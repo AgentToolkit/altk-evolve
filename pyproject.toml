@@ -22,7 +22,12 @@ dev = [
 [tool.uv]
 package = true
 
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["explorations*"]
+
 [tool.pytest.ini_options]
+addopts = "--ignore=explorations"
 markers = [
     "e2e",
     "unit",
