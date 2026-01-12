@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "sse",
+      "url": "http://localhost:8202/sse"
+    },
+    "guidelines": {
+      "type": "sse",
+      "url": "http://localhost:8201/sse"
+    }
+  }
+}

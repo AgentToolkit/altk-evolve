@@ -73,12 +73,74 @@ You can run the MCP server using `fastmcp`:
 
 ```bash
 # Assuming you are in the root directory
-uv run fastmcp run kaizen/frontend/mcp/mcp_server.py
+uv run fastmcp run kaizen/frontend/mcp/mcp_server.py --transport sse --port 8201
+```
+
+This starts the MCP server on port 8201 using SSE transport (http://127.0.0.1:8201/sse).
+
+### Smoke Test
+
+You can verify the frontend MCP server is running using the MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --method tools/list
 ```
 
 This will start the MCP server, which exposes the following tools:
 - `get_guidelines(task: str)`: Get relevant guidelines for a specific task.
 - `save_trajectory(trajectory_data: str, task_id: str | None)`: Save a conversation trajectory and generate new tips.
+
+### Running the Filesystem MCP Server
+
+You can run the filesystem MCP server by providing the directory you want to allow access to:
+
+```bash
+uv run demo/filesystem/server.py demo/filesystem --transport sse --port 8202
+```
+
+This starts the server on port 8202 using SSE transport (http://127.0.0.1:8202/sse).
+
+### Smoke Test
+
+You can verify the filesystem MCP server is running using the MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8202/sse --cli --method tools/list
+```
+
+### Running with Claude Code
+
+Install [Claude Code](https://code.claude.com/docs/en/overview) and set credentials:
+```bash
+export CLAUDE_CODE_SKIP_BEDROCK_AUTH=1
+export ANTHROPIC_BASE_URL="https://ete-litellm.bx.cloud9.ibm.com"
+export ANTHROPIC_AUTH_TOKEN="sk-..."
+export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 # Some people need this to get Claude Code to work.
+```
+
+Run Claude Code in the `demo/workdir` directory:
+```bash
+(cd demo/workdir && claude)
+```
+
+Make sure it's connected to the 2 MCP servers (Cortex and file system):
+```bash
+/mcp
+```
+(You should see connection to localhost:8201 and localhost:8202)
+
+If the MCP servers aren't there add it using the following command:
+```bash
+claude mcp add --scope local guidelines --transport sse http://localhost:8201/sse
+claude mcp add --scope local filesystem --transport sse http://localhost:8202/sse
+```
+
+Enter this utterance:
+```
+What states do I have teammates in? Read the list from the states.txt file.
+```
+
+You should see the guidelines (retrieved from the Kaizen knowledge base) being retrieved and applied during the reasoning steps.
 
 ## Development
 
