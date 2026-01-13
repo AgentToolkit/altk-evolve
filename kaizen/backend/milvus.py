@@ -152,7 +152,7 @@ class MilvusKataBackend(BaseKataBackend):
         if query is None:
             results = self.milvus.query(
                 collection_name=namespace_id,
-                filter=' AND '.join([f"{k} == '{v}'" for k, v in filters.items()]) if len(filters) > 0 else ['id > 0']
+                filter=' AND '.join([f"{k} == '{v}'" for k, v in filters.items()]) if len(filters) > 0 else 'id > 0'
             )
         else:
 

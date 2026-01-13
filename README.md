@@ -204,6 +204,10 @@ What states do I have teammates in? Read the list from the states.txt file.
 
 You should see the guidelines (retrieved from the Kaizen knowledge base) being retrieved and applied during the reasoning steps.
 
+## CLI
+
+Kaizen includes a command-line interface for managing namespaces and entities directly. See [CLI.md](CLI.md) for full documentation.
+
 ## Development
 
 To run tests:
