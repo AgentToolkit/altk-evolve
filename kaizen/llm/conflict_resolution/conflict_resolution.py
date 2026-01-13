@@ -25,7 +25,8 @@ def resolve_conflicts(
         try:
             response: str = completion(
                 model=llm_settings.conflict_resolution_model,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
+                custom_llm_provider="openai"
             ).choices[0].message.content
             response = clean_llm_response(response)
             parsed = json.loads(response)

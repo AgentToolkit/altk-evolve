@@ -1048,6 +1048,7 @@ dependencies = [
 dev = [
     { name = "anyio" },
     { name = "pytest" },
+    { name = "python-dotenv" },
 ]
 
 [package.metadata]
@@ -1064,6 +1065,7 @@ requires-dist = [
 dev = [
     { name = "anyio" },
     { name = "pytest" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
 ]
 
 [[package]]

@@ -12,7 +12,8 @@ def generate_tips(messages: list[dict]) -> list[str]:
     prompt = Template(prompt_file.read_text()).render(markdown_trajectory=markdown_trajectory)
     response = completion(
         model=llm_settings.tips_model,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        custom_llm_provider="openai"
     ).choices[0].message.content
     clean_response = clean_llm_response(response)
     return json.loads(clean_response)

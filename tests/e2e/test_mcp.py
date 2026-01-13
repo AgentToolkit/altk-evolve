@@ -3,8 +3,10 @@ import pytest
 import json
 from fastmcp.client import Client
 from pathlib import Path
+from dotenv import load_dotenv
 
 __data__ = Path(__file__).parent.parent / 'data'
+load_dotenv()
 
 @pytest.fixture
 def mcp():
