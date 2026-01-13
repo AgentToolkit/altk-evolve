@@ -51,19 +51,81 @@ KAIZEN_CUSTOM_LLM_PROVIDER="your-custom-llm-provider"
 
 All configuration variables are prefixed with `KAIZEN_`.
 
+**General Settings:**
+
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `KAIZEN_PROVIDER` | Backend provider (`milvus` or `filesystem`) | `milvus` |
+| `KAIZEN_NAMESPACE_ID` | Namespace ID for isolation | `kaizen` |
 | `KAIZEN_TIPS_MODEL` | Model for generating tips | `openai/gpt-4o` |
 | `KAIZEN_CONFLICT_RESOLUTION_MODEL` | Model for resolving conflicts | `openai/gpt-4o` |
 | `KAIZEN_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for proxy with custom models) | `openai` |
+| `KAIZEN_EMBEDDING_MODEL` | Embedding model | `sentence-transformers/all-MiniLM-L6-v2` |
+
+**Milvus Backend Settings** (when `KAIZEN_PROVIDER=milvus`):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
 | `KAIZEN_URI` | Milvus URI (file path for Lite) | `katas.milvus.db` |
 | `KAIZEN_USER` | Milvus user (optional) | `""` |
 | `KAIZEN_PASSWORD` | Milvus password (optional) | `""` |
 | `KAIZEN_DB_NAME` | Milvus database name (optional) | `""` |
 | `KAIZEN_TOKEN` | Milvus token (optional) | `""` |
 | `KAIZEN_TIMEOUT` | Milvus timeout (optional) | `None` |
-| `KAIZEN_EMBEDDING_MODEL` | Embedding model | `sentence-transformers/all-MiniLM-L6-v2` |
-| `KAIZEN_NAMESPACE_ID` | Namespace ID for isolation | `kaizen` |
+
+**Filesystem Backend Settings** (when `KAIZEN_PROVIDER=filesystem`):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KAIZEN_DATA_DIR` | Directory to store JSON data files | `kaizen_data` |
+
+### Switching Backends
+
+Kaizen supports two storage backends:
+
+| Backend | Description | Search | Best For |
+|---------|-------------|--------|----------|
+| **Milvus** (default) | Vector database with embeddings | Semantic similarity | Production |
+| **Filesystem** | JSON files, no embeddings | Text substring match | Development/testing |
+
+To switch backends, set the `KAIZEN_PROVIDER` environment variable:
+
+```bash
+# Use Milvus backend (default)
+export KAIZEN_PROVIDER=milvus
+
+# Use Filesystem backend
+export KAIZEN_PROVIDER=filesystem
+```
+
+### Using the Filesystem Backend
+
+The filesystem backend stores all data in JSON files - one file per namespace. This is ideal for:
+- Local development and testing
+- Debugging (you can inspect/edit the JSON files directly)
+- Environments where you don't want to run Milvus
+- Quick prototyping without embedding model overhead
+
+**JSON File Structure:**
+
+Each namespace is stored as `<data_dir>/<namespace_id>.json`:
+
+```json
+{
+  "id": "my_guidelines",
+  "created_at": "2026-01-13T21:29:51.986882+00:00",
+  "entities": [
+    {
+      "id": "1",
+      "type": "guideline",
+      "content": "Always write tests before code",
+      "created_at": "2026-01-13T21:30:00.023283+00:00",
+      "metadata": null
+    }
+  ],
+  "next_id": 2
+}
+```
 
 ## Usage
 

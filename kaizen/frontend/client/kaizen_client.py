@@ -12,6 +12,9 @@ class KaizenClient:
         if self.config.provider == 'milvus':
             from kaizen.backend.milvus import MilvusKataBackend
             self.backend = MilvusKataBackend(self.config.settings)
+        elif self.config.provider == 'filesystem':
+            from kaizen.backend.filesystem import FilesystemKataBackend
+            self.backend = FilesystemKataBackend(self.config.settings)
         else:
             raise NotImplementedError(f'Kata backend not implemented for provider {self.config.provider}')
 
