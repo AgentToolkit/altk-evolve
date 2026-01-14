@@ -1,0 +1,42 @@
+# Pre-commit hooks configuration
+# See https://pre-commit.com for more information
+
+repos:
+  # Ruff - Python linting and formatting (using uv)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.3
+    hooks:
+      # Run the linter
+      - id: ruff
+        name: ruff check
+        args: [--fix]
+        types_or: [python, pyi]
+      # Run the formatter
+      - id: ruff-format
+        name: ruff format
+        types_or: [python, pyi]
+
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+
+  # Conventional Commits - validate commit message format
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.3.0
+    hooks:
+      - id: conventional-pre-commit
+        name: conventional commits
+        stages: [commit-msg]
+        args: []
+
+  # Detect secrets - prevent committing sensitive information
+  - repo: https://github.com/ibm/detect-secrets
+    rev: 0.13.1+ibm.64.dss
+    hooks:
+      - id: detect-secrets
+        name: detect secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package.lock.json

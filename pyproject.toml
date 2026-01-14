@@ -18,7 +18,8 @@ dev = [
     "pytest",
     "anyio",
     "python-dotenv>=1.2.1",
-    "detect-secrets"
+    "detect-secrets",
+    "pre-commit"
 ]
 
 [tool.uv.sources]
