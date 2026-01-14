@@ -114,7 +114,7 @@ class FilesystemKataBackend(BaseKataBackend):
         file_path = self._namespace_file(namespace_id)
         with self._lock:
             if not file_path.exists():
-                raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
+                return  # Already deleted, no-op
             file_path.unlink()
 
     def update_entities(
@@ -231,7 +231,11 @@ class FilesystemKataBackend(BaseKataBackend):
             for ent in entities:
                 match = True
                 for key, value in filters.items():
-                    if ent.get(key) != value:
+                    # Check top-level field first, then metadata
+                    ent_value = ent.get(key)
+                    if ent_value is None and ent.get("metadata"):
+                        ent_value = ent["metadata"].get(key)
+                    if ent_value != value:
                         match = False
                         break
                 if match:
