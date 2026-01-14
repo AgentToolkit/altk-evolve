@@ -20,7 +20,7 @@ Prerequisites:
 ```bash
 git clone <repository_url>
 cd kaizen
-uv sync
+uv sync && source .venv/bin/activate
 ```
 
 ## Configuration
