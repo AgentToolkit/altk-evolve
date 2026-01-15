@@ -18,9 +18,11 @@ from kaizen.schema.exceptions import (
 app = typer.Typer(help="Kaizen CLI - Manage entities and namespaces")
 namespaces_app = typer.Typer(help="Namespace management commands")
 entities_app = typer.Typer(help="Entity management commands")
+sync_app = typer.Typer(help="Sync commands")
 
 app.add_typer(namespaces_app, name="namespaces")
 app.add_typer(entities_app, name="entities")
+app.add_typer(sync_app, name="sync")
 
 console = Console()
 
@@ -316,6 +318,59 @@ def show_entity(
 
     except NamespaceNotFoundException:
         console.print(f"[red]Namespace '{namespace}' not found.[/red]")
+        raise typer.Exit(1)
+
+
+# =============================================================================
+# Sync Commands
+# =============================================================================
+
+
+@sync_app.command("phoenix")
+def sync_phoenix(
+    phoenix_url: Annotated[Optional[str], typer.Option("--url", "-u", help="Phoenix server URL")] = None,
+    namespace: Annotated[Optional[str], typer.Option("--namespace", "-n", help="Target namespace")] = None,
+    project: Annotated[Optional[str], typer.Option("--project", "-p", help="Phoenix project name")] = None,
+    limit: Annotated[int, typer.Option(help="Maximum number of spans to fetch")] = 100,
+    include_errors: Annotated[bool, typer.Option("--include-errors", help="Include failed/error spans")] = False,
+):
+    """Sync trajectories from Arize Phoenix and generate tips."""
+    from kaizen.sync.phoenix_sync import PhoenixSync
+
+    syncer = PhoenixSync(
+        phoenix_url=phoenix_url,
+        namespace_id=namespace,
+        project=project,
+    )
+
+    console.print(f"[bold]Syncing from Phoenix[/bold]")
+    console.print(f"  URL: {syncer.phoenix_url}")
+    console.print(f"  Project: {syncer.project}")
+    console.print(f"  Namespace: {syncer.namespace_id}")
+    console.print(f"  Limit: {limit}")
+    console.print()
+
+    try:
+        result = syncer.sync(limit=limit, include_errors=include_errors)
+
+        table = Table(title="Sync Results")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Count", justify="right")
+
+        table.add_row("Trajectories processed", str(result.processed))
+        table.add_row("Trajectories skipped (already synced)", str(result.skipped))
+        table.add_row("Tips generated", str(result.tips_generated))
+        table.add_row("Errors", str(len(result.errors)))
+
+        console.print(table)
+
+        if result.errors:
+            console.print("\n[red]Errors:[/red]")
+            for error in result.errors:
+                console.print(f"  - {error}")
+
+    except Exception as e:
+        console.print(f"[red]Sync failed: {e}[/red]")
         raise typer.Exit(1)
 
 
