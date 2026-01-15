@@ -69,7 +69,7 @@ class TestParseContent:
         """Test that lists are passed through unchanged."""
         content = [{"type": "text"}]
         result = phoenix_sync._parse_content(content)
-        assert content == [{"type": "text"}]
+        assert result == [{"type": "text"}]
 
     def test_parse_content_invalid_json_returns_string(self, phoenix_sync):
         """Test that invalid JSON/Python returns the original string."""
