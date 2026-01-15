@@ -583,3 +583,267 @@ class TestCLIHelp:
         assert "delete" in result.stdout
         assert "search" in result.stdout
         assert "show" in result.stdout
+
+    def test_sync_help(self):
+        """Test sync subcommand help."""
+        result = runner.invoke(app, ["sync", "--help"])
+
+        assert result.exit_code == 0
+        assert "phoenix" in result.stdout
+
+
+# =============================================================================
+# Sync Commands Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.phoenix
+class TestSyncPhoenix:
+    """Tests for 'kaizen sync phoenix' command."""
+
+    def test_sync_phoenix_default_params(self):
+        """Test sync phoenix with default parameters."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=5,
+                skipped=2,
+                tips_generated=10,
+                errors=[]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix"])
+
+            assert result.exit_code == 0
+            mock_syncer.sync.assert_called_once_with(limit=100, include_errors=False)
+
+    def test_sync_phoenix_with_custom_url(self):
+        """Test sync phoenix with custom Phoenix URL."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://custom:8080"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=0,
+                skipped=0,
+                tips_generated=0,
+                errors=[]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix", "--url", "http://custom:8080"])
+
+            assert result.exit_code == 0
+            MockSync.assert_called_once_with(
+                phoenix_url="http://custom:8080",
+                namespace_id=None,
+                project=None
+            )
+
+    def test_sync_phoenix_with_custom_namespace(self):
+        """Test sync phoenix with custom namespace."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "my_namespace"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=0,
+                skipped=0,
+                tips_generated=0,
+                errors=[]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix", "--namespace", "my_namespace"])
+
+            assert result.exit_code == 0
+            MockSync.assert_called_once_with(
+                phoenix_url=None,
+                namespace_id="my_namespace",
+                project=None
+            )
+
+    def test_sync_phoenix_with_custom_project(self):
+        """Test sync phoenix with custom project."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "my_project"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=0,
+                skipped=0,
+                tips_generated=0,
+                errors=[]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix", "--project", "my_project"])
+
+            assert result.exit_code == 0
+            MockSync.assert_called_once_with(
+                phoenix_url=None,
+                namespace_id=None,
+                project="my_project"
+            )
+
+    def test_sync_phoenix_with_custom_limit(self):
+        """Test sync phoenix with custom limit."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=0,
+                skipped=0,
+                tips_generated=0,
+                errors=[]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix", "--limit", "50"])
+
+            assert result.exit_code == 0
+            mock_syncer.sync.assert_called_once_with(limit=50, include_errors=False)
+
+    def test_sync_phoenix_with_include_errors(self):
+        """Test sync phoenix with include-errors flag."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=0,
+                skipped=0,
+                tips_generated=0,
+                errors=[]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix", "--include-errors"])
+
+            assert result.exit_code == 0
+            mock_syncer.sync.assert_called_once_with(limit=100, include_errors=True)
+
+    def test_sync_phoenix_displays_results(self):
+        """Test sync phoenix displays results in output."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=10,
+                skipped=5,
+                tips_generated=20,
+                errors=[]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix"])
+
+            assert result.exit_code == 0
+            assert "Sync Results" in result.stdout
+            assert "10" in result.stdout  # processed
+            assert "5" in result.stdout   # skipped
+            assert "20" in result.stdout  # tips_generated
+
+    def test_sync_phoenix_displays_errors(self):
+        """Test sync phoenix displays errors if any."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=1,
+                skipped=0,
+                tips_generated=0,
+                errors=["Error processing span abc: Connection failed"]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix"])
+
+            assert result.exit_code == 0
+            assert "Errors:" in result.stdout
+            assert "Connection failed" in result.stdout
+
+    def test_sync_phoenix_handles_exception(self):
+        """Test sync phoenix handles exceptions gracefully."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.side_effect = Exception("Phoenix server unreachable")
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix"])
+
+            assert result.exit_code == 1
+            assert "Sync failed" in result.stdout
+            assert "Phoenix server unreachable" in result.stdout
+
+    def test_sync_phoenix_displays_parameters(self):
+        """Test sync phoenix displays sync parameters."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://test:6006"
+            mock_syncer.project = "test_project"
+            mock_syncer.namespace_id = "test_namespace"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=0,
+                skipped=0,
+                tips_generated=0,
+                errors=[]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix"])
+
+            assert result.exit_code == 0
+            assert "http://test:6006" in result.stdout
+            assert "test_project" in result.stdout
+            assert "test_namespace" in result.stdout
+
+    def test_sync_phoenix_all_options(self):
+        """Test sync phoenix with all options combined."""
+        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://custom:9000"
+            mock_syncer.project = "prod"
+            mock_syncer.namespace_id = "production"
+            mock_syncer.sync.return_value = MagicMock(
+                processed=100,
+                skipped=50,
+                tips_generated=200,
+                errors=[]
+            )
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, [
+                "sync", "phoenix",
+                "--url", "http://custom:9000",
+                "--namespace", "production",
+                "--project", "prod",
+                "--limit", "500",
+                "--include-errors"
+            ])
+
+            assert result.exit_code == 0
+            MockSync.assert_called_once_with(
+                phoenix_url="http://custom:9000",
+                namespace_id="production",
+                project="prod"
+            )
+            mock_syncer.sync.assert_called_once_with(limit=500, include_errors=True)

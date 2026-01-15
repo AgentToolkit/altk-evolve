@@ -210,8 +210,30 @@ Kaizen includes a command-line interface for managing namespaces and entities di
 
 ## Development
 
-To run tests:
+### Running Tests
+
+Run the default test suite:
 
 ```bash
 uv run pytest
 ```
+
+#### Phoenix Sync Tests
+
+Tests for the Phoenix trajectory sync functionality are **skipped by default** since they require familiarity with the Phoenix integration. To include them:
+
+```bash
+# Run all tests including Phoenix tests
+uv run pytest --run-phoenix
+
+# Run only Phoenix tests
+uv run pytest -m phoenix
+
+# Run default tests (excludes Phoenix)
+uv run pytest
+```
+
+The Phoenix tests cover:
+- `kaizen/sync/phoenix_sync.py` - Trajectory sync from Arize Phoenix
+- `extract_trajectories.py` - Standalone trajectory extraction script
+- CLI `sync phoenix` command

@@ -38,9 +38,10 @@ include = ["kaizen"]
 package = true
 
 [tool.pytest.ini_options]
-addopts = "--ignore=explorations"
+addopts = "--ignore=explorations -m 'not phoenix'"
 markers = [
     "e2e",
     "unit",
+    "phoenix: tests requiring Phoenix sync functionality (deselected by default)",
 ]
 anyio_mode = "auto"
