@@ -53,14 +53,14 @@ All configuration variables are prefixed with `KAIZEN_`.
 
 **General Settings:**
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `KAIZEN_PROVIDER` | Backend provider (`milvus` or `filesystem`) | `milvus` |
-| `KAIZEN_NAMESPACE_ID` | Namespace ID for isolation | `kaizen` |
-| `KAIZEN_TIPS_MODEL` | Model for generating tips | `openai/gpt-4o` |
-| `KAIZEN_CONFLICT_RESOLUTION_MODEL` | Model for resolving conflicts | `openai/gpt-4o` |
-| `KAIZEN_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for proxy with custom models) | `openai` |
-| `KAIZEN_EMBEDDING_MODEL` | Embedding model | `sentence-transformers/all-MiniLM-L6-v2` |
+| Variable | Description                                                                   | Default                                  |
+|----------|-------------------------------------------------------------------------------|------------------------------------------|
+| `KAIZEN_PROVIDER` | Backend provider (`milvus` or `filesystem`)                                   | `milvus`                                 |
+| `KAIZEN_NAMESPACE_ID` | Namespace ID for isolation                                                    | `kaizen`                                 |
+| `KAIZEN_TIPS_MODEL` | Model for generating tips (e.g. `openai/gpt-4o` for proxy with custom models) | `gpt-4o`                                 |
+| `KAIZEN_CONFLICT_RESOLUTION_MODEL` | Model for resolving conflicts (e.g. `openai/gpt-4o` for proxy with custom models)  | `gpt-4o`                                 |
+| `KAIZEN_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for proxy with custom models) | `None`                                   |
+| `KAIZEN_EMBEDDING_MODEL` | Embedding model                                                               | `sentence-transformers/all-MiniLM-L6-v2` |
 
 **Milvus Backend Settings** (when `KAIZEN_PROVIDER=milvus`):
 

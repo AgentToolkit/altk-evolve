@@ -3,6 +3,7 @@ Katas MCP Server
 
 This server provides a tool to get task-relevant guidelines.
 """
+
 import json
 import logging
 import uuid
@@ -20,11 +21,13 @@ logger = logging.getLogger("katas-mcp")
 mcp = FastMCP("katas")
 client = KaizenClient()
 
+
 def ensure_namespace():
     try:
         client.get_namespace_details(kaizen_config.namespace_id)
     except NamespaceNotFoundException:
         client.create_namespace(kaizen_config.namespace_id)
+
 
 @mcp.tool()
 def get_guidelines(task: str) -> str:
@@ -41,7 +44,7 @@ def get_guidelines(task: str) -> str:
     results = client.search_entities(
         namespace_id=kaizen_config.namespace_id,
         query=task,
-        filters={"type": "guideline"}
+        filters={"type": "guideline"},
     )
 
     # Format the response
@@ -54,7 +57,9 @@ def get_guidelines(task: str) -> str:
 
 
 @mcp.tool()
-def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[RecordedEntity]:
+def save_trajectory(
+    trajectory_data: str, task_id: str | None = None
+) -> list[RecordedEntity]:
     """
     Save the full agent trajectory to the Kata DB and generate tips
 
@@ -67,33 +72,45 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
     entities = []
     messages = json.loads(trajectory_data)
     for message in messages:
-        entities.append(Entity(
-            type='trajectory',
-            content=message['content'] if isinstance(message['content'], str) else str(message['content']),
-            metadata={
-                "task_id": task_id,
-                "message": message  # store the original message for reference
-            }
-        ))
+        entities.append(
+            Entity(
+                type="trajectory",
+                content=message["content"]
+                if isinstance(message["content"], str)
+                else str(message["content"]),
+                metadata={
+                    "task_id": task_id,
+                    "message": message,  # store the original message for reference
+                },
+            )
+        )
 
     client.update_entities(
         namespace_id=kaizen_config.namespace_id,
         entities=entities,
-        enable_conflict_resolution=False
+        enable_conflict_resolution=False,
     )
     tips = generate_tips(messages)
 
     client.update_entities(
         namespace_id=kaizen_config.namespace_id,
-        entities=[Entity(
-            type='guideline',
-            content=tip,
-        ) for tip in tips],
-        enable_conflict_resolution=True
+        entities=[
+            Entity(
+                type="guideline",
+                content=tip.content,
+                metadata={
+                    "category": tip.category,
+                    "rationale": tip.rationale,
+                    "trigger": tip.trigger,
+                },
+            )
+            for tip in tips
+        ],
+        enable_conflict_resolution=True,
     )
 
     return client.search_entities(
         namespace_id=kaizen_config.namespace_id,
         filters={"type": "trajectory", "task_id": task_id},
-        limit=1000
+        limit=1000,
     )

@@ -42,6 +42,6 @@ addopts = "--ignore=explorations -m 'not phoenix'"
 markers = [
     "e2e",
     "unit",
-    "phoenix: tests requiring Phoenix sync functionality (deselected by default)",
+    "phoenix"
 ]
 anyio_mode = "auto"

@@ -1,7 +1,38 @@
-Examine the following agent trajectory. Extract guidelines or tips that can be used in the future to optimize the trajectory.
-This includes remembering sequences of tool calls, or entities that will make the reasoning more efficient and avoid errors.
+You are analyzing an AI agent's execution trajectory to extract actionable tips.
 
-The tips should be short sentences that guide future iterations of the agent to perform better or faster, avoid errors, or learn from experience.
-Generate as many tips as you think is needed. Output as a JSON formatted list of strings.
+# Task Information
+**Task:** {{task_instruction}}
+**Status:** UNKNOWN
+**Steps Taken:** {{num_steps}}
 
-{{markdown_trajectory}}
+# Agent Trajectory
+{{trajectory_summary}}
+
+# Your Task
+Extract 3-5 actionable tips from this trajectory that would help AI agents perform similar tasks better.
+
+**Guidelines:**
+1. Focus on patterns that worked or mistakes that were made
+2. Be specific to what you observed in this trajectory
+3. Each tip should have:
+   - Clear description of what to do (or avoid)
+   - Why it matters
+   - When to apply it
+
+{% if not constrained_decoding_supported %}
+**Output Format (JSON):**
+```json
+{
+    "tips": [
+        {
+            "content": "Clear, actionable tip",
+            "rationale": "Why this tip helps",
+            "category": "strategy|recovery|optimization",
+            "trigger": "When to apply this tip"
+        }
+    ]
+}
+```
+
+Generate tips now. Return ONLY the JSON, no other text.
+{% endif %}

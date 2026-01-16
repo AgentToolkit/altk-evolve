@@ -28,6 +28,7 @@ logger = logging.getLogger("kaizen.sync.phoenix")
 @dataclass
 class SyncResult:
     """Result of a sync operation."""
+
     processed: int
     skipped: int
     tips_generated: int
@@ -87,7 +88,7 @@ class PhoenixSync:
             entities = self.client.search_entities(
                 namespace_id=self.namespace_id,
                 filters={"type": "trajectory"},
-                limit=10000
+                limit=10000,
             )
             return {
                 e.metadata.get("span_id")
@@ -105,6 +106,7 @@ class PhoenixSync:
             except json.JSONDecodeError:
                 try:
                     import ast
+
                     return ast.literal_eval(content)
                 except (ValueError, SyntaxError):
                     return content
@@ -126,12 +128,14 @@ class PhoenixSync:
             role = attrs.get(f"gen_ai.prompt.{i}.role")
             content = attrs.get(f"gen_ai.prompt.{i}.content")
             if role and content is not None:
-                messages.append({
-                    "index": i,
-                    "type": "prompt",
-                    "role": role,
-                    "content": self._parse_content(content)
-                })
+                messages.append(
+                    {
+                        "index": i,
+                        "type": "prompt",
+                        "role": role,
+                        "content": self._parse_content(content),
+                    }
+                )
 
         # Extract completion messages
         completion_indices = set()
@@ -144,12 +148,14 @@ class PhoenixSync:
             role = attrs.get(f"gen_ai.completion.{i}.role")
             content = attrs.get(f"gen_ai.completion.{i}.content")
             if role and content is not None:
-                messages.append({
-                    "index": i,
-                    "type": "completion",
-                    "role": role,
-                    "content": self._parse_content(content)
-                })
+                messages.append(
+                    {
+                        "index": i,
+                        "type": "completion",
+                        "role": role,
+                        "content": self._parse_content(content),
+                    }
+                )
 
         return messages
 
@@ -184,21 +190,25 @@ class PhoenixSync:
                     thinking_parts.append(thinking)
 
             elif block_type == "tool_use":
-                tool_calls.append({
-                    "id": block.get("id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": block.get("name", ""),
-                        "arguments": json.dumps(block.get("input", {}))
+                tool_calls.append(
+                    {
+                        "id": block.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": block.get("name", ""),
+                            "arguments": json.dumps(block.get("input", {})),
+                        },
                     }
-                })
+                )
 
             elif block_type == "tool_result":
-                tool_results.append({
-                    "tool_call_id": block.get("tool_use_id", ""),
-                    "content": block.get("content", ""),
-                    "is_error": block.get("is_error", False)
-                })
+                tool_results.append(
+                    {
+                        "tool_call_id": block.get("tool_use_id", ""),
+                        "content": block.get("content", ""),
+                        "is_error": block.get("is_error", False),
+                    }
+                )
 
         if role == "assistant":
             msg = {"role": "assistant"}
@@ -233,11 +243,13 @@ class PhoenixSync:
 
             if converted.get("role") == "tool" and "tool_results" in converted:
                 for result in converted["tool_results"]:
-                    openai_messages.append({
-                        "role": "tool",
-                        "tool_call_id": result["tool_call_id"],
-                        "content": result["content"]
-                    })
+                    openai_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": result["tool_call_id"],
+                            "content": result["content"],
+                        }
+                    )
             else:
                 openai_messages.append(converted)
 
@@ -250,13 +262,14 @@ class PhoenixSync:
             "usage": {
                 "prompt_tokens": attrs.get("gen_ai.usage.prompt_tokens"),
                 "completion_tokens": attrs.get("gen_ai.usage.completion_tokens"),
-                "total_tokens": attrs.get("llm.usage.total_tokens")
-            }
+                "total_tokens": attrs.get("llm.usage.total_tokens"),
+            },
         }
 
     def _clean_trajectory(self, trajectory: dict) -> dict:
         """Clean up a trajectory by removing system reminders."""
         import re
+
         cleaned_messages = []
 
         for msg in trajectory.get("messages", []):
@@ -267,10 +280,10 @@ class PhoenixSync:
                 content = msg["content"]
                 if isinstance(content, str):
                     content = re.sub(
-                        r'<system-reminder>.*?</system-reminder>',
-                        '',
+                        r"<system-reminder>.*?</system-reminder>",
+                        "",
                         content,
-                        flags=re.DOTALL
+                        flags=re.DOTALL,
                     ).strip()
                     if not content:
                         continue
@@ -290,23 +303,25 @@ class PhoenixSync:
         for msg in trajectory.get("messages", []):
             content = msg.get("content")
             if isinstance(content, str) and content:
-                entities.append(Entity(
-                    type='trajectory',
-                    content=content,
-                    metadata={
-                        "trace_id": trajectory["trace_id"],
-                        "span_id": trajectory["span_id"],
-                        "model": trajectory["model"],
-                        "role": msg.get("role"),
-                        "timestamp": trajectory["timestamp"],
-                    }
-                ))
+                entities.append(
+                    Entity(
+                        type="trajectory",
+                        content=content,
+                        metadata={
+                            "trace_id": trajectory["trace_id"],
+                            "span_id": trajectory["span_id"],
+                            "model": trajectory["model"],
+                            "role": msg.get("role"),
+                            "timestamp": trajectory["timestamp"],
+                        },
+                    )
+                )
 
         if entities:
             self.client.update_entities(
                 namespace_id=self.namespace_id,
                 entities=entities,
-                enable_conflict_resolution=False
+                enable_conflict_resolution=False,
             )
 
         # Generate tips from the trajectory
@@ -315,19 +330,22 @@ class PhoenixSync:
         if tips:
             tip_entities = [
                 Entity(
-                    type='guideline',
-                    content=tip,
+                    type="guideline",
+                    content=tip.content,
                     metadata={
+                        "category": tip.category,
+                        "rationale": tip.rationale,
+                        "trigger": tip.trigger,
                         "source_trace_id": trajectory["trace_id"],
                         "source_span_id": trajectory["span_id"],
-                    }
+                    },
                 )
                 for tip in tips
             ]
             self.client.update_entities(
                 namespace_id=self.namespace_id,
                 entities=tip_entities,
-                enable_conflict_resolution=True
+                enable_conflict_resolution=True,
             )
 
         return len(tips)
@@ -347,7 +365,9 @@ class PhoenixSync:
         Returns:
             SyncResult with counts of processed, skipped, and tips generated
         """
-        logger.info(f"Starting sync from {self.phoenix_url} to namespace '{self.namespace_id}'")
+        logger.info(
+            f"Starting sync from {self.phoenix_url} to namespace '{self.namespace_id}'"
+        )
 
         self._ensure_namespace()
 
@@ -405,7 +425,7 @@ class PhoenixSync:
             processed=processed,
             skipped=skipped,
             tips_generated=tips_generated,
-            errors=errors
+            errors=errors,
         )
 
         logger.info(
