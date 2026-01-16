@@ -9,14 +9,14 @@ class KaizenClient:
     def __init__(self, config: KaizenConfig | None = None):
         """Initialize the Kaizen client."""
         self.config = config or KaizenConfig()
-        if self.config.provider == 'milvus':
+        if self.config.backend == 'milvus':
             from kaizen.backend.milvus import MilvusKataBackend
             self.backend = MilvusKataBackend(self.config.settings)
-        elif self.config.provider == 'filesystem':
+        elif self.config.backend == 'filesystem':
             from kaizen.backend.filesystem import FilesystemKataBackend
             self.backend = FilesystemKataBackend(self.config.settings)
         else:
-            raise NotImplementedError(f'Kata backend not implemented for provider {self.config.provider}')
+            raise NotImplementedError(f'Kata backend not implemented: {self.config.backend}')
 
     def ready(self) -> bool:
         """Check if the backend is healthy."""

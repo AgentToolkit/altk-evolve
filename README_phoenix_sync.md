@@ -24,7 +24,7 @@ No additional dependencies required - uses only stdlib for Phoenix API calls.
 | `PHOENIX_URL` | `http://localhost:6006` | Phoenix server URL |
 | `PHOENIX_PROJECT` | `default` | Phoenix project name |
 | `KAIZEN_NAMESPACE_ID` | `kaizen` | Target namespace for stored entities |
-| `KAIZEN_PROVIDER` | `milvus` | Backend provider (`milvus` or `filesystem`) |
+| `KAIZEN_BACKEND` | `milvus` | Backend provider (`milvus` or `filesystem`) |
 
 ## Usage
 

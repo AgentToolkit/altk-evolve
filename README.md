@@ -55,14 +55,14 @@ All configuration variables are prefixed with `KAIZEN_`.
 
 | Variable | Description                                                                   | Default                                  |
 |----------|-------------------------------------------------------------------------------|------------------------------------------|
-| `KAIZEN_PROVIDER` | Backend provider (`milvus` or `filesystem`)                                   | `milvus`                                 |
+| `KAIZEN_BACKEND` | Backend provider (`milvus` or `filesystem`)                                   | `milvus`                                 |
 | `KAIZEN_NAMESPACE_ID` | Namespace ID for isolation                                                    | `kaizen`                                 |
 | `KAIZEN_TIPS_MODEL` | Model for generating tips (e.g. `openai/gpt-4o` for proxy with custom models) | `gpt-4o`                                 |
 | `KAIZEN_CONFLICT_RESOLUTION_MODEL` | Model for resolving conflicts (e.g. `openai/gpt-4o` for proxy with custom models)  | `gpt-4o`                                 |
 | `KAIZEN_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for proxy with custom models) | `None`                                   |
 | `KAIZEN_EMBEDDING_MODEL` | Embedding model                                                               | `sentence-transformers/all-MiniLM-L6-v2` |
 
-**Milvus Backend Settings** (when `KAIZEN_PROVIDER=milvus`):
+**Milvus Backend Settings** (when `KAIZEN_BACKEND=milvus`):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -73,7 +73,7 @@ All configuration variables are prefixed with `KAIZEN_`.
 | `KAIZEN_TOKEN` | Milvus token (optional) | `""` |
 | `KAIZEN_TIMEOUT` | Milvus timeout (optional) | `None` |
 
-**Filesystem Backend Settings** (when `KAIZEN_PROVIDER=filesystem`):
+**Filesystem Backend Settings** (when `KAIZEN_BACKEND=filesystem`):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -88,14 +88,14 @@ Kaizen supports two storage backends:
 | **Milvus** (default) | Vector database with embeddings | Semantic similarity | Production |
 | **Filesystem** | JSON files, no embeddings | Text substring match | Development/testing |
 
-To switch backends, set the `KAIZEN_PROVIDER` environment variable:
+To switch backends, set the `KAIZEN_BACKEND` environment variable:
 
 ```bash
 # Use Milvus backend (default)
-export KAIZEN_PROVIDER=milvus
+export KAIZEN_BACKEND=milvus
 
 # Use Filesystem backend
-export KAIZEN_PROVIDER=filesystem
+export KAIZEN_BACKEND=filesystem
 ```
 
 ### Using the Filesystem Backend
@@ -172,13 +172,7 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8202/sse --cli --met
 
 ### Running with Claude Code
 
-Install [Claude Code](https://code.claude.com/docs/en/overview) and set credentials:
-```bash
-export CLAUDE_CODE_SKIP_BEDROCK_AUTH=1
-export ANTHROPIC_BASE_URL="https://ete-litellm.bx.cloud9.ibm.com"
-export ANTHROPIC_AUTH_TOKEN="sk-..."
-export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 # Some people need this to get Claude Code to work.
-```
+Install [Claude Code](https://code.claude.com/docs/en/overview) and set credentials.
 
 Run Claude Code in the `demo/workdir` directory:
 ```bash
