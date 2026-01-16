@@ -11,7 +11,9 @@ Kaizen is a system designed to help agents improve over time by learning from th
 - **Trajectory Analysis**: Automatically analyzes agent trajectories to generate tips and best practices.
 - **Milvus Integration**: Uses Milvus (or Milvus Lite) for efficient vector storage and retrieval.
 
-## Installation
+## Quick Start
+
+### Installation
 
 Prerequisites:
 - Python 3.12 or higher
@@ -23,190 +25,39 @@ cd kaizen
 uv sync && source .venv/bin/activate
 ```
 
-## Configuration
+### Configuration
 
-Kaizen uses environment variables for configuration. You can set these in a `.env` file or export them directly.
-
-**LLM Configuration (required for OpenAI models):**
+Set your OpenAI API key:
 ```bash
 export OPENAI_API_KEY=sk-...
 ```
 
-**Custom LLM Configuration**
-
-Kaizen uses [LiteLLM](https://docs.litellm.ai/) and supports using a LiteLLM proxy server for centralized LLM access:
-
-```bash
-# LiteLLM Proxy Configuration
-OPENAI_API_KEY="your-proxy-token"
-OPENAI_BASE_URL="https://your-litellm-proxy.com"
-
-# Kaizen Model Configuration
-KAIZEN_TIPS_MODEL="your-model-name"
-KAIZEN_CONFLICT_RESOLUTION_MODEL="your-model-name"
-KAIZEN_CUSTOM_LLM_PROVIDER="your-custom-llm-provider"
-```
-
-**Kaizen Configuration:**
-
-All configuration variables are prefixed with `KAIZEN_`.
-
-**General Settings:**
-
-| Variable | Description                                                                   | Default                                  |
-|----------|-------------------------------------------------------------------------------|------------------------------------------|
-| `KAIZEN_BACKEND` | Backend provider (`milvus` or `filesystem`)                                   | `milvus`                                 |
-| `KAIZEN_NAMESPACE_ID` | Namespace ID for isolation                                                    | `kaizen`                                 |
-| `KAIZEN_TIPS_MODEL` | Model for generating tips (e.g. `openai/gpt-4o` for proxy with custom models) | `gpt-4o`                                 |
-| `KAIZEN_CONFLICT_RESOLUTION_MODEL` | Model for resolving conflicts (e.g. `openai/gpt-4o` for proxy with custom models)  | `gpt-4o`                                 |
-| `KAIZEN_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for proxy with custom models) | `None`                                   |
-| `KAIZEN_EMBEDDING_MODEL` | Embedding model                                                               | `sentence-transformers/all-MiniLM-L6-v2` |
-
-**Milvus Backend Settings** (when `KAIZEN_BACKEND=milvus`):
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `KAIZEN_URI` | Milvus URI (file path for Lite) | `katas.milvus.db` |
-| `KAIZEN_USER` | Milvus user (optional) | `""` |
-| `KAIZEN_PASSWORD` | Milvus password (optional) | `""` |
-| `KAIZEN_DB_NAME` | Milvus database name (optional) | `""` |
-| `KAIZEN_TOKEN` | Milvus token (optional) | `""` |
-| `KAIZEN_TIMEOUT` | Milvus timeout (optional) | `None` |
-
-**Filesystem Backend Settings** (when `KAIZEN_BACKEND=filesystem`):
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `KAIZEN_DATA_DIR` | Directory to store JSON data files | `kaizen_data` |
-
-### Switching Backends
-
-Kaizen supports two storage backends:
-
-| Backend | Description | Search | Best For |
-|---------|-------------|--------|----------|
-| **Milvus** (default) | Vector database with embeddings | Semantic similarity | Production |
-| **Filesystem** | JSON files, no embeddings | Text substring match | Development/testing |
-
-To switch backends, set the `KAIZEN_BACKEND` environment variable:
-
-```bash
-# Use Milvus backend (default)
-export KAIZEN_BACKEND=milvus
-
-# Use Filesystem backend
-export KAIZEN_BACKEND=filesystem
-```
-
-### Using the Filesystem Backend
-
-The filesystem backend stores all data in JSON files - one file per namespace. This is ideal for:
-- Local development and testing
-- Debugging (you can inspect/edit the JSON files directly)
-- Environments where you don't want to run Milvus
-- Quick prototyping without embedding model overhead
-
-**JSON File Structure:**
-
-Each namespace is stored as `<data_dir>/<namespace_id>.json`:
-
-```json
-{
-  "id": "my_guidelines",
-  "created_at": "2026-01-13T21:29:51.986882+00:00",
-  "entities": [
-    {
-      "id": "1",
-      "type": "guideline",
-      "content": "Always write tests before code",
-      "created_at": "2026-01-13T21:30:00.023283+00:00",
-      "metadata": null
-    }
-  ],
-  "next_id": 2
-}
-```
-
-## Usage
+For detailed configuration options (custom LLM providers, backends, etc.), see [CONFIGURATION.md](CONFIGURATION.md).
 
 ### Running the MCP Server
 
-You can run the MCP server using `fastmcp`:
-
 ```bash
-# Assuming you are in the root directory
 uv run fastmcp run kaizen/frontend/mcp/mcp_server.py --transport sse --port 8201
 ```
 
-This starts the MCP server on port 8201 using SSE transport (http://127.0.0.1:8201/sse).
-
-### Smoke Test
-
-You can verify the frontend MCP server is running using the MCP Inspector:
-
+Verify it's running:
 ```bash
 npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --method tools/list
 ```
 
-This will start the MCP server, which exposes the following tools:
+**Available tools:**
 - `get_guidelines(task: str)`: Get relevant guidelines for a specific task.
 - `save_trajectory(trajectory_data: str, task_id: str | None)`: Save a conversation trajectory and generate new tips.
 
-### Running the Filesystem MCP Server
+## Documentation
 
-You can run the filesystem MCP server by providing the directory you want to allow access to:
-
-```bash
-uv run demo/filesystem/server.py demo/filesystem --transport sse --port 8202
-```
-
-This starts the server on port 8202 using SSE transport (http://127.0.0.1:8202/sse).
-
-### Smoke Test
-
-You can verify the filesystem MCP server is running using the MCP Inspector:
-
-```bash
-npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8202/sse --cli --method tools/list
-```
-
-### Running with Claude Code
-
-Install [Claude Code](https://code.claude.com/docs/en/overview) and set credentials.
-
-Run Claude Code in the `demo/workdir` directory:
-```bash
-(cd demo/workdir && claude)
-```
-
-Make sure it's connected to the 2 MCP servers (Cortex and file system):
-```bash
-/mcp
-```
-(You should see connection to localhost:8201 and localhost:8202)
-
-If the MCP servers aren't there add it using the following command:
-```bash
-claude mcp add --scope local guidelines --transport sse http://localhost:8201/sse
-claude mcp add --scope local filesystem --transport sse http://localhost:8202/sse
-```
-
-Enter this utterance:
-```
-What states do I have teammates in? Read the list from the states.txt file.
-```
-
-You should see the guidelines (retrieved from the Kaizen knowledge base) being retrieved and applied during the reasoning steps.
-
-## CLI
-
-Kaizen includes a command-line interface for managing namespaces and entities directly. See [CLI.md](CLI.md) for full documentation.
+- [CONFIGURATION.md](CONFIGURATION.md) - Detailed configuration options
+- [CLI.md](CLI.md) - Command-line interface documentation
+- [CLAUDE_CODE_DEMO.md](CLAUDE_CODE_DEMO.md) - Claude Code demo walkthrough
 
 ## Development
 
 ### Running Tests
-
-Run the default test suite:
 
 ```bash
 uv run pytest
@@ -222,12 +73,4 @@ uv run pytest --run-phoenix
 
 # Run only Phoenix tests
 uv run pytest -m phoenix
-
-# Run default tests (excludes Phoenix)
-uv run pytest
 ```
-
-The Phoenix tests cover:
-- `kaizen/sync/phoenix_sync.py` - Trajectory sync from Arize Phoenix
-- `extract_trajectories.py` - Standalone trajectory extraction script
-- CLI `sync phoenix` command
