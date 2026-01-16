@@ -57,23 +57,22 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
                         function_calls.append(function_call)
 
                         # Add to agent steps as an action
-                        args_str = (assistant_response["function"]["arguments"],)
+                        args_str = assistant_response["function"]["arguments"]
                         try:
-                            args = (
-                                json.loads(args_str)
-                                if isinstance(args_str, str)
-                                else args_str
-                            )
+                            args: dict = json.loads(args_str)
                             args_display = ", ".join(
                                 f"{k}={json.dumps(v)}" for k, v in args.items()
                             )
+                            function_description = f"{assistant_response['function']['name']}({args_display})"
                         except JSONDecodeError:
-                            args_display = args_str
+                            function_description = (
+                                f"{assistant_response['function']['name']}({args_str})"
+                            )
 
                         agent_steps.append(
                             {
-                                "type": "actions",
-                                "content": f"{assistant_response['function']['name']}({args_display})",
+                                "type": "action",
+                                "content": function_description,
                                 "raw": assistant_response,
                             }
                         )
