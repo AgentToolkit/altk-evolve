@@ -15,8 +15,8 @@ Kaizen uses [LiteLLM](https://docs.litellm.ai/) and supports using a LiteLLM pro
 
 ```bash
 # LiteLLM Proxy Configuration
-OPENAI_API_KEY="your-proxy-token"
-OPENAI_BASE_URL="https://your-litellm-proxy.com"
+LITELLM_PROXY_API_KEY="your-proxy-token"
+LITELLM_PROXY_API_BASE="https://your-litellm-proxy.com"
 
 # Kaizen Model Configuration
 KAIZEN_TIPS_MODEL="your-model-name"
