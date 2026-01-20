@@ -16,7 +16,7 @@ class Namespace(BaseModel):
 
 class Entity(BaseModel):
     """Basic data stored in the DB"""
-    content: str = Field(description='Some relatively short searchable text.')
+    content: str | list | dict = Field(description='Searchable text or structured data.')
     metadata: dict | None = Field(default=None, description='Arbitrary metadata which is related to the entity.')
     type: str = Field(description='The type of the entity.')
 

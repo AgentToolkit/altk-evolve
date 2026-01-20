@@ -95,8 +95,8 @@ class SQLiteManager:
         with self._lock:
             cursor: sqlite3.Cursor = self.connection.cursor()
             cursor.row_factory = Namespace.row_factory
-            cursor.execute(f"""
-                    SELECT id, created_at, user_id, agent_id, app_id
+            cursor.execute("""
+                    SELECT id, created_at
                     FROM namespaces
                     LIMIT ?
                 """,

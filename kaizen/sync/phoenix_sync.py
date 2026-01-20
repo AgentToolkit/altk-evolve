@@ -298,29 +298,24 @@ class PhoenixSync:
 
         Returns the number of tips generated.
         """
-        # Store trajectory messages
-        entities = []
-        for msg in trajectory.get("messages", []):
-            content = msg.get("content")
-            if isinstance(content, str) and content:
-                entities.append(
-                    Entity(
-                        type="trajectory",
-                        content=content,
-                        metadata={
-                            "trace_id": trajectory["trace_id"],
-                            "span_id": trajectory["span_id"],
-                            "model": trajectory["model"],
-                            "role": msg.get("role"),
-                            "timestamp": trajectory["timestamp"],
-                        },
-                    )
-                )
-
-        if entities:
+        # Store trajectory as a single entity with all messages
+        messages = trajectory.get("messages", [])
+        if messages:
+            entity = Entity(
+                type="trajectory",
+                content=messages,
+                metadata={
+                    "trace_id": trajectory["trace_id"],
+                    "span_id": trajectory["span_id"],
+                    "model": trajectory["model"],
+                    "timestamp": trajectory["timestamp"],
+                    "message_count": len(messages),
+                    "usage": trajectory.get("usage"),
+                },
+            )
             self.client.update_entities(
                 namespace_id=self.namespace_id,
-                entities=entities,
+                entities=[entity],
                 enable_conflict_resolution=False,
             )
 

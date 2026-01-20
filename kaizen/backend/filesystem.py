@@ -248,10 +248,14 @@ class FilesystemKataBackend(BaseKataBackend):
         else:
             # Simple case-insensitive text matching
             query_lower = query.lower()
-            matching = [
-                ent for ent in entities
-                if query_lower in ent.get("content", "").lower()
-            ]
+            matching = []
+            for ent in entities:
+                content = ent.get("content", "")
+                # Convert non-string content to JSON string for searching
+                if not isinstance(content, str):
+                    content = json.dumps(content)
+                if query_lower in content.lower():
+                    matching.append(ent)
             results = matching[:limit]
 
         return [

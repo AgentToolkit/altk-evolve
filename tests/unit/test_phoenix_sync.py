@@ -638,7 +638,18 @@ class TestSync:
         mock_urlopen.return_value = mock_response
 
         phoenix_sync.client.search_entities.return_value = []
-        mock_generate_tips.return_value = ["Tip 1", "Tip 2"]
+        # Create mock Tip objects with required attributes
+        mock_tip1 = MagicMock()
+        mock_tip1.content = "Tip 1 content"
+        mock_tip1.category = "strategy"
+        mock_tip1.rationale = "Tip 1 rationale"
+        mock_tip1.trigger = "Tip 1 trigger"
+        mock_tip2 = MagicMock()
+        mock_tip2.content = "Tip 2 content"
+        mock_tip2.category = "optimization"
+        mock_tip2.rationale = "Tip 2 rationale"
+        mock_tip2.trigger = "Tip 2 trigger"
+        mock_generate_tips.return_value = [mock_tip1, mock_tip2]
 
         result = phoenix_sync.sync(limit=10)
 
@@ -684,7 +695,13 @@ class TestSync:
         mock_entity = MagicMock()
         mock_entity.metadata = {"span_id": "old_span"}
         phoenix_sync.client.search_entities.return_value = [mock_entity]
-        mock_generate_tips.return_value = ["Generated tip"]
+        # Create mock Tip object with required attributes
+        mock_tip = MagicMock()
+        mock_tip.content = "Generated tip content"
+        mock_tip.category = "strategy"
+        mock_tip.rationale = "Tip rationale"
+        mock_tip.trigger = "Tip trigger"
+        mock_generate_tips.return_value = [mock_tip]
 
         result = phoenix_sync.sync(limit=10)
 

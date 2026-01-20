@@ -11,6 +11,10 @@ Kaizen is a system designed to help agents improve over time by learning from th
 - **Trajectory Analysis**: Automatically analyzes agent trajectories to generate tips and best practices.
 - **Milvus Integration**: Uses Milvus (or Milvus Lite) for efficient vector storage and retrieval.
 
+## Architecture
+
+<img src="docs/assets/architecture.png" alt="Architecture" width="480">
+
 ## Quick Start
 
 ### Installation

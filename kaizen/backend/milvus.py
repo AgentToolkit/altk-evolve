@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import uuid
 
@@ -14,6 +15,22 @@ from sentence_transformers import SentenceTransformer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("katas-db.milvus")
+
+
+def serialize_content(content) -> str:
+    """Serialize content to string for Milvus storage."""
+    if isinstance(content, str):
+        return content
+    return json.dumps(content)
+
+
+def deserialize_content(content: str):
+    """Deserialize content from Milvus storage."""
+    try:
+        return json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return content
+
 
 class MilvusKataBackend(BaseKataBackend):
     milvus = MilvusClient(**milvus_client_settings.model_dump())
@@ -93,27 +110,29 @@ class MilvusKataBackend(BaseKataBackend):
         if enable_conflict_resolution:
             old_entities = []
             for entity in entities:
-                old_entities.extend(self.search_entities(namespace_id=namespace_id, query=entity.content))
+                query_str = serialize_content(entity.content)
+                old_entities.extend(self.search_entities(namespace_id=namespace_id, query=query_str))
 
             updates = resolve_conflicts(old_entities, entities_with_temporary_ids)
             for update in updates:
+                content_str = serialize_content(update.content)
                 match update.event:
                     case 'ADD':
                         entity_id = str(self.milvus.insert(collection_name=namespace_id, data={
                             'type': entity_type,
-                            'content': update.content,
+                            'content': content_str,
                             'created_at': int(now.timestamp()),
-                            'embedding': self.embedding_model.encode(update.content),
+                            'embedding': self.embedding_model.encode(content_str),
                             'metadata': update.metadata,
                         })['ids'][0])
                         update.id = entity_id
                     case 'UPDATE':
                         self.milvus.upsert(collection_name=namespace_id, data={
                             'type': entity_type,
-                            'id': update.id,
-                            'content': update.content,
+                            'id': int(update.id),
+                            'content': content_str,
                             'created_at': int(now.timestamp()),
-                            'embedding': self.embedding_model.encode(update.content),
+                            'embedding': self.embedding_model.encode(content_str),
                             'metadata': update.metadata
                         }, partial_update=True)
                     case 'DELETE':
@@ -123,11 +142,12 @@ class MilvusKataBackend(BaseKataBackend):
         else:
             updates = []
             for entity in entities:
+                content_str = serialize_content(entity.content)
                 entity_id = str(self.milvus.insert(collection_name=namespace_id, data={
                     'type': entity_type,
-                    'content': entity.content,
+                    'content': content_str,
                     'created_at': int(now.timestamp()),
-                    'embedding': self.embedding_model.encode(entity.content),
+                    'embedding': self.embedding_model.encode(content_str),
                     'metadata': entity.metadata
                 })['ids'][0])
                 updates.append(EntityUpdate(
@@ -175,7 +195,7 @@ entity_schema = CollectionSchema(fields=[
     # Keep it as an INT64 or else you won't be able to list all entities.
     FieldSchema(name='id', is_primary=True, auto_id=True, dtype=DataType.INT64, max_length=128),
     FieldSchema(name='type', dtype=DataType.VARCHAR, max_length=128),
-    FieldSchema(name='content', dtype=DataType.VARCHAR, max_length=512),
+    FieldSchema(name='content', dtype=DataType.VARCHAR, max_length=65535),
     FieldSchema(name='created_at', dtype=DataType.INT64),
     FieldSchema(name='embedding', dtype=DataType.FLOAT_VECTOR, dim=384),
     FieldSchema(name='metadata', dtype=DataType.JSON),
@@ -185,5 +205,6 @@ def parse_milvus_entity(entity: dict) -> RecordedEntity:
     return RecordedEntity.model_validate({
         **entity,
         'id': str(entity['id']),
+        'content': deserialize_content(entity['content']),
         'created_at': datetime.datetime.fromtimestamp(entity['created_at'], datetime.UTC),
     })
