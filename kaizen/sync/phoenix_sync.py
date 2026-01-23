@@ -114,9 +114,95 @@ class PhoenixSync:
 
     def _extract_messages_from_span(self, span: dict) -> list[dict]:
         """Extract messages from a single span's attributes."""
-        attrs = span.get("attributes", {})
+        attrs = span.get("attributes") or {}
         messages = []
 
+        # Try OpenInference schema first (input_messages/output_messages)
+        # Note: Phoenix API might return these as JSON strings or lists depending on version
+        input_msgs = attrs.get("llm.input_messages")
+        output_msgs = attrs.get("llm.output_messages")
+        
+        # If input_messages is missing, try parsing input.value
+        if input_msgs is None:
+            input_val = attrs.get("input.value")
+            if input_val:
+                try:
+                    parsed_input = self._parse_content(input_val)
+                    if isinstance(parsed_input, dict) and "messages" in parsed_input:
+                        input_msgs = parsed_input["messages"]
+                    elif isinstance(parsed_input, list): # rare but possible
+                        input_msgs = parsed_input
+                except:
+                    pass
+
+        if input_msgs:
+            # Handle OpenInference format
+            # Ensure it's a list
+            if isinstance(input_msgs, str):
+                input_msgs = self._parse_content(input_msgs)
+            
+            if isinstance(input_msgs, list):
+                for i, msg in enumerate(input_msgs):
+                     # OpenInference often uses message.role / message.content keys in flattened export
+                     # but via API it might be cleaner. Let's handle dict access safely.
+                     role = msg.get("message.role") or msg.get("role")
+                     content = msg.get("message.content") or msg.get("content")
+                     tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
+                     
+                     if role:
+                        mapped_msg = {
+                            "index": i,
+                            "type": "prompt",
+                            "role": role,
+                            "content": self._parse_content(content),
+                        }
+                        if tool_calls:
+                             mapped_msg["tool_calls"] = tool_calls
+                        messages.append(mapped_msg)
+
+        # Handle Output/Completion from OpenInference
+        if output_msgs is None:
+             output_val = attrs.get("output.value")
+             if output_val:
+                 try:
+                     parsed_output = self._parse_content(output_val)
+                     # output.value is often just the string content or a list of choices
+                     if isinstance(parsed_output, list) and len(parsed_output) > 0 and "message" in parsed_output[0]:
+                          output_msgs = [c["message"] for c in parsed_output]
+                     elif isinstance(parsed_output, dict) and "choices" in parsed_output: # OpenAI response format
+                          output_msgs = [c["message"] for c in parsed_output["choices"]]
+                     else:
+                          # Fallback for simple string output
+                          # output_msgs = [{"role": "assistant", "content": output_val}]
+                          pass 
+                 except:
+                     pass
+
+        if output_msgs:
+             if isinstance(output_msgs, str):
+                output_msgs = self._parse_content(output_msgs)
+             
+             if isinstance(output_msgs, list):
+                for i, msg in enumerate(output_msgs):
+                     role = msg.get("message.role") or msg.get("role")
+                     content = msg.get("message.content") or msg.get("content")
+                     tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
+                     
+                     if role:
+                        mapped_msg = {
+                            "index": i,
+                            "type": "completion",
+                            "role": role,
+                            "content": self._parse_content(content),
+                        }
+                        if tool_calls:
+                             mapped_msg["tool_calls"] = tool_calls
+                        messages.append(mapped_msg)
+
+        if messages:
+            return messages
+
+        # Fallback to GenAI semantic conventions (original code)
         # Extract prompt messages
         prompt_indices = set()
         for key in attrs:
@@ -231,7 +317,7 @@ class PhoenixSync:
 
     def _extract_trajectory(self, span: dict) -> dict:
         """Extract a complete trajectory from a span."""
-        attrs = span.get("attributes", {})
+        attrs = span.get("attributes") or {}
         messages = self._extract_messages_from_span(span)
 
         openai_messages = []
@@ -260,9 +346,9 @@ class PhoenixSync:
             "timestamp": span.get("start_time"),
             "messages": openai_messages,
             "usage": {
-                "prompt_tokens": attrs.get("gen_ai.usage.prompt_tokens"),
-                "completion_tokens": attrs.get("gen_ai.usage.completion_tokens"),
-                "total_tokens": attrs.get("llm.usage.total_tokens"),
+                "prompt_tokens": attrs.get("gen_ai.usage.prompt_tokens") or attrs.get("llm.token_count.prompt"),
+                "completion_tokens": attrs.get("gen_ai.usage.completion_tokens") or attrs.get("llm.token_count.completion"),
+                "total_tokens": attrs.get("llm.usage.total_tokens") or attrs.get("llm.token_count.total"),
             },
         }
 
@@ -303,7 +389,7 @@ class PhoenixSync:
         if messages:
             entity = Entity(
                 type="trajectory",
-                content=messages,
+                content=json.dumps(messages),
                 metadata={
                     "trace_id": trajectory["trace_id"],
                     "span_id": trajectory["span_id"],
@@ -313,6 +399,7 @@ class PhoenixSync:
                     "usage": trajectory.get("usage"),
                 },
             )
+
             self.client.update_entities(
                 namespace_id=self.namespace_id,
                 entities=[entity],
@@ -380,9 +467,9 @@ class PhoenixSync:
         errors = []
 
         for span in spans:
-            # Filter to LLM request spans
-            if span.get("name") != "litellm_request":
-                continue
+            # Filter to LLM request spans - accept any span with prompt attributes
+            # if span.get("name") != "litellm_request":
+            #     continue
 
             # Filter errors if requested
             if not include_errors and span.get("status_code") == "ERROR":
@@ -394,9 +481,12 @@ class PhoenixSync:
                 skipped += 1
                 continue
 
-            # Only include spans with actual messages
-            attrs = span.get("attributes", {})
-            if not any(k.startswith("gen_ai.prompt.") for k in attrs):
+            # Only include spans with actual messages or GenAI/LLM prompt attributes
+            attrs = span.get("attributes") or {}
+            has_gen_ai = any(k.startswith("gen_ai.prompt.") for k in attrs)
+            has_llm_msgs = "llm.input_messages" in attrs or "input.value" in attrs
+            
+            if not (has_gen_ai or has_llm_msgs):
                 continue
 
             try:

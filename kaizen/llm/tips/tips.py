@@ -112,10 +112,11 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
 
 def generate_tips(messages: list[dict]) -> list[Tip]:
     prompt_file = Path(__file__).parent / "prompts/generate_tips.jinja2"
-    supports_response_format = "response_format" in get_supported_openai_params(
+    supported_params = get_supported_openai_params(
         model=llm_settings.tips_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
+    supports_response_format = supported_params and "response_format" in supported_params
     response_schema_enabled = supports_response_schema(
         model=llm_settings.tips_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
