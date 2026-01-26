@@ -145,6 +145,14 @@ class PhoenixSync:
                 for i, msg in enumerate(input_msgs):
                      # OpenInference often uses message.role / message.content keys in flattened export
                      # but via API it might be cleaner. Let's handle dict access safely.
+                     if isinstance(msg, str):
+                         try:
+                             msg = self._parse_content(msg)
+                         except:
+                             pass
+                     
+                     if not isinstance(msg, dict):
+                         continue
                      role = msg.get("message.role") or msg.get("role")
                      content = msg.get("message.content") or msg.get("content")
                      tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
@@ -173,8 +181,8 @@ class PhoenixSync:
                           output_msgs = [c["message"] for c in parsed_output["choices"]]
                      else:
                           # Fallback for simple string output
-                          # output_msgs = [{"role": "assistant", "content": output_val}]
-                          pass 
+                          output_msgs = [{"role": "assistant", "content": output_val}]
+                          #pass 
                  except:
                      pass
 
@@ -184,6 +192,14 @@ class PhoenixSync:
              
              if isinstance(output_msgs, list):
                 for i, msg in enumerate(output_msgs):
+                     if isinstance(msg, str):
+                         try:
+                             msg = self._parse_content(msg)
+                         except:
+                             pass
+                     
+                     if not isinstance(msg, dict):
+                         continue
                      role = msg.get("message.role") or msg.get("role")
                      content = msg.get("message.content") or msg.get("content")
                      tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
@@ -503,7 +519,7 @@ class PhoenixSync:
                     )
             except Exception as e:
                 error_msg = f"Error processing span {span_id}: {e}"
-                logger.error(error_msg)
+                logger.error(error_msg) 
                 errors.append(error_msg)
 
         result = SyncResult(
