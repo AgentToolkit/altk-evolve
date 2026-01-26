@@ -132,8 +132,8 @@ class PhoenixSync:
                         input_msgs = parsed_input["messages"]
                     elif isinstance(parsed_input, list): # rare but possible
                         input_msgs = parsed_input
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to parse input.value: {e}. Payload: {input_val}")
 
         if input_msgs:
             # Handle OpenInference format
@@ -148,8 +148,8 @@ class PhoenixSync:
                      if isinstance(msg, str):
                          try:
                              msg = self._parse_content(msg)
-                         except:
-                             pass
+                         except Exception as e:
+                             logger.debug(f"Failed to parse input message string: {e}. Payload: {msg}")
                      
                      if not isinstance(msg, dict):
                          continue
@@ -183,8 +183,8 @@ class PhoenixSync:
                           # Fallback for simple string output
                           output_msgs = [{"role": "assistant", "content": output_val}]
                           #pass 
-                 except:
-                     pass
+                 except Exception as e:
+                     logger.debug(f"Failed to parse output.value: {e}. Payload: {output_val}")
 
         if output_msgs:
              if isinstance(output_msgs, str):
@@ -195,8 +195,8 @@ class PhoenixSync:
                      if isinstance(msg, str):
                          try:
                              msg = self._parse_content(msg)
-                         except:
-                             pass
+                         except Exception as e:
+                             logger.debug(f"Failed to parse output message string: {e}. Payload: {msg}")
                      
                      if not isinstance(msg, dict):
                          continue
@@ -362,9 +362,9 @@ class PhoenixSync:
             "timestamp": span.get("start_time"),
             "messages": openai_messages,
             "usage": {
-                "prompt_tokens": attrs.get("gen_ai.usage.prompt_tokens") or attrs.get("llm.token_count.prompt"),
-                "completion_tokens": attrs.get("gen_ai.usage.completion_tokens") or attrs.get("llm.token_count.completion"),
-                "total_tokens": attrs.get("gen_ai.usage.total_tokens") or attrs.get("llm.token_count.total"),
+                "prompt_tokens": attrs.get("gen_ai.usage.prompt_tokens") or attrs.get("llm.token_count.prompt") or attrs.get("llm.usage.prompt_tokens"),
+                "completion_tokens": attrs.get("gen_ai.usage.completion_tokens") or attrs.get("llm.token_count.completion") or attrs.get("llm.usage.completion_tokens"),
+                "total_tokens": attrs.get("gen_ai.usage.total_tokens") or attrs.get("llm.token_count.total") or attrs.get("llm.usage.total_tokens"),
             },
         }
 
@@ -519,7 +519,7 @@ class PhoenixSync:
                     )
             except Exception as e:
                 error_msg = f"Error processing span {span_id}: {e}"
-                logger.error(error_msg) 
+                logger.exception(error_msg) 
                 errors.append(error_msg)
 
         result = SyncResult(
