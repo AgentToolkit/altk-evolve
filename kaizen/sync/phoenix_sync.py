@@ -364,7 +364,7 @@ class PhoenixSync:
             "usage": {
                 "prompt_tokens": attrs.get("gen_ai.usage.prompt_tokens") or attrs.get("llm.token_count.prompt"),
                 "completion_tokens": attrs.get("gen_ai.usage.completion_tokens") or attrs.get("llm.token_count.completion"),
-                "total_tokens": attrs.get("llm.usage.total_tokens") or attrs.get("llm.token_count.total"),
+                "total_tokens": attrs.get("gen_ai.usage.total_tokens") or attrs.get("llm.token_count.total"),
             },
         }
 
