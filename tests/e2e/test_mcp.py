@@ -198,3 +198,23 @@ async def test_create_multiple_entities_same_type(mcp):
             await kaizen_mcp.call_tool_mcp('delete_entity', {
                 'entity_id': entity_id
             })
+
+
+@pytest.mark.e2e
+async def test_create_entity_with_invalid_json_metadata(mcp):
+    """Test creating an entity with invalid JSON metadata."""
+    async with Client(transport=mcp) as kaizen_mcp:
+        response = await kaizen_mcp.call_tool_mcp('create_entity', {
+            'content': 'Test entity with bad metadata',
+            'entity_type': 'test',
+            'metadata': '{invalid json here}',
+            'enable_conflict_resolution': False
+        })
+        
+        result = json.loads(response.content[0].text)
+        
+        # Should return an error
+        assert 'error' in result
+        assert result['error'] == 'Invalid metadata JSON'
+        assert 'message' in result
+        assert 'invalid_metadata' in result

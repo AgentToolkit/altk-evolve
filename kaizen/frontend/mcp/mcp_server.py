@@ -13,7 +13,7 @@ from kaizen.config.kaizen import kaizen_config
 from kaizen.frontend.client.kaizen_client import KaizenClient
 from kaizen.llm.tips.tips import generate_tips
 from kaizen.schema.core import Entity, RecordedEntity
-from kaizen.schema.exceptions import NamespaceNotFoundException
+from kaizen.schema.exceptions import KaizenException, NamespaceNotFoundException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-mcp")
@@ -139,7 +139,17 @@ def create_entity(
     ensure_namespace()
     
     # Parse metadata if provided
-    metadata_dict = json.loads(metadata) if metadata else None
+    metadata_dict = None
+    if metadata:
+        try:
+            metadata_dict = json.loads(metadata)
+        except json.JSONDecodeError as e:
+            logger.exception(f"Invalid JSON in metadata parameter: {str(e)}")
+            return json.dumps({
+                "error": "Invalid metadata JSON",
+                "message": f"Failed to parse metadata: {str(e)}",
+                "invalid_metadata": metadata
+            })
     
     # Create the entity using the Entity schema
     entity = Entity(
@@ -193,8 +203,8 @@ def delete_entity(entity_id: str) -> str:
             "success": True,
             "message": f"Entity {entity_id} deleted successfully"
         })
-    except Exception as e:
-        logger.error(f"Error deleting entity {entity_id}: {str(e)}")
+    except KaizenException as e:
+        logger.exception(f"Error deleting entity {entity_id}: {str(e)}")
         return json.dumps({
             "success": False,
             "error": str(e)
