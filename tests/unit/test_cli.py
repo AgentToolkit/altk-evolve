@@ -1,7 +1,6 @@
 """Tests for Kaizen CLI commands."""
 
 import datetime
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -79,9 +78,7 @@ class TestNamespacesCreate:
     def test_create_namespace_success(self, mock_client):
         """Test creating a new namespace successfully."""
         created_at = datetime.datetime.now(datetime.UTC)
-        mock_client.create_namespace.return_value = Namespace(
-            id="new_namespace", created_at=created_at
-        )
+        mock_client.create_namespace.return_value = Namespace(id="new_namespace", created_at=created_at)
 
         result = runner.invoke(app, ["namespaces", "create", "new_namespace"])
 
@@ -116,9 +113,7 @@ class TestNamespacesDelete:
     def test_delete_namespace_with_force(self, mock_client):
         """Test deleting a namespace with --force flag."""
         created_at = datetime.datetime.now(datetime.UTC)
-        mock_client.get_namespace_details.return_value = Namespace(
-            id="to_delete", created_at=created_at, num_entities=3
-        )
+        mock_client.get_namespace_details.return_value = Namespace(id="to_delete", created_at=created_at, num_entities=3)
 
         result = runner.invoke(app, ["namespaces", "delete", "to_delete", "--force"])
 
@@ -129,9 +124,7 @@ class TestNamespacesDelete:
     def test_delete_namespace_cancelled(self, mock_client):
         """Test cancelling namespace deletion at confirmation prompt."""
         created_at = datetime.datetime.now(datetime.UTC)
-        mock_client.get_namespace_details.return_value = Namespace(
-            id="to_delete", created_at=created_at, num_entities=3
-        )
+        mock_client.get_namespace_details.return_value = Namespace(id="to_delete", created_at=created_at, num_entities=3)
 
         result = runner.invoke(app, ["namespaces", "delete", "to_delete"], input="n\n")
 
@@ -142,9 +135,7 @@ class TestNamespacesDelete:
     def test_delete_namespace_confirmed(self, mock_client):
         """Test confirming namespace deletion at prompt."""
         created_at = datetime.datetime.now(datetime.UTC)
-        mock_client.get_namespace_details.return_value = Namespace(
-            id="to_delete", created_at=created_at, num_entities=3
-        )
+        mock_client.get_namespace_details.return_value = Namespace(id="to_delete", created_at=created_at, num_entities=3)
 
         result = runner.invoke(app, ["namespaces", "delete", "to_delete"], input="y\n")
 
@@ -160,9 +151,7 @@ class TestNamespacesInfo:
     def test_namespace_info_success(self, mock_client):
         """Test getting namespace info successfully."""
         created_at = datetime.datetime(2024, 1, 15, 10, 30, 0, tzinfo=datetime.UTC)
-        mock_client.get_namespace_details.return_value = Namespace(
-            id="my_namespace", created_at=created_at, num_entities=42
-        )
+        mock_client.get_namespace_details.return_value = Namespace(id="my_namespace", created_at=created_at, num_entities=42)
 
         result = runner.invoke(app, ["namespaces", "info", "my_namespace"])
 
@@ -202,12 +191,8 @@ class TestEntitiesList:
         """Test listing entities with results."""
         created_at = datetime.datetime(2024, 1, 15, 10, 30, 0, tzinfo=datetime.UTC)
         mock_client.get_all_entities.return_value = [
-            RecordedEntity(
-                id="1", type="guideline", content="Always test your code", created_at=created_at
-            ),
-            RecordedEntity(
-                id="2", type="fact", content="Python is awesome", created_at=created_at
-            ),
+            RecordedEntity(id="1", type="guideline", content="Always test your code", created_at=created_at),
+            RecordedEntity(id="2", type="fact", content="Python is awesome", created_at=created_at),
         ]
 
         result = runner.invoke(app, ["entities", "list", "my_namespace"])
@@ -223,9 +208,7 @@ class TestEntitiesList:
 
         runner.invoke(app, ["entities", "list", "my_namespace", "--type", "guideline"])
 
-        mock_client.get_all_entities.assert_called_once_with(
-            "my_namespace", filters={"type": "guideline"}, limit=100
-        )
+        mock_client.get_all_entities.assert_called_once_with("my_namespace", filters={"type": "guideline"}, limit=100)
 
     def test_list_entities_namespace_not_found(self, mock_client):
         """Test listing entities from non-existent namespace."""
@@ -241,9 +224,7 @@ class TestEntitiesList:
         created_at = datetime.datetime.now(datetime.UTC)
         long_content = "A" * 100  # Content longer than 60 chars
         mock_client.get_all_entities.return_value = [
-            RecordedEntity(
-                id="1", type="guideline", content=long_content, created_at=created_at
-            ),
+            RecordedEntity(id="1", type="guideline", content=long_content, created_at=created_at),
         ]
 
         result = runner.invoke(app, ["entities", "list", "my_namespace"])
@@ -262,9 +243,7 @@ class TestEntitiesAdd:
     def test_add_entity_success(self, mock_client):
         """Test adding an entity successfully."""
         mock_client.namespace_exists.return_value = True
-        mock_client.update_entities.return_value = [
-            EntityUpdate(id="123", type="guideline", content="Test content", event="ADD")
-        ]
+        mock_client.update_entities.return_value = [EntityUpdate(id="123", type="guideline", content="Test content", event="ADD")]
 
         result = runner.invoke(
             app,
@@ -287,9 +266,7 @@ class TestEntitiesAdd:
     def test_add_entity_creates_namespace(self, mock_client):
         """Test that adding entity prompts to create namespace if it doesn't exist."""
         mock_client.namespace_exists.return_value = False
-        mock_client.update_entities.return_value = [
-            EntityUpdate(id="1", type="guideline", content="Test", event="ADD")
-        ]
+        mock_client.update_entities.return_value = [EntityUpdate(id="1", type="guideline", content="Test", event="ADD")]
 
         result = runner.invoke(
             app,
@@ -323,9 +300,7 @@ class TestEntitiesAdd:
     def test_add_entity_with_metadata(self, mock_client):
         """Test adding entity with JSON metadata."""
         mock_client.namespace_exists.return_value = True
-        mock_client.update_entities.return_value = [
-            EntityUpdate(id="1", type="guideline", content="Test", event="ADD")
-        ]
+        mock_client.update_entities.return_value = [EntityUpdate(id="1", type="guideline", content="Test", event="ADD")]
 
         result = runner.invoke(
             app,
@@ -384,9 +359,7 @@ class TestEntitiesAdd:
     def test_add_entity_prompts_for_content(self, mock_client):
         """Test that CLI prompts for content if not provided."""
         mock_client.namespace_exists.return_value = True
-        mock_client.update_entities.return_value = [
-            EntityUpdate(id="1", type="guideline", content="Prompted content", event="ADD")
-        ]
+        mock_client.update_entities.return_value = [EntityUpdate(id="1", type="guideline", content="Prompted content", event="ADD")]
 
         result = runner.invoke(
             app,
@@ -448,9 +421,7 @@ class TestEntitiesSearch:
         """Test searching entities with results."""
         created_at = datetime.datetime(2024, 1, 15, 10, 30, 0, tzinfo=datetime.UTC)
         mock_client.search_entities.return_value = [
-            RecordedEntity(
-                id="1", type="guideline", content="Matching content", created_at=created_at
-            ),
+            RecordedEntity(id="1", type="guideline", content="Matching content", created_at=created_at),
         ]
 
         result = runner.invoke(app, ["entities", "search", "my_namespace", "test query"])
@@ -463,13 +434,9 @@ class TestEntitiesSearch:
         """Test searching entities with type filter."""
         mock_client.search_entities.return_value = []
 
-        runner.invoke(
-            app, ["entities", "search", "my_namespace", "query", "--type", "guideline"]
-        )
+        runner.invoke(app, ["entities", "search", "my_namespace", "query", "--type", "guideline"])
 
-        mock_client.search_entities.assert_called_once_with(
-            "my_namespace", query="query", filters={"type": "guideline"}, limit=10
-        )
+        mock_client.search_entities.assert_called_once_with("my_namespace", query="query", filters={"type": "guideline"}, limit=10)
 
     def test_search_entities_namespace_not_found(self, mock_client):
         """Test searching in non-existent namespace."""
@@ -609,12 +576,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(
-                processed=5,
-                skipped=2,
-                tips_generated=10,
-                errors=[]
-            )
+            mock_syncer.sync.return_value = MagicMock(processed=5, skipped=2, tips_generated=10, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix"])
@@ -629,22 +591,13 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://custom:8080"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(
-                processed=0,
-                skipped=0,
-                tips_generated=0,
-                errors=[]
-            )
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--url", "http://custom:8080"])
 
             assert result.exit_code == 0
-            MockSync.assert_called_once_with(
-                phoenix_url="http://custom:8080",
-                namespace_id=None,
-                project=None
-            )
+            MockSync.assert_called_once_with(phoenix_url="http://custom:8080", namespace_id=None, project=None)
 
     def test_sync_phoenix_with_custom_namespace(self):
         """Test sync phoenix with custom namespace."""
@@ -653,22 +606,13 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "my_namespace"
-            mock_syncer.sync.return_value = MagicMock(
-                processed=0,
-                skipped=0,
-                tips_generated=0,
-                errors=[]
-            )
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--namespace", "my_namespace"])
 
             assert result.exit_code == 0
-            MockSync.assert_called_once_with(
-                phoenix_url=None,
-                namespace_id="my_namespace",
-                project=None
-            )
+            MockSync.assert_called_once_with(phoenix_url=None, namespace_id="my_namespace", project=None)
 
     def test_sync_phoenix_with_custom_project(self):
         """Test sync phoenix with custom project."""
@@ -677,22 +621,13 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "my_project"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(
-                processed=0,
-                skipped=0,
-                tips_generated=0,
-                errors=[]
-            )
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--project", "my_project"])
 
             assert result.exit_code == 0
-            MockSync.assert_called_once_with(
-                phoenix_url=None,
-                namespace_id=None,
-                project="my_project"
-            )
+            MockSync.assert_called_once_with(phoenix_url=None, namespace_id=None, project="my_project")
 
     def test_sync_phoenix_with_custom_limit(self):
         """Test sync phoenix with custom limit."""
@@ -701,12 +636,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(
-                processed=0,
-                skipped=0,
-                tips_generated=0,
-                errors=[]
-            )
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--limit", "50"])
@@ -721,12 +651,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(
-                processed=0,
-                skipped=0,
-                tips_generated=0,
-                errors=[]
-            )
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--include-errors"])
@@ -741,12 +666,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(
-                processed=10,
-                skipped=5,
-                tips_generated=20,
-                errors=[]
-            )
+            mock_syncer.sync.return_value = MagicMock(processed=10, skipped=5, tips_generated=20, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix"])
@@ -754,7 +674,7 @@ class TestSyncPhoenix:
             assert result.exit_code == 0
             assert "Sync Results" in result.stdout
             assert "10" in result.stdout  # processed
-            assert "5" in result.stdout   # skipped
+            assert "5" in result.stdout  # skipped
             assert "20" in result.stdout  # tips_generated
 
     def test_sync_phoenix_displays_errors(self):
@@ -765,10 +685,7 @@ class TestSyncPhoenix:
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
             mock_syncer.sync.return_value = MagicMock(
-                processed=1,
-                skipped=0,
-                tips_generated=0,
-                errors=["Error processing span abc: Connection failed"]
+                processed=1, skipped=0, tips_generated=0, errors=["Error processing span abc: Connection failed"]
             )
             MockSync.return_value = mock_syncer
 
@@ -801,12 +718,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://test:6006"
             mock_syncer.project = "test_project"
             mock_syncer.namespace_id = "test_namespace"
-            mock_syncer.sync.return_value = MagicMock(
-                processed=0,
-                skipped=0,
-                tips_generated=0,
-                errors=[]
-            )
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix"])
@@ -823,27 +735,26 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://custom:9000"
             mock_syncer.project = "prod"
             mock_syncer.namespace_id = "production"
-            mock_syncer.sync.return_value = MagicMock(
-                processed=100,
-                skipped=50,
-                tips_generated=200,
-                errors=[]
-            )
+            mock_syncer.sync.return_value = MagicMock(processed=100, skipped=50, tips_generated=200, errors=[])
             MockSync.return_value = mock_syncer
 
-            result = runner.invoke(app, [
-                "sync", "phoenix",
-                "--url", "http://custom:9000",
-                "--namespace", "production",
-                "--project", "prod",
-                "--limit", "500",
-                "--include-errors"
-            ])
+            result = runner.invoke(
+                app,
+                [
+                    "sync",
+                    "phoenix",
+                    "--url",
+                    "http://custom:9000",
+                    "--namespace",
+                    "production",
+                    "--project",
+                    "prod",
+                    "--limit",
+                    "500",
+                    "--include-errors",
+                ],
+            )
 
             assert result.exit_code == 0
-            MockSync.assert_called_once_with(
-                phoenix_url="http://custom:9000",
-                namespace_id="production",
-                project="prod"
-            )
+            MockSync.assert_called_once_with(phoenix_url="http://custom:9000", namespace_id="production", project="prod")
             mock_syncer.sync.assert_called_once_with(limit=500, include_errors=True)

@@ -3,7 +3,7 @@
 import json
 import os
 import sys
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import patch
 
 import pytest
 
@@ -94,20 +94,10 @@ class TestExtractMessagesFromSpan:
 
     def test_extract_single_prompt(self):
         """Test extracting a single prompt."""
-        span = {
-            "attributes": {
-                "gen_ai.prompt.0.role": "user",
-                "gen_ai.prompt.0.content": "Hello"
-            }
-        }
+        span = {"attributes": {"gen_ai.prompt.0.role": "user", "gen_ai.prompt.0.content": "Hello"}}
         messages = extract_messages_from_span(span)
         assert len(messages) == 1
-        assert messages[0] == {
-            "index": 0,
-            "type": "prompt",
-            "role": "user",
-            "content": "Hello"
-        }
+        assert messages[0] == {"index": 0, "type": "prompt", "role": "user", "content": "Hello"}
 
     def test_extract_multiple_prompts_sorted(self):
         """Test that multiple prompts are sorted by index."""
@@ -118,7 +108,7 @@ class TestExtractMessagesFromSpan:
                 "gen_ai.prompt.0.role": "system",
                 "gen_ai.prompt.0.content": "First",
                 "gen_ai.prompt.1.role": "user",
-                "gen_ai.prompt.1.content": "Second"
+                "gen_ai.prompt.1.content": "Second",
             }
         }
         messages = extract_messages_from_span(span)
@@ -129,12 +119,7 @@ class TestExtractMessagesFromSpan:
 
     def test_extract_completion_messages(self):
         """Test extracting completion messages."""
-        span = {
-            "attributes": {
-                "gen_ai.completion.0.role": "assistant",
-                "gen_ai.completion.0.content": "I can help with that."
-            }
-        }
+        span = {"attributes": {"gen_ai.completion.0.role": "assistant", "gen_ai.completion.0.content": "I can help with that."}}
         messages = extract_messages_from_span(span)
         assert len(messages) == 1
         assert messages[0]["type"] == "completion"
@@ -147,7 +132,7 @@ class TestExtractMessagesFromSpan:
                 "gen_ai.prompt.0.role": "user",
                 "gen_ai.prompt.0.content": "Question",
                 "gen_ai.completion.0.role": "assistant",
-                "gen_ai.completion.0.content": "Answer"
+                "gen_ai.completion.0.content": "Answer",
             }
         }
         messages = extract_messages_from_span(span)
@@ -164,22 +149,13 @@ class TestExtractMessagesFromSpan:
 
     def test_extract_parses_json_content(self):
         """Test that JSON content is parsed."""
-        span = {
-            "attributes": {
-                "gen_ai.prompt.0.role": "assistant",
-                "gen_ai.prompt.0.content": '[{"type": "text", "text": "Hi"}]'
-            }
-        }
+        span = {"attributes": {"gen_ai.prompt.0.role": "assistant", "gen_ai.prompt.0.content": '[{"type": "text", "text": "Hi"}]'}}
         messages = extract_messages_from_span(span)
         assert messages[0]["content"] == [{"type": "text", "text": "Hi"}]
 
     def test_extract_skips_missing_role(self):
         """Test that entries without role are skipped."""
-        span = {
-            "attributes": {
-                "gen_ai.prompt.0.content": "No role here"
-            }
-        }
+        span = {"attributes": {"gen_ai.prompt.0.content": "No role here"}}
         messages = extract_messages_from_span(span)
         assert messages == []
 
@@ -207,10 +183,7 @@ class TestConvertAnthropicToOpenai:
 
     def test_convert_thinking_block(self):
         """Test converting thinking block."""
-        content = [
-            {"type": "thinking", "thinking": "Let me think about this..."},
-            {"type": "text", "text": "Here's my answer."}
-        ]
+        content = [{"type": "thinking", "thinking": "Let me think about this..."}, {"type": "text", "text": "Here's my answer."}]
         result = convert_anthropic_to_openai(content, "assistant")
         assert result["thinking"] == "Let me think about this..."
         assert result["content"] == "Here's my answer."
@@ -220,7 +193,7 @@ class TestConvertAnthropicToOpenai:
         content = [
             {"type": "thinking", "thinking": "First thought"},
             {"type": "thinking", "thinking": "Second thought"},
-            {"type": "text", "text": "Final answer"}
+            {"type": "text", "text": "Final answer"},
         ]
         result = convert_anthropic_to_openai(content, "assistant")
         assert "First thought" in result["thinking"]
@@ -228,14 +201,7 @@ class TestConvertAnthropicToOpenai:
 
     def test_convert_tool_use_block(self):
         """Test converting tool_use block."""
-        content = [
-            {
-                "type": "tool_use",
-                "id": "tool_abc",
-                "name": "search",
-                "input": {"query": "test"}
-            }
-        ]
+        content = [{"type": "tool_use", "id": "tool_abc", "name": "search", "input": {"query": "test"}}]
         result = convert_anthropic_to_openai(content, "assistant")
         assert result["role"] == "assistant"
         assert len(result["tool_calls"]) == 1
@@ -249,21 +215,14 @@ class TestConvertAnthropicToOpenai:
         """Test converting multiple tool_use blocks."""
         content = [
             {"type": "tool_use", "id": "t1", "name": "read", "input": {}},
-            {"type": "tool_use", "id": "t2", "name": "write", "input": {}}
+            {"type": "tool_use", "id": "t2", "name": "write", "input": {}},
         ]
         result = convert_anthropic_to_openai(content, "assistant")
         assert len(result["tool_calls"]) == 2
 
     def test_convert_tool_result_block(self):
         """Test converting tool_result block."""
-        content = [
-            {
-                "type": "tool_result",
-                "tool_use_id": "tool_123",
-                "content": "Result data",
-                "is_error": False
-            }
-        ]
+        content = [{"type": "tool_result", "tool_use_id": "tool_123", "content": "Result data", "is_error": False}]
         result = convert_anthropic_to_openai(content, "user")
         assert result["role"] == "tool"
         assert "tool_results" in result
@@ -272,40 +231,25 @@ class TestConvertAnthropicToOpenai:
 
     def test_convert_tool_result_with_error(self):
         """Test converting tool_result with error flag."""
-        content = [
-            {
-                "type": "tool_result",
-                "tool_use_id": "tool_err",
-                "content": "Error occurred",
-                "is_error": True
-            }
-        ]
+        content = [{"type": "tool_result", "tool_use_id": "tool_err", "content": "Error occurred", "is_error": True}]
         result = convert_anthropic_to_openai(content, "user")
         assert result["tool_results"][0]["is_error"] is True
 
     def test_convert_filters_no_content_text(self):
         """Test that (no content) placeholder is filtered."""
-        content = [
-            {"type": "text", "text": "(no content)"},
-            {"type": "text", "text": "Real text"}
-        ]
+        content = [{"type": "text", "text": "(no content)"}, {"type": "text", "text": "Real text"}]
         result = convert_anthropic_to_openai(content, "assistant")
         assert result["content"] == "Real text"
 
     def test_convert_filters_empty_text(self):
         """Test that empty text is filtered."""
-        content = [
-            {"type": "text", "text": ""},
-            {"type": "text", "text": "Content"}
-        ]
+        content = [{"type": "text", "text": ""}, {"type": "text", "text": "Content"}]
         result = convert_anthropic_to_openai(content, "assistant")
         assert result["content"] == "Content"
 
     def test_convert_assistant_tool_only_no_content(self):
         """Test assistant with only tool calls has null content."""
-        content = [
-            {"type": "tool_use", "id": "t1", "name": "test", "input": {}}
-        ]
+        content = [{"type": "tool_use", "id": "t1", "name": "test", "input": {}}]
         result = convert_anthropic_to_openai(content, "assistant")
         assert result.get("content") is None
         assert "tool_calls" in result
@@ -388,12 +332,7 @@ class TestCleanTrajectory:
 
     def test_clean_removes_system_reminders(self):
         """Test that system reminders are removed from content."""
-        trajectory = {
-            "trace_id": "test",
-            "messages": [
-                {"role": "user", "content": "Hi <system-reminder>ignore</system-reminder> there"}
-            ]
-        }
+        trajectory = {"trace_id": "test", "messages": [{"role": "user", "content": "Hi <system-reminder>ignore</system-reminder> there"}]}
         cleaned = clean_trajectory(trajectory)
         assert "<system-reminder>" not in cleaned["messages"][0]["content"]
         assert "Hi" in cleaned["messages"][0]["content"]
@@ -406,31 +345,21 @@ class TestCleanTrajectory:
                 {"role": "user", "content": "Valid"},
                 {"role": "assistant", "content": ""},
                 {"role": "assistant", "content": None},
-                {"role": "user", "content": "Also valid"}
-            ]
+                {"role": "user", "content": "Also valid"},
+            ],
         }
         cleaned = clean_trajectory(trajectory)
         assert len(cleaned["messages"]) == 2
 
     def test_clean_preserves_tool_calls(self):
         """Test that messages with tool_calls are preserved."""
-        trajectory = {
-            "trace_id": "test",
-            "messages": [
-                {"role": "assistant", "tool_calls": [{"id": "1"}]}
-            ]
-        }
+        trajectory = {"trace_id": "test", "messages": [{"role": "assistant", "tool_calls": [{"id": "1"}]}]}
         cleaned = clean_trajectory(trajectory)
         assert len(cleaned["messages"]) == 1
 
     def test_clean_with_remove_reminders_false(self):
         """Test that reminders are preserved when flag is False."""
-        trajectory = {
-            "trace_id": "test",
-            "messages": [
-                {"role": "user", "content": "<system-reminder>keep me</system-reminder>"}
-            ]
-        }
+        trajectory = {"trace_id": "test", "messages": [{"role": "user", "content": "<system-reminder>keep me</system-reminder>"}]}
         cleaned = clean_trajectory(trajectory, remove_system_reminders=False)
         assert "<system-reminder>" in cleaned["messages"][0]["content"]
 
@@ -440,8 +369,8 @@ class TestCleanTrajectory:
             "trace_id": "test",
             "messages": [
                 {"role": "user", "content": "Keep"},
-                {"role": "assistant", "content": "<system-reminder>only reminder</system-reminder>"}
-            ]
+                {"role": "assistant", "content": "<system-reminder>only reminder</system-reminder>"},
+            ],
         }
         cleaned = clean_trajectory(trajectory)
         assert len(cleaned["messages"]) == 1
@@ -449,12 +378,7 @@ class TestCleanTrajectory:
 
     def test_clean_preserves_metadata(self):
         """Test that trajectory metadata is preserved."""
-        trajectory = {
-            "trace_id": "t1",
-            "span_id": "s1",
-            "model": "claude-3",
-            "messages": [{"role": "user", "content": "Hi"}]
-        }
+        trajectory = {"trace_id": "t1", "span_id": "s1", "model": "claude-3", "messages": [{"role": "user", "content": "Hi"}]}
         cleaned = clean_trajectory(trajectory)
         assert cleaned["trace_id"] == "t1"
         assert cleaned["span_id"] == "s1"
@@ -476,9 +400,7 @@ class TestFormatTrajectoryAsText:
             "trace_id": "abc123def456",
             "model": "claude-3",
             "timestamp": "2024-01-15T10:00:00Z",
-            "messages": [
-                {"role": "user", "content": "What is 2+2?"}
-            ]
+            "messages": [{"role": "user", "content": "What is 2+2?"}],
         }
         result = format_trajectory_as_text(trajectory)
         assert "[USER]" in result
@@ -491,9 +413,7 @@ class TestFormatTrajectoryAsText:
             "trace_id": "abc",
             "model": "claude-3",
             "timestamp": "2024-01-15",
-            "messages": [
-                {"role": "assistant", "content": "The answer is 4."}
-            ]
+            "messages": [{"role": "assistant", "content": "The answer is 4."}],
         }
         result = format_trajectory_as_text(trajectory)
         assert "[ASSISTANT]" in result
@@ -505,13 +425,7 @@ class TestFormatTrajectoryAsText:
             "trace_id": "abc",
             "model": "claude-3",
             "timestamp": "2024-01-15",
-            "messages": [
-                {
-                    "role": "assistant",
-                    "thinking": "Let me calculate...",
-                    "content": "The answer is 4."
-                }
-            ]
+            "messages": [{"role": "assistant", "thinking": "Let me calculate...", "content": "The answer is 4."}],
         }
         result = format_trajectory_as_text(trajectory, include_thinking=True)
         assert "<thinking>" in result
@@ -524,13 +438,7 @@ class TestFormatTrajectoryAsText:
             "trace_id": "abc",
             "model": "claude-3",
             "timestamp": "2024-01-15",
-            "messages": [
-                {
-                    "role": "assistant",
-                    "thinking": "Hidden thought",
-                    "content": "Visible content"
-                }
-            ]
+            "messages": [{"role": "assistant", "thinking": "Hidden thought", "content": "Visible content"}],
         }
         result = format_trajectory_as_text(trajectory, include_thinking=False)
         assert "Hidden thought" not in result
@@ -546,16 +454,10 @@ class TestFormatTrajectoryAsText:
                 {
                     "role": "assistant",
                     "tool_calls": [
-                        {
-                            "id": "tool_12345678901234567890",
-                            "function": {
-                                "name": "read_file",
-                                "arguments": '{"path": "/test.txt"}'
-                            }
-                        }
-                    ]
+                        {"id": "tool_12345678901234567890", "function": {"name": "read_file", "arguments": '{"path": "/test.txt"}'}}
+                    ],
                 }
-            ]
+            ],
         }
         result = format_trajectory_as_text(trajectory)
         assert "Tool call: read_file" in result
@@ -568,18 +470,9 @@ class TestFormatTrajectoryAsText:
             "model": "claude-3",
             "timestamp": "2024-01-15",
             "messages": [
-                {
-                    "role": "assistant",
-                    "tool_calls": [
-                        {"id": "tool_abc", "function": {"name": "read", "arguments": "{}"}}
-                    ]
-                },
-                {
-                    "role": "tool",
-                    "tool_call_id": "tool_abc",
-                    "content": "File contents here"
-                }
-            ]
+                {"role": "assistant", "tool_calls": [{"id": "tool_abc", "function": {"name": "read", "arguments": "{}"}}]},
+                {"role": "tool", "tool_call_id": "tool_abc", "content": "File contents here"},
+            ],
         }
         result = format_trajectory_as_text(trajectory)
         assert "[TOOL RESULT]" in result
@@ -592,9 +485,7 @@ class TestFormatTrajectoryAsText:
             "trace_id": "abc",
             "model": "claude-3",
             "timestamp": "2024-01-15",
-            "messages": [
-                {"role": "assistant", "thinking": long_thinking, "content": "Answer"}
-            ]
+            "messages": [{"role": "assistant", "thinking": long_thinking, "content": "Answer"}],
         }
         result = format_trajectory_as_text(trajectory)
         assert "..." in result
@@ -602,12 +493,7 @@ class TestFormatTrajectoryAsText:
 
     def test_format_header_info(self):
         """Test that header info is included."""
-        trajectory = {
-            "trace_id": "trace_123456789",
-            "model": "claude-3-opus",
-            "timestamp": "2024-01-15T10:30:00Z",
-            "messages": []
-        }
+        trajectory = {"trace_id": "trace_123456789", "model": "claude-3-opus", "timestamp": "2024-01-15T10:30:00Z", "messages": []}
         result = format_trajectory_as_text(trajectory)
         assert "Trajectory:" in result
         assert "Model: claude-3-opus" in result
@@ -633,8 +519,8 @@ class TestExtractTrajectory:
                 "gen_ai.prompt.0.role": "user",
                 "gen_ai.prompt.0.content": "Hello",
                 "gen_ai.completion.0.role": "assistant",
-                "gen_ai.completion.0.content": "Hi there!"
-            }
+                "gen_ai.completion.0.content": "Hi there!",
+            },
         }
         trajectory = extract_trajectory(span)
 
@@ -655,8 +541,8 @@ class TestExtractTrajectory:
                 "gen_ai.prompt.0.content": "Test",
                 "gen_ai.usage.prompt_tokens": 100,
                 "gen_ai.usage.completion_tokens": 50,
-                "llm.usage.total_tokens": 150
-            }
+                "llm.usage.total_tokens": 150,
+            },
         }
         trajectory = extract_trajectory(span)
 
@@ -669,10 +555,7 @@ class TestExtractTrajectory:
         span = {
             "context": {"trace_id": "t1", "span_id": "s1"},
             "start_time": "2024-01-15",
-            "attributes": {
-                "gen_ai.prompt.0.role": "user",
-                "gen_ai.prompt.0.content": "Test"
-            }
+            "attributes": {"gen_ai.prompt.0.role": "user", "gen_ai.prompt.0.content": "Test"},
         }
         trajectory = extract_trajectory(span)
 
@@ -680,18 +563,20 @@ class TestExtractTrajectory:
 
     def test_extract_trajectory_expands_tool_results(self):
         """Test that tool results are expanded into individual messages."""
-        tool_result_content = json.dumps([
-            {"type": "tool_result", "tool_use_id": "t1", "content": "Result 1"},
-            {"type": "tool_result", "tool_use_id": "t2", "content": "Result 2"}
-        ])
+        tool_result_content = json.dumps(
+            [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "Result 1"},
+                {"type": "tool_result", "tool_use_id": "t2", "content": "Result 2"},
+            ]
+        )
         span = {
             "context": {"trace_id": "t1", "span_id": "s1"},
             "start_time": "2024-01-15",
             "attributes": {
                 "gen_ai.request.model": "claude-3",
                 "gen_ai.prompt.0.role": "user",
-                "gen_ai.prompt.0.content": tool_result_content
-            }
+                "gen_ai.prompt.0.content": tool_result_content,
+            },
         }
         trajectory = extract_trajectory(span)
 
@@ -711,9 +596,7 @@ class TestGetTrajectories:
     @patch("extract_trajectories.fetch_spans")
     def test_get_trajectories_filters_non_llm_spans(self, mock_fetch):
         """Test that non-LLM spans are filtered."""
-        mock_fetch.return_value = [
-            {"name": "other_span", "attributes": {}}
-        ]
+        mock_fetch.return_value = [{"name": "other_span", "attributes": {}}]
 
         result = get_trajectories()
 
@@ -727,10 +610,7 @@ class TestGetTrajectories:
                 "name": "litellm_request",
                 "status_code": "ERROR",
                 "context": {"trace_id": "t1", "span_id": "s1"},
-                "attributes": {
-                    "gen_ai.prompt.0.role": "user",
-                    "gen_ai.prompt.0.content": "test"
-                }
+                "attributes": {"gen_ai.prompt.0.role": "user", "gen_ai.prompt.0.content": "test"},
             }
         ]
 
@@ -747,11 +627,7 @@ class TestGetTrajectories:
                 "status_code": "ERROR",
                 "context": {"trace_id": "t1", "span_id": "s1"},
                 "start_time": "2024-01-15",
-                "attributes": {
-                    "gen_ai.request.model": "test",
-                    "gen_ai.prompt.0.role": "user",
-                    "gen_ai.prompt.0.content": "test message"
-                }
+                "attributes": {"gen_ai.request.model": "test", "gen_ai.prompt.0.role": "user", "gen_ai.prompt.0.content": "test message"},
             }
         ]
 
@@ -766,7 +642,7 @@ class TestGetTrajectories:
             {
                 "name": "litellm_request",
                 "context": {"trace_id": "t1", "span_id": "s1"},
-                "attributes": {}  # No gen_ai.prompt.* attributes
+                "attributes": {},  # No gen_ai.prompt.* attributes
             }
         ]
 
@@ -785,8 +661,8 @@ class TestGetTrajectories:
                 "attributes": {
                     "gen_ai.request.model": "test",
                     "gen_ai.prompt.0.role": "user",
-                    "gen_ai.prompt.0.content": "Hi <system-reminder>remove</system-reminder>"
-                }
+                    "gen_ai.prompt.0.content": "Hi <system-reminder>remove</system-reminder>",
+                },
             }
         ]
 
@@ -806,8 +682,8 @@ class TestGetTrajectories:
                 "attributes": {
                     "gen_ai.request.model": "test",
                     "gen_ai.prompt.0.role": "user",
-                    "gen_ai.prompt.0.content": "<system-reminder>keep</system-reminder>"
-                }
+                    "gen_ai.prompt.0.content": "<system-reminder>keep</system-reminder>",
+                },
             }
         ]
 

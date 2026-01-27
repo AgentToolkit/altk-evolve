@@ -94,9 +94,7 @@ def delete_namespace(
 
     if not force:
         entity_count = ns.num_entities or 0
-        confirm = typer.confirm(
-            f"Delete namespace '{namespace_id}' with {entity_count} entities?"
-        )
+        confirm = typer.confirm(f"Delete namespace '{namespace_id}' with {entity_count} entities?")
         if not confirm:
             console.print("[yellow]Cancelled.[/yellow]")
             raise typer.Exit(0)
@@ -343,7 +341,7 @@ def sync_phoenix(
         project=project,
     )
 
-    console.print(f"[bold]Syncing from Phoenix[/bold]")
+    console.print("[bold]Syncing from Phoenix[/bold]")
     console.print(f"  URL: {syncer.phoenix_url}")
     console.print(f"  Project: {syncer.project}")
     console.print(f"  Namespace: {syncer.namespace_id}")

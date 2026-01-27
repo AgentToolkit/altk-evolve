@@ -13,7 +13,6 @@ compatible with OpenAI's chat completion messages, including:
 
 import json
 import argparse
-from collections import defaultdict
 from typing import Any
 import urllib.request
 
@@ -49,6 +48,7 @@ def parse_content(content: Any) -> Any:
             # Try to parse as Python literal
             try:
                 import ast
+
                 return ast.literal_eval(content)
             except (ValueError, SyntaxError):
                 return content
@@ -71,12 +71,7 @@ def extract_messages_from_span(span: dict) -> list[dict]:
         role = attrs.get(f"gen_ai.prompt.{i}.role")
         content = attrs.get(f"gen_ai.prompt.{i}.content")
         if role and content is not None:
-            messages.append({
-                "index": i,
-                "type": "prompt",
-                "role": role,
-                "content": parse_content(content)
-            })
+            messages.append({"index": i, "type": "prompt", "role": role, "content": parse_content(content)})
 
     # Extract completion messages
     completion_indices = set()
@@ -89,12 +84,7 @@ def extract_messages_from_span(span: dict) -> list[dict]:
         role = attrs.get(f"gen_ai.completion.{i}.role")
         content = attrs.get(f"gen_ai.completion.{i}.content")
         if role and content is not None:
-            messages.append({
-                "index": i,
-                "type": "completion",
-                "role": role,
-                "content": parse_content(content)
-            })
+            messages.append({"index": i, "type": "completion", "role": role, "content": parse_content(content)})
 
     return messages
 
@@ -132,21 +122,22 @@ def convert_anthropic_to_openai(content: Any, role: str) -> dict:
                 thinking_parts.append(thinking)
 
         elif block_type == "tool_use":
-            tool_calls.append({
-                "id": block.get("id", ""),
-                "type": "function",
-                "function": {
-                    "name": block.get("name", ""),
-                    "arguments": json.dumps(block.get("input", {}))
+            tool_calls.append(
+                {
+                    "id": block.get("id", ""),
+                    "type": "function",
+                    "function": {"name": block.get("name", ""), "arguments": json.dumps(block.get("input", {}))},
                 }
-            })
+            )
 
         elif block_type == "tool_result":
-            tool_results.append({
-                "tool_call_id": block.get("tool_use_id", ""),
-                "content": block.get("content", ""),
-                "is_error": block.get("is_error", False)
-            })
+            tool_results.append(
+                {
+                    "tool_call_id": block.get("tool_use_id", ""),
+                    "content": block.get("content", ""),
+                    "is_error": block.get("is_error", False),
+                }
+            )
 
     # Build OpenAI format message
     if role == "assistant":
@@ -193,11 +184,7 @@ def extract_trajectory(span: dict) -> dict:
         # Handle tool results (expand into individual messages)
         if converted.get("role") == "tool" and "tool_results" in converted:
             for result in converted["tool_results"]:
-                openai_messages.append({
-                    "role": "tool",
-                    "tool_call_id": result["tool_call_id"],
-                    "content": result["content"]
-                })
+                openai_messages.append({"role": "tool", "tool_call_id": result["tool_call_id"], "content": result["content"]})
         else:
             openai_messages.append(converted)
 
@@ -225,15 +212,16 @@ def extract_trajectory(span: dict) -> dict:
         "usage": {
             "prompt_tokens": attrs.get("gen_ai.usage.prompt_tokens"),
             "completion_tokens": attrs.get("gen_ai.usage.completion_tokens"),
-            "total_tokens": attrs.get("llm.usage.total_tokens")
-        }
+            "total_tokens": attrs.get("llm.usage.total_tokens"),
+        },
     }
 
 
 def filter_system_reminders(text: str) -> str:
     """Remove system reminders from text content."""
     import re
-    return re.sub(r'<system-reminder>.*?</system-reminder>', '', text, flags=re.DOTALL).strip()
+
+    return re.sub(r"<system-reminder>.*?</system-reminder>", "", text, flags=re.DOTALL).strip()
 
 
 def clean_trajectory(trajectory: dict, remove_system_reminders: bool = True) -> dict:
@@ -260,10 +248,7 @@ def clean_trajectory(trajectory: dict, remove_system_reminders: bool = True) -> 
 
 
 def get_trajectories(
-    base_url: str = "http://localhost:6006",
-    limit: int = 100,
-    include_errors: bool = False,
-    clean: bool = True
+    base_url: str = "http://localhost:6006", limit: int = 100, include_errors: bool = False, clean: bool = True
 ) -> list[dict]:
     """
     Fetch and extract agent trajectories from Phoenix.
@@ -317,12 +302,7 @@ def get_trajectory_by_trace_id(trace_id: str, base_url: str = "http://localhost:
     Returns:
         Trajectory dict or None if not found
     """
-    trajectories = get_trajectories(
-        base_url=base_url,
-        limit=1000,
-        include_errors=True,
-        clean=True
-    )
+    trajectories = get_trajectories(base_url=base_url, limit=1000, include_errors=True, clean=True)
     for t in trajectories:
         if t["trace_id"] == trace_id:
             return t
@@ -352,23 +332,20 @@ def format_trajectory_as_text(trajectory: dict, include_thinking: bool = True) -
         if msg.get("tool_calls"):
             for tc in msg["tool_calls"]:
                 func = tc.get("function", {})
-                tool_call_map[tc.get("id", "")] = {
-                    "name": func.get("name", "unknown"),
-                    "arguments": func.get("arguments", "{}")
-                }
+                tool_call_map[tc.get("id", "")] = {"name": func.get("name", "unknown"), "arguments": func.get("arguments", "{}")}
 
     for msg in trajectory.get("messages", []):
         role = msg.get("role", "unknown").upper()
 
         if role == "USER":
-            lines.append(f"[USER]")
+            lines.append("[USER]")
             lines.append(msg.get("content", ""))
             lines.append("")
 
         elif role == "ASSISTANT":
-            lines.append(f"[ASSISTANT]")
+            lines.append("[ASSISTANT]")
             if include_thinking and msg.get("thinking"):
-                lines.append(f"<thinking>")
+                lines.append("<thinking>")
                 lines.append(msg["thinking"][:500] + "..." if len(msg.get("thinking", "")) > 500 else msg.get("thinking", ""))
                 lines.append("</thinking>")
                 lines.append("")
@@ -387,7 +364,7 @@ def format_trajectory_as_text(trajectory: dict, include_thinking: bool = True) -
                         args = json.dumps(args_obj, indent=4)
                     except (json.JSONDecodeError, TypeError):
                         pass
-                    lines.append(f"     Arguments:")
+                    lines.append("     Arguments:")
                     for arg_line in args.split("\n"):
                         lines.append(f"       {arg_line}")
             lines.append("")
@@ -404,7 +381,7 @@ def format_trajectory_as_text(trajectory: dict, include_thinking: bool = True) -
                 content = json.dumps(content_obj, indent=2)
             except (json.JSONDecodeError, TypeError):
                 pass
-            lines.append(f"     Response:")
+            lines.append("     Response:")
             for content_line in content.split("\n")[:50]:  # Limit to 50 lines
                 lines.append(f"       {content_line}")
             if content.count("\n") > 50:
@@ -415,58 +392,19 @@ def format_trajectory_as_text(trajectory: dict, include_thinking: bool = True) -
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Extract agent trajectories from Arize Phoenix"
-    )
-    parser.add_argument(
-        "--url",
-        default="http://localhost:6006",
-        help="Phoenix server URL"
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=100,
-        help="Maximum number of spans to fetch"
-    )
-    parser.add_argument(
-        "--include-errors",
-        action="store_true",
-        help="Include failed spans"
-    )
-    parser.add_argument(
-        "--no-clean",
-        action="store_true",
-        help="Don't clean system reminders from messages"
-    )
-    parser.add_argument(
-        "--output",
-        "-o",
-        help="Output file (default: stdout)"
-    )
-    parser.add_argument(
-        "--pretty",
-        action="store_true",
-        help="Pretty print JSON output"
-    )
-    parser.add_argument(
-        "--trace-id",
-        help="Filter to specific trace ID"
-    )
-    parser.add_argument(
-        "--text",
-        action="store_true",
-        help="Output as human-readable text instead of JSON"
-    )
+    parser = argparse.ArgumentParser(description="Extract agent trajectories from Arize Phoenix")
+    parser.add_argument("--url", default="http://localhost:6006", help="Phoenix server URL")
+    parser.add_argument("--limit", type=int, default=100, help="Maximum number of spans to fetch")
+    parser.add_argument("--include-errors", action="store_true", help="Include failed spans")
+    parser.add_argument("--no-clean", action="store_true", help="Don't clean system reminders from messages")
+    parser.add_argument("--output", "-o", help="Output file (default: stdout)")
+    parser.add_argument("--pretty", action="store_true", help="Pretty print JSON output")
+    parser.add_argument("--trace-id", help="Filter to specific trace ID")
+    parser.add_argument("--text", action="store_true", help="Output as human-readable text instead of JSON")
 
     args = parser.parse_args()
 
-    trajectories = get_trajectories(
-        base_url=args.url,
-        limit=args.limit,
-        include_errors=args.include_errors,
-        clean=not args.no_clean
-    )
+    trajectories = get_trajectories(base_url=args.url, limit=args.limit, include_errors=args.include_errors, clean=not args.no_clean)
 
     if args.trace_id:
         trajectories = [t for t in trajectories if t["trace_id"] == args.trace_id]
@@ -477,11 +415,7 @@ def main():
     if args.text:
         output = "\n\n".join(format_trajectory_as_text(t) for t in trajectories)
     else:
-        output = json.dumps(
-            trajectories,
-            indent=2 if args.pretty else None,
-            default=str
-        )
+        output = json.dumps(trajectories, indent=2 if args.pretty else None, default=str)
 
     if args.output:
         with open(args.output, "w") as f:

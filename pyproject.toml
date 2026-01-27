@@ -24,7 +24,8 @@ dev = [
     "anyio",
     "python-dotenv>=1.2.1",
     "detect-secrets",
-    "pre-commit"
+    "pre-commit",
+    "ruff"
 ]
 
 [tool.uv.sources]
@@ -46,3 +47,7 @@ markers = [
     "phoenix"
 ]
 anyio_mode = "auto"
+
+[tool.ruff]
+line-length = 140
+indent-width = 4
