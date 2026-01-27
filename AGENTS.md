@@ -15,7 +15,7 @@ Kaizen is a Python library and service which enables AI agents to improve throug
 4. Future agents can query the Kaizen MCP server to fetch guidelines for similar tasks
 
 ## Project Directory Tree (Some files omitted for brevity)
-```
+```text
 .
 ├── demo (Files used by the Claude Code demo)
 │   ├── filesystem
@@ -53,7 +53,7 @@ pre-commit install
 - We use the pytest markers `e2e` for end-to-end tests, and `unit` for unit tests, and `phoenix` to test integration with Phoenix.
 - When running `uv run pytest` it will skip the tests marked with `phoenix`.
 - To run specific markers: `uv run pytest -m e2e` or `uv run pytest -m unit`
-- To override and run all: `uv run pytest -m 'e2e or unit or phoenix'"`
+- To override and run all: `uv run pytest -m "e2e or unit or phoenix"`
 
 ## Available Interfaces
 - MCP Server: `get_guidelines()`, `save_trajectory()`
