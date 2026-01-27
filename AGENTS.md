@@ -48,11 +48,12 @@ pre-commit install
 ```
 
 ## Testing Instructions
-- Use `uv run pytest tests/.../<test_name.py> -v` to run tests individually.
+- Run pytest verbosely with the `-v` flag by default so that you have more context when tests fail.
+- Use `uv run pytest tests/.../<test_name.py>` to run tests individually.
 - We use the pytest markers `e2e` for end-to-end tests, and `unit` for unit tests, and `phoenix` to test integration with Phoenix.
 - When running `uv run pytest` it will skip the tests marked with `phoenix`.
 - To run specific markers: `uv run pytest -m e2e` or `uv run pytest -m unit`
-- To override and run all: `uv run pytest -o addopts="-m 'e2e or unit or phoenix'"`
+- To override and run all: `uv run pytest -m 'e2e or unit or phoenix'"`
 
 ## Available Interfaces
 - MCP Server: `get_guidelines()`, `save_trajectory()`
