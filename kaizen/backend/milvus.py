@@ -166,6 +166,7 @@ class MilvusEntityBackend(BaseEntityBackend):
         filters = filters or {}
 
         if query is None:
+            # Default query: Get all entities
             results = self.milvus.query(
                 collection_name=namespace_id,
                 filter=" AND ".join([f"{k} == '{v}'" for k, v in filters.items()]) if len(filters) > 0 else "id > 0",
