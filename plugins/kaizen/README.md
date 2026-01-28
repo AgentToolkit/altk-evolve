@@ -12,10 +12,10 @@ A plugin that helps Claude Code learn from conversations by automatically extrac
 
 ```bash
 # Load plugin for current session
-claude --plugin-dir ./guidelines-plugin
+claude --plugin-dir ./kaizen
 
 # Or with absolute path
-claude --plugin-dir /path/to/guidelines-plugin
+claude --plugin-dir /path/to/kaizen
 ```
 
 See [INSTALL.md](INSTALL.md) for making it permanent, loading multiple plugins, and troubleshooting.
@@ -77,8 +77,8 @@ After installation, run `claude plugin list` to confirm the plugin is enabled. S
 
 ## Plugin Structure
 
-```
-guidelines-plugin/
+```text
+kaizen/
 ├── .claude-plugin/
 │   └── plugin.json              # Plugin manifest
 ├── skills/

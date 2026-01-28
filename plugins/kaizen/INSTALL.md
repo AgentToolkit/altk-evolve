@@ -11,10 +11,10 @@ Use `--plugin-dir` to load the plugin for a session:
 
 ```bash
 # Load plugin when starting Claude Code (absolute path)
-claude --plugin-dir /path/to/guidelines-plugin
+claude --plugin-dir /path/to/kaizen
 
 # Or use a relative path from current directory
-claude --plugin-dir ./guidelines-plugin
+claude --plugin-dir ./kaizen
 ```
 
 **Note:** The plugin is loaded **for that session only**.
@@ -30,7 +30,7 @@ claude --plugin-dir ./plugin1 --plugin-dir ./plugin2
 Add an alias to your shell profile (`~/.bashrc` or `~/.zshrc`):
 
 ```bash
-alias claude='claude --plugin-dir /path/to/guidelines-plugin'
+alias claude='claude --plugin-dir /path/to/kaizen'
 ```
 
 Then reload your shell:
@@ -42,7 +42,7 @@ source ~/.zshrc  # or source ~/.bashrc
 ## Option 2: Install from Marketplace (when published)
 
 ```bash
-claude plugin install guidelines
+claude plugin install kaizen
 ```
 
 ## Validate Plugin
@@ -50,7 +50,7 @@ claude plugin install guidelines
 Before using, validate the plugin manifest:
 
 ```bash
-claude plugin validate /path/to/guidelines-plugin
+claude plugin validate /path/to/kaizen
 # Should output: ✔ Validation passed
 ```
 
@@ -68,11 +68,11 @@ After loading the plugin, verify it's working:
 1. **Test hook execution:**
    ```bash
    # Start Claude Code with the plugin
-   claude --plugin-dir ./guidelines-plugin
+   claude --plugin-dir ./kaizen
 
    # Send any prompt, then check the debug log (in another terminal)
-   cat /tmp/guidelines.txt
-   # Should show: "retrieve_guidelines called at <timestamp>"
+   cat /tmp/guidelines-plugin.log
+   # Should show: "[retrieve] Script started" with timestamp
    ```
 
 2. **Test guideline storage:**
@@ -93,17 +93,17 @@ After loading the plugin, verify it's working:
 
 ### Plugin validation fails
 
-Run `claude plugin validate ./guidelines-plugin` to see specific errors.
+Run `claude plugin validate ./kaizen` to see specific errors.
 
 ### Hooks not firing
 
 1. Verify the plugin is loaded with `--plugin-dir`
 2. Verify Python is in PATH: `which python3`
-3. Check script permissions: `ls -la guidelines-plugin/scripts/`
-4. Check debug log: `cat /tmp/guidelines.txt`
+3. Check script permissions: `ls -la kaizen/scripts/`
+4. Check debug log: `cat /tmp/guidelines-plugin.log`
 
 ### Guidelines not saving
 
 1. Verify `.claude/` directory exists in your project
 2. Check write permissions on the directory
-3. Review `/tmp/guidelines.txt` for error messages
+3. Review `/tmp/guidelines-plugin.log` for error messages

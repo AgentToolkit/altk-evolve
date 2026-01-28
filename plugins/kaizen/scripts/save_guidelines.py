@@ -108,13 +108,17 @@ def main():
         print(f"Creating new file: {guidelines_path}")
 
     # Merge guidelines (avoid duplicates by content)
-    existing_contents = {g.get("content") for g in existing_guidelines}
+    existing_contents = {g.get("content") for g in existing_guidelines if g.get("content")}
     added_count = 0
 
     for guideline in new_guidelines:
-        if guideline.get("content") not in existing_contents:
+        content = guideline.get("content")
+        if not content:
+            log(f"Skipping guideline without content: {guideline}")
+            continue
+        if content not in existing_contents:
             existing_guidelines.append(guideline)
-            existing_contents.add(guideline.get("content"))
+            existing_contents.add(content)
             added_count += 1
 
     # Save merged guidelines

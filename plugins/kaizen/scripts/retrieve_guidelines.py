@@ -58,7 +58,10 @@ Review these guidelines and apply any relevant ones:
 """
     items = []
     for g in guidelines:
-        item = f"- **[{g.get('category', 'general')}]** {g['content']}"
+        content = g.get('content')
+        if not content:
+            continue
+        item = f"- **[{g.get('category', 'general')}]** {content}"
         if g.get('rationale'):
             item += f"\n  - _Rationale: {g['rationale']}_"
         if g.get('trigger'):
