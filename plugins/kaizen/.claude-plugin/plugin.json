@@ -1,0 +1,9 @@
+{
+  "name": "kaizen",
+  "version": "1.0.0",
+  "description": "Learn from conversations with auto-generated guidelines",
+  "author": {
+    "name": "Vinod Muthusamy"
+  },
+  "skills": "./skills/"
+}
