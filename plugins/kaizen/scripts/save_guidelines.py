@@ -30,7 +30,8 @@ def find_guidelines_file():
         os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".claude/guidelines.json"),
         # Current working directory
         ".claude/guidelines.json",
-        "guidelines.json",
+        # Plugin-relative path (fallback)
+        str(Path(__file__).parent.parent / "guidelines.json"),
     ]
 
     for loc in locations:
@@ -46,15 +47,12 @@ def get_default_guidelines_path():
     project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
     if project_root:
         claude_dir = Path(project_root) / ".claude"
-        if claude_dir.exists() or Path(project_root).exists():
-            claude_dir.mkdir(parents=True, exist_ok=True)
-            return (claude_dir / "guidelines.json").resolve()
+    else:
+        # Fall back to current directory's .claude/
+        claude_dir = Path(".claude")
 
-    # Fall back to current directory
-    claude_dir = Path(".claude")
-    if claude_dir.exists():
-        return (claude_dir / "guidelines.json").resolve()
-    return Path("guidelines.json").resolve()
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    return (claude_dir / "guidelines.json").resolve()
 
 
 def load_existing_guidelines(path):
