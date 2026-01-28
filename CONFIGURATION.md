@@ -120,7 +120,13 @@ pip install kaizen[tracing]
 
 ### Usage
 
-Add one import at the top of your agent:
+First, enable auto-mode by setting the environment variable:
+
+```bash
+export KAIZEN_AUTO_ENABLED=true
+```
+
+Then, add one import at the top of your agent to trigger the patching:
 
 ```python
 try:

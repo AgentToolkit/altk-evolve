@@ -103,7 +103,10 @@ def _register_flush_handler(tracer_provider: TracerProvider) -> None:
     
     def _flush():
         try:
-            tracer_provider.force_flush()
+            # Use global getter to avoid stale closure
+            provider = get_tracer_provider()
+            if provider:
+                provider.force_flush()
         except Exception as e:
             logger.debug(f"Error flushing traces: {e}")
     
