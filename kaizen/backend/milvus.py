@@ -3,7 +3,7 @@ import json
 import logging
 import uuid
 
-from kaizen.backend.base import BaseEntityBackend
+from kaizen.backend.base import BaseEntityBackend, BaseSettings
 from kaizen.config.milvus import milvus_client_settings, milvus_other_settings
 from kaizen.db.sqlite_manager import SQLiteManager
 from kaizen.llm.conflict_resolution.conflict_resolution import resolve_conflicts
@@ -33,8 +33,13 @@ def deserialize_content(content: str):
 
 
 class MilvusEntityBackend(BaseEntityBackend):
-    milvus = MilvusClient(**milvus_client_settings.model_dump())
-    embedding_model = SentenceTransformer(milvus_other_settings.embedding_model)
+    milvus: MilvusClient
+    embedding_model: SentenceTransformer
+
+    def __init__(self, config: BaseSettings | None = None):
+        super().__init__(config)
+        self.milvus = MilvusClient(**milvus_client_settings.model_dump())
+        self.embedding_model = SentenceTransformer(milvus_other_settings.embedding_model)
 
     def ready(self):
         _ = self.milvus.list_collections()
