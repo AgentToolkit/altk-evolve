@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "kaizen-marketplace",
+  "description": "Kaizen plugins for Claude Code - continuous improvement through auto-generated guidelines",
+  "owner": {
+    "name": "Vinod Muthusamy"
+  },
+  "plugins": [
+    {
+      "name": "kaizen",
+      "description": "Learn from conversations with auto-generated guidelines",
+      "version": "1.0.0",
+      "author": {
+        "name": "Vinod Muthusamy"
+      },
+      "source": "./plugins/kaizen",
+      "category": "productivity"
+    }
+  ]
+}
