@@ -32,6 +32,10 @@ def deserialize_content(content: str):
         return content
 
 
+def _escape_filter(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
 class MilvusEntityBackend(BaseEntityBackend):
     milvus: MilvusClient
     embedding_model: SentenceTransformer
@@ -41,9 +45,13 @@ class MilvusEntityBackend(BaseEntityBackend):
         self.milvus = MilvusClient(**milvus_client_settings.model_dump())
         self.embedding_model = SentenceTransformer(milvus_other_settings.embedding_model)
 
-    def ready(self):
+    def ready(self) -> bool:
         _ = self.milvus.list_collections()
-        return {"status": "ok"}
+        return True
+
+    def details(self) -> dict:
+        """Return details about the backend."""
+        return {}
 
     def validate_namespace(self, namespace_id: str):
         if not self.milvus.has_collection(namespace_id):
@@ -169,14 +177,16 @@ class MilvusEntityBackend(BaseEntityBackend):
             # Default query: Get all entities
             results = self.milvus.query(
                 collection_name=namespace_id,
-                filter=" AND ".join([f"{k} == '{v}'" for k, v in filters.items()]) if len(filters) > 0 else "id > 0",
+                filter=" AND ".join([f"{_escape_filter(k)} == '{_escape_filter(v)}'" for k, v in filters.items()])
+                if len(filters) > 0
+                else "id > 0",
             )
         else:
             results = self.milvus.query(
                 collection_name=namespace_id,
                 anns_field="embedding",
                 data=[self.embedding_model.encode(query)],
-                filter=" AND ".join([f"{k} == '{v}'" for k, v in filters.items()]),
+                filter=" AND ".join([f"{_escape_filter(k)} == '{_escape_filter(v)}'" for k, v in filters.items()]),
                 limit=limit,
                 search_params={"metric_type": "IP"},
             )

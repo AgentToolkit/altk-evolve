@@ -13,14 +13,15 @@ class BaseEntityBackend(ABC):
         pass
 
     @abstractmethod
-    def ready(self):
+    def ready(self) -> bool:
         pass
 
     @abstractmethod
-    def create_namespace(
-        self,
-        namespace_id: str | None = None
-    ) -> Namespace:
+    def details(self) -> dict:
+        pass
+
+    @abstractmethod
+    def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         pass
 
     @abstractmethod
@@ -39,12 +40,9 @@ class BaseEntityBackend(ABC):
         enable_conflict_resolution: bool = True,
     ) -> list[EntityUpdate]:
         pass
+
     def search_entities(
-        self,
-        namespace_id: str,
-        query: str | None = None,
-        filters: dict | None = None,
-        limit: int = 10
+        self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
     ) -> list[RecordedEntity]:
         pass
 
