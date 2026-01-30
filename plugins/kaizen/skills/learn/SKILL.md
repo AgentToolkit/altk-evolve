@@ -1,5 +1,5 @@
 ---
-name: guideline-generator
+name: learn
 description: Extract actionable guidelines from conversation trajectories. Analyzes user requests, steps taken, successes and failures to generate proactive guidelines that help on similar future tasks.
 ---
 
@@ -53,6 +53,54 @@ Output guidelines in the following JSON format:
   ]
 }
 ```
+
+### Step 4: Save Guidelines
+
+After generating the guidelines JSON, save them using the save_guidelines.py script:
+
+**Method 1: Direct Pipe (Recommended)**
+```bash
+echo '<your-json-output>' | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_guidelines.py
+```
+
+**Method 2: From File**
+```bash
+cat guidelines.json | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_guidelines.py
+```
+
+**Method 3: Interactive**
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_guidelines.py
+# Then paste your JSON and press Ctrl+D
+```
+
+The script will:
+- Find or create the guidelines file (`.claude/guidelines.json`)
+- Merge new guidelines with existing ones (avoiding duplicates)
+- Display confirmation with the total count
+
+**Example:**
+```bash
+echo '{
+  "guidelines": [
+    {
+      "content": "Use Python PIL/Pillow for image metadata extraction",
+      "rationale": "System tools may not be available in sandboxed environments",
+      "category": "strategy",
+      "trigger": "When extracting image metadata in containerized environments"
+    }
+  ]
+}' | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_guidelines.py
+```
+
+**Output:**
+```
+Creating new file: /path/to/project/.claude/guidelines.json
+Added 1 new guideline(s). Total: 1
+Guidelines stored in: /path/to/project/.claude/guidelines.json
+```
+
+**Note:** Guidelines are also automatically saved when a conversation ends via the Stop hook.
 
 ## Guideline Categories
 

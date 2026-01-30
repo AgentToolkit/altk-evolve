@@ -4,50 +4,75 @@ A plugin that helps Claude Code learn from conversations by automatically extrac
 
 ## Features
 
-- **Automatic Learning**: At the end of each conversation, guidelines are extracted and saved
-- **Context-Aware Retrieval**: At the start of each prompt, relevant guidelines are injected
-- **No Manual Configuration**: Hooks are automatically installed when the plugin is enabled
+- **Automatic Retrieval**: At the start of each prompt, relevant guidelines are automatically injected
+- **Manual Learning**: Use the `/kaizen:learn` skill to extract and save guidelines from conversations
+- **Zero-config Retrieval**: Hooks are automatically installed when the plugin is enabled
 
 ## Installation
 
-```bash
-# Load plugin for current session
-claude --plugin-dir ./kaizen
+### From Local Directory
 
-# Or with absolute path
-claude --plugin-dir /path/to/kaizen
+```bash
+claude --plugin-dir /path/to/kaizen/repo/plugins/kaizen
 ```
 
-See [INSTALL.md](INSTALL.md) for making it permanent, loading multiple plugins, and troubleshooting.
+### From Marketplace
+
+1. Add the marketplace and plugin:
+   ```bash
+   claude plugin marketplace add AgentToolkit/kaizen
+   claude plugin install kaizen@kaizen-marketplace
+   ```
+
 
 ## How It Works
 
-### Guideline Retrieval (UserPromptSubmit hook)
+### Guideline Retrieval (Automatic)
 
-When you submit a prompt, the plugin:
+When you submit a prompt, the plugin automatically:
 1. Loads all stored guidelines from `.claude/guidelines.json`
 2. Formats and injects them into the conversation context
 3. Claude applies relevant guidelines to the current task
 
-### Guideline Generation (Stop hook)
+### Guideline Generation (Manual by Default)
 
-When a conversation ends, the plugin:
-1. Analyzes the conversation trajectory
-2. Extracts actionable guidelines from what worked/failed
-3. Saves new guidelines to `.claude/guidelines.json`
+By default, you must manually invoke the `/kaizen:learn` skill to extract guidelines:
+1. Complete a conversation or task
+2. Invoke `/kaizen:learn` 
+3. The plugin analyzes the conversation trajectory
+4. Extracts actionable guidelines from what worked/failed
+5. Saves new guidelines to `.claude/guidelines.json`
 
 ## Skills Included
 
-### `/guidelines:generator`
+### `/kaizen:learn`
 
 Manually invoke to extract guidelines from the current conversation:
 - Analyzes task, steps taken, successes and failures
 - Generates proactive guidelines (what to do, not what to avoid)
 - Outputs JSON for storage
 
-### `/guidelines:retrieval`
+### `/kaizen:recall`
 
 Manually invoke to retrieve and display stored guidelines.
+
+### `/kaizen:save`
+
+Manually invoke to capture successful workflows from your current session and save them as reusable skills:
+- Analyzes conversation history (user requests, reasoning, tool calls, responses)
+- Generates parameterized SKILL.md documentation
+- Creates Python helper scripts for programmatic operations (when applicable)
+- Saves to `~/.claude/skills/{skill-name}/` for cross-project availability
+
+**Quick Start:**
+```
+User: [Complete a successful task]
+User: "save"
+Assistant: "What would you like to name this skill?"
+User: "my-workflow-name"
+```
+
+See [SAVE_SKILL.md](SAVE_SKILL.md) for detailed documentation.
 
 ## Guidelines Storage
 
@@ -73,7 +98,7 @@ Guidelines are stored in `.claude/guidelines.json`:
 
 ## Verification
 
-After installation, run `claude plugin list` to confirm the plugin is enabled. See [INSTALL.md](INSTALL.md) for detailed verification steps.
+After installation, run `claude plugin list` to confirm the plugin is enabled.
 
 ## Plugin Structure
 
@@ -82,9 +107,11 @@ kaizen/
 ├── .claude-plugin/
 │   └── plugin.json              # Plugin manifest
 ├── skills/
-│   ├── guideline-generator/
+│   ├── learn/
 │   │   └── SKILL.md
-│   └── guideline-retrieval/
+│   ├── recall/
+│   │   └── SKILL.md
+│   └── save/
 │       └── SKILL.md
 ├── hooks/
 │   └── hooks.json               # Auto-configured hooks
