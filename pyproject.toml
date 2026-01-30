@@ -23,6 +23,13 @@ tracing = [
     "openinference-instrumentation-openai-agents",
 ]
 
+examples = [
+    "kaizen[tracing]",
+    "smolagents",
+    "openai-agents",
+    "openai",
+]
+
 [project.scripts]
 kaizen = "kaizen.frontend.cli.cli:app"
 

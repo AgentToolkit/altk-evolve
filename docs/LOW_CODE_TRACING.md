@@ -64,6 +64,9 @@ response = client.chat.completions.create(...)
 export KAIZEN_AUTO_ENABLED=true
 export KAIZEN_TRACING_PROJECT=my-agent  # Optional, defaults to "kaizen-agent"
 export KAIZEN_TRACING_ENDPOINT=http://localhost:6006/v1/traces  # Optional
+
+# For Kaizen example scripts only (e.g. examples/low_code/smolagents_demo.py):
+export KAIZEN_EXAMPLE_AGENT_MODEL="Azure/gpt-4.1" # Overrides default tips model for agent execution
 ```
 
 > **Note**: Auto-patching will skip if existing tracing is detected. Use `enable_tracing(force=True)` to override.
@@ -211,6 +214,41 @@ uv run python -m kaizen.frontend.cli.cli entities list kaizen --type guideline
 
 ---
 
+## End-to-End Verification
+
+Kaizen includes a comprehensive E2E verification suite to ensure that tracing and tip generation work correctly across all supported agents.
+
+### Running the E2E Pipeline
+
+You can run the full regression suite using `pytest`:
+
+```bash
+uv run pytest tests/e2e/test_e2e_pipeline.py -s
+```
+
+### Running Specific Tests
+
+To test a specific agent framework:
+
+```bash
+# Test smolagents
+uv run pytest tests/e2e/test_e2e_pipeline.py -k smolagents -s
+
+# Test OpenAI Agents
+uv run pytest tests/e2e/test_e2e_pipeline.py -k openai_agents -s
+```
+
+### What It Tests
+
+The pipeline performs the following for each agent:
+1.  **Executes the Agent**: Run the agent script (e.g., `smolagents_demo.py`) with auto-instrumentation enabled.
+2.  **Verifies Traces**: Checks the Phoenix server for the existence of traces in a unique, timestamped project.
+3.  **Generates Tips**: Runs `kaizen sync` on the generated traces to verify that tips are successfully created from the agent's execution.
+
+This ensures the entire "Agent -> Traces -> Tips" loop is functional.
+
+---
+
 ## Troubleshooting
 
 | Issue | Solution |
@@ -227,7 +265,7 @@ uv run python -m kaizen.frontend.cli.cli entities list kaizen --type guideline
 
 Kaizen.auto automatically instruments these frameworks when detected:
 
-- **OpenAI** - ChatCompletion, Completion, Embeddings
-- **LiteLLM** - All providers (Azure, Anthropic, etc.)
-- **Smolagents** - HuggingFace agents
-- **OpenAI Agents SDK** - OpenAI's agent framework
+- **OpenAI** ([Example](../examples/low_code/simple_openai.py)) - ChatCompletion, Completion, Embeddings
+- **LiteLLM** ([Example](../examples/low_code/litellm_demo.py)) - All providers (Azure, Anthropic, etc.)
+- **Smolagents** ([Example](../examples/low_code/smolagents_demo.py)) - HuggingFace agents
+- **OpenAI Agents SDK** ([Example](../examples/low_code/openai_agents_demo.py)) - OpenAI's agent framework
