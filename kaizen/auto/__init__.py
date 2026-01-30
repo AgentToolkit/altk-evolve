@@ -108,8 +108,8 @@ def _register_flush_handler() -> None:
             provider = get_tracer_provider()
             if provider:
                 provider.force_flush()
-        except Exception as e:
-            logger.debug(f"Error flushing traces: {e}")
+        except Exception:  # noqa: BLE001
+            logger.debug("Error flushing traces", exc_info=True)
 
     atexit.register(_flush)
     _flush_registered = True
@@ -156,11 +156,11 @@ def enable_tracing(
         )
         _tracer_provider = tracer_provider
         logger.info(f"Phoenix tracing enabled: project={project}, endpoint={endpoint}")
-    except ImportError as e:
-        logger.exception(f"Phoenix not available: {e}. Install with: pip install arize-phoenix")
+    except ImportError:
+        logger.exception("Phoenix not available: Install with: pip install arize-phoenix")
         return None
-    except Exception as e:  # noqa: BLE001
-        logger.exception(f"Failed to initialize Phoenix: {e}")
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to initialize Phoenix")
         return None
 
     # Detect frameworks to instrument

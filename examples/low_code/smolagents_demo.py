@@ -57,7 +57,7 @@ def main():
         # Ask it to do math using the tools
         result = agent.run("What is (5 * 5) + 10?")
         print(f"Result: {result}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Error running agent: {e}")
 
 if __name__ == "__main__":

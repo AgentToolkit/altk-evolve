@@ -140,7 +140,7 @@ except ImportError:
 ### Tracing Environment Variables
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+| ----- | ----- | ----- |
 | `KAIZEN_AUTO_ENABLED` | Enable auto-patching on import | `false` |
 | `KAIZEN_TRACING_PROJECT` | Phoenix project name | `kaizen-agent` |
 | `KAIZEN_TRACING_ENDPOINT` | Phoenix collector endpoint | `http://localhost:6006/v1/traces` |

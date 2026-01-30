@@ -54,7 +54,7 @@ async def main():
     try:
         result = await Runner.run(agent, "What is (10 * 2) + 5?")
         print(f"Result: {result.final_output}")
-    except Exception:
+    except Exception:  # noqa: BLE001
         import traceback
         traceback.print_exc()
 

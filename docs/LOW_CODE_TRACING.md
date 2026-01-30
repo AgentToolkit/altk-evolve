@@ -252,7 +252,7 @@ This ensures the entire "Agent -> Traces -> Tips" loop is functional.
 ## Troubleshooting
 
 | Issue | Solution |
-|-------|----------|
+| ----- | ---------- |
 | `ModuleNotFoundError: kaizen.auto` | Install: `pip install -e path/to/kaizen_repo` or add to PYTHONPATH |
 | No traces appearing | Check `KAIZEN_AUTO_ENABLED=true` is set |
 | Wrong project name | Set `KAIZEN_TRACING_PROJECT=your-name` |

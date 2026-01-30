@@ -80,7 +80,7 @@ def main():
         else:
             print(f"Response: {msg.content}")
             
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Error: {e}")
 
 if __name__ == "__main__":
