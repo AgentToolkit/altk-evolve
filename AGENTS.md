@@ -65,3 +65,4 @@ pre-commit install
 - Use Ruff for linting and formatting (configured in pyproject.toml)
 - Run pre-commit hooks before committing
 - All new features need tests (unit + e2e where applicable)
+- Use uv to run Python commands, including pip.

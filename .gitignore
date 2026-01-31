@@ -6,3 +6,6 @@
 *.db*
 .DS_Store
 __pycache__
+kaizen_data
+demo/workdir/.claude/
+.claude

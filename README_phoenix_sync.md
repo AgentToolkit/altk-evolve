@@ -32,20 +32,20 @@ No additional dependencies required - uses only stdlib for Phoenix API calls.
 
 ```bash
 # Basic sync with defaults
-uv run python -m kaizen.frontend.cli.cli sync phoenix
+uv run python -m kaizen.cli.cli sync phoenix
 
 # Custom Phoenix URL and namespace
-uv run python -m kaizen.frontend.cli.cli sync phoenix \
+uv run python -m kaizen.cli.cli sync phoenix \
   --url http://phoenix.example.com:6006 \
   --namespace my_namespace
 
 # Fetch more spans and include errors
-uv run python -m kaizen.frontend.cli.cli sync phoenix \
+uv run python -m kaizen.cli.cli sync phoenix \
   --limit 500 \
   --include-errors
 
 # Full options
-uv run python -m kaizen.frontend.cli.cli sync phoenix \
+uv run python -m kaizen.cli.cli sync phoenix \
   --url http://localhost:6006 \
   --namespace production \
   --project my_project \
@@ -145,7 +145,7 @@ Two entity types are stored:
 
 ```bash
 # Sync every hour
-0 * * * * cd /path/to/kaizen && uv run python -m kaizen.frontend.cli.cli sync phoenix --limit 100
+0 * * * * cd /path/to/kaizen && uv run python -m kaizen.cli.cli sync phoenix --limit 100
 ```
 
 ### Systemd Timer
@@ -158,7 +158,7 @@ Description=Kaizen Phoenix Sync
 [Service]
 Type=oneshot
 WorkingDirectory=/path/to/kaizen
-ExecStart=/path/to/uv run python -m kaizen.frontend.cli.cli sync phoenix
+ExecStart=/path/to/uv run python -m kaizen.cli.cli sync phoenix
 Environment=PHOENIX_URL=http://localhost:6006
 Environment=KAIZEN_NAMESPACE_ID=production
 ```

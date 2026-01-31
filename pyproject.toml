@@ -31,7 +31,7 @@ examples = [
 ]
 
 [project.scripts]
-kaizen = "kaizen.frontend.cli.cli:app"
+kaizen = "kaizen.cli.cli:app"
 
 [dependency-groups]
 dev = [
