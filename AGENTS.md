@@ -25,10 +25,10 @@ Kaizen is a Python library and service which enables AI agents to improve throug
 │   └── claudecode
 ├── kaizen (Primary Source Root)
 │   ├── backend (Entity Database Backend implementations, primarily vector databases)
+│   ├── cli (A CLI wrapper over the native Python client)
 │   ├── config (All configurations which are derived from environment variables or instantiated as an object)
 │   ├── db (A sqlite database for when vector databases are a poor fit for the data)
 │   ├── frontend (Interfaces to interact with the backend)
-│   │   ├── cli (A CLI wrapper over the native Python client)
 │   │   ├── client (A native Python client which thinly wraps the configured backend)
 │   │   └── mcp (An MCP server implementing some high-level methods useful for AI agents)
 │   ├── llm (All code that prompts an LLM)
