@@ -107,3 +107,43 @@ Each namespace is stored as `<data_dir>/<namespace_id>.json`:
   "next_id": 2
 }
 ```
+
+## Low-Code Tracing (Phoenix Integration)
+
+Kaizen provides easy integration with Phoenix for tracing LLM calls.
+
+### Installation
+
+```bash
+pip install kaizen[tracing]
+```
+
+### Usage
+
+First, enable auto-mode by setting the environment variable:
+
+```bash
+export KAIZEN_AUTO_ENABLED=true
+```
+
+Then, add one import at the top of your agent to trigger the patching:
+
+```python
+try:
+    import kaizen.auto
+except ImportError:
+    pass
+
+# Your existing code unchanged...
+```
+
+### Tracing Environment Variables
+
+| Variable | Description | Default |
+| ----- | ----- | ----- |
+| `KAIZEN_AUTO_ENABLED` | Enable auto-patching on import | `false` |
+| `KAIZEN_TRACING_PROJECT` | Phoenix project name | `kaizen-agent` |
+| `KAIZEN_TRACING_ENDPOINT` | Phoenix collector endpoint | `http://localhost:6006/v1/traces` |
+
+> **Note**: Auto-patching skips if existing tracing is detected. Use `enable_tracing(force=True)` to override.
+

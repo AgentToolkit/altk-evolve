@@ -1,5 +1,5 @@
 ---
-name: guideline-retrieval
+name: recall
 description: Retrieves relevant guidelines from a knowledge base. Designed to be invoked automatically via hooks to inject context-appropriate guidelines before task execution.
 ---
 
@@ -33,8 +33,3 @@ Guidelines are stored in `.claude/guidelines.json` in the project root:
   ]
 }
 ```
-
-## Environment Variables
-
-- `GUIDELINES_FILE`: Optional path to guidelines JSON file (defaults to `.claude/guidelines.json`)
-- `CLAUDE_PROJECT_ROOT`: Project root directory (set by Claude Code)

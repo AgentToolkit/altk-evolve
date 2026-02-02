@@ -18,6 +18,23 @@ def log(message):
 
 log("Script started")
 
+# Log all environment variables
+log("=== Environment Variables ===")
+for key, value in sorted(os.environ.items()):
+    # Mask sensitive values
+    if any(sensitive in key.upper() for sensitive in ['PASSWORD', 'SECRET', 'TOKEN', 'KEY', 'API']):
+        log(f"  {key}=***MASKED***")
+    else:
+        log(f"  {key}={value}")
+log("=== End Environment Variables ===")
+
+# Log command-line arguments
+log("=== Command-Line Arguments ===")
+log(f"  sys.argv: {sys.argv}")
+log(f"  Script path: {sys.argv[0] if sys.argv else 'N/A'}")
+log(f"  Arguments: {sys.argv[1:] if len(sys.argv) > 1 else 'None'}")
+log("=== End Command-Line Arguments ===")
+
 
 def find_guidelines_file():
     """Find the guidelines file in common locations."""
@@ -75,7 +92,10 @@ def main():
     # Read input from stdin (hook provides JSON with prompt)
     try:
         input_data = json.load(sys.stdin)
-        log(f"Received input with keys: {list(input_data.keys())}")
+        log("=== Input Data ===")
+        log(f"  Keys: {list(input_data.keys())}")
+        log(f"  Full content: {json.dumps(input_data, indent=2)}")
+        log("=== End Input Data ===")
     except json.JSONDecodeError as e:
         log(f"Failed to parse JSON input: {e}")
         return

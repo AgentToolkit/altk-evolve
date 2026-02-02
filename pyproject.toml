@@ -15,8 +15,23 @@ dependencies = [
     "typer>=0.9.0",
 ]
 
+[project.optional-dependencies]
+tracing = [
+    "openinference-instrumentation-openai",
+    "openinference-instrumentation-litellm",
+    "openinference-instrumentation-smolagents",
+    "openinference-instrumentation-openai-agents",
+]
+
+examples = [
+    "kaizen[tracing]",
+    "smolagents",
+    "openai-agents",
+    "openai",
+]
+
 [project.scripts]
-kaizen = "kaizen.frontend.cli.cli:app"
+kaizen = "kaizen.cli.cli:app"
 
 [dependency-groups]
 dev = [

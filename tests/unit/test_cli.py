@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from kaizen.frontend.cli.cli import app
+from kaizen.cli.cli import app
 from kaizen.schema.core import Namespace, RecordedEntity
 from kaizen.schema.conflict_resolution import EntityUpdate
 from kaizen.schema.exceptions import (
@@ -22,7 +22,7 @@ runner = CliRunner()
 @pytest.fixture
 def mock_client():
     """Create a mock KaizenClient."""
-    with patch("kaizen.frontend.cli.cli.get_client") as mock_get_client:
+    with patch("kaizen.cli.cli.get_client") as mock_get_client:
         client = MagicMock()
         mock_get_client.return_value = client
         yield client
