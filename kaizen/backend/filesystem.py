@@ -50,9 +50,13 @@ class FilesystemEntityBackend(BaseEntityBackend):
         with open(file_path, "w") as f:
             json.dump(data, f, indent=2, default=str)
 
-    def ready(self):
+    def ready(self) -> bool:
         """Check if the backend is healthy."""
-        return {"status": "ok", "data_dir": str(self.data_dir)}
+        return True
+
+    def details(self) -> dict:
+        """Return details about the backend."""
+        return {"data_dir": str(self.data_dir)}
 
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         """Create a new namespace for entities to exist in."""
@@ -61,9 +65,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
 
         with self._lock:
             if file_path.exists():
-                raise NamespaceAlreadyExistsException(
-                    f'Namespace "{namespace_id}" already exists.'
-                )
+                raise NamespaceAlreadyExistsException(f'Namespace "{namespace_id}" already exists.')
 
             now = datetime.datetime.now(datetime.UTC)
             data = {
@@ -97,9 +99,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
                     namespaces.append(
                         Namespace(
                             id=data["id"],
-                            created_at=datetime.datetime.fromisoformat(
-                                data["created_at"]
-                            ),
+                            created_at=datetime.datetime.fromisoformat(data["created_at"]),
                             num_entities=len(data["entities"]),
                         )
                     )
@@ -151,9 +151,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
                 # Find similar existing entities for conflict resolution
                 old_entities = []
                 for entity in entities:
-                    similar = self._search_entities_internal(
-                        data, query=entity.content, filters=None, limit=10
-                    )
+                    similar = self._search_entities_internal(data, query=entity.content, filters=None, limit=10)
                     old_entities.extend(similar)
 
                 updates = resolve_conflicts(old_entities, entities_with_temporary_ids)
@@ -181,9 +179,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
                                     ent["metadata"] = update.metadata
                                     break
                         case "DELETE":
-                            data["entities"] = [
-                                e for e in data["entities"] if e["id"] != update.id
-                            ]
+                            data["entities"] = [e for e in data["entities"] if e["id"] != update.id]
                         case "NONE":
                             pass
             else:
@@ -286,9 +282,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
         with self._lock:
             data = self._load_namespace_data(namespace_id)
             original_count = len(data["entities"])
-            data["entities"] = [
-                e for e in data["entities"] if str(e["id"]) != entity_id
-            ]
+            data["entities"] = [e for e in data["entities"] if str(e["id"]) != entity_id]
             if len(data["entities"]) == original_count:
                 raise KaizenException(f"Entity `{entity_id}` not found")
             self._save_namespace_data(namespace_id, data)
