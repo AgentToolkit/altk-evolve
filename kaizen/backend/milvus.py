@@ -198,22 +198,13 @@ class MilvusEntityBackend(BaseEntityBackend):
         except ValueError:
             raise KaizenException(f"Invalid entity ID: {entity_id}. Entity IDs must be numeric.")
         self.validate_namespace(namespace_id)
-
-        # Check if entity exists before deleting
-        existing = self.milvus.query(
-            collection_name=namespace_id,
-            filter=f"id == {entity_id_int}",
-            output_fields=["id"]
-        )
-        if not existing:
-            raise KaizenException(f"Entity with ID {entity_id} not found in namespace {namespace_id}.")
-
+        # Entity deletion is idempotent and does not require validation.
         self.milvus.delete(collection_name=namespace_id, ids=[entity_id_int])
 
     def close(self):
         """Close Milvus connection."""
         try:
-            if hasattr(self, 'milvus'):
+            if hasattr(self, "milvus"):
                 self.milvus.close()
         except Exception as e:
             logger.warning(f"Error closing Milvus client: {e}")
