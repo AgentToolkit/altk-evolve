@@ -97,7 +97,7 @@ echo '{
 ```
 
 **Output:**
-```
+```text
 Creating new file: /path/to/project/.claude/entities.json
 Added 1 new entity(ies). Total: 1
 Entities stored in: /path/to/project/.claude/entities.json
