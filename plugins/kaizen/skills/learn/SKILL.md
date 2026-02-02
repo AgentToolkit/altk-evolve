@@ -58,17 +58,20 @@ Output entities in the following JSON format:
 
 After generating the entities JSON, save them using the save_entities.py script:
 
-**Method 1: Direct Pipe (Recommended)**
+#### Method 1: Direct Pipe (Recommended)
+
 ```bash
 echo '<your-json-output>' | python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
 ```
 
-**Method 2: From File**
+#### Method 2: From File
+
 ```bash
 cat entities.json | python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
 ```
 
-**Method 3: Interactive**
+#### Method 3: Interactive
+
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
 # Then paste your JSON and press Ctrl+D
