@@ -466,9 +466,10 @@ def package_skills(
             console.print(f"[red]Failed to package {skill_name}: {e}[/red]")
             failed += 1
 
-    console.print(f"\n[bold green]Successfully packaged {packaged}/{len(skill_dirs)} skill(s)[/bold green]")
-
-    if failed > 0:
+    if failed == 0:
+        console.print(f"\n[bold green]Successfully packaged {packaged}/{len(skill_dirs)} skill(s)[/bold green]")
+    else:
+        console.print(f"\n[bold yellow]Packaged {packaged}/{len(skill_dirs)} skill(s); {failed} failed[/bold yellow]")
         sys.exit(1)
 
 
