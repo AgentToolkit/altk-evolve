@@ -20,8 +20,8 @@ class Entity(BaseModel):
     """Basic data stored in the DB"""
 
     content: str | list | dict = Field(description="Searchable text or structured data.")
-    metadata: dict = Field(default_factory=dict, description="Arbitrary metadata which is related to the entity.")
     type: str = Field(description="The type of the entity.")
+    metadata: dict = Field(default_factory=dict, description="Arbitrary metadata which is related to the entity.")
 
 
 class RecordedEntity(Entity):

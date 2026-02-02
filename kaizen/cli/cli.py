@@ -188,6 +188,8 @@ def add_entity(
         except json.JSONDecodeError:
             console.print("[red]Invalid JSON metadata.[/red]")
             raise typer.Exit(1)
+    else:
+        parsed_metadata = {}
 
     # Ensure namespace exists
     if not client.namespace_exists(namespace):

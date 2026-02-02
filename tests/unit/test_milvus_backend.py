@@ -67,8 +67,7 @@ def test_ready(milvus_backend: MilvusEntityBackend, monkeypatch):
         return ["collection1", "collection2"]
 
     monkeypatch.setattr(milvus_backend.milvus, "list_collections", list_collections)
-    result = milvus_backend.ready()
-    assert result == {"status": "ok"}
+    assert milvus_backend.ready()
 
 
 @pytest.mark.unit

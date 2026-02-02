@@ -495,13 +495,7 @@ class TestEntitiesShow:
         """Test showing entity without metadata."""
         created_at = datetime.datetime(2024, 1, 15, 10, 30, 0, tzinfo=datetime.UTC)
         mock_client.get_all_entities.return_value = [
-            RecordedEntity(
-                id="123",
-                type="guideline",
-                content="Content without metadata",
-                created_at=created_at,
-                metadata=None,
-            ),
+            RecordedEntity(id="123", type="guideline", content="Content without metadata", created_at=created_at),
         ]
 
         result = runner.invoke(app, ["entities", "show", "my_namespace", "123"])
