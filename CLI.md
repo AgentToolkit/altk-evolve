@@ -62,6 +62,38 @@ kaizen entities show my_namespace 12345
 kaizen entities delete my_namespace 12345
 ```
 
+### Skill Management
+
+```bash
+# Package all skills from default location (plugins/kaizen/skills → dist/)
+kaizen skills package
+
+# Preview what would be packaged (no files created)
+kaizen skills package --dry-run
+
+# Package from a custom source directory
+kaizen skills package --source ./my-skills
+
+# Package to a custom output directory
+kaizen skills package --output ./dist
+
+# Remove existing .skill files before packaging
+kaizen skills package --clean
+
+# Combine options
+kaizen skills package --source ./my-skills --output ./dist --clean
+```
+
+**Options:**
+- `--source, -s`: Source directory containing skill folders (default: `plugins/kaizen/skills`)
+- `--output, -o`: Output directory for `.skill` files (default: `dist`)
+- `--clean`: Remove existing `.skill` files in output directory before packaging
+- `--dry-run`: Show what would be packaged without creating files
+
+**Skill Requirements:**
+- Each skill must be a directory containing a `SKILL.md` file
+- The resulting `.skill` file is a ZIP archive with the skill directory as the top-level folder
+
 ## Examples
 
 ```bash
@@ -84,6 +116,10 @@ uv run kaizen entities search coding_guidelines "error handling"
 
 # List all guidelines
 uv run kaizen entities list coding_guidelines --type guideline
+
+# Package skills for distribution
+uv run kaizen skills package --dry-run  # Preview first
+uv run kaizen skills package --clean    # Package with clean output
 ```
 
 ## Environment Variables

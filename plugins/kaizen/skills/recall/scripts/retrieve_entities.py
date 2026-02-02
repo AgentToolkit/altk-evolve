@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retrieve and output guidelines for Claude to filter."""
+"""Retrieve and output entities for Claude to filter."""
 
 import json
 import os
@@ -8,10 +8,12 @@ from pathlib import Path
 import datetime
 
 # Debug logging
-LOG_FILE = "/tmp/guidelines-plugin.log"
+LOG_FILE = os.path.join(os.environ.get("TMPDIR", "/tmp"), "kaizen-plugin.log")
 
 def log(message):
     """Append a timestamped message to the log file."""
+    if not os.environ.get("KAIZEN_DEBUG"):
+        return
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(LOG_FILE, "a") as f:
         f.write(f"[{timestamp}] [retrieve] {message}\n")
@@ -36,16 +38,16 @@ log(f"  Arguments: {sys.argv[1:] if len(sys.argv) > 1 else 'None'}")
 log("=== End Command-Line Arguments ===")
 
 
-def find_guidelines_file():
-    """Find the guidelines file in common locations."""
+def find_entities_file():
+    """Find the entities file in common locations."""
     locations = [
-        os.environ.get("GUIDELINES_FILE"),
+        os.environ.get("ENTITIES_FILE"),
         # Project root from Claude Code
-        os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".claude/guidelines.json"),
+        os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".claude/entities.json"),
         # Current working directory
-        ".claude/guidelines.json",
+        ".claude/entities.json",
         # Plugin-relative path (fallback)
-        str(Path(__file__).parent.parent / "guidelines.json"),
+        str(Path(__file__).parent.parent / "entities.json"),
     ]
     for loc in locations:
         if loc and Path(loc).exists():
@@ -53,36 +55,36 @@ def find_guidelines_file():
     return None
 
 
-def load_guidelines():
-    """Load guidelines from the guidelines file."""
-    guidelines_file = find_guidelines_file()
-    if not guidelines_file:
+def load_entities():
+    """Load entities from the entities file."""
+    entities_file = find_entities_file()
+    if not entities_file:
         return []
     try:
-        with open(guidelines_file) as f:
+        with open(entities_file) as f:
             data = json.load(f)
-        return data.get("guidelines", [])
+        return data.get("entities", [])
     except (json.JSONDecodeError, IOError):
         return []
 
 
-def format_guidelines(guidelines):
-    """Format all guidelines for Claude to review."""
-    header = """## Guidelines for this task
+def format_entities(entities):
+    """Format all entities for Claude to review."""
+    header = """## Entities for this task
 
-Review these guidelines and apply any relevant ones:
+Review these entities and apply any relevant ones:
 
 """
     items = []
-    for g in guidelines:
-        content = g.get('content')
+    for e in entities:
+        content = e.get('content')
         if not content:
             continue
-        item = f"- **[{g.get('category', 'general')}]** {content}"
-        if g.get('rationale'):
-            item += f"\n  - _Rationale: {g['rationale']}_"
-        if g.get('trigger'):
-            item += f"\n  - _When: {g['trigger']}_"
+        item = f"- **[{e.get('category', 'general')}]** {content}"
+        if e.get('rationale'):
+            item += f"\n  - _Rationale: {e['rationale']}_"
+        if e.get('trigger'):
+            item += f"\n  - _When: {e['trigger']}_"
         items.append(item)
 
     return header + "\n".join(items)
@@ -100,19 +102,19 @@ def main():
         log(f"Failed to parse JSON input: {e}")
         return
 
-    # Load all guidelines
-    guidelines_file = find_guidelines_file()
-    log(f"Guidelines file: {guidelines_file}")
+    # Load all entities
+    entities_file = find_entities_file()
+    log(f"Entities file: {entities_file}")
 
-    guidelines = load_guidelines()
-    if not guidelines:
-        log("No guidelines found")
+    entities = load_entities()
+    if not entities:
+        log("No entities found")
         return
 
-    log(f"Loaded {len(guidelines)} guidelines")
+    log(f"Loaded {len(entities)} entities")
 
-    # Output all guidelines - Claude will filter for relevance
-    output = format_guidelines(guidelines)
+    # Output all entities - Claude will filter for relevance
+    output = format_entities(entities)
     print(output)
     log(f"Output {len(output)} chars to stdout")
 

@@ -9,3 +9,4 @@ __pycache__
 kaizen_data
 demo/workdir/.claude/
 .claude
+dist

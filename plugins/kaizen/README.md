@@ -1,11 +1,11 @@
-# Guidelines Plugin for Claude Code
+# Kaizen Plugin for Claude Code
 
-A plugin that helps Claude Code learn from conversations by automatically extracting and applying guidelines.
+A plugin that helps Claude Code learn from conversations by automatically extracting and applying entities.
 
 ## Features
 
-- **Automatic Retrieval**: At the start of each prompt, relevant guidelines are automatically injected
-- **Manual Learning**: Use the `/kaizen:learn` skill to extract and save guidelines from conversations
+- **Automatic Retrieval**: At the start of each prompt, relevant entities are automatically injected
+- **Manual Learning**: Use the `/kaizen:learn` skill to extract and save entities from conversations
 - **Zero-config Retrieval**: Hooks are automatically installed when the plugin is enabled
 
 ## Installation
@@ -27,34 +27,34 @@ claude --plugin-dir /path/to/kaizen/repo/plugins/kaizen
 
 ## How It Works
 
-### Guideline Retrieval (Automatic)
+### Entity Retrieval (Automatic)
 
 When you submit a prompt, the plugin automatically:
-1. Loads all stored guidelines from `.claude/guidelines.json`
+1. Loads all stored entities from `.claude/entities.json`
 2. Formats and injects them into the conversation context
-3. Claude applies relevant guidelines to the current task
+3. Claude applies relevant entities to the current task
 
-### Guideline Generation (Manual by Default)
+### Entity Generation (Manual by Default)
 
-By default, you must manually invoke the `/kaizen:learn` skill to extract guidelines:
+By default, you must manually invoke the `/kaizen:learn` skill to extract entities:
 1. Complete a conversation or task
-2. Invoke `/kaizen:learn` 
+2. Invoke `/kaizen:learn`
 3. The plugin analyzes the conversation trajectory
-4. Extracts actionable guidelines from what worked/failed
-5. Saves new guidelines to `.claude/guidelines.json`
+4. Extracts actionable entities from what worked/failed
+5. Saves new entities to `.claude/entities.json`
 
 ## Skills Included
 
 ### `/kaizen:learn`
 
-Manually invoke to extract guidelines from the current conversation:
+Manually invoke to extract entities from the current conversation:
 - Analyzes task, steps taken, successes and failures
-- Generates proactive guidelines (what to do, not what to avoid)
+- Generates proactive entities (what to do, not what to avoid)
 - Outputs JSON for storage
 
 ### `/kaizen:recall`
 
-Manually invoke to retrieve and display stored guidelines.
+Manually invoke to retrieve and display stored entities.
 
 ### `/kaizen:save`
 
@@ -72,15 +72,13 @@ Assistant: "What would you like to name this skill?"
 User: "my-workflow-name"
 ```
 
-See [SAVE_SKILL.md](SAVE_SKILL.md) for detailed documentation.
+## Entities Storage
 
-## Guidelines Storage
-
-Guidelines are stored in `.claude/guidelines.json`:
+Entities are stored in `.claude/entities.json`:
 
 ```json
 {
-  "guidelines": [
+  "entities": [
     {
       "content": "Use Python PIL/Pillow for image metadata extraction in sandboxed environments",
       "rationale": "System tools like exiftool may not be available",
@@ -93,8 +91,8 @@ Guidelines are stored in `.claude/guidelines.json`:
 
 ## Environment Variables
 
-- `GUIDELINES_FILE`: Override the default guidelines storage location
-- `CLAUDE_PROJECT_ROOT`: Set by Claude Code, used to locate project-level guidelines
+- `ENTITIES_FILE`: Override the default entities storage location
+- `CLAUDE_PROJECT_ROOT`: Set by Claude Code, used to locate project-level entities
 
 ## Verification
 
@@ -108,16 +106,17 @@ kaizen/
 │   └── plugin.json              # Plugin manifest
 ├── skills/
 │   ├── learn/
-│   │   └── SKILL.md
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── save_entities.py
 │   ├── recall/
-│   │   └── SKILL.md
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── retrieve_entities.py
 │   └── save/
 │       └── SKILL.md
 ├── hooks/
 │   └── hooks.json               # Auto-configured hooks
-├── scripts/
-│   ├── save_guidelines.py
-│   └── retrieve_guidelines.py
 └── README.md
 ```
 

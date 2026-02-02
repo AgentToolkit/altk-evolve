@@ -1,7 +1,7 @@
 {
   "name": "kaizen",
   "version": "1.0.0",
-  "description": "Learn from conversations with auto-generated guidelines",
+  "description": "Learn from conversations with auto-generated entities",
   "author": {
     "name": "Vinod Muthusamy"
   },

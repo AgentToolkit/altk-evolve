@@ -1,13 +1,13 @@
 ---
 name: learn
-description: Extract actionable guidelines from conversation trajectories. Analyzes user requests, steps taken, successes and failures to generate proactive guidelines that help on similar future tasks.
+description: Extract actionable entities from conversation trajectories. Analyzes user requests, steps taken, successes and failures to generate proactive entities that help on similar future tasks.
 ---
 
-# Guideline Generator
+# Entity Generator
 
 ## Overview
 
-This skill analyzes conversation trajectories to extract actionable guidelines that would help on similar tasks in the future. It transforms reactive learnings (what failed) into proactive recommendations (what to do first).
+This skill analyzes conversation trajectories to extract actionable entities that would help on similar tasks in the future. It transforms reactive learnings (what failed) into proactive recommendations (what to do first).
 
 ## Workflow
 
@@ -20,9 +20,9 @@ Identify from your current conversation:
 - **What Worked**: Which approaches succeeded?
 - **What Failed**: Which approaches didn't work and why?
 
-### Step 2: Extract Guidelines
+### Step 2: Extract Entities
 
-Extract 3-5 proactive guidelines following these principles:
+Extract 3-5 proactive entities following these principles:
 
 1. **Reframe failures as proactive recommendations:**
    - If an approach failed due to permissions → recommend the alternative FIRST
@@ -37,15 +37,15 @@ Extract 3-5 proactive guidelines following these principles:
    - Bad trigger: "When apt-get fails"
    - Good trigger: "When working in containerized/sandboxed environments"
 
-### Step 3: Output Guidelines JSON
+### Step 3: Output Entities JSON
 
-Output guidelines in the following JSON format:
+Output entities in the following JSON format:
 
 ```json
 {
-  "guidelines": [
+  "entities": [
     {
-      "content": "Proactive guideline stating what TO DO",
+      "content": "Proactive entity stating what TO DO",
       "rationale": "Why this approach works better",
       "category": "strategy|recovery|optimization",
       "trigger": "Situational context when this applies"
@@ -54,35 +54,35 @@ Output guidelines in the following JSON format:
 }
 ```
 
-### Step 4: Save Guidelines
+### Step 4: Save Entities
 
-After generating the guidelines JSON, save them using the save_guidelines.py script:
+After generating the entities JSON, save them using the save_entities.py script:
 
 **Method 1: Direct Pipe (Recommended)**
 ```bash
-echo '<your-json-output>' | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_guidelines.py
+echo '<your-json-output>' | python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
 ```
 
 **Method 2: From File**
 ```bash
-cat guidelines.json | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_guidelines.py
+cat entities.json | python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
 ```
 
 **Method 3: Interactive**
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_guidelines.py
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
 # Then paste your JSON and press Ctrl+D
 ```
 
 The script will:
-- Find or create the guidelines file (`.claude/guidelines.json`)
-- Merge new guidelines with existing ones (avoiding duplicates)
+- Find or create the entities file (`.claude/entities.json`)
+- Merge new entities with existing ones (avoiding duplicates)
 - Display confirmation with the total count
 
 **Example:**
 ```bash
 echo '{
-  "guidelines": [
+  "entities": [
     {
       "content": "Use Python PIL/Pillow for image metadata extraction",
       "rationale": "System tools may not be available in sandboxed environments",
@@ -90,19 +90,19 @@ echo '{
       "trigger": "When extracting image metadata in containerized environments"
     }
   ]
-}' | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/save_guidelines.py
+}' | python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
 ```
 
 **Output:**
 ```
-Creating new file: /path/to/project/.claude/guidelines.json
-Added 1 new guideline(s). Total: 1
-Guidelines stored in: /path/to/project/.claude/guidelines.json
+Creating new file: /path/to/project/.claude/entities.json
+Added 1 new entity(ies). Total: 1
+Entities stored in: /path/to/project/.claude/entities.json
 ```
 
-**Note:** Guidelines are also automatically saved when a conversation ends via the Stop hook.
+**Note:** Entities are also automatically saved when a conversation ends via the Stop hook.
 
-## Guideline Categories
+## Entity Categories
 
 - **strategy**: High-level approach or methodology choices
 - **recovery**: Handling errors, edge cases, or unexpected situations
@@ -110,7 +110,7 @@ Guidelines stored in: /path/to/project/.claude/guidelines.json
 
 ## Examples
 
-### Good vs Bad Guidelines
+### Good vs Bad Entities
 
 **BAD (reactive):**
 ```json
@@ -132,8 +132,8 @@ Guidelines stored in: /path/to/project/.claude/guidelines.json
 
 ## Best Practices
 
-1. **Be specific**: Generic guidelines are less useful than context-specific ones
-2. **Be actionable**: Guidelines should clearly state what to do
+1. **Be specific**: Generic entities are less useful than context-specific ones
+2. **Be actionable**: Entities should clearly state what to do
 3. **Include rationale**: Explain why the approach works
 4. **Use situational triggers**: Context-based triggers are more useful than failure-based ones
-5. **Limit to 3-5 guidelines**: Focus on the most impactful learnings
+5. **Limit to 3-5 entities**: Focus on the most impactful learnings

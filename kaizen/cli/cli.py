@@ -1,6 +1,8 @@
 """Kaizen CLI for managing entities and namespaces."""
 
 import json
+import zipfile
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
@@ -19,10 +21,12 @@ app = typer.Typer(help="Kaizen CLI - Manage entities and namespaces")
 namespaces_app = typer.Typer(help="Namespace management commands")
 entities_app = typer.Typer(help="Entity management commands")
 sync_app = typer.Typer(help="Sync commands")
+skills_app = typer.Typer(help="Skill management commands")
 
 app.add_typer(namespaces_app, name="namespaces")
 app.add_typer(entities_app, name="entities")
 app.add_typer(sync_app, name="sync")
+app.add_typer(skills_app, name="skills")
 
 console = Console()
 
@@ -370,6 +374,94 @@ def sync_phoenix(
     except Exception as e:
         console.print(f"[red]Sync failed: {e}[/red]")
         raise typer.Exit(1)
+
+
+# =============================================================================
+# Skills Commands
+# =============================================================================
+
+
+@skills_app.command("package")
+def package_skills(
+    source: Annotated[Path, typer.Option("--source", "-s", help="Source skills directory")] = Path("plugins/kaizen/skills"),
+    output: Annotated[Path, typer.Option("--output", "-o", help="Output directory for .skill files")] = Path("dist"),
+    clean: Annotated[bool, typer.Option("--clean", help="Remove existing .skill files before packaging")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be packaged without creating files")] = False,
+):
+    """Package plugin skills into .skill files for distribution."""
+    # Validate source directory
+    if not source.exists():
+        console.print(f"[red]Source directory not found: {source}[/red]")
+        raise typer.Exit(1)
+
+    if not source.is_dir():
+        console.print(f"[red]Source is not a directory: {source}[/red]")
+        raise typer.Exit(1)
+
+    # Find valid skill directories (those containing SKILL.md)
+    skill_dirs: list[tuple[str, Path]] = []
+    for item in sorted(source.iterdir()):
+        if item.is_dir():
+            skill_md = item / "SKILL.md"
+            if skill_md.exists():
+                skill_dirs.append((item.name, item))
+
+    if not skill_dirs:
+        console.print(f"[yellow]No skills found in {source}[/yellow]")
+        console.print("[dim]Skills must contain a SKILL.md file[/dim]")
+        raise typer.Exit(0)
+
+    # Display found skills
+    console.print(f"[bold]Found {len(skill_dirs)} skill(s) in {source}[/bold]\n")
+
+    table = Table(title="Skills to Package")
+    table.add_column("Skill", style="cyan")
+    table.add_column("Files", justify="right")
+    table.add_column("Output", style="dim")
+
+    for skill_name, skill_path in skill_dirs:
+        file_count = sum(1 for _ in skill_path.rglob("*") if _.is_file())
+        output_file = output / f"{skill_name}.skill"
+        table.add_row(skill_name, str(file_count), str(output_file))
+
+    console.print(table)
+    console.print()
+
+    if dry_run:
+        console.print("[yellow]Dry run - no files created[/yellow]")
+        return
+
+    # Create output directory if needed
+    output.mkdir(parents=True, exist_ok=True)
+
+    # Clean existing .skill files if requested
+    if clean:
+        existing_skills = list(output.glob("*.skill"))
+        if existing_skills:
+            console.print(f"[dim]Removing {len(existing_skills)} existing .skill file(s)...[/dim]")
+            for skill_file in existing_skills:
+                skill_file.unlink()
+
+    # Package each skill
+    packaged = 0
+    for skill_name, skill_path in skill_dirs:
+        output_file = output / f"{skill_name}.skill"
+
+        try:
+            with zipfile.ZipFile(output_file, "w", zipfile.ZIP_DEFLATED) as zf:
+                for file_path in skill_path.rglob("*"):
+                    if file_path.is_file():
+                        # Archive path includes skill name as top-level directory
+                        arcname = f"{skill_name}/{file_path.relative_to(skill_path)}"
+                        zf.write(file_path, arcname)
+
+            console.print(f"[green]Packaged:[/green] {skill_name} -> {output_file}")
+            packaged += 1
+
+        except Exception as e:
+            console.print(f"[red]Failed to package {skill_name}: {e}[/red]")
+
+    console.print(f"\n[bold green]Successfully packaged {packaged}/{len(skill_dirs)} skill(s)[/bold green]")
 
 
 if __name__ == "__main__":

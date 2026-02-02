@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/retrieve_guidelines.py"
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/skills/recall/scripts/retrieve_entities.py"
           }
         ]
       }
