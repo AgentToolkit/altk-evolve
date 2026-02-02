@@ -1,21 +1,36 @@
 #!/usr/bin/env python3
 """Retrieve and output entities for Claude to filter."""
 
+import getpass
 import json
 import os
 import sys
 from pathlib import Path
 import datetime
+import tempfile
 
-# Debug logging
-LOG_FILE = os.path.join(os.environ.get("TMPDIR", "/tmp"), "kaizen-plugin.log")
+
+def _get_log_dir():
+    """Get user-scoped log directory with restrictive permissions."""
+    try:
+        uid = os.getuid()
+    except AttributeError:
+        # Windows doesn't have os.getuid(); fall back to username
+        uid = getpass.getuser()
+    log_dir = os.path.join(tempfile.gettempdir(), f"kaizen-{uid}")
+    os.makedirs(log_dir, mode=0o700, exist_ok=True)
+    return log_dir
+
+
+# Debug logging - use user-scoped directory for security
+LOG_FILE = os.path.join(_get_log_dir(), "kaizen-plugin.log")
 
 def log(message):
     """Append a timestamped message to the log file."""
     if not os.environ.get("KAIZEN_DEBUG"):
         return
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE, "a") as f:
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [retrieve] {message}\n")
 
 log("Script started")
@@ -61,7 +76,7 @@ def load_entities():
     if not entities_file:
         return []
     try:
-        with open(entities_file) as f:
+        with open(entities_file, encoding="utf-8") as f:
             data = json.load(f)
         return data.get("entities", [])
     except (json.JSONDecodeError, IOError):

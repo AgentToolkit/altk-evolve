@@ -4,6 +4,7 @@ Save Entities Script
 Reads entities from stdin and appends them to the entities file.
 """
 
+import getpass
 import json
 import os
 import sys
@@ -15,7 +16,12 @@ import tempfile
 
 def _get_log_dir():
     """Get user-scoped log directory with restrictive permissions."""
-    log_dir = os.path.join(tempfile.gettempdir(), f"kaizen-{os.getuid()}")
+    try:
+        uid = os.getuid()
+    except AttributeError:
+        # Windows doesn't have os.getuid(); fall back to username
+        uid = getpass.getuser()
+    log_dir = os.path.join(tempfile.gettempdir(), f"kaizen-{uid}")
     os.makedirs(log_dir, mode=0o700, exist_ok=True)
     return log_dir
 
@@ -26,7 +32,7 @@ def log(message):
     if not os.environ.get("KAIZEN_DEBUG"):
         return
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE, "a") as f:
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [save] {message}\n")
 
 log("Script started")
@@ -73,7 +79,7 @@ def get_default_entities_path():
 def load_existing_entities(path):
     """Load existing entities from file."""
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data.get("entities", [])
     except (json.JSONDecodeError, FileNotFoundError):
@@ -83,7 +89,7 @@ def load_existing_entities(path):
 def save_entities(path, entities):
     """Save entities to file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump({"entities": entities}, f, indent=2)
         f.write("\n")
 
