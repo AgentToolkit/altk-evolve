@@ -34,8 +34,13 @@ log("Script started")
 
 def find_entities_file():
     """Find existing entities file, checking multiple locations."""
+    # If ENTITIES_FILE is explicitly set, honor it even if the file doesn't exist yet
+    env_val = os.environ.get("ENTITIES_FILE")
+    if env_val:
+        return Path(env_val).resolve()
+
+    # Fall back to checking other candidate locations
     locations = [
-        os.environ.get("ENTITIES_FILE"),
         # Project root from Claude Code
         os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".claude/entities.json"),
         # Current working directory
