@@ -77,7 +77,12 @@ def find_entities_file():
 
 
 def load_entities():
-    """Load entities from the entities file."""
+    """Load entities from the entities file.
+
+    Returns:
+        list: The entities list on success or if file not found.
+        None: If the file exists but contains invalid JSON.
+    """
     entities_file = find_entities_file()
     if not entities_file:
         return []
@@ -85,8 +90,11 @@ def load_entities():
         with open(entities_file, encoding="utf-8") as f:
             data = json.load(f)
         return data.get("entities", [])
-    except (json.JSONDecodeError, IOError):
+    except IOError:
         return []
+    except json.JSONDecodeError as e:
+        log(f"load_entities: JSON decode error in {entities_file}: {e}")
+        return None
 
 
 def format_entities(entities):
@@ -128,6 +136,10 @@ def main():
     log(f"Entities file: {entities_file}")
 
     entities = load_entities()
+    if entities is None:
+        log(f"Failed to load entities due to invalid JSON in {entities_file}")
+        print(f"Error: {entities_file} contains invalid JSON.", file=sys.stderr)
+        return
     if not entities:
         log("No entities found")
         return

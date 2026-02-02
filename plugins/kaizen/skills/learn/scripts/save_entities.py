@@ -77,13 +77,21 @@ def get_default_entities_path():
 
 
 def load_existing_entities(path):
-    """Load existing entities from file."""
+    """Load existing entities from file.
+
+    Returns:
+        list: The entities list on success or if file not found.
+        None: If the file exists but contains invalid JSON (to prevent data loss).
+    """
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data.get("entities", [])
-    except (json.JSONDecodeError, FileNotFoundError):
+    except FileNotFoundError:
         return []
+    except json.JSONDecodeError as e:
+        log(f"load_existing_entities: JSON decode error in {path}: {e}")
+        return None
 
 
 def save_entities(path, entities):
@@ -118,6 +126,11 @@ def main():
     if existing_path:
         entities_path = existing_path
         existing_entities = load_existing_entities(entities_path)
+        if existing_entities is None:
+            log(f"Refusing to overwrite corrupted file: {entities_path}")
+            print(f"Error: {entities_path} contains invalid JSON. "
+                  "Fix or remove the file before adding entities.", file=sys.stderr)
+            sys.exit(1)
         log(f"Found existing file: {entities_path} with {len(existing_entities)} entities")
         print(f"Appending to existing file: {entities_path}")
     else:
