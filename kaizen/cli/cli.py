@@ -1,6 +1,7 @@
 """Kaizen CLI for managing entities and namespaces."""
 
 import json
+import sys
 import zipfile
 from pathlib import Path
 from typing import Annotated, Optional
@@ -446,6 +447,7 @@ def package_skills(
 
     # Package each skill
     packaged = 0
+    failed = 0
     for skill_name, skill_path in skill_dirs:
         output_file = output / f"{skill_name}.skill"
 
@@ -460,10 +462,14 @@ def package_skills(
             console.print(f"[green]Packaged:[/green] {skill_name} -> {output_file}")
             packaged += 1
 
-        except Exception as e:
+        except (OSError, PermissionError, zipfile.LargeZipFile, zipfile.BadZipFile, ValueError) as e:
             console.print(f"[red]Failed to package {skill_name}: {e}[/red]")
+            failed += 1
 
     console.print(f"\n[bold green]Successfully packaged {packaged}/{len(skill_dirs)} skill(s)[/bold green]")
+
+    if failed > 0:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
