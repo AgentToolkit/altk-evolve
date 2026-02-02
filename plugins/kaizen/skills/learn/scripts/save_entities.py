@@ -10,8 +10,16 @@ import sys
 from pathlib import Path
 import datetime
 
-# Debug logging
-LOG_FILE = os.path.join(os.environ.get("TMPDIR", "/tmp"), "kaizen-plugin.log")
+# Debug logging - use user-scoped directory for security
+import tempfile
+
+def _get_log_dir():
+    """Get user-scoped log directory with restrictive permissions."""
+    log_dir = os.path.join(tempfile.gettempdir(), f"kaizen-{os.getuid()}")
+    os.makedirs(log_dir, mode=0o700, exist_ok=True)
+    return log_dir
+
+LOG_FILE = os.path.join(_get_log_dir(), "kaizen-plugin.log")
 
 def log(message):
     """Append a timestamped message to the log file."""
