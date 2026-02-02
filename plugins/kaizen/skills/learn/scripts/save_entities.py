@@ -40,8 +40,8 @@ log("Script started")
 
 def find_entities_file():
     """Find existing entities file, checking multiple locations."""
-    # If ENTITIES_FILE is explicitly set, honor it even if the file doesn't exist yet
-    env_val = os.environ.get("ENTITIES_FILE")
+    # If KAIZEN_ENTITIES_FILE is explicitly set, honor it even if the file doesn't exist yet
+    env_val = os.environ.get("KAIZEN_ENTITIES_FILE")
     if env_val:
         return Path(env_val).resolve()
 

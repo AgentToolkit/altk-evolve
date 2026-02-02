@@ -91,7 +91,7 @@ Entities are stored in `.claude/entities.json`:
 
 ## Environment Variables
 
-- `ENTITIES_FILE`: Override the default entities storage location
+- `KAIZEN_ENTITIES_FILE`: Override the default entities storage location
 - `CLAUDE_PROJECT_ROOT`: Set by Claude Code, used to locate project-level entities
 
 ## Verification
