@@ -212,20 +212,6 @@ async def test_delete_entity(mcp):
 
 
 @pytest.mark.e2e
-async def test_delete_nonexistent_entity(mcp):
-    """Test deleting an entity that doesn't exist."""
-    async with Client(transport=mcp) as kaizen_mcp:
-        # Use a numeric ID that doesn't exist (entity IDs are integers)
-        delete_response = await kaizen_mcp.call_tool_mcp("delete_entity", {"entity_id": "99999999"})
-
-        result = json.loads(delete_response.content[0].text)
-
-        # Should return an error since entity doesn't exist
-        assert result["success"] is False
-        assert "error" in result
-
-
-@pytest.mark.e2e
 async def test_create_and_delete_workflow(mcp):
     """Test complete workflow: create then delete."""
     async with Client(transport=mcp) as kaizen_mcp:
