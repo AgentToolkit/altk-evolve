@@ -55,8 +55,14 @@ log("=== End Command-Line Arguments ===")
 
 def find_entities_file():
     """Find the entities file in common locations."""
+    # If KAIZEN_ENTITIES_FILE env var is set, it is authoritative - no fallbacks
+    entities_file_env = os.environ.get("KAIZEN_ENTITIES_FILE")
+    if entities_file_env:
+        path = Path(entities_file_env)
+        return path if path.exists() else None
+
+    # Fallback locations when KAIZEN_ENTITIES_FILE is not set
     locations = [
-        os.environ.get("ENTITIES_FILE"),
         # Project root from Claude Code
         os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".claude/entities.json"),
         # Current working directory
