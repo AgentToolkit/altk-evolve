@@ -92,6 +92,10 @@ class MilvusEntityBackend(BaseEntityBackend):
 
     def update_entities(self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True) -> list[EntityUpdate]:
         self.validate_namespace(namespace_id)
+        if len(entities) == 0:
+            logger.warning("No entities to update.")
+            return []
+
         entity_type = entities[0].type
         if not all(entity.type == entity_type for entity in entities):
             raise KaizenException("All entities must have the same type.")
