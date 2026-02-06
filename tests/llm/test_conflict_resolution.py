@@ -385,9 +385,9 @@ def test_resolve_conflicts_retry_logic(
 
     # Test that exception is raised after max retries
     mock_completion.reset_mock()
-    mock_completion.side_effect = Exception("LLM error")
+    mock_completion.side_effect = Exception()
 
-    with pytest.raises(Exception, match="LLM error"):
+    with pytest.raises(Exception, match="Failed to resolve conflicts after 3 attempts"):
         resolve_conflicts(
             sample_recorded_entities,
             sample_recorded_entities,
