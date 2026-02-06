@@ -8,7 +8,7 @@ Usage:
     export KAIZEN_AUTO_ENABLED=true
 
     # Then in code, just import:
-    import kaizen.auto
+    import kaizen.auto # noqa: F401
 
     # All LLM calls are now traced!
 

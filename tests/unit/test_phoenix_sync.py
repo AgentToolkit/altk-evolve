@@ -17,11 +17,7 @@ def phoenix_sync():
     with patch("kaizen.sync.phoenix_sync.KaizenClient") as mock_client_class:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
-        sync = PhoenixSync(
-            phoenix_url="http://test-phoenix:6006",
-            namespace_id="test_namespace",
-            project="test_project"
-        )
+        sync = PhoenixSync(phoenix_url="http://test-phoenix:6006", namespace_id="test_namespace", project="test_project")
         sync.client = mock_client
         yield sync
 
@@ -89,12 +85,7 @@ class TestExtractMessagesFromSpan:
 
     def test_extract_single_prompt(self, phoenix_sync):
         """Test extracting a single prompt message."""
-        span = {
-            "attributes": {
-                "gen_ai.prompt.0.role": "user",
-                "gen_ai.prompt.0.content": "Hello, world!"
-            }
-        }
+        span = {"attributes": {"gen_ai.prompt.0.role": "user", "gen_ai.prompt.0.content": "Hello, world!"}}
         messages = phoenix_sync._extract_messages_from_span(span)
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
@@ -109,7 +100,7 @@ class TestExtractMessagesFromSpan:
                 "gen_ai.prompt.0.role": "system",
                 "gen_ai.prompt.0.content": "You are a helpful assistant.",
                 "gen_ai.prompt.1.role": "user",
-                "gen_ai.prompt.1.content": "What is 2+2?"
+                "gen_ai.prompt.1.content": "What is 2+2?",
             }
         }
         messages = phoenix_sync._extract_messages_from_span(span)
@@ -124,7 +115,7 @@ class TestExtractMessagesFromSpan:
                 "gen_ai.prompt.0.role": "user",
                 "gen_ai.prompt.0.content": "Hi",
                 "gen_ai.completion.0.role": "assistant",
-                "gen_ai.completion.0.content": "Hello! How can I help?"
+                "gen_ai.completion.0.content": "Hello! How can I help?",
             }
         }
         messages = phoenix_sync._extract_messages_from_span(span)
@@ -142,12 +133,7 @@ class TestExtractMessagesFromSpan:
 
     def test_extract_parses_json_content(self, phoenix_sync):
         """Test that JSON content in attributes is parsed."""
-        span = {
-            "attributes": {
-                "gen_ai.prompt.0.role": "assistant",
-                "gen_ai.prompt.0.content": '[{"type": "text", "text": "Hello"}]'
-            }
-        }
+        span = {"attributes": {"gen_ai.prompt.0.role": "assistant", "gen_ai.prompt.0.content": '[{"type": "text", "text": "Hello"}]'}}
         messages = phoenix_sync._extract_messages_from_span(span)
         assert len(messages) == 1
         assert messages[0]["content"] == [{"type": "text", "text": "Hello"}]
@@ -159,7 +145,7 @@ class TestExtractMessagesFromSpan:
                 "gen_ai.prompt.0.role": "user",
                 "gen_ai.prompt.0.content": "First",
                 "gen_ai.prompt.5.role": "user",
-                "gen_ai.prompt.5.content": "Second"
+                "gen_ai.prompt.5.content": "Second",
             }
         }
         messages = phoenix_sync._extract_messages_from_span(span)
@@ -192,19 +178,13 @@ class TestConvertToOpenAIFormat:
 
     def test_convert_multiple_text_blocks(self, phoenix_sync):
         """Test converting multiple text blocks."""
-        content = [
-            {"type": "text", "text": "First part"},
-            {"type": "text", "text": "Second part"}
-        ]
+        content = [{"type": "text", "text": "First part"}, {"type": "text", "text": "Second part"}]
         result = phoenix_sync._convert_to_openai_format(content, "assistant")
         assert result["content"] == "First part\n\nSecond part"
 
     def test_convert_thinking_block(self, phoenix_sync):
         """Test converting Anthropic thinking block."""
-        content = [
-            {"type": "thinking", "thinking": "Let me analyze this..."},
-            {"type": "text", "text": "The answer is 42."}
-        ]
+        content = [{"type": "thinking", "thinking": "Let me analyze this..."}, {"type": "text", "text": "The answer is 42."}]
         result = phoenix_sync._convert_to_openai_format(content, "assistant")
         assert result["role"] == "assistant"
         assert result["thinking"] == "Let me analyze this..."
@@ -212,14 +192,7 @@ class TestConvertToOpenAIFormat:
 
     def test_convert_tool_use_block(self, phoenix_sync):
         """Test converting Anthropic tool_use block."""
-        content = [
-            {
-                "type": "tool_use",
-                "id": "tool_123",
-                "name": "read_file",
-                "input": {"path": "/tmp/test.txt"}
-            }
-        ]
+        content = [{"type": "tool_use", "id": "tool_123", "name": "read_file", "input": {"path": "/tmp/test.txt"}}]
         result = phoenix_sync._convert_to_openai_format(content, "assistant")
         assert result["role"] == "assistant"
         assert "tool_calls" in result
@@ -231,14 +204,7 @@ class TestConvertToOpenAIFormat:
 
     def test_convert_tool_result_block(self, phoenix_sync):
         """Test converting Anthropic tool_result block."""
-        content = [
-            {
-                "type": "tool_result",
-                "tool_use_id": "tool_123",
-                "content": "File contents here",
-                "is_error": False
-            }
-        ]
+        content = [{"type": "tool_result", "tool_use_id": "tool_123", "content": "File contents here", "is_error": False}]
         result = phoenix_sync._convert_to_openai_format(content, "user")
         assert result["role"] == "tool"
         assert "tool_results" in result
@@ -250,12 +216,7 @@ class TestConvertToOpenAIFormat:
         content = [
             {"type": "thinking", "thinking": "I need to read the file first"},
             {"type": "text", "text": "Let me check that file."},
-            {
-                "type": "tool_use",
-                "id": "tool_456",
-                "name": "read_file",
-                "input": {"path": "/etc/hosts"}
-            }
+            {"type": "tool_use", "id": "tool_456", "name": "read_file", "input": {"path": "/etc/hosts"}},
         ]
         result = phoenix_sync._convert_to_openai_format(content, "assistant")
         assert result["role"] == "assistant"
@@ -265,23 +226,13 @@ class TestConvertToOpenAIFormat:
 
     def test_convert_filters_no_content_text(self, phoenix_sync):
         """Test that '(no content)' text is filtered out."""
-        content = [
-            {"type": "text", "text": "(no content)"},
-            {"type": "text", "text": "Real content"}
-        ]
+        content = [{"type": "text", "text": "(no content)"}, {"type": "text", "text": "Real content"}]
         result = phoenix_sync._convert_to_openai_format(content, "assistant")
         assert result["content"] == "Real content"
 
     def test_convert_assistant_only_tool_calls(self, phoenix_sync):
         """Test assistant message with only tool calls (no text)."""
-        content = [
-            {
-                "type": "tool_use",
-                "id": "tool_789",
-                "name": "bash",
-                "input": {"command": "ls"}
-            }
-        ]
+        content = [{"type": "tool_use", "id": "tool_789", "name": "bash", "input": {"command": "ls"}}]
         result = phoenix_sync._convert_to_openai_format(content, "assistant")
         assert result["role"] == "assistant"
         assert result.get("content") is None
@@ -311,10 +262,7 @@ class TestExtractTrajectory:
     def test_extract_full_trajectory(self, phoenix_sync):
         """Test extracting a complete trajectory."""
         span = {
-            "context": {
-                "trace_id": "trace_abc123",
-                "span_id": "span_xyz789"
-            },
+            "context": {"trace_id": "trace_abc123", "span_id": "span_xyz789"},
             "start_time": "2024-01-15T10:30:00Z",
             "attributes": {
                 "gen_ai.request.model": "claude-3-opus",
@@ -324,8 +272,8 @@ class TestExtractTrajectory:
                 "gen_ai.completion.0.content": "2+2 equals 4.",
                 "gen_ai.usage.prompt_tokens": 10,
                 "gen_ai.usage.completion_tokens": 8,
-                "llm.usage.total_tokens": 18
-            }
+                "llm.usage.total_tokens": 18,
+            },
         }
         trajectory = phoenix_sync._extract_trajectory(span)
 
@@ -340,13 +288,13 @@ class TestExtractTrajectory:
 
     def test_extract_trajectory_with_tool_calls(self, phoenix_sync):
         """Test extracting trajectory with tool calls."""
-        tool_use_content = json.dumps([
-            {"type": "text", "text": "I'll read that file."},
-            {"type": "tool_use", "id": "tool_1", "name": "read_file", "input": {"path": "/test"}}
-        ])
-        tool_result_content = json.dumps([
-            {"type": "tool_result", "tool_use_id": "tool_1", "content": "file contents"}
-        ])
+        tool_use_content = json.dumps(
+            [
+                {"type": "text", "text": "I'll read that file."},
+                {"type": "tool_use", "id": "tool_1", "name": "read_file", "input": {"path": "/test"}},
+            ]
+        )
+        tool_result_content = json.dumps([{"type": "tool_result", "tool_use_id": "tool_1", "content": "file contents"}])
 
         span = {
             "context": {"trace_id": "trace_1", "span_id": "span_1"},
@@ -360,8 +308,8 @@ class TestExtractTrajectory:
                 "gen_ai.prompt.2.role": "user",
                 "gen_ai.prompt.2.content": tool_result_content,
                 "gen_ai.completion.0.role": "assistant",
-                "gen_ai.completion.0.content": "The file contains: file contents"
-            }
+                "gen_ai.completion.0.content": "The file contains: file contents",
+            },
         }
         trajectory = phoenix_sync._extract_trajectory(span)
 
@@ -384,12 +332,7 @@ class TestCleanTrajectory:
         """Test that system reminders are removed."""
         trajectory = {
             "trace_id": "test",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Hello <system-reminder>This is a reminder</system-reminder> there"
-                }
-            ]
+            "messages": [{"role": "user", "content": "Hello <system-reminder>This is a reminder</system-reminder> there"}],
         }
         cleaned = phoenix_sync._clean_trajectory(trajectory)
         assert "<system-reminder>" not in cleaned["messages"][0]["content"]
@@ -400,12 +343,7 @@ class TestCleanTrajectory:
         """Test that multiline system reminders are removed."""
         trajectory = {
             "trace_id": "test",
-            "messages": [
-                {
-                    "role": "assistant",
-                    "content": "Start\n<system-reminder>\nLine 1\nLine 2\n</system-reminder>\nEnd"
-                }
-            ]
+            "messages": [{"role": "assistant", "content": "Start\n<system-reminder>\nLine 1\nLine 2\n</system-reminder>\nEnd"}],
         }
         cleaned = phoenix_sync._clean_trajectory(trajectory)
         assert "<system-reminder>" not in cleaned["messages"][0]["content"]
@@ -420,8 +358,8 @@ class TestCleanTrajectory:
                 {"role": "user", "content": "Hello"},
                 {"role": "assistant", "content": ""},
                 {"role": "assistant", "content": None},
-                {"role": "user", "content": "World"}
-            ]
+                {"role": "user", "content": "World"},
+            ],
         }
         cleaned = phoenix_sync._clean_trajectory(trajectory)
         assert len(cleaned["messages"]) == 2
@@ -430,15 +368,7 @@ class TestCleanTrajectory:
 
     def test_clean_preserves_tool_calls(self, phoenix_sync):
         """Test that messages with tool_calls but no content are preserved."""
-        trajectory = {
-            "trace_id": "test",
-            "messages": [
-                {
-                    "role": "assistant",
-                    "tool_calls": [{"id": "1", "function": {"name": "test"}}]
-                }
-            ]
-        }
+        trajectory = {"trace_id": "test", "messages": [{"role": "assistant", "tool_calls": [{"id": "1", "function": {"name": "test"}}]}]}
         cleaned = phoenix_sync._clean_trajectory(trajectory)
         assert len(cleaned["messages"]) == 1
         assert "tool_calls" in cleaned["messages"][0]
@@ -450,20 +380,15 @@ class TestCleanTrajectory:
             "messages": [
                 {"role": "user", "content": "Valid"},
                 {"role": "assistant", "content": "<system-reminder>Only reminder</system-reminder>"},
-                {"role": "user", "content": "Also valid"}
-            ]
+                {"role": "user", "content": "Also valid"},
+            ],
         }
         cleaned = phoenix_sync._clean_trajectory(trajectory)
         assert len(cleaned["messages"]) == 2
 
     def test_clean_preserves_non_string_content(self, phoenix_sync):
         """Test that non-string content is preserved."""
-        trajectory = {
-            "trace_id": "test",
-            "messages": [
-                {"role": "user", "content": ["list", "content"]}
-            ]
-        }
+        trajectory = {"trace_id": "test", "messages": [{"role": "user", "content": ["list", "content"]}]}
         cleaned = phoenix_sync._clean_trajectory(trajectory)
         assert len(cleaned["messages"]) == 1
         assert cleaned["messages"][0]["content"] == ["list", "content"]
@@ -500,19 +425,18 @@ class TestSync:
     def test_sync_skips_already_processed(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that already processed spans are skipped."""
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "data": [
-                {
-                    "name": "litellm_request",
-                    "context": {"trace_id": "t1", "span_id": "already_processed"},
-                    "attributes": {
-                        "gen_ai.prompt.0.role": "user",
-                        "gen_ai.prompt.0.content": "test"
+        mock_response.read.return_value = json.dumps(
+            {
+                "data": [
+                    {
+                        "name": "litellm_request",
+                        "context": {"trace_id": "t1", "span_id": "already_processed"},
+                        "attributes": {"gen_ai.prompt.0.role": "user", "gen_ai.prompt.0.content": "test"},
                     }
-                }
-            ],
-            "next_cursor": None
-        }).encode()
+                ],
+                "next_cursor": None,
+            }
+        ).encode()
         mock_response.__enter__ = Mock(return_value=mock_response)
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
@@ -532,20 +456,19 @@ class TestSync:
     def test_sync_filters_error_spans(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that error spans are filtered by default."""
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "data": [
-                {
-                    "name": "litellm_request",
-                    "status_code": "ERROR",
-                    "context": {"trace_id": "t1", "span_id": "s1"},
-                    "attributes": {
-                        "gen_ai.prompt.0.role": "user",
-                        "gen_ai.prompt.0.content": "test"
+        mock_response.read.return_value = json.dumps(
+            {
+                "data": [
+                    {
+                        "name": "litellm_request",
+                        "status_code": "ERROR",
+                        "context": {"trace_id": "t1", "span_id": "s1"},
+                        "attributes": {"gen_ai.prompt.0.role": "user", "gen_ai.prompt.0.content": "test"},
                     }
-                }
-            ],
-            "next_cursor": None
-        }).encode()
+                ],
+                "next_cursor": None,
+            }
+        ).encode()
         mock_response.__enter__ = Mock(return_value=mock_response)
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
@@ -561,22 +484,24 @@ class TestSync:
     def test_sync_includes_error_spans_when_requested(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that error spans are included when include_errors=True."""
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "data": [
-                {
-                    "name": "litellm_request",
-                    "status_code": "ERROR",
-                    "context": {"trace_id": "t1", "span_id": "s1"},
-                    "start_time": "2024-01-15T10:00:00Z",
-                    "attributes": {
-                        "gen_ai.request.model": "test-model",
-                        "gen_ai.prompt.0.role": "user",
-                        "gen_ai.prompt.0.content": "test message"
+        mock_response.read.return_value = json.dumps(
+            {
+                "data": [
+                    {
+                        "name": "litellm_request",
+                        "status_code": "ERROR",
+                        "context": {"trace_id": "t1", "span_id": "s1"},
+                        "start_time": "2024-01-15T10:00:00Z",
+                        "attributes": {
+                            "gen_ai.request.model": "test-model",
+                            "gen_ai.prompt.0.role": "user",
+                            "gen_ai.prompt.0.content": "test message",
+                        },
                     }
-                }
-            ],
-            "next_cursor": None
-        }).encode()
+                ],
+                "next_cursor": None,
+            }
+        ).encode()
         mock_response.__enter__ = Mock(return_value=mock_response)
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
@@ -593,16 +518,9 @@ class TestSync:
     def test_sync_filters_non_llm_spans(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that non-LLM spans are filtered out."""
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "data": [
-                {
-                    "name": "some_other_span",
-                    "context": {"trace_id": "t1", "span_id": "s1"},
-                    "attributes": {}
-                }
-            ],
-            "next_cursor": None
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {"data": [{"name": "some_other_span", "context": {"trace_id": "t1", "span_id": "s1"}, "attributes": {}}], "next_cursor": None}
+        ).encode()
         mock_response.__enter__ = Mock(return_value=mock_response)
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
@@ -618,21 +536,23 @@ class TestSync:
     def test_sync_processes_valid_spans(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that valid spans are processed."""
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "data": [
-                {
-                    "name": "litellm_request",
-                    "context": {"trace_id": "t1", "span_id": "s1"},
-                    "start_time": "2024-01-15T10:00:00Z",
-                    "attributes": {
-                        "gen_ai.request.model": "claude-3",
-                        "gen_ai.prompt.0.role": "user",
-                        "gen_ai.prompt.0.content": "Hello"
+        mock_response.read.return_value = json.dumps(
+            {
+                "data": [
+                    {
+                        "name": "litellm_request",
+                        "context": {"trace_id": "t1", "span_id": "s1"},
+                        "start_time": "2024-01-15T10:00:00Z",
+                        "attributes": {
+                            "gen_ai.request.model": "claude-3",
+                            "gen_ai.prompt.0.role": "user",
+                            "gen_ai.prompt.0.content": "Hello",
+                        },
                     }
-                }
-            ],
-            "next_cursor": None
-        }).encode()
+                ],
+                "next_cursor": None,
+            }
+        ).encode()
         mock_response.__enter__ = Mock(return_value=mock_response)
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
@@ -662,31 +582,33 @@ class TestSync:
     def test_sync_returns_correct_counts(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that sync returns correct counts in SyncResult."""
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "data": [
-                {
-                    "name": "litellm_request",
-                    "context": {"trace_id": "t1", "span_id": "new_span"},
-                    "start_time": "2024-01-15T10:00:00Z",
-                    "attributes": {
-                        "gen_ai.request.model": "claude-3",
-                        "gen_ai.prompt.0.role": "user",
-                        "gen_ai.prompt.0.content": "New message"
-                    }
-                },
-                {
-                    "name": "litellm_request",
-                    "context": {"trace_id": "t2", "span_id": "old_span"},
-                    "start_time": "2024-01-15T09:00:00Z",
-                    "attributes": {
-                        "gen_ai.request.model": "claude-3",
-                        "gen_ai.prompt.0.role": "user",
-                        "gen_ai.prompt.0.content": "Old message"
-                    }
-                }
-            ],
-            "next_cursor": None
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "data": [
+                    {
+                        "name": "litellm_request",
+                        "context": {"trace_id": "t1", "span_id": "new_span"},
+                        "start_time": "2024-01-15T10:00:00Z",
+                        "attributes": {
+                            "gen_ai.request.model": "claude-3",
+                            "gen_ai.prompt.0.role": "user",
+                            "gen_ai.prompt.0.content": "New message",
+                        },
+                    },
+                    {
+                        "name": "litellm_request",
+                        "context": {"trace_id": "t2", "span_id": "old_span"},
+                        "start_time": "2024-01-15T09:00:00Z",
+                        "attributes": {
+                            "gen_ai.request.model": "claude-3",
+                            "gen_ai.prompt.0.role": "user",
+                            "gen_ai.prompt.0.content": "Old message",
+                        },
+                    },
+                ],
+                "next_cursor": None,
+            }
+        ).encode()
         mock_response.__enter__ = Mock(return_value=mock_response)
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
@@ -716,21 +638,23 @@ class TestSync:
     def test_sync_handles_processing_errors(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that processing errors are captured."""
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "data": [
-                {
-                    "name": "litellm_request",
-                    "context": {"trace_id": "t1", "span_id": "s1"},
-                    "start_time": "2024-01-15T10:00:00Z",
-                    "attributes": {
-                        "gen_ai.request.model": "claude-3",
-                        "gen_ai.prompt.0.role": "user",
-                        "gen_ai.prompt.0.content": "test"
+        mock_response.read.return_value = json.dumps(
+            {
+                "data": [
+                    {
+                        "name": "litellm_request",
+                        "context": {"trace_id": "t1", "span_id": "s1"},
+                        "start_time": "2024-01-15T10:00:00Z",
+                        "attributes": {
+                            "gen_ai.request.model": "claude-3",
+                            "gen_ai.prompt.0.role": "user",
+                            "gen_ai.prompt.0.content": "test",
+                        },
                     }
-                }
-            ],
-            "next_cursor": None
-        }).encode()
+                ],
+                "next_cursor": None,
+            }
+        ).encode()
         mock_response.__enter__ = Mock(return_value=mock_response)
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
@@ -765,6 +689,7 @@ class TestEnsureNamespace:
     def test_ensure_namespace_creates_if_missing(self, phoenix_sync):
         """Test that missing namespace is created."""
         from kaizen.schema.exceptions import NamespaceNotFoundException
+
         phoenix_sync.client.get_namespace_details.side_effect = NamespaceNotFoundException()
 
         phoenix_sync._ensure_namespace()
@@ -807,6 +732,7 @@ class TestGetProcessedSpanIds:
     def test_get_processed_span_ids_namespace_not_found(self, phoenix_sync):
         """Test that missing namespace returns empty set."""
         from kaizen.schema.exceptions import NamespaceNotFoundException
+
         phoenix_sync.client.search_entities.side_effect = NamespaceNotFoundException()
 
         result = phoenix_sync._get_processed_span_ids()

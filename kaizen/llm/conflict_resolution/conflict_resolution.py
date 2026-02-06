@@ -10,9 +10,7 @@ from pathlib import Path
 
 
 def resolve_conflicts(
-    old_entities: list[RecordedEntity],
-    new_entities: list[RecordedEntity],
-    custom_update_entities_prompt: str | None = None
+    old_entities: list[RecordedEntity], new_entities: list[RecordedEntity], custom_update_entities_prompt: str | None = None
 ) -> list[EntityUpdate]:
     simplified_old_entities = SimpleEntity.from_recorded_entities(old_entities)
     simplified_new_entities = SimpleEntity.from_recorded_entities(new_entities)
@@ -23,16 +21,20 @@ def resolve_conflicts(
     caught = None
     for attempt in range(3):
         try:
-            response: str = completion(
-                model=llm_settings.conflict_resolution_model,
-                messages=[{"role": "user", "content": prompt}],
-                custom_llm_provider=llm_settings.custom_llm_provider
-            ).choices[0].message.content
+            response: str = (
+                completion(
+                    model=llm_settings.conflict_resolution_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    custom_llm_provider=llm_settings.custom_llm_provider,
+                )
+                .choices[0]
+                .message.content
+            )
             response = clean_llm_response(response)
             parsed = json.loads(response)
-            entity_updates = [EntityUpdate.model_validate(event) for event in parsed['entities']]
+            entity_updates = [EntityUpdate.model_validate(event) for event in parsed["entities"]]
             for update in entity_updates:
-                if update.event == 'ADD':
+                if update.event == "ADD":
                     update.metadata = new_entities_by_id[update.id].metadata
             return entity_updates
         except Exception as e:
@@ -40,9 +42,10 @@ def resolve_conflicts(
             continue
     raise caught
 
+
 def get_update_entities_messages(
-    old_entities: list['SimpleEntity'],
-    new_entities: list['SimpleEntity'],
+    old_entities: list["SimpleEntity"],
+    new_entities: list["SimpleEntity"],
     custom_update_entities_prompt: str | None = None,
 ) -> str:
     if custom_update_entities_prompt is None:
@@ -51,8 +54,8 @@ def get_update_entities_messages(
 
     prompt_input = {
         "custom_update_entities_prompt": custom_update_entities_prompt,
-        "old_entities": json.dumps([entity.model_dump(mode='json') for entity in old_entities], indent=4),
-        "new_entities": json.dumps([entity.model_dump(mode='json') for entity in new_entities], indent=4),
+        "old_entities": json.dumps([entity.model_dump(mode="json") for entity in old_entities], indent=4),
+        "new_entities": json.dumps([entity.model_dump(mode="json") for entity in new_entities], indent=4),
     }
     prompt_file = Path(__file__).parent / "prompts/conflict_resolution.jinja2"
 

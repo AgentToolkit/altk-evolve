@@ -14,6 +14,7 @@ import datetime
 # Debug logging - use user-scoped directory for security
 import tempfile
 
+
 def _get_log_dir():
     """Get user-scoped log directory with restrictive permissions."""
     try:
@@ -25,7 +26,9 @@ def _get_log_dir():
     os.makedirs(log_dir, mode=0o700, exist_ok=True)
     return log_dir
 
+
 LOG_FILE = os.path.join(_get_log_dir(), "kaizen-plugin.log")
+
 
 def log(message):
     """Append a timestamped message to the log file."""
@@ -34,6 +37,7 @@ def log(message):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [save] {message}\n")
+
 
 log("Script started")
 
@@ -128,8 +132,7 @@ def main():
         existing_entities = load_existing_entities(entities_path)
         if existing_entities is None:
             log(f"Refusing to overwrite corrupted file: {entities_path}")
-            print(f"Error: {entities_path} contains invalid JSON. "
-                  "Fix or remove the file before adding entities.", file=sys.stderr)
+            print(f"Error: {entities_path} contains invalid JSON. Fix or remove the file before adding entities.", file=sys.stderr)
             sys.exit(1)
         log(f"Found existing file: {entities_path} with {len(existing_entities)} entities")
         print(f"Appending to existing file: {entities_path}")

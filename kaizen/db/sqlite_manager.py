@@ -18,12 +18,15 @@ def convert_timestamp(time: bytes) -> datetime.datetime:
     """Convert Unix epoch timestamp to datetime.datetime object."""
     return datetime.datetime.fromtimestamp(int.from_bytes(time), datetime.UTC)
 
+
 sqlite3.register_adapter(datetime.datetime, adapt_datetime_epoch)
 sqlite3.register_converter("timestamp", convert_timestamp)
 
+
 class SQLiteManager:
     """A database for any resources that can't be generalized across backends."""
-    def __init__(self, db_path: str = 'entities.sqlite.db'):
+
+    def __init__(self, db_path: str = "entities.sqlite.db"):
         self.db_path = db_path
 
     def _create_namespace_table(self):
@@ -35,18 +38,14 @@ class SQLiteManager:
                         id           TEXT PRIMARY KEY,
                         created_at   TIMESTAMP NOT NULL
                     )
-                """
-                )
+                """)
                 self.connection.execute("COMMIT")
             except Exception as e:
                 self.connection.execute("ROLLBACK")
                 logger.error(f"Failed to create namespaces table: {e}")
                 raise
 
-    def create_namespace(
-        self,
-        namespace_id: str
-    ) -> Namespace:
+    def create_namespace(self, namespace_id: str) -> Namespace:
         created_at = datetime.datetime.now(datetime.timezone.utc)
         with self._lock:
             try:
@@ -58,10 +57,7 @@ class SQLiteManager:
                     )
                     VALUES (?, ?)
                 """,
-                    (
-                        namespace_id,
-                        created_at
-                    ),
+                    (namespace_id, created_at),
                 )
                 self.connection.execute("COMMIT")
             except sqlite3.IntegrityError as e:
@@ -70,16 +66,14 @@ class SQLiteManager:
                 self.connection.execute("ROLLBACK")
                 logger.error(f"Failed to create namespace: {e}")
                 raise
-        return Namespace(
-            id=namespace_id,
-            created_at=created_at
-        )
+        return Namespace(id=namespace_id, created_at=created_at)
 
     def get_namespace(self, namespace_id: str) -> Namespace | None:
         with self._lock:
             cursor: sqlite3.Cursor = self.connection.cursor()
             cursor.row_factory = Namespace.row_factory
-            cursor.execute("""
+            cursor.execute(
+                """
                     SELECT id, created_at
                     FROM namespaces
                     WHERE id = ?
@@ -95,7 +89,8 @@ class SQLiteManager:
         with self._lock:
             cursor: sqlite3.Cursor = self.connection.cursor()
             cursor.row_factory = Namespace.row_factory
-            cursor.execute("""
+            cursor.execute(
+                """
                     SELECT id, created_at
                     FROM namespaces
                     LIMIT ?

@@ -3,29 +3,29 @@ from kaizen.schema.exceptions import NamespaceNotFoundException
 from kaizen.schema.conflict_resolution import EntityUpdate
 from kaizen.config.kaizen import KaizenConfig
 
+
 class KaizenClient:
     """Wrapper client around kaizen entity backends."""
 
     def __init__(self, config: KaizenConfig | None = None):
         """Initialize the Kaizen client."""
         self.config = config or KaizenConfig()
-        if self.config.backend == 'milvus':
+        if self.config.backend == "milvus":
             from kaizen.backend.milvus import MilvusEntityBackend
+
             self.backend = MilvusEntityBackend(self.config.settings)
-        elif self.config.backend == 'filesystem':
+        elif self.config.backend == "filesystem":
             from kaizen.backend.filesystem import FilesystemEntityBackend
+
             self.backend = FilesystemEntityBackend(self.config.settings)
         else:
-            raise NotImplementedError(f'Entity backend not implemented: {self.config.backend}')
+            raise NotImplementedError(f"Entity backend not implemented: {self.config.backend}")
 
     def ready(self) -> bool:
         """Check if the backend is healthy."""
         return self.backend.ready()
 
-    def create_namespace(
-        self,
-        namespace_id: str | None = None
-    ) -> Namespace:
+    def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         """Create a new namespace for entities to exist in."""
         return self.backend.create_namespace(namespace_id)
 
@@ -37,32 +37,20 @@ class KaizenClient:
         """Get details about a specific namespace."""
         return self.backend.get_namespace_details(namespace_id)
 
-    def search_namespaces(
-        self,
-        limit: int = 10
-    ) -> list[Namespace]:
+    def search_namespaces(self, limit: int = 10) -> list[Namespace]:
         """Search namespace with filters."""
-        return self.backend.search_namespaces( limit)
+        return self.backend.search_namespaces(limit)
 
     def delete_namespace(self, namespace_id: str) -> None:
         """Delete a namespace that entities exist in."""
         self.backend.delete_namespace(namespace_id)
 
-    def update_entities(
-        self,
-        namespace_id: str,
-        entities: list[Entity],
-        enable_conflict_resolution: bool = True
-    ) -> list[EntityUpdate]:
+    def update_entities(self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True) -> list[EntityUpdate]:
         """Add multiple entities to a namespace."""
         return self.backend.update_entities(namespace_id, entities, enable_conflict_resolution)
 
     def search_entities(
-        self,
-        namespace_id: str,
-        query: str | None = None,
-        filters: dict | None = None,
-        limit: int = 10
+        self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
     ) -> list[RecordedEntity]:
         """Search for entities in a namespace."""
         return self.backend.search_entities(namespace_id, query, filters, limit)

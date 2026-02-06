@@ -49,7 +49,7 @@ Add one import at the top of your agent:
 
 ```python
 try:
-    import kaizen.auto
+    import kaizen.auto # noqa: F401
 except ImportError:
     pass
 
@@ -77,7 +77,7 @@ Use this when you are tracing **raw API calls** directly using the `openai` libr
 
 ```python
 try:
-    import kaizen.auto
+    import kaizen.auto # noqa: F401
 except ImportError:
     pass
 
@@ -99,7 +99,7 @@ Use this when using **LiteLLM** to abstract across multiple providers. Kaizen tr
 
 ```python
 try:
-    import kaizen.auto
+    import kaizen.auto # noqa: F401
 except ImportError:
     pass
 
@@ -128,7 +128,7 @@ Use this for **agentic workflows** built with HuggingFace's `smolagents`. Kaizen
 
 ```python
 try:
-    import kaizen.auto
+    import kaizen.auto # noqa: F401
 except ImportError:
     pass
 
@@ -150,7 +150,7 @@ Use this for the **OpenAI Agents framework** (`agents`). Kaizen traces the high-
 
 ```python
 try:
-    import kaizen.auto
+    import kaizen.auto # noqa: F401
 except ImportError:
     pass
 

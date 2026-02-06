@@ -26,7 +26,7 @@ allowed_directories: List[str] = []
 
 def normalize_path(p: str) -> str:
     """Normalize a path to use forward slashes and resolve it."""
-    return str(Path(p).resolve()).replace('\\', '/')
+    return str(Path(p).resolve()).replace("\\", "/")
 
 
 def expand_home(p: str) -> str:
@@ -52,7 +52,7 @@ def validate_path(file_path: str) -> str:
 
     # Check if path is within any allowed directory
     for allowed_dir in allowed_directories:
-        if resolved.startswith(allowed_dir + '/') or resolved == allowed_dir:
+        if resolved.startswith(allowed_dir + "/") or resolved == allowed_dir:
             return resolved
 
     raise ValueError(f"Access denied: {file_path} is outside allowed directories")
@@ -60,7 +60,7 @@ def validate_path(file_path: str) -> str:
 
 def format_size(size_bytes: int) -> str:
     """Format file size in human-readable format."""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
         if size_bytes < 1024.0:
             return f"{size_bytes:.1f}{unit}"
         size_bytes /= 1024.0
@@ -83,46 +83,46 @@ async def get_file_stats(file_path: str) -> Dict[str, Any]:
 
 async def read_file_content(file_path: str) -> str:
     """Read file content as text."""
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
 
 
 async def write_file_content(file_path: str, content: str) -> None:
     """Write content to file."""
     # Ensure parent directory exists
-    os.makedirs(os.path.dirname(file_path) or '.', exist_ok=True)
-    with open(file_path, 'w', encoding='utf-8') as f:
+    os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
+    with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
 
 
 async def tail_file(file_path: str, n: int) -> str:
     """Read last n lines of a file."""
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
-    return ''.join(lines[-n:])
+    return "".join(lines[-n:])
 
 
 async def head_file(file_path: str, n: int) -> str:
     """Read first n lines of a file."""
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         lines = []
         for i, line in enumerate(f):
             if i >= n:
                 break
             lines.append(line)
-    return ''.join(lines)
+    return "".join(lines)
 
 
 async def apply_file_edits(file_path: str, edits: List[Dict[str, str]], dry_run: bool = False) -> str:
     """Apply edits to a file and return a diff-style result."""
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     original_content = content
 
     for edit in edits:
-        old_text = edit['oldText']
-        new_text = edit['newText']
+        old_text = edit["oldText"]
+        new_text = edit["newText"]
 
         if old_text not in content:
             raise ValueError(f"Text to replace not found: {old_text[:50]}...")
@@ -135,7 +135,7 @@ async def apply_file_edits(file_path: str, edits: List[Dict[str, str]], dry_run:
         content = content.replace(old_text, new_text)
 
     if not dry_run:
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
 
     # Generate diff
@@ -156,12 +156,10 @@ async def apply_file_edits(file_path: str, edits: List[Dict[str, str]], dry_run:
             diff_lines.append(f"+ {new_line.rstrip()}")
 
     status = "Dry run - no changes made" if dry_run else "Changes applied successfully"
-    return f"{status}\n\n" + '\n'.join(diff_lines)
+    return f"{status}\n\n" + "\n".join(diff_lines)
 
 
-async def search_files_recursive(
-    root_path: str, pattern: str, exclude_patterns: List[str] = None
-) -> List[str]:
+async def search_files_recursive(root_path: str, pattern: str, exclude_patterns: List[str] = None) -> List[str]:
     """Recursively search for files matching a pattern."""
     if exclude_patterns is None:
         exclude_patterns = []
@@ -169,7 +167,7 @@ async def search_files_recursive(
     results = []
 
     # Handle glob patterns
-    if '**' in pattern:
+    if "**" in pattern:
         # Use glob for recursive patterns
         glob_pattern = os.path.join(root_path, pattern)
         matches = glob.glob(glob_pattern, recursive=True)
@@ -247,17 +245,13 @@ async def read_media_file(path: str) -> Dict[str, str]:
         mime_type = "application/octet-stream"
 
     # Read file as binary and encode to base64
-    with open(valid_path, 'rb') as f:
-        data = base64.b64encode(f.read()).decode('utf-8')
+    with open(valid_path, "rb") as f:
+        data = base64.b64encode(f.read()).decode("utf-8")
 
     return {
         "mimeType": mime_type,
         "data": data,
-        "type": "image"
-        if mime_type.startswith("image/")
-        else "audio"
-        if mime_type.startswith("audio/")
-        else "blob",
+        "type": "image" if mime_type.startswith("image/") else "audio" if mime_type.startswith("audio/") else "blob",
     }
 
 
@@ -384,26 +378,26 @@ async def list_directory_with_sizes(path: str, sortBy: str = "name") -> str:
         except Exception:
             size = 0
 
-        detailed_entries.append({'name': entry, 'is_dir': is_dir, 'size': size})
+        detailed_entries.append({"name": entry, "is_dir": is_dir, "size": size})
 
     # Sort entries
-    if sortBy == 'size':
-        detailed_entries.sort(key=lambda x: x['size'], reverse=True)
+    if sortBy == "size":
+        detailed_entries.sort(key=lambda x: x["size"], reverse=True)
     else:
-        detailed_entries.sort(key=lambda x: x['name'])
+        detailed_entries.sort(key=lambda x: x["name"])
 
     # Format output
     formatted = []
     for entry in detailed_entries:
-        prefix = "[DIR]" if entry['is_dir'] else "[FILE]"
-        name = entry['name'].ljust(30)
-        size_str = "" if entry['is_dir'] else format_size(entry['size']).rjust(10)
+        prefix = "[DIR]" if entry["is_dir"] else "[FILE]"
+        name = entry["name"].ljust(30)
+        size_str = "" if entry["is_dir"] else format_size(entry["size"]).rjust(10)
         formatted.append(f"{prefix} {name} {size_str}")
 
     # Add summary
-    total_files = sum(1 for e in detailed_entries if not e['is_dir'])
-    total_dirs = sum(1 for e in detailed_entries if e['is_dir'])
-    total_size = sum(e['size'] for e in detailed_entries if not e['is_dir'])
+    total_files = sum(1 for e in detailed_entries if not e["is_dir"])
+    total_dirs = sum(1 for e in detailed_entries if e["is_dir"])
+    total_size = sum(e["size"] for e in detailed_entries if not e["is_dir"])
 
     formatted.append("")
     formatted.append(f"Total: {total_files} files, {total_dirs} directories")
@@ -452,10 +446,10 @@ async def directory_tree(path: str, excludePatterns: List[str] = None) -> str:
                 continue
 
             is_dir = os.path.isdir(entry_path)
-            entry_data = {'name': entry, 'type': 'directory' if is_dir else 'file'}
+            entry_data = {"name": entry, "type": "directory" if is_dir else "file"}
 
             if is_dir:
-                entry_data['children'] = build_tree(entry_path, root_path)
+                entry_data["children"] = build_tree(entry_path, root_path)
 
             result.append(entry_data)
 
@@ -549,23 +543,9 @@ async def list_allowed_directories() -> str:
 def main():
     """Main entry point for the server."""
     parser = argparse.ArgumentParser(description="Secure MCP Filesystem Server")
-    parser.add_argument(
-        "allowed_directories",
-        nargs="+",
-        help="Directories to allow access to"
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8112,
-        help="Port to run the SSE server on (default: 8112)"
-    )
-    parser.add_argument(
-        "--transport",
-        choices=["sse", "stdio"],
-        default="sse",
-        help="Transport capability to expose (default: sse)"
-    )
+    parser.add_argument("allowed_directories", nargs="+", help="Directories to allow access to")
+    parser.add_argument("--port", type=int, default=8112, help="Port to run the SSE server on (default: 8112)")
+    parser.add_argument("--transport", choices=["sse", "stdio"], default="sse", help="Transport capability to expose (default: sse)")
 
     args = parser.parse_args()
 

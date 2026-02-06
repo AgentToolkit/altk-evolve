@@ -130,7 +130,7 @@ Then, add one import at the top of your agent to trigger the patching:
 
 ```python
 try:
-    import kaizen.auto
+    import kaizen.auto # noqa: F401
 except ImportError:
     pass
 

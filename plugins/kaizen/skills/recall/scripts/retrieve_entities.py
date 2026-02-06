@@ -25,6 +25,7 @@ def _get_log_dir():
 # Debug logging - use user-scoped directory for security
 LOG_FILE = os.path.join(_get_log_dir(), "kaizen-plugin.log")
 
+
 def log(message):
     """Append a timestamped message to the log file."""
     if not os.environ.get("KAIZEN_DEBUG"):
@@ -33,13 +34,14 @@ def log(message):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [retrieve] {message}\n")
 
+
 log("Script started")
 
 # Log all environment variables
 log("=== Environment Variables ===")
 for key, value in sorted(os.environ.items()):
     # Mask sensitive values
-    if any(sensitive in key.upper() for sensitive in ['PASSWORD', 'SECRET', 'TOKEN', 'KEY', 'API']):
+    if any(sensitive in key.upper() for sensitive in ["PASSWORD", "SECRET", "TOKEN", "KEY", "API"]):
         log(f"  {key}=***MASKED***")
     else:
         log(f"  {key}={value}")
@@ -106,13 +108,13 @@ Review these entities and apply any relevant ones:
 """
     items = []
     for e in entities:
-        content = e.get('content')
+        content = e.get("content")
         if not content:
             continue
         item = f"- **[{e.get('category', 'general')}]** {content}"
-        if e.get('rationale'):
+        if e.get("rationale"):
             item += f"\n  - _Rationale: {e['rationale']}_"
-        if e.get('trigger'):
+        if e.get("trigger"):
             item += f"\n  - _When: {e['trigger']}_"
         items.append(item)
 
