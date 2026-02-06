@@ -120,5 +120,7 @@ module = [
     "pymilvus.*",
     "smolagents.*",
     "milvus_lite.*",
+    "openinference.*",
+    "agents.*",
 ]
 ignore_missing_imports = true
