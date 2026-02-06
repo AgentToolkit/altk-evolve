@@ -72,6 +72,8 @@ class MilvusEntityBackend(BaseEntityBackend):
 
         with SQLiteManager() as db_manager:
             namespace = db_manager.get_namespace(namespace_id)
+            if namespace is None:
+                raise NamespaceNotFoundException(f"Namespace {namespace_id} not found")
             namespace.num_entities = self.milvus.get_collection_stats(namespace_id)["row_count"]
             return namespace
 

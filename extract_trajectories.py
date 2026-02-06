@@ -19,7 +19,7 @@ import urllib.request
 
 def fetch_spans(base_url: str, limit: int = 1000) -> list[dict]:
     """Fetch all spans from Phoenix, handling pagination."""
-    spans = []
+    spans: list[dict[str, Any]] = []
     cursor = None
 
     while True:
@@ -150,10 +150,10 @@ def convert_anthropic_to_openai(content: Any, role: str) -> dict:
         if text_parts:
             msg["content"] = "\n\n".join(text_parts)
         elif not tool_calls:
-            msg["content"] = None
+            msg["content"] = None  # type: ignore[assignment]
 
         if tool_calls:
-            msg["tool_calls"] = tool_calls
+            msg["tool_calls"] = tool_calls  # type: ignore[assignment]
 
         return msg
 

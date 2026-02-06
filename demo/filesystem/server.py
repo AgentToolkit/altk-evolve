@@ -10,7 +10,7 @@ import base64
 import json
 import mimetypes
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TypedDict
 from datetime import datetime
 import glob
 import fnmatch
@@ -58,7 +58,7 @@ def validate_path(file_path: str) -> str:
     raise ValueError(f"Access denied: {file_path} is outside allowed directories")
 
 
-def format_size(size_bytes: int) -> str:
+def format_size(size_bytes: float) -> str:
     """Format file size in human-readable format."""
     for unit in ["B", "KB", "MB", "GB", "TB"]:
         if size_bytes < 1024.0:
@@ -159,7 +159,7 @@ async def apply_file_edits(file_path: str, edits: List[Dict[str, str]], dry_run:
     return f"{status}\n\n" + "\n".join(diff_lines)
 
 
-async def search_files_recursive(root_path: str, pattern: str, exclude_patterns: List[str] = None) -> List[str]:
+async def search_files_recursive(root_path: str, pattern: str, exclude_patterns: List[str] | None = None) -> List[str]:
     """Recursively search for files matching a pattern."""
     if exclude_patterns is None:
         exclude_patterns = []
@@ -363,13 +363,19 @@ async def list_directory_with_sizes(path: str, sortBy: str = "name") -> str:
         path: Path to the directory to list
         sortBy: Sort entries by 'name' or 'size' (default: 'name')
     """
-    valid_path = validate_path(path)
-    entries = os.listdir(valid_path)
+
+    class Entry(TypedDict):
+        name: str
+        is_dir: bool
+        size: int
+
+    valid_path: str = validate_path(path)
+    entries: list[str] = os.listdir(valid_path)
 
     # Collect entry details
-    detailed_entries = []
-    for entry in entries:
-        entry_path = os.path.join(valid_path, entry)
+    detailed_entries: list[Entry] = []
+    for path in entries:
+        entry_path = os.path.join(valid_path, path)
         is_dir = os.path.isdir(entry_path)
 
         try:
@@ -378,7 +384,7 @@ async def list_directory_with_sizes(path: str, sortBy: str = "name") -> str:
         except Exception:
             size = 0
 
-        detailed_entries.append({"name": entry, "is_dir": is_dir, "size": size})
+        detailed_entries.append({"name": path, "is_dir": is_dir, "size": size})
 
     # Sort entries
     if sortBy == "size":
@@ -389,9 +395,10 @@ async def list_directory_with_sizes(path: str, sortBy: str = "name") -> str:
     # Format output
     formatted = []
     for entry in detailed_entries:
-        prefix = "[DIR]" if entry["is_dir"] else "[FILE]"
+        is_dir = entry["is_dir"]
+        prefix = "[DIR]" if is_dir else "[FILE]"
         name = entry["name"].ljust(30)
-        size_str = "" if entry["is_dir"] else format_size(entry["size"]).rjust(10)
+        size_str = "" if is_dir else format_size(entry["size"]).rjust(10)
         formatted.append(f"{prefix} {name} {size_str}")
 
     # Add summary
@@ -407,7 +414,7 @@ async def list_directory_with_sizes(path: str, sortBy: str = "name") -> str:
 
 
 @mcp.tool()
-async def directory_tree(path: str, excludePatterns: List[str] = None) -> str:
+async def directory_tree(path: str, excludePatterns: List[str] | None = None) -> str:
     """
     Get a recursive tree view of files and directories as a JSON structure.
     Each entry includes 'name', 'type' (file/directory), and 'children' for directories.
@@ -446,7 +453,7 @@ async def directory_tree(path: str, excludePatterns: List[str] = None) -> str:
                 continue
 
             is_dir = os.path.isdir(entry_path)
-            entry_data = {"name": entry, "type": "directory" if is_dir else "file"}
+            entry_data: dict[str, str | list] = {"name": entry, "type": "directory" if is_dir else "file"}
 
             if is_dir:
                 entry_data["children"] = build_tree(entry_path, root_path)
@@ -483,7 +490,7 @@ async def move_file(source: str, destination: str) -> str:
 
 
 @mcp.tool()
-async def search_files(path: str, pattern: str, excludePatterns: List[str] = None) -> str:
+async def search_files(path: str, pattern: str, excludePatterns: List[str] | None = None) -> str:
     """
     Recursively search for files and directories matching a pattern.
     The patterns should be glob-style patterns that match paths relative to the working directory.

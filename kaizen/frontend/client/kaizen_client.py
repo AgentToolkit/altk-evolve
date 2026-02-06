@@ -2,6 +2,7 @@ from kaizen.schema.core import Entity, Namespace, RecordedEntity
 from kaizen.schema.exceptions import NamespaceNotFoundException
 from kaizen.schema.conflict_resolution import EntityUpdate
 from kaizen.config.kaizen import KaizenConfig
+from kaizen.backend.base import BaseEntityBackend
 
 
 class KaizenClient:
@@ -10,13 +11,19 @@ class KaizenClient:
     def __init__(self, config: KaizenConfig | None = None):
         """Initialize the Kaizen client."""
         self.config = config or KaizenConfig()
+        self.backend: BaseEntityBackend
+
         if self.config.backend == "milvus":
             from kaizen.backend.milvus import MilvusEntityBackend
 
             self.backend = MilvusEntityBackend(self.config.settings)
         elif self.config.backend == "filesystem":
-            from kaizen.backend.filesystem import FilesystemEntityBackend
+            from kaizen.backend.filesystem import FilesystemEntityBackend, FilesystemSettings
 
+            if not isinstance(self.config.settings, (FilesystemSettings, type(None))):
+                raise TypeError(
+                    f"Type of `config` should be `{FilesystemSettings.__name__}` or `None`, got `{type(self.config.settings).__name__}`"
+                )
             self.backend = FilesystemEntityBackend(self.config.settings)
         else:
             raise NotImplementedError(f"Entity backend not implemented: {self.config.backend}")
@@ -61,7 +68,7 @@ class KaizenClient:
 
     def delete_entity_by_id(self, namespace_id: str, entity_id: str) -> None:
         """Delete a specific entity by its ID."""
-        return self.backend.delete_entity_by_id(namespace_id, entity_id)
+        self.backend.delete_entity_by_id(namespace_id, entity_id)
 
     # Convenience methods for common patterns
     def namespace_exists(self, namespace_id: str) -> bool:

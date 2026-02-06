@@ -22,7 +22,7 @@ def add(a: int, b: int) -> int:
         a: First number.
         b: Second number.
     """
-    return mcp_add(a, b)
+    return mcp_add(a, b)  # type: ignore[no-any-return,operator]
 
 
 @tool
@@ -33,7 +33,7 @@ def multiply(a: int, b: int) -> int:
         a: First number.
         b: Second number.
     """
-    return mcp_multiply(a, b)
+    return mcp_multiply(a, b)  # type: ignore[no-any-return,operator]
 
 
 def main():

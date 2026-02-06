@@ -218,20 +218,20 @@ def test_search_entities(milvus_backend: MilvusEntityBackend, monkeypatch):
     assert result[0].content == "Test content"
 
     # Test searching entities without a query (list all).
-    result: list[RecordedEntity] = milvus_backend.search_entities(namespace_id="test_namespace", query=None)
+    result_2: list[RecordedEntity] = milvus_backend.search_entities(namespace_id="test_namespace", query=None)
 
-    assert len(result) == 1
-    assert result[0].id == "123"
-    assert result[0].type == "fact"
-    assert result[0].content == "Test content"
+    assert len(result_2) == 1
+    assert result_2[0].id == "123"
+    assert result_2[0].type == "fact"
+    assert result_2[0].content == "Test content"
 
     # Test searching entities with filters.
-    result = milvus_backend.search_entities(namespace_id="test_namespace", query="test_query", filters={"type": "fact"}, limit=10)
+    result_3 = milvus_backend.search_entities(namespace_id="test_namespace", query="test_query", filters={"type": "fact"}, limit=10)
 
-    assert len(result) == 1
-    assert result[0].id == "123"
-    assert result[0].type == "fact"
-    assert result[0].content == "Test content"
+    assert len(result_3) == 1
+    assert result_3[0].id == "123"
+    assert result_3[0].type == "fact"
+    assert result_3[0].content == "Test content"
 
 
 @pytest.mark.unit

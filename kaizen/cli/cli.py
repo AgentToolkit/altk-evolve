@@ -157,12 +157,14 @@ def list_entities(
 
     for entity in entities:
         content = entity.content
-        if len(content) > 60:
-            content = content[:57] + "..."
+        content_str = str(content)
+
+        if len(content_str) > 60:
+            content_str = content_str[:57] + "..."
         table.add_row(
             str(entity.id),
             entity.type,
-            content,
+            content_str,
             entity.created_at.strftime("%Y-%m-%d %H:%M"),
         )
 
@@ -284,12 +286,14 @@ def search_entities(
 
     for entity in entities:
         content = entity.content
-        if len(content) > 60:
-            content = content[:57] + "..."
+        content_str = str(content)
+
+        if len(content_str) > 60:
+            content_str = content_str[:57] + "..."
         table.add_row(
             str(entity.id),
             entity.type,
-            content,
+            content_str,
             entity.created_at.strftime("%Y-%m-%d %H:%M"),
         )
 

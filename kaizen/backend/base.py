@@ -29,6 +29,10 @@ class BaseEntityBackend(ABC):
         pass
 
     @abstractmethod
+    def search_namespaces(self, limit: int = 10) -> list[Namespace]:
+        pass
+
+    @abstractmethod
     def delete_namespace(self, namespace_id: str):
         pass
 
@@ -41,6 +45,7 @@ class BaseEntityBackend(ABC):
     ) -> list[EntityUpdate]:
         pass
 
+    @abstractmethod
     def search_entities(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
     ) -> list[RecordedEntity]:

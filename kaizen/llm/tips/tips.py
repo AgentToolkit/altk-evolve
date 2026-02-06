@@ -23,9 +23,9 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
         - function_calls: List of tool/function calls made
         - num_steps: Total number of agent actions
     """
-    agent_steps = []
-    function_calls = []
-    task_instruction = None
+    agent_steps: list[dict[str, str | dict]] = []
+    function_calls: list[dict[str, str | dict]] = []
+    task_instruction: str | None = None
 
     for message in messages:
         # Extract task instruction from first user message

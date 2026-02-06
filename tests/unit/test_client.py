@@ -21,18 +21,18 @@ def kaizen_client() -> KaizenClient:
 @pytest.mark.unit
 def test_health_check(kaizen_client: KaizenClient, monkeypatch):
     # Client should return False derived from API response
-    def ready(self) -> bool:
+    def never_ready(self) -> bool:
         return False
 
-    monkeypatch.setattr(kaizen_client.backend, "ready", ready.__get__(kaizen_client, BaseEntityBackend))
+    monkeypatch.setattr(kaizen_client.backend, "ready", never_ready.__get__(kaizen_client, BaseEntityBackend))
     health_status = kaizen_client.ready()
     assert not health_status
 
     # Client should return True derived from API response
-    def ready(self) -> bool:
+    def always_ready(self) -> bool:
         return True
 
-    monkeypatch.setattr(kaizen_client.backend, "ready", ready.__get__(kaizen_client, BaseEntityBackend))
+    monkeypatch.setattr(kaizen_client.backend, "ready", always_ready.__get__(kaizen_client, BaseEntityBackend))
     health_status = kaizen_client.ready()
     assert health_status
 

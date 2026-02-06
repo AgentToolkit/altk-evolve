@@ -1,4 +1,4 @@
-from kaizen.frontend.mcp.server import mcp
+from kaizen.frontend.mcp.mcp_server import mcp
 
 
 def main():

@@ -18,13 +18,13 @@ from local_mcp_server import add as mcp_add, multiply as mcp_multiply
 @function_tool
 async def add(a: int, b: int) -> int:
     """Add two numbers."""
-    return mcp_add(a, b)
+    return mcp_add(a, b)  # type: ignore[no-any-return,operator]
 
 
 @function_tool
 async def multiply(a: int, b: int) -> int:
     """Multiply two numbers."""
-    return mcp_multiply(a, b)
+    return mcp_multiply(a, b)  # type: ignore[no-any-return,operator]
 
 
 async def main():

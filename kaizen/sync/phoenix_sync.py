@@ -59,7 +59,7 @@ class PhoenixSync:
 
     def _fetch_spans(self, limit: int = 1000) -> list[dict]:
         """Fetch spans from Phoenix, handling pagination."""
-        spans = []
+        spans: list[dict] = []
         cursor = None
 
         while True:
@@ -90,7 +90,7 @@ class PhoenixSync:
                 filters={"type": "trajectory"},
                 limit=10000,
             )
-            return {e.metadata.get("span_id") for e in entities if e.metadata and e.metadata.get("span_id")}
+            return {str(e.metadata.get("span_id")) for e in entities if e.metadata and e.metadata.get("span_id")}
         except NamespaceNotFoundException:
             return set()
 
@@ -326,7 +326,7 @@ class PhoenixSync:
                 )
 
         if role == "assistant":
-            msg = {"role": "assistant"}
+            msg: dict[str, str | list | None] = {"role": "assistant"}
             if thinking_parts:
                 msg["thinking"] = "\n\n".join(thinking_parts)
             if text_parts:

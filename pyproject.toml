@@ -108,3 +108,17 @@ exclude_commit_patterns = [
 [tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"
 output_format = "md"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "pymilvus.*",
+    "smolagents.*",
+    "milvus_lite.*",
+]
+ignore_missing_imports = true
