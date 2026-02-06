@@ -35,12 +35,13 @@ kaizen = "kaizen.cli.cli:app"
 
 [dependency-groups]
 dev = [
-    "pytest",
     "anyio",
+    "detect-secrets",
+    "mypy",
+    "pre-commit",
+    "pytest",
     "python-dotenv>=1.2.1",
     "python-semantic-release",
-    "detect-secrets",
-    "pre-commit",
     "ruff"
 ]
 
