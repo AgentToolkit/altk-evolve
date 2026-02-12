@@ -1,5 +1,8 @@
 import json
+import logging
 from json import JSONDecodeError
+
+logger = logging.getLogger("entities-mcp")
 
 import litellm
 
@@ -73,7 +76,8 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
                     else:
                         raise KaizenException(f"Unhandled assistant content type in list `{assistant_response['type']}`")
             else:
-                raise KaizenException(f"Unhandled assistant content type `{type(content)}`")
+                # Skip empty assistant messages (common from tool-calling patterns)
+                continue
 
     steps_text = []
     for i, step in enumerate(agent_steps[:50], 1):
@@ -142,4 +146,11 @@ def generate_tips(messages: list[dict]) -> list[Tip]:
             .message.content
         )
         clean_response = clean_llm_response(response)
-    return TipGenerationResponse.model_validate(json.loads(clean_response)).tips
+    if not clean_response:
+        logger.warning(f"LLM returned empty response for tip generation. Model: {llm_settings.tips_model}")
+        return []
+    try:
+        return TipGenerationResponse.model_validate(json.loads(clean_response)).tips
+    except JSONDecodeError as e:
+        logger.warning(f"Failed to parse LLM tip generation response: {e}. Response: {repr(clean_response[:500])}")
+        return []
