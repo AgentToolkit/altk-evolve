@@ -1,6 +1,7 @@
 import json
 import logging
 from json import JSONDecodeError
+from pydantic import ValidationError
 
 logger = logging.getLogger("entities-mcp")
 
@@ -153,4 +154,7 @@ def generate_tips(messages: list[dict]) -> list[Tip]:
         return TipGenerationResponse.model_validate(json.loads(clean_response)).tips
     except JSONDecodeError as e:
         logger.warning(f"Failed to parse LLM tip generation response: {e}. Response: {repr(clean_response[:500])}")
+        return []
+    except ValidationError as e:
+        logger.warning(f"Failed to validate LLM tip generation response: {e}. Response: {repr(clean_response[:500])}")
         return []
