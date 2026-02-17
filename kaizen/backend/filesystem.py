@@ -219,6 +219,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
                         )
                     )
 
+            data.num_entities = len(data.entities)
             self._save_namespace_data(namespace_id, data)
 
         return updates
