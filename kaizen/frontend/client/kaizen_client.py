@@ -70,6 +70,26 @@ class KaizenClient:
         """Delete a specific entity by its ID."""
         self.backend.delete_entity_by_id(namespace_id, entity_id)
 
+    def cluster_tips(
+        self, namespace_id: str, threshold: float | None = None
+    ) -> list[list[RecordedEntity]]:
+        """Cluster guideline entities by task description similarity.
+
+        Args:
+            namespace_id: Namespace to fetch entities from.
+            threshold: Cosine similarity threshold (0-1). Defaults to config value.
+
+        Returns:
+            List of clusters, each containing related RecordedEntity objects.
+        """
+        from kaizen.llm.tips.clustering import cluster_entities
+
+        if threshold is None:
+            threshold = self.config.clustering_threshold
+
+        entities = self.get_all_entities(namespace_id, filters={"type": "guideline"}, limit=10000)
+        return cluster_entities(entities, threshold=threshold)
+
     # Convenience methods for common patterns
     def namespace_exists(self, namespace_id: str) -> bool:
         """Check if a namespace exists."""
