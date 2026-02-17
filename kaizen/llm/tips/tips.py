@@ -3,8 +3,6 @@ import logging
 from json import JSONDecodeError
 from pydantic import ValidationError
 
-logger = logging.getLogger("entities-mcp")
-
 import litellm
 
 from jinja2 import Template
@@ -15,6 +13,7 @@ from kaizen.schema.exceptions import KaizenException
 from kaizen.schema.tips import TipGenerationResponse, Tip
 from pathlib import Path
 
+logger = logging.getLogger("entities-mcp")
 
 def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
     """
