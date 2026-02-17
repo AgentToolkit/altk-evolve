@@ -13,7 +13,7 @@ from kaizen.schema.exceptions import KaizenException
 from kaizen.schema.tips import TipGenerationResponse, Tip
 from pathlib import Path
 
-logger = logging.getLogger("entities-mcp")
+logger = logging.getLogger(__name__)
 
 def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
     """
