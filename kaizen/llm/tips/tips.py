@@ -1,19 +1,20 @@
 import json
 import logging
 from json import JSONDecodeError
-from pydantic import ValidationError
-
-import litellm
-
-from jinja2 import Template
-from litellm import completion, get_supported_openai_params, supports_response_schema
-from kaizen.config.llm import llm_settings
-from kaizen.utils.utils import clean_llm_response
-from kaizen.schema.exceptions import KaizenException
-from kaizen.schema.tips import TipGenerationResponse, Tip
 from pathlib import Path
 
+import litellm
+from jinja2 import Template
+from litellm import completion, get_supported_openai_params, supports_response_schema
+from pydantic import ValidationError
+
+from kaizen.config.llm import llm_settings
+from kaizen.schema.exceptions import KaizenException
+from kaizen.schema.tips import Tip, TipGenerationResponse
+from kaizen.utils.utils import clean_llm_response
+
 logger = logging.getLogger(__name__)
+
 
 def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
     """
