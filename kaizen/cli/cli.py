@@ -381,6 +381,21 @@ def consolidate_entities(
     total_entities = sum(len(c) for c in clusters)
     console.print(f"[dim]Total: {total_entities} entities in {len(clusters)} clusters[/dim]")
 
+    if dry_run:
+        console.print("\n[yellow]Dry run — no changes made. Use --no-dry-run to consolidate.[/yellow]")
+        return
+
+    console.print("\n[bold]Consolidating clusters...[/bold]")
+    try:
+        result = client.consolidate_tips(namespace, threshold=effective_threshold)
+        console.print("[green]Consolidation complete:[/green]")
+        console.print(f"  Clusters combined: {result.clusters_found}")
+        console.print(f"  Tips before: {result.tips_before}")
+        console.print(f"  Tips after: {result.tips_after}")
+    except KaizenException as e:
+        console.print(f"[red]Consolidation failed: {e}[/red]")
+        raise typer.Exit(1)
+
 
 # =============================================================================
 # Sync Commands

@@ -20,3 +20,12 @@ class TipGenerationResult:
 
     tips: list[Tip]
     task_description: str
+
+
+@dataclass
+class ConsolidationResult:
+    """Summary of a tip consolidation run."""
+
+    clusters_found: int
+    tips_before: int
+    tips_after: int

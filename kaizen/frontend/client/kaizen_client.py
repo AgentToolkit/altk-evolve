@@ -1,6 +1,7 @@
 from kaizen.schema.core import Entity, Namespace, RecordedEntity
 from kaizen.schema.exceptions import NamespaceNotFoundException
 from kaizen.schema.conflict_resolution import EntityUpdate
+from kaizen.schema.tips import ConsolidationResult
 from kaizen.config.kaizen import KaizenConfig
 from kaizen.backend.base import BaseEntityBackend
 
@@ -89,6 +90,56 @@ class KaizenClient:
 
         entities = self.get_all_entities(namespace_id, filters={"type": "guideline"}, limit=10000)
         return cluster_entities(entities, threshold=threshold)
+
+    def consolidate_tips(
+        self, namespace_id: str, threshold: float | None = None
+    ) -> ConsolidationResult:
+        """Cluster similar tips and combine each cluster into consolidated guidelines.
+
+        Args:
+            namespace_id: Namespace to consolidate entities in.
+            threshold: Cosine similarity threshold (0-1). Defaults to config value.
+
+        Returns:
+            ConsolidationResult with counts of clusters, tips before, and tips after.
+        """
+        from kaizen.llm.tips.clustering import combine_cluster
+
+        clusters = self.cluster_tips(namespace_id, threshold=threshold)
+        tips_before = sum(len(c) for c in clusters)
+        tips_after = 0
+
+        for cluster in clusters:
+            consolidated_tips = combine_cluster(cluster)
+            tips_after += len(consolidated_tips)
+
+            # Delete original entities
+            for entity in cluster:
+                self.delete_entity_by_id(namespace_id, entity.id)
+
+            # Insert consolidated entities, preserving task_description from first entity
+            task_description = (cluster[0].metadata or {}).get("task_description", "")
+            new_entities = [
+                Entity(
+                    content=tip.content,
+                    type="guideline",
+                    metadata={
+                        "task_description": task_description,
+                        "rationale": tip.rationale,
+                        "category": tip.category,
+                        "trigger": tip.trigger,
+                    },
+                )
+                for tip in consolidated_tips
+            ]
+            if new_entities:
+                self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False)
+
+        return ConsolidationResult(
+            clusters_found=len(clusters),
+            tips_before=tips_before,
+            tips_after=tips_after,
+        )
 
     # Convenience methods for common patterns
     def namespace_exists(self, namespace_id: str) -> bool:

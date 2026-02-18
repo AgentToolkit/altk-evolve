@@ -1,0 +1,45 @@
+You are consolidating multiple AI agent guidelines that were generated from similar tasks.
+
+# Task Descriptions
+These guidelines came from tasks like:
+{% for desc in task_descriptions %}
+- {{ desc }}
+{% endfor %}
+
+# Existing Guidelines
+{% for tip in tips %}
+## Guideline {{ loop.index }}
+- **Content:** {{ tip.content }}
+- **Rationale:** {{ tip.rationale }}
+- **Category:** {{ tip.category }}
+- **Trigger:** {{ tip.trigger }}
+
+{% endfor %}
+
+# Your Task
+Combine the above guidelines into a smaller set of HIGH-QUALITY, CONSOLIDATED, NON-REDUNDANT guidelines. Merge overlapping advice, remove duplicates, and preserve any unique insights.
+
+**Things to Remember:**
+1. Each consolidated guideline should be self-contained, clear and actionable
+2. Preserve important nuances from different source guidelines. Preserve specific technical details (API names, parameter names, etc.)
+3. Use the most specific and helpful phrasing
+4. Remove guidelines that are too generic or obvious.
+5. Reduce the total count while retaining all valuable information
+
+{% if not constrained_decoding_supported %}
+**Output Format (JSON):**
+```json
+{
+    "tips": [
+        {
+            "content": "Clear, actionable tip",
+            "rationale": "Why this tip helps",
+            "category": "strategy|recovery|optimization",
+            "trigger": "When to apply this tip"
+        }
+    ]
+}
+```
+
+Generate consolidated guidelines now. Return ONLY the JSON, no other text.
+{% endif %}
