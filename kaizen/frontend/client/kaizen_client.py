@@ -116,10 +116,10 @@ class KaizenClient:
         tips_after = 0
 
         for cluster in clusters:
+            # Phase 1: combine + insert (skip cluster on failure)
             try:
                 consolidated_tips = combine_cluster(cluster)
 
-                # Insert consolidated entities first, preserving task_description from first entity
                 task_description = (cluster[0].metadata or {}).get("task_description", "")
                 new_entities = [
                     Entity(
@@ -136,14 +136,6 @@ class KaizenClient:
                 ]
                 if new_entities:
                     self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False)
-
-                # Only delete originals after successful insert
-                for entity in cluster:
-                    self.delete_entity_by_id(namespace_id, entity.id)
-
-                clusters_found += 1
-                tips_before += len(cluster)
-                tips_after += len(consolidated_tips)
             except Exception:
                 logger.warning(
                     "Failed to consolidate cluster of %d entities (IDs: %s); skipping.",
@@ -151,6 +143,22 @@ class KaizenClient:
                     [e.id for e in cluster],
                     exc_info=True,
                 )
+                continue
+
+            clusters_found += 1
+            tips_before += len(cluster)
+            tips_after += len(consolidated_tips)
+
+            # Phase 2: delete originals (log errors but don't roll back insert)
+            for entity in cluster:
+                try:
+                    self.delete_entity_by_id(namespace_id, entity.id)
+                except Exception:
+                    logger.warning(
+                        "Failed to delete original entity %s after successful insert; skipping.",
+                        entity.id,
+                        exc_info=True,
+                    )
 
         return ConsolidationResult(
             clusters_found=clusters_found,

@@ -155,7 +155,7 @@ class TestConsolidateTips:
         with patch.object(client, "cluster_tips", return_value=[entities_cluster]):
             client.consolidate_tips("test-ns")
 
-        # Verify insert was called before deletes (insert-first for safety)
+        # Verify insert was called with correct args
         assert mock_backend.update_entities.call_count == 1
         call_args = mock_backend.update_entities.call_args
         ns_id, new_entities, enable_cr = call_args[0]
@@ -169,6 +169,12 @@ class TestConsolidateTips:
         assert mock_backend.delete_entity_by_id.call_count == 2
         mock_backend.delete_entity_by_id.assert_any_call("test-ns", "1")
         mock_backend.delete_entity_by_id.assert_any_call("test-ns", "2")
+
+        # Verify insert happened before deletes
+        call_names = [str(c) for c in mock_backend.mock_calls]
+        insert_idx = next(i for i, c in enumerate(call_names) if "update_entities" in c)
+        first_delete_idx = next(i for i, c in enumerate(call_names) if "delete_entity_by_id" in c)
+        assert insert_idx < first_delete_idx
 
     @patch("kaizen.llm.tips.clustering.combine_cluster")
     def test_consolidate_tips_returns_correct_counts(self, mock_combine):

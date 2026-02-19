@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 MAX_CLUSTER_ENTITIES = 5000
 
+_COMBINE_TIPS_TEMPLATE = Template(
+    (Path(__file__).parent / "prompts/combine_tips.jinja2").read_text()
+)
+
 
 @lru_cache(maxsize=4)
 def _get_sentence_transformer(model_name: str) -> SentenceTransformer:
@@ -139,8 +143,6 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
     Raises:
         KaizenException: If the LLM call fails after 3 attempts.
     """
-    prompt_file = Path(__file__).parent / "prompts/combine_tips.jinja2"
-
     supported_params = get_supported_openai_params(
         model=llm_settings.tips_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
@@ -169,7 +171,7 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
         for e in entities
     ]
 
-    prompt = Template(prompt_file.read_text()).render(
+    prompt = _COMBINE_TIPS_TEMPLATE.render(
         task_descriptions=task_descriptions,
         tips=tips,
         constrained_decoding_supported=constrained_decoding_supported,
