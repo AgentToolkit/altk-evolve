@@ -4,7 +4,7 @@ import logging
 import uuid
 
 from kaizen.backend.base import BaseEntityBackend, BaseSettings
-from kaizen.config.milvus import milvus_client_settings, milvus_other_settings
+from kaizen.config.milvus import MilvusDBSettings, milvus_client_settings
 from kaizen.db.sqlite_manager import SQLiteManager
 from kaizen.llm.conflict_resolution.conflict_resolution import resolve_conflicts
 from kaizen.schema.conflict_resolution import EntityUpdate
@@ -39,8 +39,18 @@ class MilvusEntityBackend(BaseEntityBackend):
 
     def __init__(self, config: BaseSettings | None = None):
         super().__init__(config)
-        self.milvus = MilvusClient(**milvus_client_settings.model_dump())
-        self.embedding_model = SentenceTransformer(milvus_other_settings.embedding_model)
+        resolved_config = config if isinstance(config, MilvusDBSettings) else milvus_client_settings
+        self.config = resolved_config
+        self.sqlite_uri = self.config.sqlite_uri
+        self.milvus = MilvusClient(
+            uri=self.config.uri,
+            user=self.config.user,
+            password=self.config.password,
+            db_name=self.config.db_name,
+            token=self.config.token,
+            timeout=self.config.timeout,
+        )
+        self.embedding_model = SentenceTransformer(self.config.embedding_model)
         self.metric_type = "COSINE"
 
     def _build_filter_expr(self, filters: dict | None, base_conditions: list[str] | None = None) -> str:
@@ -180,13 +190,13 @@ class MilvusEntityBackend(BaseEntityBackend):
             self.milvus.create_collection(collection_name=namespace_id, schema=entity_schema)
         self._ensure_embedding_index(namespace_id)
 
-        with SQLiteManager() as db_manager:
+        with SQLiteManager(self.sqlite_uri) as db_manager:
             return db_manager.create_namespace(namespace_id)
 
     def get_namespace_details(self, namespace_id: str) -> Namespace:
         self.validate_namespace(namespace_id)
 
-        with SQLiteManager() as db_manager:
+        with SQLiteManager(self.sqlite_uri) as db_manager:
             namespace = db_manager.get_namespace(namespace_id)
             if namespace is None:
                 raise NamespaceNotFoundException(f"Namespace {namespace_id} not found")
@@ -194,7 +204,7 @@ class MilvusEntityBackend(BaseEntityBackend):
             return namespace
 
     def search_namespaces(self, limit: int = 10) -> list[Namespace]:
-        with SQLiteManager() as db_manager:
+        with SQLiteManager(self.sqlite_uri) as db_manager:
             namespaces = []
             for namespace in db_manager.search_namespaces(limit):
                 namespace.num_entities = self.milvus.get_collection_stats(namespace.id)["row_count"]
@@ -204,7 +214,7 @@ class MilvusEntityBackend(BaseEntityBackend):
     def delete_namespace(self, namespace_id: str):
         self.milvus.drop_collection(collection_name=namespace_id)
 
-        with SQLiteManager() as db_manager:
+        with SQLiteManager(self.sqlite_uri) as db_manager:
             db_manager.delete_namespace(namespace_id)
 
     def update_entities(
