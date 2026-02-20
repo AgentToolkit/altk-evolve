@@ -75,9 +75,7 @@ class KaizenClient:
         """Delete a specific entity by its ID."""
         self.backend.delete_entity_by_id(namespace_id, entity_id)
 
-    def cluster_tips(
-        self, namespace_id: str, threshold: float | None = None, limit: int = 10000
-    ) -> list[list[RecordedEntity]]:
+    def cluster_tips(self, namespace_id: str, threshold: float | None = None, limit: int = 10000) -> list[list[RecordedEntity]]:
         """Cluster guideline entities by task description similarity.
 
         Args:
@@ -94,11 +92,15 @@ class KaizenClient:
             threshold = self.config.clustering_threshold
 
         entities = self.get_all_entities(namespace_id, filters={"type": "guideline"}, limit=limit)
+        if len(entities) >= limit:
+            logger.warning(
+                "Fetched %d entities (hit limit=%d); clustering results may be incomplete. Consider increasing the limit.",
+                len(entities),
+                limit,
+            )
         return cluster_entities(entities, threshold=threshold)
 
-    def consolidate_tips(
-        self, namespace_id: str, threshold: float | None = None
-    ) -> ConsolidationResult:
+    def consolidate_tips(self, namespace_id: str, threshold: float | None = None) -> ConsolidationResult:
         """Cluster similar tips and combine each cluster into consolidated guidelines.
 
         Args:
@@ -134,8 +136,13 @@ class KaizenClient:
                     )
                     for tip in consolidated_tips
                 ]
-                if new_entities:
-                    self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False)
+                if not new_entities:
+                    logger.warning(
+                        "LLM returned no consolidated tips for cluster (IDs: %s); skipping deletion.",
+                        [e.id for e in cluster],
+                    )
+                    continue
+                self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False)
             except Exception:
                 logger.warning(
                     "Failed to consolidate cluster of %d entities (IDs: %s); skipping.",

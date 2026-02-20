@@ -23,9 +23,7 @@ logger = logging.getLogger(__name__)
 
 MAX_CLUSTER_ENTITIES = 5000
 
-_COMBINE_TIPS_TEMPLATE = Template(
-    (Path(__file__).parent / "prompts/combine_tips.jinja2").read_text()
-)
+_COMBINE_TIPS_TEMPLATE = Template((Path(__file__).parent / "prompts/combine_tips.jinja2").read_text())
 
 
 @lru_cache(maxsize=4)
@@ -147,7 +145,7 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
         model=llm_settings.tips_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
-    supports_response_format = supported_params and "response_format" in supported_params
+    supports_response_format = bool(supported_params and "response_format" in supported_params)
     response_schema_enabled = supports_response_schema(
         model=llm_settings.tips_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
@@ -155,11 +153,9 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
     constrained_decoding_supported = supports_response_format and response_schema_enabled
 
     # Deduplicate task descriptions
-    task_descriptions = list(dict.fromkeys(
-        (e.metadata or {}).get("task_description", "")
-        for e in entities
-        if (e.metadata or {}).get("task_description")
-    ))
+    task_descriptions = list(
+        dict.fromkeys((e.metadata or {}).get("task_description", "") for e in entities if (e.metadata or {}).get("task_description"))
+    )
 
     tips = [
         {
@@ -183,7 +179,7 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
     for attempt in range(3):
         try:
             if constrained_decoding_supported:
-                clean_response = (
+                content = (
                     completion(
                         model=llm_settings.tips_model,
                         messages=[{"role": "user", "content": prompt}],
@@ -193,8 +189,11 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
                     .choices[0]
                     .message.content
                 )
+                if content is None:
+                    raise KaizenException("LLM returned None content for combine_cluster")
+                clean_response = content
             else:
-                response = (
+                content = (
                     completion(
                         model=llm_settings.tips_model,
                         messages=[{"role": "user", "content": prompt}],
@@ -203,7 +202,9 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
                     .choices[0]
                     .message.content
                 )
-                clean_response = clean_llm_response(response)
+                if content is None:
+                    raise KaizenException("LLM returned None content for combine_cluster")
+                clean_response = clean_llm_response(content)
 
             return TipGenerationResponse.model_validate(json.loads(clean_response)).tips
         except Exception as e:
