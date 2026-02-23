@@ -52,9 +52,9 @@ def find_entities_file():
     # Fall back to checking other candidate locations
     locations = [
         # Project root from Claude Code
-        os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".claude/entities.json"),
+        os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".kaizen/entities.json"),
         # Current working directory
-        ".claude/entities.json",
+        ".kaizen/entities.json",
         # Plugin-relative path (fallback)
         str(Path(__file__).parent.parent / "entities.json"),
     ]
@@ -71,10 +71,10 @@ def get_default_entities_path():
     # Prefer project root if available
     project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
     if project_root:
-        claude_dir = Path(project_root) / ".claude"
+        claude_dir = Path(project_root) / ".kaizen"
     else:
-        # Fall back to current directory's .claude/
-        claude_dir = Path(".claude")
+        # Fall back to current directory's .kaizen/
+        claude_dir = Path(".kaizen")
 
     claude_dir.mkdir(parents=True, exist_ok=True)
     return (claude_dir / "entities.json").resolve()

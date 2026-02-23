@@ -66,9 +66,9 @@ def find_entities_file():
     # Fallback locations when KAIZEN_ENTITIES_FILE is not set
     locations = [
         # Project root from Claude Code
-        os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".claude/entities.json"),
+        os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".kaizen/entities.json"),
         # Current working directory
-        ".claude/entities.json",
+        ".kaizen/entities.json",
         # Plugin-relative path (fallback)
         str(Path(__file__).parent.parent / "entities.json"),
     ]

@@ -78,7 +78,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
 ```
 
 The script will:
-- Find or create the entities file (`.claude/entities.json`)
+- Find or create the entities file (`.kaizen/entities.json`)
 - Merge new entities with existing ones (avoiding duplicates)
 - Display confirmation with the total count
 
@@ -98,9 +98,9 @@ echo '{
 
 **Output:**
 ```text
-Creating new file: /path/to/project/.claude/entities.json
+Creating new file: /path/to/project/.kaizen/entities.json
 Added 1 new entity(ies). Total: 1
-Entities stored in: /path/to/project/.claude/entities.json
+Entities stored in: /path/to/project/.kaizen/entities.json
 ```
 
 **Note:** Entities are also automatically saved when a conversation ends via the Stop hook.

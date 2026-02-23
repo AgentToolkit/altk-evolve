@@ -19,7 +19,7 @@ This skill retrieves relevant entities from a stored knowledge base based on the
 
 ## Entities Storage
 
-Entities are stored in `.claude/entities.json` in the project root:
+Entities are stored in `.kaizen/entities.json` in the project root:
 
 ```json
 {

@@ -57,6 +57,7 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 
 ## Documentation
 
+- [KAIZEN_LITE.md](KAIZEN_LITE.md) - Lightweight mode via Claude Code plugin (no infra required)
 - [CONFIGURATION.md](CONFIGURATION.md) - Detailed configuration options
 - [CLI.md](CLI.md) - Command-line interface documentation
 - [CLAUDE_CODE_DEMO.md](CLAUDE_CODE_DEMO.md) - Claude Code demo walkthrough
