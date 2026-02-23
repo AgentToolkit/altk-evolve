@@ -43,7 +43,7 @@ This example shows the full learn-then-recall loop across two sessions.
 
 ### Session 1 — Learn a preference
 
-```
+```text
 You: Tell me the distances between the 3 most populous cities in Canada.
 
 Claude: The three most populous cities in Canada are Toronto, Montreal, and
@@ -82,7 +82,7 @@ Claude: I've extracted the following entities from this conversation:
 
 Start a new Claude Code session in the same project:
 
-```
+```text
 You: Tell me the distances between the 3 most populous cities in Canada.
 
 Claude: The three most populous cities in Canada are Toronto, Montreal, and
