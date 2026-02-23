@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional, Dict, Any
+from typing import Any
 from pydantic import BaseModel, Field
 
 
@@ -20,19 +20,19 @@ class TriggerType(str, Enum):
 
 class PolicyTrigger(BaseModel):
     type: TriggerType
-    value: Optional[List[str]] = None
+    value: list[str] | None = None
     target: str = "intent"
     operator: str = "or"  # "and" / "or" for keywords
     threshold: float = 0.7  # for natural_language triggers
 
 
 class Policy(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     name: str
     type: PolicyType
     description: str
-    triggers: List[PolicyTrigger]
+    triggers: list[PolicyTrigger]
     content: str  # The policy payload (playbook markdown, response text, etc.)
-    config: Dict[str, Any] = Field(default_factory=dict)  # Type-specific config
+    config: dict[str, Any] = Field(default_factory=dict)  # Type-specific config
     priority: int = 50
     enabled: bool = True

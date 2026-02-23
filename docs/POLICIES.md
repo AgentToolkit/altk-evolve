@@ -17,6 +17,7 @@ Kaizen supports the following CUGA-compatible policy types:
 ### Trigger Types
 - `keyword`: Matches specific words or phrases.
 - `natural_language`: Matches semantic meaning using vector similarity.
+- `always`: Applies to every input/response (e.g., for global output formatters).
 
 ## Using MCP Tools for Policies
 
