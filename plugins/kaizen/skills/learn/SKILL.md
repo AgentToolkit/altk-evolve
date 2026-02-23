@@ -207,3 +207,9 @@ Entities stored in: /path/to/project/.kaizen/entities.json
 5. **Include rationale**: Explain why the approach works
 6. **Use situational triggers**: Context-based triggers are more useful than failure-based ones
 7. **Limit to 3-5 entities**: Focus on the most impactful learnings
+8. **Resolving Rules 2 vs 7**: When more than 5 distinct errors are found, start from Rule 2 (one error, one entity) then reduce to 3-5 entities using these steps:
+   - **Merge**: Combine errors with the same root cause or fix into a single prevention entity
+   - **Rank**: Select among remaining entities by severity > frequency > user impact > recency
+   - **Drop**: Discard lowest-ranked entities that exceed the cap
+
+   *Example*: A session hits 8 errors — 3 timeout variants (connect, read, DNS), 2 auth failures (expired token, missing header), 1 file-not-found, 1 permission error, 1 import error. Apply: merge the 3 timeouts into one network-resilience entity and the 2 auth failures into one auth-validation entity, then rank the resulting 5 entities (network-resilience, auth-validation, file-not-found, permission, import) and keep the top 3-5.
