@@ -7,6 +7,8 @@ from kaizen.schema.policy import (
     TriggerType
 )
 
+pytestmark = pytest.mark.unit
+
 def test_policy_serialization():
     """Test that a Policy object can be serialized to a dictionary/JSON."""
     trigger = PolicyTrigger(

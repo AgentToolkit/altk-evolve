@@ -66,7 +66,6 @@ def get_client() -> KaizenClient:
 def get_entities_logic(task: str, entity_type: str = "guideline") -> str:
     """Implementation logic for get_entities tool."""
     logger.info(f"Getting entities of type '{entity_type}' for task: {task}")
-    ensure_namespace()
     # Get relevant entities
     results = get_client().search_entities(
         namespace_id=kaizen_config.namespace_id,
