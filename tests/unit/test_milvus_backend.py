@@ -205,8 +205,24 @@ def test_search_entities(milvus_backend: MilvusEntityBackend, monkeypatch):
             }
         ]
 
+    def search(collection_name, data, filter=None, limit=None, output_fields=None, search_params=None, **kwargs):
+        # This mocks the vector search
+        return [
+            [
+                {
+                    "id": 123,
+                    "type": "fact",
+                    "content": "Test content",
+                    "created_at": int(datetime.datetime.now(datetime.UTC).timestamp()),
+                    "metadata": {},
+                    "distance": 0.0,
+                }
+            ]
+        ]
+
     monkeypatch.setattr(milvus_backend.milvus, "has_collection", always_has_collection)
     monkeypatch.setattr(milvus_backend.milvus, "query", query)
+    monkeypatch.setattr(milvus_backend.milvus, "search", search)
     monkeypatch.setattr(milvus_backend.embedding_model, "encode", arbitrary_embedding)
 
     # Test searching entities with a query (list all).

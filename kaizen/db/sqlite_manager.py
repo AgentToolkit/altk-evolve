@@ -26,8 +26,10 @@ sqlite3.register_converter("timestamp", convert_timestamp)
 class SQLiteManager:
     """A database for any resources that can't be generalized across backends."""
 
-    def __init__(self, db_path: str = "entities.sqlite.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str | None = None):
+        import os
+
+        self.db_path = db_path or os.environ.get("KAIZEN_SQLITE_PATH", "entities.sqlite.db")
         self.connection: sqlite3.Connection | None = None
         self._lock: threading.Lock | None = None
 
