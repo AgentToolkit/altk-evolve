@@ -98,24 +98,26 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
         entities=entities,
         enable_conflict_resolution=False,
     )
-    tips = generate_tips(messages)
+    result = generate_tips(messages)
 
-    get_client().update_entities(
-        namespace_id=kaizen_config.namespace_id,
-        entities=[
-            Entity(
-                type="guideline",
-                content=tip.content,
-                metadata={
-                    "category": tip.category,
-                    "rationale": tip.rationale,
-                    "trigger": tip.trigger,
-                },
-            )
-            for tip in tips
-        ],
-        enable_conflict_resolution=True,
-    )
+    if result.tips:
+        get_client().update_entities(
+            namespace_id=kaizen_config.namespace_id,
+            entities=[
+                Entity(
+                    type="guideline",
+                    content=tip.content,
+                    metadata={
+                        "category": tip.category,
+                        "rationale": tip.rationale,
+                        "trigger": tip.trigger,
+                        "task_description": result.task_description,
+                    },
+                )
+                for tip in result.tips
+            ],
+            enable_conflict_resolution=True,
+        )
 
     return get_client().search_entities(
         namespace_id=kaizen_config.namespace_id,

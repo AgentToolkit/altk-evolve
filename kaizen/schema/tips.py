@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pydantic import BaseModel, Field
 from typing import Literal
 
@@ -11,3 +12,11 @@ class Tip(BaseModel):
 
 class TipGenerationResponse(BaseModel):
     tips: list[Tip]
+
+
+@dataclass
+class TipGenerationResult:
+    """Internal result from generate_tips(), pairing tips with the source task description."""
+
+    tips: list[Tip]
+    task_description: str

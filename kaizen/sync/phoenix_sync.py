@@ -469,9 +469,9 @@ class PhoenixSync:
             )
 
         # Generate tips from the trajectory
-        tips = generate_tips(trajectory["messages"])
+        result = generate_tips(trajectory["messages"])
 
-        if tips:
+        if result.tips:
             tip_entities = [
                 Entity(
                     type="guideline",
@@ -482,9 +482,10 @@ class PhoenixSync:
                         "trigger": tip.trigger,
                         "source_trace_id": trajectory["trace_id"],
                         "source_span_id": trajectory["span_id"],
+                        "task_description": result.task_description,
                     },
                 )
-                for tip in tips
+                for tip in result.tips
             ]
             self.client.update_entities(
                 namespace_id=self.namespace_id,
@@ -492,7 +493,7 @@ class PhoenixSync:
                 enable_conflict_resolution=True,
             )
 
-        return len(tips)
+        return len(result.tips)
 
     def sync(
         self,

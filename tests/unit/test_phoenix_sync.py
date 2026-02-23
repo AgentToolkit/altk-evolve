@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch, Mock
 import pytest
 
 from kaizen.sync.phoenix_sync import PhoenixSync, SyncResult
+from kaizen.schema.tips import TipGenerationResult
 
 # Mark all tests in this module as phoenix tests (skipped by default)
 pytestmark = pytest.mark.phoenix
@@ -507,7 +508,7 @@ class TestSync:
         mock_urlopen.return_value = mock_response
 
         phoenix_sync.client.search_entities.return_value = []
-        mock_generate_tips.return_value = []
+        mock_generate_tips.return_value = TipGenerationResult(tips=[], task_description="Task description unknown")
 
         result = phoenix_sync.sync(limit=10, include_errors=True)
 
@@ -569,13 +570,18 @@ class TestSync:
         mock_tip2.category = "optimization"
         mock_tip2.rationale = "Tip 2 rationale"
         mock_tip2.trigger = "Tip 2 trigger"
-        mock_generate_tips.return_value = [mock_tip1, mock_tip2]
+        mock_generate_tips.return_value = TipGenerationResult(tips=[mock_tip1, mock_tip2], task_description="Hello")
 
         result = phoenix_sync.sync(limit=10)
 
         assert result.processed == 1
         assert result.tips_generated == 2
         phoenix_sync.client.update_entities.assert_called()
+
+        # Verify task_description is persisted in tip entity metadata
+        tip_update_call = phoenix_sync.client.update_entities.call_args_list[-1]
+        tip_entities = tip_update_call.kwargs["entities"]
+        assert all(e.metadata.get("task_description") == "Hello" for e in tip_entities)
 
     @patch("kaizen.sync.phoenix_sync.urllib.request.urlopen")
     @patch("kaizen.sync.phoenix_sync.generate_tips")
@@ -623,7 +629,7 @@ class TestSync:
         mock_tip.category = "strategy"
         mock_tip.rationale = "Tip rationale"
         mock_tip.trigger = "Tip trigger"
-        mock_generate_tips.return_value = [mock_tip]
+        mock_generate_tips.return_value = TipGenerationResult(tips=[mock_tip], task_description="New message")
 
         result = phoenix_sync.sync(limit=10)
 

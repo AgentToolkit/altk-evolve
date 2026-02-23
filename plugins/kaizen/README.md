@@ -30,7 +30,7 @@ claude --plugin-dir /path/to/kaizen/repo/plugins/kaizen
 ### Entity Retrieval (Automatic)
 
 When you submit a prompt, the plugin automatically:
-1. Loads all stored entities from `.claude/entities.json`
+1. Loads all stored entities from `.kaizen/entities.json`
 2. Formats and injects them into the conversation context
 3. Claude applies relevant entities to the current task
 
@@ -41,7 +41,11 @@ By default, you must manually invoke the `/kaizen:learn` skill to extract entiti
 2. Invoke `/kaizen:learn`
 3. The plugin analyzes the conversation trajectory
 4. Extracts actionable entities from what worked/failed
-5. Saves new entities to `.claude/entities.json`
+5. Saves new entities to `.kaizen/entities.json`
+
+## Example Walkthrough
+
+See [KAIZEN_LITE.md](../../KAIZEN_LITE.md#example-walkthrough) for a step-by-step example showing the full learn-then-recall loop across two sessions.
 
 ## Skills Included
 
@@ -74,7 +78,7 @@ User: "my-workflow-name"
 
 ## Entities Storage
 
-Entities are stored in `.claude/entities.json`:
+Entities are stored in `.kaizen/entities.json`:
 
 ```json
 {
