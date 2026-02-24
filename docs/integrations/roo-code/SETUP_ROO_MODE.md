@@ -12,7 +12,7 @@ This guide explains how to install the custom Kaizen mode into your local Roo Co
 3. In VS Code, open the Roo Code extension panel.
 4. Click the **Settings** gear icon (⚙️) in the top right of the Roo Code panel.
 5. Scroll down to the **Custom Modes** section.
-6. Paste the JSON you copied into the Custom Modes text area.
+6. Paste the configuration fields you copied into the Custom Modes text area.
 7. Click **Save**.
 8. You should now see a new mode called **Kaizen** in the mode dropdown menu at the bottom of the Roo Code chat panel.
 
