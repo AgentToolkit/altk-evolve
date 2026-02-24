@@ -1,6 +1,7 @@
 import datetime
 import json
 from pathlib import Path
+from typing import Any
 
 from jinja2 import Template
 from litellm import completion
@@ -30,7 +31,7 @@ def _build_prompt(messages: list[dict], use_categorization: bool) -> str:
     filtered_messages = [str(message.get("content", "")) for message in messages if str(message.get("role", "")).lower() == "user"]
     messages_str = "\n".join(filtered_messages)
 
-    prompt_input = {
+    prompt_input: dict[str, Any] = {
         "current_datetime": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "user_messages": messages_str,
     }
@@ -69,8 +70,8 @@ def extract_facts_from_messages(messages: list[dict], use_categorization: bool |
         try:
             parsed_json = json.loads(cleaned)
             if use_categorization:
-                extracted_facts = CategorizedExtractedFacts.model_validate(parsed_json)
-                return extracted_facts.facts
+                categorized_facts = CategorizedExtractedFacts.model_validate(parsed_json)
+                return categorized_facts.facts
             extracted_facts = ExtractedFacts.model_validate(parsed_json)
             return extracted_facts.facts
         except Exception as exc:
