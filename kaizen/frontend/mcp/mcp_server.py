@@ -171,9 +171,7 @@ def create_entity(content: str, entity_type: str, metadata: str | None = None, e
                 metadata_dict = json.loads(metadata)
             except json.JSONDecodeError as e:
                 logger.exception(f"Invalid JSON in metadata parameter: {str(e)}")
-                return json.dumps(
-                    {"error": "Invalid JSON", "message": f"Failed to parse metadata: {str(e)}", "invalid_metadata": metadata}
-                )
+                return json.dumps({"error": "Invalid JSON", "message": f"Failed to parse metadata: {str(e)}", "invalid_metadata": metadata})
 
         # Inject creation mode for manually created guidelines/policies if not present
         if entity_type in ("guideline", "policy"):

@@ -122,6 +122,7 @@ async def test_save_trajectory_and_retrieve_guidelines(mcp):
         # Verify tip provenance in Kaizen backend
         from kaizen.frontend.client.kaizen_client import KaizenClient
         from kaizen.config.kaizen import kaizen_config
+
         client = KaizenClient()
         entities = client.search_entities(
             namespace_id=kaizen_config.namespace_id,
