@@ -64,14 +64,16 @@ def find_entities_file():
         return path if path.exists() else None
 
     # Fallback locations when KAIZEN_ENTITIES_FILE is not set
+    project_root = os.environ.get("CLAUDE_PROJECT_ROOT")
     locations = [
-        # Project root from Claude Code
-        os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".claude/entities.json"),
         # Current working directory
-        ".claude/entities.json",
+        ".kaizen/entities.json",
         # Plugin-relative path (fallback)
         str(Path(__file__).parent.parent / "entities.json"),
     ]
+    if project_root:
+        # Project root from Claude Code (prepend so it's checked first)
+        locations.insert(0, os.path.join(project_root, ".kaizen/entities.json"))
     for loc in locations:
         if loc and Path(loc).exists():
             return Path(loc)

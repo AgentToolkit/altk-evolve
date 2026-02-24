@@ -12,25 +12,40 @@ __data__ = Path(__file__).parent.parent / "data"
 load_dotenv()
 
 
-@pytest.fixture
-def mcp():
+@pytest.fixture(params=["milvus", "filesystem"])
+def mcp(request, tmp_path):
+    backend_type = request.param
     os.environ["KAIZEN_NAMESPACE_ID"] = "test"
+    os.environ["KAIZEN_BACKEND"] = backend_type
+
+    # Common SQLite setup
+    os.environ["KAIZEN_SQLITE_PATH"] = str(tmp_path / f"test_{backend_type}.sqlite.db")
+
+    # Backend-specific setup
+    milvus_db_file = None
+    original_milvus_uri = None
+
+    if backend_type == "milvus":
+        # Use a unique DB file inside tmp_path for each test to avoid socket/locking issues and ensure cleanup
+        milvus_db_file = str(tmp_path / f"test_{uuid.uuid4().hex[:8]}.db")
+        original_milvus_uri = milvus_client_settings.uri
+        milvus_client_settings.uri = milvus_db_file
+        # Note: currently milvus-lite creates a file, not a dir for the uri
+        # We set KAIZEN_URI just in case, though settings init should pick it up if we did it before
+    elif backend_type == "filesystem":
+        os.environ["KAIZEN_DATA_DIR"] = str(tmp_path)
+
     from kaizen.frontend.client.kaizen_client import KaizenClient
     from kaizen.config.kaizen import kaizen_config
 
-    # we change the namespace ID for these tests so we have to reset the loaded settings
+    # Reset loaded settings to pick up new env vars
     kaizen_config.__init__()
 
-    # Use a unique DB file for each test to avoid socket/locking issues
-    # Milvus Lite has a 36 character limit on DB filenames
-    db_file = f"test_{uuid.uuid4().hex[:8]}.db"
-    original_uri = milvus_client_settings.uri
-    milvus_client_settings.uri = db_file
-
-    # Reset the MCP server client to ensure it uses the new DB file
+    # Reset the MCP server client
     import kaizen.frontend.mcp.mcp_server as mcp_server_module
 
     mcp_server_module._client = None
+    mcp_server_module._namespace_initialized = False
 
     kaizen_client = KaizenClient()
     # Create the test namespace
@@ -41,49 +56,52 @@ def mcp():
 
     yield mcp_server_module.mcp
 
-    # Cleanup - close the backend connection properly
+    # Cleanup
     try:
         kaizen_client.backend.close()
     except Exception:
         pass
 
-    # Disconnect all pymilvus connections to ensure clean state for next test
-    try:
-        from pymilvus import connections
+    if backend_type == "milvus":
+        # Disconnect all pymilvus connections
+        try:
+            from pymilvus import connections
 
-        for alias, _ in connections.list_connections():
+            for alias, _ in connections.list_connections():
+                try:
+                    connections.disconnect(alias)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Release all Milvus Lite servers
+        try:
+            from milvus_lite.server_manager import server_manager_instance
+
+            server_manager_instance.release_all()
+        except Exception:
+            pass
+
+        # Restore original URI
+        if original_milvus_uri:
+            milvus_client_settings.uri = original_milvus_uri
+
+        # Clean up temp DB files
+        if milvus_db_file and os.path.exists(milvus_db_file):
             try:
-                connections.disconnect(alias)
+                os.remove(milvus_db_file)
             except Exception:
                 pass
-    except Exception:
-        pass
-
-    # Release all Milvus Lite servers to fully clean up between tests
-    try:
-        from milvus_lite.server_manager import server_manager_instance
-
-        server_manager_instance.release_all()
-    except Exception:
-        pass
+        if milvus_db_file and os.path.exists(f"{milvus_db_file}.lock"):
+            try:
+                os.remove(f"{milvus_db_file}.lock")
+            except Exception:
+                pass
 
     # Reset the MCP server client
     mcp_server_module._client = None
-
-    # Restore original URI
-    milvus_client_settings.uri = original_uri
-
-    # Clean up temp DB files
-    if os.path.exists(db_file):
-        try:
-            os.remove(db_file)
-        except Exception:
-            pass
-    if os.path.exists(f"{db_file}.lock"):
-        try:
-            os.remove(f"{db_file}.lock")
-        except Exception:
-            pass
+    mcp_server_module._namespace_initialized = False
 
 
 @pytest.mark.e2e
@@ -144,7 +162,14 @@ async def test_create_entity_with_conflict_resolution(mcp):
         first_entity_id = result["id"]
 
         # Mock resolve_conflicts to avoid LLM call timeout
-        with patch("kaizen.backend.milvus.resolve_conflicts") as mock_resolve:
+        import os
+
+        if os.environ.get("KAIZEN_BACKEND") == "filesystem":
+            patch_target = "kaizen.backend.filesystem.resolve_conflicts"
+        else:
+            patch_target = "kaizen.backend.milvus.resolve_conflicts"
+
+        with patch(patch_target) as mock_resolve:
             # Configure mock to return an UPDATE event
             mock_resolve.return_value = [
                 EntityUpdate(

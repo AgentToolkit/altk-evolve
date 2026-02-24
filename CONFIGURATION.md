@@ -45,7 +45,7 @@ When `KAIZEN_BACKEND=milvus`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `KAIZEN_URI` | Milvus URI (file path for Lite) | `cortex.milvus.db` |
+| `KAIZEN_URI` | Milvus URI (file path for Lite) | `entities.milvus.db` |
 | `KAIZEN_USER` | Milvus user (optional) | `""` |
 | `KAIZEN_PASSWORD` | Milvus password (optional) | `""` |
 | `KAIZEN_DB_NAME` | Milvus database name (optional) | `""` |

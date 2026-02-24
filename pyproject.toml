@@ -45,7 +45,8 @@ dev = [
     "pytest-cov",
     "python-dotenv>=1.2.1",
     "python-semantic-release",
-    "ruff"
+    "ruff",
+    "types-requests>=2.32.4.20260107",
 ]
 
 [tool.uv.sources]

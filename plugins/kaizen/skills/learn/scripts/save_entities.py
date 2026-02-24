@@ -50,14 +50,16 @@ def find_entities_file():
         return Path(env_val).resolve()
 
     # Fall back to checking other candidate locations
+    project_root = os.environ.get("CLAUDE_PROJECT_ROOT")
     locations = [
-        # Project root from Claude Code
-        os.path.join(os.environ.get("CLAUDE_PROJECT_ROOT", ""), ".claude/entities.json"),
         # Current working directory
-        ".claude/entities.json",
+        ".kaizen/entities.json",
         # Plugin-relative path (fallback)
         str(Path(__file__).parent.parent / "entities.json"),
     ]
+    if project_root:
+        # Project root from Claude Code (prepend so it's checked first)
+        locations.insert(0, os.path.join(project_root, ".kaizen/entities.json"))
 
     for loc in locations:
         if loc and Path(loc).exists():
@@ -71,13 +73,13 @@ def get_default_entities_path():
     # Prefer project root if available
     project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
     if project_root:
-        claude_dir = Path(project_root) / ".claude"
+        kaizen_dir = Path(project_root) / ".kaizen"
     else:
-        # Fall back to current directory's .claude/
-        claude_dir = Path(".claude")
+        # Fall back to current directory's .kaizen/
+        kaizen_dir = Path(".kaizen")
 
-    claude_dir.mkdir(parents=True, exist_ok=True)
-    return (claude_dir / "entities.json").resolve()
+    kaizen_dir.mkdir(parents=True, exist_ok=True)
+    return (kaizen_dir / "entities.json").resolve()
 
 
 def load_existing_entities(path):

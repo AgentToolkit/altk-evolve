@@ -63,6 +63,9 @@ class MilvusEntityBackend(BaseEntityBackend):
 
         if not self.milvus.has_collection(namespace_id):
             self.milvus.create_collection(collection_name=namespace_id, dimension=384, auto_id=False, schema=entity_schema)
+            index_params = self.milvus.prepare_index_params()
+            index_params.add_index(field_name="embedding", metric_type="IP", index_type="FLAT")
+            self.milvus.create_index(collection_name=namespace_id, index_params=index_params)
 
         with SQLiteManager() as db_manager:
             return db_manager.create_namespace(namespace_id)
@@ -171,6 +174,9 @@ class MilvusEntityBackend(BaseEntityBackend):
                     )["ids"][0]
                 )
                 updates.append(EntityUpdate(id=entity_id, type=entity_type, content=entity.content, event="ADD", metadata=entity.metadata))
+
+        self.milvus.flush(namespace_id)
+        self.milvus.load_collection(namespace_id)
         return updates
 
     def search_entities(
@@ -188,14 +194,35 @@ class MilvusEntityBackend(BaseEntityBackend):
                 else "id > 0",
             )
         else:
-            results = self.milvus.query(
+            filter_str = " AND ".join([f"{_escape_filter(k)} == '{_escape_filter(v)}'" for k, v in filters.items()])
+            results = self.milvus.search(
                 collection_name=namespace_id,
                 anns_field="embedding",
                 data=[self.embedding_model.encode(query)],
-                filter=" AND ".join([f"{_escape_filter(k)} == '{_escape_filter(v)}'" for k, v in filters.items()]),
+                filter=filter_str,
                 limit=limit,
+                output_fields=["type", "content", "created_at", "metadata"],
                 search_params={"metric_type": "IP"},
+                consistency_level="Strong",
             )
+
+            # MilvusClient.search returns a list of results (one per query vector)
+            # Each result is a list of hits. Each hit is a dict including the id and output_fields.
+            if not results or len(results) == 0:
+                return []
+
+            hits = []
+            for hit in results[0]:
+                # In some versions/configs, output fields might be in hit['entity']
+                if "entity" in hit:
+                    entity_data = hit["entity"]
+                    # Merge id if it's at the top level
+                    if "id" in hit and "id" not in entity_data:
+                        entity_data["id"] = hit["id"]
+                    hits.append(parse_milvus_entity(entity_data))
+                else:
+                    hits.append(parse_milvus_entity(hit))
+            return hits
         return [parse_milvus_entity(i) for i in results]
 
     def delete_entity_by_id(self, namespace_id: str, entity_id: str):
