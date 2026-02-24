@@ -480,9 +480,10 @@ class PhoenixSync:
                         "category": tip.category,
                         "rationale": tip.rationale,
                         "trigger": tip.trigger,
-                        "source_trace_id": trajectory["trace_id"],
+                        "source_task_id": trajectory["trace_id"],
                         "source_span_id": trajectory["span_id"],
                         "task_description": result.task_description,
+                        "creation_mode": "auto-phoenix",
                     },
                 )
                 for tip in result.tips
