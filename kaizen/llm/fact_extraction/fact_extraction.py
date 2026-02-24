@@ -27,11 +27,7 @@ class CategorizedExtractedFacts(BaseModel):
 
 
 def _build_prompt(messages: list[dict], use_categorization: bool) -> str:
-    filtered_messages = [
-        str(message.get("content", ""))
-        for message in messages
-        if str(message.get("role", "")).lower() == "user"
-    ]
+    filtered_messages = [str(message.get("content", "")) for message in messages if str(message.get("role", "")).lower() == "user"]
     messages_str = "\n".join(filtered_messages)
 
     prompt_input = {
@@ -54,9 +50,7 @@ def _build_prompt(messages: list[dict], use_categorization: bool) -> str:
     return Template(prompt_file.read_text(encoding="utf-8")).render(**prompt_input)
 
 
-def extract_facts_from_messages(
-    messages: list[dict], use_categorization: bool | None = None
-) -> list[str] | list[ExtractedFact]:
+def extract_facts_from_messages(messages: list[dict], use_categorization: bool | None = None) -> list[str] | list[ExtractedFact]:
     """Extract user facts from chat messages."""
     if use_categorization is None:
         use_categorization = llm_settings.categorization_mode in {"predefined", "dynamic", "hybrid"}
@@ -83,4 +77,3 @@ def extract_facts_from_messages(
             last_error = exc
             continue
     raise ValueError(f"Failed to parse extracted facts response: {last_error}")
-

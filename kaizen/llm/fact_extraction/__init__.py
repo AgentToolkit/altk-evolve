@@ -4,4 +4,3 @@ from kaizen.llm.fact_extraction.fact_extraction import (
 )
 
 __all__ = ["ExtractedFact", "extract_facts_from_messages"]
-

@@ -60,9 +60,7 @@ class MilvusEntityBackend(BaseEntityBackend):
             if value is None:
                 continue
             literal = json.dumps(value)
-            if key == "__entity_type":
-                expressions.append(f"type == {literal}")
-            elif key.startswith("metadata."):
+            if key.startswith("metadata."):
                 metadata_key = key.split(".", 1)[1]
                 expressions.append(f"metadata[{json.dumps(metadata_key)}] == {literal}")
             elif key in self._schema_filter_fields:
@@ -159,9 +157,7 @@ class MilvusEntityBackend(BaseEntityBackend):
 
     def _ensure_embedding_index(self, namespace_id: str) -> None:
         try:
-            existing_indexes = self.milvus.list_indexes(
-                collection_name=namespace_id, field_name="embedding"
-            )
+            existing_indexes = self.milvus.list_indexes(collection_name=namespace_id, field_name="embedding")
             if existing_indexes:
                 return
             logger.warning(
@@ -179,9 +175,7 @@ class MilvusEntityBackend(BaseEntityBackend):
             self.milvus.create_index(collection_name=namespace_id, index_params=index_params)
             self.milvus.load_collection(collection_name=namespace_id)
         except Exception as exc:
-            raise KaizenException(
-                f"Failed to ensure embedding index for namespace={namespace_id}: {exc}"
-            ) from exc
+            raise KaizenException(f"Failed to ensure embedding index for namespace={namespace_id}: {exc}") from exc
 
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         namespace_id = namespace_id or "ns_" + str(uuid.uuid4()).replace("-", "_")
@@ -217,9 +211,7 @@ class MilvusEntityBackend(BaseEntityBackend):
         with SQLiteManager(self.sqlite_uri) as db_manager:
             db_manager.delete_namespace(namespace_id)
 
-    def update_entities(
-        self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True
-    ) -> list[EntityUpdate]:
+    def update_entities(self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True) -> list[EntityUpdate]:
         self.validate_namespace(namespace_id)
         if not entities:
             logger.warning("No entities to update.")
@@ -375,9 +367,7 @@ class MilvusEntityBackend(BaseEntityBackend):
         try:
             entity_id_int = int(entity_id)
         except ValueError as exc:
-            raise KaizenException(
-                f"Invalid entity ID: {entity_id}. Entity IDs must be numeric."
-            ) from exc
+            raise KaizenException(f"Invalid entity ID: {entity_id}. Entity IDs must be numeric.") from exc
         self.validate_namespace(namespace_id)
         self.milvus.delete(collection_name=namespace_id, ids=[entity_id_int])
 
@@ -409,8 +399,6 @@ def parse_milvus_entity(entity: dict) -> RecordedEntity:
             "id": str(entity["id"]),
             "content": deserialize_content(entity.get("content", "")),
             "metadata": metadata,
-            "created_at": datetime.datetime.fromtimestamp(
-                int(entity["created_at"]), datetime.UTC
-            ),
+            "created_at": datetime.datetime.fromtimestamp(int(entity["created_at"]), datetime.UTC),
         }
     )

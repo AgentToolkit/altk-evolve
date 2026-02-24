@@ -30,21 +30,13 @@ class CategoryManager:
     ):
         self.mode = mode or llm_settings.categorization_mode
         self.allow_dynamic_categories = (
-            allow_dynamic_categories
-            if allow_dynamic_categories is not None
-            else llm_settings.allow_dynamic_categories
+            allow_dynamic_categories if allow_dynamic_categories is not None else llm_settings.allow_dynamic_categories
         )
-        self.confirm_new_categories = (
-            confirm_new_categories
-            if confirm_new_categories is not None
-            else llm_settings.confirm_new_categories
-        )
+        self.confirm_new_categories = confirm_new_categories if confirm_new_categories is not None else llm_settings.confirm_new_categories
         self.custom_categories: set[str] = set()
 
         if self.mode not in ["predefined", "dynamic", "hybrid"]:
-            raise ValueError(
-                f"Invalid categorization mode: {self.mode}. Must be 'predefined', 'dynamic', or 'hybrid'"
-            )
+            raise ValueError(f"Invalid categorization mode: {self.mode}. Must be 'predefined', 'dynamic', or 'hybrid'")
 
     @property
     def predefined_categories(self) -> list[str]:
@@ -65,4 +57,3 @@ class CategoryManager:
             "descriptions": self.PREDEFINED_CATEGORIES,
             "custom": list(self.custom_categories),
         }
-

@@ -240,9 +240,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
             for ent in entities:
                 match = True
                 for key, value in filters.items():
-                    if key == "__entity_type":
-                        ent_value = ent.get("type")
-                    elif key.startswith("metadata."):
+                    if key.startswith("metadata."):
                         metadata_key = key.split(".", 1)[1]
                         ent_value = (ent.get("metadata") or {}).get(metadata_key)
                     else:

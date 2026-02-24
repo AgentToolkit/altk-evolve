@@ -141,28 +141,28 @@ class KaizenClient:
         facts = self.search_entities(
             namespace_id=namespace_id,
             query=query,
-            filters={"__entity_type": "fact", "metadata.user_id": user_id},
+            filters={"type": "fact", "metadata.user_id": user_id},
             limit=limit,
         )
         if query and not facts:
             facts = self.search_entities(
                 namespace_id=namespace_id,
                 query=None,
-                filters={"__entity_type": "fact", "metadata.user_id": user_id},
+                filters={"type": "fact", "metadata.user_id": user_id},
                 limit=limit,
             )
         if not facts and user_id != "default":
             facts = self.search_entities(
                 namespace_id=namespace_id,
                 query=query,
-                filters={"__entity_type": "fact", "metadata.user_id": "default"},
+                filters={"type": "fact", "metadata.user_id": "default"},
                 limit=limit,
             )
             if query and not facts:
                 facts = self.search_entities(
                     namespace_id=namespace_id,
                     query=None,
-                    filters={"__entity_type": "fact", "metadata.user_id": "default"},
+                    filters={"type": "fact", "metadata.user_id": "default"},
                     limit=limit,
                 )
 
