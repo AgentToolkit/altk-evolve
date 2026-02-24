@@ -1,5 +1,8 @@
+from dataclasses import dataclass
 from pydantic import BaseModel, Field
 from typing import Literal
+
+DEFAULT_TASK_DESCRIPTION = "Task description unknown"
 
 
 class Tip(BaseModel):
@@ -11,3 +14,20 @@ class Tip(BaseModel):
 
 class TipGenerationResponse(BaseModel):
     tips: list[Tip]
+
+
+@dataclass(frozen=True)
+class TipGenerationResult:
+    """Internal result from generate_tips(), pairing tips with the source task description."""
+
+    tips: list[Tip]
+    task_description: str
+
+
+@dataclass(frozen=True)
+class ConsolidationResult:
+    """Summary of a tip consolidation run."""
+
+    clusters_found: int
+    tips_before: int
+    tips_after: int

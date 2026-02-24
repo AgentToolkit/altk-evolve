@@ -308,6 +308,8 @@ class MilvusEntityBackend(BaseEntityBackend):
                         metadata=entity.metadata or {},
                     )
                 )
+        self.milvus.flush(namespace_id)
+        self.milvus.load_collection(namespace_id)
         return updates
 
     def search_entities(

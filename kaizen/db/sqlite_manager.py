@@ -28,8 +28,7 @@ class SQLiteManager:
     """A database for any resources that can't be generalized across backends."""
 
     def __init__(self, db_path: str | None = None):
-        resolved_db_path = db_path or os.getenv("KAIZEN_SQLITE_URI") or "entities.sqlite.db"
-        self.db_path = resolved_db_path
+        self.db_path = db_path or os.getenv("KAIZEN_SQLITE_URI") or os.getenv("KAIZEN_SQLITE_PATH") or "entities.sqlite.db"
         self.connection: sqlite3.Connection | None = None
         self._lock: threading.Lock | None = None
 

@@ -55,8 +55,17 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 - `create_entity(content: str, entity_type: str, metadata: str | None, enable_conflict_resolution: bool)`: Create a single entity in the namespace.
 - `delete_entity(entity_id: str)`: Delete a specific entity by its ID.
 
+## Tip Provenance
+
+Kaizen automatically tracks the origin of every guideline it generates or stores. Every tip entity contains `metadata` identifying its source:
+- `creation_mode`: Identifies how the tip was created (`auto-phoenix` via trace observability, `auto-mcp` via trajectory saving tools, or `manual`).
+- `source_task_id`: The ID of the original trace or task that inspired the tip, providing full audibility.
+
+See the [Low-Code Tracing Guide](docs/LOW_CODE_TRACING.md#6-understanding-tip-provenance-metadata) for more details.
+
 ## Documentation
 
+- [KAIZEN_LITE.md](KAIZEN_LITE.md) - Lightweight mode via Claude Code plugin (no infra required)
 - [CONFIGURATION.md](CONFIGURATION.md) - Detailed configuration options
 - [CLI.md](CLI.md) - Command-line interface documentation
 - [CLAUDE_CODE_DEMO.md](CLAUDE_CODE_DEMO.md) - Claude Code demo walkthrough

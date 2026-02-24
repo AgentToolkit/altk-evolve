@@ -330,6 +330,73 @@ def show_entity(
         raise typer.Exit(1)
 
 
+@entities_app.command("consolidate")
+def consolidate_entities(
+    namespace: Annotated[str, typer.Argument(help="Namespace to consolidate entities in")],
+    threshold: Annotated[Optional[float], typer.Option("--threshold", "-t", help="Cosine similarity threshold (0-1)")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show clusters without modifying anything")] = True,
+):
+    """Cluster similar guideline entities by task description similarity."""
+    from kaizen.config.kaizen import kaizen_config
+
+    client = get_client()
+
+    effective_threshold = threshold if threshold is not None else kaizen_config.clustering_threshold
+
+    console.print(f"[bold]Clustering entities in '{namespace}'[/bold]")
+    console.print(f"  Threshold: {effective_threshold}")
+    console.print(f"  Dry run: {dry_run}")
+    console.print()
+
+    try:
+        clusters = client.cluster_tips(namespace, threshold=effective_threshold)
+    except NamespaceNotFoundException:
+        console.print(f"[red]Namespace '{namespace}' not found.[/red]")
+        raise typer.Exit(1)
+
+    if not clusters:
+        console.print("[yellow]No clusters found. Tips have dissimilar task descriptions.[/yellow]")
+        return
+
+    console.print(f"[green]Found {len(clusters)} cluster(s)[/green]\n")
+
+    for i, cluster in enumerate(clusters, 1):
+        table = Table(title=f"Cluster {i} ({len(cluster)} entities)")
+        table.add_column("ID", style="cyan", max_width=20)
+        table.add_column("Task Description", max_width=40)
+        table.add_column("Content", max_width=50)
+
+        for entity in cluster:
+            task_desc = (entity.metadata or {}).get("task_description", "")
+            if len(task_desc) > 40:
+                task_desc = task_desc[:37] + "..."
+            content_str = str(entity.content)
+            if len(content_str) > 50:
+                content_str = content_str[:47] + "..."
+            table.add_row(str(entity.id), task_desc, content_str)
+
+        console.print(table)
+        console.print()
+
+    total_entities = sum(len(c) for c in clusters)
+    console.print(f"[dim]Total: {total_entities} entities in {len(clusters)} clusters[/dim]")
+
+    if dry_run:
+        console.print("\n[yellow]Dry run — no changes made. Use --no-dry-run to consolidate.[/yellow]")
+        return
+
+    console.print("\n[bold]Consolidating clusters...[/bold]")
+    try:
+        result = client.consolidate_tips(namespace, threshold=effective_threshold)
+        console.print("[green]Consolidation complete:[/green]")
+        console.print(f"  Clusters combined: {result.clusters_found}")
+        console.print(f"  Tips before: {result.tips_before}")
+        console.print(f"  Tips after: {result.tips_after}")
+    except KaizenException as e:
+        console.print(f"[red]Consolidation failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
 # =============================================================================
 # Sync Commands
 # =============================================================================

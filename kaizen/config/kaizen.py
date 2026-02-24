@@ -7,6 +7,7 @@ class KaizenConfig(BaseSettings):
     backend: Literal["milvus", "filesystem"] = "milvus"
     namespace_id: str = "kaizen"
     settings: BaseSettings | None = None
+    clustering_threshold: float = 0.80
 
 
 # to reload settings call kaizen_config.__init__()
