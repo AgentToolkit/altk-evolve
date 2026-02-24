@@ -16,16 +16,24 @@ RUN apt-get update && apt-get install -y \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Create Python venv and upgrade pip safely
-RUN python3 -m venv /opt/claude-venv \
-    && /opt/claude-venv/bin/python -m pip install --upgrade pip
+# Create non-root user
+RUN groupadd sandbox && useradd -m -g sandbox sandbox \
+    && mkdir -p /workspace && chown sandbox:sandbox /workspace
 
-# Install Claude Code (native installer)
-#RUN curl -fsSL https://install.anthropic.com/claude-code/linux | bash
-RUN curl -fsSL https://claude.ai/install.sh | bash
+# Create Python venv and make it accessible to sandbox user
+RUN python3 -m venv /opt/claude-venv \
+    && /opt/claude-venv/bin/python -m pip install --upgrade pip \
+    && chown -R sandbox:sandbox /opt/claude-venv
+
+# Install Claude Code as sandbox user
+USER sandbox
+RUN curl -fsSL -o /tmp/install.sh https://claude.ai/install.sh \
+    && bash /tmp/install.sh \
+    && rm /tmp/install.sh
 
 # Add venv + Claude to PATH
-ENV PATH="/opt/claude-venv/bin:/root/.local/bin:${PATH}"
+ENV HOME="/home/sandbox"
+ENV PATH="/opt/claude-venv/bin:/home/sandbox/.local/bin:${PATH}"
 
 WORKDIR /workspace
 
