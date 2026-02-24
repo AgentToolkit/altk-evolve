@@ -132,6 +132,8 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
                         "rationale": tip.rationale,
                         "trigger": tip.trigger,
                         "task_description": result.task_description,
+                        "source_task_id": task_id,
+                        "creation_mode": "auto-mcp",
                     },
                 )
                 for tip in result.tips
@@ -169,9 +171,11 @@ def create_entity(content: str, entity_type: str, metadata: str | None = None, e
                 metadata_dict = json.loads(metadata)
             except json.JSONDecodeError as e:
                 logger.exception(f"Invalid JSON in metadata parameter: {str(e)}")
-                return json.dumps(
-                    {"error": "Invalid metadata JSON", "message": f"Failed to parse metadata: {str(e)}", "invalid_metadata": metadata}
-                )
+                return json.dumps({"error": "Invalid JSON", "message": f"Failed to parse metadata: {str(e)}", "invalid_metadata": metadata})
+
+        # Inject creation mode for manually created guidelines/policies if not present
+        if entity_type in ("guideline", "policy"):
+            metadata_dict.setdefault("creation_mode", "manual")
 
         # Create the entity using the Entity schema
         entity = Entity(type=entity_type, content=content, metadata=metadata_dict)

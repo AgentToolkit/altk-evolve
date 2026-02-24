@@ -578,10 +578,13 @@ class TestSync:
         assert result.tips_generated == 2
         phoenix_sync.client.update_entities.assert_called()
 
-        # Verify task_description is persisted in tip entity metadata
+        # Verify provenance metadata is persisted in tip entities
         tip_update_call = phoenix_sync.client.update_entities.call_args_list[-1]
         tip_entities = tip_update_call.kwargs["entities"]
         assert all(e.metadata.get("task_description") == "Hello" for e in tip_entities)
+        assert all(e.metadata.get("source_task_id") == "t1" for e in tip_entities)
+        assert all(e.metadata.get("source_span_id") == "s1" for e in tip_entities)
+        assert all(e.metadata.get("creation_mode") == "auto-phoenix" for e in tip_entities)
 
     @patch("kaizen.sync.phoenix_sync.urllib.request.urlopen")
     @patch("kaizen.sync.phoenix_sync.generate_tips")

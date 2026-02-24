@@ -119,6 +119,22 @@ async def test_save_trajectory_and_retrieve_guidelines(mcp):
         guidelines = response.content[0].text
         assert "# Guidelines for: " in guidelines
 
+        # Verify tip provenance in Kaizen backend
+        from kaizen.frontend.client.kaizen_client import KaizenClient
+        from kaizen.config.kaizen import kaizen_config
+
+        client = KaizenClient()
+        entities = client.search_entities(
+            namespace_id=kaizen_config.namespace_id,
+            filters={"type": "guideline"},
+            limit=10,
+        )
+        assert len(entities) > 0
+        for entity in entities:
+            metadata = entity.metadata or {}
+            assert metadata.get("source_task_id") == "123"
+            assert metadata.get("creation_mode") == "auto-mcp"
+
 
 @pytest.mark.e2e
 async def test_create_entity_without_conflict_resolution(mcp):
@@ -301,6 +317,6 @@ async def test_create_entity_with_invalid_json_metadata(mcp):
 
         # Should return an error
         assert "error" in result
-        assert result["error"] == "Invalid metadata JSON"
+        assert result["error"] == "Invalid JSON"
         assert "message" in result
         assert "invalid_metadata" in result
