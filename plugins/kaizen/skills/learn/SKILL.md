@@ -1,13 +1,13 @@
 ---
 name: learn
-description: Extract actionable entities from conversation trajectories. Analyzes user requests, steps taken, successes and failures to generate proactive entities that help on similar future tasks.
+description: Extract actionable entities from conversation trajectories. Systematically identifies errors, failures, and inefficiencies to generate proactive entities that prevent them from recurring.
 ---
 
 # Entity Generator
 
 ## Overview
 
-This skill analyzes conversation trajectories to extract actionable entities that would help on similar tasks in the future. It transforms reactive learnings (what failed) into proactive recommendations (what to do first).
+This skill analyzes conversation trajectories to extract actionable entities that would help on similar tasks in the future. It **prioritizes errors encountered during the conversation** — tool failures, exceptions, wrong approaches, retry loops — and transforms them into proactive recommendations that prevent those errors from recurring.
 
 ## Workflow
 
@@ -19,10 +19,34 @@ Identify from your current conversation:
 - **Steps Taken**: What reasoning, actions, and observations occurred?
 - **What Worked**: Which approaches succeeded?
 - **What Failed**: Which approaches didn't work and why?
+- **Errors Encountered**: Tool failures, exceptions, permission errors, retry loops, dead ends, and wrong initial approaches
 
-### Step 2: Extract Entities
+### Step 2: Identify Errors and Root Causes
 
-Extract 3-5 proactive entities following these principles:
+Scan the conversation for these error signals:
+
+1. **Tool/command failures**: Non-zero exit codes, error messages, exceptions, stack traces
+2. **Permission/access errors**: "Permission denied", "not found", sandbox restrictions
+3. **Wrong initial approach**: First attempt abandoned in favor of a different strategy
+4. **Retry loops**: Same action attempted multiple times with variations before succeeding
+5. **Missing prerequisites**: Missing dependencies, packages, configs discovered mid-task
+6. **Silent failures**: Actions that appeared to succeed but produced wrong results
+
+For each error found, document:
+
+| | Error Example | Root Cause | Resolution | Prevention Guideline |
+|---|---|---|---|---|
+| 1 | `exiftool: command not found` | System tool unavailable in sandbox | Switched to Python PIL | Use PIL for image metadata in sandboxed environments |
+| 2 | `git push` rejected (no upstream) | Branch not tracked to remote | Added `-u origin branch` | Always set upstream when pushing a new branch |
+| 3 | Tried regex parsing of HTML, got wrong results | Regex can't handle nested tags | Switched to BeautifulSoup | Use a proper HTML parser (BeautifulSoup/lxml), never regex |
+
+> **If no errors are found**, proceed to Step 3 and extract entities from successful patterns.
+
+### Step 3: Extract Entities
+
+Extract 3-5 proactive entities. **Prioritize entities derived from errors identified in Step 2.**
+
+Follow these principles:
 
 1. **Reframe failures as proactive recommendations:**
    - If an approach failed due to permissions → recommend the alternative FIRST
@@ -37,7 +61,16 @@ Extract 3-5 proactive entities following these principles:
    - Bad trigger: "When apt-get fails"
    - Good trigger: "When working in containerized/sandboxed environments"
 
-### Step 3: Output Entities JSON
+4. **For retry loops, recommend the final working approach as the starting point:**
+   - If 3 variations were tried before one worked, the entity should recommend the working variation directly
+   - Eliminate the trial-and-error by encoding the answer
+
+5. **Map error-derived entities to categories:**
+   - `strategy` — wrong approach was chosen → recommend the right approach from the start
+   - `recovery` — a fallback chain was needed → start from the approach that worked, only fall back to alternatives if it's unavailable
+   - `optimization` — effort was wasted on retries/timeouts → eliminate the waste
+
+### Step 4: Output Entities JSON
 
 Output entities in the following JSON format:
 
@@ -54,7 +87,7 @@ Output entities in the following JSON format:
 }
 ```
 
-### Step 4: Save Entities
+### Step 5: Save Entities
 
 After generating the entities JSON, save them using the save_entities.py script:
 
@@ -133,10 +166,50 @@ Entities stored in: /path/to/project/.kaizen/entities.json
 }
 ```
 
+### Error-Prevention Entity Examples
+
+**From a retry loop** (tried 3 git push variations):
+```json
+{
+  "content": "When pushing a new branch, always use 'git push -u origin <branch>' to set upstream tracking",
+  "rationale": "Plain 'git push' fails on new branches without upstream configured; -u sets it in one step",
+  "category": "optimization",
+  "trigger": "When pushing a newly created git branch for the first time"
+}
+```
+
+**From a wrong initial approach** (tried regex, switched to parser):
+```json
+{
+  "content": "Use BeautifulSoup or lxml for HTML content extraction, never regex",
+  "rationale": "Regex cannot reliably handle nested/malformed HTML; a proper parser handles edge cases",
+  "category": "strategy",
+  "trigger": "When extracting data from HTML documents or web pages"
+}
+```
+
+**From a permission error** (apt-get blocked in sandbox):
+```json
+{
+  "content": "Install Python packages with pip/uv instead of system package managers in sandboxed environments",
+  "rationale": "apt-get and brew require root/sudo which sandboxed environments block; pip works in user space",
+  "category": "recovery",
+  "trigger": "When installing dependencies in containerized or sandboxed environments"
+}
+```
+
 ## Best Practices
 
-1. **Be specific**: Generic entities are less useful than context-specific ones
-2. **Be actionable**: Entities should clearly state what to do
-3. **Include rationale**: Explain why the approach works
-4. **Use situational triggers**: Context-based triggers are more useful than failure-based ones
-5. **Limit to 3-5 entities**: Focus on the most impactful learnings
+1. **Prioritize error-derived entities**: Errors are the highest-signal source of learnings — extract entities from them first
+2. **One error, one entity**: Each distinct error should produce exactly one prevention entity
+3. **Be specific**: Generic entities are less useful than context-specific ones
+4. **Be actionable**: Entities should clearly state what to do
+5. **Include rationale**: Explain why the approach works
+6. **Use situational triggers**: Context-based triggers are more useful than failure-based ones
+7. **Limit to 3-5 entities**: Focus on the most impactful learnings
+8. **Resolving Rules 2 vs 7**: When more than 5 distinct errors are found, start from Rule 2 (one error, one entity) then reduce to 3-5 entities using these steps:
+   - **Merge**: Combine errors with the same root cause or fix into a single prevention entity
+   - **Rank**: Select among remaining entities by severity > frequency > user impact > recency
+   - **Drop**: Discard lowest-ranked entities that exceed the cap
+
+   *Example*: A session hits 8 errors — 3 timeout variants (connect, read, DNS), 2 auth failures (expired token, missing header), 1 file-not-found, 1 permission error, 1 import error. Apply: merge the 3 timeouts into one network-resilience entity and the 2 auth failures into one auth-validation entity, then rank the resulting 5 entities (network-resilience, auth-validation, file-not-found, permission, import) and keep the top 3-5.
