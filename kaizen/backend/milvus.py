@@ -234,7 +234,8 @@ class MilvusEntityBackend(BaseEntityBackend):
                 raise NamespaceNotFoundException(f"Namespace {namespace_id} not found")
             try:
                 namespace.num_entities = self.milvus.get_collection_stats(namespace_id)["row_count"]
-            except Exception:
+            except Exception as e:
+                logger.exception(f"Failed to get collection stats for namespace {namespace_id}: {e}")
                 namespace.num_entities = 0
             return namespace
 
@@ -244,7 +245,8 @@ class MilvusEntityBackend(BaseEntityBackend):
             for namespace in db_manager.search_namespaces(limit):
                 try:
                     namespace.num_entities = self.milvus.get_collection_stats(namespace.id)["row_count"]
-                except Exception:
+                except Exception as e:
+                    logger.exception(f"Failed to get collection stats for namespace {namespace.id}: {e}")
                     namespace.num_entities = 0
                 namespaces.append(namespace)
             return namespaces

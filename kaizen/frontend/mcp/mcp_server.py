@@ -70,14 +70,16 @@ def _setup_ui_routes():
         @app.get("/ui")
         @app.get("/ui/{catchall:path}")
         async def serve_spa(request: Request, catchall: str = ""):
+            resolved_base = os.path.realpath(ui_dist_dir)
             # If the requested file exists in dist, serve it (for assets not caught by /ui_static if any)
-            potential_file = os.path.join(ui_dist_dir, catchall)
-            if catchall and os.path.isfile(potential_file):
-                return FileResponse(potential_file)
-            
+            if catchall:
+                potential_file = os.path.realpath(os.path.join(ui_dist_dir, catchall))
+                if potential_file.startswith(resolved_base + os.sep) and os.path.isfile(potential_file):
+                    return FileResponse(potential_file)
+
             # Otherwise serve index.html
-            index_file = os.path.join(ui_dist_dir, "index.html")
-            if os.path.exists(index_file):
+            index_file = os.path.realpath(os.path.join(ui_dist_dir, "index.html"))
+            if index_file.startswith(resolved_base + os.sep) and os.path.exists(index_file):
                 return FileResponse(index_file)
             raise HTTPException(status_code=404, detail="UI index.html not found")
     else:

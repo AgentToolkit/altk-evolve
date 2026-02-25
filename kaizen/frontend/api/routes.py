@@ -45,18 +45,26 @@ def get_dashboard() -> dict[str, Any]:
 
     for ns in namespaces:
         try:
-            # We fetch recent entities from this namespace
-            ns_entities = client.get_all_entities(ns.id, limit=1000)
-            total_entities += len(ns_entities)
-            
+            total_entities += ns.num_entities or 0
+            # Fetch only a small sample per namespace for the dashboard
+            ns_entities = client.get_all_entities(ns.id, limit=10)
+
             for entity in ns_entities:
                 etype = entity.type or "unknown"
                 type_breakdown[etype] = type_breakdown.get(etype, 0) + 1
-                
+
+                # Safely handle non-string content before slicing
+                content = entity.content
+                if isinstance(content, str):
+                    snippet = content[:100] + "..." if len(content) > 100 else content
+                else:
+                    safe_str = str(content)
+                    snippet = safe_str[:100] + "..." if len(safe_str) > 100 else safe_str
+
                 recent_entities.append({
                     "id": entity.id,
                     "type": entity.type,
-                    "content": entity.content[:100] + "..." if entity.content and len(entity.content) > 100 else entity.content,
+                    "content": snippet,
                     "namespace": ns.id,
                     "created_at": entity.created_at.isoformat() if hasattr(entity, 'created_at') and entity.created_at else None
                 })
@@ -177,7 +185,8 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
         from kaizen.schema.tips import Tip
         try:
             # Tip expects content at the root, so we map req.content and unpack the metadata
-            Tip(content=req.content, **req.metadata)
+            tip_meta = {k: v for k, v in req.metadata.items() if k != "content"}
+            Tip(content=req.content, **tip_meta)
         except Exception as e:
             logger.error(f"Guideline validation failed: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid guideline metadata schema: {e}")
@@ -187,7 +196,8 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
             from kaizen.schema.policy import Policy
             try:
                 # The Policy model checks the full payload
-                Policy(content=req.content, type=req.type, **req.metadata)
+                policy_meta = {k: v for k, v in req.metadata.items() if k not in ("content", "type")}
+                Policy(content=req.content, type=req.type, **policy_meta)
             except Exception as e:
                 logger.error(f"Policy validation failed: {e}")
                 raise HTTPException(status_code=422, detail=f"Invalid policy metadata schema: {e}")

@@ -74,7 +74,7 @@ export default function Namespaces() {
                     <h2 className="section-title">Namespaces</h2>
                     <p className="text-secondary">Manage separated knowledge bases for your agents</p>
                 </div>
-                <button className="btn btn-primary" onClick={() => setIsCreateOpen(true)}>
+                <button className="btn btn-primary" onClick={() => { setNewName(''); setCreateError(null); setIsCreateOpen(true); }}>
                     <Plus size={18} />
                     Create Namespace
                 </button>
@@ -163,7 +163,7 @@ export default function Namespaces() {
                             </div>
                             {createError && <p className="text-danger small-text mt-2">{createError}</p>}
                             <div className="modal-actions">
-                                <button type="button" className="btn btn-secondary" onClick={() => setIsCreateOpen(false)}>Cancel</button>
+                                <button type="button" className="btn btn-secondary" onClick={() => { setNewName(''); setCreateError(null); setIsCreateOpen(false); }}>Cancel</button>
                                 <button type="submit" className="btn btn-primary">Create</button>
                             </div>
                         </form>

@@ -7,12 +7,11 @@ import EntityExplorer from './EntityExplorer';
 // Mock the global fetch
 globalThis.fetch = vi.fn();
 
-// Add missing global confirm for Node environment
-globalThis.confirm = vi.fn(() => true) as any;
-
 describe('EntityExplorer Component', () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        // Re-apply confirm stub after resetAllMocks clears it
+        globalThis.confirm = vi.fn(() => true) as any;
     });
 
     const renderWithRouter = () => {

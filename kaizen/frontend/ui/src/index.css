@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap';
 
 :root {
   --primary: #4F46E5;
@@ -57,6 +57,7 @@ h1.logo {
   font-weight: 700;
   background: linear-gradient(to right, #818cf8, #c084fc);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   display: flex;
   align-items: center;
