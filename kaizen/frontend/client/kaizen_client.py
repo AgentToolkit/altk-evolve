@@ -6,7 +6,7 @@ from kaizen.config.kaizen import KaizenConfig
 from kaizen.llm.fact_extraction.fact_extraction import ExtractedFact, extract_facts_from_messages
 from kaizen.schema.conflict_resolution import EntityUpdate
 from kaizen.schema.core import Entity, Namespace, RecordedEntity
-from kaizen.schema.exceptions import NamespaceNotFoundException
+from kaizen.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
 from kaizen.schema.tips import ConsolidationResult
 
 logger = logging.getLogger(__name__)
@@ -189,9 +189,12 @@ class KaizenClient:
         try:
             return self.get_namespace_details(namespace_id)
         except NamespaceNotFoundException:
-            return self.create_namespace(namespace_id)
+            try:
+                return self.create_namespace(namespace_id)
+            except NamespaceAlreadyExistsException:
+                return self.get_namespace_details(namespace_id)
 
-    async def store_user_memory(
+    def store_user_memory(
         self,
         namespace_id: str,
         message: str,

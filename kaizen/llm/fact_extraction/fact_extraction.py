@@ -32,7 +32,7 @@ def _build_prompt(messages: list[dict], use_categorization: bool) -> str:
     messages_str = "\n".join(filtered_messages)
 
     prompt_input: dict[str, Any] = {
-        "current_datetime": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "current_datetime": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S"),
         "user_messages": messages_str,
     }
 
@@ -54,20 +54,19 @@ def _build_prompt(messages: list[dict], use_categorization: bool) -> str:
 def extract_facts_from_messages(messages: list[dict], use_categorization: bool | None = None) -> list[str] | list[ExtractedFact]:
     """Extract user facts from chat messages."""
     if use_categorization is None:
-        use_categorization = llm_settings.categorization_mode in {"predefined", "dynamic", "hybrid"}
+        use_categorization = True
 
     prompt = _build_prompt(messages, use_categorization=use_categorization)
-    response = completion(
-        model=llm_settings.fact_extraction_model,
-        messages=[{"role": "user", "content": prompt}],
-        custom_llm_provider=llm_settings.custom_llm_provider,
-    )
-    content = response.choices[0].message.content or ""  # type: ignore[union-attr]
-    cleaned = clean_llm_response(content)
-
     last_error = None
     for _ in range(3):
         try:
+            response = completion(
+                model=llm_settings.fact_extraction_model,
+                messages=[{"role": "user", "content": prompt}],
+                custom_llm_provider=llm_settings.custom_llm_provider,
+            )
+            content = response.choices[0].message.content or ""  # type: ignore[union-attr]
+            cleaned = clean_llm_response(content)
             parsed_json = json.loads(cleaned)
             if use_categorization:
                 categorized_facts = CategorizedExtractedFacts.model_validate(parsed_json)

@@ -429,12 +429,21 @@ entity_schema = CollectionSchema(
 
 def parse_milvus_entity(entity: dict) -> RecordedEntity:
     metadata = entity.get("metadata", {}) or {}
+    created_at_value = entity.get("created_at")
+    if created_at_value:
+        try:
+            created_at = datetime.datetime.fromtimestamp(int(created_at_value), datetime.UTC)
+        except (TypeError, ValueError, OSError):
+            created_at = datetime.datetime.now(datetime.UTC)
+    else:
+        created_at = datetime.datetime.now(datetime.UTC)
+
     return RecordedEntity.model_validate(
         {
             **entity,
             "id": str(entity["id"]),
             "content": deserialize_content(entity.get("content", "")),
             "metadata": metadata,
-            "created_at": datetime.datetime.fromtimestamp(int(entity["created_at"]), datetime.UTC),
+            "created_at": created_at,
         }
     )
