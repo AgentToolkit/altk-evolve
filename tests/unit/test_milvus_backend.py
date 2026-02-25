@@ -251,6 +251,52 @@ def test_search_entities(milvus_backend: MilvusEntityBackend, monkeypatch):
 
 
 @pytest.mark.unit
+def test_search_entities_filters_metadata_in_python(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """Test metadata filtering is applied even if backend returns mixed records."""
+
+    def query(collection_name, filter="", output_fields=None, timeout=None, ids=None, partition_names=None, **kwargs):
+        now = int(datetime.datetime.now(datetime.UTC).timestamp())
+        return [
+            {
+                "id": 1,
+                "type": "trajectory",
+                "content": "message one",
+                "created_at": now,
+                "metadata": {"task_id": "123"},
+            },
+            {
+                "id": 2,
+                "type": "guideline",
+                "content": "guideline",
+                "created_at": now,
+                "metadata": {"source_task_id": "123"},
+            },
+            {
+                "id": 3,
+                "type": "trajectory",
+                "content": "message two",
+                "created_at": now,
+                "metadata": {"task_id": "other"},
+            },
+        ]
+
+    monkeypatch.setattr(milvus_backend.milvus, "has_collection", always_has_collection)
+    monkeypatch.setattr(milvus_backend.milvus, "query", query)
+
+    result = milvus_backend.search_entities(
+        namespace_id="test_namespace",
+        query=None,
+        filters={"type": "trajectory", "task_id": "123"},
+        limit=100,
+    )
+
+    assert len(result) == 1
+    assert result[0].id == "1"
+    assert result[0].type == "trajectory"
+    assert (result[0].metadata or {}).get("task_id") == "123"
+
+
+@pytest.mark.unit
 def test_delete_entity_by_id(milvus_backend: MilvusEntityBackend, monkeypatch):
     """Test deleting an entity by ID."""
     delete = Mock()

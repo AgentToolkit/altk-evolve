@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import os
 import uuid
 
 from kaizen.backend.base import BaseEntityBackend, BaseSettings
@@ -41,7 +42,7 @@ class MilvusEntityBackend(BaseEntityBackend):
         super().__init__(config)
         resolved_config = config if isinstance(config, MilvusDBSettings) else milvus_client_settings
         self.config = resolved_config
-        self.sqlite_uri = self.config.sqlite_uri
+        self.sqlite_uri = os.getenv("KAIZEN_SQLITE_PATH") or self.config.sqlite_uri
         self.milvus = MilvusClient(
             uri=self.config.uri,
             user=self.config.user,
@@ -68,6 +69,35 @@ class MilvusEntityBackend(BaseEntityBackend):
             else:
                 expressions.append(f"metadata[{json.dumps(str(key))}] == {literal}")
         return " AND ".join(expressions)
+
+    def _split_filters(self, filters: dict | None) -> tuple[dict, dict]:
+        schema_filters: dict = {}
+        metadata_filters: dict = {}
+        for key, value in (filters or {}).items():
+            if key in self._schema_filter_fields:
+                schema_filters[key] = value
+            elif key.startswith("metadata."):
+                metadata_filters[key.split(".", 1)[1]] = value
+            else:
+                metadata_filters[str(key)] = value
+        return schema_filters, metadata_filters
+
+    @staticmethod
+    def _entity_matches_filter(entity: RecordedEntity, schema_filters: dict, metadata_filters: dict) -> bool:
+        for key, value in schema_filters.items():
+            entity_value = getattr(entity, key, None)
+            if key == "id":
+                if str(entity_value) != str(value):
+                    return False
+            elif entity_value != value:
+                return False
+
+        metadata = entity.metadata or {}
+        for key, value in metadata_filters.items():
+            if metadata.get(key) != value:
+                return False
+
+        return True
 
     @staticmethod
     def _extract_vector_score(result: dict) -> float | None:
@@ -181,7 +211,7 @@ class MilvusEntityBackend(BaseEntityBackend):
         namespace_id = namespace_id or "ns_" + str(uuid.uuid4()).replace("-", "_")
 
         if not self.milvus.has_collection(namespace_id):
-            self.milvus.create_collection(collection_name=namespace_id, schema=entity_schema)
+            self.milvus.create_collection(collection_name=namespace_id, dimension=384, auto_id=False, schema=entity_schema)
         self._ensure_embedding_index(namespace_id)
 
         with SQLiteManager(self.sqlite_uri) as db_manager:
@@ -317,12 +347,13 @@ class MilvusEntityBackend(BaseEntityBackend):
     ) -> list[RecordedEntity]:
         self.validate_namespace(namespace_id)
         filters = filters or {}
+        schema_filters, metadata_filters = self._split_filters(filters)
 
         if query is None:
             try:
                 results = self.milvus.query(
                     collection_name=namespace_id,
-                    filter=self._build_filter_expr(filters, base_conditions=["id > 0"]),
+                    filter=self._build_filter_expr(schema_filters, base_conditions=["id > 0"]),
                     output_fields=["id", "type", "content", "created_at", "metadata"],
                     limit=limit,
                 )
@@ -341,7 +372,7 @@ class MilvusEntityBackend(BaseEntityBackend):
                     collection_name=namespace_id,
                     anns_field="embedding",
                     data=[self.embedding_model.encode(query)],
-                    filter=self._build_filter_expr(filters),
+                    filter=self._build_filter_expr(schema_filters),
                     limit=limit,
                     output_fields=["*"],
                     search_params={"metric_type": self.metric_type},
@@ -353,7 +384,7 @@ class MilvusEntityBackend(BaseEntityBackend):
                         collection_name=namespace_id,
                         anns_field="embedding",
                         data=[self.embedding_model.encode(query)],
-                        filter=self._build_filter_expr(filters),
+                        filter=self._build_filter_expr(schema_filters),
                         limit=limit,
                         output_fields=["*"],
                         search_params={"metric_type": self.metric_type},
@@ -363,7 +394,8 @@ class MilvusEntityBackend(BaseEntityBackend):
             flat_results = self._flatten_search_results(raw_results)
             normalized = [self._normalize_search_hit(hit) for hit in flat_results]
             results = self._sort_vector_results(normalized, metric_type=self.metric_type)
-        return [parse_milvus_entity(i) for i in results]
+        parsed = [parse_milvus_entity(i) for i in results]
+        return [entity for entity in parsed if self._entity_matches_filter(entity, schema_filters, metadata_filters)]
 
     def delete_entity_by_id(self, namespace_id: str, entity_id: str):
         try:
