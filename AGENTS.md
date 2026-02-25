@@ -59,7 +59,7 @@ pre-commit install
 - To run all tests: `uv run pytest -m "e2e or unit or phoenix"`
 
 ## Available Interfaces
-- MCP Server: `get_guidelines()`, `save_trajectory()`
+- MCP Server: `get_entities()`, `get_guidelines()`, `save_trajectory()`
 - CLI: Run `kaizen --help` if details are needed about its subcommands.
   Available subcommands include `namespaces`, `entities`, and `sync`
 - Python Client: `KaizenClient()` for programmatic access

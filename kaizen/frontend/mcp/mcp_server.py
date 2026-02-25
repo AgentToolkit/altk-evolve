@@ -63,30 +63,50 @@ def get_client() -> KaizenClient:
         return _client
 
 
+def get_entities_logic(task: str, entity_type: str = "guideline") -> str:
+    """Implementation logic for get_entities tool."""
+    logger.info(f"Getting entities of type '{entity_type}' for task: {task}")
+    # Get relevant entities
+    results = get_client().search_entities(
+        namespace_id=kaizen_config.namespace_id,
+        query=task,
+        filters={"type": entity_type},
+    )
+
+    # Format the response
+    header = f"# {entity_type.capitalize()}s for: {task}"
+    response_lines = [f"{header}\n"]
+
+    for i, entity in enumerate(results, 1):
+        response_lines.append(f"{i}. {entity.content}")
+
+    return "\n".join(response_lines)
+
+
+@mcp.tool()
+def get_entities(task: str, entity_type: str = "guideline") -> str:
+    """
+    Get relevant entities for a given task, filtered by type.
+    Provide a task description and receive applicable best practices, guidelines, or policies.
+
+    Args:
+        task: A description of the task you want entities for
+        entity_type: The type of entities to retrieve (e.g., 'guideline', 'policy'). Defaults to 'guideline'.
+    """
+    return get_entities_logic(task, entity_type)
+
+
 @mcp.tool()
 def get_guidelines(task: str) -> str:
     """
     Get relevant guidelines for a given task.
     Provide a task description and receive applicable best practices and guidelines.
+    This tool is maintained for backward compatibility. Use 'get_entities' for more generic queries.
 
     Args:
         task: A description of the task you want guidelines for
     """
-    logger.info(f"Getting guidelines for task: {task}")
-    # Get relevant guidelines
-    results = get_client().search_entities(
-        namespace_id=kaizen_config.namespace_id,
-        query=task,
-        filters={"type": "guideline"},
-    )
-
-    # Format the response
-    response_lines = [f"# Guidelines for: {task}\n"]
-
-    for i, guideline in enumerate(results, 1):
-        response_lines.append(f"{i}. {guideline.content}")
-
-    return "\n".join(response_lines)
+    return get_entities_logic(task, "guideline")
 
 
 @mcp.tool()
