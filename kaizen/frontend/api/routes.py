@@ -229,7 +229,5 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
             raise Exception("Failed to insert entity. No updates returned.")
         return {"success": True, "id": updates[0].id}
     except Exception as e:
-        from fastapi import HTTPException
-
         logger.error(f"Error creating entity in namespace {namespace_id}: {e}")
         raise HTTPException(status_code=400, detail=str(e))

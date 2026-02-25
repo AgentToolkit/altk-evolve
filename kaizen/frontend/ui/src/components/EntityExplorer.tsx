@@ -19,24 +19,16 @@ export default function EntityExplorer() {
 
     const debouncedFilter = useDebounce(filterType, 300);
 
-    // If there's no namespace ID, halt rendering so we don't fetch from a null URL
-    if (!id) {
-        return (
-            <div className="entity-explorer-container">
-                <div className="page-header explorer-header">
-                    <h2 className="section-title text-danger">Error: Missing Namespace ID</h2>
-                    <p className="text-secondary">Please return to the Namespaces page and try again.</p>
-                </div>
-            </div>
-        );
-    }
-
-    const apiUrl = `/api/namespaces/${encodeURIComponent(id)}/entities${debouncedFilter ? `?type=${encodeURIComponent(debouncedFilter)}` : ''}`;
+    // Compute apiUrl as null when id is missing so useApi skips fetching
+    const apiUrl = id
+        ? `/api/namespaces/${encodeURIComponent(id)}/entities${debouncedFilter ? `?type=${encodeURIComponent(debouncedFilter)}` : ''}`
+        : null;
     const { data: entities, loading, error, refetch } = useApi<Entity[]>(apiUrl);
 
     const handleDelete = useCallback(async (entityId: string) => {
+        if (!id) return;
         try {
-            const res = await fetch(`/api/namespaces/${encodeURIComponent(id || '')}/entities/${encodeURIComponent(entityId)}`, {
+            const res = await fetch(`/api/namespaces/${encodeURIComponent(id)}/entities/${encodeURIComponent(entityId)}`, {
                 method: 'DELETE'
             });
             if (!res.ok) {
@@ -61,6 +53,18 @@ export default function EntityExplorer() {
             return () => clearTimeout(timer);
         }
     }, [errorToast]);
+
+    // Early return AFTER all hooks have been called
+    if (!id) {
+        return (
+            <div className="entity-explorer-container">
+                <div className="page-header explorer-header">
+                    <h2 className="section-title text-danger">Error: Missing Namespace ID</h2>
+                    <p className="text-secondary">Please return to the Namespaces page and try again.</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="entity-explorer-container">

@@ -115,12 +115,12 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
 
             if (!res.ok) {
                 let errorMsg = `HTTP ${res.status} ${res.statusText}`;
+                const body = await res.text();
                 try {
-                    const d = await res.json();
+                    const d = JSON.parse(body);
                     errorMsg = d.detail || errorMsg;
                 } catch {
-                    const text = await res.text();
-                    if (text) errorMsg += `: ${text}`;
+                    if (body) errorMsg += `: ${body}`;
                 }
                 throw new Error(errorMsg);
             }
