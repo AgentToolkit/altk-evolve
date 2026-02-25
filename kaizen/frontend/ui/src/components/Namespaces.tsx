@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Folder, Trash2, Plus, AlertCircle, RefreshCw, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useApi } from '../hooks/useApi';
+import ConfirmDialog from './ConfirmDialog';
 
 interface Namespace {
     id: string;
@@ -8,33 +10,16 @@ interface Namespace {
 }
 
 export default function Namespaces() {
-    const [namespaces, setNamespaces] = useState<Namespace[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const { data: namespaces, loading, error, refetch } = useApi<Namespace[]>('/api/namespaces');
 
     // Create Modal State
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [newName, setNewName] = useState("");
     const [createError, setCreateError] = useState<string | null>(null);
 
-    const fetchNamespaces = () => {
-        setLoading(true);
-        fetch('/api/namespaces')
-            .then(res => {
-                if (!res.ok) throw new Error('Failed to fetch namespaces');
-                return res.json();
-            })
-            .then(data => {
-                setNamespaces(data);
-                setError(null);
-            })
-            .catch(err => setError(err.message))
-            .finally(() => setLoading(false));
-    };
-
-    useEffect(() => {
-        fetchNamespaces();
-    }, []);
+    // Delete confirmation state
+    const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+    const [errorToast, setErrorToast] = useState<string | null>(null);
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -58,15 +43,13 @@ export default function Namespaces() {
 
             setNewName("");
             setIsCreateOpen(false);
-            fetchNamespaces();
+            refetch();
         } catch (err: any) {
             setCreateError(err.message);
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm(`Are you sure you want to delete the namespace "${id}" and all its entities?`)) return;
-
         try {
             const res = await fetch(`/api/namespaces/${encodeURIComponent(id)}`, {
                 method: 'DELETE'
@@ -75,9 +58,12 @@ export default function Namespaces() {
                 const d = await res.json();
                 throw new Error(d.detail || 'Failed to delete namespace');
             }
-            fetchNamespaces();
+            refetch();
         } catch (err: any) {
-            alert("Error deleting: " + err.message);
+            setErrorToast(err.message);
+            setTimeout(() => setErrorToast(null), 5000);
+        } finally {
+            setDeleteTarget(null);
         }
     };
 
@@ -98,7 +84,7 @@ export default function Namespaces() {
                 <div className="error-state">
                     <AlertCircle size={40} />
                     <p>{error}</p>
-                    <button className="btn btn-secondary" onClick={fetchNamespaces}>
+                    <button className="btn btn-secondary" onClick={refetch}>
                         <RefreshCw size={16} /> Retry
                     </button>
                 </div>
@@ -117,14 +103,14 @@ export default function Namespaces() {
                             </tr>
                         </thead>
                         <tbody>
-                            {namespaces.length === 0 ? (
+                            {(namespaces || []).length === 0 ? (
                                 <tr>
                                     <td colSpan={3} className="text-center py-8 text-secondary">
                                         No namespaces found. Create one to get started.
                                     </td>
                                 </tr>
                             ) : (
-                                namespaces.map(ns => (
+                                (namespaces || []).map(ns => (
                                     <tr key={ns.id}>
                                         <td>
                                             <div className="d-flex align-center gap-2 font-medium">
@@ -135,7 +121,7 @@ export default function Namespaces() {
                                         <td>
                                             <span className="badge">{ns.amount_of_entities}</span>
                                         </td>
-                                        <td className="text-right d-flex justify-end gap-2" style={{ border: 'none' }}>
+                                        <td className="text-right d-flex justify-end gap-2 table-actions">
                                             <Link
                                                 to={`/namespaces/${ns.id}/entities`}
                                                 className="btn-icon"
@@ -146,7 +132,7 @@ export default function Namespaces() {
                                             <button
                                                 className="btn-icon text-danger"
                                                 title="Delete Namespace"
-                                                onClick={() => handleDelete(ns.id)}
+                                                onClick={() => setDeleteTarget(ns.id)}
                                             >
                                                 <Trash2 size={18} />
                                             </button>
@@ -182,6 +168,23 @@ export default function Namespaces() {
                             </div>
                         </form>
                     </div>
+                </div>
+            )}
+
+            {deleteTarget && (
+                <ConfirmDialog
+                    title="Delete Namespace"
+                    message={`Are you sure you want to delete the namespace "${deleteTarget}" and all its entities? This action cannot be undone.`}
+                    confirmLabel="Delete"
+                    variant="danger"
+                    onConfirm={() => handleDelete(deleteTarget)}
+                    onCancel={() => setDeleteTarget(null)}
+                />
+            )}
+
+            {errorToast && (
+                <div className="error-inline" style={{ position: 'fixed', bottom: '1.5rem', right: '1.5rem', zIndex: 100, maxWidth: '400px' }}>
+                    {errorToast}
                 </div>
             )}
         </div>

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
 import { Activity, Database, FileText, XCircle } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import { useApi } from '../hooks/useApi';
 
 interface TypeBreakdown {
     type: string;
@@ -26,25 +26,7 @@ interface DashboardData {
 const COLORS = ['#4F46E5', '#8B5CF6', '#EC4899', '#10B981', '#F59E0B', '#3B82F6', '#6366F1'];
 
 export default function Dashboard() {
-    const [data, setData] = useState<DashboardData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        fetch('/api/dashboard')
-            .then((res) => {
-                if (!res.ok) throw new Error('Failed to fetch dashboard data');
-                return res.json();
-            })
-            .then((d) => {
-                setData(d);
-                setLoading(false);
-            })
-            .catch((err) => {
-                setError(err.message || 'Error occurred');
-                setLoading(false);
-            });
-    }, []);
+    const { data, loading, error } = useApi<DashboardData>('/api/dashboard');
 
     if (loading) {
         return (
@@ -132,7 +114,7 @@ export default function Dashboard() {
                                 </PieChart>
                             </ResponsiveContainer>
                         ) : (
-                            <p className="loading-state" style={{ minHeight: 'auto' }}>No entities found</p>
+                            <p className="text-secondary">No entities found</p>
                         )}
                     </div>
                 </div>
@@ -156,7 +138,7 @@ export default function Dashboard() {
                                 </div>
                             ))
                         ) : (
-                            <p className="loading-state" style={{ minHeight: 'auto' }}>No recent entities</p>
+                            <p className="text-secondary">No recent entities</p>
                         )}
                     </div>
                 </div>
