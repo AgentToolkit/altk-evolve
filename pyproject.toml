@@ -156,6 +156,5 @@ module = [
     "psycopg.*",
     "entity_io.*",
     "local_mcp_server",
-    "kaizen.schema.policy",
 ]
 ignore_missing_imports = true

@@ -206,20 +206,15 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
             logger.error(f"Guideline validation failed: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid guideline metadata schema: {e}")
 
-    elif req.type == "policy":
-        try:
-            from kaizen.schema.policy import Policy  # type: ignore[import-not-found]
+        from kaizen.schema.policy import Policy, PolicyType
 
-            try:
-                # The Policy model checks the full payload
-                policy_meta = {k: v for k, v in req.metadata.items() if k not in ("content", "type")}
-                Policy(content=req.content, type=req.type, **policy_meta)
-            except Exception as e:
-                logger.error(f"Policy validation failed: {e}")
-                raise HTTPException(status_code=422, detail=f"Invalid policy metadata schema: {e}")
-        except ImportError:
-            # Fallback if we're on a branch where kaizen.schema.policy doesn't exist yet
-            logger.warning("Policy schema missing. Skipping strict validation.")
+        try:
+            # The Policy model checks the full payload
+            policy_meta = {k: v for k, v in req.metadata.items() if k not in ("content", "type")}
+            Policy(content=req.content, type=PolicyType(req.type), **policy_meta)
+        except Exception as e:
+            logger.error(f"Policy validation failed: {e}")
+            raise HTTPException(status_code=422, detail=f"Invalid policy metadata schema: {e}")
 
     client = get_client()
     try:
