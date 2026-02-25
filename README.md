@@ -38,8 +38,31 @@ export OPENAI_API_KEY=sk-...
 
 For LiteLLM proxy usage and model selection (including global fallback via `KAIZEN_MODEL_NAME`), see [CONFIGURATION.md](CONFIGURATION.md).
 
-### Running the MCP Server
+### Running the MCP Server & UI
 
+Kaizen provides both a standard MCP server and a full Web UI (Dashboard & Entity Explorer).
+
+#### Starting Both Automatically
+The easiest way to start both the MCP Server (on standard input/output) and the HTTP UI backend is to run the module directly:
+```bash
+uv run python -m kaizen.frontend.mcp
+```
+This will start the UI server in the background on port `8000` and the MCP server in the foreground. You can then access the UI locally by opening your browser to:
+`http://127.0.0.1:8000/ui/`
+
+#### Starting the UI Standalone
+If you only want to access the Web UI and API (without the MCP server stdio blocking the terminal), you can run the FastAPI application directly using `uvicorn`:
+```bash
+uv run uvicorn kaizen.frontend.mcp.mcp_server:app --host 127.0.0.1 --port 8000
+```
+Then navigate to `http://127.0.0.1:8000/ui/`.
+
+#### Starting only the MCP Server
+If you're attaching Kaizen to an MCP client that requires a direct command (like Claude Desktop):
+```bash
+uv run fastmcp run kaizen/frontend/mcp/mcp_server.py --transport stdio
+```
+Or for SSE transport:
 ```bash
 uv run fastmcp run kaizen/frontend/mcp/mcp_server.py --transport sse --port 8201
 ```
