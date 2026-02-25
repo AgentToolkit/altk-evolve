@@ -31,6 +31,8 @@ Model selection precedence:
 3. Shared fallback (commonly used in tests): `MODEL_NAME`
 4. Built-in default: `gpt-4o`
 
+For tests, if `KAIZEN_*_MODEL` and `KAIZEN_MODEL_NAME` are unset, set `MODEL_NAME` to control all Kaizen LLM calls.
+
 ## Environment Variables
 
 All configuration variables are prefixed with `KAIZEN_`.

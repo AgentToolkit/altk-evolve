@@ -36,28 +36,7 @@ For direct OpenAI usage:
 export OPENAI_API_KEY=sk-...
 ```
 
-For LiteLLM proxy usage:
-```bash
-export LITELLM_PROXY_API_KEY=your-proxy-token
-export LITELLM_PROXY_API_BASE=https://your-litellm-proxy.com/v1
-export KAIZEN_CUSTOM_LLM_PROVIDER=openai
-```
-
-Model config:
-```bash
-# Per-task models (highest priority)
-export KAIZEN_TIPS_MODEL=openai/gpt-4o-mini
-export KAIZEN_CONFLICT_RESOLUTION_MODEL=openai/gpt-4o-mini
-export KAIZEN_FACT_EXTRACTION_MODEL=openai/gpt-4o-mini
-
-# Optional global fallback for all Kaizen LLM calls
-export KAIZEN_MODEL_NAME=openai/gpt-4o-mini
-
-# Shared fallback commonly used in tests
-export MODEL_NAME=openai/gpt-4o-mini
-```
-
-For detailed configuration options (custom LLM providers, backends, etc.), see [CONFIGURATION.md](CONFIGURATION.md).
+For LiteLLM proxy usage and model selection (including test-specific `MODEL_NAME` behavior), see [CONFIGURATION.md](CONFIGURATION.md).
 
 ### Running the MCP Server
 
