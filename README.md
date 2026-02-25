@@ -50,7 +50,8 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 ```
 
 **Available tools:**
-- `get_guidelines(task: str)`: Get relevant guidelines for a specific task.
+- `get_entities(task: str, entity_type: str)`: Get relevant entities for a specific task, filtered by type (e.g., 'guideline', 'policy').
+- `get_guidelines(task: str)`: Get relevant guidelines for a specific task (backward compatibility alias).
 - `save_trajectory(trajectory_data: str, task_id: str | None)`: Save a conversation trajectory and generate new tips.
 - `create_entity(content: str, entity_type: str, metadata: str | None, enable_conflict_resolution: bool)`: Create a single entity in the namespace.
 - `delete_entity(entity_id: str)`: Delete a specific entity by its ID.
@@ -67,6 +68,7 @@ See the [Low-Code Tracing Guide](docs/LOW_CODE_TRACING.md#6-understanding-tip-pr
 
 - [KAIZEN_LITE.md](KAIZEN_LITE.md) - Lightweight mode via Claude Code plugin (no infra required)
 - [CONFIGURATION.md](CONFIGURATION.md) - Detailed configuration options
+- [POLICIES.md](docs/POLICIES.md) - Policy support and schema
 - [CLI.md](CLI.md) - Command-line interface documentation
 - [CLAUDE_CODE_DEMO.md](CLAUDE_CODE_DEMO.md) - Claude Code demo walkthrough
 

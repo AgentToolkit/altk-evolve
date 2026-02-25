@@ -219,6 +219,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
                         )
                     )
 
+            data.num_entities = len(data.entities)
             self._save_namespace_data(namespace_id, data)
 
         return updates
@@ -298,4 +299,5 @@ class FilesystemEntityBackend(BaseEntityBackend):
             data.entities = [e for e in data.entities if str(e["id"]) != entity_id]
             if len(data.entities) == original_count:
                 raise KaizenException(f"Entity `{entity_id}` not found")
+            data.num_entities = len(data.entities)
             self._save_namespace_data(namespace_id, data)
