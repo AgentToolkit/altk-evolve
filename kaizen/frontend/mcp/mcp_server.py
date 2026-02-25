@@ -8,10 +8,17 @@ import json
 import logging
 import threading
 import uuid
+import os
 
 from fastmcp import FastMCP
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse
+from starlette.requests import Request
+from starlette.exceptions import HTTPException
 from kaizen.config.kaizen import kaizen_config
 from kaizen.frontend.client.kaizen_client import KaizenClient
+from kaizen.frontend.api.routes import router as api_router
 from kaizen.llm.tips.tips import generate_tips
 from kaizen.schema.core import Entity, RecordedEntity
 from kaizen.schema.exceptions import KaizenException, NamespaceNotFoundException
@@ -23,7 +30,60 @@ _client = None
 _namespace_initialized = False
 _client_init_lock = threading.Lock()
 
+# Need to configure FastAPI separately and mount FastMCP on it
+app = FastAPI(title="Kaizen API & UI")
 mcp = FastMCP("entities")
+
+# Mount API routes
+app.include_router(api_router, prefix="/api")
+
+# Configure UI Static Files Serving
+def _setup_ui_routes():
+    # UI directory path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    frontend_dir = os.path.dirname(current_dir)
+    ui_dist_dir = os.path.join(frontend_dir, "ui", "dist")
+
+    # Only mount UI if dist folder exists (i.e. we built it)
+    if os.path.exists(ui_dist_dir) and os.path.isdir(ui_dist_dir):
+        logger.info(f"Mounting Kaizen UI at /ui from {ui_dist_dir}")
+        
+        # We mount static files under /ui/assets or similar, but Vite normally
+        # places them in dist/assets. 
+        # For a standard Vite build, index.html is at dist/index.html
+        
+        # Mount the entire dist folder at /ui_static
+        # Actually in Vite, assets are referenced as /assets/... from index.html
+        # We need to mount the assets folder directly at /assets so the browser finds them
+        assets_dir = os.path.join(ui_dist_dir, "assets")
+        if os.path.exists(assets_dir):
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="ui_assets")
+        
+        # We can also mount the root dist at /ui_static just in case
+        app.mount("/ui_static", StaticFiles(directory=ui_dist_dir), name="ui_static")
+        
+        @app.get("/")
+        async def root_redirect():
+            return RedirectResponse(url="/ui/")
+
+        # Catch-all route to serve the React SPA index.html for /ui and /ui/*
+        @app.get("/ui")
+        @app.get("/ui/{catchall:path}")
+        async def serve_spa(request: Request, catchall: str = ""):
+            # If the requested file exists in dist, serve it (for assets not caught by /ui_static if any)
+            potential_file = os.path.join(ui_dist_dir, catchall)
+            if catchall and os.path.isfile(potential_file):
+                return FileResponse(potential_file)
+            
+            # Otherwise serve index.html
+            index_file = os.path.join(ui_dist_dir, "index.html")
+            if os.path.exists(index_file):
+                return FileResponse(index_file)
+            raise HTTPException(status_code=404, detail="UI index.html not found")
+    else:
+        logger.info("Kaizen UI dist directory not found. Skipping UI mount.")
+
+_setup_ui_routes()
 
 
 def get_client() -> KaizenClient:

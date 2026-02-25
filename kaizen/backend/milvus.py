@@ -232,14 +232,20 @@ class MilvusEntityBackend(BaseEntityBackend):
             namespace = db_manager.get_namespace(namespace_id)
             if namespace is None:
                 raise NamespaceNotFoundException(f"Namespace {namespace_id} not found")
-            namespace.num_entities = self.milvus.get_collection_stats(namespace_id)["row_count"]
+            try:
+                namespace.num_entities = self.milvus.get_collection_stats(namespace_id)["row_count"]
+            except Exception:
+                namespace.num_entities = 0
             return namespace
 
     def search_namespaces(self, limit: int = 10) -> list[Namespace]:
         with SQLiteManager(self.sqlite_uri) as db_manager:
             namespaces = []
             for namespace in db_manager.search_namespaces(limit):
-                namespace.num_entities = self.milvus.get_collection_stats(namespace.id)["row_count"]
+                try:
+                    namespace.num_entities = self.milvus.get_collection_stats(namespace.id)["row_count"]
+                except Exception:
+                    namespace.num_entities = 0
                 namespaces.append(namespace)
             return namespaces
 
