@@ -42,6 +42,15 @@ For LiteLLM proxy usage and model selection (including global fallback via `KAIZ
 
 Kaizen provides both a standard MCP server and a full Web UI (Dashboard & Entity Explorer).
 
+> [!IMPORTANT]
+> **Building from Source:** If you cloned this repository (rather than installing a pre-built package), you must build the UI before it can be served.
+> ```bash
+> cd kaizen/frontend/ui
+> npm ci && npm run build
+> cd ../../../
+> ```
+> See `kaizen/frontend/ui/README.md` for more frontend development details.
+
 #### Starting Both Automatically
 The easiest way to start both the MCP Server (on standard input/output) and the HTTP UI backend is to run the module directly:
 ```bash
