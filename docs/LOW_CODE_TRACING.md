@@ -212,6 +212,29 @@ KAIZEN_BACKEND=filesystem \
 uv run python -m kaizen.frontend.cli.cli entities list kaizen --type guideline
 ```
 
+### 6. Understanding Tip Provenance (Metadata)
+
+When Kaizen generates tips from traced trajectories (or from explicit `save_trajectory` calls), it automatically injects provenance metadata into the resulting `guideline` entities. This helps you track exactly *where* a tip came from and *how* it was created.
+
+```json
+{
+  "type": "guideline",
+  "content": "Always verify the record exists before updating.",
+  "metadata": {
+    "creation_mode": "auto-phoenix",
+    "source_task_id": "0df020ed0bd2e...",
+    "source_span_id": "9218e1003f...",
+    "category": "optimization"
+  }
+}
+```
+
+*   **`creation_mode`**: Describes the origin of the tip.
+    *   `"auto-phoenix"`: Auto-generated from observability traces via `kaizen sync phoenix`.
+    *   `"auto-mcp"`: Auto-generated when an agent directly calls the Kaizen `save_trajectory` MCP tool.
+    *   `"manual"`: Explicitly created by a human or agent (e.g., via the `create_entity` MCP tool).
+*   **`source_task_id`**: The originating trace ID (for Phoenix) or task ID (for MCP), linking the tip back to the specific execution that inspired it.
+
 ---
 
 ## End-to-End Verification
