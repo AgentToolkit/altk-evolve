@@ -15,14 +15,21 @@ Kaizen uses [LiteLLM](https://docs.litellm.ai/) and supports using a LiteLLM pro
 
 ```bash
 # LiteLLM Proxy Configuration
-LITELLM_PROXY_API_KEY="your-proxy-token"
-LITELLM_PROXY_API_BASE="https://your-litellm-proxy.com"
+export LITELLM_PROXY_API_KEY="your-proxy-token"
+export LITELLM_PROXY_API_BASE="https://your-litellm-proxy.com/v1"
 
 # Kaizen Model Configuration
-KAIZEN_TIPS_MODEL="your-model-name"
-KAIZEN_CONFLICT_RESOLUTION_MODEL="your-model-name"
-KAIZEN_CUSTOM_LLM_PROVIDER="your-custom-llm-provider"
+export KAIZEN_TIPS_MODEL="openai/gpt-4o-mini"
+export KAIZEN_CONFLICT_RESOLUTION_MODEL="openai/gpt-4o-mini"
+export KAIZEN_FACT_EXTRACTION_MODEL="openai/gpt-4o-mini"
+export KAIZEN_CUSTOM_LLM_PROVIDER="openai"
 ```
+
+Model selection precedence:
+1. Task-specific models: `KAIZEN_TIPS_MODEL`, `KAIZEN_CONFLICT_RESOLUTION_MODEL`, `KAIZEN_FACT_EXTRACTION_MODEL`
+2. Global Kaizen fallback: `KAIZEN_MODEL_NAME`
+3. Shared fallback (commonly used in tests): `MODEL_NAME`
+4. Built-in default: `gpt-4o`
 
 ## Environment Variables
 
@@ -34,8 +41,11 @@ All configuration variables are prefixed with `KAIZEN_`.
 |----------|-------------------------------------------------------------------------------|------------------------------------------|
 | `KAIZEN_BACKEND` | Backend provider (`milvus` or `filesystem`)                                   | `milvus`                                 |
 | `KAIZEN_NAMESPACE_ID` | Namespace ID for isolation                                                    | `kaizen`                                 |
-| `KAIZEN_TIPS_MODEL` | Model for generating tips (e.g. `openai/gpt-4o` for proxy with custom models) | `gpt-4o`                                 |
-| `KAIZEN_CONFLICT_RESOLUTION_MODEL` | Model for resolving conflicts (e.g. `openai/gpt-4o` for proxy with custom models)  | `gpt-4o`                                 |
+| `KAIZEN_TIPS_MODEL` | Model for tip generation only | `KAIZEN_MODEL_NAME` -> `MODEL_NAME` -> `gpt-4o` |
+| `KAIZEN_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `KAIZEN_MODEL_NAME` -> `MODEL_NAME` -> `gpt-4o` |
+| `KAIZEN_FACT_EXTRACTION_MODEL` | Model for fact extraction only | `KAIZEN_MODEL_NAME` -> `MODEL_NAME` -> `gpt-4o` |
+| `KAIZEN_MODEL_NAME` | Global fallback model for all Kaizen LLM calls | `MODEL_NAME` -> `gpt-4o` |
+| `MODEL_NAME` | Shared cross-project fallback (used by tests if Kaizen-specific vars are unset) | `gpt-4o` |
 | `KAIZEN_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for proxy with custom models) | `None`                                   |
 | `KAIZEN_EMBEDDING_MODEL` | Embedding model                                                               | `sentence-transformers/all-MiniLM-L6-v2` |
 
@@ -146,4 +156,3 @@ except ImportError:
 | `KAIZEN_TRACING_ENDPOINT` | Phoenix collector endpoint | `http://localhost:6006/v1/traces` |
 
 > **Note**: Auto-patching skips if existing tracing is detected. Use `enable_tracing(force=True)` to override.
-
