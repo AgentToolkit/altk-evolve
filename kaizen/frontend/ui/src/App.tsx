@@ -19,7 +19,7 @@ function Navigation() {
           </Link>
         </li>
         <li>
-          <Link to="/namespaces" className={`nav-link ${location.pathname === '/namespaces' ? 'active' : ''}`}>
+          <Link to="/namespaces" className={`nav-link ${location.pathname.startsWith('/namespaces') ? 'active' : ''}`}>
             <FolderTree size={20} /> Namespaces
           </Link>
         </li>

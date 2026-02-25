@@ -156,7 +156,7 @@ def list_namespace_entities(
             })
             
         # Sort by created_at descending
-        result.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+        result.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
         return result
     except Exception as e:
         logger.error(f"Error fetching entities for namespace {namespace_id}: {e}")

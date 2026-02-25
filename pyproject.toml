@@ -100,6 +100,8 @@ build_command = '''
     perl -i -pe "s|\]\(docs/([^)]*)\)|](https://github.com/AgentToolkit/kaizen/blob/v$NEW_VERSION/docs/\$1)|g" README.md
     sed -i 's/^SCRIPT_VERSION="main"/SCRIPT_VERSION="v'"$NEW_VERSION"'"/' platform-integrations/install.sh
     git add platform-integrations/install.sh
+    cd kaizen/frontend/ui && npm ci && npm run build && cd ../../../
+    if [ ! -d "kaizen/frontend/ui/dist" ]; then echo "UI build failed!" && exit 1; fi
     uv build
     mv README.md.bak README.md
 '''

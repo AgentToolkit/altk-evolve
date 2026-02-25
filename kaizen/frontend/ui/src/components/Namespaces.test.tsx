@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
 import Namespaces from './Namespaces';
@@ -48,8 +48,10 @@ describe('Namespaces Component', () => {
 
         // Verify the data is laid out
         expect(screen.getByText('42')).toBeInTheDocument();
-        expect(screen.getByText('test-namespace-2')).toBeInTheDocument();
-        expect(screen.getByText('0')).toBeInTheDocument();
+        // Find the specific row for test-namespace-2 to avoid fragile '0' assertions
+        const row2 = screen.getByText('test-namespace-2').closest('tr');
+        expect(row2).not.toBeNull();
+        expect(within(row2 as HTMLElement).getByText('0')).toBeInTheDocument();
     });
 
     it('displays empty state when no namespaces exist', async () => {
