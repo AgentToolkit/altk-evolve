@@ -114,8 +114,15 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
             });
 
             if (!res.ok) {
-                const d = await res.json();
-                throw new Error(d.detail || 'Failed to create entity');
+                let errorMsg = `HTTP ${res.status} ${res.statusText}`;
+                try {
+                    const d = await res.json();
+                    errorMsg = d.detail || errorMsg;
+                } catch {
+                    const text = await res.text();
+                    if (text) errorMsg += `: ${text}`;
+                }
+                throw new Error(errorMsg);
             }
 
             onCreated();
@@ -255,7 +262,10 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
                                         type="number"
                                         className="form-control"
                                         value={policyPriority}
-                                        onChange={(e) => setPolicyPriority(parseInt(e.target.value) || 50)}
+                                        onChange={(e) => {
+                                            const v = parseInt(e.target.value, 10);
+                                            setPolicyPriority(Number.isNaN(v) ? 50 : v);
+                                        }}
                                     />
                                 </div>
                             </div>

@@ -98,17 +98,8 @@ def list_namespaces() -> List[dict[str, Any]]:
     client = get_client()
     try:
         namespaces = []
-        if hasattr(client.backend, "milvus"):
-            collections = client.backend.milvus.list_collections()
-            for coll in collections:
-                try:
-                    count = int(client.backend.milvus.get_collection_stats(coll).get("row_count", 0))
-                except Exception:
-                    count = 0
-                namespaces.append({"id": coll, "amount_of_entities": count})
-        else:
-            for ns in client.all_namespaces(limit=1000):
-                namespaces.append({"id": ns.id, "amount_of_entities": ns.num_entities or 0})
+        for ns in client.all_namespaces(limit=1000):
+            namespaces.append({"id": ns.id, "amount_of_entities": ns.num_entities or 0})
         return namespaces
     except Exception as e:
         logger.error(f"Error fetching namespaces: {e}")
@@ -216,7 +207,7 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
 
     elif req.type == "policy":
         try:
-            from kaizen.schema.policy import Policy
+            from kaizen.schema.policy import Policy  # type: ignore[import-not-found]
 
             try:
                 # The Policy model checks the full payload

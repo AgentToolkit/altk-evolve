@@ -19,9 +19,19 @@ export default function EntityExplorer() {
 
     const debouncedFilter = useDebounce(filterType, 300);
 
-    const apiUrl = id
-        ? `/api/namespaces/${encodeURIComponent(id)}/entities${debouncedFilter ? `?type=${encodeURIComponent(debouncedFilter)}` : ''}`
-        : null;
+    // If there's no namespace ID, halt rendering so we don't fetch from a null URL
+    if (!id) {
+        return (
+            <div className="entity-explorer-container">
+                <div className="page-header explorer-header">
+                    <h2 className="section-title text-danger">Error: Missing Namespace ID</h2>
+                    <p className="text-secondary">Please return to the Namespaces page and try again.</p>
+                </div>
+            </div>
+        );
+    }
+
+    const apiUrl = `/api/namespaces/${encodeURIComponent(id)}/entities${debouncedFilter ? `?type=${encodeURIComponent(debouncedFilter)}` : ''}`;
     const { data: entities, loading, error, refetch } = useApi<Entity[]>(apiUrl);
 
     const handleDelete = useCallback(async (entityId: string) => {

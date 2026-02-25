@@ -3,7 +3,7 @@ import { Eye, Trash2 } from 'lucide-react';
 interface Entity {
     id: string;
     type: string;
-    content: string;
+    content: string | any;
     created_at?: string;
     metadata: Record<string, any>;
 }
@@ -41,7 +41,14 @@ export default function EntityTable({ entities, onView, onDelete }: EntityTableP
                                 </td>
                                 <td>
                                     <div style={{ fontSize: "0.95rem", color: "#CBD5E1" }}>
-                                        {ent.content.length > 100 ? `${ent.content.substring(0, 100)}...` : ent.content}
+                                        {(() => {
+                                            const contentStr = typeof ent.content === 'string'
+                                                ? ent.content
+                                                : JSON.stringify(ent.content);
+                                            return contentStr.length > 100
+                                                ? `${contentStr.substring(0, 100)}...`
+                                                : contentStr;
+                                        })()}
                                     </div>
                                 </td>
                                 <td className="text-secondary small-text">

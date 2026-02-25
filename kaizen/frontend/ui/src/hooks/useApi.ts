@@ -13,11 +13,14 @@ interface UseApiResult<T> {
  */
 export function useApi<T>(url: string | null): UseApiResult<T> {
     const [data, setData] = useState<T | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(!!url);
     const [error, setError] = useState<string | null>(null);
 
     const refetch = useCallback(() => {
-        if (!url) return;
+        if (!url) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         fetch(url)
             .then(res => {

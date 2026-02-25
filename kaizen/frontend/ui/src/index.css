@@ -20,7 +20,7 @@
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: Inter, sans-serif;
   background-color: var(--bg-dark);
   color: var(--text-primary);
   min-height: 100vh;
@@ -129,7 +129,7 @@ h1.logo {
   border: none;
   cursor: pointer;
   transition: all 0.2s;
-  font-family: 'Inter', sans-serif;
+  font-family: Inter, sans-serif;
 }
 
 .btn-primary {
@@ -386,7 +386,7 @@ textarea.form-control {
   color: white;
   border: none;
   border-radius: 6px;
-  font-family: 'Inter', sans-serif;
+  font-family: Inter, sans-serif;
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s;

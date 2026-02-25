@@ -27,11 +27,11 @@ export default function EntityDetailModal({ entity, onClose }: EntityDetailModal
                 <div className="detail-field">
                     <label className="detail-field-label">Content</label>
                     <div className="detail-field-value detail-field-value--pre">
-                        {entity.content}
+                        {typeof entity.content === 'string' ? entity.content : JSON.stringify(entity.content, null, 2)}
                     </div>
                 </div>
 
-                {Object.keys(entity.metadata).length > 0 && (
+                {Boolean(entity.metadata) && typeof entity.metadata === 'object' && Object.keys(entity.metadata).length > 0 && (
                     <div className="detail-field">
                         <label className="detail-field-label">Metadata</label>
                         <div className="detail-field-value detail-field-value--mono detail-field-value--pre">
