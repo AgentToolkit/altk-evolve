@@ -32,8 +32,15 @@ export default function EntityExplorer() {
                 method: 'DELETE'
             });
             if (!res.ok) {
-                const d = await res.json();
-                throw new Error(d.detail || 'Failed to delete entity');
+                let errorMsg = `HTTP ${res.status} ${res.statusText}`;
+                const body = await res.text();
+                try {
+                    const d = JSON.parse(body);
+                    errorMsg = d.detail || errorMsg;
+                } catch {
+                    if (body) errorMsg += `: ${body}`;
+                }
+                throw new Error(errorMsg);
             }
             refetch();
             if (selectedEntity?.id === entityId) {
