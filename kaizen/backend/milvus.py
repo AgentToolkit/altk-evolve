@@ -348,6 +348,7 @@ class MilvusEntityBackend(BaseEntityBackend):
         self.validate_namespace(namespace_id)
         filters = filters or {}
         schema_filters, metadata_filters = self._split_filters(filters)
+        fetch_limit = max(limit, 1000) if filters else limit
 
         if query is None:
             try:
@@ -355,7 +356,7 @@ class MilvusEntityBackend(BaseEntityBackend):
                     collection_name=namespace_id,
                     filter=self._build_filter_expr(schema_filters, base_conditions=["id > 0"]),
                     output_fields=["id", "type", "content", "created_at", "metadata"],
-                    limit=limit,
+                    limit=fetch_limit,
                 )
             except MilvusException as exc:
                 if "HasRawData" in str(exc):
@@ -373,7 +374,7 @@ class MilvusEntityBackend(BaseEntityBackend):
                     anns_field="embedding",
                     data=[self.embedding_model.encode(query)],
                     filter=self._build_filter_expr(schema_filters),
-                    limit=limit,
+                    limit=fetch_limit,
                     output_fields=["*"],
                     search_params={"metric_type": self.metric_type},
                 )
@@ -385,7 +386,7 @@ class MilvusEntityBackend(BaseEntityBackend):
                         anns_field="embedding",
                         data=[self.embedding_model.encode(query)],
                         filter=self._build_filter_expr(schema_filters),
-                        limit=limit,
+                        limit=fetch_limit,
                         output_fields=["*"],
                         search_params={"metric_type": self.metric_type},
                     )
@@ -395,7 +396,8 @@ class MilvusEntityBackend(BaseEntityBackend):
             normalized = [self._normalize_search_hit(hit) for hit in flat_results]
             results = self._sort_vector_results(normalized, metric_type=self.metric_type)
         parsed = [parse_milvus_entity(i) for i in results]
-        return [entity for entity in parsed if self._entity_matches_filter(entity, schema_filters, metadata_filters)]
+        filtered = [entity for entity in parsed if self._entity_matches_filter(entity, schema_filters, metadata_filters)]
+        return filtered[:limit]
 
     def delete_entity_by_id(self, namespace_id: str, entity_id: str):
         try:

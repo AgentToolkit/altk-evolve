@@ -297,6 +297,51 @@ def test_search_entities_filters_metadata_in_python(milvus_backend: MilvusEntity
 
 
 @pytest.mark.unit
+def test_search_entities_overfetches_before_python_filter(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """Test filtered queries still return matches when backend ignores filter and truncates by limit."""
+
+    def query(collection_name, filter="", output_fields=None, timeout=None, ids=None, partition_names=None, limit=10, **kwargs):
+        now = int(datetime.datetime.now(datetime.UTC).timestamp())
+        records = [
+            {
+                "id": i,
+                "type": "trajectory",
+                "content": f"trajectory {i}",
+                "created_at": now,
+                "metadata": {"task_id": "123"},
+            }
+            for i in range(1, 20)
+        ]
+        records.extend(
+            [
+                {
+                    "id": 100 + i,
+                    "type": "guideline",
+                    "content": f"guideline {i}",
+                    "created_at": now,
+                    "metadata": {"source_task_id": "123"},
+                }
+                for i in range(1, 6)
+            ]
+        )
+        # Simulate backend truncation before applying filter.
+        return records[:limit]
+
+    monkeypatch.setattr(milvus_backend.milvus, "has_collection", always_has_collection)
+    monkeypatch.setattr(milvus_backend.milvus, "query", query)
+
+    result = milvus_backend.search_entities(
+        namespace_id="test_namespace",
+        query=None,
+        filters={"type": "guideline"},
+        limit=10,
+    )
+
+    assert len(result) == 5
+    assert all(entity.type == "guideline" for entity in result)
+
+
+@pytest.mark.unit
 def test_delete_entity_by_id(milvus_backend: MilvusEntityBackend, monkeypatch):
     """Test deleting an entity by ID."""
     delete = Mock()

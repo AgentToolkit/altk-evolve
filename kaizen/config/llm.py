@@ -6,7 +6,7 @@ from typing import Literal
 
 
 def _default_model_name() -> str:
-    # Reuse CUGA/OpenAI-compatible model env when Kaizen-specific model is not configured.
+    # Reuse OpenAI-compatible model env when Kaizen-specific model is not configured.
     return os.getenv("MODEL_NAME", "gpt-4o")
 
 
