@@ -37,6 +37,7 @@ mcp = FastMCP("entities")
 # Mount API routes
 app.include_router(api_router, prefix="/api")
 
+
 # Configure UI Static Files Serving
 def _setup_ui_routes():
     # UI directory path
@@ -47,21 +48,21 @@ def _setup_ui_routes():
     # Only mount UI if dist folder exists (i.e. we built it)
     if os.path.exists(ui_dist_dir) and os.path.isdir(ui_dist_dir):
         logger.info(f"Mounting Kaizen UI at /ui from {ui_dist_dir}")
-        
+
         # We mount static files under /ui/assets or similar, but Vite normally
-        # places them in dist/assets. 
+        # places them in dist/assets.
         # For a standard Vite build, index.html is at dist/index.html
-        
+
         # Mount the entire dist folder at /ui_static
         # Actually in Vite, assets are referenced as /assets/... from index.html
         # We need to mount the assets folder directly at /assets so the browser finds them
         assets_dir = os.path.join(ui_dist_dir, "assets")
         if os.path.exists(assets_dir):
             app.mount("/assets", StaticFiles(directory=assets_dir), name="ui_assets")
-        
+
         # We can also mount the root dist at /ui_static just in case
         app.mount("/ui_static", StaticFiles(directory=ui_dist_dir), name="ui_static")
-        
+
         @app.get("/")
         async def root_redirect():
             return RedirectResponse(url="/ui/")
@@ -84,6 +85,7 @@ def _setup_ui_routes():
             raise HTTPException(status_code=404, detail="UI index.html not found")
     else:
         logger.info("Kaizen UI dist directory not found. Skipping UI mount.")
+
 
 _setup_ui_routes()
 
