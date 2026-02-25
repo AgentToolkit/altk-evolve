@@ -36,7 +36,7 @@ For direct OpenAI usage:
 export OPENAI_API_KEY=sk-...
 ```
 
-For LiteLLM proxy usage and model selection (including test-specific `MODEL_NAME` behavior), see [CONFIGURATION.md](CONFIGURATION.md).
+For LiteLLM proxy usage and model selection (including global fallback via `KAIZEN_MODEL_NAME`), see [CONFIGURATION.md](CONFIGURATION.md).
 
 ### Running the MCP Server
 
