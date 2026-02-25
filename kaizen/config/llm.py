@@ -18,7 +18,10 @@ def _normalize_litellm_proxy_env() -> None:
 
 def _default_model_name() -> str:
     # Reuse shared model env when Kaizen-specific model is not configured.
-    return os.getenv("KAIZEN_MODEL_NAME") or os.getenv("MODEL_NAME", "gpt-4o")
+    kaizen_model = os.getenv("KAIZEN_MODEL_NAME")
+    if kaizen_model is not None:
+        return kaizen_model
+    return os.getenv("MODEL_NAME", "gpt-4o")
 
 
 def _default_custom_provider() -> str | None:
