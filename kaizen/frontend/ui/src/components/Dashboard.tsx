@@ -19,7 +19,8 @@ interface DashboardData {
     health: boolean;
     namespace_count: number;
     total_entities: number;
-    type_breakdown: TypeBreakdown[];
+    approximate_type_breakdown: TypeBreakdown[];
+    type_breakdown_is_approx: boolean;
     recent_entities: Entity[];
 }
 
@@ -90,13 +91,20 @@ export default function Dashboard() {
 
             <div className="charts-row">
                 <div className="glass-panel section-card">
-                    <h3 className="section-title">Entity Types</h3>
+                    <h3 className="section-title">
+                        Entity Types
+                        {data.type_breakdown_is_approx && (
+                            <span className="text-secondary" style={{ marginLeft: 10, fontSize: '0.8rem', fontWeight: "normal" }}>
+                                (Approximate from sample)
+                            </span>
+                        )}
+                    </h3>
                     <div className="chart-container">
-                        {data.type_breakdown.length > 0 ? (
+                        {data.approximate_type_breakdown.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie
-                                        data={data.type_breakdown}
+                                        data={data.approximate_type_breakdown}
                                         innerRadius={60}
                                         outerRadius={80}
                                         paddingAngle={5}
@@ -104,7 +112,7 @@ export default function Dashboard() {
                                         nameKey="type"
                                         stroke="none"
                                     >
-                                        {data.type_breakdown.map((_entry, index) => (
+                                        {data.approximate_type_breakdown.map((_entry, index) => (
                                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                         ))}
                                     </Pie>

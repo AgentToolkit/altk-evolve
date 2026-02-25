@@ -44,7 +44,7 @@ def get_dashboard() -> dict[str, Any]:
     # 3. Entity counts and recent entities across namespaces
     # For MVP, we will aggregate from all available namespaces up to the limit
     total_entities = 0
-    type_breakdown: dict[str, int] = {}
+    approximate_type_breakdown: dict[str, int] = {}
     recent_entities: list[dict[str, Any]] = []
 
     for ns in namespaces:
@@ -55,7 +55,7 @@ def get_dashboard() -> dict[str, Any]:
 
             for entity in ns_entities:
                 etype = entity.type or "unknown"
-                type_breakdown[etype] = type_breakdown.get(etype, 0) + 1
+                approximate_type_breakdown[etype] = approximate_type_breakdown.get(etype, 0) + 1
 
                 # Safely handle non-string content before slicing
                 content = entity.content
@@ -86,7 +86,8 @@ def get_dashboard() -> dict[str, Any]:
         "health": health,
         "namespace_count": namespace_count,
         "total_entities": total_entities,
-        "type_breakdown": [{"type": k, "count": v} for k, v in type_breakdown.items()],
+        "approximate_type_breakdown": [{"type": k, "count": v} for k, v in approximate_type_breakdown.items()],
+        "type_breakdown_is_approx": True,
         "recent_entities": recent_entities,
     }
 
