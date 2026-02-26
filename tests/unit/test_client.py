@@ -191,9 +191,10 @@ def test_store_user_memory_skips_none_empty_or_whitespace(kaizen_client: KaizenC
 
 @pytest.mark.unit
 def test_store_user_memory_uses_trimmed_message(kaizen_client: KaizenClient, monkeypatch):
-    captured: dict = {}
+    captured: dict = {"ensure_namespace_called": False}
 
     def ensure_namespace(namespace_id: str):
+        captured["ensure_namespace_called"] = True
         return Namespace(id=namespace_id, created_at=datetime.datetime.now(datetime.UTC))
 
     def extract(messages):
@@ -210,6 +211,7 @@ def test_store_user_memory_uses_trimmed_message(kaizen_client: KaizenClient, mon
 
     result = kaizen_client.store_user_memory(namespace_id="foobar", message="  hello world \n", user_id="u1")
 
+    assert captured["ensure_namespace_called"] is True
     assert captured["message_content"] == "hello world"
     assert captured["entity_content"] == "trimmed fact"
     assert result[0].event == "ADD"
