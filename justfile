@@ -29,6 +29,10 @@ sandbox-run:
 # Run a one-shot prompt in the sandbox (trace=true to summarize session, learn=true to run /kaizen:learn)
 sandbox-prompt prompt:
     #!/usr/bin/env sh
+    export SANDBOX_PROMPT="$(cat <<'PROMPT_EOF'
+    {{prompt}}
+    PROMPT_EOF
+    )"
     TRACE_CMD=""
     LEARN_CMD=""
     if [ "{{trace}}" = "true" ]; then
@@ -43,8 +47,8 @@ sandbox-prompt prompt:
             claude --plugin-dir /plugins/kaizen/ --dangerously-skip-permissions --continue -p '/kaizen:learn'
         "
     fi
-    docker run --rm -it --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/plugins":/plugins {{image}} sh -c "
-        claude --plugin-dir /plugins/kaizen/ --dangerously-skip-permissions -p '{{prompt}}'
+    docker run --rm -it --env SANDBOX_PROMPT --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/plugins":/plugins {{image}} sh -c "
+        claude --plugin-dir /plugins/kaizen/ --dangerously-skip-permissions -p \"\$SANDBOX_PROMPT\"
         $TRACE_CMD
         $LEARN_CMD
     "
