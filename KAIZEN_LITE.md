@@ -113,7 +113,7 @@ Then run a task to extract metadata from an image:
 just trace=true learn=true sandbox-prompt 'where was the photo @sample.jpg taken. use exif metadata'
 ```
 
-When you the above, you will see that the agent hits some dead ends (exiftool not found, Pillow not installed), and that it learns guidelines to avoid them in the future (see `demo/workspace/.kaizen/entities.json`).
+When you run the above, you will see that the agent hits some dead ends (exiftool not found, Pillow not installed), and that it learns guidelines to avoid them in the future (see `demo/workspace/.kaizen/entities.json`).
 
 Run the same task again in a new session:
 
