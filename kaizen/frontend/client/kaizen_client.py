@@ -203,6 +203,7 @@ class KaizenClient:
         enable_conflict_resolution: bool = False,
     ) -> list[EntityUpdate]:
         """Extract facts from a user utterance and persist them as `fact` entities."""
+        message = (message or "").strip()
         if not message:
             return []
 

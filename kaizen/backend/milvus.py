@@ -74,6 +74,8 @@ class MilvusEntityBackend(BaseEntityBackend):
         schema_filters: dict = {}
         metadata_filters: dict = {}
         for key, value in (filters or {}).items():
+            if value is None:
+                continue
             if key in self._schema_filter_fields:
                 schema_filters[key] = value
             elif key.startswith("metadata."):
@@ -88,6 +90,24 @@ class MilvusEntityBackend(BaseEntityBackend):
             entity_value = getattr(entity, key, None)
             if key == "id":
                 if str(entity_value) != str(value):
+                    return False
+            elif key == "created_at":
+                if isinstance(entity_value, datetime.datetime):
+                    entity_epoch_seconds = int(entity_value.timestamp())
+                    entity_epoch_milliseconds = int(entity_value.timestamp() * 1000)
+                else:
+                    try:
+                        entity_epoch_seconds = int(entity_value)
+                    except (TypeError, ValueError):
+                        return False
+                    entity_epoch_milliseconds = entity_epoch_seconds * 1000
+
+                try:
+                    filter_epoch = int(value)
+                except (TypeError, ValueError):
+                    return False
+
+                if filter_epoch not in {entity_epoch_seconds, entity_epoch_milliseconds}:
                     return False
             elif entity_value != value:
                 return False
@@ -430,7 +450,7 @@ entity_schema = CollectionSchema(
 def parse_milvus_entity(entity: dict) -> RecordedEntity:
     metadata = entity.get("metadata", {}) or {}
     created_at_value = entity.get("created_at")
-    if created_at_value:
+    if created_at_value is not None and created_at_value != "":
         try:
             created_at = datetime.datetime.fromtimestamp(int(created_at_value), datetime.UTC)
         except (TypeError, ValueError, OSError):

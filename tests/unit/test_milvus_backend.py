@@ -7,7 +7,7 @@ import datetime
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 
-from kaizen.backend.milvus import MilvusEntityBackend
+from kaizen.backend.milvus import MilvusEntityBackend, parse_milvus_entity
 from kaizen.schema.core import Entity, Namespace, RecordedEntity
 from kaizen.schema.conflict_resolution import EntityUpdate
 from kaizen.schema.exceptions import NamespaceNotFoundException, KaizenException
@@ -251,6 +251,51 @@ def test_search_entities(milvus_backend: MilvusEntityBackend, monkeypatch):
 
 
 @pytest.mark.unit
+def test_split_filters_skips_none_values(milvus_backend: MilvusEntityBackend):
+    """Test _split_filters ignores None values while preserving schema/metadata routing."""
+    schema_filters, metadata_filters = milvus_backend._split_filters(
+        {
+            "type": "trajectory",
+            "created_at": None,
+            "metadata.task_id": "123",
+            "metadata.source_task_id": None,
+            "task_id": "123",
+            "source_span_id": None,
+        }
+    )
+
+    assert schema_filters == {"type": "trajectory"}
+    assert metadata_filters == {"task_id": "123"}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("filter_value", [1700000000, "1700000000", 1700000000000, "1700000000000"])
+def test_entity_matches_filter_normalizes_created_at(filter_value):
+    entity = RecordedEntity(
+        id="1",
+        type="trajectory",
+        content="message",
+        metadata={},
+        created_at=datetime.datetime.fromtimestamp(1700000000, datetime.UTC),
+    )
+
+    assert MilvusEntityBackend._entity_matches_filter(entity, {"created_at": filter_value}, {})
+
+
+@pytest.mark.unit
+def test_entity_matches_filter_created_at_rejects_non_numeric_filter():
+    entity = RecordedEntity(
+        id="1",
+        type="trajectory",
+        content="message",
+        metadata={},
+        created_at=datetime.datetime.fromtimestamp(1700000000, datetime.UTC),
+    )
+
+    assert not MilvusEntityBackend._entity_matches_filter(entity, {"created_at": "not-an-epoch"}, {})
+
+
+@pytest.mark.unit
 def test_search_entities_filters_metadata_in_python(milvus_backend: MilvusEntityBackend, monkeypatch):
     """Test metadata filtering is applied even if backend returns mixed records."""
 
@@ -362,3 +407,18 @@ def test_delete_entity_nonexistent_namespace(milvus_backend: MilvusEntityBackend
 
     with pytest.raises(NamespaceNotFoundException):
         milvus_backend.delete_entity_by_id(namespace_id="nonexistent_namespace", entity_id="12345")
+
+
+@pytest.mark.unit
+def test_parse_milvus_entity_accepts_epoch_zero_created_at():
+    parsed = parse_milvus_entity(
+        {
+            "id": 1,
+            "type": "fact",
+            "content": "Test content",
+            "created_at": 0,
+            "metadata": {},
+        }
+    )
+
+    assert parsed.created_at == datetime.datetime.fromtimestamp(0, datetime.UTC)
