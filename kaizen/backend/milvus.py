@@ -96,6 +96,8 @@ class MilvusEntityBackend(BaseEntityBackend):
                     entity_epoch_seconds = int(entity_value.timestamp())
                     entity_epoch_milliseconds = int(entity_value.timestamp() * 1000)
                 else:
+                    if not isinstance(entity_value, (int, float, str)):
+                        return False
                     try:
                         entity_epoch_seconds = int(entity_value)
                     except (TypeError, ValueError):
