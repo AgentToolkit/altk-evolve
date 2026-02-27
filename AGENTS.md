@@ -66,6 +66,6 @@ pre-commit install
 
 ## Coding Standards
 - Use Ruff for linting and formatting (configured in pyproject.toml)
-- Run pre-commit hooks before committing
+- Always run `uv run ruff format .` and `git add -u` before committing to avoid pre-commit stash conflicts with ruff auto-fixes
 - All new features need tests (unit + e2e where applicable)
 - Use uv to run Python commands, including pip.
