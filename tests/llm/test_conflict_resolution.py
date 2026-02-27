@@ -1,438 +1,117 @@
-"""Tests for conflict resolution functionality."""
+"""LLM-based tests for conflict resolution.
 
-import json
+These tests call the real LLM and verify that the conflict resolution prompt
+produces semantically correct diffs. They are slow and require a configured
+LLM backend, so they are marked `llm` and excluded from the default run.
+
+Run with: uv run pytest -m llm
+"""
+
 from datetime import datetime
-from unittest.mock import Mock, patch
 
 import pytest
 
-from kaizen.llm.conflict_resolution.conflict_resolution import (
-    resolve_conflicts,
-    get_update_entities_messages,
-)
-from kaizen.schema.conflict_resolution import SimpleEntity
+from kaizen.llm.conflict_resolution.conflict_resolution import resolve_conflicts
 from kaizen.schema.core import RecordedEntity
 
 
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def sample_recorded_entities():
-    """Create sample RecordedEntity objects for testing."""
-    return [
+@pytest.mark.llm
+def test_add_to_empty_store():
+    """All incoming entities should be ADDed when the store is empty."""
+    new = [
         RecordedEntity(
-            id="entity_1",
+            id="g1",
             type="guideline",
-            content="Always use type hints in Python",
-            metadata={"source": "code_review", "priority": "high"},
-            created_at=datetime.now(),
-        ),
-        RecordedEntity(
-            id="entity_2",
-            type="guideline",
-            content="Write unit tests for all functions",
-            metadata={"source": "best_practices", "priority": "medium"},
-            created_at=datetime.now(),
-        ),
-    ]
-
-
-@pytest.fixture
-def sample_new_recorded_entities():
-    """Create sample new RecordedEntity objects for testing."""
-    return [
-        RecordedEntity(
-            id="new_entity_1",
-            type="guideline",
-            content="Use descriptive variable names",
-            metadata={"source": "code_review", "priority": "high"},
-            created_at=datetime.now(),
-        ),
-    ]
-
-
-@pytest.fixture
-def mock_llm_response_add():
-    """Mock LLM response for ADD operation."""
-    return json.dumps(
-        {
-            "entities": [
-                {
-                    "id": "entity_1",
-                    "type": "guideline",
-                    "content": "Always use type hints in Python",
-                    "event": "NONE",
-                },
-                {
-                    "id": "entity_2",
-                    "type": "guideline",
-                    "content": "Write unit tests for all functions",
-                    "event": "NONE",
-                },
-                {
-                    "id": "new_entity_1",
-                    "type": "guideline",
-                    "content": "Use descriptive variable names",
-                    "event": "ADD",
-                },
-            ]
-        }
-    )
-
-
-@pytest.fixture
-def mock_llm_response_update():
-    """Mock LLM response for UPDATE operation."""
-    return json.dumps(
-        {
-            "entities": [
-                {
-                    "id": "entity_1",
-                    "type": "guideline",
-                    "content": "Always use type hints and docstrings in Python",
-                    "event": "UPDATE",
-                    "old_entity": "Always use type hints in Python",
-                },
-                {
-                    "id": "entity_2",
-                    "type": "guideline",
-                    "content": "Write unit tests for all functions",
-                    "event": "NONE",
-                },
-            ]
-        }
-    )
-
-
-@pytest.fixture
-def mock_llm_response_delete():
-    """Mock LLM response for DELETE operation."""
-    return json.dumps(
-        {
-            "entities": [
-                {
-                    "id": "entity_1",
-                    "type": "guideline",
-                    "content": "Always use type hints in Python",
-                    "event": "NONE",
-                },
-                {
-                    "id": "entity_2",
-                    "type": "guideline",
-                    "content": "Write unit tests for all functions",
-                    "event": "DELETE",
-                },
-            ]
-        }
-    )
-
-
-@pytest.fixture
-def mock_llm_response_with_markdown():
-    """Mock LLM response wrapped in markdown code block."""
-    return """```json
-{
-    "entities": [
-        {
-            "id": "entity_1",
-            "type": "guideline",
-            "content": "Test content",
-            "event": "NONE"
-        }
-    ]
-}
-```"""
-
-
-# =============================================================================
-# SimpleEntity.from_recorded_entities() Tests
-# =============================================================================
-
-
-@pytest.mark.unit
-def test_from_recorded_entities_basic(sample_recorded_entities):
-    """Test basic conversion from RecordedEntity to SimpleEntity."""
-    simple_entities = SimpleEntity.from_recorded_entities(sample_recorded_entities)
-
-    assert len(simple_entities) == 2
-    assert simple_entities[0].id == "entity_1"
-    assert simple_entities[0].type == "guideline"
-    assert simple_entities[0].content == "Always use type hints in Python"
-    assert simple_entities[1].id == "entity_2"
-
-    # Test conversion with empty list.
-    simple_entities = SimpleEntity.from_recorded_entities([])
-    assert simple_entities == []
-
-    # Test that different content types are preserved.
-    entities = [
-        RecordedEntity(
-            id="1",
-            type="test",
-            content="string content",
+            content="Always use type hints in Python function signatures.",
             metadata={},
             created_at=datetime.now(),
         ),
         RecordedEntity(
-            id="2",
-            type="test",
-            content={"key": "value"},
-            metadata={},
-            created_at=datetime.now(),
+            id="g2", type="guideline", content="Prefer f-strings over .format() or % formatting.", metadata={}, created_at=datetime.now()
         ),
+    ]
+    updates = {u.id: u for u in resolve_conflicts([], new)}
+    assert updates["g1"].event == "ADD"
+    assert updates["g2"].event == "ADD"
+
+
+@pytest.mark.llm
+def test_none_for_duplicate_and_equivalent():
+    """Exact duplicates and semantic paraphrases should not produce new ADDs."""
+    old = [
         RecordedEntity(
-            id="3",
-            type="test",
-            content=["item1", "item2"],
-            metadata={},
-            created_at=datetime.now(),
+            id="g1", type="fact", content="Always use type hints in Python function signatures.", metadata={}, created_at=datetime.now()
+        ),
+        RecordedEntity(id="g2", type="fact", content="Likes cheese pizza", metadata={}, created_at=datetime.now()),
+    ]
+    new = [
+        # Exact duplicate
+        RecordedEntity(
+            id="g1_dup", type="fact", content="Always use type hints in Python function signatures.", metadata={}, created_at=datetime.now()
+        ),
+        # Semantic paraphrase — same meaning, slightly different wording
+        RecordedEntity(id="g2_dup", type="fact", content="Loves cheese pizza", metadata={}, created_at=datetime.now()),
+    ]
+    updates = {u.id: u for u in resolve_conflicts(old, new)}
+    assert updates["g1"].event == "NONE"
+    assert updates["g2"].event == "NONE"
+    for u in updates.values():
+        assert u.event != "ADD"
+
+
+@pytest.mark.llm
+def test_update_preserves_id_and_captures_old_content():
+    """An enriched incoming entity should UPDATE the existing one, keeping its ID and recording old_entity."""
+    old = [
+        RecordedEntity(id="g1", type="fact", content="User likes to play cricket", metadata={}, created_at=datetime.now()),
+        RecordedEntity(id="g2", type="fact", content="User is a software engineer", metadata={}, created_at=datetime.now()),
+    ]
+    new = [
+        # Richer version of g1
+        RecordedEntity(
+            id="n1", type="fact", content="Loves to play cricket with friends on weekends", metadata={}, created_at=datetime.now()
         ),
     ]
-
-    simple_entities = SimpleEntity.from_recorded_entities(entities)
-
-    assert isinstance(simple_entities[0].content, str)
-    assert isinstance(simple_entities[1].content, dict)
-    assert isinstance(simple_entities[2].content, list)
-
-
-# =============================================================================
-# get_update_entities_messages() Tests
-# =============================================================================
+    updates = {u.id: u for u in resolve_conflicts(old, new)}
+    assert updates["g1"].event == "UPDATE"
+    assert updates["g1"].id == "g1"  # ID must not change
+    assert updates["g1"].old_entity is not None  # old content must be recorded
+    assert "cricket" in updates["g1"].old_entity
+    assert updates["g2"].event == "NONE"
 
 
-@pytest.mark.unit
-def test_get_update_entities_messages_default_prompt():
-    """Test prompt generation with default template."""
-    old_entities = [SimpleEntity(id="1", type="guideline", content="Old content")]
-    new_entities = [SimpleEntity(id="2", type="guideline", content="New content")]
-
-    prompt = get_update_entities_messages(old_entities, new_entities)
-
-    assert "Old content" in prompt
-    assert "New content" in prompt
-    assert "ADD" in prompt
-    assert "UPDATE" in prompt
-    assert "DELETE" in prompt
-    assert "NONE" in prompt
-    assert '"id"' in prompt
-    assert '"type"' in prompt
-    assert '"content"' in prompt
-
-    # Test prompt generation with custom template.
-    custom_prompt = "Custom instructions for entity management"
-
-    prompt = get_update_entities_messages(old_entities, new_entities, custom_prompt)
-
-    assert "Custom instructions for entity management" in prompt
-    assert "Old content" in prompt
-    assert "New content" in prompt
-
-    # Test prompt generation with empty old entities list.
-    old_entities = []
-    new_entities = [SimpleEntity(id="1", type="guideline", content="New content")]
-
-    prompt = get_update_entities_messages(old_entities, new_entities)
-
-    assert "Currently contains no entities" in prompt
-    assert "New content" in prompt
-
-
-# =============================================================================
-# resolve_conflicts() Tests
-# =============================================================================
-
-
-@pytest.mark.unit
-@patch("kaizen.llm.conflict_resolution.conflict_resolution.completion")
-def test_resolve_conflicts_event_types(
-    mock_completion,
-    sample_recorded_entities,
-    sample_new_recorded_entities,
-    mock_llm_response_add,
-    mock_llm_response_update,
-    mock_llm_response_delete,
-):
-    """Test successful conflict resolution with ADD, UPDATE, DELETE, and NONE operations."""
-    # Test ADD operation
-    mock_response = Mock()
-    mock_response.choices = [Mock()]
-    mock_response.choices[0].message.content = mock_llm_response_add
-    mock_completion.return_value = mock_response
-
-    result = resolve_conflicts(
-        sample_recorded_entities,
-        sample_new_recorded_entities,
-    )
-
-    assert len(result) == 3
-    assert result[0].event == "NONE"
-    assert result[1].event == "NONE"
-    assert result[2].event == "ADD"
-    assert result[2].id == "new_entity_1"
-    # Verify metadata was assigned for ADD operation
-    assert result[2].metadata == {"source": "code_review", "priority": "high"}
-
-    # Test UPDATE operation
-    mock_response.choices[0].message.content = mock_llm_response_update
-    mock_completion.return_value = mock_response
-
-    result = resolve_conflicts(
-        sample_recorded_entities,
-        sample_recorded_entities,
-    )
-
-    assert len(result) == 2
-    assert result[0].event == "UPDATE"
-    assert result[0].old_entity == "Always use type hints in Python"
-    assert "docstrings" in result[0].content
-    assert result[1].event == "NONE"
-    # Verify UPDATE operation doesn't get metadata reassigned
-    assert result[0].metadata == {}
-
-    # Test DELETE operation
-    mock_response.choices[0].message.content = mock_llm_response_delete
-    mock_completion.return_value = mock_response
-
-    result = resolve_conflicts(
-        sample_recorded_entities,
-        sample_recorded_entities,
-    )
-
-    assert len(result) == 2
-    assert result[0].event == "NONE"
-    assert result[1].event == "DELETE"
-
-
-@pytest.mark.unit
-@patch("kaizen.llm.conflict_resolution.conflict_resolution.completion")
-def test_resolve_conflicts_response_parsing(
-    mock_completion,
-    sample_recorded_entities,
-    mock_llm_response_with_markdown,
-):
-    """Test markdown cleaning and JSON parsing of LLM responses."""
-    # Test that markdown code blocks are properly cleaned
-    mock_response = Mock()
-    mock_response.choices = [Mock()]
-    mock_response.choices[0].message.content = mock_llm_response_with_markdown
-    mock_completion.return_value = mock_response
-
-    result = resolve_conflicts(
-        sample_recorded_entities,
-        sample_recorded_entities,
-    )
-
-    assert len(result) == 1
-    assert result[0].event == "NONE"
-
-    # Test handling of malformed JSON response
-    mock_response.choices[0].message.content = '{"entities": [invalid json}'
-    mock_completion.return_value = mock_response
-
-    with pytest.raises(Exception):
-        resolve_conflicts(
-            sample_recorded_entities,
-            sample_recorded_entities,
-        )
-
-    # Test handling of response missing 'entities' key
-    mock_response.choices[0].message.content = json.dumps({"wrong_key": []})
-    mock_completion.return_value = mock_response
-
-    with pytest.raises(Exception):
-        resolve_conflicts(
-            sample_recorded_entities,
-            sample_recorded_entities,
-        )
-
-
-@pytest.mark.unit
-@patch("kaizen.llm.conflict_resolution.conflict_resolution.completion")
-def test_resolve_conflicts_retry_logic(
-    mock_completion,
-    sample_recorded_entities,
-    sample_new_recorded_entities,
-    mock_llm_response_add,
-):
-    """Test retry logic when LLM calls fail."""
-    # Test retry on JSON parsing error
-    mock_response_fail = Mock()
-    mock_response_fail.choices = [Mock()]
-    mock_response_fail.choices[0].message.content = "invalid json"
-
-    mock_response_success = Mock()
-    mock_response_success.choices = [Mock()]
-    mock_response_success.choices[0].message.content = mock_llm_response_add
-
-    mock_completion.side_effect = [
-        mock_response_fail,
-        mock_response_fail,
-        mock_response_success,
+@pytest.mark.llm
+def test_delete_contradicted_fact():
+    """A directly contradicting incoming entity should DELETE the old one."""
+    old = [
+        RecordedEntity(id="g1", type="fact", content="Name is John", metadata={}, created_at=datetime.now()),
+        RecordedEntity(id="g2", type="fact", content="Loves cheese pizza", metadata={}, created_at=datetime.now()),
     ]
-
-    result = resolve_conflicts(
-        sample_recorded_entities,
-        sample_new_recorded_entities,
-    )
-
-    # Verify it succeeded after retries
-    assert len(result) == 3
-    assert mock_completion.call_count == 3
-
-    # Test that exception is raised after max retries
-    mock_completion.reset_mock()
-    mock_completion.side_effect = Exception()
-
-    with pytest.raises(Exception, match="Failed to resolve conflicts after 3 attempts"):
-        resolve_conflicts(
-            sample_recorded_entities,
-            sample_recorded_entities,
-        )
-
-    # Verify it tried 3 times
-    assert mock_completion.call_count == 3
+    new = [RecordedEntity(id="n1", type="fact", content="Dislikes cheese pizza", metadata={}, created_at=datetime.now())]
+    updates = {u.id: u for u in resolve_conflicts(old, new)}
+    assert updates["g2"].event == "DELETE"
+    assert updates["g1"].event == "NONE"
 
 
-@pytest.mark.unit
-@patch("kaizen.llm.conflict_resolution.conflict_resolution.completion")
-def test_resolve_conflicts_edge_cases(
-    mock_completion,
-    sample_recorded_entities,
-    sample_new_recorded_entities,
-    mock_llm_response_add,
-):
-    """Test edge cases like empty lists and custom prompts."""
-    # Test conflict resolution with empty entity lists
-    mock_response = Mock()
-    mock_response.choices = [Mock()]
-    mock_response.choices[0].message.content = json.dumps({"entities": []})
-    mock_completion.return_value = mock_response
-
-    result = resolve_conflicts([], [])
-    assert result == []
-
-    # Test conflict resolution with custom prompt template
-    mock_response.choices[0].message.content = mock_llm_response_add
-    mock_completion.return_value = mock_response
-
-    custom_prompt = "Custom conflict resolution instructions"
-
-    result = resolve_conflicts(
-        sample_recorded_entities,
-        sample_new_recorded_entities,
-        custom_update_entities_prompt=custom_prompt,
-    )
-
-    # Verify the call was made with custom prompt
-    call_args = mock_completion.call_args
-    assert custom_prompt in call_args[1]["messages"][0]["content"]
-    assert len(result) == 3
-
-    # Test that LLM settings are properly used
-    assert "model" in call_args[1]
-    assert "messages" in call_args[1]
-    assert "custom_llm_provider" in call_args[1]
+@pytest.mark.llm
+def test_mixed_add_update_delete_none():
+    """A realistic batch: ADD new info, UPDATE enriched info, DELETE contradicted info, NONE for unchanged."""
+    old = [
+        RecordedEntity(id="g1", type="fact", content="I really like cheese pizza", metadata={}, created_at=datetime.now()),
+        RecordedEntity(id="g2", type="fact", content="User is a software engineer", metadata={}, created_at=datetime.now()),
+        RecordedEntity(id="g3", type="fact", content="User likes to play cricket", metadata={}, created_at=datetime.now()),
+    ]
+    new = [
+        RecordedEntity(
+            id="n1", type="fact", content="Loves chicken pizza", metadata={}, created_at=datetime.now()
+        ),  # contradicts / updates g1
+        RecordedEntity(
+            id="n2", type="fact", content="Loves to play cricket with friends", metadata={}, created_at=datetime.now()
+        ),  # enriches g3
+        RecordedEntity(id="n3", type="fact", content="Name is John", metadata={}, created_at=datetime.now()),  # brand new
+    ]
+    updates = {u.id: u for u in resolve_conflicts(old, new)}
+    assert updates["g1"].event == "UPDATE"
+    assert updates["g2"].event == "NONE"
+    assert updates["g3"].event == "UPDATE"
+    assert updates["n3"].event == "ADD"

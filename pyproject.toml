@@ -65,7 +65,8 @@ addopts = "--ignore=explorations -m 'not phoenix'"
 markers = [
     "e2e",
     "unit",
-    "phoenix"
+    "phoenix",
+    "llm"
 ]
 anyio_mode = "auto"
 
