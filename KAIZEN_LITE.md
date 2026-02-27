@@ -37,7 +37,7 @@ Kaizen Lite has two halves:
 
 No external services are involved. The entire loop is a JSON file and two Python scripts.
 
-## Example Walkthrough
+## Example 1 — Learning a user preference
 
 This example shows the full learn-then-recall loop across two sessions.
 
@@ -97,6 +97,127 @@ Claude: The three most populous cities in Canada are Toronto, Montreal, and
 
 The entity was automatically injected via the `UserPromptSubmit` hook, so Claude used kilometres only — without being reminded.
 
+## Example 2 — Learning from failure in a sandboxed environment
+
+This example shows how Kaizen Lite helps an agent avoid dead ends it encountered in a previous session. The agent runs in a Docker sandbox where common system tools are not installed.
+
+To run it, first build the Docker image:
+
+```bash
+just sandbox-build
+```
+
+Then run a task to extract metadata from an image:
+
+```bash
+just trace=true learn=true sandbox-prompt 'where was the photo @sample.jpg taken. use exif metadata'
+```
+
+When you run the above, you will see that the agent hits some dead ends (exiftool not found, Pillow not installed), and that it learns guidelines to avoid them in the future (see `demo/workspace/.kaizen/entities.json`).
+
+Run the same task again in a new session:
+
+```bash
+just trace=true sandbox-prompt 'where was the photo @sample.jpg taken. use exif metadata'
+```
+
+You will see that the agent now is more efficient, avoiding the dead ends it encountered in the previous session such as trying to use exiftool.
+
+The instructions below walk you through the same example in interactive sessions.
+
+
+### Session 1 — Solving the hard way
+
+The user asks the agent to find where a photo was taken:
+
+```text
+You: Where was this photo taken? [sample.jpg]
+
+Claude: I'll extract the GPS coordinates from the photo's EXIF metadata.
+
+        [runs: exiftool sample.jpg]
+
+        exiftool: command not found
+
+        Let me try using Python with Pillow instead.
+
+        [runs: python3 -c "from PIL import Image; ..."]
+
+        ModuleNotFoundError: No module named 'PIL'
+
+        I'll install Pillow first.
+
+        [runs: pip install Pillow]
+        [runs: python3 script to extract EXIF GPS via Pillow]
+
+        The photo was taken at:
+        - Latitude:  51.4936° N
+        - Longitude: 0.0376° E
+
+        This places it in Wapping, East London, UK.
+        Google Maps: https://www.google.com/maps?q=51.493608,0.037561
+```
+
+The agent got the right answer, but wasted two turns on dead ends (exiftool not found, Pillow not installed). Now the user runs `/kaizen:learn`:
+
+```text
+You: /kaizen:learn
+
+Claude: I've extracted the following entities from this conversation:
+
+        {
+          "entities": [
+            {
+              "content": "Use Python stdlib (struct module) to manually parse JPEG
+                          EXIF/GPS metadata when no external tools are available",
+              "rationale": "In sandboxed environments, neither system tools (exiftool)
+                          nor third-party libraries (PIL/Pillow) may be installed.
+                          Python stdlib is always available and sufficient for JPEG
+                          binary parsing.",
+              "category": "strategy",
+              "trigger": "When extracting EXIF or GPS metadata from images in
+                          containerized or sandboxed environments"
+            },
+            {
+              "content": "When system tools or pip packages are unavailable, check if
+                          the task can be solved with Python stdlib before attempting
+                          installs",
+              "rationale": "Binary parsing, HTTP requests (urllib), JSON, CSV, and many
+                          common tasks are fully covered by stdlib. Attempting installs
+                          in sandboxes wastes time and often fails silently.",
+              "category": "recovery",
+              "trigger": "When a required CLI tool or Python package is missing in a
+                          restricted environment"
+            }
+          ]
+        }
+
+        Added 2 new entity(ies). Total: 2
+        Entities stored in: /workspace/.kaizen/entities.json
+```
+
+### Session 2 — No more dead ends
+
+In a new session, the user asks the same question. The stored entities are automatically injected via the `UserPromptSubmit` hook:
+
+```text
+You: Where was this photo taken? [sample.jpg]
+
+Claude: I'll extract the GPS coordinates from the EXIF data using Python's
+        struct module.
+
+        [runs: python3 script using struct to parse JPEG EXIF binary data]
+
+        The photo was taken at:
+        - Latitude:  51.4936° N
+        - Longitude: 0.0376° E
+
+        This places it in Wapping, East London, UK.
+        Google Maps: https://www.google.com/maps?q=51.493608,0.037561
+```
+
+The agent skipped both `exiftool` and `Pillow` entirely — it went straight to the Python stdlib approach that it learned works in sandboxed environments. Two wasted turns eliminated.
+
 ## Available Skills
 
 | Skill | Description |
@@ -113,10 +234,10 @@ Entities live in `.kaizen/entities.json` in the project root:
 {
   "entities": [
     {
-      "content": "Use Python PIL/Pillow for image metadata extraction in sandboxed environments",
-      "rationale": "System tools like exiftool may not be available",
+      "content": "Use Python stdlib (struct module) to manually parse JPEG EXIF/GPS metadata when no external tools are available",
+      "rationale": "In sandboxed environments, neither system tools (exiftool) nor third-party libraries (PIL/Pillow) may be installed. Python stdlib is always available.",
       "category": "strategy",
-      "trigger": "When extracting image metadata in containerized environments"
+      "trigger": "When extracting EXIF or GPS metadata from images in containerized or sandboxed environments"
     }
   ]
 }
