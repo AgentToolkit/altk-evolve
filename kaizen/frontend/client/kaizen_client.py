@@ -194,7 +194,7 @@ class KaizenClient:
             except NamespaceAlreadyExistsException:
                 return self.get_namespace_details(namespace_id)
 
-    def store_user_memory(
+    def store_user_facts(
         self,
         namespace_id: str,
         message: str,
@@ -233,7 +233,7 @@ class KaizenClient:
             enable_conflict_resolution=enable_conflict_resolution,
         )
 
-    def retrieve_user_memory(
+    def retrieve_user_facts(
         self,
         namespace_id: str,
         user_id: str,

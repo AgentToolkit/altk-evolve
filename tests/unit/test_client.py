@@ -170,7 +170,7 @@ def test_delete_entity(kaizen_client: KaizenClient, monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("message", [None, "", "   \t\n"])
-def test_store_user_memory_skips_none_empty_or_whitespace(kaizen_client: KaizenClient, monkeypatch, message):
+def test_store_user_facts_skips_none_empty_or_whitespace(kaizen_client: KaizenClient, monkeypatch, message):
     def fail_ensure_namespace(namespace_id: str):
         raise AssertionError("ensure_namespace should not be called for blank messages")
 
@@ -184,13 +184,13 @@ def test_store_user_memory_skips_none_empty_or_whitespace(kaizen_client: KaizenC
     monkeypatch.setattr(kaizen_client, "update_entities", fail_update_entities)
     monkeypatch.setattr("kaizen.frontend.client.kaizen_client.extract_facts_from_messages", fail_extract)
 
-    result = kaizen_client.store_user_memory(namespace_id="foobar", message=message, user_id="u1")
+    result = kaizen_client.store_user_facts(namespace_id="foobar", message=message, user_id="u1")
 
     assert result == []
 
 
 @pytest.mark.unit
-def test_store_user_memory_uses_trimmed_message(kaizen_client: KaizenClient, monkeypatch):
+def test_store_user_facts_uses_trimmed_message(kaizen_client: KaizenClient, monkeypatch):
     captured: dict = {"ensure_namespace_called": False}
 
     def ensure_namespace(namespace_id: str):
@@ -209,7 +209,7 @@ def test_store_user_memory_uses_trimmed_message(kaizen_client: KaizenClient, mon
     monkeypatch.setattr(kaizen_client, "update_entities", update_entities)
     monkeypatch.setattr("kaizen.frontend.client.kaizen_client.extract_facts_from_messages", extract)
 
-    result = kaizen_client.store_user_memory(namespace_id="foobar", message="  hello world \n", user_id="u1")
+    result = kaizen_client.store_user_facts(namespace_id="foobar", message="  hello world \n", user_id="u1")
 
     assert captured["ensure_namespace_called"] is True
     assert captured["message_content"] == "hello world"
