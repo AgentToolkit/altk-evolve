@@ -67,5 +67,11 @@ pre-commit install
 ## Coding Standards
 - Use Ruff for linting and formatting (configured in pyproject.toml)
 - Always run `uv run ruff format .` and `git add -u` before committing to avoid pre-commit stash conflicts with ruff auto-fixes
+- Write commit messages in the Conventional Commits format expected by `python-semantic-release`:
+  - `feat(scope): description` — new feature, triggers a minor version bump
+  - `fix(scope): description` — bug fix, triggers a patch version bump
+  - `perf(scope): description` — performance improvement, triggers a patch version bump
+  - `test(scope): description`, `chore(scope): description`, `docs(scope): description`, etc. — no version bump
+  - Breaking changes: append `!` after the type/scope (e.g. `feat!:`) or add `BREAKING CHANGE:` in the footer
 - All new features need tests (unit + e2e where applicable)
 - Use uv to run Python commands, including pip.
