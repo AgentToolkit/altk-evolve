@@ -61,7 +61,7 @@ include = ["kaizen"]
 package = true
 
 [tool.pytest.ini_options]
-addopts = "--ignore=explorations -m 'not phoenix'"
+addopts = "--ignore=explorations -m 'not phoenix and not llm'"
 markers = [
     "e2e",
     "unit",
