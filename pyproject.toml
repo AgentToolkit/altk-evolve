@@ -43,6 +43,7 @@ dev = [
     "pre-commit",
     "pytest",
     "pytest-cov",
+    "pytest-retry",
     "python-dotenv>=1.2.1",
     "python-semantic-release",
     "ruff",
@@ -61,11 +62,12 @@ include = ["kaizen"]
 package = true
 
 [tool.pytest.ini_options]
-addopts = "--ignore=explorations -m 'not phoenix'"
+addopts = "--ignore=explorations -m 'not phoenix and not llm'"
 markers = [
     "e2e",
     "unit",
-    "phoenix"
+    "phoenix",
+    "llm"
 ]
 anyio_mode = "auto"
 

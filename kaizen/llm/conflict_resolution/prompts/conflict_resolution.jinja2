@@ -33,7 +33,7 @@ Follow the instruction mentioned below:
 - Do not return anything from the custom few shot prompts provided above.
 - If the current list of entities is empty, then you have to add the new retrieved entity to the list of entities.
 - You should return the updated entity in only JSON format as shown below. The entity ID and type should be the same if no changes are made.
-- If there is an addition, generate a new ID and add the new event corresponding to it.
+- If there is an addition, use the ID from the retrieved entity.
 - If there is a deletion, the object corresponding to that entity should be removed from the list of entities.
 - If there is an update, the ID key should remain the same and only the content needs to be updated.
 

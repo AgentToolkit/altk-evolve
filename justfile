@@ -2,6 +2,12 @@
 default:
     @just --list
 
+# Format staged files and commit — avoids pre-commit stash conflicts with ruff auto-fixes
+commit message:
+    uv run ruff format .
+    git add -u
+    git commit -m "{{message}}"
+
 image := "claude-sandbox"
 env_file := "sandbox/myenv"
 sandbox_dir := "sandbox"

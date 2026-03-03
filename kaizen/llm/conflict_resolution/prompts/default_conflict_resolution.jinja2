@@ -47,10 +47,8 @@ Here are some guidelines on how to select which operation to perform:
             ]
         }
 
-2. **Update**: If the retrieved entities contain information that is already present in the list of entities but the information is totally different, then you have to update it.
-If the retrieved entity contains information that conveys the same thing as the elements present in the list of entities, then you have to keep the entity which has the most information.
-Example (a) -- if the entity contains "User likes to play cricket" and the retrieved entity is "Loves to play cricket with friends", then update the list of entities with the retrieved facts.
-Example (b) -- if the entity contains "Likes cheese pizza" and the retrieved entity is "Loves cheese pizza", then you do not need to update it because they convey the same information.
+2. **Update**: Use UPDATE only when the new entity adds concrete new information that genuinely enriches an existing entity — for example, adding specific details, numbers, or qualifications that the old entity did not contain. Use UPDATE (not NONE) when the same topic now has different specific values — for example, a different deployment platform, a different tool, or a different location with new details, or additional preferences. If the new entity merely restates or paraphrases the old one (same meaning, different words), use NONE instead. Do NOT update an entity just because the wording changed. 
+Sometimes the new information found in a retrieved entity needs to be added to the old entity.
 If the direction is to update the list of entities, then you have to update it.
 Please keep in mind while updating you have to keep the same ID.
 Please note to return the IDs in the output from the input IDs only and do not generate any new ID.
@@ -60,31 +58,45 @@ Please note to return the IDs in the output from the input IDs only and do not g
             {
                 "id" : "0",
                 "type": "fact",
-                "content" : "I really like cheese pizza"
+                "content" : "User is a software engineer"
             },
             {
                 "id" : "1",
                 "type": "fact",
-                "content" : "User is a software engineer"
+                "content" : "User likes to play cricket"
             },
             {
                 "id" : "2",
                 "type": "fact",
-                "content" : "User likes to play cricket"
+                "content" : "Likes racing"
+            },
+            {
+                "id" : "3",
+                "type": "fact",
+                "content" : "His usual order is a double cheeseburger"
             }
-        ]
     - Retrieved entities:
         [
             {
                 "id" : "Retrieved_Fact_1",
                 "type": "fact",
-                "content" : "Loves chicken pizza"
+                "content" : "User is a senior software engineer specializing in distributed systems"
             },
             {
                 "id" : "Retrieved_Fact_2",
                 "type": "fact",
-                "content" : "Loves to play cricket with friends"
-            }
+                "content" : "Loves to play cricket with friends on weekends"
+            },
+            {
+                "id" : "Retrieved_Fact_3",
+                "type": "fact",
+                "content" : "Loves racing"
+            },
+            {
+                "id" : "Retrieved_Fact_4",
+                "type": "fact",
+                "content" : "Always requests his hamburger with grilled onions"
+            },
         ]
     - New Entities:
         {
@@ -92,28 +104,35 @@ Please note to return the IDs in the output from the input IDs only and do not g
                 {
                     "id" : "0",
                     "type": "fact",
-                    "content" : "Loves cheese and chicken pizza",
+                    "content" : "User is a senior software engineer specializing in distributed systems",
                     "event" : "UPDATE",
-                    "old_entity" : "I really like cheese pizza"
+                    "old_entity" : "User is a software engineer"
                 },
                 {
                     "id" : "1",
                     "type": "fact",
-                    "content" : "User is a software engineer",
-                    "event" : "NONE"
+                    "content" : "Loves to play cricket with friends on weekends",
+                    "event" : "UPDATE",
+                    "old_entity" : "User likes to play cricket"
                 },
                 {
                     "id" : "2",
                     "type": "fact",
-                    "content" : "Loves to play cricket with friends",
+                    "content" : "Likes cheese pizza",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "3",
+                    "type": "fact",
+                    "content" : "His usual order is a double cheeseburger with grilled onions",
                     "event" : "UPDATE",
-                    "old_entity" : "User likes to play cricket"
+                    "old_entity": "His usual order is a double cheeseburger"
                 }
             ]
         }
 
 
-3. **Delete**: If the retrieved entities contain information that contradicts the information present in the list of entities, then you have to delete it. Or if the direction is to delete the entity, then you have to delete it.
+3. **Delete**: If the retrieved entities contain information that directly contradicts an existing entity — making the old entity false or obsolete (e.g., a preference is reversed, a status is replaced, or the old information is no longer true) — then you have to delete it. Pay special attention to explicit negation phrases such as "no longer", "switched away from", "quit", "stopped using", "replaced" — these always indicate a DELETE. Or if the direction is to delete the entity, then you have to delete it.
 Please note to return the IDs in the output from the input IDs only and do not generate any new ID.
 - **Example**:
     - Old Entities:
@@ -127,6 +146,11 @@ Please note to return the IDs in the output from the input IDs only and do not g
                 "id" : "1",
                 "type": "fact",
                 "content" : "Loves cheese pizza"
+            },
+            {
+                "id" : "2",
+                "type": "fact",
+                "content" : "User uses Jira for project management"
             }
         ]
     - Retrieved entities:
@@ -135,6 +159,11 @@ Please note to return the IDs in the output from the input IDs only and do not g
                 "id": "Retrieved_Fact_1",
                 "type": "fact",
                 "content": "Dislikes cheese pizza"
+            },
+            {
+                "id": "Retrieved_Fact_2",
+                "type": "fact",
+                "content": "Team switched from Jira to Linear for project management"
             }
         ]
     - New Entities:
@@ -151,11 +180,23 @@ Please note to return the IDs in the output from the input IDs only and do not g
                     "type": "fact",
                     "content" : "Loves cheese pizza",
                     "event" : "DELETE"
+                },
+                {
+                    "id" : "2",
+                    "type": "fact",
+                    "content" : "User uses Jira for project management",
+                    "event" : "DELETE"
+                },
+                {
+                    "id" : "Retrieved_Fact_2",
+                    "type": "fact",
+                    "content" : "Team switched from Jira to Linear for project management",
+                    "event" : "ADD"
                 }
             ]
         }
 
-4. **No Change**: If the retrieved entities contain information that is already present in the list of entities, then you do not need to make any changes.
+4. **No Change**: If the retrieved entities contain information that is already present in the list of old entities — including paraphrases, synonyms, or minor rewordings that convey the same meaning — then you do not need to make any changes. Also use NONE for any existing entity that is unrelated to the new entities.
 - **Example**:
     - Old Entities:
         [
@@ -167,7 +208,17 @@ Please note to return the IDs in the output from the input IDs only and do not g
             {
                 "id" : "1",
                 "type": "fact",
-                "content" : "Loves cheese pizza"
+                "content" : "Likes racing"
+            },
+            {
+                "id" : "2",
+                "type": "fact",
+                "content" : "User enjoys running"
+            },
+            {
+                "id" : "3",
+                "type": "fact",
+                "content" : "User works from home"
             }
         ]
     - Retrieved entities:
@@ -176,6 +227,21 @@ Please note to return the IDs in the output from the input IDs only and do not g
                 "id" : "Retrieved_Fact_1",
                 "type": "fact",
                 "content" : "Name is John"
+            },
+            {
+                "id" : "Retrieved_Fact_2",
+                "type": "fact",
+                "content" : "Loves racing"
+            },
+            {
+                "id" : "Retrieved_Fact_3",
+                "type": "fact",
+                "content" : "User likes to run"
+            },
+            {
+                "id" : "Retrieved_Fact_4",
+                "type": "fact",
+                "content" : "The user is a remote worker"
             }
         ]
     - New Entities:
@@ -190,7 +256,19 @@ Please note to return the IDs in the output from the input IDs only and do not g
                 {
                     "id" : "1",
                     "type": "fact",
-                    "content" : "Loves cheese pizza",
+                    "content" : "Likes racing",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "2",
+                    "type": "fact",
+                    "content" : "User enjoys running",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "3",
+                    "type": "fact",
+                    "content" : "User works from home",
                     "event" : "NONE"
                 }
             ]
