@@ -1602,6 +1602,7 @@ dev = [
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "pytest-retry" },
     { name = "python-dotenv" },
     { name = "python-semantic-release" },
     { name = "ruff" },
@@ -1638,6 +1639,7 @@ dev = [
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "pytest-retry" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "python-semantic-release" },
     { name = "ruff" },
@@ -3302,6 +3304,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5e/f7/c933acc76f5208b3b00089573cf6a2bc26dc80a8aece8f52bb7d6b1855ca/pytest_cov-7.0.0.tar.gz", hash = "sha256:33c97eda2e049a0c5298e91f519302a1334c26ac65c1a483d6206fd458361af1", size = 54328, upload-time = "2025-09-09T10:57:02.113Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/49/1377b49de7d0c1ce41292161ea0f721913fa8722c19fb9c1e3aa0367eecb/pytest_cov-7.0.0-py3-none-any.whl", hash = "sha256:3b8e9558b16cc1479da72058bdecf8073661c7f57f7d3c5f22a1c23507f2d861", size = 22424, upload-time = "2025-09-09T10:57:00.695Z" },
+]
+
+[[package]]
+name = "pytest-retry"
+version = "1.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c5/5b/607b017994cca28de3a1ad22a3eee8418e5d428dcd8ec25b26b18e995a73/pytest_retry-1.7.0.tar.gz", hash = "sha256:f8d52339f01e949df47c11ba9ee8d5b362f5824dff580d3870ec9ae0057df80f", size = 19977, upload-time = "2025-01-19T01:56:13.115Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/ff/3266c8a73b9b93c4b14160a7e2b31d1e1088e28ed29f4c2d93ae34093bfd/pytest_retry-1.7.0-py3-none-any.whl", hash = "sha256:a2dac85b79a4e2375943f1429479c65beb6c69553e7dae6b8332be47a60954f4", size = 13775, upload-time = "2025-01-19T01:56:11.199Z" },
 ]
 
 [[package]]

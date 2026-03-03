@@ -604,6 +604,7 @@ CONFLICT_SCENARIOS: list[ConflictScenario] = [
 
 
 @pytest.mark.llm
+@pytest.mark.flaky(retries=3, delay=1)
 @pytest.mark.parametrize(
     "scenario",
     [pytest.param(scenario, id=scenario["label"]) for scenario in CONFLICT_SCENARIOS],

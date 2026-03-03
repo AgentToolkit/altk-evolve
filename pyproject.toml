@@ -43,6 +43,7 @@ dev = [
     "pre-commit",
     "pytest",
     "pytest-cov",
+    "pytest-retry",
     "python-dotenv>=1.2.1",
     "python-semantic-release",
     "ruff",
