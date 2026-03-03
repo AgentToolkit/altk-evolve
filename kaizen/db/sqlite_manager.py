@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 import sqlite3
 import threading
 
@@ -27,9 +28,7 @@ class SQLiteManager:
     """A database for any resources that can't be generalized across backends."""
 
     def __init__(self, db_path: str | None = None):
-        import os
-
-        self.db_path = db_path or os.environ.get("KAIZEN_SQLITE_PATH", "entities.sqlite.db")
+        self.db_path = db_path or os.getenv("KAIZEN_SQLITE_PATH") or os.getenv("KAIZEN_SQLITE_URI") or "entities.sqlite.db"
         self.connection: sqlite3.Connection | None = None
         self._lock: threading.Lock | None = None
 

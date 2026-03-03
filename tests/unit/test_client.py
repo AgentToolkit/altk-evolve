@@ -166,3 +166,52 @@ def test_delete_entity(kaizen_client: KaizenClient, monkeypatch):
 
     monkeypatch.setattr(kaizen_client.backend, "delete_entity_by_id", delete_entity_by_id.__get__(kaizen_client.backend, BaseEntityBackend))
     kaizen_client.delete_entity_by_id(namespace_id="foobar", entity_id="1")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("message", [None, "", "   \t\n"])
+def test_store_user_facts_skips_none_empty_or_whitespace(kaizen_client: KaizenClient, monkeypatch, message):
+    def fail_ensure_namespace(namespace_id: str):
+        raise AssertionError("ensure_namespace should not be called for blank messages")
+
+    def fail_update_entities(namespace_id, entities, enable_conflict_resolution=True):
+        raise AssertionError("update_entities should not be called for blank messages")
+
+    def fail_extract(messages):
+        raise AssertionError("extract_facts_from_messages should not be called for blank messages")
+
+    monkeypatch.setattr(kaizen_client, "ensure_namespace", fail_ensure_namespace)
+    monkeypatch.setattr(kaizen_client, "update_entities", fail_update_entities)
+    monkeypatch.setattr("kaizen.frontend.client.kaizen_client.extract_facts_from_messages", fail_extract)
+
+    result = kaizen_client.store_user_facts(namespace_id="foobar", message=message, user_id="u1")
+
+    assert result == []
+
+
+@pytest.mark.unit
+def test_store_user_facts_uses_trimmed_message(kaizen_client: KaizenClient, monkeypatch):
+    captured: dict = {"ensure_namespace_called": False}
+
+    def ensure_namespace(namespace_id: str):
+        captured["ensure_namespace_called"] = True
+        return Namespace(id=namespace_id, created_at=datetime.datetime.now(datetime.UTC))
+
+    def extract(messages):
+        captured["message_content"] = messages[0]["content"]
+        return ["trimmed fact"]
+
+    def update_entities(namespace_id, entities, enable_conflict_resolution=True):
+        captured["entity_content"] = entities[0].content if entities else None
+        return [EntityUpdate(id="1", type="fact", content="trimmed fact", event="ADD")]
+
+    monkeypatch.setattr(kaizen_client, "ensure_namespace", ensure_namespace)
+    monkeypatch.setattr(kaizen_client, "update_entities", update_entities)
+    monkeypatch.setattr("kaizen.frontend.client.kaizen_client.extract_facts_from_messages", extract)
+
+    result = kaizen_client.store_user_facts(namespace_id="foobar", message="  hello world \n", user_id="u1")
+
+    assert captured["ensure_namespace_called"] is True
+    assert captured["message_content"] == "hello world"
+    assert captured["entity_content"] == "trimmed fact"
+    assert result[0].event == "ADD"

@@ -241,10 +241,14 @@ class FilesystemEntityBackend(BaseEntityBackend):
             for ent in entities:
                 match = True
                 for key, value in filters.items():
-                    # Check top-level field first, then metadata
-                    ent_value = ent.get(key)
-                    if ent_value is None and ent.get("metadata"):
-                        ent_value = ent["metadata"].get(key)
+                    if key.startswith("metadata."):
+                        metadata_key = key.split(".", 1)[1]
+                        ent_value = (ent.get("metadata") or {}).get(metadata_key)
+                    else:
+                        # Check top-level field first, then metadata
+                        ent_value = ent.get(key)
+                        if ent_value is None and ent.get("metadata"):
+                            ent_value = ent["metadata"].get(key)
                     if ent_value != value:
                         match = False
                         break

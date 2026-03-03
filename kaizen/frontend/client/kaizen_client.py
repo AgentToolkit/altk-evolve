@@ -1,11 +1,13 @@
 import logging
+from typing import Any
 
-from kaizen.schema.core import Entity, Namespace, RecordedEntity
-from kaizen.schema.exceptions import NamespaceNotFoundException
-from kaizen.schema.conflict_resolution import EntityUpdate
-from kaizen.schema.tips import ConsolidationResult
-from kaizen.config.kaizen import KaizenConfig
 from kaizen.backend.base import BaseEntityBackend
+from kaizen.config.kaizen import KaizenConfig
+from kaizen.llm.fact_extraction.fact_extraction import ExtractedFact, extract_facts_from_messages
+from kaizen.schema.conflict_resolution import EntityUpdate
+from kaizen.schema.core import Entity, Namespace, RecordedEntity
+from kaizen.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
+from kaizen.schema.tips import ConsolidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -181,3 +183,106 @@ class KaizenClient:
             return True
         except NamespaceNotFoundException:
             return False
+
+    def ensure_namespace(self, namespace_id: str) -> Namespace:
+        """Get an existing namespace or create it if missing."""
+        try:
+            return self.get_namespace_details(namespace_id)
+        except NamespaceNotFoundException:
+            try:
+                return self.create_namespace(namespace_id)
+            except NamespaceAlreadyExistsException:
+                return self.get_namespace_details(namespace_id)
+
+    def store_user_facts(
+        self,
+        namespace_id: str,
+        message: str,
+        user_id: str,
+        metadata: dict[str, Any] | None = None,
+        enable_conflict_resolution: bool = False,
+    ) -> list[EntityUpdate]:
+        """Extract facts from a user utterance and persist them as `fact` entities."""
+        message = (message or "").strip()
+        if not message:
+            return []
+
+        self.ensure_namespace(namespace_id)
+
+        base_metadata: dict[str, Any] = dict(metadata or {})
+        base_metadata["user_id"] = user_id
+
+        extracted = extract_facts_from_messages([{"role": "user", "content": message}])
+        entities: list[Entity] = []
+        for one in extracted:
+            if isinstance(one, ExtractedFact):
+                fact_metadata = dict(base_metadata)
+                fact_metadata["category"] = one.category
+                fact_metadata["key"] = one.key
+                fact_metadata["value"] = one.value
+                entities.append(Entity(type="fact", content=one.content, metadata=fact_metadata))
+            else:
+                entities.append(Entity(type="fact", content=str(one), metadata=dict(base_metadata)))
+
+        if not entities:
+            return []
+
+        return self.update_entities(
+            namespace_id=namespace_id,
+            entities=entities,
+            enable_conflict_resolution=enable_conflict_resolution,
+        )
+
+    def retrieve_user_facts(
+        self,
+        namespace_id: str,
+        user_id: str,
+        query: str | None = None,
+        limit: int = 5,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Retrieve categorized user facts for prompt/context usage."""
+        if limit <= 0 or not self.namespace_exists(namespace_id):
+            return {}
+
+        facts = self.search_entities(
+            namespace_id=namespace_id,
+            query=query,
+            filters={"type": "fact", "metadata.user_id": user_id},
+            limit=limit,
+        )
+        if query and not facts:
+            facts = self.search_entities(
+                namespace_id=namespace_id,
+                query=None,
+                filters={"type": "fact", "metadata.user_id": user_id},
+                limit=limit,
+            )
+        if not facts and user_id != "default":
+            facts = self.search_entities(
+                namespace_id=namespace_id,
+                query=query,
+                filters={"type": "fact", "metadata.user_id": "default"},
+                limit=limit,
+            )
+            if query and not facts:
+                facts = self.search_entities(
+                    namespace_id=namespace_id,
+                    query=None,
+                    filters={"type": "fact", "metadata.user_id": "default"},
+                    limit=limit,
+                )
+
+        categorized_preferences: dict[str, list[dict[str, Any]]] = {}
+        for fact in facts:
+            metadata = fact.metadata or {}
+            category = str(metadata.get("category") or "misc")
+            categorized_preferences.setdefault(category, []).append(
+                {
+                    "id": fact.id,
+                    "content": str(fact.content),
+                    "key": metadata.get("key"),
+                    "value": metadata.get("value"),
+                }
+            )
+
+        return categorized_preferences

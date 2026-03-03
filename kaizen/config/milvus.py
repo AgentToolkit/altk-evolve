@@ -10,6 +10,8 @@ class MilvusDBSettings(BaseSettings):
     db_name: str = Field(default="")
     token: str = Field(default="")
     timeout: float | None = Field(default=None)
+    sqlite_uri: str = Field(default="entities.sqlite.db")
+    embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2")
 
 
 class MilvusOtherSettings(BaseSettings):

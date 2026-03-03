@@ -31,12 +31,12 @@ uv sync && source .venv/bin/activate
 
 ### Configuration
 
-Set your OpenAI API key:
+For direct OpenAI usage:
 ```bash
 export OPENAI_API_KEY=sk-...
 ```
 
-For detailed configuration options (custom LLM providers, backends, etc.), see [CONFIGURATION.md](CONFIGURATION.md).
+For LiteLLM proxy usage and model selection (including global fallback via `KAIZEN_MODEL_NAME`), see [CONFIGURATION.md](CONFIGURATION.md).
 
 ### Running the MCP Server
 
