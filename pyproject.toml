@@ -25,6 +25,11 @@ tracing = [
     "openinference-instrumentation-openai-agents",
 ]
 
+pgvector = [
+    "psycopg[binary]>=3.1",
+    "pgvector>=0.3",
+]
+
 examples = [
     "kaizen[tracing]",
     "smolagents",
@@ -136,5 +141,7 @@ module = [
     "milvus_lite.*",
     "openinference.*",
     "agents.*",
+    "pgvector.*",
+    "psycopg.*",
 ]
 ignore_missing_imports = true
