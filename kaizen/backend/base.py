@@ -1,5 +1,4 @@
 import datetime
-import json
 import logging
 from abc import ABC, abstractmethod
 
@@ -8,16 +7,10 @@ from pydantic_settings import BaseSettings
 from kaizen.schema.conflict_resolution import EntityUpdate
 from kaizen.schema.core import Entity, Namespace, RecordedEntity
 from kaizen.schema.exceptions import KaizenException
+from kaizen.utils.utils import serialize_content
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db")
-
-
-def serialize_content(content) -> str:
-    """Serialize content to a string for storage."""
-    if isinstance(content, str):
-        return content
-    return json.dumps(content)
 
 
 class BaseEntityBackend(ABC):
