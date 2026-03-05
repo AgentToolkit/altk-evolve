@@ -63,21 +63,26 @@ class BaseEntityBackend(ABC):
     @abstractmethod
     def _validate_namespace(self, namespace_id: str) -> None:
         """Raise NamespaceNotFoundException if the namespace does not exist."""
+        pass
 
     @abstractmethod
     def _add_entity(self, namespace_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> str:
         """Insert a new entity and return its ID as a string."""
+        pass
 
     @abstractmethod
     def _update_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
         """Update an existing entity in-place."""
+        pass
 
     @abstractmethod
     def _delete_entity(self, namespace_id: str, entity_id: str) -> None:
         """Delete an entity by ID."""
+        pass
 
     def _post_update(self, namespace_id: str) -> None:
         """Hook called after all entity mutations are complete. No-op by default."""
+        pass
 
     def update_entities(
         self,
