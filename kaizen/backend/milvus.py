@@ -9,6 +9,7 @@ from kaizen.config.milvus import MilvusDBSettings, milvus_client_settings
 from kaizen.db.sqlite_manager import SQLiteManager
 from kaizen.schema.core import Namespace, RecordedEntity
 from kaizen.schema.exceptions import KaizenException, NamespaceNotFoundException
+from kaizen.utils.utils import deserialize_content
 from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient
 from pymilvus.exceptions import MilvusException
 from pymilvus.milvus_client.index import IndexParams
@@ -16,13 +17,6 @@ from sentence_transformers import SentenceTransformer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db.milvus")
-
-
-def deserialize_content(content: str):
-    try:
-        return json.loads(content)
-    except (json.JSONDecodeError, TypeError):
-        return content
 
 
 class MilvusEntityBackend(BaseEntityBackend):

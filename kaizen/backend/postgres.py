@@ -15,19 +15,12 @@ from kaizen.config.postgres import postgres_db_settings
 from kaizen.db.sqlite_manager import SQLiteManager
 from kaizen.schema.core import Namespace, RecordedEntity
 from kaizen.schema.exceptions import KaizenException, NamespaceNotFoundException
+from kaizen.utils.utils import deserialize_content
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db.pgvector")
 
 EMBEDDING_DIM = 384
-
-
-def deserialize_content(content: str) -> Any:
-    """Deserialize content from PostgreSQL storage."""
-    try:
-        return json.loads(content)
-    except (json.JSONDecodeError, TypeError):
-        return content
 
 
 def _entity_row_factory(cursor: psycopg.Cursor[Any]) -> Callable[[Sequence[Any]], RecordedEntity]:

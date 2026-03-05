@@ -9,6 +9,14 @@ def serialize_content(content: str | dict) -> str:
     return json.dumps(content)
 
 
+def deserialize_content(content: str):
+    """Deserialize content from storage."""
+    try:
+        return json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return content
+
+
 def clean_llm_response(content: str) -> str:
     """
     Removes common junk from an LLM response so that it can be parsed using `json.loads()`
