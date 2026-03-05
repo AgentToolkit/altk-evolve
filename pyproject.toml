@@ -58,6 +58,9 @@ where = ["."]
 exclude = ["explorations*"]
 include = ["kaizen*"]
 
+[tool.setuptools.package-data]
+kaizen = ["**/*.jinja2"]
+
 [tool.uv]
 package = true
 
