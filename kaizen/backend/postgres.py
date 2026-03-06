@@ -170,7 +170,9 @@ class PostgresEntityBackend(BaseEntityBackend):
                 (entity_type, content_str, timestamp, str(embedding), metadata_json),
             )
             row = cur.fetchone()
-            return str(row[0]) if row else "0"
+            if row is None:
+                raise KaizenException(f"INSERT into namespace '{namespace_id}' returned no row; entity was not created.")
+            return str(row[0])
 
     def _update_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
         table = self._table_name(namespace_id)
