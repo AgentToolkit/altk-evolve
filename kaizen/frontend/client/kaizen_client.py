@@ -32,9 +32,9 @@ class KaizenClient:
                     f"Type of `config` should be `{FilesystemSettings.__name__}` or `None`, got `{type(self.config.settings).__name__}`"
                 )
             self.backend = FilesystemEntityBackend(self.config.settings)
-        elif self.config.backend == "pgvector":
+        elif self.config.backend == "postgres":
             from kaizen.backend.postgres import PostgresEntityBackend
-            from kaizen.config.pgvector import PostgresDBSettings
+            from kaizen.config.postgres import PostgresDBSettings
 
             if not isinstance(self.config.settings, (PostgresDBSettings, type(None))):
                 raise TypeError(
