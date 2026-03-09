@@ -2,7 +2,7 @@ import json
 import re
 
 
-def serialize_content(content: str | dict) -> str:
+def serialize_content(content: str | list | dict) -> str:
     """Serialize content to a string for storage."""
     if isinstance(content, str):
         return content

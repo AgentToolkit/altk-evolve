@@ -65,11 +65,13 @@ def make_table_exists(exists: bool):
 def test_ready(postgres_backend: PostgresEntityBackend):
     """Test the ready() health check method."""
     mock_cursor = MagicMock()
-    postgres_backend.conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
-    postgres_backend.conn.cursor.return_value.__exit__ = Mock(return_value=False)
+    mock_cursor_context = MagicMock()
+    mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_context.__exit__ = Mock(return_value=False)
 
-    assert postgres_backend.ready()
-    mock_cursor.execute.assert_called_with("SELECT 1")
+    with patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context):
+        assert postgres_backend.ready()
+        mock_cursor.execute.assert_called_with("SELECT 1")
 
 
 @pytest.mark.unit
@@ -79,21 +81,24 @@ def test_create_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
     monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(False))
 
     mock_cursor = MagicMock()
-    postgres_backend.conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
-    postgres_backend.conn.cursor.return_value.__exit__ = Mock(return_value=False)
+    mock_cursor_context = MagicMock()
+    mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_context.__exit__ = Mock(return_value=False)
 
-    with patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager):
+    with (
+        patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
+        patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager),
+    ):
         result = postgres_backend.create_namespace(namespace_id=namespace_id)
 
-    assert result.id == namespace_id
-    assert isinstance(result.created_at, datetime.datetime)
+        assert result.id == namespace_id
+        assert isinstance(result.created_at, datetime.datetime)
 
-    # create a namespace with auto-generated id
-    with patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager):
+        # create a namespace with auto-generated id
         result = postgres_backend.create_namespace()
 
-    assert result.id.startswith("ns_")
-    assert isinstance(result.created_at, datetime.datetime)
+        assert result.id.startswith("ns_")
+        assert isinstance(result.created_at, datetime.datetime)
 
 
 @pytest.mark.unit
@@ -110,11 +115,15 @@ def test_get_namespace_details(postgres_backend: PostgresEntityBackend, db_manag
 
     mock_cursor = MagicMock()
     mock_cursor.fetchone.return_value = (42,)
-    postgres_backend.conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
-    postgres_backend.conn.cursor.return_value.__exit__ = Mock(return_value=False)
+    mock_cursor_context = MagicMock()
+    mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_context.__exit__ = Mock(return_value=False)
 
     # Test existing namespace
-    with patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager):
+    with (
+        patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
+        patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager),
+    ):
         result = postgres_backend.get_namespace_details(namespace_id="test_namespace")
 
     assert result.id == "test_namespace"
@@ -135,10 +144,14 @@ def test_search_namespaces(postgres_backend: PostgresEntityBackend, db_manager, 
 
     mock_cursor = MagicMock()
     mock_cursor.fetchone.return_value = (42,)
-    postgres_backend.conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
-    postgres_backend.conn.cursor.return_value.__exit__ = Mock(return_value=False)
+    mock_cursor_context = MagicMock()
+    mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_context.__exit__ = Mock(return_value=False)
 
-    with patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager):
+    with (
+        patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
+        patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager),
+    ):
         result = postgres_backend.search_namespaces(limit=10)
 
     assert len(result) == 2
@@ -155,10 +168,14 @@ def test_delete_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
     db_manager.delete_namespace = Mock()
 
     mock_cursor = MagicMock()
-    postgres_backend.conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
-    postgres_backend.conn.cursor.return_value.__exit__ = Mock(return_value=False)
+    mock_cursor_context = MagicMock()
+    mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_context.__exit__ = Mock(return_value=False)
 
-    with patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager):
+    with (
+        patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
+        patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager),
+    ):
         postgres_backend.delete_namespace(namespace_id=namespace_id)
 
     db_manager.delete_namespace.assert_called_once_with(namespace_id)
@@ -181,10 +198,14 @@ def test_update_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
 
     mock_cursor = MagicMock()
     mock_cursor.fetchone.return_value = (12345,)
-    postgres_backend.conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
-    postgres_backend.conn.cursor.return_value.__exit__ = Mock(return_value=False)
+    mock_cursor_context = MagicMock()
+    mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_context.__exit__ = Mock(return_value=False)
 
-    with patch("kaizen.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts):
+    with (
+        patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
+        patch("kaizen.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts),
+    ):
         entities = [Entity(type=entity_update.type, content=entity_update.content, metadata={"key": "value"})]
         result = postgres_backend.update_entities(namespace_id="test_namespace", entities=entities, enable_conflict_resolution=True)
 
@@ -224,27 +245,29 @@ def test_search_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
 
     mock_cursor = MagicMock()
     mock_cursor.fetchall.return_value = sample_rows
-    postgres_backend.conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
-    postgres_backend.conn.cursor.return_value.__exit__ = Mock(return_value=False)
+    mock_cursor_context = MagicMock()
+    mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_context.__exit__ = Mock(return_value=False)
 
-    # Test with query (vector search)
-    result = postgres_backend.search_entities(namespace_id="test_namespace", query="test query", limit=10)
-    assert len(result) == 1
-    assert result[0].id == "123"
-    assert result[0].type == "fact"
-    assert result[0].content == "Test content"
+    with patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context):
+        # Test with query (vector search)
+        result = postgres_backend.search_entities(namespace_id="test_namespace", query="test query", limit=10)
+        assert len(result) == 1
+        assert result[0].id == "123"
+        assert result[0].type == "fact"
+        assert result[0].content == "Test content"
 
-    # Test without query (list all)
-    result_2 = postgres_backend.search_entities(namespace_id="test_namespace", query=None)
-    assert len(result_2) == 1
-    assert result_2[0].id == "123"
-    assert result_2[0].type == "fact"
-    assert result_2[0].content == "Test content"
+        # Test without query (list all)
+        result_2 = postgres_backend.search_entities(namespace_id="test_namespace", query=None)
+        assert len(result_2) == 1
+        assert result_2[0].id == "123"
+        assert result_2[0].type == "fact"
+        assert result_2[0].content == "Test content"
 
-    # Test with filters
-    result_3 = postgres_backend.search_entities(namespace_id="test_namespace", query="test_query", filters={"type": "fact"}, limit=10)
-    assert len(result_3) == 1
-    assert result_3[0].id == "123"
+        # Test with filters
+        result_3 = postgres_backend.search_entities(namespace_id="test_namespace", query="test_query", filters={"type": "fact"}, limit=10)
+        assert len(result_3) == 1
+        assert result_3[0].id == "123"
 
 
 @pytest.mark.unit
@@ -253,10 +276,12 @@ def test_delete_entity_by_id(postgres_backend: PostgresEntityBackend, monkeypatc
     monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))
 
     mock_cursor = MagicMock()
-    postgres_backend.conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
-    postgres_backend.conn.cursor.return_value.__exit__ = Mock(return_value=False)
+    mock_cursor_context = MagicMock()
+    mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_context.__exit__ = Mock(return_value=False)
 
-    postgres_backend.delete_entity_by_id(namespace_id="test_namespace", entity_id="12345")
+    with patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context):
+        postgres_backend.delete_entity_by_id(namespace_id="test_namespace", entity_id="12345")
 
     # Verify execute was called (SQL is composed so we check args)
     assert mock_cursor.execute.called
