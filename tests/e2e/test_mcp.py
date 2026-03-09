@@ -178,12 +178,7 @@ async def test_create_entity_with_conflict_resolution(mcp):
         first_entity_id = result["id"]
 
         # Mock resolve_conflicts to avoid LLM call timeout
-        import os
-
-        if os.environ.get("KAIZEN_BACKEND") == "filesystem":
-            patch_target = "kaizen.backend.filesystem.resolve_conflicts"
-        else:
-            patch_target = "kaizen.backend.milvus.resolve_conflicts"
+        patch_target = "kaizen.llm.conflict_resolution.conflict_resolution.resolve_conflicts"
 
         with patch(patch_target) as mock_resolve:
             # Configure mock to return an UPDATE event

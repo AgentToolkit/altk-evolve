@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import Mock, MagicMock, patch
 
 from kaizen.backend.postgres import PostgresEntityBackend
-from kaizen.schema.core import Entity, Namespace
+from kaizen.schema.core import Entity, Namespace, RecordedEntity
 from kaizen.schema.conflict_resolution import EntityUpdate
 from kaizen.schema.exceptions import NamespaceNotFoundException, KaizenException
 
@@ -208,15 +208,15 @@ def test_update_entities_mixed_types_raises_exception(postgres_backend: Postgres
 @pytest.mark.unit
 def test_search_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
     """Test searching entities with and without a query string."""
-    now_ts = int(datetime.datetime.now(datetime.UTC).timestamp())
+    now_dt = datetime.datetime.now(datetime.UTC)
     sample_rows = [
-        {
-            "id": 123,
-            "type": "fact",
-            "content": "Test content",
-            "created_at": now_ts,
-            "metadata": {},
-        }
+        RecordedEntity(
+            id="123",
+            type="fact",
+            content="Test content",
+            created_at=now_dt,
+            metadata={},
+        )
     ]
 
     monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))
