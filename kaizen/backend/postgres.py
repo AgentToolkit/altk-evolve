@@ -224,7 +224,8 @@ class PostgresEntityBackend(BaseEntityBackend):
 
         with self.conn.cursor(row_factory=_entity_row_factory) as cur:
             cur.execute(stmt, query_params)
-            return cur.fetchall()
+            results: list[RecordedEntity] = cur.fetchall()
+            return results
 
     def delete_entity_by_id(self, namespace_id: str, entity_id: str):
         try:

@@ -21,6 +21,9 @@ class BaseEntityBackend(ABC):
     def ready(self) -> bool:
         pass
 
+    def close(self):
+        pass
+
     @abstractmethod
     def details(self) -> dict:
         pass
