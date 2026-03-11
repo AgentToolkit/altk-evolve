@@ -84,15 +84,21 @@ def main():
         else:
             log("Reading trajectory from stdin")
             trajectory = json.load(sys.stdin)
-        log(f"Received trajectory with keys: {list(trajectory.keys())}")
     except json.JSONDecodeError as e:
         log(f"Failed to parse JSON input: {e}")
         print(f"Error: Invalid JSON input - {e}", file=sys.stderr)
         sys.exit(1)
-    except FileNotFoundError:
-        print(f"Error: Input file not found - {input_path}", file=sys.stderr)
+    except OSError as e:
+        log(f"Failed to read input: {e}")
+        print(f"Error: Failed to read input - {e}", file=sys.stderr)
         sys.exit(1)
 
+    if not isinstance(trajectory, dict):
+        log(f"Expected JSON object, got {type(trajectory).__name__}")
+        print(f"Error: Expected JSON object, got {type(trajectory).__name__}", file=sys.stderr)
+        sys.exit(1)
+
+    log(f"Received trajectory with keys: {list(trajectory.keys())}")
     messages = trajectory.get("messages", [])
     if not messages:
         log("No messages in trajectory")
