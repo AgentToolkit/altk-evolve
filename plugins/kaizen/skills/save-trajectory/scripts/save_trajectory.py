@@ -32,12 +32,15 @@ def _get_log_file():
 
 
 def log(message):
-    """Append a timestamped message to the log file."""
+    """Append a timestamped message to the log file. Best-effort; never raises."""
     if not os.environ.get("KAIZEN_DEBUG"):
         return
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(_get_log_file(), "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}] [save-trajectory] {message}\n")
+    try:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(_get_log_file(), "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] [save-trajectory] {message}\n")
+    except Exception:
+        pass
 
 
 def get_trajectories_dir():
