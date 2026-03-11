@@ -169,7 +169,7 @@ def test_update_entities(milvus_backend: MilvusEntityBackend, monkeypatch):
     monkeypatch.setattr(milvus_backend.embedding_model, "encode", arbitrary_embedding)
     monkeypatch.setattr(milvus_backend, "search_entities", search_entities.__get__(milvus_backend, MilvusEntityBackend))
 
-    with patch("kaizen.backend.milvus.resolve_conflicts", resolve_conflicts):
+    with patch("kaizen.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts):
         entities = [Entity(type=entity_update.type, content=entity_update.content, metadata={"key": "value"})]
         result = milvus_backend.update_entities(namespace_id="test_namespace", entities=entities, enable_conflict_resolution=True)
 

@@ -30,7 +30,7 @@ def test_save_trajectory_metadata_injection(mock_get_client):
         trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
         task_id = str(uuid.uuid4())
 
-        save_trajectory.fn(trajectory_data=trajectory_data, task_id=task_id)
+        save_trajectory(trajectory_data=trajectory_data, task_id=task_id)
 
         # Ensure update_entities was called twice (once for trajectory, once for tips)
         assert mock_get_client.update_entities.call_count == 2
@@ -51,7 +51,7 @@ def test_create_entity_metadata_injection_manual_guideline(mock_get_client):
     mock_get_client.update_entities.return_value = [mock_update]
 
     # Missing explicit metadata, should auto-inject "manual"
-    result_str = create_entity.fn(content="Write clear docstrings", entity_type="guideline")
+    result_str = create_entity(content="Write clear docstrings", entity_type="guideline")
     result = json.loads(result_str)
     assert result["event"] == "ADD"
     assert "id" in result
@@ -69,7 +69,7 @@ def test_create_entity_metadata_injection_manual_policy(mock_get_client):
     mock_update = EntityUpdate(id="123", type="policy", content="PR reviews", event="ADD", metadata={"creation_mode": "manual"})
     mock_get_client.update_entities.return_value = [mock_update]
 
-    result_str = create_entity.fn(content="Require PR reviews", entity_type="policy")
+    result_str = create_entity(content="Require PR reviews", entity_type="policy")
     result = json.loads(result_str)
     assert result["event"] == "ADD"
 
@@ -86,7 +86,7 @@ def test_create_entity_no_metadata_injection_for_other_types(mock_get_client):
     mock_get_client.update_entities.return_value = [mock_update]
 
     # A generic log entity shouldn't get creation_mode injected
-    result_str = create_entity.fn(content="App started", entity_type="log")
+    result_str = create_entity(content="App started", entity_type="log")
     result = json.loads(result_str)
     assert result["event"] == "ADD"
 

@@ -7,10 +7,9 @@ import uuid
 from kaizen.backend.base import BaseEntityBackend, BaseSettings
 from kaizen.config.milvus import MilvusDBSettings, milvus_client_settings
 from kaizen.db.sqlite_manager import SQLiteManager
-from kaizen.llm.conflict_resolution.conflict_resolution import resolve_conflicts
-from kaizen.schema.conflict_resolution import EntityUpdate
-from kaizen.schema.core import Entity, Namespace, RecordedEntity
+from kaizen.schema.core import Namespace, RecordedEntity
 from kaizen.schema.exceptions import KaizenException, NamespaceNotFoundException
+from kaizen.utils.utils import deserialize_content
 from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient
 from pymilvus.exceptions import MilvusException
 from pymilvus.milvus_client.index import IndexParams
@@ -18,19 +17,6 @@ from sentence_transformers import SentenceTransformer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db.milvus")
-
-
-def serialize_content(content) -> str:
-    if isinstance(content, str):
-        return content
-    return json.dumps(content)
-
-
-def deserialize_content(content: str):
-    try:
-        return json.loads(content)
-    except (json.JSONDecodeError, TypeError):
-        return content
 
 
 class MilvusEntityBackend(BaseEntityBackend):
@@ -203,7 +189,7 @@ class MilvusEntityBackend(BaseEntityBackend):
     def details(self) -> dict:
         return {"metric_type": self.metric_type}
 
-    def validate_namespace(self, namespace_id: str):
+    def _validate_namespace(self, namespace_id: str):
         if not self.milvus.has_collection(namespace_id):
             raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
 
@@ -240,7 +226,7 @@ class MilvusEntityBackend(BaseEntityBackend):
             return db_manager.create_namespace(namespace_id)
 
     def get_namespace_details(self, namespace_id: str) -> Namespace:
-        self.validate_namespace(namespace_id)
+        self._validate_namespace(namespace_id)
 
         with SQLiteManager(self.sqlite_uri) as db_manager:
             namespace = db_manager.get_namespace(namespace_id)
@@ -263,111 +249,49 @@ class MilvusEntityBackend(BaseEntityBackend):
         with SQLiteManager(self.sqlite_uri) as db_manager:
             db_manager.delete_namespace(namespace_id)
 
-    def update_entities(self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True) -> list[EntityUpdate]:
-        self.validate_namespace(namespace_id)
-        if not entities:
-            logger.warning("No entities to update.")
-            return []
+    # ── update_entities hooks ────────────────────────────────────────
 
-        entity_type = entities[0].type
-        if not all(entity.type == entity_type for entity in entities):
-            raise KaizenException("All entities must have the same type.")
+    def _add_entity(self, namespace_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> str:
+        return str(
+            self.milvus.insert(
+                collection_name=namespace_id,
+                data={
+                    "type": entity_type,
+                    "content": content_str,
+                    "created_at": timestamp,
+                    "embedding": self.embedding_model.encode(content_str),
+                    "metadata": metadata,
+                },
+            )["ids"][0]
+        )
 
-        now = datetime.datetime.now(datetime.UTC)
-        entities_with_temporary_ids: list[RecordedEntity] = []
-        for i, entity in enumerate(entities):
-            entity_data = entity.model_dump()
-            if entity_data.get("metadata") is None:
-                entity_data["metadata"] = {}
-            entities_with_temporary_ids.append(
-                RecordedEntity(
-                    **entity_data,
-                    created_at=datetime.datetime.now(datetime.UTC),
-                    id=f"Unprocessed_Entity_{i}",
-                )
-            )
+    def _update_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
+        self.milvus.upsert(
+            collection_name=namespace_id,
+            data={
+                "type": entity_type,
+                "id": int(entity_id),
+                "content": content_str,
+                "created_at": timestamp,
+                "embedding": self.embedding_model.encode(content_str),
+                "metadata": metadata,
+            },
+            partial_update=True,
+        )
 
-        if enable_conflict_resolution:
-            old_entities = []
-            for entity in entities:
-                query_str = serialize_content(entity.content)
-                old_entities.extend(
-                    self.search_entities(
-                        namespace_id=namespace_id,
-                        query=query_str,
-                        filters={"type": entity_type},
-                        limit=10,
-                    )
-                )
+    def _delete_entity(self, namespace_id: str, entity_id: str) -> None:
+        self.delete_entity_by_id(namespace_id=namespace_id, entity_id=entity_id)
 
-            updates = resolve_conflicts(old_entities, entities_with_temporary_ids)
-            for update in updates:
-                content_str = serialize_content(update.content)
-                match update.event:
-                    case "ADD":
-                        entity_id = str(
-                            self.milvus.insert(
-                                collection_name=namespace_id,
-                                data={
-                                    "type": entity_type,
-                                    "content": content_str,
-                                    "created_at": int(now.timestamp()),
-                                    "embedding": self.embedding_model.encode(content_str),
-                                    "metadata": update.metadata or {},
-                                },
-                            )["ids"][0]
-                        )
-                        update.id = entity_id
-                    case "UPDATE":
-                        self.milvus.upsert(
-                            collection_name=namespace_id,
-                            data={
-                                "type": entity_type,
-                                "id": int(update.id),
-                                "content": content_str,
-                                "created_at": int(now.timestamp()),
-                                "embedding": self.embedding_model.encode(content_str),
-                                "metadata": update.metadata or {},
-                            },
-                            partial_update=True,
-                        )
-                    case "DELETE":
-                        self.delete_entity_by_id(namespace_id=namespace_id, entity_id=update.id)
-                    case "NONE":
-                        pass
-        else:
-            updates = []
-            for entity in entities:
-                content_str = serialize_content(entity.content)
-                entity_id = str(
-                    self.milvus.insert(
-                        collection_name=namespace_id,
-                        data={
-                            "type": entity_type,
-                            "content": content_str,
-                            "created_at": int(now.timestamp()),
-                            "embedding": self.embedding_model.encode(content_str),
-                            "metadata": entity.metadata or {},
-                        },
-                    )["ids"][0]
-                )
-                updates.append(
-                    EntityUpdate(
-                        id=entity_id,
-                        type=entity_type,
-                        content=entity.content,
-                        event="ADD",
-                        metadata=entity.metadata or {},
-                    )
-                )
+    def _post_update(self, namespace_id: str) -> None:
         self.milvus.flush(namespace_id)
         self.milvus.load_collection(namespace_id)
-        return updates
+
+    # ── search / delete ──────────────────────────────────────────────
 
     def search_entities(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
     ) -> list[RecordedEntity]:
-        self.validate_namespace(namespace_id)
+        self._validate_namespace(namespace_id)
         filters = filters or {}
         schema_filters, metadata_filters = self._split_filters(filters)
         fetch_limit = max(limit, 1000) if filters else limit
@@ -426,7 +350,7 @@ class MilvusEntityBackend(BaseEntityBackend):
             entity_id_int = int(entity_id)
         except ValueError as exc:
             raise KaizenException(f"Invalid entity ID: {entity_id}. Entity IDs must be numeric.") from exc
-        self.validate_namespace(namespace_id)
+        self._validate_namespace(namespace_id)
         self.milvus.delete(collection_name=namespace_id, ids=[entity_id_int])
 
     def close(self):

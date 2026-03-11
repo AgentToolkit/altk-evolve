@@ -1,4 +1,20 @@
+import json
 import re
+
+
+def serialize_content(content: str | list | dict) -> str:
+    """Serialize content to a string for storage."""
+    if isinstance(content, str):
+        return content
+    return json.dumps(content)
+
+
+def deserialize_content(content: str):
+    """Deserialize content from storage."""
+    try:
+        return json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return content
 
 
 def clean_llm_response(content: str) -> str:

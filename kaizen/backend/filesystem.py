@@ -9,7 +9,6 @@ from pydantic import Field
 
 from kaizen.backend.base import BaseEntityBackend
 from kaizen.config.filesystem import FilesystemSettings, filesystem_settings
-from kaizen.llm.conflict_resolution.conflict_resolution import resolve_conflicts
 from kaizen.schema.conflict_resolution import EntityUpdate
 from kaizen.schema.core import Entity, Namespace, RecordedEntity
 from kaizen.schema.exceptions import (
@@ -40,6 +39,8 @@ class FilesystemEntityBackend(BaseEntityBackend):
         self.data_dir = Path(self.config.data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._lock = Lock()
+        # Holds the loaded namespace data during update_entities so hooks can access it.
+        self._active_data: FilesystemNamespace | None = None
 
     def _namespace_file(self, namespace_id: str) -> Path:
         """Get the path to a namespace's JSON file."""
@@ -64,6 +65,11 @@ class FilesystemEntityBackend(BaseEntityBackend):
     def details(self) -> dict:
         """Return details about the backend."""
         return {"data_dir": str(self.data_dir)}
+
+    def _validate_namespace(self, namespace_id: str) -> None:
+        file_path = self._namespace_file(namespace_id)
+        if not file_path.exists():
+            raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
 
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         """Create a new namespace for entities to exist in."""
@@ -124,105 +130,56 @@ class FilesystemEntityBackend(BaseEntityBackend):
                 return  # Already deleted, no-op
             file_path.unlink()
 
+    # ── update_entities hooks ────────────────────────────────────────
+
+    def _add_entity(self, namespace_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> str:
+        assert self._active_data is not None
+        entity_id = str(self._active_data.next_id)
+        self._active_data.next_id += 1
+        created_at_iso = datetime.datetime.fromtimestamp(timestamp, datetime.UTC).isoformat()
+        self._active_data.entities.append(
+            {
+                "id": entity_id,
+                "type": entity_type,
+                "content": content_str,
+                "created_at": created_at_iso,
+                "metadata": metadata,
+            }
+        )
+        return entity_id
+
+    def _update_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
+        assert self._active_data is not None
+        created_at_iso = datetime.datetime.fromtimestamp(timestamp, datetime.UTC).isoformat()
+        for ent in self._active_data.entities:
+            if ent["id"] == entity_id:
+                ent["content"] = content_str
+                ent["created_at"] = created_at_iso
+                ent["metadata"] = metadata
+                break
+
+    def _delete_entity(self, namespace_id: str, entity_id: str) -> None:
+        assert self._active_data is not None
+        self._active_data.entities = [e for e in self._active_data.entities if e["id"] != entity_id]
+
+    def _post_update(self, namespace_id: str) -> None:
+        assert self._active_data is not None
+        self._active_data.num_entities = len(self._active_data.entities)
+        self._save_namespace_data(namespace_id, self._active_data)
+        self._active_data = None
+
     def update_entities(
         self,
         namespace_id: str,
         entities: list[Entity],
         enable_conflict_resolution: bool = True,
     ) -> list[EntityUpdate]:
-        """Add/update entities in a namespace."""
-        if len(entities) == 0:
-            return []
-
-        entity_type = entities[0].type
-        if not all(entity.type == entity_type for entity in entities):
-            raise KaizenException("All entities must have the same type.")
-
-        now = datetime.datetime.now(datetime.UTC)
-        now_iso = now.isoformat()
-
-        # Create temporary entities with placeholder IDs
-        entities_with_temporary_ids = []
-        for i, entity in enumerate(entities):
-            entity_data = entity.model_dump()
-            if entity_data.get("metadata") is None:
-                entity_data["metadata"] = {}
-            entities_with_temporary_ids.append(
-                RecordedEntity(
-                    **entity_data,
-                    created_at=now,
-                    id=f"Unprocessed_Entity_{i}",
-                )
-            )
-
+        """Override to wrap the base template in a lock with loaded data."""
         with self._lock:
-            data = self._load_namespace_data(namespace_id)
+            self._active_data = self._load_namespace_data(namespace_id)
+            return super().update_entities(namespace_id, entities, enable_conflict_resolution)
 
-            if enable_conflict_resolution:
-                # Find similar existing entities for conflict resolution
-                old_entities = []
-                for entity in entities:
-                    # Convert content to string for search query
-                    query_str = entity.content if isinstance(entity.content, str) else json.dumps(entity.content)
-                    similar = self._search_entities_internal(data, query=query_str, filters=None, limit=10)
-                    old_entities.extend(similar)
-
-                updates = resolve_conflicts(old_entities, entities_with_temporary_ids)
-
-                for update in updates:
-                    match update.event:
-                        case "ADD":
-                            entity_id = str(data.next_id)
-                            data.next_id += 1
-                            data.entities.append(
-                                {
-                                    "id": entity_id,
-                                    "type": entity_type,
-                                    "content": update.content,
-                                    "created_at": now_iso,
-                                    "metadata": update.metadata,
-                                }
-                            )
-                            update.id = entity_id
-                        case "UPDATE":
-                            for ent in data.entities:
-                                if ent["id"] == update.id:
-                                    ent["content"] = update.content
-                                    ent["created_at"] = now_iso
-                                    ent["metadata"] = update.metadata
-                                    break
-                        case "DELETE":
-                            data.entities = [e for e in data.entities if e["id"] != update.id]
-                        case "NONE":
-                            pass
-            else:
-                updates = []
-                for entity in entities:
-                    entity_id = str(data.next_id)
-                    data.next_id += 1
-                    data.entities.append(
-                        {
-                            "id": entity_id,
-                            "type": entity_type,
-                            "content": entity.content,
-                            "created_at": now_iso,
-                            "metadata": entity.metadata,
-                        }
-                    )
-                    updates.append(
-                        EntityUpdate(
-                            id=entity_id,
-                            type=entity_type,
-                            content=entity.content,
-                            event="ADD",
-                            metadata=entity.metadata,
-                        )
-                    )
-
-            data.num_entities = len(data.entities)
-            self._save_namespace_data(namespace_id, data)
-
-        return updates
+    # ── search ───────────────────────────────────────────────────────
 
     def _search_entities_internal(
         self,
@@ -291,6 +248,9 @@ class FilesystemEntityBackend(BaseEntityBackend):
         limit: int = 10,
     ) -> list[RecordedEntity]:
         """Search for entities in a namespace."""
+        # If called during update_entities (inside the lock), use the active data
+        if self._active_data is not None:
+            return self._search_entities_internal(self._active_data, query, filters, limit)
         with self._lock:
             data = self._load_namespace_data(namespace_id)
             return self._search_entities_internal(data, query, filters, limit)
