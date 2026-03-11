@@ -76,6 +76,15 @@ Assistant: "What would you like to name this skill?"
 User: "my-workflow-name"
 ```
 
+### `/kaizen:save-trajectory`
+
+Manually invoke to export the current conversation as a trajectory JSON file:
+- Converts all messages to OpenAI chat completion format (user, assistant, tool calls, tool results)
+- Strips system reminders and cleans content
+- Saves to `.kaizen/trajectories/` with a timestamped filename
+- Useful for trajectory analysis, fine-tuning data collection, and session review
+- Runs in a forked context to keep the parent conversation clean
+
 ## Entities Storage
 
 Entities are stored in `.kaizen/entities.json`:
@@ -117,8 +126,12 @@ kaizen/
 │   │   ├── SKILL.md
 │   │   └── scripts/
 │   │       └── retrieve_entities.py
-│   └── save/
-│       └── SKILL.md
+│   ├── save/
+│   │   └── SKILL.md
+│   └── save-trajectory/
+│       ├── SKILL.md
+│       └── scripts/
+│           └── save_trajectory.py
 ├── hooks/
 │   └── hooks.json               # Auto-configured hooks
 └── README.md
