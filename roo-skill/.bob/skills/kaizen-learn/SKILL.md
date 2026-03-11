@@ -1,13 +1,13 @@
 ---
 name: kaizen-learn
-description: Extract actionable entities from conversation trajectories. Systematically identifies errors, failures, and inefficiencies to generate proactive entities that prevent them from recurring.
+description: Extract actionable entities from the completed conversation. Systematically identifies errors, failures, and inefficiencies to generate proactive entities that prevent them from recurring.
 ---
 
 # Kaizen Learn Skill
 
 ## Overview
 
-This skill analyzes conversation trajectories to extract actionable entities that would help on similar tasks in the future. It **prioritizes errors encountered during the conversation** — tool failures, exceptions, wrong approaches, retry loops — and transforms them into proactive recommendations that prevent those errors from recurring.
+This skill analyzes your recent actions to extract actionable entities that would help on similar tasks in the future. It **prioritizes errors encountered during the conversation** — tool failures, exceptions, wrong approaches, retry loops — and transforms them into proactive recommendations that prevent those errors from recurring.
 
 ## Workflow
 

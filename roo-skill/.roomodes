@@ -17,7 +17,7 @@ customModes:
       
       STEP 3 - AT TASK END (MANDATORY - DO NOT FORGET):
       🔴 Execute the entire workflow from the `kaizen-learn` skill.
-      🔴 This saves your trajectory and generates new learnings.
+      🔴 This analyzes what you just did and creates reusable guidelines.
       🔴 Follow ALL steps as documented in the skill.
       🔴 Wait for terminal confirmation that the save was successful.
       
