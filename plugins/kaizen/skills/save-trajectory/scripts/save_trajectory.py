@@ -51,7 +51,7 @@ def get_trajectories_dir():
     else:
         base = Path(".kaizen") / "trajectories"
 
-    base.mkdir(parents=True, exist_ok=True)
+    base.mkdir(parents=True, exist_ok=True, mode=0o700)
     return base.resolve()
 
 
@@ -105,9 +105,10 @@ def main():
     trajectories_dir = get_trajectories_dir()
     output_path = generate_filename(trajectories_dir)
 
-    # Write formatted JSON
+    # Write formatted JSON with owner-only permissions
     try:
-        with open(output_path, "w", encoding="utf-8") as f:
+        fd = os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(trajectory, f, indent=2, default=str)
             f.write("\n")
         log(f"Wrote trajectory to {output_path}")
