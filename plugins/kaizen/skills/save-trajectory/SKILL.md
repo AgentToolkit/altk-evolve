@@ -90,7 +90,7 @@ Convert each message to the appropriate format:
 
 ### Step 3: Clean Content
 
-Strip `<system-reminder>...</system-reminder>` tags and their contents from all message content. If after stripping, a message has empty content and no tool calls, omit it.
+Strip `<system-reminder>...</system-reminder>` tags and their contents from all message content. Use a non-greedy multiline match (e.g., `re.sub(r'<system-reminder>[\s\S]*?</system-reminder>', '', text).strip()`). If after stripping, a message has empty content and no tool calls, omit it.
 
 ### Step 4: Build Envelope
 
@@ -98,13 +98,13 @@ Wrap the messages array in a trajectory envelope:
 
 ```json
 {
-  "model": "claude-opus-4-20250514",
+  "model": "<model-id-from-session>",
   "timestamp": "2025-01-15T10:30:00Z",
   "messages": [...]
 }
 ```
 
-- **model**: Use the model name from the current session (e.g., from the system context or a reasonable default like `"claude-opus-4-20250514"`)
+- **model**: Use the exact model ID from the current session's environment context (e.g., the value after "You are powered by the model named …"). Do not hardcode a default — always read it from the session.
 - **timestamp**: Current ISO 8601 timestamp
 
 ### Step 5: Save via Helper Script
@@ -138,6 +138,6 @@ Messages: 12
 
 ## Notes
 
-- This skill captures what's visible in the current conversation context. Very long sessions may have earlier messages compressed or summarized.
+- This skill captures what's visible in the current conversation context. Very long sessions may have earlier messages compressed or summarized by the system. Include these summarized messages as-is with `role: "user"` or `role: "assistant"` as appropriate — do not skip them, since they preserve the conversation flow.
 - The trajectory format is compatible with OpenAI chat completion format for downstream tooling.
 - Trajectories are saved per-project in `.kaizen/trajectories/` and can be version-controlled or gitignored as preferred.

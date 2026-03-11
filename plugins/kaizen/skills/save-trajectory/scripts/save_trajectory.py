@@ -13,18 +13,21 @@ import tempfile
 from pathlib import Path
 
 
-def _get_log_dir():
-    """Get user-scoped log directory with restrictive permissions."""
-    try:
-        uid = os.getuid()
-    except AttributeError:
-        uid = getpass.getuser()
-    log_dir = os.path.join(tempfile.gettempdir(), f"kaizen-{uid}")
-    os.makedirs(log_dir, mode=0o700, exist_ok=True)
-    return log_dir
+_log_file = None
 
 
-LOG_FILE = os.path.join(_get_log_dir(), "kaizen-plugin.log")
+def _get_log_file():
+    """Get log file path, lazily creating the log directory on first use."""
+    global _log_file
+    if _log_file is None:
+        try:
+            uid = os.getuid()
+        except AttributeError:
+            uid = getpass.getuser()
+        log_dir = os.path.join(tempfile.gettempdir(), f"kaizen-{uid}")
+        os.makedirs(log_dir, mode=0o700, exist_ok=True)
+        _log_file = os.path.join(log_dir, "kaizen-plugin.log")
+    return _log_file
 
 
 def log(message):
@@ -32,11 +35,8 @@ def log(message):
     if not os.environ.get("KAIZEN_DEBUG"):
         return
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
+    with open(_get_log_file(), "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [save-trajectory] {message}\n")
-
-
-log("Script started")
 
 
 def get_trajectories_dir():
@@ -61,12 +61,12 @@ def generate_filename(trajectories_dir):
         return candidate
 
     # Handle collisions with _1, _2, etc.
-    suffix = 1
-    while True:
+    for suffix in range(1, 1000):
         candidate = trajectories_dir / f"{base_name}_{suffix}.json"
         if not candidate.exists():
             return candidate
-        suffix += 1
+
+    raise RuntimeError(f"Too many trajectory files for timestamp {now}")
 
 
 def main():
