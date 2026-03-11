@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Save Trajectory Script
-Reads a trajectory JSON from stdin and writes it to the trajectories directory.
+Reads a trajectory JSON from a file path argument (or stdin as fallback)
+and writes it to the .kaizen/trajectories/ directory.
 """
 
 import datetime
