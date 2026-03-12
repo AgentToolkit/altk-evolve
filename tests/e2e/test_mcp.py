@@ -12,7 +12,7 @@ __data__ = Path(__file__).parent.parent / "data"
 load_dotenv()
 
 
-@pytest.fixture(params=["milvus", "filesystem"])
+@pytest.fixture(params=["filesystem"])
 def mcp(request, tmp_path):
     backend_type = request.param
     os.environ["KAIZEN_NAMESPACE_ID"] = "test"

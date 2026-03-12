@@ -12,3 +12,5 @@ demo/workdir/.claude/
 dist
 .coverage
 /.kaizen
+.secrets
+event.json
