@@ -205,11 +205,10 @@ def markdown_to_entity(path):
 
     # Split body into content and rationale
     body = body.strip()
-    rationale_marker = "## Rationale"
-    if rationale_marker in body:
-        idx = body.index(rationale_marker)
-        content = body[:idx].strip()
-        rationale = body[idx + len(rationale_marker):].strip()
+    m = re.search(r"^## Rationale", body, re.MULTILINE)
+    if m:
+        content = body[:m.start()].strip()
+        rationale = body[m.end():].strip()
         if rationale:
             entity["rationale"] = rationale
     else:
