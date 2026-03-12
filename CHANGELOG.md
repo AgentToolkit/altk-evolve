@@ -2,6 +2,54 @@
 
 <!-- version list -->
 
+## v1.0.3 (2026-03-12)
+
+### Bug Fixes
+
+- **save-trajectory**: Address code review findings
+  ([#89](https://github.com/AgentToolkit/kaizen/pull/89),
+  [`6e6438b`](https://github.com/AgentToolkit/kaizen/commit/6e6438b285f562d15c9dc191b96a47a04d7d4e73))
+
+- **save-trajectory**: Make log() best-effort so debug logging never crashes the script
+  ([#89](https://github.com/AgentToolkit/kaizen/pull/89),
+  [`6e6438b`](https://github.com/AgentToolkit/kaizen/commit/6e6438b285f562d15c9dc191b96a47a04d7d4e73))
+
+- **save-trajectory**: Restrict file permissions on trajectories dir and output files
+  ([#89](https://github.com/AgentToolkit/kaizen/pull/89),
+  [`6e6438b`](https://github.com/AgentToolkit/kaizen/commit/6e6438b285f562d15c9dc191b96a47a04d7d4e73))
+
+- **save-trajectory**: Use EXIT trap for temp file cleanup to handle script failures
+  ([#89](https://github.com/AgentToolkit/kaizen/pull/89),
+  [`6e6438b`](https://github.com/AgentToolkit/kaizen/commit/6e6438b285f562d15c9dc191b96a47a04d7d4e73))
+
+- **save-trajectory**: Validate trajectory type and broaden input error handling
+  ([#89](https://github.com/AgentToolkit/kaizen/pull/89),
+  [`6e6438b`](https://github.com/AgentToolkit/kaizen/commit/6e6438b285f562d15c9dc191b96a47a04d7d4e73))
+
+### Documentation
+
+- **save-trajectory**: Add skill to plugin README
+  ([#89](https://github.com/AgentToolkit/kaizen/pull/89),
+  [`6e6438b`](https://github.com/AgentToolkit/kaizen/commit/6e6438b285f562d15c9dc191b96a47a04d7d4e73))
+
+- **save-trajectory**: Update module docstring to reflect file path argument
+  ([#89](https://github.com/AgentToolkit/kaizen/pull/89),
+  [`6e6438b`](https://github.com/AgentToolkit/kaizen/commit/6e6438b285f562d15c9dc191b96a47a04d7d4e73))
+
+### Features
+
+- Add PostgreSQL/pgvector backend ([#86](https://github.com/AgentToolkit/kaizen/pull/86),
+  [`50efcd2`](https://github.com/AgentToolkit/kaizen/commit/50efcd2161e9c98ad127e8494bf6bf8f0b726067))
+
+- Add save-trajectory skill to export conversation as OpenAI chat format
+  ([#89](https://github.com/AgentToolkit/kaizen/pull/89),
+  [`6e6438b`](https://github.com/AgentToolkit/kaizen/commit/6e6438b285f562d15c9dc191b96a47a04d7d4e73))
+
+- **backend**: Refactor entity update with template method pattern and upgrade dependencies
+  ([#86](https://github.com/AgentToolkit/kaizen/pull/86),
+  [`50efcd2`](https://github.com/AgentToolkit/kaizen/commit/50efcd2161e9c98ad127e8494bf6bf8f0b726067))
+
+
 ## v1.0.2 (2026-03-05)
 
 ### Bug Fixes
