@@ -1,0 +1,38 @@
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+# Install system dependencies
+RUN microdnf install -y \
+    python3.12 \
+    python3.12-pip \
+    git \
+    tar \
+    gzip \
+    && microdnf clean all
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml uv.lock ./
+COPY kaizen ./kaizen
+COPY README.md LICENSE MANIFEST.in ./
+
+# Install dependencies using uv (no extras needed for milvus as it's in base dependencies)
+RUN uv sync --frozen --no-dev
+
+# Set environment variables for filesystem backend
+ENV KAIZEN_BACKEND=filesystem
+ENV KAIZEN_NAMESPACE_ID=kaizen
+
+# Expose MCP server (stdio-based, no port needed)
+# The MCP server runs via stdio, not HTTP
+
+# Activate the virtual environment
+ENV PATH="/app/.venv/bin:${PATH}"
+
+# Set the entrypoint to run the MCP server directly from venv
+ENTRYPOINT ["python", "-m", "kaizen.frontend.mcp"]

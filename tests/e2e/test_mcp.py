@@ -26,12 +26,18 @@ def mcp(request, tmp_path):
     original_milvus_uri = None
 
     if backend_type == "milvus":
-        # Use a unique DB file inside tmp_path for each test to avoid socket/locking issues and ensure cleanup
-        milvus_db_file = str(tmp_path / f"test_{uuid.uuid4().hex[:8]}.db")
         original_milvus_uri = milvus_client_settings.uri
-        milvus_client_settings.uri = milvus_db_file
-        # Note: currently milvus-lite creates a file, not a dir for the uri
-        # We set KAIZEN_URI just in case, though settings init should pick it up if we did it before
+        _env_uri = os.getenv("KAIZEN_URI", "")
+        if _env_uri.startswith("http"):
+            # Running against a real Milvus server (e.g. in CI via Docker sidecar).
+            # Use the server URI directly; skip milvus-lite local file creation.
+            milvus_db_file = None
+            milvus_client_settings.uri = _env_uri
+        else:
+            # Local dev: use a unique milvus-lite DB file per test run.
+            milvus_db_file = str(tmp_path / f"test_{uuid.uuid4().hex[:8]}.db")
+            milvus_client_settings.uri = milvus_db_file
+            # Note: currently milvus-lite creates a file, not a dir for the uri
     elif backend_type == "filesystem":
         os.environ["KAIZEN_DATA_DIR"] = str(tmp_path)
 

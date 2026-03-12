@@ -11,3 +11,4 @@ demo/workdir/.claude/
 .claude
 dist
 .coverage
+/.kaizen
