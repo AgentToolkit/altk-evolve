@@ -35,6 +35,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/kaizen-mcp-${{ matrix.image-suffix }}
+          flavor: |
+            suffix=-${{ matrix.image-suffix }},onlatest=true
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -58,5 +60,5 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ secrets.DOCKERHUB_USERNAME }}/kaizen-mcp-${{ matrix.image-suffix }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/kaizen
           readme-filepath: ./README.md
