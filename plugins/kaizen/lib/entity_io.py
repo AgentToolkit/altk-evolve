@@ -16,6 +16,7 @@ from pathlib import Path
 # Logging
 # ---------------------------------------------------------------------------
 
+
 def _get_log_dir():
     """Get user-scoped log directory with restrictive permissions."""
     try:
@@ -50,6 +51,7 @@ def log(component, message):
 # ---------------------------------------------------------------------------
 # Directory discovery
 # ---------------------------------------------------------------------------
+
 
 def find_entities_dir():
     """Locate the entities directory.
@@ -97,6 +99,7 @@ def get_default_entities_dir():
 # ---------------------------------------------------------------------------
 # Slugify / filename helpers
 # ---------------------------------------------------------------------------
+
 
 def slugify(text, max_length=60):
     """Convert *text* to a filesystem-safe slug.
@@ -207,8 +210,8 @@ def markdown_to_entity(path):
     body = body.strip()
     m = re.search(r"^## Rationale", body, re.MULTILINE)
     if m:
-        content = body[:m.start()].strip()
-        rationale = body[m.end():].strip()
+        content = body[: m.start()].strip()
+        rationale = body[m.end() :].strip()
         if rationale:
             entity["rationale"] = rationale
     else:
@@ -223,6 +226,7 @@ def markdown_to_entity(path):
 # ---------------------------------------------------------------------------
 # Bulk load / write
 # ---------------------------------------------------------------------------
+
 
 def load_all_entities(entities_dir):
     """Glob ``**/*.md`` under *entities_dir* and parse each file.

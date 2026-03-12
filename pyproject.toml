@@ -145,5 +145,6 @@ module = [
     "agents.*",
     "pgvector.*",
     "psycopg.*",
+    "entity_io.*",
 ]
 ignore_missing_imports = true
