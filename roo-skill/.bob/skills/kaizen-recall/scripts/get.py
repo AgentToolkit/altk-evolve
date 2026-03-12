@@ -12,8 +12,8 @@ from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser(description="Get Kaizen entities (Stage 2 Filesystem)")
-    parser.add_argument("--type", type=str, required=True, help="Entity type (e.g., guideline)")
-    parser.add_argument("--task", type=str, required=True, help="Task description (ignored in filesystem mode)")
+    parser.add_argument("--type", type=str, default="guideline", help="Entity type (default: guideline)")
+    parser.add_argument("--task", type=str, default="", help="Task description (ignored in filesystem mode)")
     parser.add_argument("--limit", type=int, default=50, help="Max entities to return")
     args = parser.parse_args()
 

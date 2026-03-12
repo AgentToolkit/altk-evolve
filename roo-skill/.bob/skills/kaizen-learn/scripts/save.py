@@ -15,7 +15,14 @@ from pathlib import Path
 def main():
     print("[Kaizen Learn] Processing extracted entities...")
 
-    # 1. Read from stdin
+    # Detect if called with CLI arguments (common agent mistake)
+    if len(sys.argv) > 1:
+        print("ERROR: This script does not accept CLI arguments.", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("Correct usage (pipe JSON via stdin):", file=sys.stderr)
+        print("  printf '{\"entities\": [{\"content\": \"...\", \"rationale\": \"...\", \"category\": \"strategy\", \"trigger\": \"...\"}]}' | python3 save.py", file=sys.stderr)
+        sys.exit(1)
+
     input_data = sys.stdin.read().strip()
     if not input_data:
         print("Error: No data provided via stdin.", file=sys.stderr)
