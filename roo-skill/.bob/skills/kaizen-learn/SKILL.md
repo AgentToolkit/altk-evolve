@@ -102,7 +102,9 @@ Output entities in the following JSON format:
 
 ### Step 5: Save Entities
 
-After generating the entities JSON, save them by piping them into the `save.py` script:
+After generating the entities JSON:
+- **If entities array is empty** (`{"entities": []}`): Skip the save command and notify the user that no learnings were identified for this routine task. Proceed directly to `attempt_completion`.
+- **If entities array has content**: Save them by piping the JSON into the `save.py` script as shown below.
 
 **✅ CORRECT SYNTAX (stdin pipe):**
 ```bash

@@ -13,8 +13,15 @@ Before beginning your work for the user, you must fetch existing guidelines rela
 
 **Command to run:**
 ```bash
-python .bob/skills/kaizen-recall/scripts/get.py --type guideline --task "<brief summary of the user's goal>"
+python3 .bob/skills/kaizen-recall/scripts/get.py --type guideline --task "<brief summary of the user's goal>"
 ```
+
+**⚠️ REQUIRED PARAMETERS:**
+- `--type guideline` - MUST be included (specifies entity type to retrieve)
+- `--task "..."` - MUST be included (brief summary of user's goal)
+
+**Common Error:**
+If you see `error: the following arguments are required: --type`, you forgot to include `--type guideline` in the command.
 
 **How to use the output:**
 The script will return a list of guidelines in JSON format (or plain text). Review these carefully. They represent hard-learned lessons or organizational standards. Incorporate them into your approach to the current task. If no guidelines are found, proceed normally.
