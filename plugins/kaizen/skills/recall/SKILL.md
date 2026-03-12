@@ -13,23 +13,32 @@ This skill retrieves relevant entities from a stored knowledge base based on the
 
 1. Hook fires on user prompt submission
 2. Script reads prompt from stdin (JSON with `prompt` field)
-3. Loads all entities from the entities JSON file
+3. Loads all entities from the entities directory (`.kaizen/entities/`)
 4. Outputs formatted entities to stdout
 5. Claude receives entities as additional context and applies relevant ones
 
 ## Entities Storage
 
-Entities are stored in `.kaizen/entities.json` in the project root:
+Entities are stored as individual markdown files in `.kaizen/entities/`, nested by type:
 
-```json
-{
-  "entities": [
-    {
-      "content": "Use context managers for file operations",
-      "rationale": "Ensures proper resource cleanup",
-      "category": "strategy",
-      "trigger": "When processing files or managing resources"
-    }
-  ]
-}
+```
+.kaizen/entities/
+  guideline/
+    use-context-managers-for-file-operations.md
+    cache-api-responses-locally.md
+```
+
+Each file uses markdown with YAML frontmatter:
+
+```markdown
+---
+type: guideline
+trigger: When processing files or managing resources
+---
+
+Use context managers for file operations
+
+## Rationale
+
+Ensures proper resource cleanup
 ```

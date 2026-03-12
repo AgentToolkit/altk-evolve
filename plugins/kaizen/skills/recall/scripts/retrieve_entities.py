@@ -1,38 +1,18 @@
 #!/usr/bin/env python3
 """Retrieve and output entities for Claude to filter."""
 
-import getpass
 import json
 import os
 import sys
 from pathlib import Path
-import datetime
-import tempfile
 
-
-def _get_log_dir():
-    """Get user-scoped log directory with restrictive permissions."""
-    try:
-        uid = os.getuid()
-    except AttributeError:
-        # Windows doesn't have os.getuid(); fall back to username
-        uid = getpass.getuser()
-    log_dir = os.path.join(tempfile.gettempdir(), f"kaizen-{uid}")
-    os.makedirs(log_dir, mode=0o700, exist_ok=True)
-    return log_dir
-
-
-# Debug logging - use user-scoped directory for security
-LOG_FILE = os.path.join(_get_log_dir(), "kaizen-plugin.log")
+# Add lib to path so we can import entity_io
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
+from entity_io import find_entities_dir, load_all_entities, log as _log
 
 
 def log(message):
-    """Append a timestamped message to the log file."""
-    if not os.environ.get("KAIZEN_DEBUG"):
-        return
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}] [retrieve] {message}\n")
+    _log("retrieve", message)
 
 
 log("Script started")
@@ -55,52 +35,6 @@ log(f"  Arguments: {sys.argv[1:] if len(sys.argv) > 1 else 'None'}")
 log("=== End Command-Line Arguments ===")
 
 
-def find_entities_file():
-    """Find the entities file in common locations."""
-    # If KAIZEN_ENTITIES_FILE env var is set, it is authoritative - no fallbacks
-    entities_file_env = os.environ.get("KAIZEN_ENTITIES_FILE")
-    if entities_file_env:
-        path = Path(entities_file_env)
-        return path if path.exists() else None
-
-    # Fallback locations when KAIZEN_ENTITIES_FILE is not set
-    project_root = os.environ.get("CLAUDE_PROJECT_ROOT")
-    locations = [
-        # Current working directory
-        ".kaizen/entities.json",
-        # Plugin-relative path (fallback)
-        str(Path(__file__).parent.parent / "entities.json"),
-    ]
-    if project_root:
-        # Project root from Claude Code (prepend so it's checked first)
-        locations.insert(0, os.path.join(project_root, ".kaizen/entities.json"))
-    for loc in locations:
-        if loc and Path(loc).exists():
-            return Path(loc)
-    return None
-
-
-def load_entities():
-    """Load entities from the entities file.
-
-    Returns:
-        list: The entities list on success or if file not found.
-        None: If the file exists but contains invalid JSON.
-    """
-    entities_file = find_entities_file()
-    if not entities_file:
-        return []
-    try:
-        with open(entities_file, encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("entities", [])
-    except IOError:
-        return []
-    except json.JSONDecodeError as e:
-        log(f"load_entities: JSON decode error in {entities_file}: {e}")
-        return None
-
-
 def format_entities(entities):
     """Format all entities for Claude to review."""
     header = """## Entities for this task
@@ -113,7 +47,7 @@ Review these entities and apply any relevant ones:
         content = e.get("content")
         if not content:
             continue
-        item = f"- **[{e.get('category', 'general')}]** {content}"
+        item = f"- **[{e.get('type', 'general')}]** {content}"
         if e.get("rationale"):
             item += f"\n  - _Rationale: {e['rationale']}_"
         if e.get("trigger"):
@@ -135,15 +69,15 @@ def main():
         log(f"Failed to parse JSON input: {e}")
         return
 
-    # Load all entities
-    entities_file = find_entities_file()
-    log(f"Entities file: {entities_file}")
+    # Load all entities from directory
+    entities_dir = find_entities_dir()
+    log(f"Entities dir: {entities_dir}")
 
-    entities = load_entities()
-    if entities is None:
-        log(f"Failed to load entities due to invalid JSON in {entities_file}")
-        print(f"Error: {entities_file} contains invalid JSON.", file=sys.stderr)
+    if not entities_dir:
+        log("No entities directory found")
         return
+
+    entities = load_all_entities(entities_dir)
     if not entities:
         log("No entities found")
         return

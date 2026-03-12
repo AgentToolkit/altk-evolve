@@ -65,11 +65,6 @@ Follow these principles:
    - If 3 variations were tried before one worked, the entity should recommend the working variation directly
    - Eliminate the trial-and-error by encoding the answer
 
-5. **Map error-derived entities to categories:**
-   - `strategy` — wrong approach was chosen → recommend the right approach from the start
-   - `recovery` — a fallback chain was needed → start from the approach that worked, only fall back to alternatives if it's unavailable
-   - `optimization` — effort was wasted on retries/timeouts → eliminate the waste
-
 ### Step 4: Output Entities JSON
 
 Output entities in the following JSON format:
@@ -80,7 +75,7 @@ Output entities in the following JSON format:
     {
       "content": "Proactive entity stating what TO DO",
       "rationale": "Why this approach works better",
-      "category": "strategy|recovery|optimization",
+      "type": "guideline",
       "trigger": "Situational context when this applies"
     }
   ]
@@ -111,8 +106,9 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
 ```
 
 The script will:
-- Find or create the entities file (`.kaizen/entities.json`)
-- Merge new entities with existing ones (avoiding duplicates)
+- Find or create the entities directory (`.kaizen/entities/`)
+- Write each entity as a markdown file in `{type}/` subdirectories
+- Deduplicate against existing entities (avoiding duplicates)
 - Display confirmation with the total count
 
 **Example:**
@@ -122,7 +118,7 @@ echo '{
     {
       "content": "Use Python PIL/Pillow for image metadata extraction",
       "rationale": "System tools may not be available in sandboxed environments",
-      "category": "strategy",
+      "type": "guideline",
       "trigger": "When extracting image metadata in containerized environments"
     }
   ]
@@ -131,18 +127,12 @@ echo '{
 
 **Output:**
 ```text
-Creating new file: /path/to/project/.kaizen/entities.json
+Created new entities dir: /path/to/project/.kaizen/entities
 Added 1 new entity(ies). Total: 1
-Entities stored in: /path/to/project/.kaizen/entities.json
+Entities stored in: /path/to/project/.kaizen/entities
 ```
 
 **Note:** Entities are also automatically saved when a conversation ends via the Stop hook.
-
-## Entity Categories
-
-- **strategy**: High-level approach or methodology choices
-- **recovery**: Handling errors, edge cases, or unexpected situations
-- **optimization**: Improving efficiency, performance, or code quality
 
 ## Examples
 
@@ -161,7 +151,7 @@ Entities stored in: /path/to/project/.kaizen/entities.json
 {
   "content": "Use Python PIL/Pillow for image metadata extraction in sandboxed environments",
   "rationale": "System tools like exiftool may not be available; PIL is always installable via pip",
-  "category": "strategy",
+  "type": "guideline",
   "trigger": "When extracting image metadata in containerized or sandboxed environments"
 }
 ```
@@ -173,7 +163,7 @@ Entities stored in: /path/to/project/.kaizen/entities.json
 {
   "content": "When pushing a new branch, always use 'git push -u origin <branch>' to set upstream tracking",
   "rationale": "Plain 'git push' fails on new branches without upstream configured; -u sets it in one step",
-  "category": "optimization",
+  "type": "guideline",
   "trigger": "When pushing a newly created git branch for the first time"
 }
 ```
@@ -183,7 +173,7 @@ Entities stored in: /path/to/project/.kaizen/entities.json
 {
   "content": "Use BeautifulSoup or lxml for HTML content extraction, never regex",
   "rationale": "Regex cannot reliably handle nested/malformed HTML; a proper parser handles edge cases",
-  "category": "strategy",
+  "type": "guideline",
   "trigger": "When extracting data from HTML documents or web pages"
 }
 ```
@@ -193,7 +183,7 @@ Entities stored in: /path/to/project/.kaizen/entities.json
 {
   "content": "Install Python packages with pip/uv instead of system package managers in sandboxed environments",
   "rationale": "apt-get and brew require root/sudo which sandboxed environments block; pip works in user space",
-  "category": "recovery",
+  "type": "guideline",
   "trigger": "When installing dependencies in containerized or sandboxed environments"
 }
 ```
