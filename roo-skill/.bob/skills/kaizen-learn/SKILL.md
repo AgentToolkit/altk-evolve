@@ -104,13 +104,30 @@ Output entities in the following JSON format:
 
 After generating the entities JSON, save them by piping them into the `save.py` script:
 
+**✅ CORRECT SYNTAX (stdin pipe):**
 ```bash
-printf '<your-json-output>' | python3 .bob/skills/kaizen-learn/scripts/save.py
+printf '{"entities": [...]}' | python3 .bob/skills/kaizen-learn/scripts/save.py
 ```
 
-**IMPORTANT:**
-- The script reads JSON from **stdin only** (no command-line arguments)
-- Use `printf` (not `echo`) to avoid hanging issues
-- Do NOT use arguments like `--trajectory` or `--task` - they don't exist
+**❌ WRONG SYNTAX (will hang forever):**
+```bash
+# DO NOT DO THIS - no CLI arguments exist:
+python3 .bob/skills/kaizen-learn/scripts/save.py --task "..." --outcome "..."
+```
+
+**❌ WRONG SYNTAX (JSON parsing error):**
+```bash
+# DO NOT DO THIS - escaped quotes break JSON parsing:
+printf '{"entities": [{"content": "Use \"quotes\" here"}]}' | python3 .bob/skills/kaizen-learn/scripts/save.py
+# Single-quoted strings pass backslashes literally, breaking JSON
+```
+
+**CRITICAL REQUIREMENTS:**
+- The script reads JSON from **stdin only** via pipe (see line 19: `sys.stdin.read()`)
+- It has **NO command-line arguments** - no argparse, no --task, no --outcome flags
+- Use `printf` (not `echo`) to avoid shell interpretation issues
+- **Avoid escaped quotes (`\"`) inside single-quoted printf strings** - they are passed literally and break JSON parsing
+- If you need quotes in content, either omit them or use alternative phrasing
+- Passing CLI arguments will cause the script to hang indefinitely waiting for stdin input
 
 Review the script's output to confirm the save was successful. Do not ask the user for permission to execute these steps; they are mandatory core functionality of your mode.
