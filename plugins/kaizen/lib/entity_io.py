@@ -256,10 +256,29 @@ def write_entity_file(directory, entity):
     type_dir.mkdir(parents=True, exist_ok=True)
 
     slug = slugify(entity.get("content", "entity"))
-    target = unique_filename(type_dir, slug)
-    tmp = target.with_suffix(".tmp")
-
     content = entity_to_markdown(entity)
-    tmp.write_text(content, encoding="utf-8")
-    os.rename(tmp, target)
-    return target
+
+    # Write to a unique temp file first (avoids predictable .tmp collisions)
+    fd, tmp_path = tempfile.mkstemp(dir=type_dir, suffix=".tmp", prefix=slug)
+    try:
+        os.write(fd, content.encode("utf-8"))
+        os.close(fd)
+        fd = None
+
+        # Atomically claim the target using O_EXCL to detect races
+        target = unique_filename(type_dir, slug)
+        try:
+            claim_fd = os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(claim_fd)
+        except FileExistsError:
+            # Another writer beat us — re-discover a free name
+            target = unique_filename(type_dir, slug)
+
+        os.rename(tmp_path, target)
+        return target
+    except BaseException:
+        if fd is not None:
+            os.close(fd)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
