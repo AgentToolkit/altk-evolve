@@ -25,3 +25,4 @@ If you see `error: the following arguments are required: --type`, you forgot to 
 
 **How to use the output:**
 The script will return a list of guidelines in JSON format (or plain text). Review these carefully. They represent hard-learned lessons or organizational standards. Incorporate them into your approach to the current task. If no guidelines are found, proceed normally.
+
