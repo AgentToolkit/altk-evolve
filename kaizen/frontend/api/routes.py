@@ -106,6 +106,7 @@ def list_namespaces() -> List[dict[str, Any]]:
         return namespaces
     except Exception as e:
         from fastapi import HTTPException
+
         logger.error(f"Error fetching namespaces: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching namespaces: {e}")
 
@@ -176,6 +177,7 @@ def list_namespace_entities(
         return result
     except Exception as e:
         from fastapi import HTTPException
+
         logger.error(f"Error fetching entities for namespace {namespace_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching entities for namespace {namespace_id}: {e}")
 
