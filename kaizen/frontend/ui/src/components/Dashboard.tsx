@@ -43,7 +43,7 @@ export default function Dashboard() {
             <div className="error-state">
                 <XCircle size={48} />
                 <h2>Connection Error</h2>
-                <p>{error}</p>
+                <p>{error || "Unable to load data. Please try again."}</p>
                 <button className="retry-btn" onClick={() => window.location.reload()}>Retry</button>
             </div>
         );
