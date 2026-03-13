@@ -105,8 +105,9 @@ def list_namespaces() -> List[dict[str, Any]]:
             namespaces.append({"id": ns.id, "amount_of_entities": ns.num_entities or 0})
         return namespaces
     except Exception as e:
+        from fastapi import HTTPException
         logger.error(f"Error fetching namespaces: {e}")
-        return []
+        raise HTTPException(status_code=500, detail=f"Error fetching namespaces: {e}")
 
 
 @router.post("/namespaces")
@@ -174,8 +175,9 @@ def list_namespace_entities(
         result.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
         return result
     except Exception as e:
+        from fastapi import HTTPException
         logger.error(f"Error fetching entities for namespace {namespace_id}: {e}")
-        return []
+        raise HTTPException(status_code=500, detail=f"Error fetching entities for namespace {namespace_id}: {e}")
 
 
 @router.delete("/namespaces/{namespace_id}/entities/{entity_id}")
