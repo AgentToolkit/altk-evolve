@@ -367,7 +367,7 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
                                     checked={policyEnabled}
                                     onChange={(e) => setPolicyEnabled(e.target.checked)}
                                 />
-                                <label htmlFor="policyStatus" className="no-margin">Policy Enabled active state</label>
+                                <label htmlFor="policyStatus" className="no-margin">Policy Enabled</label>
                             </div>
                         </>
                     ) : (
