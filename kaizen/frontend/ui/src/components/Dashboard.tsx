@@ -132,7 +132,7 @@ export default function Dashboard() {
                     <div className="entity-list">
                         {data.recent_entities.length > 0 ? (
                             data.recent_entities.map((ent) => (
-                                <div key={ent.id} className="entity-item">
+                                <div key={`${ent.namespace}-${ent.id}`} className="entity-item">
                                     <div className="entity-icon">
                                         <FileText size={20} />
                                     </div>

@@ -206,6 +206,7 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
             logger.error(f"Guideline validation failed: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid guideline metadata schema: {e}")
 
+    elif req.type == "policy":
         from kaizen.schema.policy import Policy, PolicyType
 
         try:

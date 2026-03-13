@@ -303,8 +303,8 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
                                                     onChange={(e) => updateTrigger(idx, 'type', e.target.value)}
                                                 >
                                                     <option value="keyword">Keyword</option>
-                                                    <option value="regex">Regex</option>
-                                                    <option value="intent">Intent</option>
+                                                    <option value="natural_language">Natural Language</option>
+                                                    <option value="always">Always</option>
                                                 </select>
                                             </div>
                                             <div>

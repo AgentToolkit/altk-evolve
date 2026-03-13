@@ -6,8 +6,9 @@ interface ConfirmDialogProps {
     message: string;
     confirmLabel?: string;
     cancelLabel?: string;
+    loadingLabel?: string;
     variant?: 'danger' | 'default';
-    onConfirm: () => void;
+    onConfirm: () => void | Promise<void>;
     onCancel: () => void;
 }
 
@@ -16,6 +17,7 @@ export default function ConfirmDialog({
     message,
     confirmLabel = 'Confirm',
     cancelLabel = 'Cancel',
+    loadingLabel,
     variant = 'default',
     onConfirm,
     onCancel,
@@ -56,7 +58,7 @@ export default function ConfirmDialog({
                         onClick={handleConfirm}
                         disabled={loading}
                     >
-                        {loading ? 'Deleting...' : confirmLabel}
+                        {loading ? (loadingLabel || `${confirmLabel}...`) : confirmLabel}
                     </button>
                 </div>
             </div>
