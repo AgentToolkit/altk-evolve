@@ -30,7 +30,7 @@ claude --plugin-dir /path/to/kaizen/repo/plugins/kaizen
 ### Entity Retrieval (Automatic)
 
 When you submit a prompt, the plugin automatically:
-1. Loads all stored entities from `.kaizen/entities.json`
+1. Loads all stored entities from `.kaizen/entities/` (one markdown file per entity)
 2. Formats and injects them into the conversation context
 3. Claude applies relevant entities to the current task
 
@@ -41,7 +41,7 @@ By default, you must manually invoke the `/kaizen:learn` skill to extract entiti
 2. Invoke `/kaizen:learn`
 3. The plugin analyzes the conversation trajectory
 4. Extracts actionable entities from what worked/failed
-5. Saves new entities to `.kaizen/entities.json`
+5. Saves new entities as markdown files in `.kaizen/entities/{type}/`
 
 ## Example Walkthrough
 
@@ -87,24 +87,33 @@ Manually invoke to export the current conversation as a trajectory JSON file:
 
 ## Entities Storage
 
-Entities are stored in `.kaizen/entities.json`:
+Entities are stored as individual markdown files in `.kaizen/entities/`, nested by type:
 
-```json
-{
-  "entities": [
-    {
-      "content": "Use Python PIL/Pillow for image metadata extraction in sandboxed environments",
-      "rationale": "System tools like exiftool may not be available",
-      "category": "strategy",
-      "trigger": "When extracting image metadata in containerized environments"
-    }
-  ]
-}
+```
+.kaizen/entities/
+  guideline/
+    use-python-pil-for-image-metadata-extraction.md
+    cache-api-responses-locally.md
+```
+
+Each file uses markdown with YAML frontmatter:
+
+```markdown
+---
+type: guideline
+trigger: When extracting image metadata in containerized environments
+---
+
+Use Python PIL/Pillow for image metadata extraction in sandboxed environments
+
+## Rationale
+
+System tools like exiftool may not be available
 ```
 
 ## Environment Variables
 
-- `KAIZEN_ENTITIES_FILE`: Override the default entities storage location
+- `KAIZEN_ENTITIES_DIR`: Override the default entities directory location
 - `CLAUDE_PROJECT_ROOT`: Set by Claude Code, used to locate project-level entities
 
 ## Verification
