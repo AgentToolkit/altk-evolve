@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 
 interface PolicyTrigger {
     type: string;
-    value: string | string[];
+    value: string | string[] | null;
     target: string;
     operator: string;
     threshold: number;
@@ -83,18 +83,35 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
                 setCreateError("Policies require a name, description, and at least one trigger.");
                 return;
             }
+            const serializedTriggers = policyTriggers.map(t => {
+                let val: string[] | null = null;
+                if (t.type !== 'always' && t.value) {
+                    if (Array.isArray(t.value)) {
+                        const filtered = t.value.filter(v => v.trim() !== "");
+                        val = filtered.length > 0 ? filtered : null;
+                    } else if (typeof t.value === 'string' && t.value.trim() !== "") {
+                        val = [t.value.trim()];
+                    }
+                }
+                return { ...t, value: val };
+            });
+
             parsedMetadata = {
                 name: policyName,
                 description: policyDesc,
                 policy_type: policyTypeEnum,
                 priority: policyPriority,
                 enabled: policyEnabled,
-                triggers: policyTriggers
+                triggers: serializedTriggers
             };
         } else {
             if (newMetadata.trim()) {
                 try {
                     parsedMetadata = JSON.parse(newMetadata);
+                    if (typeof parsedMetadata !== 'object' || parsedMetadata === null || Array.isArray(parsedMetadata)) {
+                        setCreateError("Metadata must be a JSON object.");
+                        return;
+                    }
                 } catch {
                     setCreateError("Metadata must be valid JSON.");
                     return;
@@ -328,14 +345,15 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
                                                 <input
                                                     type="text"
                                                     className="form-control trigger-compact"
-                                                    value={Array.isArray(t.value) ? t.value.join(', ') : t.value}
+                                                    value={Array.isArray(t.value) ? t.value.join(', ') : (t.value || '')}
                                                     onChange={(e) => {
                                                         const val = e.target.value;
                                                         const arr = val.includes(',') ? val.split(',').map(s => s.trim()) : (val ? [val] : []);
                                                         updateTrigger(idx, 'value', val.includes(',') ? arr : val);
                                                     }}
-                                                    placeholder="e.g. drop table, delete"
-                                                    required
+                                                    placeholder={t.type === 'always' ? "No value needed for 'always'" : "e.g. drop table, delete"}
+                                                    required={t.type !== 'always'}
+                                                    disabled={t.type === 'always'}
                                                 />
                                             </div>
                                         </div>
