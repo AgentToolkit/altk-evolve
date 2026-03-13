@@ -8,6 +8,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+MAX_ENTITY_LIMIT = 500
+
 
 class NamespaceCreateRequest(BaseModel):
     namespace_id: str
@@ -141,12 +143,15 @@ def delete_namespace(namespace_id: str) -> dict[str, Any]:
 def list_namespace_entities(
     namespace_id: str,
     type: Optional[str] = Query(None, description="Filter entities by type (e.g., guideline, task)"),
-    limit: int = Query(100, description="Maximum number of entities to return"),
+    limit: int = Query(100, description=f"Maximum number of entities to return (max {MAX_ENTITY_LIMIT})"),
 ) -> List[dict[str, Any]]:
     from kaizen.frontend.mcp.mcp_server import get_client
 
     client = get_client()
     try:
+        # Sanitize limit
+        limit = max(1, min(limit, MAX_ENTITY_LIMIT))
+
         filters = {}
         if type:
             filters["type"] = type
@@ -211,8 +216,8 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
 
         try:
             # The Policy model checks the full payload
-            policy_meta = {k: v for k, v in req.metadata.items() if k not in ("content", "type")}
-            Policy(content=req.content, type=PolicyType(req.type), **policy_meta)
+            policy_meta = {k: v for k, v in req.metadata.items() if k != "content"}
+            Policy(content=req.content, type=PolicyType(req.metadata["policy_type"]), **policy_meta)
         except Exception as e:
             logger.error(f"Policy validation failed: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid policy metadata schema: {e}")
