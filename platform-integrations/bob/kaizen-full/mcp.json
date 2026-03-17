@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "kaizen": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "1lleatmyhat/kaizen:latest-core"
+      ],
+      "disabled": false
+    }
+  }
+}

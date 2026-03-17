@@ -1,4 +1,4 @@
-# Kaizen Plugin for Claude Code
+# Kaizen Lite Plugin for Claude Code
 
 A plugin that helps Claude Code learn from conversations by automatically extracting and applying entities.
 
