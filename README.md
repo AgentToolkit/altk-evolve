@@ -8,7 +8,7 @@ Kaizen is a system designed to help agents improve over time by learning from th
 
 - **MCP Server**: Exposes tools to get guidelines and save trajectories.
 - **Conflict Resolution**: Intelligently merges new insights with existing guidelines using LLMs.
-- **Trajectory Analysis**: Automatically analyzes agent trajectories to generate tips and best practices.
+- **Trajectory Analysis**: Automatically analyzes agent trajectories to generate guidelines and best practices.
 - **Milvus Integration**: Uses Milvus (or Milvus Lite) for efficient vector storage and retrieval.
 
 ## Architecture
@@ -52,7 +52,7 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 **Available tools:**
 - `get_entities(task: str, entity_type: str)`: Get relevant entities for a specific task, filtered by type (e.g., 'guideline', 'policy').
 - `get_guidelines(task: str)`: Get relevant guidelines for a specific task (backward compatibility alias).
-- `save_trajectory(trajectory_data: str, task_id: str | None)`: Save a conversation trajectory and generate new tips.
+- `save_trajectory(trajectory_data: str, task_id: str | None)`: Save a conversation trajectory and generate new guidelines.
 - `create_entity(content: str, entity_type: str, metadata: str | None, enable_conflict_resolution: bool)`: Create a single entity in the namespace.
 - `delete_entity(entity_id: str)`: Delete a specific entity by its ID.
 
