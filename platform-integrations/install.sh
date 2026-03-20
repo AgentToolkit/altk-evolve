@@ -11,17 +11,21 @@
 #   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | bash -s -- install --platform roo
 #
-# Pinned version:
-#   KAIZEN_VERSION=v1.2.0
-#   curl -fsSL "https://raw.githubusercontent.com/AgentToolkit/kaizen/${KAIZEN_VERSION}/platform-integrations/install.sh" | \
-#     KAIZEN_VERSION="${KAIZEN_VERSION}" bash
+# Pinned version (SCRIPT_VERSION is substituted by the release process, so the
+# script fetched from a tag already knows its own version — no env var needed):
+#   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/v1.2.0/platform-integrations/install.sh | bash
 
 set -euo pipefail
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 KAIZEN_REPO="${KAIZEN_REPO:-AgentToolkit/kaizen}"
-KAIZEN_VERSION="${KAIZEN_VERSION:-main}"
 KAIZEN_DEBUG="${KAIZEN_DEBUG:-0}"
+
+# SCRIPT_VERSION is substituted by the release process (e.g. sed to "v1.2.0").
+# This means a script fetched from a tag URL already knows its own version,
+# so callers never need to set KAIZEN_VERSION manually.
+SCRIPT_VERSION="main"
+KAIZEN_VERSION="${KAIZEN_VERSION:-${SCRIPT_VERSION}}"
 
 # ─── Colours ──────────────────────────────────────────────────────────────────
 if [ -t 1 ]; then

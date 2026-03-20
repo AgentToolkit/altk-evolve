@@ -30,7 +30,10 @@ https://github.com/${KAIZEN_REPO}/archive/refs/tags/v${VERSION}.tar.gz
 ```
 
 `KAIZEN_REPO` defaults to `AgentToolkit/kaizen` and can be overridden by env var.
-`KAIZEN_VERSION` defaults to `main` (latest).
+`KAIZEN_VERSION` defaults to `SCRIPT_VERSION`, a constant embedded in the script
+that the release process substitutes with the actual tag (e.g. `v1.2.0`). This means
+a script fetched from a tag URL already knows which tarball to download — callers
+never need to set `KAIZEN_VERSION` manually.
 
 ---
 
@@ -226,10 +229,8 @@ No pip packages are required. The script uses only Python stdlib.
 # Latest main
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | bash
 
-# Specific version
-KAIZEN_VERSION=v1.2.0
-curl -fsSL "https://raw.githubusercontent.com/AgentToolkit/kaizen/${KAIZEN_VERSION}/platform-integrations/install.sh" | \
-  KAIZEN_VERSION="${KAIZEN_VERSION}" bash
+# Pinned version — the script fetched from the tag already knows its own version
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/v1.2.0/platform-integrations/install.sh | bash
 
 # Non-interactive, specific platform
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | \
