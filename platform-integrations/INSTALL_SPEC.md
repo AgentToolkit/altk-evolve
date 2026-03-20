@@ -227,8 +227,9 @@ No pip packages are required. The script uses only Python stdlib.
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | bash
 
 # Specific version
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | \
-  KAIZEN_VERSION=v1.2.0 bash
+KAIZEN_VERSION=v1.2.0
+curl -fsSL "https://raw.githubusercontent.com/AgentToolkit/kaizen/${KAIZEN_VERSION}/platform-integrations/install.sh" | \
+  KAIZEN_VERSION="${KAIZEN_VERSION}" bash
 
 # Non-interactive, specific platform
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | \

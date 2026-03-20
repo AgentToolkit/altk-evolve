@@ -10,6 +10,11 @@
 # Remote:
 #   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | bash -s -- install --platform roo
+#
+# Pinned version:
+#   KAIZEN_VERSION=v1.2.0
+#   curl -fsSL "https://raw.githubusercontent.com/AgentToolkit/kaizen/${KAIZEN_VERSION}/platform-integrations/install.sh" | \
+#     KAIZEN_VERSION="${KAIZEN_VERSION}" bash
 
 set -euo pipefail
 
