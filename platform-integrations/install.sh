@@ -342,6 +342,10 @@ def merge_yaml_custom_mode(source_yaml_path, target_yaml_path, slug):
     except FileNotFoundError:
         existing = "customModes:\n"
 
+    # Ensure proper YAML structure if file is empty or doesn't contain customModes
+    if not existing.strip() or "customModes:" not in existing:
+        existing = "customModes:\n"
+
     if start in existing:
         pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.DOTALL)
         new_content = pattern.sub(block.strip(), existing)
@@ -378,15 +382,20 @@ def load_roo_mode_from_yaml(source_path):
         text = f.read()
 
     def extract(field):
-        # Match simple single-line values (with optional list dash)
-        m = re.search(rf"^\s+(?:- )?{field}:\s+(.+)$", text, re.MULTILINE)
+        # Match simple single-line values at mode definition level (2-4 spaces, optionally with list dash)
+        # First try to match with list dash (for slug field: "  - slug: value")
+        m = re.search(rf"^  - {field}:\s+(.+)$", text, re.MULTILINE)
+        if m:
+            return m.group(1).strip().strip('"')
+        # Then try without dash (for other fields: "    name: value")
+        m = re.search(rf"^    {field}:\s+(.+)$", text, re.MULTILINE)
         if m:
             return m.group(1).strip().strip('"')
         return ""
 
     def extract_block(field):
-        # Match block scalar (|- or |) with optional list dash
-        m = re.search(rf"^\s+(?:- )?{field}:\s*\|-?\s*\n((?:[ \t]+.+\n?)*)", text, re.MULTILINE)
+        # Match block scalar (|- or |) at mode definition level (4 spaces, no list dash)
+        m = re.search(rf"^    {field}:\s*\|-?\s*\n((?:[ \t]+.+\n?)*)", text, re.MULTILINE)
         if m:
             lines = m.group(1).splitlines()
             # Find minimum indent
@@ -395,8 +404,8 @@ def load_roo_mode_from_yaml(source_path):
         return extract(field)
 
     def extract_list(field):
-        # Match list field with optional list dash before field name
-        m = re.search(rf"^\s+(?:- )?{field}:\s*\n((?:\s+- .+\n?)*)", text, re.MULTILINE)
+        # Match list field at mode definition level (4 spaces, no list dash before field name)
+        m = re.search(rf"^    {field}:\s*\n((?:      - .+\n?)*)", text, re.MULTILINE)
         if m:
             return [re.sub(r"^\s+- ", "", l) for l in m.group(1).splitlines() if l.strip()]
         return []
@@ -500,6 +509,9 @@ def install_bob(source_dir, target_dir, mode="lite"):
     # Full mode: mcp.json
     if mode == "full":
         mcp_source = Path(source_dir) / "platform-integrations" / "bob" / "kaizen-full" / "mcp.json"
+        if not mcp_source.exists():
+            error(f"Source MCP config not found: {mcp_source}")
+            sys.exit(1)
         mcp_target = bob_target / "mcp.json"
         with open(mcp_source) as f:
             mcp_data = json.load(f)

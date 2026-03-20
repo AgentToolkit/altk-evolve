@@ -51,10 +51,12 @@ install options:
   --platform {bob,roo,claude,all}   Platform to install (default: auto-detect + prompt)
   --mode     {lite,full}            Installation mode for bob (default: lite)
   --dir      DIR                    Target project directory (default: current working dir)
+  --dry-run                         Preview changes without modifying files
 
 uninstall options:
   --platform {bob,roo,claude,all}   Platform to uninstall (default: prompt)
   --dir      DIR                    Target project directory (default: current working dir)
+  --dry-run                         Preview changes without modifying files
 ```
 
 ---
@@ -218,8 +220,7 @@ No pip packages are required. The script uses only Python stdlib.
 ## Logging
 
 - Normal output: plain text with `✓` / `✗` / `→` indicators
-- `--verbose` flag: prints each file operation
-- `KAIZEN_DEBUG=1` env var: same as `--verbose`
+- `KAIZEN_DEBUG=1` env var: enables verbose output with detailed file operations
 
 ---
 

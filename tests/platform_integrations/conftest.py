@@ -92,36 +92,25 @@ class InstallRunner:
 
         Returns:
             subprocess.CompletedProcess with stdout, stderr, returncode
+
+        Raises:
+            subprocess.CalledProcessError: If expect_success=True and command fails
         """
-        cmd = ["bash", str(self.script_path), command, "--dir", str(self.project_dir)]
+        # Build command with conditional arguments
+        cmd = (
+            ["bash", str(self.script_path), command, "--dir", str(self.project_dir)]
+            + (["--platform", platform] if platform else [])
+            + (["--mode", mode] if mode else [])
+            + (["--dry-run"] if dry_run else [])
+        )
 
-        if platform:
-            cmd.extend(["--platform", platform])
-
-        if mode:
-            cmd.extend(["--mode", mode])
-
-        if dry_run:
-            cmd.append("--dry-run")
-
-        # Set up environment
-        test_env = os.environ.copy()
-        if env:
-            test_env.update(env)
+        # Merge environment variables
+        test_env = {**os.environ, **(env or {})}
 
         # Run the command
-        result = subprocess.run(cmd, capture_output=True, text=True, env=test_env)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=test_env, check=expect_success)
 
         self.last_result = result
-
-        if expect_success and result.returncode != 0:
-            raise AssertionError(
-                f"Command failed with exit code {result.returncode}\n"
-                f"Command: {' '.join(cmd)}\n"
-                f"Stdout: {result.stdout}\n"
-                f"Stderr: {result.stderr}"
-            )
-
         return result
 
 
