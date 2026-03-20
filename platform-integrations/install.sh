@@ -378,15 +378,15 @@ def load_roo_mode_from_yaml(source_path):
         text = f.read()
 
     def extract(field):
-        # Match simple single-line values
-        m = re.search(rf"^\s+{field}:\s+(.+)$", text, re.MULTILINE)
+        # Match simple single-line values (with optional list dash)
+        m = re.search(rf"^\s+(?:- )?{field}:\s+(.+)$", text, re.MULTILINE)
         if m:
             return m.group(1).strip().strip('"')
         return ""
 
     def extract_block(field):
-        # Match block scalar (|- or |)
-        m = re.search(rf"^\s+{field}:\s*\|-?\s*\n((?:[ \t]+.+\n?)*)", text, re.MULTILINE)
+        # Match block scalar (|- or |) with optional list dash
+        m = re.search(rf"^\s+(?:- )?{field}:\s*\|-?\s*\n((?:[ \t]+.+\n?)*)", text, re.MULTILINE)
         if m:
             lines = m.group(1).splitlines()
             # Find minimum indent
@@ -395,7 +395,8 @@ def load_roo_mode_from_yaml(source_path):
         return extract(field)
 
     def extract_list(field):
-        m = re.search(rf"^\s+{field}:\s*\n((?:\s+- .+\n?)*)", text, re.MULTILINE)
+        # Match list field with optional list dash before field name
+        m = re.search(rf"^\s+(?:- )?{field}:\s*\n((?:\s+- .+\n?)*)", text, re.MULTILINE)
         if m:
             return [re.sub(r"^\s+- ", "", l) for l in m.group(1).splitlines() if l.strip()]
         return []
@@ -556,8 +557,12 @@ def install_roo(source_dir, target_dir):
     roomodes_source = roo_skills_source / ".roomodes"   # YAML format in source
     roomodes_target = Path(target_dir) / ".roomodes"
 
-    if roomodes_target.is_file() and is_json_file(roomodes_target):
-        # Target is JSON — load mode from YAML source and upsert into JSON
+    if not roomodes_target.is_file():
+        # Target doesn't exist — create as YAML (roo-code preferred format)
+        merge_yaml_custom_mode(roomodes_source, roomodes_target, ROO_SLUG)
+        success(f"Created {roomodes_target} with mode '{ROO_SLUG}' (YAML)")
+    elif is_json_file(roomodes_target):
+        # Target exists and is JSON — load mode from YAML source and upsert into JSON
         mode_dict = load_roo_mode_from_yaml(roomodes_source)
         if mode_dict is None:
             warn(f"Could not extract mode '{ROO_SLUG}' from {roomodes_source}")
@@ -565,19 +570,9 @@ def install_roo(source_dir, target_dir):
             upsert_json_array_item(roomodes_target, "customModes", mode_dict, "slug")
             success(f"Upserted mode '{ROO_SLUG}' into {roomodes_target} (JSON)")
     else:
-        # Target is YAML or doesn't exist yet
-        # If target doesn't exist, create as JSON (modern Roo format)
-        if not roomodes_target.is_file():
-            mode_dict = load_roo_mode_from_yaml(roomodes_source)
-            if mode_dict is None:
-                warn(f"Could not extract mode '{ROO_SLUG}' from {roomodes_source}")
-            else:
-                atomic_write_json(roomodes_target, {"customModes": [mode_dict]})
-                success(f"Created {roomodes_target} with mode '{ROO_SLUG}'")
-        else:
-            # Existing YAML target — use sentinel merge
-            merge_yaml_custom_mode(roomodes_source, roomodes_target, ROO_SLUG)
-            success(f"Merged mode '{ROO_SLUG}' into {roomodes_target} (YAML)")
+        # Target exists and is YAML — use sentinel merge
+        merge_yaml_custom_mode(roomodes_source, roomodes_target, ROO_SLUG)
+        success(f"Merged mode '{ROO_SLUG}' into {roomodes_target} (YAML)")
 
     success("Roo installation complete")
 
