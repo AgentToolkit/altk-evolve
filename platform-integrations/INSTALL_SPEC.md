@@ -172,13 +172,9 @@ between sentinels. If no, append sentinel block to end of file.
 
 **Uninstall**: find sentinel start and end lines, remove all lines between them (inclusive).
 
-**PyYAML fallback**: try `import yaml` first. If available, use proper `yaml.safe_load` /
-`yaml.dump` for load and write. Fall back to sentinel approach if not installed.
-
 **Source parsing**: the source `.roomodes` from `platform-integrations/roo/` is YAML format.
-For merging into a JSON target `.roomodes`, PyYAML is used to parse the source. If PyYAML
-is unavailable, the mode data is extracted via regex from the YAML source and converted to
-a Python dict for JSON insertion.
+The mode data is extracted via regex from the YAML source and converted to a Python dict
+for JSON insertion. No third-party YAML library is required.
 
 ---
 
@@ -199,10 +195,9 @@ All operations are safe to run multiple times:
 | `python3 >= 3.8` | Everything | Checked at startup; clear error if missing |
 | `curl` | Remote mode only | Required to download source tarball |
 | `tar` | Remote mode only | Required to extract tarball |
-| `PyYAML` | YAML merging (optional) | Falls back to sentinel approach if absent |
 | `claude` CLI | Claude install | Falls back to manual instructions if absent |
 
-No pip packages are required. PyYAML is optional. The script uses only Python stdlib otherwise.
+No pip packages are required. The script uses only Python stdlib.
 
 ---
 

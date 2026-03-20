@@ -291,23 +291,6 @@ def _sentinel_start(slug): return f"# >>>kaizen:{slug}<<<"
 def _sentinel_end(slug):   return f"# <<<kaizen:{slug}<<<"
 
 
-def _try_import_yaml():
-    try:
-        import yaml
-        return yaml
-    except ImportError:
-        return None
-
-
-def load_yaml_file(path):
-    """Load a YAML file. Requires PyYAML. Returns None if unavailable."""
-    yaml = _try_import_yaml()
-    if yaml is None:
-        return None
-    with open(str(path)) as f:
-        return yaml.safe_load(f)
-
-
 def is_json_file(path):
     """Detect whether a file is JSON (vs YAML) by attempting to parse it."""
     try:
@@ -320,140 +303,68 @@ def is_json_file(path):
 
 
 def merge_yaml_custom_mode(source_yaml_path, target_yaml_path, slug):
-    """
-    Merge a custom mode entry into a YAML custom_modes file.
-    Uses PyYAML if available, otherwise uses sentinel comment blocks.
-    """
+    """Merge a custom mode entry into a YAML custom_modes file using sentinel blocks."""
     source_yaml_path = str(source_yaml_path)
     target_yaml_path = str(target_yaml_path)
 
-    yaml = _try_import_yaml()
+    with open(source_yaml_path) as f:
+        source_text = f.read()
 
-    if yaml is not None:
-        # Proper YAML merge
-        with open(source_yaml_path) as f:
-            source_data = yaml.safe_load(f)
-        source_modes = source_data.get("customModes", [])
-        new_mode = next((m for m in source_modes if m.get("slug") == slug), None)
-        if new_mode is None:
-            warn(f"Slug '{slug}' not found in {source_yaml_path}")
-            return
+    # Extract the mode block lines from under the top-level "customModes:" key,
+    # stripping one level of indent so the block is ready to re-indent as needed.
+    mode_lines = []
+    in_modes = False
+    for line in source_text.splitlines():
+        if line.strip() == "customModes:":
+            in_modes = True
+            continue
+        if in_modes:
+            mode_lines.append(line[2:] if line.startswith("  ") else line)
 
-        try:
-            with open(target_yaml_path) as f:
-                target_data = yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            target_data = {}
+    mode_block = "\n".join(mode_lines).strip()
 
-        existing = target_data.setdefault("customModes", [])
-        for i, mode in enumerate(existing):
-            if mode.get("slug") == slug:
-                existing[i] = new_mode
-                break
-        else:
-            existing.append(new_mode)
+    start = _sentinel_start(slug)
+    end   = _sentinel_end(slug)
+    block = f"\n{start}\n  {mode_block.replace(chr(10), chr(10) + '  ')}\n{end}\n"
 
-        if DRY_RUN:
-            dryrun(f"write YAML → {target_yaml_path}")
-            return
-        os.makedirs(os.path.dirname(target_yaml_path) or ".", exist_ok=True)
-        tmp = target_yaml_path + ".kaizen.tmp"
-        with open(tmp, "w") as f:
-            yaml.dump(target_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        os.replace(tmp, target_yaml_path)
-        debug(f"YAML merge (PyYAML): {target_yaml_path}")
+    try:
+        with open(target_yaml_path) as f:
+            existing = f.read()
+    except FileNotFoundError:
+        existing = "customModes:\n"
 
+    if start in existing:
+        pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.DOTALL)
+        new_content = pattern.sub(block.strip(), existing)
     else:
-        # Sentinel block fallback
-        warn("PyYAML not found — using sentinel comment blocks for YAML merge. "
-             "Install PyYAML for cleaner YAML handling: pip install pyyaml")
-        with open(source_yaml_path) as f:
-            source_text = f.read()
+        new_content = existing.rstrip() + block
 
-        # Extract just the mode block lines (the list item under customModes)
-        # Strip the top-level "customModes:" key and dedent one level
-        mode_lines = []
-        in_modes = False
-        for line in source_text.splitlines():
-            if line.strip() == "customModes:":
-                in_modes = True
-                continue
-            if in_modes:
-                # Strip leading 2-space indent that YAML list items have under customModes
-                mode_lines.append(line[2:] if line.startswith("  ") else line)
-
-        mode_block = "\n".join(mode_lines).strip()
-
-        start = _sentinel_start(slug)
-        end   = _sentinel_end(slug)
-        block = f"\n{start}\n  {mode_block.replace(chr(10), chr(10) + '  ')}\n{end}\n"
-
-        try:
-            with open(target_yaml_path) as f:
-                existing = f.read()
-        except FileNotFoundError:
-            existing = "customModes:\n"
-
-        if start in existing:
-            # Replace existing sentinel block
-            pattern = re.compile(
-                re.escape(start) + r".*?" + re.escape(end),
-                re.DOTALL
-            )
-            new_content = pattern.sub(block.strip(), existing)
-        else:
-            new_content = existing.rstrip() + block
-
-        os.makedirs(os.path.dirname(target_yaml_path) or ".", exist_ok=True)
-        atomic_write_text(target_yaml_path, new_content)
-        debug(f"YAML merge (sentinel): {target_yaml_path}")
+    atomic_write_text(target_yaml_path, new_content)
+    debug(f"YAML merge (sentinel): {target_yaml_path}")
 
 
 def remove_yaml_custom_mode(target_yaml_path, slug):
-    """Remove a custom mode entry from a YAML file (sentinel or PyYAML)."""
+    """Remove a sentinel-wrapped custom mode entry from a YAML file."""
     target_yaml_path = str(target_yaml_path)
     if not os.path.isfile(target_yaml_path):
         return
 
-    yaml = _try_import_yaml()
-
-    if yaml is not None:
-        with open(target_yaml_path) as f:
-            data = yaml.safe_load(f) or {}
-        modes = data.get("customModes", [])
-        data["customModes"] = [m for m in modes if m.get("slug") != slug]
-        if DRY_RUN:
-            dryrun(f"write YAML → {target_yaml_path}")
-            return
-        tmp = target_yaml_path + ".kaizen.tmp"
-        with open(tmp, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        os.replace(tmp, target_yaml_path)
-    else:
-        with open(target_yaml_path) as f:
-            text = f.read()
-        start = _sentinel_start(slug)
-        end   = _sentinel_end(slug)
-        pattern = re.compile(
-            r"\n?" + re.escape(start) + r".*?" + re.escape(end) + r"\n?",
-            re.DOTALL
-        )
-        atomic_write_text(target_yaml_path, pattern.sub("", text))
+    with open(target_yaml_path) as f:
+        text = f.read()
+    start = _sentinel_start(slug)
+    end   = _sentinel_end(slug)
+    pattern = re.compile(
+        r"\n?" + re.escape(start) + r".*?" + re.escape(end) + r"\n?",
+        re.DOTALL
+    )
+    atomic_write_text(target_yaml_path, pattern.sub("", text))
 
 
 def load_roo_mode_from_yaml(source_path):
     """
-    Load the kaizen-lite custom mode dict from the Roo source .roomodes YAML file.
-    Returns a dict suitable for JSON insertion, or None on failure.
+    Extract the kaizen-lite mode dict from the Roo source .roomodes YAML file
+    using regex, returning a dict suitable for JSON insertion.
     """
-    yaml = _try_import_yaml()
-    if yaml is not None:
-        with open(str(source_path)) as f:
-            data = yaml.safe_load(f)
-        modes = data.get("customModes", [])
-        return next((m for m in modes if m.get("slug") == ROO_SLUG), None)
-
-    # Fallback: extract fields from YAML with regex
     with open(str(source_path)) as f:
         text = f.read()
 
