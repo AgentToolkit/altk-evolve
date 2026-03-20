@@ -137,8 +137,10 @@ python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+explicit_package_bases = true
 exclude = [
     "platform-integrations/",
+    "examples/",
 ]
 
 [[tool.mypy.overrides]]
@@ -151,5 +153,6 @@ module = [
     "pgvector.*",
     "psycopg.*",
     "entity_io.*",
+    "local_mcp_server",
 ]
 ignore_missing_imports = true

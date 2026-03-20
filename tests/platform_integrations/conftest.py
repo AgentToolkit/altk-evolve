@@ -68,7 +68,7 @@ class InstallRunner:
     def __init__(self, script_path: Path, project_dir: Path):
         self.script_path = script_path
         self.project_dir = project_dir
-        self.last_result = None
+        self.last_result: Optional[subprocess.CompletedProcess[str]] = None
 
     def run(
         self,
@@ -225,7 +225,9 @@ class FileAssertions:
     @staticmethod
     def read_json(path: Path) -> Dict[str, Any]:
         """Read and parse a JSON file."""
-        return json.loads(path.read_text())
+        result = json.loads(path.read_text())
+        assert isinstance(result, dict), f"Expected dict from JSON file {path}"
+        return result
 
     @staticmethod
     def write_json(path: Path, data: Dict[str, Any]):
