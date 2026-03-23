@@ -209,7 +209,10 @@ def _safe_copy2(src, dst):
     if os.path.exists(dst) and os.path.samefile(src, dst):
         debug(f"Skipping (same file): {src} → {dst}")
         return
-    shutil.copy2(src, dst)
+    try:
+        shutil.copy2(src, dst)
+    except shutil.SameFileError:
+        debug(f"Skipping (same file): {src} → {dst}")
 
 
 def copy_tree(src, dst):
