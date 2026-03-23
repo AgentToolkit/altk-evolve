@@ -204,6 +204,14 @@ def read_json(path):
         return {}
 
 
+def _safe_copy2(src, dst):
+    """Like shutil.copy2 but skips when src and dst are already the same file (hardlink/APFS clone)."""
+    if os.path.exists(dst) and os.path.samefile(src, dst):
+        debug(f"Skipping (same file): {src} → {dst}")
+        return
+    shutil.copy2(src, dst)
+
+
 def copy_tree(src, dst):
     """Idempotently copy a directory tree (Python 3.8+ dirs_exist_ok)."""
     src, dst = str(src), str(dst)
@@ -215,7 +223,7 @@ def copy_tree(src, dst):
         dryrun(f"copy dir → {dst}/ ({len(files)} file(s): {', '.join(files[:5])}{'…' if len(files) > 5 else ''})")
         return
     os.makedirs(dst, exist_ok=True)
-    shutil.copytree(src, dst, dirs_exist_ok=True)
+    shutil.copytree(src, dst, dirs_exist_ok=True, copy_function=_safe_copy2)
     debug(f"Copied {src} → {dst}")
 
 
