@@ -8,6 +8,7 @@
 __pycache__
 kaizen_data
 demo/workdir/.claude/
+.bob
 .claude
 dist
 .coverage
