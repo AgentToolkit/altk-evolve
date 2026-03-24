@@ -504,6 +504,9 @@ def install_bob(source_dir, target_dir, mode="lite"):
 
     # Shared lib (entity_io) — single source of truth lives in the Claude plugin
     shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "kaizen-lite" / "lib"
+    if not shared_lib.is_dir():
+        error(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
+        sys.exit(1)
     copy_tree(shared_lib, bob_target / "kaizen-lib")
     success("Copied Bob lib")
 
