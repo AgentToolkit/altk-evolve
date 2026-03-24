@@ -265,6 +265,7 @@ def write_entity_file(directory, entity):
     entity_type = entity.get("type", "general")
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", entity_type):
         entity_type = "general"
+    entity["type"] = entity_type
     type_dir = Path(directory) / entity_type
     type_dir.mkdir(parents=True, exist_ok=True)
 
