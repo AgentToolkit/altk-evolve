@@ -9,8 +9,8 @@ import json
 import sys
 from pathlib import Path
 
-# Add lib to path so we can import entity_io
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
+# Add kaizen-lib to path so we can import entity_io
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "kaizen-lib"))
 from entity_io import (
     find_entities_dir,
     get_default_entities_dir,
