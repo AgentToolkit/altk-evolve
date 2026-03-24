@@ -20,7 +20,7 @@ for _ancestor in _script.parents:
 if _lib is None:
     raise ImportError(f"Cannot find kaizen-lib directory above {_script}")
 sys.path.insert(0, str(_lib))
-from entity_io import (
+from entity_io import (  # noqa: E402
     find_entities_dir,
     get_default_entities_dir,
     load_all_entities,
