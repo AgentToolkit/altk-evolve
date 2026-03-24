@@ -296,4 +296,7 @@ def write_entity_file(directory, entity):
             os.close(fd)
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
+        # Clean up the 0-byte placeholder if the replace didn't happen
+        if target and os.path.exists(str(target)) and os.path.getsize(str(target)) == 0:
+            os.unlink(str(target))
         raise
