@@ -84,9 +84,16 @@ def find_entities_dir():
 def get_default_entities_dir():
     """Return (and create) the default entities directory.
 
-    Prefers ``{CLAUDE_PROJECT_ROOT}/.kaizen/entities/``, falls back to
+    Prefers ``KAIZEN_ENTITIES_DIR``, then
+    ``{CLAUDE_PROJECT_ROOT}/.kaizen/entities/``, falls back to
     ``.kaizen/entities/``.
     """
+    env_dir = os.environ.get("KAIZEN_ENTITIES_DIR")
+    if env_dir:
+        base = Path(env_dir)
+        base.mkdir(parents=True, exist_ok=True)
+        return base.resolve()
+
     project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
     if project_root:
         base = Path(project_root) / ".kaizen" / "entities"
