@@ -84,9 +84,16 @@ def find_entities_dir():
 def get_default_entities_dir():
     """Return (and create) the default entities directory.
 
-    Prefers ``{CLAUDE_PROJECT_ROOT}/.kaizen/entities/``, falls back to
+    Prefers ``KAIZEN_ENTITIES_DIR``, then
+    ``{CLAUDE_PROJECT_ROOT}/.kaizen/entities/``, falls back to
     ``.kaizen/entities/``.
     """
+    env_dir = os.environ.get("KAIZEN_ENTITIES_DIR")
+    if env_dir:
+        base = Path(env_dir)
+        base.mkdir(parents=True, exist_ok=True)
+        return base.resolve()
+
     project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
     if project_root:
         base = Path(project_root) / ".kaizen" / "entities"
@@ -258,6 +265,7 @@ def write_entity_file(directory, entity):
     entity_type = entity.get("type", "general")
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", entity_type):
         entity_type = "general"
+    entity["type"] = entity_type
     type_dir = Path(directory) / entity_type
     type_dir.mkdir(parents=True, exist_ok=True)
 
@@ -271,20 +279,24 @@ def write_entity_file(directory, entity):
         os.close(fd)
         fd = None
 
-        # Atomically claim the target using O_EXCL to detect races
-        target = unique_filename(type_dir, slug)
-        try:
-            claim_fd = os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(claim_fd)
-        except FileExistsError:
-            # Another writer beat us — re-discover a free name
+        # Atomically claim the target using O_EXCL; retry on race
+        while True:
             target = unique_filename(type_dir, slug)
+            try:
+                claim_fd = os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.close(claim_fd)
+                break
+            except FileExistsError:
+                continue
 
-        os.rename(tmp_path, target)
+        os.replace(tmp_path, target)
         return target
     except BaseException:
         if fd is not None:
             os.close(fd)
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
+        # Clean up the 0-byte placeholder if the replace didn't happen
+        if target and os.path.exists(str(target)) and os.path.getsize(str(target)) == 0:
+            os.unlink(str(target))
         raise

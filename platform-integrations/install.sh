@@ -502,6 +502,14 @@ def install_bob(source_dir, target_dir, mode="lite"):
 
     info(f"Installing Bob ({mode} mode) → {bob_target}")
 
+    # Shared lib (entity_io) — single source of truth lives in the Claude plugin
+    shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "kaizen-lite" / "lib"
+    if not shared_lib.is_dir():
+        error(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
+        sys.exit(1)
+    copy_tree(shared_lib, bob_target / "kaizen-lib")
+    success("Copied Bob lib")
+
     # Skills
     copy_tree(bob_source_lite / "skills" / "kaizen-learn",  bob_target / "skills" / "kaizen-learn")
     copy_tree(bob_source_lite / "skills" / "kaizen-recall", bob_target / "skills" / "kaizen-recall")
@@ -537,6 +545,7 @@ def uninstall_bob(target_dir, mode="full"):
     bob_target = Path(target_dir) / ".bob"
     info(f"Uninstalling Bob from {bob_target}")
 
+    remove_dir(bob_target / "kaizen-lib")
     remove_dir(bob_target / "skills" / "kaizen-learn")
     remove_dir(bob_target / "skills" / "kaizen-recall")
     remove_file(bob_target / "commands" / "kaizen:learn.md")
@@ -550,6 +559,7 @@ def uninstall_bob(target_dir, mode="full"):
 def status_bob(target_dir):
     bob_target = Path(target_dir) / ".bob"
     print(f"  Bob (.bob/):")
+    print(f"    kaizen-lib/entity_io  : {'✓' if (bob_target / 'kaizen-lib' / 'entity_io.py').is_file() else '✗'}")
     print(f"    skills/kaizen-learn  : {'✓' if (bob_target / 'skills' / 'kaizen-learn').is_dir() else '✗'}")
     print(f"    skills/kaizen-recall : {'✓' if (bob_target / 'skills' / 'kaizen-recall').is_dir() else '✗'}")
     print(f"    commands/            : {'✓' if (bob_target / 'commands' / 'kaizen:learn.md').is_file() else '✗'}")

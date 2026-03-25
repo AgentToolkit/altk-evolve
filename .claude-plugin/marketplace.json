@@ -13,7 +13,7 @@
       "author": {
         "name": "Vinod Muthusamy"
       },
-      "source": "./plugins/kaizen",
+      "source": "./platform-integrations/claude/plugins/kaizen-lite",
       "category": "productivity"
     }
   ]

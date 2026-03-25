@@ -9,9 +9,18 @@ import json
 import sys
 from pathlib import Path
 
-# Add lib to path so we can import entity_io
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from entity_io import (
+# Walk up from script to find kaizen-lib
+_script = Path(__file__).resolve()
+_lib = None
+for _ancestor in _script.parents:
+    _candidate = _ancestor / "kaizen-lib"
+    if _candidate.is_dir():
+        _lib = _candidate
+        break
+if _lib is None:
+    raise ImportError(f"Cannot find kaizen-lib directory above {_script}")
+sys.path.insert(0, str(_lib))
+from entity_io import (  # noqa: E402
     find_entities_dir,
     get_default_entities_dir,
     load_all_entities,
