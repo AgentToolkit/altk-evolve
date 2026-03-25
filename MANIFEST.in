@@ -1,1 +1,2 @@
 recursive-include kaizen *.jinja2
+recursive-include kaizen/frontend/ui/dist *
