@@ -96,6 +96,15 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
                 return { ...t, value: val };
             });
 
+            const hasInvalidTrigger = serializedTriggers.some(
+                t => t.type !== 'always' && (!t.value || (Array.isArray(t.value) && t.value.length === 0))
+            );
+
+            if (hasInvalidTrigger) {
+                setCreateError("Policies require a name, description, and at least one trigger with effective values.");
+                return;
+            }
+
             parsedMetadata = {
                 name: policyName,
                 description: policyDesc,

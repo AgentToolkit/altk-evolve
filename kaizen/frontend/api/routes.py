@@ -108,7 +108,7 @@ def list_namespaces() -> List[dict[str, Any]]:
         from fastapi import HTTPException
 
         logger.error(f"Error fetching namespaces: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching namespaces: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error while fetching namespaces")
 
 
 @router.post("/namespaces")
@@ -123,7 +123,7 @@ def add_namespace(req: NamespaceCreateRequest) -> dict[str, Any]:
         from fastapi import HTTPException
 
         logger.error(f"Error creating namespace: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Internal server error while creating namespace")
 
 
 @router.delete("/namespaces/{namespace_id}")
@@ -138,7 +138,7 @@ def delete_namespace(namespace_id: str) -> dict[str, Any]:
         from fastapi import HTTPException
 
         logger.error(f"Error deleting namespace: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Internal server error while deleting namespace")
 
 
 @router.get("/namespaces/{namespace_id}/entities")
@@ -179,7 +179,7 @@ def list_namespace_entities(
         from fastapi import HTTPException
 
         logger.error(f"Error fetching entities for namespace {namespace_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching entities for namespace {namespace_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error while fetching entities")
 
 
 @router.delete("/namespaces/{namespace_id}/entities/{entity_id}")
@@ -194,7 +194,7 @@ def delete_namespace_entity(namespace_id: str, entity_id: str) -> dict[str, Any]
         from fastapi import HTTPException
 
         logger.error(f"Error deleting entity {entity_id} from namespace {namespace_id}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Internal server error while deleting entity")
 
 
 @router.post("/namespaces/{namespace_id}/entities")
@@ -203,8 +203,13 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
     from kaizen.schema.core import Entity
     from fastapi import HTTPException
 
-    # 1. Enforce specific schema typing prior to insertion
-    if req.type == "guideline":
+    # 1. Normalize and validate inputs before branching
+    entity_type = req.type.strip().lower()
+    if not req.content or not req.content.strip():
+        raise HTTPException(status_code=422, detail="Entity content must be non-empty.")
+
+    # 2. Enforce specific schema typing prior to insertion
+    if entity_type == "guideline":
         from kaizen.schema.tips import Tip
 
         try:
@@ -215,7 +220,7 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
             logger.error(f"Guideline validation failed: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid guideline metadata schema: {e}")
 
-    elif req.type == "policy":
+    elif entity_type == "policy":
         from kaizen.schema.policy import Policy, PolicyType
 
         try:
@@ -228,7 +233,7 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
 
     client = get_client()
     try:
-        new_entity = Entity(type=req.type, content=req.content, metadata=req.metadata)
+        new_entity = Entity(type=entity_type, content=req.content, metadata=req.metadata)
         # Using enable_conflict_resolution=False for a direct insert
         updates = client.update_entities(namespace_id, [new_entity], enable_conflict_resolution=False)
         if not updates:
@@ -236,4 +241,4 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
         return {"success": True, "id": updates[0].id}
     except Exception as e:
         logger.error(f"Error creating entity in namespace {namespace_id}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Internal server error while creating entity")
