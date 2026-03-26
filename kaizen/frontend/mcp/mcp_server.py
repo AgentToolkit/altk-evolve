@@ -306,3 +306,71 @@ def delete_entity(entity_id: str) -> str:
     except KaizenException as e:
         logger.exception(f"Error deleting entity {entity_id}: {str(e)}")
         return json.dumps({"success": False, "error": str(e)})
+
+
+@mcp.tool()
+def store_gist(conversation_data: str, conversation_id: str | None = None) -> str:
+    """
+    Generate purpose-directed gists from a conversation and store them.
+    Gists are compressed representations optimized for answering questions about the user.
+    Uses rolling consolidation: re-calling with the same conversation_id replaces previous gists.
+
+    Args:
+        conversation_data: A JSON formatted list of conversation messages (each with 'role' and 'content').
+        conversation_id: Optional identifier for the conversation. If not provided, a UUID is generated.
+
+    Returns:
+        JSON string with stored gist details.
+    """
+    logger.info("Storing gist for conversation")
+    try:
+        messages = json.loads(conversation_data)
+        conversation_id = conversation_id or str(uuid.uuid4())
+
+        updates = get_client().store_gists(
+            namespace_id=kaizen_config.namespace_id,
+            messages=messages,
+            conversation_id=conversation_id,
+        )
+
+        return json.dumps({
+            "success": True,
+            "conversation_id": conversation_id,
+            "gists_stored": len(updates),
+            "gists": [{"id": u.id, "content": u.content} for u in updates],
+        })
+    except Exception as e:
+        logger.exception(f"Error storing gist: {e}")
+        return json.dumps({"success": False, "error": str(e)})
+
+
+@mcp.tool()
+def get_gists(query: str, limit: int = 10) -> str:
+    """
+    Retrieve stored conversation gists relevant to a query.
+    Gists are purpose-directed compressed representations of past conversations,
+    optimized for answering questions about the user.
+
+    Args:
+        query: A description or question to search for relevant gists.
+        limit: Maximum number of gists to return. Defaults to 10.
+
+    Returns:
+        Formatted string with relevant gists.
+    """
+    logger.info(f"Getting gists for query: {query}")
+    results = get_client().retrieve_gists(
+        namespace_id=kaizen_config.namespace_id,
+        query=query,
+        limit=limit,
+    )
+
+    if not results:
+        return "No relevant gists found."
+
+    response_lines = [f"# Conversation Gists for: {query}\n"]
+    for i, entity in enumerate(results, 1):
+        conversation_id = (entity.metadata or {}).get("conversation_id", "unknown")
+        response_lines.append(f"{i}. [conversation:{conversation_id}] {entity.content}")
+
+    return "\n".join(response_lines)

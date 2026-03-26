@@ -37,24 +37,45 @@ log("=== End Command-Line Arguments ===")
 
 def format_entities(entities):
     """Format all entities for Claude to review."""
-    header = """## Entities for this task
+    # Separate gists from other entities
+    gists = [e for e in entities if e.get("type") == "gist"]
+    other = [e for e in entities if e.get("type") != "gist"]
+
+    sections = []
+
+    if other:
+        header = """## Entities for this task
 
 Review these entities and apply any relevant ones:
 
 """
-    items = []
-    for e in entities:
-        content = e.get("content")
-        if not content:
-            continue
-        item = f"- **[{e.get('type', 'general')}]** {content}"
-        if e.get("rationale"):
-            item += f"\n  - _Rationale: {e['rationale']}_"
-        if e.get("trigger"):
-            item += f"\n  - _When: {e['trigger']}_"
-        items.append(item)
+        items = []
+        for e in other:
+            content = e.get("content")
+            if not content:
+                continue
+            item = f"- **[{e.get('type', 'general')}]** {content}"
+            if e.get("rationale"):
+                item += f"\n  - _Rationale: {e['rationale']}_"
+            if e.get("trigger"):
+                item += f"\n  - _When: {e['trigger']}_"
+            items.append(item)
+        sections.append(header + "\n".join(items))
 
-    return header + "\n".join(items)
+    if gists:
+        gist_header = """## Conversation Gists
+
+These are gists from prior conversations, optimized for recalling user preferences and attributes:
+
+"""
+        gist_items = []
+        for g in gists:
+            content = g.get("content")
+            if content:
+                gist_items.append(f"- {content}")
+        sections.append(gist_header + "\n".join(gist_items))
+
+    return "\n\n".join(sections)
 
 
 def main():

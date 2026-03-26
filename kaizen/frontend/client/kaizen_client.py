@@ -1,9 +1,11 @@
 import logging
+import uuid
 from typing import Any
 
 from kaizen.backend.base import BaseEntityBackend
 from kaizen.config.kaizen import KaizenConfig
 from kaizen.llm.fact_extraction.fact_extraction import ExtractedFact, extract_facts_from_messages
+from kaizen.llm.gist.gist import generate_gist
 from kaizen.schema.conflict_resolution import EntityUpdate
 from kaizen.schema.core import Entity, Namespace, RecordedEntity
 from kaizen.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
@@ -295,3 +297,135 @@ class KaizenClient:
             )
 
         return categorized_preferences
+
+    # ── Gist memory ──────────────────────────────────────────────────
+
+    def store_gists(
+        self,
+        namespace_id: str,
+        messages: list[dict],
+        conversation_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[EntityUpdate]:
+        """Generate purpose-directed gists from conversation messages and store them.
+
+        Implements rolling consolidation: deletes any existing gists for the same
+        conversation_id before storing new ones, so the latest gist always reflects
+        the full session.
+        """
+        if not messages:
+            return []
+
+        conversation_id = conversation_id or str(uuid.uuid4())
+        self.ensure_namespace(namespace_id)
+
+        # Delete existing gists for this conversation (rolling replacement)
+        existing = self.search_entities(
+            namespace_id=namespace_id,
+            query=None,
+            filters={"type": "gist", "metadata.conversation_id": conversation_id},
+            limit=100,
+        )
+        for entity in existing:
+            try:
+                self.delete_entity_by_id(namespace_id, entity.id)
+            except Exception:
+                logger.warning("Failed to delete old gist %s during rolling replacement", entity.id, exc_info=True)
+
+        # Generate gists
+        result = generate_gist(messages, conversation_id=conversation_id)
+
+        if not result.gists:
+            return []
+
+        # Store gist entities
+        base_metadata: dict[str, Any] = dict(metadata or {})
+        base_metadata["conversation_id"] = conversation_id
+        base_metadata["message_count"] = result.message_count
+
+        gist_entities = []
+        for i, gist_text in enumerate(result.gists):
+            gist_metadata = dict(base_metadata)
+            gist_metadata["chunk_index"] = i
+            gist_metadata["chunk_count"] = result.chunk_count
+            gist_entities.append(Entity(type="gist", content=gist_text, metadata=gist_metadata))
+
+        updates = self.update_entities(namespace_id, gist_entities, enable_conflict_resolution=False)
+
+        # Store original messages as gist_source for durable retrieval
+        source_entities = []
+        for i, msg in enumerate(messages):
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                content = str(content)
+            source_entities.append(
+                Entity(
+                    type="gist_source",
+                    content=content,
+                    metadata={
+                        "conversation_id": conversation_id,
+                        "message_index": i,
+                        "role": msg.get("role", "unknown"),
+                    },
+                )
+            )
+
+        if source_entities:
+            # Delete existing sources for this conversation first
+            existing_sources = self.search_entities(
+                namespace_id=namespace_id,
+                query=None,
+                filters={"type": "gist_source", "metadata.conversation_id": conversation_id},
+                limit=1000,
+            )
+            for entity in existing_sources:
+                try:
+                    self.delete_entity_by_id(namespace_id, entity.id)
+                except Exception:
+                    logger.warning("Failed to delete old gist_source %s", entity.id, exc_info=True)
+
+            self.update_entities(namespace_id, source_entities, enable_conflict_resolution=False)
+
+        return updates
+
+    def retrieve_gists(
+        self,
+        namespace_id: str,
+        query: str,
+        limit: int = 10,
+    ) -> list[RecordedEntity]:
+        """Retrieve gists relevant to a query via semantic search."""
+        if not self.namespace_exists(namespace_id):
+            return []
+        return self.search_entities(
+            namespace_id=namespace_id,
+            query=query,
+            filters={"type": "gist"},
+            limit=limit,
+        )
+
+    def retrieve_gist_with_source(
+        self,
+        namespace_id: str,
+        query: str,
+        limit: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Retrieve gists with their original source messages.
+
+        Returns a list of dicts, each with 'gist' (RecordedEntity) and
+        'source_messages' (list[RecordedEntity]) keys.
+        """
+        gists = self.retrieve_gists(namespace_id, query=query, limit=limit)
+        results = []
+        for gist in gists:
+            conversation_id = (gist.metadata or {}).get("conversation_id")
+            source_messages: list[RecordedEntity] = []
+            if conversation_id:
+                source_messages = self.search_entities(
+                    namespace_id=namespace_id,
+                    query=None,
+                    filters={"type": "gist_source", "metadata.conversation_id": conversation_id},
+                    limit=100,
+                )
+            results.append({"gist": gist, "source_messages": source_messages})
+        return results

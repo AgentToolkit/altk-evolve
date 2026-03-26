@@ -1,0 +1,18 @@
+You are given messages from a conversation between a user and an AI agent.
+Please create a gist of the conversation in a way that can be used to answer questions about the user.
+The gist will be stored in a vector database and used to answer questions about the user.
+Therefore, it can contain phrases and keywords and does not have to have complete sentences.
+The gist is not intended to be read by humans.
+You do not have to explain your reasoning. Just give me the gist.
+If there is nothing notable about the user in the conversation, return "no user signal".
+If you are not able to shorten the conversation, just give me the original messages.
+
+{% if not constrained_decoding_supported %}
+Respond with a JSON object with a single key "gist" containing the gist string.
+Do not include any other text or explanation outside the JSON.
+{% endif %}
+
+Conversation:
+{% for message in messages %}
+{{ message.role }}: {{ message.content }}
+{% endfor %}

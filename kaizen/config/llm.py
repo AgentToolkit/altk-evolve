@@ -25,6 +25,7 @@ class LLMSettings(BaseSettings):
     tips_model: str = Field(default_factory=_default_model_name)
     conflict_resolution_model: str = Field(default_factory=_default_model_name)
     fact_extraction_model: str = Field(default_factory=_default_model_name)
+    gist_model: str = Field(default_factory=_default_model_name)
     categorization_mode: Literal["predefined", "dynamic", "hybrid"] = "predefined"
     allow_dynamic_categories: bool = False
     confirm_new_categories: bool = False
