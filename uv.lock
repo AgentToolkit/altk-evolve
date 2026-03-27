@@ -859,6 +859,105 @@ wheels = [
 ]
 
 [[package]]
+name = "evolve"
+version = "1.0.5"
+source = { editable = "." }
+dependencies = [
+    { name = "arize-phoenix" },
+    { name = "fastmcp" },
+    { name = "jinja2" },
+    { name = "litellm" },
+    { name = "milvus-lite", marker = "platform_machine != 'aarch64'" },
+    { name = "pydantic" },
+    { name = "pymilvus" },
+    { name = "pymilvus", extra = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
+    { name = "sentence-transformers" },
+    { name = "typer" },
+    { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+build = [
+    { name = "uv" },
+]
+examples = [
+    { name = "openai" },
+    { name = "openai-agents" },
+    { name = "openinference-instrumentation-litellm" },
+    { name = "openinference-instrumentation-openai" },
+    { name = "openinference-instrumentation-openai-agents" },
+    { name = "openinference-instrumentation-smolagents" },
+    { name = "smolagents" },
+]
+pgvector = [
+    { name = "pgvector" },
+    { name = "psycopg", extra = ["binary"] },
+]
+tracing = [
+    { name = "openinference-instrumentation-litellm" },
+    { name = "openinference-instrumentation-openai" },
+    { name = "openinference-instrumentation-openai-agents" },
+    { name = "openinference-instrumentation-smolagents" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "anyio" },
+    { name = "detect-secrets" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-retry" },
+    { name = "python-dotenv" },
+    { name = "python-semantic-release" },
+    { name = "ruff" },
+    { name = "types-requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "arize-phoenix", specifier = ">=12.30.0" },
+    { name = "evolve", extras = ["tracing"], marker = "extra == 'examples'" },
+    { name = "fastmcp" },
+    { name = "jinja2" },
+    { name = "litellm" },
+    { name = "milvus-lite", marker = "platform_machine != 'aarch64'", specifier = ">=2.5.2rc1" },
+    { name = "openai", marker = "extra == 'examples'" },
+    { name = "openai-agents", marker = "extra == 'examples'" },
+    { name = "openinference-instrumentation-litellm", marker = "extra == 'tracing'" },
+    { name = "openinference-instrumentation-openai", marker = "extra == 'tracing'" },
+    { name = "openinference-instrumentation-openai-agents", marker = "extra == 'tracing'" },
+    { name = "openinference-instrumentation-smolagents", marker = "extra == 'tracing'" },
+    { name = "pgvector", marker = "extra == 'pgvector'", specifier = ">=0.3" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
+    { name = "pydantic" },
+    { name = "pymilvus", marker = "platform_machine == 'aarch64'" },
+    { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
+    { name = "sentence-transformers" },
+    { name = "smolagents", marker = "extra == 'examples'" },
+    { name = "typer", specifier = ">=0.9.0" },
+    { name = "uv", marker = "extra == 'build'" },
+    { name = "uvicorn" },
+]
+provides-extras = ["build", "tracing", "pgvector", "examples"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "anyio" },
+    { name = "detect-secrets", git = "https://github.com/ibm/detect-secrets?branch=master" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-retry" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "python-semantic-release" },
+    { name = "ruff" },
+    { name = "types-requests", specifier = ">=2.32.4.20260107" },
+]
+
+[[package]]
 name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1561,105 +1660,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/19/74/a633ee74eb36c44aa6d1095e7cc5569bebf04342ee146178e2d36600708b/jsonschema_specifications-2025.9.1.tar.gz", hash = "sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d", size = 32855, upload-time = "2025-09-08T01:34:59.186Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl", hash = "sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe", size = 18437, upload-time = "2025-09-08T01:34:57.871Z" },
-]
-
-[[package]]
-name = "kaizen"
-version = "1.0.5"
-source = { editable = "." }
-dependencies = [
-    { name = "arize-phoenix" },
-    { name = "fastmcp" },
-    { name = "jinja2" },
-    { name = "litellm" },
-    { name = "milvus-lite", marker = "platform_machine != 'aarch64'" },
-    { name = "pydantic" },
-    { name = "pymilvus" },
-    { name = "pymilvus", extra = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
-    { name = "sentence-transformers" },
-    { name = "typer" },
-    { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-build = [
-    { name = "uv" },
-]
-examples = [
-    { name = "openai" },
-    { name = "openai-agents" },
-    { name = "openinference-instrumentation-litellm" },
-    { name = "openinference-instrumentation-openai" },
-    { name = "openinference-instrumentation-openai-agents" },
-    { name = "openinference-instrumentation-smolagents" },
-    { name = "smolagents" },
-]
-pgvector = [
-    { name = "pgvector" },
-    { name = "psycopg", extra = ["binary"] },
-]
-tracing = [
-    { name = "openinference-instrumentation-litellm" },
-    { name = "openinference-instrumentation-openai" },
-    { name = "openinference-instrumentation-openai-agents" },
-    { name = "openinference-instrumentation-smolagents" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "anyio" },
-    { name = "detect-secrets" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-retry" },
-    { name = "python-dotenv" },
-    { name = "python-semantic-release" },
-    { name = "ruff" },
-    { name = "types-requests" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "arize-phoenix", specifier = ">=12.30.0" },
-    { name = "fastmcp" },
-    { name = "jinja2" },
-    { name = "kaizen", extras = ["tracing"], marker = "extra == 'examples'" },
-    { name = "litellm" },
-    { name = "milvus-lite", marker = "platform_machine != 'aarch64'", specifier = ">=2.5.2rc1" },
-    { name = "openai", marker = "extra == 'examples'" },
-    { name = "openai-agents", marker = "extra == 'examples'" },
-    { name = "openinference-instrumentation-litellm", marker = "extra == 'tracing'" },
-    { name = "openinference-instrumentation-openai", marker = "extra == 'tracing'" },
-    { name = "openinference-instrumentation-openai-agents", marker = "extra == 'tracing'" },
-    { name = "openinference-instrumentation-smolagents", marker = "extra == 'tracing'" },
-    { name = "pgvector", marker = "extra == 'pgvector'", specifier = ">=0.3" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
-    { name = "pydantic" },
-    { name = "pymilvus", marker = "platform_machine == 'aarch64'" },
-    { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
-    { name = "sentence-transformers" },
-    { name = "smolagents", marker = "extra == 'examples'" },
-    { name = "typer", specifier = ">=0.9.0" },
-    { name = "uv", marker = "extra == 'build'" },
-    { name = "uvicorn" },
-]
-provides-extras = ["build", "tracing", "pgvector", "examples"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "anyio" },
-    { name = "detect-secrets", git = "https://github.com/ibm/detect-secrets?branch=master" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-retry" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "python-semantic-release" },
-    { name = "ruff" },
-    { name = "types-requests", specifier = ">=2.32.4.20260107" },
 ]
 
 [[package]]

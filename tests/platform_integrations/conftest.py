@@ -171,7 +171,7 @@ class FileAssertions:
 
         Args:
             path: Path to JSON file
-            key_path: List of keys to traverse (e.g., ['mcpServers', 'kaizen'])
+            key_path: List of keys to traverse (e.g., ['mcpServers', 'evolve'])
             message: Optional error message
         """
         assert path.is_file(), f"File does not exist: {path}"
@@ -203,8 +203,8 @@ class FileAssertions:
         """Assert that a YAML file contains sentinel comments for the given slug."""
         assert path.is_file(), f"File does not exist: {path}"
         content = path.read_text()
-        start_sentinel = f"# >>>kaizen:{slug}<<<"
-        end_sentinel = f"# <<<kaizen:{slug}<<<"
+        start_sentinel = f"# >>>evolve:{slug}<<<"
+        end_sentinel = f"# <<<evolve:{slug}<<<"
 
         assert start_sentinel in content, f"Start sentinel '{start_sentinel}' not found in {path}"
         assert end_sentinel in content, f"End sentinel '{end_sentinel}' not found in {path}"
@@ -216,8 +216,8 @@ class FileAssertions:
             return  # File doesn't exist, so sentinel doesn't exist
 
         content = path.read_text()
-        start_sentinel = f"# >>>kaizen:{slug}<<<"
-        end_sentinel = f"# <<<kaizen:{slug}<<<"
+        start_sentinel = f"# >>>evolve:{slug}<<<"
+        end_sentinel = f"# <<<evolve:{slug}<<<"
 
         assert start_sentinel not in content, f"Start sentinel '{start_sentinel}' should not be in {path}"
         assert end_sentinel not in content, f"End sentinel '{end_sentinel}' should not be in {path}"

@@ -1,6 +1,6 @@
 import json
 import pytest
-from kaizen.schema.policy import Policy, PolicyType, PolicyTrigger, TriggerType
+from evolve.schema.policy import Policy, PolicyType, PolicyTrigger, TriggerType
 
 pytestmark = pytest.mark.unit
 

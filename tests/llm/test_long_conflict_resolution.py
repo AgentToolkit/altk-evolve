@@ -12,8 +12,8 @@ from typing import TypedDict
 
 import pytest
 
-from kaizen.llm.conflict_resolution.conflict_resolution import resolve_conflicts
-from kaizen.schema.core import RecordedEntity
+from evolve.llm.conflict_resolution.conflict_resolution import resolve_conflicts
+from evolve.schema.core import RecordedEntity
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -405,11 +405,11 @@ CONFLICT_SCENARIOS: list[ConflictScenario] = [
         ],
         # g1: "cheese pizza" → "chicken pizza" is a change in preference.
         # An LLM might UPDATE (different pizza type, still pizza lover) or
-        # DELETE (contradicts cheese preference) or even ADD (separate fact).
+        # DELETE (contradicts cheese preference) or even NONE (ADD a separate fact).
         # g2: unrelated to any new entity → NONE.
         # g3: enriched with more detail → UPDATE.
         # n3: brand new fact → ADD.
-        "expect": {"g1": ["UPDATE", "DELETE", "ADD"], "g2": "NONE", "g3": "UPDATE", "n3": "ADD"},
+        "expect": {"g1": ["UPDATE", "DELETE", "NONE"], "g2": "NONE", "g3": "UPDATE", "n3": "ADD"},
     },
     # ── Mixed scenarios ────────────────────────────────────────────────────
     {
@@ -476,10 +476,10 @@ CONFLICT_SCENARIOS: list[ConflictScenario] = [
         ],
         "new": [
             _entity("n1", "User migrated all projects from MySQL to PostgreSQL"),  # contradicts m1 → DELETE
-            _entity("n2", "User deploys on AWS using ECS"),  # enriches m2 → UPDATE
+            _entity("n2", "User deploys on AWS using ECS"),  # enriches m2 → UPDATE, or DELETE m2 and ADD
             _entity("n3", "User writes backend services in Node.js"),  # paraphrase → NONE
         ],
-        "expect": {"m1": "DELETE", "m2": "UPDATE", "m3": "NONE"},
+        "expect": {"m1": "DELETE", "m2": ["UPDATE", "DELETE"], "m3": "NONE"},
     },
     {
         "label": "mixed_all_four_events_guidelines",

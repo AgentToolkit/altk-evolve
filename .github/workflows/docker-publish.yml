@@ -34,7 +34,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/kaizen
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/evolve
           flavor: |
             suffix=-${{ matrix.image-suffix }},onlatest=true
           tags: |
@@ -60,5 +60,5 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ secrets.DOCKERHUB_USERNAME }}/kaizen
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/evolve
           readme-filepath: ./README.md

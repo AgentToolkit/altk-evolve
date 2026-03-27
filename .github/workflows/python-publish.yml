@@ -14,7 +14,7 @@ jobs:
       id-token: write
     environment:
       name: pypi
-      url: https://pypi.org/project/kaizen
+      url: https://pypi.org/project/evolve
     steps:
       - name: Download release assets
         env:

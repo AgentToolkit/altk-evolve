@@ -28,12 +28,12 @@ class TestBobIdempotency:
         assert first_content == second_content, "Content changed after second install"
 
         # Assert: No duplicate sentinel blocks
-        assert first_content.count("# >>>kaizen:kaizen-lite<<<") == 1
-        assert first_content.count("# <<<kaizen:kaizen-lite<<<") == 1
+        assert first_content.count("# >>>evolve:evolve-lite<<<") == 1
+        assert first_content.count("# <<<evolve:evolve-lite<<<") == 1
 
         # Assert: Skills still exist
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-recall")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-recall")
 
     def test_multiple_full_installs(self, temp_project_dir, install_runner, file_assertions):
         """Running install twice for Bob full mode should be safe."""
@@ -52,9 +52,9 @@ class TestBobIdempotency:
         second_data = json.loads(mcp_file.read_text())
         assert first_data == second_data, "MCP config changed after second install"
 
-        # Assert: Only one kaizen server entry
-        assert "kaizen" in second_data["mcpServers"]
-        assert len([k for k in second_data["mcpServers"].keys() if k == "kaizen"]) == 1
+        # Assert: Only one evolve server entry
+        assert "evolve" in second_data["mcpServers"]
+        assert len([k for k in second_data["mcpServers"].keys() if k == "evolve"]) == 1
 
     def test_install_after_partial_uninstall(self, temp_project_dir, install_runner, file_assertions):
         """Installing after manually deleting some components should restore them."""
@@ -66,17 +66,17 @@ class TestBobIdempotency:
         # Manually delete one skill
         import shutil
 
-        shutil.rmtree(bob_dir / "skills" / "kaizen-learn")
+        shutil.rmtree(bob_dir / "skills" / "evolve-learn")
 
         # Reinstall
         install_runner.run("install", platform="bob")
 
         # Assert: Deleted skill is restored
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-learn")
-        file_assertions.assert_file_exists(bob_dir / "skills" / "kaizen-learn" / "SKILL.md")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_file_exists(bob_dir / "skills" / "evolve-learn" / "SKILL.md")
 
         # Assert: Other components still intact
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-recall")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-recall")
         file_assertions.assert_file_exists(bob_dir / "custom_modes.yaml")
 
 
@@ -104,9 +104,9 @@ class TestRooIdempotency:
         second_data = json.loads(second_content)
         assert first_data == second_data, ".roomodes changed after second install"
 
-        # Assert: Only one kaizen-lite entry
-        kaizen_modes = [m for m in second_data["customModes"] if m["slug"] == "kaizen-lite"]
-        assert len(kaizen_modes) == 1, "Duplicate kaizen-lite entries found"
+        # Assert: Only one evolve-lite entry
+        evolve_modes = [m for m in second_data["customModes"] if m["slug"] == "evolve-lite"]
+        assert len(evolve_modes) == 1, "Duplicate evolve-lite entries found"
 
     def test_multiple_installs_yaml_roomodes(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
         """Running install twice with YAML .roomodes should be safe."""
@@ -127,8 +127,8 @@ class TestRooIdempotency:
         assert first_content == second_content, ".roomodes changed after second install"
 
         # Assert: Only one sentinel block
-        assert first_content.count("# >>>kaizen:kaizen-lite<<<") == 1
-        assert first_content.count("# <<<kaizen:kaizen-lite<<<") == 1
+        assert first_content.count("# >>>evolve:evolve-lite<<<") == 1
+        assert first_content.count("# <<<evolve:evolve-lite<<<") == 1
 
     def test_install_creates_yaml_when_no_roomodes(self, temp_project_dir, install_runner, file_assertions):
         """When .roomodes doesn't exist, install creates it as YAML (roo-code preferred format)."""
@@ -143,7 +143,7 @@ class TestRooIdempotency:
 
         # Verify it's YAML format (contains YAML markers, not JSON)
         assert "customModes:" in content, "Missing YAML customModes key"
-        assert "slug: kaizen-lite" in content, "Missing kaizen-lite mode"
+        assert "slug: evolve-lite" in content, "Missing evolve-lite mode"
 
         # Second install should be idempotent
         first_content = content
@@ -167,21 +167,21 @@ class TestUninstallInstallCycle:
         install_runner.run("install", platform="bob")
 
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
 
         # Uninstall
         install_runner.run("uninstall", platform="bob")
 
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "kaizen-learn")
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "kaizen-recall")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-recall")
 
         # Reinstall
         install_runner.run("install", platform="bob")
 
-        # Assert: Kaizen content is back
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-recall")
-        file_assertions.assert_sentinel_block_exists(bob_dir / "custom_modes.yaml", "kaizen-lite")
+        # Assert: Evolve content is back
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-recall")
+        file_assertions.assert_sentinel_block_exists(bob_dir / "custom_modes.yaml", "evolve-lite")
 
         # Assert: User content still intact
         file_assertions.assert_dir_exists(bob_dir / "skills" / "my-custom-skill")
@@ -198,25 +198,25 @@ class TestUninstallInstallCycle:
         install_runner.run("install", platform="roo")
 
         roo_dir = temp_project_dir / ".roo"
-        file_assertions.assert_dir_exists(roo_dir / "skills" / "kaizen-learn")
+        file_assertions.assert_dir_exists(roo_dir / "skills" / "evolve-learn")
 
         # Uninstall
         install_runner.run("uninstall", platform="roo")
 
-        file_assertions.assert_dir_not_exists(roo_dir / "skills" / "kaizen-learn")
-        file_assertions.assert_dir_not_exists(roo_dir / "skills" / "kaizen-recall")
+        file_assertions.assert_dir_not_exists(roo_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_not_exists(roo_dir / "skills" / "evolve-recall")
 
         # Reinstall
         install_runner.run("install", platform="roo")
 
-        # Assert: Kaizen content is back
-        file_assertions.assert_dir_exists(roo_dir / "skills" / "kaizen-learn")
-        file_assertions.assert_dir_exists(roo_dir / "skills" / "kaizen-recall")
+        # Assert: Evolve content is back
+        file_assertions.assert_dir_exists(roo_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(roo_dir / "skills" / "evolve-recall")
 
-        # Assert: kaizen-lite mode is present (file is still JSON from initial setup)
+        # Assert: evolve-lite mode is present (file is still JSON from initial setup)
         roomodes_file = temp_project_dir / ".roomodes"
         data = json.loads(roomodes_file.read_text())
-        assert any(m["slug"] == "kaizen-lite" for m in data["customModes"]), "kaizen-lite mode missing after reinstall"
+        assert any(m["slug"] == "evolve-lite" for m in data["customModes"]), "evolve-lite mode missing after reinstall"
 
         # Assert: User content still intact
         file_assertions.assert_dir_exists(roo_dir / "skills" / "my-roo-skill")

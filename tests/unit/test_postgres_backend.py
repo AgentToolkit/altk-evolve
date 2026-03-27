@@ -7,19 +7,19 @@ import datetime
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 
-from kaizen.backend.postgres import PostgresEntityBackend
-from kaizen.schema.core import Entity, Namespace, RecordedEntity
-from kaizen.schema.conflict_resolution import EntityUpdate
-from kaizen.schema.exceptions import NamespaceNotFoundException, KaizenException
+from evolve.backend.postgres import PostgresEntityBackend
+from evolve.schema.core import Entity, Namespace, RecordedEntity
+from evolve.schema.conflict_resolution import EntityUpdate
+from evolve.schema.exceptions import NamespaceNotFoundException, EvolveException
 
 
 @pytest.fixture(scope="module")
 def postgres_backend() -> PostgresEntityBackend:
     """Create a PostgresEntityBackend instance with mocked dependencies."""
     with (
-        patch("kaizen.backend.postgres.psycopg") as mock_psycopg,
-        patch("kaizen.backend.postgres.register_vector"),
-        patch("kaizen.backend.postgres.SentenceTransformer"),
+        patch("evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("evolve.backend.postgres.register_vector"),
+        patch("evolve.backend.postgres.SentenceTransformer"),
     ):
         mock_conn = MagicMock()
         mock_conn.closed = False
@@ -87,7 +87,7 @@ def test_create_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
 
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager),
+        patch("evolve.backend.postgres.SQLiteManager", return_value=db_manager),
     ):
         result = postgres_backend.create_namespace(namespace_id=namespace_id)
 
@@ -122,7 +122,7 @@ def test_get_namespace_details(postgres_backend: PostgresEntityBackend, db_manag
     # Test existing namespace
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager),
+        patch("evolve.backend.postgres.SQLiteManager", return_value=db_manager),
     ):
         result = postgres_backend.get_namespace_details(namespace_id="test_namespace")
 
@@ -150,7 +150,7 @@ def test_search_namespaces(postgres_backend: PostgresEntityBackend, db_manager, 
 
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager),
+        patch("evolve.backend.postgres.SQLiteManager", return_value=db_manager),
     ):
         result = postgres_backend.search_namespaces(limit=10)
 
@@ -174,7 +174,7 @@ def test_delete_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
 
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("kaizen.backend.postgres.SQLiteManager", return_value=db_manager),
+        patch("evolve.backend.postgres.SQLiteManager", return_value=db_manager),
     ):
         postgres_backend.delete_namespace(namespace_id=namespace_id)
 
@@ -204,7 +204,7 @@ def test_update_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
 
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("kaizen.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts),
+        patch("evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts),
     ):
         entities = [Entity(type=entity_update.type, content=entity_update.content, metadata={"key": "value"})]
         result = postgres_backend.update_entities(namespace_id="test_namespace", entities=entities, enable_conflict_resolution=True)
@@ -218,7 +218,7 @@ def test_update_entities_mixed_types_raises_exception(postgres_backend: Postgres
     """Test that updating entities with mixed types raises an exception."""
     monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))
 
-    with pytest.raises(KaizenException, match="All entities must have the same type"):
+    with pytest.raises(EvolveException, match="All entities must have the same type"):
         postgres_backend.update_entities(
             namespace_id="test_namespace",
             entities=[Entity(type="fact", content="Content 1"), Entity(type="guideline", content="Content 2")],
@@ -299,5 +299,5 @@ def test_delete_entity_nonexistent_namespace(postgres_backend: PostgresEntityBac
 @pytest.mark.unit
 def test_delete_entity_invalid_id(postgres_backend: PostgresEntityBackend, monkeypatch):
     """Test deleting an entity with a non-numeric ID."""
-    with pytest.raises(KaizenException, match="Invalid entity ID"):
+    with pytest.raises(EvolveException, match="Invalid entity ID"):
         postgres_backend.delete_entity_by_id(namespace_id="test_namespace", entity_id="not_a_number")

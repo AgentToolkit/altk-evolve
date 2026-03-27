@@ -1,6 +1,6 @@
 # Docker MCP Server Testing Guide
 
-This guide explains how to manually build and test the Kaizen MCP server Docker images.
+This guide explains how to manually build and test the Evolve MCP server Docker images.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ This guide explains how to manually build and test the Kaizen MCP server Docker 
 ## Building the Image
 
 ```bash
-docker build -f Dockerfile.core -t kaizen-mcp:test .
+docker build -f Dockerfile.core -t evolve-mcp:test .
 ```
 ## Testing the MCP Server
 
@@ -18,9 +18,9 @@ docker build -f Dockerfile.core -t kaizen-mcp:test .
 cp .env.example .env
 # Populate the .env file with your API keys and any other configs
 docker run -i --rm \
-  -e KAIZEN_BACKEND=filesystem \
-  -v $(pwd)/kaizen-data:/app/.kaizen \
-  --env-file .env kaizen-mcp:test
+  -e EVOLVE_BACKEND=filesystem \
+  -v $(pwd)/evolve-data:/app/.evolve \
+  --env-file .env evolve-mcp:test
 ```
 
 You should see output like:
@@ -41,14 +41,14 @@ To test the server with an actual MCP client, add it to your MCP configuration:
 ```json
 {
   "mcpServers": {
-    "kaizen": {
+    "evolve": {
       "command": "docker",
       "args": [
         "run",
         "-i",
         "--rm",
         "-e", "OPENAI_API_KEY",
-        "kaizen-mcp:test"
+        "evolve-mcp:test"
       ]
     }
   }

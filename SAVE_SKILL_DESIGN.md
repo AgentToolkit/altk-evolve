@@ -248,7 +248,7 @@ if __name__ == "__main__":
 ✅ Skill saved successfully!
 
 Skill Name: {skill-name}
-Location: /home/user/workspace/kaizen/skills/{skill-name}/SKILL.md
+Location: /home/user/workspace/evolve/skills/{skill-name}/SKILL.md
 
 Summary:
 {Brief description of what the skill does}
@@ -296,7 +296,7 @@ The skill will include instructions to:
 
 **Alternative Locations**:
 - User's project-specific skills: `.claude/skills/{skill-name}/SKILL.md`
-- Plugin skills: `/plugins/kaizen/skills/{skill-name}/SKILL.md`
+- Plugin skills: `/plugins/evolve/skills/{skill-name}/SKILL.md`
 
 ### Parameterization Strategy
 

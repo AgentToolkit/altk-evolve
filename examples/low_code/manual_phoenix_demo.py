@@ -8,8 +8,8 @@ from openai import OpenAI
 load_dotenv()
 load_dotenv("../../../.env")  # Try loading from appworld root if running from repo
 
-# EXPLICITLY NO KAIZEN IMPORT
-# This demonstrates Brownfield support (Synced via kaizen sync phoenix)
+# EXPLICITLY NO EVOLVE IMPORT
+# This demonstrates Brownfield support (Synced via evolve sync phoenix)
 
 
 # Define a tool manually to show tracing works with tools
@@ -24,8 +24,8 @@ def main():
         return
 
     # 1. Manual Instrumentation
-    project_name = os.environ.get("PHOENIX_PROJECT_NAME", "kaizen-manual-demo")
-    # Standardize on PHOENIX_URL (matching kaizen config)
+    project_name = os.environ.get("PHOENIX_PROJECT_NAME", "evolve-manual-demo")
+    # Standardize on PHOENIX_URL (matching evolve config)
     endpoint = os.environ.get("PHOENIX_URL", "http://localhost:6006") + "/v1/traces"
 
     print(f"Registering Phoenix Tracer (Project: {project_name})...")
@@ -38,8 +38,8 @@ def main():
     # 2. Run OpenAI with Tools
     client = OpenAI()
 
-    # Manually check for Kaizen model config
-    model = os.environ.get("KAIZEN_EXAMPLE_AGENT_MODEL") or os.environ.get("KAIZEN_TIPS_MODEL", "gpt-4o-mini")
+    # Manually check for Evolve model config
+    model = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or os.environ.get("EVOLVE_TIPS_MODEL", "gpt-4o-mini")
     print(f"Running Manually Instrumented Agent (Model: {model})...")
 
     tools = [

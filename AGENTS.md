@@ -1,5 +1,5 @@
-# What is Kaizen?
-Kaizen is a Python library and service which enables AI agents to improve through self-reflection.
+# What is Evolve?
+Evolve is a Python library and service which enables AI agents to improve through self-reflection.
 
 ## Key Concepts
 - **Trajectory**: A recorded agent conversation
@@ -10,9 +10,9 @@ Kaizen is a Python library and service which enables AI agents to improve throug
 
 ## Architecture Flow
 1. Agent completes some task, and the resulting trajectory is automatically saved into a logging framework such as Langfuse or Arize Phoenix.
-2. The agent can call the sync MCP function, or the user can manually sync, which causes kaizen to process the trajectory and save any generated guidelines.
+2. The agent can call the sync MCP function, or the user can manually sync, which causes evolve to process the trajectory and save any generated guidelines.
 3. Generated guidelines are stored as entities with conflict resolution applied.
-4. Future agents can query the Kaizen MCP server to fetch guidelines for similar tasks
+4. Future agents can query the Evolve MCP server to fetch guidelines for similar tasks
 
 ## Project Directory Tree (Some files omitted for brevity)
 ```text
@@ -23,7 +23,7 @@ Kaizen is a Python library and service which enables AI agents to improve throug
 ├── docs (Data used by README files)
 ├── explorations (Tangential projects for feeling out future work. Should be avoided unless otherwise prompted.)
 │   └── claudecode
-├── kaizen (Primary Source Root)
+├── evolve (Primary Source Root)
 │   ├── backend (Entity Database Backend implementations, primarily vector databases)
 │   ├── cli (A CLI wrapper over the native Python client)
 │   ├── config (All configurations which are derived from environment variables or instantiated as an object)
@@ -35,15 +35,15 @@ Kaizen is a Python library and service which enables AI agents to improve throug
 │   ├── schema (All well-defined datatypes used throughout the project)
 │   ├── sync (Upstream data sources to be processed and stored in the backend)
 │   └── utils (Small reusable code snippets)
-├── tests (All tests for kaizen)
+├── tests (All tests for evolve)
 ├── .env.example (Environment variable template file)
-└── .env (Environment variables used to configure kaizen)
+└── .env (Environment variables used to configure evolve)
 ```
 
 ## First Time Setup
 ```bash
 uv sync && source .venv/bin/activate
-cp .env.example .env  # Configure any environment variables, defined in `./kaizen/config`
+cp .env.example .env  # Configure any environment variables, defined in `./evolve/config`
 pre-commit install
 ```
 
@@ -60,9 +60,9 @@ pre-commit install
 
 ## Available Interfaces
 - MCP Server: `get_entities()`, `get_guidelines()`, `save_trajectory()`
-- CLI: Run `kaizen --help` if details are needed about its subcommands.
+- CLI: Run `evolve --help` if details are needed about its subcommands.
   Available subcommands include `namespaces`, `entities`, and `sync`
-- Python Client: `KaizenClient()` for programmatic access
+- Python Client: `EvolveClient()` for programmatic access
 
 ## Coding Standards
 - Use Ruff for linting and formatting (configured in pyproject.toml)

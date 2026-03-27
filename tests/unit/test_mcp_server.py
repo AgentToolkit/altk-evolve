@@ -3,20 +3,20 @@ import uuid
 import pytest
 from unittest.mock import patch, MagicMock
 
-from kaizen.frontend.mcp.mcp_server import save_trajectory, create_entity
-from kaizen.schema.conflict_resolution import EntityUpdate
+from evolve.frontend.mcp.mcp_server import save_trajectory, create_entity
+from evolve.schema.conflict_resolution import EntityUpdate
 
 
 @pytest.fixture
 def mock_get_client():
-    with patch("kaizen.frontend.mcp.mcp_server.get_client") as mock:
+    with patch("evolve.frontend.mcp.mcp_server.get_client") as mock:
         client_instance = mock.return_value
         yield client_instance
 
 
 def test_save_trajectory_metadata_injection(mock_get_client):
     # Mock tip generation to prevent actual LLM calls
-    with patch("kaizen.frontend.mcp.mcp_server.generate_tips") as mock_generate_tips:
+    with patch("evolve.frontend.mcp.mcp_server.generate_tips") as mock_generate_tips:
         mock_result = MagicMock()
         mock_tip = MagicMock()
         mock_tip.content = "Always write unit tests"

@@ -2,7 +2,7 @@
 
 import pytest
 
-from kaizen.llm.tips.tips import parse_openai_agents_trajectory
+from evolve.llm.tips.tips import parse_openai_agents_trajectory
 
 
 @pytest.mark.unit

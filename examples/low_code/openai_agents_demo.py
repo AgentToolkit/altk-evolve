@@ -1,12 +1,12 @@
 import os
 import asyncio
 
-# Ensure KAIZEN_AUTO_ENABLED is set
-if os.environ.get("KAIZEN_AUTO_ENABLED", "").lower() != "true":
-    print("WARNING: KAIZEN_AUTO_ENABLED is not true")
+# Ensure EVOLVE_AUTO_ENABLED is set
+if os.environ.get("EVOLVE_AUTO_ENABLED", "").lower() != "true":
+    print("WARNING: EVOLVE_AUTO_ENABLED is not true")
 
-import kaizen.auto  # noqa: F401
-from kaizen.config.llm import llm_settings
+import evolve.auto  # noqa: F401
+from evolve.config.llm import llm_settings
 
 from agents import Agent, Runner, function_tool, ModelSettings
 from agents.extensions.models.litellm_model import LitellmModel
@@ -29,7 +29,7 @@ async def multiply(a: int, b: int) -> int:
 
 async def main():
     # Create agent with local tools
-    model_name = os.environ.get("KAIZEN_EXAMPLE_AGENT_MODEL") or llm_settings.tips_model
+    model_name = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or llm_settings.tips_model
     custom_provider = llm_settings.custom_llm_provider
 
     # Use the Agent SDK's LitellmModel adapter

@@ -1,12 +1,12 @@
-# Kaizen Platform Installer — Specification
+# Evolve Platform Installer — Specification
 
 ## Overview
 
-`install.sh` is a single-file bash/Python hybrid installer that sets up Kaizen integrations
+`install.sh` is a single-file bash/Python hybrid installer that sets up Evolve integrations
 into a user's project directory for one or more supported platforms: **Bob**, **Roo**, and **Claude**.
 
 It is designed to be run:
-- Locally from within the kaizen repo: `./install.sh install`
+- Locally from within the evolve repo: `./install.sh install`
 - Remotely via curl: `curl -fsSL https://raw.githubusercontent.com/.../install.sh | bash`
 
 ---
@@ -22,18 +22,18 @@ The installer needs the `platform-integrations/` source files. It resolves them 
 
 The download URL format:
 ```
-https://github.com/${KAIZEN_REPO}/archive/refs/heads/main.tar.gz
+https://github.com/${EVOLVE_REPO}/archive/refs/heads/main.tar.gz
 ```
 Or a pinned version:
 ```
-https://github.com/${KAIZEN_REPO}/archive/refs/tags/v${VERSION}.tar.gz
+https://github.com/${EVOLVE_REPO}/archive/refs/tags/v${VERSION}.tar.gz
 ```
 
-`KAIZEN_REPO` defaults to `AgentToolkit/kaizen` and can be overridden by env var.
-`KAIZEN_VERSION` defaults to `SCRIPT_VERSION`, a constant embedded in the script
+`EVOLVE_REPO` defaults to `AgentToolkit/altk-evolve` and can be overridden by env var.
+`EVOLVE_VERSION` defaults to `SCRIPT_VERSION`, a constant embedded in the script
 that the release process substitutes with the actual tag (e.g. `v1.2.0`). This means
 a script fetched from a tag URL already knows which tarball to download — callers
-never need to set `KAIZEN_VERSION` manually.
+never need to set `EVOLVE_VERSION` manually.
 
 ---
 
@@ -43,8 +43,8 @@ never need to set `KAIZEN_VERSION` manually.
 install.sh <command> [options]
 
 Commands:
-  install    Install kaizen into the current project directory
-  uninstall  Remove kaizen from the current project directory
+  install    Install evolve into the current project directory
+  uninstall  Remove evolve from the current project directory
   status     Show what is currently installed
 
 install options:
@@ -80,11 +80,11 @@ lets the user pick one, multiple, or all.
 
 ### Bob — Lite Mode
 
-Source: `platform-integrations/bob/kaizen-lite/`
+Source: `platform-integrations/bob/evolve-lite/`
 Target: `.bob/` in project directory
 
-1. Copy `skills/kaizen-learn/` → `.bob/skills/kaizen-learn/`  (merge, idempotent)
-2. Copy `skills/kaizen-recall/` → `.bob/skills/kaizen-recall/`  (merge, idempotent)
+1. Copy `skills/evolve-learn/` → `.bob/skills/evolve-learn/`  (merge, idempotent)
+2. Copy `skills/evolve-recall/` → `.bob/skills/evolve-recall/`  (merge, idempotent)
 3. Copy `commands/` → `.bob/commands/`  (merge, idempotent)
 4. Merge `custom_modes.yaml` → `.bob/custom_modes.yaml`  (sentinel block, see YAML Strategy)
 
@@ -92,29 +92,29 @@ Target: `.bob/` in project directory
 
 All of lite mode, plus:
 
-5. Read `platform-integrations/bob/kaizen-full/mcp.json`
-6. Upsert key `mcpServers.kaizen` into `.bob/mcp.json`  (JSON key upsert, see JSON Strategy)
+5. Read `platform-integrations/bob/evolve-full/mcp.json`
+6. Upsert key `mcpServers.evolve` into `.bob/mcp.json`  (JSON key upsert, see JSON Strategy)
 
 ### Roo — Lite Mode
 
-Source: `platform-integrations/roo/kaizen-lite/`
+Source: `platform-integrations/roo/evolve-lite/`
 Target: project directory
 
-1. Copy `skills/kaizen-learn/` → `.roo/skills/kaizen-learn/`  (merge, idempotent)
-2. Copy `skills/kaizen-recall/` → `.roo/skills/kaizen-recall/`  (merge, idempotent)
+1. Copy `skills/evolve-learn/` → `.roo/skills/evolve-learn/`  (merge, idempotent)
+2. Copy `skills/evolve-recall/` → `.roo/skills/evolve-recall/`  (merge, idempotent)
 3. Merge mode entry from `skills/.roomodes` → `.roomodes` in project dir
    - Target `.roomodes` may be JSON or YAML; detected by trying `json.loads` first
-   - Upsert by `slug: kaizen-lite` (JSON: array upsert; YAML: sentinel block)
+   - Upsert by `slug: evolve-lite` (JSON: array upsert; YAML: sentinel block)
    - If target does not exist, create as JSON
 
 ### Claude — Lite Mode
 
-Source: `platform-integrations/claude/plugins/kaizen-lite/`
+Source: `platform-integrations/claude/plugins/evolve-lite/`
 
 1. Attempt `claude plugin install <abs-path-to-plugin-dir>` via subprocess
 2. If claude CLI not found or command fails, print clear manual instructions:
    ```
-   claude --plugin-dir /path/to/platform-integrations/claude/plugins/kaizen-lite
+   claude --plugin-dir /path/to/platform-integrations/claude/plugins/evolve-lite
    ```
 3. No file-system fallback for Claude (plugin system manages its own state)
 
@@ -123,19 +123,19 @@ Source: `platform-integrations/claude/plugins/kaizen-lite/`
 ## Uninstall Actions
 
 ### Bob
-1. Remove `.bob/skills/kaizen-learn/`
-2. Remove `.bob/skills/kaizen-recall/`
-3. Remove `.bob/commands/kaizen:learn.md` and `kaizen:recall.md`
-4. Remove sentinel block for `kaizen-lite` from `.bob/custom_modes.yaml`
-5. (Full mode) Remove `mcpServers.kaizen` key from `.bob/mcp.json`
+1. Remove `.bob/skills/evolve-learn/`
+2. Remove `.bob/skills/evolve-recall/`
+3. Remove `.bob/commands/evolve:learn.md` and `evolve:recall.md`
+4. Remove sentinel block for `evolve-lite` from `.bob/custom_modes.yaml`
+5. (Full mode) Remove `mcpServers.evolve` key from `.bob/mcp.json`
 
 ### Roo
-1. Remove `.roo/skills/kaizen-learn/`
-2. Remove `.roo/skills/kaizen-recall/`
-3. Remove `kaizen-lite` entry from `.roomodes` (JSON array filter or YAML sentinel strip)
+1. Remove `.roo/skills/evolve-learn/`
+2. Remove `.roo/skills/evolve-recall/`
+3. Remove `evolve-lite` entry from `.roomodes` (JSON array filter or YAML sentinel strip)
 
 ### Claude
-1. Attempt `claude plugin uninstall kaizen-lite` via subprocess
+1. Attempt `claude plugin uninstall evolve-lite` via subprocess
 2. If that fails, print manual instructions
 
 ---
@@ -147,10 +147,10 @@ Source: `platform-integrations/claude/plugins/kaizen-lite/`
 All JSON writes use atomic read-modify-write:
 1. Read existing file (or start with `{}` if not found)
 2. Modify the target key/array in memory
-3. Write to `<path>.kaizen.tmp`
+3. Write to `<path>.evolve.tmp`
 4. `os.replace(tmp, path)` — atomic on POSIX
 
-**Key upsert** (`mcpServers.kaizen`): navigate nested keys via `dict.setdefault`, set leaf value.
+**Key upsert** (`mcpServers.evolve`): navigate nested keys via `dict.setdefault`, set leaf value.
 
 **Array upsert** (`.roomodes` `customModes`): iterate array, find item where `item["slug"] == target_slug`,
 replace in-place; append if not found.
@@ -165,14 +165,14 @@ YAML files use sentinel comment blocks:
 customModes:
   - slug: other-mode
     ...
-# >>>kaizen-lite<<<
-  - slug: kaizen-lite
-    name: Kaizen Lite
+# >>>evolve-lite<<<
+  - slug: evolve-lite
+    name: Evolve Lite
     ...
-# <<<kaizen-lite<<<
+# <<<evolve-lite<<<
 ```
 
-**Install**: check if sentinel `# >>>kaizen-lite<<<` exists in file. If yes, replace the block
+**Install**: check if sentinel `# >>>evolve-lite<<<` exists in file. If yes, replace the block
 between sentinels. If no, append sentinel block to end of file.
 
 **Uninstall**: find sentinel start and end lines, remove all lines between them (inclusive).
@@ -210,7 +210,7 @@ No pip packages are required. The script uses only Python stdlib.
 
 - Python < 3.8: print error with install instructions, exit 1
 - `curl` or `tar` not found in remote mode: print error, exit 1
-- JSON parse errors on existing config files: back up the file as `<file>.kaizen.bak`, start fresh
+- JSON parse errors on existing config files: back up the file as `<file>.evolve.bak`, start fresh
 - File permission errors: print specific error and path, exit 1
 - Partial install failure: operations already completed are not rolled back (they are idempotent
   anyway); remaining operations are skipped with a summary of what succeeded and what failed
@@ -220,7 +220,7 @@ No pip packages are required. The script uses only Python stdlib.
 ## Logging
 
 - Normal output: plain text with `✓` / `✗` / `→` indicators
-- `KAIZEN_DEBUG=1` env var: enables verbose output with detailed file operations
+- `EVOLVE_DEBUG=1` env var: enables verbose output with detailed file operations
 
 ---
 
@@ -228,20 +228,20 @@ No pip packages are required. The script uses only Python stdlib.
 
 ```bash
 # Latest main
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash
 
 # Pinned version — the script fetched from the tag already knows its own version
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/v1.2.0/platform-integrations/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.2.0/platform-integrations/install.sh | bash
 
 # Non-interactive, specific platform
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | \
   bash -s -- install --platform roo
 ```
 
 ## Local Install Example
 
 ```bash
-# From within the kaizen repo
+# From within the evolve repo
 ./platform-integrations/install.sh install              # interactive
 ./platform-integrations/install.sh install --platform bob --mode full
 ./platform-integrations/install.sh install --platform all

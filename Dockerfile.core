@@ -18,15 +18,15 @@ WORKDIR /app
 
 # Copy project files
 COPY pyproject.toml uv.lock ./
-COPY kaizen ./kaizen
+COPY evolve ./evolve
 COPY README.md LICENSE MANIFEST.in ./
 
 # Install dependencies using uv (no extras needed for milvus as it's in base dependencies)
 RUN uv sync --frozen --no-dev
 
 # Set environment variables for filesystem backend
-ENV KAIZEN_BACKEND=filesystem
-ENV KAIZEN_NAMESPACE_ID=kaizen
+ENV EVOLVE_BACKEND=filesystem
+ENV EVOLVE_NAMESPACE_ID=evolve
 
 # Expose MCP server (stdio-based, no port needed)
 # The MCP server runs via stdio, not HTTP
@@ -35,4 +35,4 @@ ENV KAIZEN_NAMESPACE_ID=kaizen
 ENV PATH="/app/.venv/bin:${PATH}"
 
 # Set the entrypoint to run the MCP server directly from venv
-ENTRYPOINT ["python", "-m", "kaizen.frontend.mcp"]
+ENTRYPOINT ["python", "-m", "evolve.frontend.mcp"]
