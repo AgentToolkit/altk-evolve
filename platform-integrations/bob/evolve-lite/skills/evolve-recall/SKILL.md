@@ -11,9 +11,10 @@ This skill retrieves relevant entities from a stored knowledge base based on the
 
 ## How It Works
 
-1. Read all entities from the entities directory (`.evolve/entities/`)
-2. Review each entity for relevance to the current task
-3. Apply relevant entities as additional context
+1. List all `.md` files under `.evolve/entities/` and its subdirectories
+2. Read each file — the YAML frontmatter contains `type` and `trigger`, the body contains the entity content and rationale
+3. Review each entity for relevance to the current task
+4. Apply relevant entities as additional context for your work
 
 ## Entities Storage
 
