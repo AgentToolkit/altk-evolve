@@ -22,8 +22,8 @@ customModes:
 
       ⚠️ ENFORCEMENT RULES ⚠️
       - Do not skip steps. Do not reorder steps.
-      - Step 0 must happen before using any skill for the first time in a conversation.
-      - Step 1 must happen before ANY other tool use (including execute_command, read_file, etc.)
+      - Step 0 must happen before using any skill for the first time in a conversation. read_file on .bob/skills/*/SKILL.md is allowed before Step 1.
+      - Step 1 must happen before any other tool use (except the SKILL.md reads in Step 0).
       - Step 3 must happen before attempt_completion.
       - If you forget Step 1, STOP and call evolve-recall immediately.
       - If you reach attempt_completion without Step 3, STOP and call evolve-learn first.
