@@ -1,21 +1,20 @@
 ---
 name: recall
-description: Retrieves relevant entities from a knowledge base. Designed to be invoked automatically via hooks to inject context-appropriate entities before task execution.
+description: Retrieves relevant entities from a knowledge base to inject context-appropriate entities before task execution.
 ---
 
 # Entity Retrieval
 
 ## Overview
 
-This skill retrieves relevant entities from a stored knowledge base based on the current task context. It loads all stored entities and presents them to Claude for relevance filtering.
+This skill retrieves relevant entities from a stored knowledge base based on the current task context. Read all stored entities from the entities directory and apply any relevant ones to the current task.
 
 ## How It Works
 
-1. Hook fires on user prompt submission
-2. Script reads prompt from stdin (JSON with `prompt` field)
-3. Loads all entities from the entities directory (`.evolve/entities/`)
-4. Outputs formatted entities to stdout
-5. Claude receives entities as additional context and applies relevant ones
+1. List all `.md` files under `.evolve/entities/` and its subdirectories
+2. Read each file — the YAML frontmatter contains `type` and `trigger`, the body contains the entity content and rationale
+3. Review each entity for relevance to the current task
+4. Apply relevant entities as additional context for your work
 
 ## Entities Storage
 
