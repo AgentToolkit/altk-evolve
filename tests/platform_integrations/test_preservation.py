@@ -14,46 +14,46 @@ class TestBobPreservation:
     """Test that Bob installation preserves existing user data."""
 
     def test_preserves_existing_skills(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
-        """Install kaizen when user has existing custom skills - they must be preserved."""
+        """Install evolve when user has existing custom skills - they must be preserved."""
         # Setup: Create user's custom skill
         custom_skill = bob_fixtures.create_existing_skill(temp_project_dir)
         original_content = (custom_skill / "SKILL.md").read_text()
 
-        # Action: Install kaizen
+        # Action: Install evolve
         install_runner.run("install", platform="bob")
 
         # Assert: User's skill is untouched
         file_assertions.assert_dir_exists(custom_skill)
         file_assertions.assert_file_unchanged(custom_skill / "SKILL.md", original_content)
 
-        # Assert: Kaizen skills are added
+        # Assert: Evolve skills are added
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-recall")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-recall")
 
     def test_preserves_existing_commands(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
-        """Install kaizen when user has existing commands - they must be preserved."""
+        """Install evolve when user has existing commands - they must be preserved."""
         # Setup: Create user's custom command
         custom_command = bob_fixtures.create_existing_command(temp_project_dir)
         original_content = custom_command.read_text()
 
-        # Action: Install kaizen
+        # Action: Install evolve
         install_runner.run("install", platform="bob")
 
         # Assert: User's command is untouched
         file_assertions.assert_file_unchanged(custom_command, original_content)
 
-        # Assert: Kaizen commands are added
+        # Assert: Evolve commands are added
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_file_exists(bob_dir / "commands" / "kaizen:learn.md")
-        file_assertions.assert_file_exists(bob_dir / "commands" / "kaizen:recall.md")
+        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve:learn.md")
+        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve:recall.md")
 
     def test_preserves_existing_custom_modes_yaml(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
-        """Install kaizen when user has existing custom modes - they must be preserved."""
+        """Install evolve when user has existing custom modes - they must be preserved."""
         # Setup: Create user's custom mode
         custom_modes_file = bob_fixtures.create_existing_custom_modes(temp_project_dir)
 
-        # Action: Install kaizen
+        # Action: Install evolve
         install_runner.run("install", platform="bob")
 
         # Assert: User's custom mode is still present
@@ -61,35 +61,35 @@ class TestBobPreservation:
         assert "slug: my-mode" in current_content, "User's custom mode was removed!"
         assert "My Custom Mode" in current_content
 
-        # Assert: Kaizen mode is added with sentinels
-        file_assertions.assert_sentinel_block_exists(custom_modes_file, "kaizen-lite")
-        assert "slug: kaizen-lite" in current_content
+        # Assert: Evolve mode is added with sentinels
+        file_assertions.assert_sentinel_block_exists(custom_modes_file, "evolve-lite")
+        assert "slug: evolve-lite" in current_content
 
         # Assert: No duplicate user modes
         assert current_content.count("slug: my-mode") == 1
 
     def test_preserves_existing_mcp_servers(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
-        """Install kaizen full mode when user has existing MCP servers - they must be preserved."""
+        """Install evolve full mode when user has existing MCP servers - they must be preserved."""
         # Setup: Create user's MCP config
         mcp_file = bob_fixtures.create_existing_mcp_config(temp_project_dir)
         original_data = json.loads(mcp_file.read_text())
 
-        # Action: Install kaizen in full mode
+        # Action: Install evolve in full mode
         install_runner.run("install", platform="bob", mode="full")
 
         # Assert: User's MCP server is still present
         file_assertions.assert_valid_json(mcp_file)
         file_assertions.assert_json_has_key(mcp_file, ["mcpServers", "my-server"], "User's MCP server was removed!")
 
-        # Assert: Kaizen MCP server is added
-        file_assertions.assert_json_has_key(mcp_file, ["mcpServers", "kaizen"])
+        # Assert: Evolve MCP server is added
+        file_assertions.assert_json_has_key(mcp_file, ["mcpServers", "evolve"])
 
         # Assert: User's server config is unchanged
         current_data = json.loads(mcp_file.read_text())
         assert current_data["mcpServers"]["my-server"] == original_data["mcpServers"]["my-server"]
 
     def test_preserves_all_bob_content_together(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
-        """Install kaizen when user has all types of Bob content - all must be preserved."""
+        """Install evolve when user has all types of Bob content - all must be preserved."""
         # Setup: Create all types of user content
         custom_skill = bob_fixtures.create_existing_skill(temp_project_dir)
         custom_command = bob_fixtures.create_existing_command(temp_project_dir)
@@ -101,7 +101,7 @@ class TestBobPreservation:
         command_content = custom_command.read_text()
         mcp_data = json.loads(mcp_config.read_text())
 
-        # Action: Install kaizen full mode
+        # Action: Install evolve full mode
         install_runner.run("install", platform="bob", mode="full")
 
         # Assert: ALL user content is preserved
@@ -113,11 +113,11 @@ class TestBobPreservation:
         current_mcp = json.loads(mcp_config.read_text())
         assert current_mcp["mcpServers"]["my-server"] == mcp_data["mcpServers"]["my-server"]
 
-        # Assert: Kaizen content is added
+        # Assert: Evolve content is added
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-learn")
-        file_assertions.assert_sentinel_block_exists(custom_modes, "kaizen-lite")
-        file_assertions.assert_json_has_key(mcp_config, ["mcpServers", "kaizen"])
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_sentinel_block_exists(custom_modes, "evolve-lite")
+        file_assertions.assert_json_has_key(mcp_config, ["mcpServers", "evolve"])
 
 
 @pytest.mark.platform_integrations
@@ -125,30 +125,30 @@ class TestRooPreservation:
     """Test that Roo installation preserves existing user data."""
 
     def test_preserves_existing_skills(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
-        """Install kaizen when user has existing Roo skills - they must be preserved."""
+        """Install evolve when user has existing Roo skills - they must be preserved."""
         # Setup: Create user's custom skill
         custom_skill = roo_fixtures.create_existing_skill(temp_project_dir)
         original_content = (custom_skill / "SKILL.md").read_text()
 
-        # Action: Install kaizen
+        # Action: Install evolve
         install_runner.run("install", platform="roo")
 
         # Assert: User's skill is untouched
         file_assertions.assert_dir_exists(custom_skill)
         file_assertions.assert_file_unchanged(custom_skill / "SKILL.md", original_content)
 
-        # Assert: Kaizen skills are added
+        # Assert: Evolve skills are added
         roo_dir = temp_project_dir / ".roo"
-        file_assertions.assert_dir_exists(roo_dir / "skills" / "kaizen-learn")
-        file_assertions.assert_dir_exists(roo_dir / "skills" / "kaizen-recall")
+        file_assertions.assert_dir_exists(roo_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(roo_dir / "skills" / "evolve-recall")
 
     def test_preserves_existing_roomodes_json(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
-        """Install kaizen when user has existing .roomodes (JSON) - it must be preserved."""
+        """Install evolve when user has existing .roomodes (JSON) - it must be preserved."""
         # Setup: Create user's .roomodes in JSON format
         roomodes_file = roo_fixtures.create_existing_roomodes_json(temp_project_dir)
         original_data = json.loads(roomodes_file.read_text())
 
-        # Action: Install kaizen
+        # Action: Install evolve
         install_runner.run("install", platform="roo")
 
         # Assert: File is still valid JSON
@@ -160,16 +160,16 @@ class TestRooPreservation:
         assert len(user_modes) == 1, "User's custom mode was removed!"
         assert user_modes[0] == original_data["customModes"][0]
 
-        # Assert: Kaizen mode is added
-        kaizen_modes = [m for m in current_data["customModes"] if m["slug"] == "kaizen-lite"]
-        assert len(kaizen_modes) == 1, f"Kaizen mode not added. Found {len(kaizen_modes)} kaizen-lite entries"
+        # Assert: Evolve mode is added
+        evolve_modes = [m for m in current_data["customModes"] if m["slug"] == "evolve-lite"]
+        assert len(evolve_modes) == 1, f"Evolve mode not added. Found {len(evolve_modes)} evolve-lite entries"
 
     def test_preserves_existing_roomodes_yaml(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
-        """Install kaizen when user has existing .roomodes (YAML) - it must be preserved."""
+        """Install evolve when user has existing .roomodes (YAML) - it must be preserved."""
         # Setup: Create user's .roomodes in YAML format
         roomodes_file = roo_fixtures.create_existing_roomodes_yaml(temp_project_dir)
 
-        # Action: Install kaizen
+        # Action: Install evolve
         install_runner.run("install", platform="roo")
 
         # Assert: User's mode is still present
@@ -177,15 +177,15 @@ class TestRooPreservation:
         assert "slug: my-roo-mode" in current_content, "User's custom mode was removed!"
         assert "My Roo Mode" in current_content
 
-        # Assert: Kaizen mode is added with sentinels
-        file_assertions.assert_sentinel_block_exists(roomodes_file, "kaizen-lite")
-        assert "slug: kaizen-lite" in current_content
+        # Assert: Evolve mode is added with sentinels
+        file_assertions.assert_sentinel_block_exists(roomodes_file, "evolve-lite")
+        assert "slug: evolve-lite" in current_content
 
         # Assert: No duplicate user modes
         assert current_content.count("slug: my-roo-mode") == 1
 
     def test_preserves_all_roo_content_together(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
-        """Install kaizen when user has all types of Roo content - all must be preserved."""
+        """Install evolve when user has all types of Roo content - all must be preserved."""
         # Setup: Create all types of user content
         custom_skill = roo_fixtures.create_existing_skill(temp_project_dir)
         roomodes_file = roo_fixtures.create_existing_roomodes_json(temp_project_dir)
@@ -194,7 +194,7 @@ class TestRooPreservation:
         skill_content = (custom_skill / "SKILL.md").read_text()
         roomodes_data = json.loads(roomodes_file.read_text())
 
-        # Action: Install kaizen
+        # Action: Install evolve
         install_runner.run("install", platform="roo")
 
         # Assert: ALL user content is preserved
@@ -204,11 +204,11 @@ class TestRooPreservation:
         user_modes = [m for m in current_roomodes["customModes"] if m["slug"] == "my-roo-mode"]
         assert user_modes[0] == roomodes_data["customModes"][0]
 
-        # Assert: Kaizen content is added
+        # Assert: Evolve content is added
         roo_dir = temp_project_dir / ".roo"
-        file_assertions.assert_dir_exists(roo_dir / "skills" / "kaizen-learn")
-        kaizen_modes = [m for m in current_roomodes["customModes"] if m["slug"] == "kaizen-lite"]
-        assert len(kaizen_modes) == 1, f"Expected 1 kaizen-lite mode, found {len(kaizen_modes)}"
+        file_assertions.assert_dir_exists(roo_dir / "skills" / "evolve-learn")
+        evolve_modes = [m for m in current_roomodes["customModes"] if m["slug"] == "evolve-lite"]
+        assert len(evolve_modes) == 1, f"Expected 1 evolve-lite mode, found {len(evolve_modes)}"
 
 
 @pytest.mark.platform_integrations
@@ -245,6 +245,6 @@ class TestMultiPlatformPreservation:
         roo_data = json.loads(roo_modes.read_text())
         assert any(m["slug"] == "my-roo-mode" for m in roo_data["customModes"])
 
-        # Assert: Kaizen content is added to both
-        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "kaizen-learn")
-        file_assertions.assert_dir_exists(temp_project_dir / ".roo" / "skills" / "kaizen-learn")
+        # Assert: Evolve content is added to both
+        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(temp_project_dir / ".roo" / "skills" / "evolve-learn")

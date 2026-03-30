@@ -4,7 +4,7 @@ import re
 import os
 import datetime
 import pytest
-from kaizen.config.phoenix import phoenix_settings
+from evolve.config.phoenix import phoenix_settings
 
 # Configuration
 PHOENIX_URL = phoenix_settings.url
@@ -28,7 +28,7 @@ def test_e2e_pipeline_agent(agent_config):
     Runs the full E2E pipeline for a specific agent configuration:
     1. Executing the agent script
     2. Verifying traces in Phoenix associated with a unique project name
-    3. Running Kaizen Sync to verify tip generation
+    3. Running Evolve Sync to verify tip generation
     """
     agent_name = agent_config["name"]
     script_path = agent_config["script"]
@@ -48,10 +48,10 @@ def test_e2e_pipeline_agent(agent_config):
     print("\n--- Step 1: Running Agent ---")
     start_time = time.time()
     env = os.environ.copy()
-    env["KAIZEN_AUTO_ENABLED"] = "true"
+    env["EVOLVE_AUTO_ENABLED"] = "true"
     # Important: Set project name for auto-instrumentation
-    # kaizen.auto prioritizes KAIZEN_TRACING_PROJECT over PHOENIX_PROJECT_NAME
-    env["KAIZEN_TRACING_PROJECT"] = project_name
+    # evolve.auto prioritizes EVOLVE_TRACING_PROJECT over PHOENIX_PROJECT_NAME
+    env["EVOLVE_TRACING_PROJECT"] = project_name
     env["PHOENIX_PROJECT_NAME"] = project_name
 
     # Ensure script exists
@@ -99,13 +99,13 @@ except Exception as e:
         pytest.fail(f"No traces found in Phoenix project {project_name}. Debug: {output}")
 
     # --- Step 3: Sync & Generate Tips ---
-    print("\n--- Step 3: Running Kaizen Sync & Monitoring ---")
+    print("\n--- Step 3: Running Evolve Sync & Monitoring ---")
     sync_command = [
         "uv",
         "run",
         "python",
         "-m",
-        "kaizen.frontend.cli.cli",
+        "evolve.frontend.cli.cli",
         "sync",
         "phoenix",
         "--project",

@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import uuid
-from kaizen.config.milvus import milvus_client_settings
+from evolve.config.milvus import milvus_client_settings
 
 __data__ = Path(__file__).parent.parent / "data"
 load_dotenv()
@@ -15,11 +15,11 @@ load_dotenv()
 @pytest.fixture(params=["filesystem"])
 def mcp(request, tmp_path):
     backend_type = request.param
-    os.environ["KAIZEN_NAMESPACE_ID"] = "test"
-    os.environ["KAIZEN_BACKEND"] = backend_type
+    os.environ["EVOLVE_NAMESPACE_ID"] = "test"
+    os.environ["EVOLVE_BACKEND"] = backend_type
 
     # Common SQLite setup
-    os.environ["KAIZEN_SQLITE_PATH"] = str(tmp_path / f"test_{backend_type}.sqlite.db")
+    os.environ["EVOLVE_SQLITE_PATH"] = str(tmp_path / f"test_{backend_type}.sqlite.db")
 
     # Backend-specific setup
     milvus_db_file = None
@@ -27,7 +27,7 @@ def mcp(request, tmp_path):
 
     if backend_type == "milvus":
         original_milvus_uri = milvus_client_settings.uri
-        _env_uri = os.getenv("KAIZEN_URI", "")
+        _env_uri = os.getenv("EVOLVE_URI", "")
         if _env_uri.startswith("http"):
             # Running against a real Milvus server (e.g. in CI via Docker sidecar).
             # Use the server URI directly; skip milvus-lite local file creation.
@@ -39,24 +39,24 @@ def mcp(request, tmp_path):
             milvus_client_settings.uri = milvus_db_file
             # Note: currently milvus-lite creates a file, not a dir for the uri
     elif backend_type == "filesystem":
-        os.environ["KAIZEN_DATA_DIR"] = str(tmp_path)
+        os.environ["EVOLVE_DATA_DIR"] = str(tmp_path)
 
-    from kaizen.frontend.client.kaizen_client import KaizenClient
-    from kaizen.config.kaizen import kaizen_config
+    from evolve.frontend.client.evolve_client import EvolveClient
+    from evolve.config.evolve import evolve_config
 
     # Reset loaded settings to pick up new env vars
-    kaizen_config.__init__()
+    evolve_config.__init__()
 
     # Reset the MCP server client
-    import kaizen.frontend.mcp.mcp_server as mcp_server_module
+    import evolve.frontend.mcp.mcp_server as mcp_server_module
 
     mcp_server_module._client = None
     mcp_server_module._namespace_initialized = False
 
-    kaizen_client = KaizenClient()
+    evolve_client = EvolveClient()
     # Create the test namespace
     try:
-        kaizen_client.create_namespace("test")
+        evolve_client.create_namespace("test")
     except Exception:
         pass
 
@@ -64,7 +64,7 @@ def mcp(request, tmp_path):
 
     # Cleanup
     try:
-        kaizen_client.backend.close()
+        evolve_client.backend.close()
     except Exception:
         pass
 
@@ -112,26 +112,26 @@ def mcp(request, tmp_path):
 
 @pytest.mark.e2e
 async def test_save_trajectory_and_retrieve_guidelines(mcp):
-    async with Client(transport=mcp) as kaizen_mcp:
+    async with Client(transport=mcp) as evolve_mcp:
         trajectory = (__data__ / "trajectory.json").read_text()
-        response = await kaizen_mcp.call_tool_mcp("save_trajectory", {"trajectory_data": trajectory, "task_id": "123"})
+        response = await evolve_mcp.call_tool_mcp("save_trajectory", {"trajectory_data": trajectory, "task_id": "123"})
         saved_trajectory = json.loads(response.content[0].text)
         # MCP server should return entity versions of the trajectory
         assert len(saved_trajectory) == 19
-        response = await kaizen_mcp.call_tool_mcp(
+        response = await evolve_mcp.call_tool_mcp(
             "get_guidelines",
             {"task": "What states do I have teammates in? Read the list from the states.txt file. use the filesystem mcp tool"},
         )
         guidelines = response.content[0].text
         assert "# Guidelines for: " in guidelines
 
-        # Verify tip provenance in Kaizen backend
-        from kaizen.frontend.client.kaizen_client import KaizenClient
-        from kaizen.config.kaizen import kaizen_config
+        # Verify tip provenance in Evolve backend
+        from evolve.frontend.client.evolve_client import EvolveClient
+        from evolve.config.evolve import evolve_config
 
-        client = KaizenClient()
+        client = EvolveClient()
         entities = client.search_entities(
-            namespace_id=kaizen_config.namespace_id,
+            namespace_id=evolve_config.namespace_id,
             filters={"type": "guideline"},
             limit=10,
         )
@@ -145,8 +145,8 @@ async def test_save_trajectory_and_retrieve_guidelines(mcp):
 @pytest.mark.e2e
 async def test_create_entity_without_conflict_resolution(mcp):
     """Test creating a single entity without conflict resolution."""
-    async with Client(transport=mcp) as kaizen_mcp:
-        response = await kaizen_mcp.call_tool_mcp(
+    async with Client(transport=mcp) as evolve_mcp:
+        response = await evolve_mcp.call_tool_mcp(
             "create_entity",
             {
                 "content": "Always use type hints in Python functions",
@@ -170,11 +170,11 @@ async def test_create_entity_without_conflict_resolution(mcp):
 async def test_create_entity_with_conflict_resolution(mcp):
     """Test creating an entity with conflict resolution enabled."""
     from unittest.mock import patch
-    from kaizen.schema.conflict_resolution import EntityUpdate
+    from evolve.schema.conflict_resolution import EntityUpdate
 
-    async with Client(transport=mcp) as kaizen_mcp:
+    async with Client(transport=mcp) as evolve_mcp:
         # Create first entity
-        response = await kaizen_mcp.call_tool_mcp(
+        response = await evolve_mcp.call_tool_mcp(
             "create_entity", {"content": "Use descriptive variable names", "entity_type": "guideline", "enable_conflict_resolution": False}
         )
 
@@ -184,7 +184,7 @@ async def test_create_entity_with_conflict_resolution(mcp):
         first_entity_id = result["id"]
 
         # Mock resolve_conflicts to avoid LLM call timeout
-        patch_target = "kaizen.llm.conflict_resolution.conflict_resolution.resolve_conflicts"
+        patch_target = "evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts"
 
         with patch(patch_target) as mock_resolve:
             # Configure mock to return an UPDATE event
@@ -195,7 +195,7 @@ async def test_create_entity_with_conflict_resolution(mcp):
             ]
 
             # Create similar entity with conflict resolution
-            response = await kaizen_mcp.call_tool_mcp(
+            response = await evolve_mcp.call_tool_mcp(
                 "create_entity",
                 {"content": "Always use descriptive variable names", "entity_type": "guideline", "enable_conflict_resolution": True},
             )
@@ -211,8 +211,8 @@ async def test_create_entity_with_conflict_resolution(mcp):
 @pytest.mark.e2e
 async def test_create_entity_without_metadata(mcp):
     """Test creating an entity without optional metadata."""
-    async with Client(transport=mcp) as kaizen_mcp:
-        response = await kaizen_mcp.call_tool_mcp(
+    async with Client(transport=mcp) as evolve_mcp:
+        response = await evolve_mcp.call_tool_mcp(
             "create_entity", {"content": "Simple entity without metadata", "entity_type": "note", "enable_conflict_resolution": False}
         )
 
@@ -228,9 +228,9 @@ async def test_create_entity_without_metadata(mcp):
 @pytest.mark.e2e
 async def test_delete_entity(mcp):
     """Test deleting an entity via MCP."""
-    async with Client(transport=mcp) as kaizen_mcp:
+    async with Client(transport=mcp) as evolve_mcp:
         # Create an entity
-        create_response = await kaizen_mcp.call_tool_mcp(
+        create_response = await evolve_mcp.call_tool_mcp(
             "create_entity",
             {
                 "content": "Temporary test entity",
@@ -244,7 +244,7 @@ async def test_delete_entity(mcp):
         entity_id = created_entity["id"]
 
         # Delete the entity
-        delete_response = await kaizen_mcp.call_tool_mcp("delete_entity", {"entity_id": entity_id})
+        delete_response = await evolve_mcp.call_tool_mcp("delete_entity", {"entity_id": entity_id})
 
         result = json.loads(delete_response.content[0].text)
 
@@ -256,9 +256,9 @@ async def test_delete_entity(mcp):
 @pytest.mark.e2e
 async def test_create_and_delete_workflow(mcp):
     """Test complete workflow: create then delete."""
-    async with Client(transport=mcp) as kaizen_mcp:
+    async with Client(transport=mcp) as evolve_mcp:
         # Create entity
-        create_response = await kaizen_mcp.call_tool_mcp(
+        create_response = await evolve_mcp.call_tool_mcp(
             "create_entity",
             {
                 "content": "Workflow test entity",
@@ -272,7 +272,7 @@ async def test_create_and_delete_workflow(mcp):
         assert created["event"] == "ADD"
 
         # Delete entity
-        delete_response = await kaizen_mcp.call_tool_mcp("delete_entity", {"entity_id": entity_id})
+        delete_response = await evolve_mcp.call_tool_mcp("delete_entity", {"entity_id": entity_id})
         delete_result = json.loads(delete_response.content[0].text)
         assert delete_result["success"] is True
 
@@ -280,12 +280,12 @@ async def test_create_and_delete_workflow(mcp):
 @pytest.mark.e2e
 async def test_create_multiple_entities_same_type(mcp):
     """Test creating multiple entities of the same type."""
-    async with Client(transport=mcp) as kaizen_mcp:
+    async with Client(transport=mcp) as evolve_mcp:
         entity_ids = []
 
         # Create 3 entities
         for i in range(3):
-            response = await kaizen_mcp.call_tool_mcp(
+            response = await evolve_mcp.call_tool_mcp(
                 "create_entity", {"content": f"Test guideline number {i}", "entity_type": "guideline", "enable_conflict_resolution": False}
             )
             result = json.loads(response.content[0].text)
@@ -297,14 +297,14 @@ async def test_create_multiple_entities_same_type(mcp):
 
         # Clean up
         for entity_id in entity_ids:
-            await kaizen_mcp.call_tool_mcp("delete_entity", {"entity_id": entity_id})
+            await evolve_mcp.call_tool_mcp("delete_entity", {"entity_id": entity_id})
 
 
 @pytest.mark.e2e
 async def test_create_entity_with_invalid_json_metadata(mcp):
     """Test creating an entity with invalid JSON metadata."""
-    async with Client(transport=mcp) as kaizen_mcp:
-        response = await kaizen_mcp.call_tool_mcp(
+    async with Client(transport=mcp) as evolve_mcp:
+        response = await evolve_mcp.call_tool_mcp(
             "create_entity",
             {
                 "content": "Test entity with bad metadata",

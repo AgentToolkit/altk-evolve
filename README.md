@@ -1,8 +1,8 @@
-# Kaizen
+# Evolve
 
 Self-improving agents through iterations.
 
-Kaizen is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
+Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
 
 ## Features
 
@@ -25,7 +25,7 @@ Prerequisites:
 
 ```bash
 git clone <repository_url>
-cd kaizen
+cd evolve
 uv sync && source .venv/bin/activate
 ```
 
@@ -36,25 +36,25 @@ For direct OpenAI usage:
 export OPENAI_API_KEY=sk-...
 ```
 
-For LiteLLM proxy usage and model selection (including global fallback via `KAIZEN_MODEL_NAME`), see [CONFIGURATION.md](CONFIGURATION.md).
+For LiteLLM proxy usage and model selection (including global fallback via `EVOLVE_MODEL_NAME`), see [CONFIGURATION.md](CONFIGURATION.md).
 
 ### Running the MCP Server & UI
 
-Kaizen provides both a standard MCP server and a full Web UI (Dashboard & Entity Explorer).
+Evolve provides both a standard MCP server and a full Web UI (Dashboard & Entity Explorer).
 
 > [!IMPORTANT]
 > **Building from Source:** If you cloned this repository (rather than installing a pre-built package), you must build the UI before it can be served.
 > ```bash
-> cd kaizen/frontend/ui
+> cd evolve/frontend/ui
 > npm ci && npm run build
 > cd ../../../
 > ```
-> See `kaizen/frontend/ui/README.md` for more frontend development details.
+> See `evolve/frontend/ui/README.md` for more frontend development details.
 
 #### Starting Both Automatically
 The easiest way to start both the MCP Server (on standard input/output) and the HTTP UI backend is to run the module directly:
 ```bash
-uv run python -m kaizen.frontend.mcp
+uv run python -m evolve.frontend.mcp
 ```
 This will start the UI server in the background on port `8000` and the MCP server in the foreground. You can then access the UI locally by opening your browser to:
 `http://127.0.0.1:8000/ui/`
@@ -62,18 +62,18 @@ This will start the UI server in the background on port `8000` and the MCP serve
 #### Starting the UI Standalone
 If you only want to access the Web UI and API (without the MCP server stdio blocking the terminal), you can run the FastAPI application directly using `uvicorn`:
 ```bash
-uv run uvicorn kaizen.frontend.mcp.mcp_server:app --host 127.0.0.1 --port 8000
+uv run uvicorn evolve.frontend.mcp.mcp_server:app --host 127.0.0.1 --port 8000
 ```
 Then navigate to `http://127.0.0.1:8000/ui/`.
 
 #### Starting only the MCP Server
-If you're attaching Kaizen to an MCP client that requires a direct command (like Claude Desktop):
+If you're attaching Evolve to an MCP client that requires a direct command (like Claude Desktop):
 ```bash
-uv run fastmcp run kaizen/frontend/mcp/mcp_server.py --transport stdio
+uv run fastmcp run evolve/frontend/mcp/mcp_server.py --transport stdio
 ```
 Or for SSE transport:
 ```bash
-uv run fastmcp run kaizen/frontend/mcp/mcp_server.py --transport sse --port 8201
+uv run fastmcp run evolve/frontend/mcp/mcp_server.py --transport sse --port 8201
 ```
 
 Verify it's running:
@@ -90,7 +90,7 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 
 ## Tip Provenance
 
-Kaizen automatically tracks the origin of every guideline it generates or stores. Every tip entity contains `metadata` identifying its source:
+Evolve automatically tracks the origin of every guideline it generates or stores. Every tip entity contains `metadata` identifying its source:
 - `creation_mode`: Identifies how the tip was created (`auto-phoenix` via trace observability, `auto-mcp` via trajectory saving tools, or `manual`).
 - `source_task_id`: The ID of the original trace or task that inspired the tip, providing full audibility.
 
@@ -98,7 +98,7 @@ See the [Low-Code Tracing Guide](docs/LOW_CODE_TRACING.md#6-understanding-tip-pr
 
 ## Documentation
 
-- [KAIZEN_LITE.md](KAIZEN_LITE.md) - Lightweight mode via Claude Code plugin (no infra required)
+- [EVOLVE_LITE.md](EVOLVE_LITE.md) - Lightweight mode via Claude Code plugin (no infra required)
 - [CONFIGURATION.md](CONFIGURATION.md) - Detailed configuration options
 - [POLICIES.md](docs/POLICIES.md) - Policy support and schema
 - [CLI.md](CLI.md) - Command-line interface documentation
@@ -129,7 +129,7 @@ uv run pytest -m phoenix
 To run the full end-to-end verification pipeline (Agent -> Trace -> Tip):
 
 ```bash
-KAIZEN_E2E=true uv run pytest tests/e2e/test_e2e_pipeline.py -s
+EVOLVE_E2E=true uv run pytest tests/e2e/test_e2e_pipeline.py -s
 ```
 
 See [docs/LOW_CODE_TRACING.md](docs/LOW_CODE_TRACING.md#end-to-end-verification) for more details.

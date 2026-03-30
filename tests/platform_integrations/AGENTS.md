@@ -14,9 +14,9 @@ Tests for `platform-integrations/install.sh` to ensure the installer:
 This is the most important requirement. Users may have custom skills, commands, and modes that they've created. The installer must:
 - Detect existing user content
 - Preserve it completely during installation
-- Add Kaizen content alongside (not replacing) user content
-- Use sentinel comments in YAML files to mark Kaizen-managed sections
-- Use JSON key upserts to add Kaizen config without touching user config
+- Add Evolve content alongside (not replacing) user content
+- Use sentinel comments in YAML files to mark Evolve-managed sections
+- Use JSON key upserts to add Evolve config without touching user config
 
 ## Test Structure
 
@@ -167,16 +167,16 @@ file_assertions.assert_file_unchanged(path, original_content)
 
 # Check JSON validity and keys
 file_assertions.assert_valid_json(path)
-file_assertions.assert_json_has_key(path, ["mcpServers", "kaizen"])
-file_assertions.assert_json_not_has_key(path, ["mcpServers", "kaizen"])
+file_assertions.assert_json_has_key(path, ["mcpServers", "evolve"])
+file_assertions.assert_json_not_has_key(path, ["mcpServers", "evolve"])
 
 # Read/write JSON
 data = file_assertions.read_json(path)
 file_assertions.write_json(path, data)
 
 # Check YAML sentinel blocks
-file_assertions.assert_sentinel_block_exists(path, "kaizen-lite")
-file_assertions.assert_sentinel_block_not_exists(path, "kaizen-lite")
+file_assertions.assert_sentinel_block_exists(path, "evolve-lite")
+file_assertions.assert_sentinel_block_not_exists(path, "evolve-lite")
 ```
 
 ## Writing New Tests
@@ -207,9 +207,9 @@ class TestMyFeature:
             original_content
         )
         
-        # Assert: Kaizen installed
+        # Assert: Evolve installed
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "kaizen-learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
 ```
 
 ### Rules for New Tests
@@ -231,26 +231,26 @@ class TestMyFeature:
 - Uses `os.replace()` for atomic writes on POSIX
 
 **YAML Files (custom_modes.yaml, .roomodes):**
-- Uses sentinel comment blocks to mark Kaizen-managed sections
-- Format: `# >>>kaizen:slug<<<` ... content ... `# <<<kaizen:slug<<<`
+- Uses sentinel comment blocks to mark Evolve-managed sections
+- Format: `# >>>evolve:slug<<<` ... content ... `# <<<evolve:slug<<<`
 - Install: Replace content between sentinels if exists, append if not
 - Uninstall: Remove lines between sentinels (inclusive)
 
 **Directory Copies:**
 - Uses `shutil.copytree(..., dirs_exist_ok=True)` for idempotency
-- Overwrites Kaizen files but leaves user files untouched
+- Overwrites Evolve files but leaves user files untouched
 
 ### Platform-Specific Behavior
 
 **Bob Lite Mode:**
-1. Copy `skills/kaizen-learn/` → `.bob/skills/kaizen-learn/`
-2. Copy `skills/kaizen-recall/` → `.bob/skills/kaizen-recall/`
+1. Copy `skills/evolve-learn/` → `.bob/skills/evolve-learn/`
+2. Copy `skills/evolve-recall/` → `.bob/skills/evolve-recall/`
 3. Copy `commands/` → `.bob/commands/`
 4. Merge `custom_modes.yaml` using sentinel blocks
 
 **Roo Lite Mode:**
-1. Copy `skills/kaizen-learn/` → `.roo/skills/kaizen-learn/`
-2. Copy `skills/kaizen-recall/` → `.roo/skills/kaizen-recall/`
+1. Copy `skills/evolve-learn/` → `.roo/skills/evolve-learn/`
+2. Copy `skills/evolve-recall/` → `.roo/skills/evolve-recall/`
 3. Merge mode into `.roomodes`:
    - If JSON: Array upsert by slug
    - If YAML: Sentinel block merge

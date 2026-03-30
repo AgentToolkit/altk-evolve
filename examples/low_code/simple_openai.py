@@ -1,18 +1,18 @@
 import os
 
-# Ensure KAIZEN_AUTO_ENABLED is set for the import to work
-if os.environ.get("KAIZEN_AUTO_ENABLED", "").lower() != "true":
-    print("WARNING: KAIZEN_AUTO_ENABLED is not true, tracing will not be enabled automatically.")
+# Ensure EVOLVE_AUTO_ENABLED is set for the import to work
+if os.environ.get("EVOLVE_AUTO_ENABLED", "").lower() != "true":
+    print("WARNING: EVOLVE_AUTO_ENABLED is not true, tracing will not be enabled automatically.")
 
-import kaizen.auto  # noqa: F401
-from kaizen.config.llm import llm_settings
+import evolve.auto  # noqa: F401
+from evolve.config.llm import llm_settings
 
 from openai import OpenAI
 
 
 def main():
     client = OpenAI()
-    model = os.environ.get("KAIZEN_EXAMPLE_AGENT_MODEL") or llm_settings.tips_model
+    model = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or llm_settings.tips_model
 
     print(f"Sending request to OpenAI (Model: {model})...")
     try:
@@ -20,7 +20,7 @@ def main():
         print(f"Response: {response.choices[0].message.content}")
 
         # Explicitly flush traces for short-lived scripts
-        kaizen.auto.flush_traces()
+        evolve.auto.flush_traces()
     except Exception as e:
         print(f"Error calling OpenAI: {e}")
 

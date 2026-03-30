@@ -6,12 +6,12 @@
 *.db*
 .DS_Store
 __pycache__
-kaizen_data
+evolve_data
 demo/workdir/.claude/
 .bob
 .claude
 dist
 .coverage
-/.kaizen
+/.evolve
 .secrets
 event.json

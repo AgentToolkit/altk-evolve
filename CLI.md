@@ -1,6 +1,6 @@
-# Kaizen CLI
+# Evolve CLI
 
-Kaizen includes a command-line interface for managing namespaces and entities directly.
+Evolve includes a command-line interface for managing namespaces and entities directly.
 
 ## Installation
 
@@ -16,76 +16,76 @@ uv sync
 
 ```bash
 # List all namespaces
-kaizen namespaces list
+evolve namespaces list
 
 # Create a new namespace
-kaizen namespaces create my_namespace
+evolve namespaces create my_namespace
 
 # Show namespace details
-kaizen namespaces info my_namespace
+evolve namespaces info my_namespace
 
 # Delete a namespace (prompts for confirmation)
-kaizen namespaces delete my_namespace
+evolve namespaces delete my_namespace
 
 # Delete without confirmation
-kaizen namespaces delete my_namespace --force
+evolve namespaces delete my_namespace --force
 ```
 
 ### Entity Management
 
 ```bash
 # List all entities in a namespace
-kaizen entities list my_namespace
+evolve entities list my_namespace
 
 # List entities filtered by type
-kaizen entities list my_namespace --type guideline
+evolve entities list my_namespace --type guideline
 
 # Add an entity
-kaizen entities add my_namespace --content "Always write tests first" --type guideline
+evolve entities add my_namespace --content "Always write tests first" --type guideline
 
 # Add entity without LLM-based conflict resolution (faster, no OpenAI key needed)
-kaizen entities add my_namespace --content "Use descriptive names" --type guideline --no-conflict-resolution
+evolve entities add my_namespace --content "Use descriptive names" --type guideline --no-conflict-resolution
 
 # Add entity with metadata (JSON format)
-kaizen entities add my_namespace --content "Check return values" --type guideline --metadata '{"source": "code-review"}'
+evolve entities add my_namespace --content "Check return values" --type guideline --metadata '{"source": "code-review"}'
 
 # Search entities using semantic similarity
-kaizen entities search my_namespace "testing best practices"
+evolve entities search my_namespace "testing best practices"
 
 # Search with type filter
-kaizen entities search my_namespace "error handling" --type guideline
+evolve entities search my_namespace "error handling" --type guideline
 
 # Show full details of an entity
-kaizen entities show my_namespace 12345
+evolve entities show my_namespace 12345
 
 # Delete an entity
-kaizen entities delete my_namespace 12345
+evolve entities delete my_namespace 12345
 ```
 
 ### Skill Management
 
 ```bash
-# Package all skills from default location (plugins/kaizen/skills → dist/)
-kaizen skills package
+# Package all skills from default location (plugins/evolve/skills → dist/)
+evolve skills package
 
 # Preview what would be packaged (no files created)
-kaizen skills package --dry-run
+evolve skills package --dry-run
 
 # Package from a custom source directory
-kaizen skills package --source ./my-skills
+evolve skills package --source ./my-skills
 
 # Package to a custom output directory
-kaizen skills package --output ./dist
+evolve skills package --output ./dist
 
 # Remove existing .skill files before packaging
-kaizen skills package --clean
+evolve skills package --clean
 
 # Combine options
-kaizen skills package --source ./my-skills --output ./dist --clean
+evolve skills package --source ./my-skills --output ./dist --clean
 ```
 
 **Options:**
-- `--source, -s`: Source directory containing skill folders (default: `plugins/kaizen/skills`)
+- `--source, -s`: Source directory containing skill folders (default: `plugins/evolve/skills`)
 - `--output, -o`: Output directory for `.skill` files (default: `dist`)
 - `--clean`: Remove existing `.skill` files in output directory before packaging
 - `--dry-run`: Show what would be packaged without creating files
@@ -98,28 +98,28 @@ kaizen skills package --source ./my-skills --output ./dist --clean
 
 ```bash
 # Create a namespace for coding guidelines
-uv run kaizen namespaces create coding_guidelines
+uv run evolve namespaces create coding_guidelines
 
 # Add some guidelines
-uv run kaizen entities add coding_guidelines \
+uv run evolve entities add coding_guidelines \
   --content "Always handle errors explicitly" \
   --type guideline \
   --no-conflict-resolution
 
-uv run kaizen entities add coding_guidelines \
+uv run evolve entities add coding_guidelines \
   --content "Write unit tests for all public functions" \
   --type guideline \
   --no-conflict-resolution
 
 # Search for relevant guidelines
-uv run kaizen entities search coding_guidelines "error handling"
+uv run evolve entities search coding_guidelines "error handling"
 
 # List all guidelines
-uv run kaizen entities list coding_guidelines --type guideline
+uv run evolve entities list coding_guidelines --type guideline
 
 # Package skills for distribution
-uv run kaizen skills package --dry-run  # Preview first
-uv run kaizen skills package --clean    # Package with clean output
+uv run evolve skills package --dry-run  # Preview first
+uv run evolve skills package --clean    # Package with clean output
 ```
 
 ## Environment Variables

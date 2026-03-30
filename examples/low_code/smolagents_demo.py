@@ -1,11 +1,11 @@
 import os
 
-# Ensure KAIZEN_AUTO_ENABLED is set
-if os.environ.get("KAIZEN_AUTO_ENABLED", "").lower() != "true":
-    print("WARNING: KAIZEN_AUTO_ENABLED is not true")
+# Ensure EVOLVE_AUTO_ENABLED is set
+if os.environ.get("EVOLVE_AUTO_ENABLED", "").lower() != "true":
+    print("WARNING: EVOLVE_AUTO_ENABLED is not true")
 
-import kaizen.auto  # noqa: F401
-from kaizen.config.llm import llm_settings
+import evolve.auto  # noqa: F401
+from evolve.config.llm import llm_settings
 
 from smolagents import CodeAgent, LiteLLMModel, tool
 
@@ -38,13 +38,13 @@ def multiply(a: int, b: int) -> int:
 
 def main():
     # Use LiteLLMModel to support generic providers
-    # Exact match of Kaizen's internal usage pattern:
-    model_id = os.environ.get("KAIZEN_EXAMPLE_AGENT_MODEL") or llm_settings.tips_model
+    # Exact match of Evolve's internal usage pattern:
+    model_id = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or llm_settings.tips_model
     custom_provider = llm_settings.custom_llm_provider
 
     print(f"Running Smolagents CodeAgent (Model: {model_id}, Provider: {custom_provider})...")
 
-    # Pass configuration exactly as Kaizen does
+    # Pass configuration exactly as Evolve does
     model = LiteLLMModel(model_id=model_id, custom_llm_provider=custom_provider)
 
     # Create agent with local tools

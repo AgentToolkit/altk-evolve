@@ -1,5 +1,5 @@
 """
-Unit tests for kaizen.auto module.
+Unit tests for evolve.auto module.
 
 Tests the low-code tracing functionality including:
 - Framework detection
@@ -18,14 +18,14 @@ class TestFrameworkDetection:
 
     def test_returns_list(self):
         """Should return a list of framework names."""
-        from kaizen.auto import detect_installed_frameworks
+        from evolve.auto import detect_installed_frameworks
 
         frameworks = detect_installed_frameworks()
         assert isinstance(frameworks, list)
 
     def test_detect_openai_when_imported(self):
         """Should detect OpenAI if it can be imported."""
-        from kaizen.auto import detect_installed_frameworks
+        from evolve.auto import detect_installed_frameworks
 
         frameworks = detect_installed_frameworks()
         # This will pass if openai is installed in test env
@@ -38,14 +38,14 @@ class TestInstrumentationCheck:
 
     def test_returns_bool(self):
         """Should return a boolean."""
-        from kaizen.auto import is_already_instrumented
+        from evolve.auto import is_already_instrumented
 
         result = is_already_instrumented()
         assert isinstance(result, bool)
 
     def test_not_instrumented_with_proxy_provider(self):
         """Should return False when ProxyTracerProvider is set."""
-        from kaizen.auto import is_already_instrumented
+        from evolve.auto import is_already_instrumented
 
         # Just verify the function runs without error
         result = is_already_instrumented()
@@ -57,18 +57,18 @@ class TestEnableTracing:
 
     def test_returns_none_when_already_instrumented(self):
         """Should return None if already instrumented and force=False."""
-        from kaizen.auto import enable_tracing
+        from evolve.auto import enable_tracing
 
-        with patch("kaizen.auto.is_already_instrumented", return_value=True):
+        with patch("evolve.auto.is_already_instrumented", return_value=True):
             tracer = enable_tracing(project="test")
             assert tracer is None
 
     def test_uses_env_project_name(self):
-        """Should use KAIZEN_TRACING_PROJECT env var."""
-        from kaizen.auto import enable_tracing
+        """Should use EVOLVE_TRACING_PROJECT env var."""
+        from evolve.auto import enable_tracing
 
-        with patch.dict(os.environ, {"KAIZEN_TRACING_PROJECT": "env-project"}):
-            with patch("kaizen.auto.is_already_instrumented", return_value=False):
+        with patch.dict(os.environ, {"EVOLVE_TRACING_PROJECT": "env-project"}):
+            with patch("evolve.auto.is_already_instrumented", return_value=False):
                 with patch("phoenix.otel.register") as mock_register:
                     mock_register.return_value = MagicMock()
 
@@ -80,9 +80,9 @@ class TestEnableTracing:
 
     def test_force_overrides_instrumented_check(self):
         """Should instrument when force=True even if already instrumented."""
-        from kaizen.auto import enable_tracing
+        from evolve.auto import enable_tracing
 
-        with patch("kaizen.auto.is_already_instrumented", return_value=True):
+        with patch("evolve.auto.is_already_instrumented", return_value=True):
             with patch("phoenix.otel.register") as mock_register:
                 mock_register.return_value = MagicMock()
 
@@ -93,23 +93,23 @@ class TestEnableTracing:
 
 
 class TestAutoMode:
-    """Tests for kaizen.auto module behavior"""
+    """Tests for evolve.auto module behavior"""
 
     def test_auto_does_nothing_when_disabled(self):
-        """Should not instrument when KAIZEN_AUTO_ENABLED is not set."""
+        """Should not instrument when EVOLVE_AUTO_ENABLED is not set."""
         import sys
 
         # Ensure clean state
-        if "kaizen.auto" in sys.modules:
-            del sys.modules["kaizen.auto"]
+        if "evolve.auto" in sys.modules:
+            del sys.modules["evolve.auto"]
 
-        with patch.dict(os.environ, {"KAIZEN_AUTO_ENABLED": ""}, clear=False):
+        with patch.dict(os.environ, {"EVOLVE_AUTO_ENABLED": ""}, clear=False):
             # We need to spy on enable_tracing before importing
             # But since it's defined in the module we're importing, we can't patch it directly
             # Instead, we'll patch phoenix.otel.register which enable_tracing calls
 
             with patch("phoenix.otel.register") as mock_register:
-                import kaizen.auto  # noqa: F401
+                import evolve.auto  # noqa: F401
 
                 # Should not have called register
                 mock_register.assert_not_called()
@@ -120,14 +120,14 @@ class TestGetInstrumentedFrameworks:
 
     def test_returns_set(self):
         """Should return a set."""
-        from kaizen.auto import get_instrumented_frameworks
+        from evolve.auto import get_instrumented_frameworks
 
         result = get_instrumented_frameworks()
         assert isinstance(result, set)
 
     def test_returns_copy(self):
         """Should return a copy, not the original set."""
-        from kaizen.auto import get_instrumented_frameworks, _instrumented_frameworks
+        from evolve.auto import get_instrumented_frameworks, _instrumented_frameworks
 
         result = get_instrumented_frameworks()
         result.add("fake_framework")
@@ -141,7 +141,7 @@ class TestFlushTraces:
 
     def test_flush_when_provider_exists(self):
         """Should call force_flush when provider exists."""
-        from kaizen import auto
+        from evolve import auto
 
         mock_provider = MagicMock()
         original_provider = auto._tracer_provider
@@ -155,7 +155,7 @@ class TestFlushTraces:
 
     def test_flush_when_no_provider(self):
         """Should not raise when no provider."""
-        from kaizen import auto
+        from evolve import auto
 
         original_provider = auto._tracer_provider
 
@@ -171,7 +171,7 @@ class TestGetTracerProvider:
 
     def test_returns_none_before_setup(self):
         """Should return None before tracing is enabled."""
-        from kaizen import auto
+        from evolve import auto
 
         original_provider = auto._tracer_provider
 
@@ -184,7 +184,7 @@ class TestGetTracerProvider:
 
     def test_returns_provider_after_setup(self):
         """Should return provider after tracing is enabled."""
-        from kaizen import auto
+        from evolve import auto
 
         mock_provider = MagicMock()
         original_provider = auto._tracer_provider
@@ -203,9 +203,9 @@ class TestTracingIntegration:
 
     def test_enable_tracing_end_to_end(self):
         """Test enable_tracing with mocked Phoenix."""
-        from kaizen.auto import enable_tracing
+        from evolve.auto import enable_tracing
 
-        with patch("kaizen.auto.is_already_instrumented", return_value=False):
+        with patch("evolve.auto.is_already_instrumented", return_value=False):
             with patch("phoenix.otel.register") as mock_register:
                 mock_register.return_value = MagicMock()
 

@@ -1,10 +1,10 @@
 # Claude Code Demo
 
-This guide walks through running Kaizen with Claude Code.
+This guide walks through running Evolve with Claude Code.
 
 ## Prerequisites
 
-- Kaizen MCP server running (see [README.md](README.md))
+- Evolve MCP server running (see [README.md](README.md))
 - [Claude Code](https://code.claude.com/docs/en/overview) installed with credentials configured
 
 ## Running the Filesystem MCP Server

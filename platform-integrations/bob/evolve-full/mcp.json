@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "evolve": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "1lleatmyhat/evolve:latest-core"
+      ],
+      "disabled": false
+    }
+  }
+}

@@ -1,2 +1,2 @@
-recursive-include kaizen *.jinja2
-recursive-include kaizen/frontend/ui/dist *
+recursive-include evolve *.jinja2
+recursive-include evolve/frontend/ui/dist *

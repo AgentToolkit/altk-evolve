@@ -1,6 +1,6 @@
 # Phoenix Sync
 
-Sync agent trajectories from Arize Phoenix to Kaizen and automatically generate tips/guidelines.
+Sync agent trajectories from Arize Phoenix to Evolve and automatically generate tips/guidelines.
 
 ## Overview
 
@@ -9,7 +9,7 @@ The Phoenix sync module:
 2. Deduplicates already-processed trajectories (by `span_id`)
 3. Converts messages to OpenAI format
 4. Generates tips/guidelines using LLM
-5. Stores both trajectories and tips in Kaizen
+5. Stores both trajectories and tips in Evolve
 
 ## Installation
 
@@ -23,8 +23,8 @@ No additional dependencies required - uses only stdlib for Phoenix API calls.
 |----------|---------|-------------|
 | `PHOENIX_URL` | `http://localhost:6006` | Phoenix server URL |
 | `PHOENIX_PROJECT` | `default` | Phoenix project name |
-| `KAIZEN_NAMESPACE_ID` | `kaizen` | Target namespace for stored entities |
-| `KAIZEN_BACKEND` | `milvus` | Backend provider (`milvus` or `filesystem`) |
+| `EVOLVE_NAMESPACE_ID` | `evolve` | Target namespace for stored entities |
+| `EVOLVE_BACKEND` | `milvus` | Backend provider (`milvus` or `filesystem`) |
 
 ## Usage
 
@@ -32,20 +32,20 @@ No additional dependencies required - uses only stdlib for Phoenix API calls.
 
 ```bash
 # Basic sync with defaults
-uv run python -m kaizen.cli.cli sync phoenix
+uv run python -m evolve.cli.cli sync phoenix
 
 # Custom Phoenix URL and namespace
-uv run python -m kaizen.cli.cli sync phoenix \
+uv run python -m evolve.cli.cli sync phoenix \
   --url http://phoenix.example.com:6006 \
   --namespace my_namespace
 
 # Fetch more spans and include errors
-uv run python -m kaizen.cli.cli sync phoenix \
+uv run python -m evolve.cli.cli sync phoenix \
   --limit 500 \
   --include-errors
 
 # Full options
-uv run python -m kaizen.cli.cli sync phoenix \
+uv run python -m evolve.cli.cli sync phoenix \
   --url http://localhost:6006 \
   --namespace production \
   --project my_project \
@@ -58,7 +58,7 @@ uv run python -m kaizen.cli.cli sync phoenix \
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--url` | `-u` | Phoenix server URL |
-| `--namespace` | `-n` | Target Kaizen namespace |
+| `--namespace` | `-n` | Target Evolve namespace |
 | `--project` | `-p` | Phoenix project name |
 | `--limit` | | Max spans to fetch (default: 100) |
 | `--include-errors` | | Include failed/error spans |
@@ -66,7 +66,7 @@ uv run python -m kaizen.cli.cli sync phoenix \
 ### Python API
 
 ```python
-from kaizen.sync.phoenix_sync import PhoenixSync
+from evolve.sync.phoenix_sync import PhoenixSync
 
 # Initialize syncer
 syncer = PhoenixSync(
@@ -134,7 +134,7 @@ Two entity types are stored:
                                                               │
                                                               ▼
                                                     ┌───────────────┐
-                                                    │    Kaizen     │
+                                                    │    Evolve     │
                                                     │   Backend     │
                                                     └───────────────┘
 ```
@@ -145,28 +145,28 @@ Two entity types are stored:
 
 ```bash
 # Sync every hour
-0 * * * * cd /path/to/kaizen && uv run python -m kaizen.cli.cli sync phoenix --limit 100
+0 * * * * cd /path/to/evolve && uv run python -m evolve.cli.cli sync phoenix --limit 100
 ```
 
 ### Systemd Timer
 
 ```ini
-# /etc/systemd/system/kaizen-sync.service
+# /etc/systemd/system/evolve-sync.service
 [Unit]
-Description=Kaizen Phoenix Sync
+Description=Evolve Phoenix Sync
 
 [Service]
 Type=oneshot
-WorkingDirectory=/path/to/kaizen
-ExecStart=/path/to/uv run python -m kaizen.cli.cli sync phoenix
+WorkingDirectory=/path/to/evolve
+ExecStart=/path/to/uv run python -m evolve.cli.cli sync phoenix
 Environment=PHOENIX_URL=http://localhost:6006
-Environment=KAIZEN_NAMESPACE_ID=production
+Environment=EVOLVE_NAMESPACE_ID=production
 ```
 
 ```ini
-# /etc/systemd/system/kaizen-sync.timer
+# /etc/systemd/system/evolve-sync.timer
 [Unit]
-Description=Run Kaizen Phoenix Sync hourly
+Description=Run Evolve Phoenix Sync hourly
 
 [Timer]
 OnCalendar=hourly

@@ -1,13 +1,13 @@
-# Policy Support in Kaizen
+# Policy Support in Evolve
 
-Kaizen supports storing and managing structured **policies** as entities. This allows agents to retrieve behavioral rules, playbooks, and guards using semantic search.
+Evolve supports storing and managing structured **policies** as entities. This allows agents to retrieve behavioral rules, playbooks, and guards using semantic search.
 
 ## Policy Schema
 
-Policies are stored as Kaizen entities with `type="policy"`. The core schema is defined in `kaizen/schema/policy.py`.
+Policies are stored as Evolve entities with `type="policy"`. The core schema is defined in `evolve/schema/policy.py`.
 
 ### Policy Types
-Kaizen supports the following CUGA-compatible policy types:
+Evolve supports the following CUGA-compatible policy types:
 - `intent_guard`: Blocks forbidden intents and returns specific responses.
 - `playbook`: Provides step-by-step Standard Operating Procedures (SOPs).
 - `tool_guide`: Enriches tool descriptions with additional context.
@@ -21,7 +21,7 @@ Kaizen supports the following CUGA-compatible policy types:
 
 ## Using MCP Tools for Policies
 
-The Kaizen MCP server provides several tools to manage and retrieve policies.
+The Evolve MCP server provides several tools to manage and retrieve policies.
 
 ### 1. Creating a Policy
 Use `create_entity` with `entity_type="policy"`. The `content` should be the serialized JSON representation of the Policy model.

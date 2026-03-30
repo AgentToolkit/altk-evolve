@@ -1,4 +1,4 @@
-"""Tests for Kaizen CLI commands."""
+"""Tests for Evolve CLI commands."""
 
 import datetime
 from unittest.mock import MagicMock, patch
@@ -6,13 +6,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from kaizen.cli.cli import app
-from kaizen.schema.core import Namespace, RecordedEntity
-from kaizen.schema.conflict_resolution import EntityUpdate
-from kaizen.schema.exceptions import (
+from evolve.cli.cli import app
+from evolve.schema.core import Namespace, RecordedEntity
+from evolve.schema.conflict_resolution import EntityUpdate
+from evolve.schema.exceptions import (
     NamespaceAlreadyExistsException,
     NamespaceNotFoundException,
-    KaizenException,
+    EvolveException,
 )
 
 
@@ -21,8 +21,8 @@ runner = CliRunner()
 
 @pytest.fixture
 def mock_client():
-    """Create a mock KaizenClient."""
-    with patch("kaizen.cli.cli.get_client") as mock_get_client:
+    """Create a mock EvolveClient."""
+    with patch("evolve.cli.cli.get_client") as mock_get_client:
         client = MagicMock()
         mock_get_client.return_value = client
         yield client
@@ -35,7 +35,7 @@ def mock_client():
 
 @pytest.mark.unit
 class TestNamespacesList:
-    """Tests for 'kaizen namespaces list' command."""
+    """Tests for 'evolve namespaces list' command."""
 
     def test_list_namespaces_empty(self, mock_client):
         """Test listing namespaces when none exist."""
@@ -73,7 +73,7 @@ class TestNamespacesList:
 
 @pytest.mark.unit
 class TestNamespacesCreate:
-    """Tests for 'kaizen namespaces create' command."""
+    """Tests for 'evolve namespaces create' command."""
 
     def test_create_namespace_success(self, mock_client):
         """Test creating a new namespace successfully."""
@@ -99,7 +99,7 @@ class TestNamespacesCreate:
 
 @pytest.mark.unit
 class TestNamespacesDelete:
-    """Tests for 'kaizen namespaces delete' command."""
+    """Tests for 'evolve namespaces delete' command."""
 
     def test_delete_namespace_not_found(self, mock_client):
         """Test deleting a namespace that doesn't exist."""
@@ -146,7 +146,7 @@ class TestNamespacesDelete:
 
 @pytest.mark.unit
 class TestNamespacesInfo:
-    """Tests for 'kaizen namespaces info' command."""
+    """Tests for 'evolve namespaces info' command."""
 
     def test_namespace_info_success(self, mock_client):
         """Test getting namespace info successfully."""
@@ -176,7 +176,7 @@ class TestNamespacesInfo:
 
 @pytest.mark.unit
 class TestEntitiesList:
-    """Tests for 'kaizen entities list' command."""
+    """Tests for 'evolve entities list' command."""
 
     def test_list_entities_empty(self, mock_client):
         """Test listing entities when none exist."""
@@ -238,7 +238,7 @@ class TestEntitiesList:
 
 @pytest.mark.unit
 class TestEntitiesAdd:
-    """Tests for 'kaizen entities add' command."""
+    """Tests for 'evolve entities add' command."""
 
     def test_add_entity_success(self, mock_client):
         """Test adding an entity successfully."""
@@ -375,7 +375,7 @@ class TestEntitiesAdd:
 
 @pytest.mark.unit
 class TestEntitiesDelete:
-    """Tests for 'kaizen entities delete' command."""
+    """Tests for 'evolve entities delete' command."""
 
     def test_delete_entity_success(self, mock_client):
         """Test deleting an entity successfully."""
@@ -396,7 +396,7 @@ class TestEntitiesDelete:
 
     def test_delete_entity_error(self, mock_client):
         """Test error when deleting entity."""
-        mock_client.delete_entity_by_id.side_effect = KaizenException("Delete failed")
+        mock_client.delete_entity_by_id.side_effect = EvolveException("Delete failed")
 
         result = runner.invoke(app, ["entities", "delete", "my_namespace", "123"])
 
@@ -406,7 +406,7 @@ class TestEntitiesDelete:
 
 @pytest.mark.unit
 class TestEntitiesSearch:
-    """Tests for 'kaizen entities search' command."""
+    """Tests for 'evolve entities search' command."""
 
     def test_search_entities_no_results(self, mock_client):
         """Test searching entities with no results."""
@@ -450,7 +450,7 @@ class TestEntitiesSearch:
 
 @pytest.mark.unit
 class TestEntitiesShow:
-    """Tests for 'kaizen entities show' command."""
+    """Tests for 'evolve entities show' command."""
 
     def test_show_entity_success(self, mock_client):
         """Test showing entity details successfully."""
@@ -520,7 +520,7 @@ class TestCLIHelp:
         result = runner.invoke(app, ["--help"])
 
         assert result.exit_code == 0
-        assert "Kaizen CLI" in result.stdout
+        assert "Evolve CLI" in result.stdout
         assert "namespaces" in result.stdout
         assert "entities" in result.stdout
 
@@ -561,11 +561,11 @@ class TestCLIHelp:
 @pytest.mark.unit
 @pytest.mark.phoenix
 class TestSyncPhoenix:
-    """Tests for 'kaizen sync phoenix' command."""
+    """Tests for 'evolve sync phoenix' command."""
 
     def test_sync_phoenix_default_params(self):
         """Test sync phoenix with default parameters."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -580,7 +580,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_custom_url(self):
         """Test sync phoenix with custom Phoenix URL."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://custom:8080"
             mock_syncer.project = "default"
@@ -595,7 +595,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_custom_namespace(self):
         """Test sync phoenix with custom namespace."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -610,7 +610,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_custom_project(self):
         """Test sync phoenix with custom project."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "my_project"
@@ -625,7 +625,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_custom_limit(self):
         """Test sync phoenix with custom limit."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -640,7 +640,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_include_errors(self):
         """Test sync phoenix with include-errors flag."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -655,7 +655,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_displays_results(self):
         """Test sync phoenix displays results in output."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -673,7 +673,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_displays_errors(self):
         """Test sync phoenix displays errors if any."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -691,7 +691,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_handles_exception(self):
         """Test sync phoenix handles exceptions gracefully."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -707,7 +707,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_displays_parameters(self):
         """Test sync phoenix displays sync parameters."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://test:6006"
             mock_syncer.project = "test_project"
@@ -724,7 +724,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_all_options(self):
         """Test sync phoenix with all options combined."""
-        with patch("kaizen.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://custom:9000"
             mock_syncer.project = "prod"

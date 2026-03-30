@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Kaizen Platform Installer
-# Installs Kaizen Lite (and optionally Full) integrations for Bob, Roo, and Claude Code.
+# Evolve Platform Installer
+# Installs Evolve Lite (and optionally Full) integrations for Bob, Roo, and Claude Code.
 #
 # Usage:
 #   ./install.sh install [--platform bob|roo|claude|all] [--mode lite|full] [--dir DIR] [--dry-run]
@@ -8,24 +8,24 @@
 #   ./install.sh status [--dir DIR]
 #
 # Remote:
-#   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/main/platform-integrations/install.sh | bash -s -- install --platform roo
+#   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform roo
 #
 # Pinned version (SCRIPT_VERSION is substituted by the release process, so the
 # script fetched from a tag already knows its own version — no env var needed):
-#   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/kaizen/v1.2.0/platform-integrations/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.2.0/platform-integrations/install.sh | bash
 
 set -euo pipefail
 
 # ─── Configuration ────────────────────────────────────────────────────────────
-KAIZEN_REPO="${KAIZEN_REPO:-AgentToolkit/kaizen}"
-KAIZEN_DEBUG="${KAIZEN_DEBUG:-0}"
+EVOLVE_REPO="${EVOLVE_REPO:-AgentToolkit/altk-evolve}"
+EVOLVE_DEBUG="${EVOLVE_DEBUG:-0}"
 
 # SCRIPT_VERSION is substituted by the release process (e.g. sed to "v1.2.0").
 # This means a script fetched from a tag URL already knows its own version,
-# so callers never need to set KAIZEN_VERSION manually.
+# so callers never need to set EVOLVE_VERSION manually.
 SCRIPT_VERSION="main"
-KAIZEN_VERSION="${KAIZEN_VERSION:-${SCRIPT_VERSION}}"
+EVOLVE_VERSION="${EVOLVE_VERSION:-${SCRIPT_VERSION}}"
 
 # ─── Colours ──────────────────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -73,7 +73,7 @@ resolve_source() {
 
   if [ -d "${parent_dir}/platform-integrations" ]; then
     SOURCE_DIR="${parent_dir}"
-    if [ "$KAIZEN_DEBUG" = "1" ]; then
+    if [ "$EVOLVE_DEBUG" = "1" ]; then
       info "Using local source (parent): ${SOURCE_DIR}"
     fi
     return
@@ -82,14 +82,14 @@ resolve_source() {
   # Fallback: script is at repo root with platform-integrations/ alongside it
   if [ -d "${SCRIPT_DIR}/platform-integrations" ]; then
     SOURCE_DIR="${SCRIPT_DIR}"
-    if [ "$KAIZEN_DEBUG" = "1" ]; then
+    if [ "$EVOLVE_DEBUG" = "1" ]; then
       info "Using local source (same dir): ${SOURCE_DIR}"
     fi
     return
   fi
 
   # Remote: download tarball
-  info "Downloading kaizen source (${KAIZEN_VERSION})..."
+  info "Downloading evolve source (${EVOLVE_VERSION})..."
 
   for cmd in curl tar; do
     command -v "$cmd" &>/dev/null || die "'$cmd' is required for remote install but not found."
@@ -99,22 +99,22 @@ resolve_source() {
   trap 'rm -rf "$TMPDIR_DOWNLOAD"' EXIT
 
   local url
-  if [ "$KAIZEN_VERSION" = "main" ] || [ "$KAIZEN_VERSION" = "latest" ]; then
-    url="https://github.com/${KAIZEN_REPO}/archive/refs/heads/main.tar.gz"
+  if [ "$EVOLVE_VERSION" = "main" ] || [ "$EVOLVE_VERSION" = "latest" ]; then
+    url="https://github.com/${EVOLVE_REPO}/archive/refs/heads/main.tar.gz"
   else
-    url="https://github.com/${KAIZEN_REPO}/archive/refs/tags/${KAIZEN_VERSION}.tar.gz"
+    url="https://github.com/${EVOLVE_REPO}/archive/refs/tags/${EVOLVE_VERSION}.tar.gz"
   fi
 
   if ! curl -fsSL "$url" | tar -xz -C "$TMPDIR_DOWNLOAD" --strip-components=1; then
-    die "Failed to download or extract kaizen from: ${url}"
+    die "Failed to download or extract evolve from: ${url}"
   fi
 
   if [ ! -d "${TMPDIR_DOWNLOAD}/platform-integrations" ]; then
-    die "Downloaded archive does not contain platform-integrations/. Check KAIZEN_REPO and KAIZEN_VERSION."
+    die "Downloaded archive does not contain platform-integrations/. Check EVOLVE_REPO and EVOLVE_VERSION."
   fi
 
   SOURCE_DIR="$TMPDIR_DOWNLOAD"
-  success "Downloaded kaizen ${KAIZEN_VERSION}"
+  success "Downloaded evolve ${EVOLVE_VERSION}"
 }
 
 resolve_source
@@ -137,12 +137,12 @@ from pathlib import Path
 SOURCE_DIR = sys.argv[1]
 CLI_ARGS   = sys.argv[2:]
 
-KAIZEN_DEBUG = os.environ.get("KAIZEN_DEBUG", "0") == "1"
+EVOLVE_DEBUG = os.environ.get("EVOLVE_DEBUG", "0") == "1"
 DRY_RUN = False   # set to True by --dry-run flag; checked in all write primitives
 
-BOB_SLUG    = "kaizen-lite"
-ROO_SLUG    = "kaizen-lite"
-CLAUDE_PLUGIN = "kaizen-lite"
+BOB_SLUG    = "evolve-lite"
+ROO_SLUG    = "evolve-lite"
+CLAUDE_PLUGIN = "evolve-lite"
 
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ def success(msg): print(_c("32", "✓") + " " + msg)
 def warn(msg):    print(_c("33", "⚠") + " " + msg)
 def error(msg):   print(_c("31", "✗") + " " + msg, file=sys.stderr)
 def debug(msg):
-    if KAIZEN_DEBUG: print(_c("35", "·") + " " + msg)
+    if EVOLVE_DEBUG: print(_c("35", "·") + " " + msg)
 def dryrun(msg): print(_c("35", "[dry-run]") + " " + msg)
 
 
@@ -167,7 +167,7 @@ def atomic_write_json(path, data):
         debug(json.dumps(data, indent=2))
         return
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".kaizen.tmp"
+    tmp = path + ".evolve.tmp"
     with open(tmp, "w") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
@@ -182,7 +182,7 @@ def atomic_write_text(path, text):
         dryrun(f"write text → {path}")
         return
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".kaizen.tmp"
+    tmp = path + ".evolve.tmp"
     with open(tmp, "w") as f:
         f.write(text)
     os.replace(tmp, path)
@@ -198,7 +198,7 @@ def read_json(path):
     except FileNotFoundError:
         return {}
     except json.JSONDecodeError:
-        bak = path + ".kaizen.bak"
+        bak = path + ".evolve.bak"
         warn(f"Could not parse {path} — backing up to {bak} and starting fresh.")
         shutil.copy2(path, bak)
         return {}
@@ -307,8 +307,8 @@ def remove_json_array_item(path, array_key: str, id_key: str, id_val: str):
 
 # ── YAML helpers ───────────────────────────────────────────────────────────────
 
-def _sentinel_start(slug): return f"# >>>kaizen:{slug}<<<"
-def _sentinel_end(slug):   return f"# <<<kaizen:{slug}<<<"
+def _sentinel_start(slug): return f"# >>>evolve:{slug}<<<"
+def _sentinel_end(slug):   return f"# <<<evolve:{slug}<<<"
 
 
 def is_json_file(path):
@@ -386,7 +386,7 @@ def remove_yaml_custom_mode(target_yaml_path, slug):
 
 def load_roo_mode_from_yaml(source_path):
     """
-    Extract the kaizen-lite mode dict from the Roo source .roomodes YAML file
+    Extract the evolve-lite mode dict from the Roo source .roomodes YAML file
     using regex, returning a dict suitable for JSON insertion.
     """
     with open(str(source_path)) as f:
@@ -497,22 +497,22 @@ def interactive_select(detected):
 # ── Bob installer ─────────────────────────────────────────────────────────────
 
 def install_bob(source_dir, target_dir, mode="lite"):
-    bob_source_lite = Path(source_dir) / "platform-integrations" / "bob" / "kaizen-lite"
+    bob_source_lite = Path(source_dir) / "platform-integrations" / "bob" / "evolve-lite"
     bob_target = Path(target_dir) / ".bob"
 
     info(f"Installing Bob ({mode} mode) → {bob_target}")
 
     # Shared lib (entity_io) — single source of truth lives in the Claude plugin
-    shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "kaizen-lite" / "lib"
+    shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
     if not shared_lib.is_dir():
         error(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
         sys.exit(1)
-    copy_tree(shared_lib, bob_target / "kaizen-lib")
+    copy_tree(shared_lib, bob_target / "evolve-lib")
     success("Copied Bob lib")
 
     # Skills
-    copy_tree(bob_source_lite / "skills" / "kaizen-learn",  bob_target / "skills" / "kaizen-learn")
-    copy_tree(bob_source_lite / "skills" / "kaizen-recall", bob_target / "skills" / "kaizen-recall")
+    copy_tree(bob_source_lite / "skills" / "evolve-learn",  bob_target / "skills" / "evolve-learn")
+    copy_tree(bob_source_lite / "skills" / "evolve-recall", bob_target / "skills" / "evolve-recall")
     success("Copied Bob skills")
 
     # Commands
@@ -527,15 +527,15 @@ def install_bob(source_dir, target_dir, mode="lite"):
 
     # Full mode: mcp.json
     if mode == "full":
-        mcp_source = Path(source_dir) / "platform-integrations" / "bob" / "kaizen-full" / "mcp.json"
+        mcp_source = Path(source_dir) / "platform-integrations" / "bob" / "evolve-full" / "mcp.json"
         if not mcp_source.exists():
             error(f"Source MCP config not found: {mcp_source}")
             sys.exit(1)
         mcp_target = bob_target / "mcp.json"
         with open(mcp_source) as f:
             mcp_data = json.load(f)
-        kaizen_server = mcp_data["mcpServers"]["kaizen"]
-        upsert_json_key(mcp_target, ["mcpServers", "kaizen"], kaizen_server)
+        evolve_server = mcp_data["mcpServers"]["evolve"]
+        upsert_json_key(mcp_target, ["mcpServers", "evolve"], evolve_server)
         success(f"Upserted MCP server config in {mcp_target}")
 
     success("Bob installation complete")
@@ -545,13 +545,13 @@ def uninstall_bob(target_dir, mode="full"):
     bob_target = Path(target_dir) / ".bob"
     info(f"Uninstalling Bob from {bob_target}")
 
-    remove_dir(bob_target / "kaizen-lib")
-    remove_dir(bob_target / "skills" / "kaizen-learn")
-    remove_dir(bob_target / "skills" / "kaizen-recall")
-    remove_file(bob_target / "commands" / "kaizen:learn.md")
-    remove_file(bob_target / "commands" / "kaizen:recall.md")
+    remove_dir(bob_target / "evolve-lib")
+    remove_dir(bob_target / "skills" / "evolve-learn")
+    remove_dir(bob_target / "skills" / "evolve-recall")
+    remove_file(bob_target / "commands" / "evolve:learn.md")
+    remove_file(bob_target / "commands" / "evolve:recall.md")
     remove_yaml_custom_mode(bob_target / "custom_modes.yaml", BOB_SLUG)
-    remove_json_key(bob_target / "mcp.json", ["mcpServers", "kaizen"])
+    remove_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"])
 
     success("Bob uninstall complete")
 
@@ -559,31 +559,31 @@ def uninstall_bob(target_dir, mode="full"):
 def status_bob(target_dir):
     bob_target = Path(target_dir) / ".bob"
     print(f"  Bob (.bob/):")
-    print(f"    kaizen-lib/entity_io  : {'✓' if (bob_target / 'kaizen-lib' / 'entity_io.py').is_file() else '✗'}")
-    print(f"    skills/kaizen-learn  : {'✓' if (bob_target / 'skills' / 'kaizen-learn').is_dir() else '✗'}")
-    print(f"    skills/kaizen-recall : {'✓' if (bob_target / 'skills' / 'kaizen-recall').is_dir() else '✗'}")
-    print(f"    commands/            : {'✓' if (bob_target / 'commands' / 'kaizen:learn.md').is_file() else '✗'}")
+    print(f"    evolve-lib/entity_io  : {'✓' if (bob_target / 'evolve-lib' / 'entity_io.py').is_file() else '✗'}")
+    print(f"    skills/evolve-learn  : {'✓' if (bob_target / 'skills' / 'evolve-learn').is_dir() else '✗'}")
+    print(f"    skills/evolve-recall : {'✓' if (bob_target / 'skills' / 'evolve-recall').is_dir() else '✗'}")
+    print(f"    commands/            : {'✓' if (bob_target / 'commands' / 'evolve:learn.md').is_file() else '✗'}")
     print(f"    custom_modes.yaml    : {'✓' if (bob_target / 'custom_modes.yaml').is_file() else '✗'}")
 
     mcp_path = bob_target / "mcp.json"
     has_mcp = False
     if mcp_path.is_file():
         mcp = read_json(mcp_path)
-        has_mcp = "kaizen" in mcp.get("mcpServers", {})
+        has_mcp = "evolve" in mcp.get("mcpServers", {})
     print(f"    mcp.json (full mode) : {'✓' if has_mcp else '✗'}")
 
 
 # ── Roo installer ─────────────────────────────────────────────────────────────
 
 def install_roo(source_dir, target_dir):
-    roo_source = Path(source_dir) / "platform-integrations" / "roo" / "kaizen-lite"
+    roo_source = Path(source_dir) / "platform-integrations" / "roo" / "evolve-lite"
     roo_skills_source = roo_source / "skills"
 
     info(f"Installing Roo → {target_dir}")
 
     # Skill directories (exclude .roomodes from copy)
-    copy_tree(roo_skills_source / "kaizen-learn",  Path(target_dir) / ".roo" / "skills" / "kaizen-learn")
-    copy_tree(roo_skills_source / "kaizen-recall", Path(target_dir) / ".roo" / "skills" / "kaizen-recall")
+    copy_tree(roo_skills_source / "evolve-learn",  Path(target_dir) / ".roo" / "skills" / "evolve-learn")
+    copy_tree(roo_skills_source / "evolve-recall", Path(target_dir) / ".roo" / "skills" / "evolve-recall")
     success("Copied Roo skills")
 
     # .roomodes — detect target format
@@ -612,8 +612,8 @@ def install_roo(source_dir, target_dir):
 
 def uninstall_roo(target_dir):
     info(f"Uninstalling Roo from {target_dir}")
-    remove_dir(Path(target_dir) / ".roo" / "skills" / "kaizen-learn")
-    remove_dir(Path(target_dir) / ".roo" / "skills" / "kaizen-recall")
+    remove_dir(Path(target_dir) / ".roo" / "skills" / "evolve-learn")
+    remove_dir(Path(target_dir) / ".roo" / "skills" / "evolve-recall")
 
     roomodes_target = Path(target_dir) / ".roomodes"
     if roomodes_target.is_file():
@@ -629,8 +629,8 @@ def status_roo(target_dir):
     roo_skills = Path(target_dir) / ".roo" / "skills"
     roomodes = Path(target_dir) / ".roomodes"
     print(f"  Roo (.roo/ + .roomodes):")
-    print(f"    .roo/skills/kaizen-learn  : {'✓' if (roo_skills / 'kaizen-learn').is_dir() else '✗'}")
-    print(f"    .roo/skills/kaizen-recall : {'✓' if (roo_skills / 'kaizen-recall').is_dir() else '✗'}")
+    print(f"    .roo/skills/evolve-learn  : {'✓' if (roo_skills / 'evolve-learn').is_dir() else '✗'}")
+    print(f"    .roo/skills/evolve-recall : {'✓' if (roo_skills / 'evolve-recall').is_dir() else '✗'}")
 
     mode_present = False
     if roomodes.is_file():
@@ -640,13 +640,13 @@ def status_roo(target_dir):
         else:
             with open(roomodes) as f:
                 mode_present = f"slug: {ROO_SLUG}" in f.read()
-    print(f"    .roomodes (kaizen-lite)   : {'✓' if mode_present else '✗'}")
+    print(f"    .roomodes (evolve-lite)   : {'✓' if mode_present else '✗'}")
 
 
 # ── Claude installer ──────────────────────────────────────────────────────────
 
 def install_claude(source_dir, target_dir):
-    plugin_source = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "kaizen-lite"
+    plugin_source = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite"
     info(f"Installing Claude plugin from {plugin_source}")
 
     claude = shutil.which("claude")
@@ -716,9 +716,9 @@ def status_claude(target_dir):
             capture_output=True, text=True
         )
         installed = CLAUDE_PLUGIN in result.stdout
-        print(f"    kaizen-lite plugin  : {'✓' if installed else '✗ (not installed)'}")
+        print(f"    evolve-lite plugin  : {'✓' if installed else '✗ (not installed)'}")
     except Exception:
-        print(f"    kaizen-lite plugin  : ? (could not query)")
+        print(f"    evolve-lite plugin  : ? (could not query)")
 
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
@@ -757,7 +757,7 @@ def cmd_install(args):
                 install_claude(SOURCE_DIR, target_dir)
         except Exception as e:
             error(f"Failed to install {platform}: {e}")
-            if KAIZEN_DEBUG:
+            if EVOLVE_DEBUG:
                 import traceback; traceback.print_exc()
             errors.append(platform)
 
@@ -817,7 +817,7 @@ def cmd_uninstall(args):
 def cmd_status(args):
     target_dir = os.path.abspath(args.dir)
     print()
-    print(f"Kaizen installation status in: {target_dir}")
+    print(f"Evolve installation status in: {target_dir}")
     print()
     status_bob(target_dir)
     print()
@@ -832,12 +832,12 @@ def cmd_status(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="install.sh",
-        description="Install Kaizen integrations for Bob, Roo, and Claude Code.",
+        description="Install Evolve integrations for Bob, Roo, and Claude Code.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     # install
-    p_install = sub.add_parser("install", help="Install Kaizen into the current project")
+    p_install = sub.add_parser("install", help="Install Evolve into the current project")
     p_install.add_argument(
         "--platform", choices=["bob", "roo", "claude", "all"], default=None,
         help="Platform to install (default: auto-detect and prompt)",
@@ -856,7 +856,7 @@ def main():
     )
 
     # uninstall
-    p_uninstall = sub.add_parser("uninstall", help="Remove Kaizen from the current project")
+    p_uninstall = sub.add_parser("uninstall", help="Remove Evolve from the current project")
     p_uninstall.add_argument(
         "--platform", choices=["bob", "roo", "claude", "all"], default=None,
         help="Platform to uninstall (default: prompt)",
