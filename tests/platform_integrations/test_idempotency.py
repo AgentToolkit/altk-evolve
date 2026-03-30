@@ -154,6 +154,56 @@ class TestRooIdempotency:
 
 
 @pytest.mark.platform_integrations
+class TestCodexIdempotency:
+    """Test that Codex installation is idempotent."""
+
+    def test_multiple_installs(self, temp_project_dir, install_runner, file_assertions):
+        """Running install twice for Codex should be safe."""
+        install_runner.run("install", platform="codex")
+
+        marketplace_file = temp_project_dir / ".agents" / "plugins" / "marketplace.json"
+        hooks_file = temp_project_dir / ".codex" / "hooks.json"
+        first_marketplace = json.loads(marketplace_file.read_text())
+        first_hooks = json.loads(hooks_file.read_text())
+
+        install_runner.run("install", platform="codex")
+
+        second_marketplace = json.loads(marketplace_file.read_text())
+        second_hooks = json.loads(hooks_file.read_text())
+
+        assert first_marketplace == second_marketplace, "marketplace.json changed after second install"
+        assert first_hooks == second_hooks, ".codex/hooks.json changed after second install"
+
+        evolve_plugins = [entry for entry in second_marketplace["plugins"] if entry["name"] == "evolve-lite"]
+        assert len(evolve_plugins) == 1, "Duplicate evolve-lite marketplace entries found"
+
+        prompt_hooks = second_hooks["hooks"]["UserPromptSubmit"]
+        evolve_hooks = [
+            hook
+            for group in prompt_hooks
+            for hook in group.get("hooks", [])
+            if "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+        ]
+        assert len(evolve_hooks) == 1, "Duplicate Evolve UserPromptSubmit hooks found"
+
+    def test_install_after_partial_uninstall(self, temp_project_dir, install_runner, file_assertions):
+        """Installing after deleting part of the Codex plugin should restore it."""
+        install_runner.run("install", platform="codex")
+
+        plugin_dir = temp_project_dir / "plugins" / "evolve-lite"
+
+        import shutil
+
+        shutil.rmtree(plugin_dir / "skills" / "learn")
+
+        install_runner.run("install", platform="codex")
+
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "learn")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "learn" / "SKILL.md")
+        file_assertions.assert_file_exists(plugin_dir / "lib" / "entity_io.py")
+
+
+@pytest.mark.platform_integrations
 class TestUninstallInstallCycle:
     """Test that uninstall followed by install works correctly."""
 
@@ -221,3 +271,54 @@ class TestUninstallInstallCycle:
         # Assert: User content still intact
         file_assertions.assert_dir_exists(roo_dir / "skills" / "my-roo-skill")
         assert any(m["slug"] == "my-roo-mode" for m in data["customModes"])
+
+    def test_codex_uninstall_install_cycle(self, temp_project_dir, install_runner, codex_fixtures, file_assertions):
+        """Uninstalling and reinstalling Codex should work correctly."""
+        custom_plugin = codex_fixtures.create_existing_plugin(temp_project_dir)
+        marketplace_file = codex_fixtures.create_existing_marketplace(temp_project_dir)
+        hooks_file = codex_fixtures.create_existing_hooks(temp_project_dir)
+
+        plugin_json = custom_plugin / ".codex-plugin" / "plugin.json"
+        original_plugin_content = plugin_json.read_text()
+
+        install_runner.run("install", platform="codex")
+
+        evolve_plugin_dir = temp_project_dir / "plugins" / "evolve-lite"
+        file_assertions.assert_dir_exists(evolve_plugin_dir)
+
+        install_runner.run("uninstall", platform="codex")
+
+        file_assertions.assert_dir_not_exists(evolve_plugin_dir)
+        current_marketplace = json.loads(marketplace_file.read_text())
+        assert all(entry["name"] != "evolve-lite" for entry in current_marketplace["plugins"])
+
+        current_hooks = json.loads(hooks_file.read_text())
+        prompt_hooks = current_hooks["hooks"].get("UserPromptSubmit", [])
+        evolve_hooks = [
+            hook
+            for group in prompt_hooks
+            for hook in group.get("hooks", [])
+            if "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+        ]
+        assert not evolve_hooks, "Evolve hook still present after uninstall"
+
+        install_runner.run("install", platform="codex")
+
+        file_assertions.assert_dir_exists(evolve_plugin_dir)
+        file_assertions.assert_file_unchanged(plugin_json, original_plugin_content)
+
+        reinstalled_marketplace = json.loads(marketplace_file.read_text())
+        assert any(entry["name"] == "my-codex-plugin" for entry in reinstalled_marketplace["plugins"])
+        assert any(entry["name"] == "evolve-lite" for entry in reinstalled_marketplace["plugins"])
+
+        reinstalled_hooks = json.loads(hooks_file.read_text())
+        assert any(
+            hook.get("command") == "python3 ~/.codex/hooks/custom_prompt_memory.py"
+            for group in reinstalled_hooks["hooks"]["UserPromptSubmit"]
+            for hook in group.get("hooks", [])
+        )
+        assert any(
+            "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+            for group in reinstalled_hooks["hooks"]["UserPromptSubmit"]
+            for hook in group.get("hooks", [])
+        )

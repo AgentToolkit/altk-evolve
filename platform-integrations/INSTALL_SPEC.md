@@ -3,7 +3,7 @@
 ## Overview
 
 `install.sh` is a single-file bash/Python hybrid installer that sets up Evolve integrations
-into a user's project directory for one or more supported platforms: **Bob**, **Roo**, and **Claude**.
+into a user's project directory for one or more supported platforms: **Bob**, **Roo**, **Claude**, and **Codex**.
 
 It is designed to be run:
 - Locally from within the evolve repo: `./install.sh install`
@@ -48,13 +48,13 @@ Commands:
   status     Show what is currently installed
 
 install options:
-  --platform {bob,roo,claude,all}   Platform to install (default: auto-detect + prompt)
+  --platform {bob,roo,claude,codex,all}   Platform to install (default: auto-detect + prompt)
   --mode     {lite,full}            Installation mode for bob (default: lite)
   --dir      DIR                    Target project directory (default: current working dir)
   --dry-run                         Preview changes without modifying files
 
 uninstall options:
-  --platform {bob,roo,claude,all}   Platform to uninstall (default: prompt)
+  --platform {bob,roo,claude,codex,all}   Platform to uninstall (default: prompt)
   --dir      DIR                    Target project directory (default: current working dir)
   --dry-run                         Preview changes without modifying files
 ```
@@ -70,6 +70,7 @@ Detection checks in order (any match = platform considered available):
 | bob      | `.bob/` dir exists in target dir, OR `bob` on PATH |
 | roo      | `.roomodes` file exists in target dir, OR `roo` or `roo-code` on PATH |
 | claude   | `.claude/` dir exists in target dir, OR `claude` on PATH |
+| codex    | `.codex/` dir exists in target dir, OR `.agents/plugins/marketplace.json` exists, OR `codex` on PATH |
 
 If no `--platform` flag is given, the script runs interactively: shows detected platforms,
 lets the user pick one, multiple, or all.
@@ -105,7 +106,7 @@ Target: project directory
 3. Merge mode entry from `skills/.roomodes` → `.roomodes` in project dir
    - Target `.roomodes` may be JSON or YAML; detected by trying `json.loads` first
    - Upsert by `slug: evolve-lite` (JSON: array upsert; YAML: sentinel block)
-   - If target does not exist, create as JSON
+   - If target does not exist, create as YAML
 
 ### Claude — Lite Mode
 
@@ -117,6 +118,18 @@ Source: `platform-integrations/claude/plugins/evolve-lite/`
    claude --plugin-dir /path/to/platform-integrations/claude/plugins/evolve-lite
    ```
 3. No file-system fallback for Claude (plugin system manages its own state)
+
+### Codex — Lite Mode
+
+Source: `platform-integrations/codex/plugins/evolve-lite/`
+Target: project directory
+
+1. Copy `platform-integrations/codex/plugins/evolve-lite/` → `plugins/evolve-lite/` in the target project
+2. Copy shared lib from `platform-integrations/claude/plugins/evolve-lite/lib/` → `plugins/evolve-lite/lib/`
+3. Upsert plugin entry `evolve-lite` into `.agents/plugins/marketplace.json`
+4. Upsert a `UserPromptSubmit` hook into `.codex/hooks.json` that runs the Evolve recall helper script
+
+Codex is currently implemented only in lite mode. Full mode is reserved for future MCP-backed work.
 
 ---
 
@@ -138,11 +151,16 @@ Source: `platform-integrations/claude/plugins/evolve-lite/`
 1. Attempt `claude plugin uninstall evolve-lite` via subprocess
 2. If that fails, print manual instructions
 
+### Codex
+1. Remove `plugins/evolve-lite/`
+2. Remove the `evolve-lite` entry from `.agents/plugins/marketplace.json`
+3. Remove the Evolve `UserPromptSubmit` hook from `.codex/hooks.json`
+
 ---
 
 ## File Operation Strategies
 
-### JSON Strategy (mcp.json, .roomodes)
+### JSON Strategy (mcp.json, .roomodes, marketplace.json, hooks.json)
 
 All JSON writes use atomic read-modify-write:
 1. Read existing file (or start with `{}` if not found)
@@ -150,9 +168,9 @@ All JSON writes use atomic read-modify-write:
 3. Write to `<path>.evolve.tmp`
 4. `os.replace(tmp, path)` — atomic on POSIX
 
-**Key upsert** (`mcpServers.evolve`): navigate nested keys via `dict.setdefault`, set leaf value.
+**Key upsert** (`mcpServers.evolve`, `hooks.UserPromptSubmit` scaffolding): navigate nested keys via `dict.setdefault`, set leaf value.
 
-**Array upsert** (`.roomodes` `customModes`): iterate array, find item where `item["slug"] == target_slug`,
+**Array upsert** (`.roomodes` `customModes`, `marketplace.json` `plugins`): iterate array, find item where the identity key matches,
 replace in-place; append if not found.
 
 **Array remove**: filter array by `item["slug"] != target_slug`, write back.
@@ -165,14 +183,14 @@ YAML files use sentinel comment blocks:
 customModes:
   - slug: other-mode
     ...
-# >>>evolve-lite<<<
+# >>>evolve:evolve-lite<<<
   - slug: evolve-lite
     name: Evolve Lite
     ...
-# <<<evolve-lite<<<
+# <<<evolve:evolve-lite<<<
 ```
 
-**Install**: check if sentinel `# >>>evolve-lite<<<` exists in file. If yes, replace the block
+**Install**: check if sentinel `# >>>evolve:evolve-lite<<<` exists in file. If yes, replace the block
 between sentinels. If no, append sentinel block to end of file.
 
 **Uninstall**: find sentinel start and end lines, remove all lines between them (inclusive).
@@ -190,6 +208,7 @@ All operations are safe to run multiple times:
 - JSON writes upsert (replace-if-exists, insert-if-not)
 - YAML writes check for sentinel before appending
 - Claude plugin install is idempotent by the Claude CLI itself
+- Codex marketplace and hook writes replace matching Evolve entries and preserve user-owned entries
 
 ---
 

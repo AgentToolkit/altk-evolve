@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Evolve Platform Installer
-# Installs Evolve Lite (and optionally Full) integrations for Bob, Roo, and Claude Code.
+# Installs Evolve Lite (and optionally Full) integrations for Bob, Roo, Claude Code, and Codex.
 #
 # Usage:
-#   ./install.sh install [--platform bob|roo|claude|all] [--mode lite|full] [--dir DIR] [--dry-run]
-#   ./install.sh uninstall [--platform bob|roo|claude|all] [--dir DIR] [--dry-run]
+#   ./install.sh install [--platform bob|roo|claude|codex|all] [--mode lite|full] [--dir DIR] [--dry-run]
+#   ./install.sh uninstall [--platform bob|roo|claude|codex|all] [--dir DIR] [--dry-run]
 #   ./install.sh status [--dir DIR]
 #
 # Remote:
@@ -143,6 +143,7 @@ DRY_RUN = False   # set to True by --dry-run flag; checked in all write primitiv
 BOB_SLUG    = "evolve-lite"
 ROO_SLUG    = "evolve-lite"
 CLAUDE_PLUGIN = "evolve-lite"
+CODEX_PLUGIN = "evolve-lite"
 
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -305,6 +306,119 @@ def remove_json_array_item(path, array_key: str, id_key: str, id_val: str):
     atomic_write_json(path, data)
 
 
+def _default_codex_marketplace():
+    return {
+        "name": "evolve-local",
+        "interface": {
+            "displayName": "Evolve Local Plugins",
+        },
+        "plugins": [],
+    }
+
+
+def upsert_codex_marketplace_entry(path, item):
+    """Upsert a Codex marketplace plugin entry by name."""
+    data = read_json(path)
+    if not data:
+        data = _default_codex_marketplace()
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object.")
+
+    interface = data.setdefault("interface", {})
+    if not isinstance(interface, dict):
+        interface = {}
+        data["interface"] = interface
+    data.setdefault("name", "evolve-local")
+    interface.setdefault("displayName", "Evolve Local Plugins")
+
+    plugins = data.setdefault("plugins", [])
+    if not isinstance(plugins, list):
+        raise ValueError(f"{path} field 'plugins' must be an array.")
+
+    for index, existing in enumerate(plugins):
+        if isinstance(existing, dict) and existing.get("name") == item.get("name"):
+            plugins[index] = item
+            break
+    else:
+        plugins.append(item)
+
+    atomic_write_json(path, data)
+
+
+def _codex_recall_hook_command():
+    return 'python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"'
+
+
+def _codex_recall_hook_group():
+    return {
+        "hooks": [
+            {
+                "type": "command",
+                "command": _codex_recall_hook_command(),
+                "statusMessage": "Loading Evolve guidance",
+            }
+        ]
+    }
+
+
+def _group_contains_command(group, command):
+    hooks = group.get("hooks", [])
+    return any(isinstance(hook, dict) and hook.get("command") == command for hook in hooks)
+
+
+def upsert_codex_user_prompt_hook(path, group):
+    """Upsert the Evolve UserPromptSubmit hook into a Codex hooks.json file."""
+    data = read_json(path)
+    if not data:
+        data = {"hooks": {}}
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object.")
+
+    hooks = data.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        hooks = {}
+        data["hooks"] = hooks
+
+    groups = hooks.setdefault("UserPromptSubmit", [])
+    if not isinstance(groups, list):
+        groups = []
+        hooks["UserPromptSubmit"] = groups
+
+    command = _codex_recall_hook_command()
+    for index, existing in enumerate(groups):
+        if isinstance(existing, dict) and _group_contains_command(existing, command):
+            groups[index] = group
+            break
+    else:
+        groups.append(group)
+
+    atomic_write_json(path, data)
+
+
+def remove_codex_user_prompt_hook(path):
+    """Remove the Evolve UserPromptSubmit hook from a Codex hooks.json file."""
+    if not os.path.isfile(str(path)):
+        return
+
+    data = read_json(path)
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        return
+
+    groups = hooks.get("UserPromptSubmit", [])
+    if not isinstance(groups, list):
+        return
+
+    command = _codex_recall_hook_command()
+    hooks["UserPromptSubmit"] = [
+        group for group in groups if not (isinstance(group, dict) and _group_contains_command(group, command))
+    ]
+    if not hooks["UserPromptSubmit"]:
+        hooks.pop("UserPromptSubmit", None)
+
+    atomic_write_json(path, data)
+
+
 # ── YAML helpers ───────────────────────────────────────────────────────────────
 
 def _sentinel_start(slug): return f"# >>>evolve:{slug}<<<"
@@ -454,6 +568,11 @@ def detect_platforms(target_dir):
         "claude": (
             shutil.which("claude") is not None or
             (target / ".claude").is_dir()
+        ),
+        "codex": (
+            shutil.which("codex") is not None or
+            (target / ".codex").is_dir() or
+            (target / ".agents" / "plugins" / "marketplace.json").is_file()
         ),
     }
 
@@ -733,6 +852,85 @@ def status_claude(target_dir):
         print(f"    evolve-lite plugin  : ? (could not query)")
 
 
+# ── Codex installer ───────────────────────────────────────────────────────────
+
+def install_codex(source_dir, target_dir):
+    plugin_source = Path(source_dir) / "platform-integrations" / "codex" / "plugins" / CODEX_PLUGIN
+    plugin_target = Path(target_dir) / "plugins" / CODEX_PLUGIN
+    info(f"Installing Codex → {plugin_target}")
+
+    copy_tree(plugin_source, plugin_target)
+    success("Copied Codex plugin")
+
+    shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
+    if not shared_lib.is_dir():
+        error(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
+        sys.exit(1)
+    copy_tree(shared_lib, plugin_target / "lib")
+    success("Copied Codex lib")
+
+    marketplace_target = Path(target_dir) / ".agents" / "plugins" / "marketplace.json"
+    upsert_codex_marketplace_entry(
+        marketplace_target,
+        {
+            "name": CODEX_PLUGIN,
+            "source": {
+                "source": "local",
+                "path": f"./plugins/{CODEX_PLUGIN}",
+            },
+            "policy": {
+                "installation": "AVAILABLE",
+                "authentication": "ON_INSTALL",
+            },
+            "category": "Productivity",
+        },
+    )
+    success(f"Upserted Codex marketplace entry in {marketplace_target}")
+
+    hooks_target = Path(target_dir) / ".codex" / "hooks.json"
+    upsert_codex_user_prompt_hook(hooks_target, _codex_recall_hook_group())
+    success(f"Upserted Codex UserPromptSubmit hook in {hooks_target}")
+
+    success("Codex installation complete")
+
+
+def uninstall_codex(target_dir):
+    info(f"Uninstalling Codex from {target_dir}")
+
+    remove_dir(Path(target_dir) / "plugins" / CODEX_PLUGIN)
+    remove_json_array_item(Path(target_dir) / ".agents" / "plugins" / "marketplace.json", "plugins", "name", CODEX_PLUGIN)
+    remove_codex_user_prompt_hook(Path(target_dir) / ".codex" / "hooks.json")
+
+    success("Codex uninstall complete")
+
+
+def status_codex(target_dir):
+    plugin_dir = Path(target_dir) / "plugins" / CODEX_PLUGIN
+    print("  Codex:")
+    print(f"    plugins/evolve-lite       : {'✓' if plugin_dir.is_dir() else '✗'}")
+    print(f"    lib/entity_io.py          : {'✓' if (plugin_dir / 'lib' / 'entity_io.py').is_file() else '✗'}")
+    print(f"    skills/learn              : {'✓' if (plugin_dir / 'skills' / 'learn').is_dir() else '✗'}")
+    print(f"    skills/recall             : {'✓' if (plugin_dir / 'skills' / 'recall').is_dir() else '✗'}")
+
+    marketplace_path = Path(target_dir) / ".agents" / "plugins" / "marketplace.json"
+    marketplace_present = False
+    if marketplace_path.is_file():
+        data = read_json(marketplace_path)
+        marketplace_present = any(entry.get("name") == CODEX_PLUGIN for entry in data.get("plugins", []))
+    print(f"    marketplace.json entry    : {'✓' if marketplace_present else '✗'}")
+
+    hooks_path = Path(target_dir) / ".codex" / "hooks.json"
+    hook_present = False
+    if hooks_path.is_file():
+        data = read_json(hooks_path)
+        hook_groups = data.get("hooks", {}).get("UserPromptSubmit", [])
+        hook_present = any(
+            isinstance(group, dict) and _group_contains_command(group, _codex_recall_hook_command())
+            for group in hook_groups
+        )
+    print(f"    .codex/hooks.json entry   : {'✓' if hook_present else '✗'}")
+
+
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
 def cmd_install(args):
@@ -742,7 +940,7 @@ def cmd_install(args):
 
     # Resolve platforms
     if args.platform == "all":
-        platforms = ["bob", "roo", "claude"]
+        platforms = ["bob", "roo", "claude", "codex"]
     elif args.platform:
         platforms = [args.platform]
     else:
@@ -767,6 +965,8 @@ def cmd_install(args):
                 install_roo(SOURCE_DIR, target_dir)
             elif platform == "claude":
                 install_claude(SOURCE_DIR, target_dir)
+            elif platform == "codex":
+                install_codex(SOURCE_DIR, target_dir)
         except Exception as e:
             error(f"Failed to install {platform}: {e}")
             if EVOLVE_DEBUG:
@@ -794,7 +994,7 @@ def cmd_uninstall(args):
         info(_c("35", "DRY RUN — no files will be written or deleted"))
 
     if args.platform == "all":
-        platforms = ["bob", "roo", "claude"]
+        platforms = ["bob", "roo", "claude", "codex"]
     elif args.platform:
         platforms = [args.platform]
     else:
@@ -811,6 +1011,8 @@ def cmd_uninstall(args):
                 uninstall_roo(target_dir)
             elif platform == "claude":
                 uninstall_claude(target_dir)
+            elif platform == "codex":
+                uninstall_codex(target_dir)
         except Exception as e:
             error(f"Failed to uninstall {platform}: {e}")
             errors.append(platform)
@@ -837,6 +1039,8 @@ def cmd_status(args):
     print()
     status_claude(target_dir)
     print()
+    status_codex(target_dir)
+    print()
 
 
 # ── argparse ──────────────────────────────────────────────────────────────────
@@ -844,14 +1048,14 @@ def cmd_status(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="install.sh",
-        description="Install Evolve integrations for Bob, Roo, and Claude Code.",
+        description="Install Evolve integrations for Bob, Roo, Claude Code, and Codex.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     # install
     p_install = sub.add_parser("install", help="Install Evolve into the current project")
     p_install.add_argument(
-        "--platform", choices=["bob", "roo", "claude", "all"], default=None,
+        "--platform", choices=["bob", "roo", "claude", "codex", "all"], default=None,
         help="Platform to install (default: auto-detect and prompt)",
     )
     p_install.add_argument(
@@ -870,7 +1074,7 @@ def main():
     # uninstall
     p_uninstall = sub.add_parser("uninstall", help="Remove Evolve from the current project")
     p_uninstall.add_argument(
-        "--platform", choices=["bob", "roo", "claude", "all"], default=None,
+        "--platform", choices=["bob", "roo", "claude", "codex", "all"], default=None,
         help="Platform to uninstall (default: prompt)",
     )
     p_uninstall.add_argument(
