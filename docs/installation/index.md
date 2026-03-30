@@ -3,15 +3,15 @@
 
 ### Bob Quick Start
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```
 ### Download Install Script
 ```bash
 # Latest (based on main)
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/evolve/main/platform-integrations/install.sh -o install.sh && chmod +x install.sh
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh -o install.sh && chmod +x install.sh
 
 # Latest Stable Version
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/evolve/v1.0.5/platform-integrations/install.sh -o install.sh && chmod +x install.sh
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/platform-integrations/install.sh -o install.sh && chmod +x install.sh
 ```
 ### Install Script Usage
 ```bash
