@@ -22,7 +22,7 @@ def _hooks_have_evolve_recall(path):
     for group in groups:
         for hook in group.get("hooks", []):
             if EVOLVE_HOOK_SNIPPET in hook.get("command", ""):
-                return True
+                return group.get("matcher") == ""
     return False
 
 
@@ -32,7 +32,7 @@ class TestCodexInstall:
 
     def test_install_creates_expected_files(self, temp_project_dir, install_runner, file_assertions):
         """Installing Codex should create the plugin tree, marketplace entry, and hook."""
-        install_runner.run("install", platform="codex")
+        result = install_runner.run("install", platform="codex")
 
         plugin_dir = temp_project_dir / "plugins" / EVOLVE_PLUGIN
         file_assertions.assert_dir_exists(plugin_dir)
@@ -51,6 +51,22 @@ class TestCodexInstall:
         hooks_path = temp_project_dir / ".codex" / "hooks.json"
         file_assertions.assert_valid_json(hooks_path)
         assert _hooks_have_evolve_recall(hooks_path), "Evolve recall hook missing from .codex/hooks.json"
+
+        hooks_data = json.loads(hooks_path.read_text())
+        evolve_groups = [
+            group
+            for group in hooks_data.get("hooks", {}).get("UserPromptSubmit", [])
+            if any(EVOLVE_HOOK_SNIPPET in hook.get("command", "") for hook in group.get("hooks", []))
+        ]
+        assert evolve_groups[0]["matcher"] == ""
+        evolve_hook = next(
+            hook for hook in evolve_groups[0]["hooks"] if EVOLVE_HOOK_SNIPPET in hook.get("command", "")
+        )
+        expected_command = 'python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"'
+        assert evolve_hook["command"] == expected_command
+        assert "~/.codex/config.toml" in result.stdout
+        assert "codex_hooks = true" in result.stdout
+        assert "evolve-lite:recall" in result.stdout
 
     def test_codex_dry_run_does_not_write_files(self, temp_project_dir, install_runner):
         """Dry-run should report actions without writing files."""

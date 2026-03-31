@@ -281,12 +281,15 @@ class TestCodexPreservation:
         assert len(custom_prompt_hooks) == 1, "User's UserPromptSubmit hook was removed!"
 
         evolve_hooks = [
-            hook
+            group
             for group in prompt_hooks
-            for hook in group.get("hooks", [])
-            if "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+            if any(
+                "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+                for hook in group.get("hooks", [])
+            )
         ]
         assert len(evolve_hooks) == 1, "Evolve UserPromptSubmit hook was not added!"
+        assert evolve_hooks[0].get("matcher") == ""
 
 
 @pytest.mark.platform_integrations

@@ -178,13 +178,16 @@ class TestCodexIdempotency:
         assert len(evolve_plugins) == 1, "Duplicate evolve-lite marketplace entries found"
 
         prompt_hooks = second_hooks["hooks"]["UserPromptSubmit"]
-        evolve_hooks = [
-            hook
+        evolve_hook_groups = [
+            group
             for group in prompt_hooks
-            for hook in group.get("hooks", [])
-            if "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+            if any(
+                "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+                for hook in group.get("hooks", [])
+            )
         ]
-        assert len(evolve_hooks) == 1, "Duplicate Evolve UserPromptSubmit hooks found"
+        assert len(evolve_hook_groups) == 1, "Duplicate Evolve UserPromptSubmit hooks found"
+        assert evolve_hook_groups[0].get("matcher") == ""
 
     def test_install_after_partial_uninstall(self, temp_project_dir, install_runner, file_assertions):
         """Installing after deleting part of the Codex plugin should restore it."""

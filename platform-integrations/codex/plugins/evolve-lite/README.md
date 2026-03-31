@@ -4,7 +4,7 @@ Evolve Lite for Codex provides lightweight file-backed learning and recall witho
 
 ## Features
 
-- Automatic recall through a repo-level Codex `UserPromptSubmit` hook
+- Automatic recall through a repo-level Codex `UserPromptSubmit` hook when Codex hooks are enabled
 - Manual `learn` skill to save reusable entities into `.evolve/entities/`
 - Manual `recall` skill to inspect everything stored for the current repo
 
@@ -46,6 +46,15 @@ That installs:
 - `plugins/evolve-lite/`
 - `.agents/plugins/marketplace.json`
 - `.codex/hooks.json`
+
+Automatic recall requires Codex hooks to be enabled in `~/.codex/config.toml`:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+If you do not want to enable Codex hooks, you can still invoke the installed `evolve-lite:recall` skill manually to load or inspect the saved guidance for the current repo.
 
 ## Included Skills
 

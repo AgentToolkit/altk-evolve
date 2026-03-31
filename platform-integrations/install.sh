@@ -349,8 +349,13 @@ def _codex_recall_hook_command():
     return 'python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"'
 
 
+def _is_codex_recall_command(command):
+    return isinstance(command, str) and "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in command
+
+
 def _codex_recall_hook_group():
     return {
+        "matcher": "",
         "hooks": [
             {
                 "type": "command",
@@ -361,9 +366,9 @@ def _codex_recall_hook_group():
     }
 
 
-def _group_contains_command(group, command):
+def _group_contains_codex_recall_command(group):
     hooks = group.get("hooks", [])
-    return any(isinstance(hook, dict) and hook.get("command") == command for hook in hooks)
+    return any(isinstance(hook, dict) and _is_codex_recall_command(hook.get("command")) for hook in hooks)
 
 
 def upsert_codex_user_prompt_hook(path, group):
@@ -384,9 +389,8 @@ def upsert_codex_user_prompt_hook(path, group):
         groups = []
         hooks["UserPromptSubmit"] = groups
 
-    command = _codex_recall_hook_command()
     for index, existing in enumerate(groups):
-        if isinstance(existing, dict) and _group_contains_command(existing, command):
+        if isinstance(existing, dict) and _group_contains_codex_recall_command(existing):
             groups[index] = group
             break
     else:
@@ -409,9 +413,8 @@ def remove_codex_user_prompt_hook(path):
     if not isinstance(groups, list):
         return
 
-    command = _codex_recall_hook_command()
     hooks["UserPromptSubmit"] = [
-        group for group in groups if not (isinstance(group, dict) and _group_contains_command(group, command))
+        group for group in groups if not (isinstance(group, dict) and _group_contains_codex_recall_command(group))
     ]
     if not hooks["UserPromptSubmit"]:
         hooks.pop("UserPromptSubmit", None)
@@ -890,6 +893,10 @@ def install_codex(source_dir, target_dir):
     hooks_target = Path(target_dir) / ".codex" / "hooks.json"
     upsert_codex_user_prompt_hook(hooks_target, _codex_recall_hook_group())
     success(f"Upserted Codex UserPromptSubmit hook in {hooks_target}")
+    warn("Automatic Codex recall requires hooks to be enabled in ~/.codex/config.toml:")
+    print("      [features]")
+    print("      codex_hooks = true")
+    info("If you do not want to enable Codex hooks, invoke the installed evolve-lite:recall skill manually.")
 
     success("Codex installation complete")
 
@@ -925,7 +932,7 @@ def status_codex(target_dir):
         data = read_json(hooks_path)
         hook_groups = data.get("hooks", {}).get("UserPromptSubmit", [])
         hook_present = any(
-            isinstance(group, dict) and _group_contains_command(group, _codex_recall_hook_command())
+            isinstance(group, dict) and _group_contains_codex_recall_command(group)
             for group in hook_groups
         )
     print(f"    .codex/hooks.json entry   : {'✓' if hook_present else '✗'}")

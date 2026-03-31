@@ -11,7 +11,7 @@ This skill retrieves relevant entities from the local Evolve knowledge base base
 
 ## How It Works
 
-1. The Codex `UserPromptSubmit` hook runs before the prompt is sent.
+1. If Codex hooks are enabled in `~/.codex/config.toml` with `[features] codex_hooks = true`, the Codex `UserPromptSubmit` hook runs before the prompt is sent.
 2. The helper script reads the prompt JSON from stdin.
 3. It loads stored entities from `.evolve/entities/`.
 4. It prints formatted guidance to stdout.
@@ -24,6 +24,8 @@ Run this if you want to inspect the currently stored entities yourself:
 ```bash
 printf '{"prompt":"Show stored Evolve entities"}' | python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
 ```
+
+If you prefer not to enable Codex hooks, invoke the installed `evolve-lite:recall` skill manually when you want the saved guidance surfaced in the current session.
 
 ## Entities Storage
 

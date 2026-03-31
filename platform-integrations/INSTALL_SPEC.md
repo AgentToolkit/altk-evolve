@@ -128,6 +128,12 @@ Target: project directory
 2. Copy shared lib from `platform-integrations/claude/plugins/evolve-lite/lib/` → `plugins/evolve-lite/lib/`
 3. Upsert plugin entry `evolve-lite` into `.agents/plugins/marketplace.json`
 4. Upsert a `UserPromptSubmit` hook into `.codex/hooks.json` that runs the Evolve recall helper script
+5. Print post-install guidance that automatic recall requires `~/.codex/config.toml` to include:
+   ```toml
+   [features]
+   codex_hooks = true
+   ```
+6. Print a manual fallback note that users can invoke `evolve-lite:recall` directly if they do not want to enable Codex hooks
 
 Codex is currently implemented only in lite mode. Full mode is reserved for future MCP-backed work.
 
