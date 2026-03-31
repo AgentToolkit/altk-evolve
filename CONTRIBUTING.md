@@ -23,15 +23,15 @@ https://docs.astral.sh/uv/getting-started/installation/
 You can use `uv` to create a virtual environment (if it doesn’t already exist) and install all project dependencies:
 
 ```bash
-uv venv
-uv sync && source .venv/bin/activate
+uv venv && source .venv/bin/activate
+uv sync
 ```
 
 #### Using a specific Python version
 
 ```bash
-uv venv --python 3.12
-uv sync && source .venv/bin/activate
+uv venv --python 3.12 && source .venv/bin/activate
+uv sync
 ```
 
 #### Adding a new dependency
