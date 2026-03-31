@@ -1,6 +1,13 @@
-# Evolve
+<div align="center">
 
-Self-improving agents through iterations.
+# Evolve: On‑the‑job learning for AI agents
+
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
+![arXiv](https://img.shields.io/badge/arXiv-2603.10600-b31b1b) 
+![License](https://img.shields.io/github/license/AgentToolkit/altk-evolve)
+![Stars](https://img.shields.io/github/stars/AgentToolkit/altk-evolve?style=social)
+</div>
 
 Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
 
