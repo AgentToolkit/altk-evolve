@@ -24,14 +24,14 @@ You can use `uv` to create a virtual environment (if it doesn’t already exist)
 
 ```bash
 uv venv
-uv sync
+uv sync && source .venv/bin/activate
 ```
 
 #### Using a specific Python version
 
 ```bash
 uv venv --python 3.12
-uv sync
+uv sync && source .venv/bin/activate
 ```
 
 #### Adding a new dependency
