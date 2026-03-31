@@ -13,7 +13,7 @@
       "author": {
         "name": "Vinod Muthusamy"
       },
-      "source": "./plugins/evolve-lite",
+      "source": "./platform-integrations/claude/plugins/evolve-lite",
       "category": "productivity"
     }
   ]
