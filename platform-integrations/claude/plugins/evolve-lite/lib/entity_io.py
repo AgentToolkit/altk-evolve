@@ -264,7 +264,7 @@ def write_entity_file(directory, entity):
     """
     _ALLOWED_TYPES = {"guideline", "preference"}
     entity_type = entity.get("type", "guideline")
-    if entity_type not in _ALLOWED_TYPES:
+    if not isinstance(entity_type, str) or entity_type not in _ALLOWED_TYPES:
         entity_type = "guideline"
     entity["type"] = entity_type
     type_dir = Path(directory) / entity_type
