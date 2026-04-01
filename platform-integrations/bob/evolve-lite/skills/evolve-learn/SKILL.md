@@ -1,57 +1,57 @@
 ---
 name: learn
-description: Analyze the current conversation to extract actionable entities — proactive recommendations derived from errors, failures, and successful patterns.
+description: Analyze the current conversation to extract guidelines that correct reasoning chains — reducing wasted steps, preventing errors, and capturing user preferences.
 ---
 
 # Entity Generator
 
 ## Overview
 
-This skill analyzes the current conversation to extract actionable entities that would help on similar tasks in the future. It **prioritizes errors** — tool failures, exceptions, wrong approaches, retry loops — and transforms them into proactive recommendations that prevent those errors from recurring.
+This skill analyzes the current conversation to extract guidelines that **correct the agent's reasoning chain**. A good guideline is one that, if known beforehand, would have led to a shorter or more correct execution. Only extract guidelines that fall into one of these three categories:
+
+1. **Shortcuts** — The agent took unnecessary steps or tried an approach that didn't work before finding the right one. The guideline encodes the direct path so future runs skip the detour.
+2. **Error prevention** — The agent hit an error (tool failure, exception, wrong output) that could be avoided with upfront knowledge. The guideline prevents the error from happening at all.
+3. **User corrections** — The user explicitly corrected, redirected, or stated a preference during the conversation. The guideline captures what the user said so the agent gets it right next time without being told.
+
+**Do NOT extract guidelines that are:**
+- General best practices the agent already knows (e.g., "use descriptive variable names")
+- Observations about the codebase that can be derived by reading the code
+- Restatements of what the agent did successfully without any detour or correction
+- Vague advice that wouldn't change the agent's behavior on a concrete task
 
 ## Workflow
 
 ### Step 1: Analyze the Conversation
 
-Identify from the current conversation:
+Review the conversation and identify:
 
-- **Task/Request**: What was the user asking for?
-- **What Worked**: Which approaches succeeded?
-- **What Failed**: Which approaches didn't work and why?
-- **Errors Encountered**: Tool failures, exceptions, permission errors, retry loops, dead ends, wrong initial approaches
+- **Wasted steps**: Where did the agent go down a path that turned out to be unnecessary? What would have been the direct route?
+- **Errors hit**: What errors occurred? What knowledge would have prevented them?
+- **User corrections**: Where did the user say "no", "not that", "actually", "I want", or otherwise redirect the agent?
 
-### Step 2: Identify Errors and Root Causes
+If none of these occurred, **output zero entities**. Not every conversation produces guidelines.
 
-Scan for these error signals:
+### Step 2: Extract Entities
 
-1. **Tool/command failures**: Non-zero exit codes, error messages, exceptions
-2. **Permission/access errors**: "Permission denied", "not found", sandbox restrictions
-3. **Wrong initial approach**: First attempt abandoned for a different strategy
-4. **Retry loops**: Same action attempted multiple times before succeeding
-5. **Missing prerequisites**: Dependencies, packages, configs discovered mid-task
-6. **Silent failures**: Actions that appeared to succeed but produced wrong results
-
-If no errors are found, extract entities from successful patterns instead.
-
-### Step 3: Extract Entities
-
-Extract 3-5 proactive entities. **Prioritize entities derived from errors.**
+For each identified shortcut, error, or user correction, create one entity — up to 5 entities; output 0 when none qualify. If more candidates exist, keep only the highest-impact ones.
 
 Principles:
 
-1. **Reframe failures as proactive recommendations** — recommend what worked, not what to avoid
-   - Bad: "If exiftool fails, use PIL instead"
+1. **State what to do, not what to avoid** — frame as proactive recommendations
+   - Bad: "Don't use exiftool in sandboxes"
    - Good: "In sandboxed environments, use Python libraries (PIL/Pillow) for image metadata extraction"
 
 2. **Triggers should be situational context, not failure conditions**
    - Bad trigger: "When apt-get fails"
    - Good trigger: "When working in containerized/sandboxed environments"
 
-3. **For retry loops, recommend the final working approach directly** — eliminate trial-and-error by encoding the answer
+3. **For shortcuts, recommend the final working approach directly** — eliminate trial-and-error by encoding the answer
 
-### Step 4: Save Entities
+4. **For user corrections, use the user's own words** — preserve the specific preference rather than generalizing it
 
-Output entities as JSON and pipe to the save script:
+### Step 3: Save Entities
+
+Output entities as JSON and pipe to the save script. The `type` field must always be `"guideline"` — no other types are accepted.
 
 ```bash
 echo '{
@@ -72,12 +72,12 @@ The script will:
 - Deduplicate against existing entities
 - Display confirmation with the total count
 
-## Best Practices
+## Quality Gate
 
-1. **Prioritize error-derived entities**: Errors are the highest-signal source of learnings
-2. **One error, one entity**: Each distinct error should produce one prevention entity
-3. **Be specific and actionable**: State what to do, not what to avoid
-4. **Include rationale**: Explain why the approach works
-5. **Use situational triggers**: Context-based, not failure-based
-6. **Limit to 3-5 entities**: Focus on the most impactful learnings
-7. **When more than 5 errors exist**: Merge errors with the same root cause, rank by severity > frequency > user impact, then keep the top 3-5
+Before saving, review each entity against this checklist:
+
+- [ ] Does it fall into one of the three categories (shortcut, error prevention, user correction)?
+- [ ] Would knowing this guideline beforehand have changed the agent's behavior in a concrete way?
+- [ ] Is it specific enough that another agent could act on it without further context?
+
+If any answer is no, drop the entity. **Zero entities is a valid output.**

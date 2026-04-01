@@ -262,9 +262,10 @@ def write_entity_file(directory, entity):
     Returns:
         Path to the written file.
     """
-    entity_type = entity.get("type", "general")
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", entity_type):
-        entity_type = "general"
+    _ALLOWED_TYPES = {"guideline", "preference"}
+    entity_type = entity.get("type", "guideline")
+    if not isinstance(entity_type, str) or entity_type not in _ALLOWED_TYPES:
+        entity_type = "guideline"
     entity["type"] = entity_type
     type_dir = Path(directory) / entity_type
     type_dir.mkdir(parents=True, exist_ok=True)
