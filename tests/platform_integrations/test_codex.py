@@ -59,10 +59,10 @@ class TestCodexInstall:
             if any(EVOLVE_HOOK_SNIPPET in hook.get("command", "") for hook in group.get("hooks", []))
         ]
         assert evolve_groups[0]["matcher"] == ""
-        evolve_hook = next(
-            hook for hook in evolve_groups[0]["hooks"] if EVOLVE_HOOK_SNIPPET in hook.get("command", "")
+        evolve_hook = next(hook for hook in evolve_groups[0]["hooks"] if EVOLVE_HOOK_SNIPPET in hook.get("command", ""))
+        expected_command = (
+            'python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"'
         )
-        expected_command = 'python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"'
         assert evolve_hook["command"] == expected_command
         assert "~/.codex/config.toml" in result.stdout
         assert "codex_hooks = true" in result.stdout
