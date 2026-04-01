@@ -168,6 +168,9 @@ customModes:
       - save_trajectory() requires OpenAI JSON format: [{"role":
       "user/assistant", "content": "..."}]
 
+      - When tool calls occur, include them as function_call/function_response
+      objects in the content field
+
       - Agent cannot access conversation history directly
 
       - save_trajectory() cannot be called automatically

@@ -502,32 +502,36 @@ def install_bob(source_dir, target_dir, mode="lite"):
 
     info(f"Installing Bob ({mode} mode) → {bob_target}")
 
-    # Shared lib (entity_io) — single source of truth lives in the Claude plugin
-    shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
-    if not shared_lib.is_dir():
-        error(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
-        sys.exit(1)
-    copy_tree(shared_lib, bob_target / "evolve-lib")
-    success("Copied Bob lib")
+    if mode == "lite":
+        # Shared lib (entity_io) — single source of truth lives in the Claude plugin
+        shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
+        if not shared_lib.is_dir():
+            error(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
+            sys.exit(1)
+        copy_tree(shared_lib, bob_target / "evolve-lib")
+        success("Copied Bob lib")
 
-    # Skills
-    copy_tree(bob_source_lite / "skills" / "evolve-learn",  bob_target / "skills" / "evolve-learn")
-    copy_tree(bob_source_lite / "skills" / "evolve-recall", bob_target / "skills" / "evolve-recall")
-    success("Copied Bob skills")
+        # Skills
+        copy_tree(bob_source_lite / "skills" / "evolve-learn",  bob_target / "skills" / "evolve-learn")
+        copy_tree(bob_source_lite / "skills" / "evolve-recall", bob_target / "skills" / "evolve-recall")
+        success("Copied Bob skills")
 
-    # Commands
-    copy_tree(bob_source_lite / "commands", bob_target / "commands")
-    success("Copied Bob commands")
+        # Commands
+        copy_tree(bob_source_lite / "commands", bob_target / "commands")
+        success("Copied Bob commands")
 
-    # custom_modes.yaml
-    source_modes_yaml = bob_source_lite / "custom_modes.yaml"
-    target_modes_yaml = bob_target / "custom_modes.yaml"
-    merge_yaml_custom_mode(source_modes_yaml, target_modes_yaml, BOB_SLUG)
-    success(f"Merged custom mode '{BOB_SLUG}' into {target_modes_yaml}")
+        # custom_modes.yaml
+        source_modes_yaml = bob_source_lite / "custom_modes.yaml"
+        target_modes_yaml = bob_target / "custom_modes.yaml"
+        merge_yaml_custom_mode(source_modes_yaml, target_modes_yaml, BOB_SLUG)
+        success(f"Merged custom mode '{BOB_SLUG}' into {target_modes_yaml}")
 
-    # Full mode: mcp.json
-    if mode == "full":
-        mcp_source = Path(source_dir) / "platform-integrations" / "bob" / "evolve-full" / "mcp.json"
+    elif mode == "full":
+        # Full mode: mcp.json and custom_modes.yaml
+        bob_source_full = Path(source_dir) / "platform-integrations" / "bob" / "evolve-full"
+        
+        # MCP configuration
+        mcp_source = bob_source_full / "mcp.json"
         if not mcp_source.exists():
             error(f"Source MCP config not found: {mcp_source}")
             sys.exit(1)
@@ -537,6 +541,12 @@ def install_bob(source_dir, target_dir, mode="lite"):
         evolve_server = mcp_data["mcpServers"]["evolve"]
         upsert_json_key(mcp_target, ["mcpServers", "evolve"], evolve_server)
         success(f"Upserted MCP server config in {mcp_target}")
+        
+        # custom_modes.yaml
+        source_modes_yaml = bob_source_full / "custom_modes.yaml"
+        target_modes_yaml = bob_target / "custom_modes.yaml"
+        merge_yaml_custom_mode(source_modes_yaml, target_modes_yaml, "Evolve")
+        success(f"Merged custom mode 'Evolve' into {target_modes_yaml}")
 
     success("Bob installation complete")
 
@@ -550,7 +560,9 @@ def uninstall_bob(target_dir, mode="full"):
     remove_dir(bob_target / "skills" / "evolve-recall")
     remove_file(bob_target / "commands" / "evolve:learn.md")
     remove_file(bob_target / "commands" / "evolve:recall.md")
-    remove_yaml_custom_mode(bob_target / "custom_modes.yaml", BOB_SLUG)
+    # Remove both lite and full mode custom modes
+    remove_yaml_custom_mode(bob_target / "custom_modes.yaml", BOB_SLUG)  # evolve-lite
+    remove_yaml_custom_mode(bob_target / "custom_modes.yaml", "Evolve")  # full mode
     remove_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"])
 
     success("Bob uninstall complete")
