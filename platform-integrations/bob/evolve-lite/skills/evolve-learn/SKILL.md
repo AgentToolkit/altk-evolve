@@ -33,7 +33,7 @@ If none of these occurred, **output zero entities**. Not every conversation prod
 
 ### Step 2: Extract Entities
 
-For each identified shortcut, error, or user correction, create one entity. **Maximum 3-5 entities.** If more candidates exist, keep only the highest-impact ones.
+For each identified shortcut, error, or user correction, create one entity — up to 5 entities; output 0 when none qualify. If more candidates exist, keep only the highest-impact ones.
 
 Principles:
 
