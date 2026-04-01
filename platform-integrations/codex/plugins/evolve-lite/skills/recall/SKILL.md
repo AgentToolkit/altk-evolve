@@ -25,6 +25,8 @@ Run this if you want to inspect the currently stored entities yourself:
 printf '{"prompt":"Show stored Evolve entities"}' | python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
 ```
 
+The installed Codex hook itself does not require `git`; it walks upward from the current working directory until it finds the repo-local plugin script.
+
 If you prefer not to enable Codex hooks, invoke the installed `evolve-lite:recall` skill manually when you want the saved guidance surfaced in the current session.
 
 ## Entities Storage

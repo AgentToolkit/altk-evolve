@@ -56,6 +56,8 @@ codex_hooks = true
 
 If you do not want to enable Codex hooks, you can still invoke the installed `evolve-lite:recall` skill manually to load or inspect the saved guidance for the current repo.
 
+The installed Codex hook does not require `git`. It walks upward from the current working directory until it finds the repo-local `plugins/evolve-lite/.../retrieve_entities.py` script.
+
 ## Included Skills
 
 ### `learn`

@@ -346,7 +346,17 @@ def upsert_codex_marketplace_entry(path, item):
 
 
 def _codex_recall_hook_command():
-    return 'python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"'
+    return (
+        "sh -lc '"
+        'd=\"$PWD\"; '
+        "while :; do "
+        'candidate=\"$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py\"; '
+        'if [ -f \"$candidate\" ]; then exec python3 \"$candidate\"; fi; '
+        '[ \"$d\" = \"/\" ] && break; '
+        'd=\"$(dirname \"$d\")\"; '
+        "done; "
+        "exit 1'"
+    )
 
 
 def _is_codex_recall_command(command):
