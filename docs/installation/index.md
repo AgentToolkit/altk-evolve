@@ -15,19 +15,18 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/pla
 ```
 ### Install Script Usage
 ```bash
-./install.sh install --platform {bob,roo,claude,all} --mode {lite,full} [--dry-run]
+./install.sh install --platform {bob,claude,all} --mode {lite,full} [--dry-run]
 ```
 
 | Platform | Description |
 |-----------|-------------|
 | `all` | Install all platforms |
 | `bob` | IBM Bob |
-| `roo` | Roo Code |
 | `claude` | Claude Code |
 
 | Mode | Description |
 |------|-------------|
-| `lite` | Install only the core components. Some platforms only supprt lite. |
+| `lite` | Install only the core components. Some platforms only support lite. |
 | `full` | Install all components including UI and CLI |
 
 Use `--dry-run` to see what would be installed without making changes.

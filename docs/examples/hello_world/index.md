@@ -14,9 +14,9 @@ uv init
 ```
 
 ## Step 2: Install Evolve
-Install Evolve by following the [installation instructions](../../installation), or run:
+Install Evolve by following the [installation instructions](../../installation/index.md), or run:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```
 ## Step 3: Project Setup
 Open the project directory in IBM Bob IDE, and switch Bob's mode to `Evolve Lite`

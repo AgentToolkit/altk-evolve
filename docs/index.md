@@ -10,5 +10,27 @@ Evolve is a system designed to help agents improve over time by learning from th
 - **Trajectory Analysis**: Automatically analyzes agent trajectories to generate guidelines and best practices.
 - **Milvus Integration**: Uses Milvus (or Milvus Lite) for efficient vector storage and retrieval.
 
+## Start Here
+
+- [Installation](installation/index.md): Set up Evolve on Bob or Claude Code.
+- [Configuration](guides/configuration.md): Configure models, backends, and environment variables.
+- [CLI Reference](reference/cli.md): Manage namespaces, entities, and sync jobs from the command line.
+
+## Guides
+
+- [Low-Code Tracing](guides/low-code-tracing.md): Instrument agents with Phoenix and verify end-to-end tracing.
+- [Phoenix Sync](guides/phoenix-sync.md): Pull trajectories from Phoenix and generate stored guidelines.
+- [Extract Trajectories](guides/extract-trajectories.md): Export Phoenix traces into an OpenAI-style message format.
+
+## Integrations and Tutorials
+
+- [Evolve Lite](integrations/evolve-lite.md): Lightweight Claude Code integration with local entity storage.
+- [Claude Code Demo](tutorials/claude-code-demo.md): Run the filesystem demo with Claude Code and the Evolve MCP server.
+- [Hello World with IBM Bob](examples/hello_world/index.md): A simple Bob walkthrough that shows how memory gets learned.
+
+## Reference
+
+- [Policies](reference/policies.md): Structured policy entities and how to retrieve them with MCP tools.
+
 ## Architecture
-![Screenshot](assets/architecture.png)
+![Architecture](assets/architecture.png)

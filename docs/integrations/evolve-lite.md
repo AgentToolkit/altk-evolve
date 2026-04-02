@@ -11,7 +11,7 @@ Evolve Lite is a lightweight mode that runs as a Claude Code plugin — no vecto
 ### From Local Directory
 
 ```bash
-claude --plugin-dir /path/to/evolve/repo/plugins/evolve
+claude --plugin-dir /path/to/altk-evolve/platform-integrations/claude/plugins/evolve-lite
 ```
 
 ### From Marketplace
@@ -36,6 +36,10 @@ Evolve Lite has two halves:
 2. **Recall** — On every subsequent prompt, a `UserPromptSubmit` hook automatically loads stored entities and injects them into the conversation context. Claude applies whichever entities are relevant to the current task.
 
 No external services are involved. The entire loop is a JSON file and two Python scripts.
+
+## Example Walkthrough
+
+The examples below show the learn-then-recall loop across multiple sessions, starting with a simple preference and then a more complex recovery pattern.
 
 ## Example 1 — Learning a user preference
 

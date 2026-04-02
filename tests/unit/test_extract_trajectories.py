@@ -1,4 +1,4 @@
-"""Tests for extract_trajectories.py standalone script functions."""
+"""Tests for scripts/extract_trajectories.py standalone utility functions."""
 
 import json
 import os
@@ -7,10 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
-# Add project root to path for importing the standalone script
+# Add project root to path for importing the standalone utility module.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from extract_trajectories import (
+from scripts.extract_trajectories import (
     parse_content,
     extract_messages_from_span,
     convert_anthropic_to_openai,
@@ -592,7 +592,7 @@ class TestExtractTrajectory:
 class TestGetTrajectories:
     """Tests for get_trajectories function."""
 
-    @patch("extract_trajectories.fetch_spans")
+    @patch("scripts.extract_trajectories.fetch_spans")
     def test_get_trajectories_filters_non_llm_spans(self, mock_fetch):
         """Test that non-LLM spans are filtered."""
         mock_fetch.return_value = [{"name": "other_span", "attributes": {}}]
@@ -601,7 +601,7 @@ class TestGetTrajectories:
 
         assert result == []
 
-    @patch("extract_trajectories.fetch_spans")
+    @patch("scripts.extract_trajectories.fetch_spans")
     def test_get_trajectories_filters_error_spans(self, mock_fetch):
         """Test that error spans are filtered by default."""
         mock_fetch.return_value = [
@@ -617,7 +617,7 @@ class TestGetTrajectories:
 
         assert result == []
 
-    @patch("extract_trajectories.fetch_spans")
+    @patch("scripts.extract_trajectories.fetch_spans")
     def test_get_trajectories_includes_errors_when_requested(self, mock_fetch):
         """Test that error spans are included when flag is set."""
         mock_fetch.return_value = [
@@ -634,7 +634,7 @@ class TestGetTrajectories:
 
         assert len(result) == 1
 
-    @patch("extract_trajectories.fetch_spans")
+    @patch("scripts.extract_trajectories.fetch_spans")
     def test_get_trajectories_filters_empty_messages(self, mock_fetch):
         """Test that spans without messages are filtered."""
         mock_fetch.return_value = [
@@ -649,7 +649,7 @@ class TestGetTrajectories:
 
         assert result == []
 
-    @patch("extract_trajectories.fetch_spans")
+    @patch("scripts.extract_trajectories.fetch_spans")
     def test_get_trajectories_cleans_by_default(self, mock_fetch):
         """Test that trajectories are cleaned by default."""
         mock_fetch.return_value = [
@@ -670,7 +670,7 @@ class TestGetTrajectories:
         assert len(result) == 1
         assert "<system-reminder>" not in result[0]["messages"][0]["content"]
 
-    @patch("extract_trajectories.fetch_spans")
+    @patch("scripts.extract_trajectories.fetch_spans")
     def test_get_trajectories_no_clean(self, mock_fetch):
         """Test trajectories without cleaning."""
         mock_fetch.return_value = [

@@ -4,7 +4,7 @@ This guide walks through running Evolve with Claude Code.
 
 ## Prerequisites
 
-- Evolve MCP server running (see [README.md](README.md))
+- Evolve MCP server running (see the [installation guide](../installation/index.md))
 - [Claude Code](https://code.claude.com/docs/en/overview) installed with credentials configured
 
 ## Running the Filesystem MCP Server
