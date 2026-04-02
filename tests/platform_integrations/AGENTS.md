@@ -59,12 +59,6 @@ These verify that existing user data is NEVER overwritten:
 - User's MCP servers in `.bob/mcp.json` are preserved
 - All preservation works when installing multiple platforms
 
-**Roo Platform:**
-- User's custom skills in `.roo/skills/` are preserved
-- User's custom modes in `.roomodes` (JSON format) are preserved
-- User's custom modes in `.roomodes` (YAML format) are preserved
-- All preservation works when installing multiple platforms
-
 ### Idempotency Tests (test_idempotency.py)
 These verify that running install multiple times is safe:
 
@@ -72,11 +66,6 @@ These verify that running install multiple times is safe:
 - Multiple lite mode installs produce identical results
 - Multiple full mode installs produce identical results (no duplicate MCP entries)
 - Installing after partial uninstall restores missing components
-
-**Roo Platform:**
-- Multiple installs with JSON `.roomodes` produce identical results
-- Multiple installs with YAML `.roomodes` produce identical results
-- When `.roomodes` doesn't exist, it's created as JSON (modern format)
 
 **Uninstall/Install Cycles:**
 - Uninstalling and reinstalling works correctly
@@ -101,10 +90,9 @@ def test_example(temp_project_dir, install_runner, file_assertions):
 
 ```python
 @pytest.mark.platform_integrations
-def test_example(bob_fixtures, roo_fixtures):
+def test_example(bob_fixtures):
     """
     bob_fixtures: Create Bob platform test data
-    roo_fixtures: Create Roo platform test data
     """
     pass
 ```
@@ -120,8 +108,8 @@ install_runner.run("install", platform="bob", mode="lite")
 # Install Bob full mode (includes MCP server)
 install_runner.run("install", platform="bob", mode="full")
 
-# Install Roo
-install_runner.run("install", platform="roo")
+# Install Codex
+install_runner.run("install", platform="codex")
 
 # Install all platforms
 install_runner.run("install", platform="all")
@@ -144,11 +132,6 @@ bob_fixtures.create_existing_skill(temp_project_dir, "my-skill")
 bob_fixtures.create_existing_command(temp_project_dir, "my-command")
 bob_fixtures.create_existing_custom_modes(temp_project_dir)
 bob_fixtures.create_existing_mcp_config(temp_project_dir)
-
-# Roo fixtures
-roo_fixtures.create_existing_skill(temp_project_dir, "my-roo-skill")
-roo_fixtures.create_existing_roomodes_json(temp_project_dir)
-roo_fixtures.create_existing_roomodes_yaml(temp_project_dir)
 ```
 
 ### File Assertions
@@ -224,13 +207,13 @@ class TestMyFeature:
 
 ### File Operation Strategies
 
-**JSON Files (mcp.json, .roomodes):**
+**JSON Files (mcp.json):**
 - Atomic read-modify-write using temp files
 - Key upsert: Navigate nested keys, set leaf value
 - Array upsert: Find by slug, replace in-place or append
 - Uses `os.replace()` for atomic writes on POSIX
 
-**YAML Files (custom_modes.yaml, .roomodes):**
+**YAML Files (custom_modes.yaml):**
 - Uses sentinel comment blocks to mark Evolve-managed sections
 - Format: `# >>>evolve:slug<<<` ... content ... `# <<<evolve:slug<<<`
 - Install: Replace content between sentinels if exists, append if not
@@ -248,13 +231,9 @@ class TestMyFeature:
 3. Copy `commands/` → `.bob/commands/`
 4. Merge `custom_modes.yaml` using sentinel blocks
 
-**Roo Lite Mode:**
-1. Copy `skills/evolve-learn/` → `.roo/skills/evolve-learn/`
-2. Copy `skills/evolve-recall/` → `.roo/skills/evolve-recall/`
-3. Merge mode into `.roomodes`:
-   - If JSON: Array upsert by slug
-   - If YAML: Sentinel block merge
-   - If doesn't exist: Create as JSON
+**Codex Lite Mode:**
+1. Copy `plugins/evolve-lite/` → `plugins/evolve-lite/`
+2. Register plugin in Codex marketplace configuration
 
 ## Important Notes
 

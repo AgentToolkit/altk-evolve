@@ -15,7 +15,7 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/pla
 ```
 ### Install Script Usage
 ```bash
-./install.sh install --platform {bob,claude,all} --mode {lite,full} [--dry-run]
+./install.sh install --platform {bob,claude,codex,all} --mode {lite,full} [--dry-run]
 ```
 
 | Platform | Description |
@@ -23,6 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/pla
 | `all` | Install all platforms |
 | `bob` | IBM Bob |
 | `claude` | Claude Code |
+| `codex` | Codex |
 
 | Mode | Description |
 |------|-------------|

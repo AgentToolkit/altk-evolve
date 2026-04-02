@@ -84,7 +84,7 @@ class InstallRunner:
 
         Args:
             command: Command to run (install, uninstall, status)
-            platform: Platform to target (bob, roo, claude, codex, all, or None for interactive)
+            platform: Platform to target (bob, claude, codex, all, or None for interactive)
             mode: Mode for bob (lite, full)
             dry_run: Whether to use --dry-run flag
             expect_success: Whether to expect the command to succeed
