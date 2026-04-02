@@ -12,9 +12,13 @@ from evolve.schema.exceptions import NamespaceNotFoundException, NamespaceAlread
 from evolve.frontend.client.evolve_client import EvolveClient
 
 
+from evolve.config.evolve import EvolveConfig
+
+
 @pytest.fixture(scope="module")
 def evolve_client() -> EvolveClient:
-    evolve_client = EvolveClient()
+    config = EvolveConfig(backend="filesystem")
+    evolve_client = EvolveClient(config=config)
     return evolve_client
 
 

@@ -6,6 +6,8 @@ from unittest.mock import patch, MagicMock
 from evolve.frontend.mcp.mcp_server import save_trajectory, create_entity
 from evolve.schema.conflict_resolution import EntityUpdate
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def mock_get_client():

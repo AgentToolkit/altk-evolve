@@ -4,10 +4,10 @@ import re
 import os
 import datetime
 import pytest
-from evolve.config.phoenix import phoenix_settings
+import urllib.request
+import urllib.error
 
 # Configuration
-PHOENIX_URL = phoenix_settings.url
 # Use a session-scope timestamp or generate per test?
 # Per-test ensures no collisions even if run in parallel (though these should satisfy sequential)
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -20,10 +20,65 @@ AGENTS_TO_TEST = [
 ]
 
 
+@pytest.fixture(scope="session", autouse=True)
+def phoenix_server():
+    """Ensure a Phoenix server is running before executing E2E tests, and shut it down afterward."""
+    # 1. Check if it's already running locally
+    try:
+        urllib.request.urlopen("http://localhost:6006/status", timeout=2)
+        print("\nPhoenix is already running on port 6006.")
+        yield "http://localhost:6006"
+        return
+    except (urllib.error.URLError, ConnectionError):
+        pass
+
+    import sys
+
+    print("\nStarting local Phoenix server for E2E tests...")
+
+    env = os.environ.copy()
+    env["PHOENIX_PORT"] = "6006"
+
+    # Start it using the current python executable to avoid 'uv run' overhead
+    # We use run_in_thread=True and a sleepy while loop because run_in_thread=False
+    # can crash the fastAPI uvicorn startup in some MacOS environments.
+    script = "import phoenix as px; import time; px.launch_app(run_in_thread=True); import sys; sys.stdout.flush(); time.sleep(86400)"
+
+    proc = subprocess.Popen([sys.executable, "-c", script], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+
+    # Poll until the server is responsive
+    max_retries = 30
+    for _ in range(max_retries):
+        try:
+            # specifically hit the status endpoint
+            urllib.request.urlopen("http://localhost:6006/status", timeout=2)
+            print("Phoenix server is up and running.")
+            break
+        except Exception:
+            # Also check if process crashed early
+            if proc.poll() is not None:
+                stderr_output = proc.stderr.read() if proc.stderr else "Unknown error"
+                pytest.fail(f"Phoenix server process crashed unexpectedly: {stderr_output}")
+            time.sleep(1)
+    else:
+        proc.terminate()
+        stderr_output = proc.stderr.read() if proc.stderr else "Unknown error"
+        pytest.fail(f"Failed to start local Phoenix server within 30 seconds. Stderr: {stderr_output}")
+
+    yield "http://localhost:6006"
+
+    # Cleanup: shut down Phoenix when tests are done
+    print("\nShutting down local Phoenix server...")
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
 @pytest.mark.e2e
-@pytest.mark.phoenix
 @pytest.mark.parametrize("agent_config", AGENTS_TO_TEST, ids=[a["name"] for a in AGENTS_TO_TEST])
-def test_e2e_pipeline_agent(agent_config):
+def test_e2e_pipeline_agent(agent_config, phoenix_server):
     """
     Runs the full E2E pipeline for a specific agent configuration:
     1. Executing the agent script
@@ -58,7 +113,16 @@ def test_e2e_pipeline_agent(agent_config):
     if not os.path.exists(script_path):
         pytest.fail(f"Script not found: {script_path}")
 
-    result = subprocess.run(["uv", "run", "python", script_path], env=env, capture_output=True, text=True)
+    try:
+        result = subprocess.run(["uv", "run", "python", script_path], env=env, capture_output=True, text=True, timeout=90)
+    except subprocess.TimeoutExpired as e:
+        print("❌ Agent execution timed out after 90s")
+        # Still try to capture what we can from stdout/stderr if possible
+        stdout = e.stdout if e.stdout else ""
+        stderr = e.stderr if e.stderr else ""
+        print("STDOUT:", stdout)
+        print("STDERR:", stderr)
+        pytest.fail(f"Agent execution timed out for {agent_name}")
 
     if result.returncode != 0:
         print(f"❌ Agent failed with exit code {result.returncode}")
@@ -78,7 +142,7 @@ def test_e2e_pipeline_agent(agent_config):
 import phoenix as px
 import sys
 try:
-    c = px.Client(endpoint='{PHOENIX_URL}')
+    c = px.Client(endpoint='{phoenix_server}')
     df = c.get_spans_dataframe(project_name='{project_name}')
     if df is not None and not df.empty:
         print(f"FOUND_TRACES:{{len(df)}}")
@@ -87,7 +151,11 @@ try:
 except Exception as e:
     print(f"ERROR:{{e}}")
 """
-    result = subprocess.run(["uv", "run", "python", "-c", check_script], capture_output=True, text=True)
+    try:
+        result = subprocess.run(["uv", "run", "python", "-c", check_script], capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        print("❌ Phoenix trace verification script timed out")
+        pytest.fail(f"Trace verification timed out for {project_name}")
 
     output = result.stdout + result.stderr
     if "FOUND_TRACES" in output:
@@ -103,9 +171,7 @@ except Exception as e:
     sync_command = [
         "uv",
         "run",
-        "python",
-        "-m",
-        "evolve.frontend.cli.cli",
+        "evolve",
         "sync",
         "phoenix",
         "--project",
@@ -128,36 +194,42 @@ except Exception as e:
     tips_found = False
     sync_start = time.time()
     timeout = 120  # 2 minute timeout for sync
+    output_lines = []
 
     try:
         while True:
             if time.time() - sync_start > timeout:
-                print("❌ Timeout waiting for tips generation")
+                print(f"❌ Timeout waiting for tips generation ({timeout}s)")
                 break
 
             line = process.stdout.readline()
-            if not line and process.poll() is not None:
-                break
-
-            if line:
-                line_stripped = line.strip()
-                # print(f"[Sync] {line_stripped}") # Optional: verbose logging
-
-                # Check target log pattern
-                match = re.search(r"generated (\d+) tips", line_stripped)
-                if match:
-                    count = match.group(1)
-                    print(f"\n✅ SUCCESS: Generated {count} tips!")
-                    tips_found = True
+            if not line:
+                if process.poll() is not None:
                     break
+                time.sleep(0.1)  # Avoid tight loop if no output but process alive
+                continue
+
+            output_lines.append(line)
+            line_stripped = line.strip()
+            # print(f"[Sync] {line_stripped}") # Optional: verbose logging
+
+            # Check target log pattern
+            match = re.search(r"generated (\d+) tips", line_stripped)
+            if match:
+                count = match.group(1)
+                print(f"\n✅ SUCCESS: Generated {count} tips!")
+                tips_found = True
+                break
     finally:
         if process.poll() is None:
             print("Stopping sync process...")
             process.terminate()
             try:
-                process.wait(timeout=5)
+                process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 process.kill()
 
     if not tips_found:
+        full_output = "".join(output_lines)
+        print(f"Final Sync Output:\n{full_output}")
         pytest.fail(f"Failed to detect tip generation for {agent_name} within {timeout}s.")

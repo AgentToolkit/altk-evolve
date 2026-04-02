@@ -200,7 +200,7 @@ curl "http://localhost:6006/v1/projects/test-agent/spans?limit=5"
 cd evolve_repo
 EVOLVE_BACKEND=filesystem \
 EVOLVE_TIPS_MODEL="gpt-4" \
-uv run python -m evolve.frontend.cli.cli sync phoenix \
+uv run evolve sync phoenix \
     --project test-agent \
     --include-errors
 ```
@@ -209,7 +209,7 @@ uv run python -m evolve.frontend.cli.cli sync phoenix \
 
 ```bash
 EVOLVE_BACKEND=filesystem \
-uv run python -m evolve.frontend.cli.cli entities list evolve --type guideline
+uv run evolve entities list evolve --type guideline
 ```
 
 ### 6. Understanding Tip Provenance (Metadata)
@@ -246,7 +246,7 @@ Evolve includes a comprehensive E2E verification suite to ensure that tracing an
 You can run the full regression suite using `pytest`:
 
 ```bash
-EVOLVE_E2E=true uv run pytest tests/e2e/test_e2e_pipeline.py -s
+uv run pytest -m e2e --run-e2e -s
 ```
 
 ### Running Specific Tests
@@ -255,10 +255,10 @@ To test a specific agent framework:
 
 ```bash
 # Test smolagents
-EVOLVE_E2E=true uv run pytest tests/e2e/test_e2e_pipeline.py -k smolagents -s
+uv run pytest tests/e2e/test_e2e_pipeline.py -k smolagents -m e2e --run-e2e -s
 
 # Test OpenAI Agents
-EVOLVE_E2E=true uv run pytest tests/e2e/test_e2e_pipeline.py -k openai_agents -s
+uv run pytest tests/e2e/test_e2e_pipeline.py -k openai_agents -m e2e --run-e2e -s
 ```
 
 ### What It Tests

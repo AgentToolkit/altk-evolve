@@ -31,22 +31,19 @@ def mock_sentence_transformer(request):
 def pytest_addoption(parser):
     """Add custom command line options."""
     parser.addoption(
-        "--run-phoenix",
+        "--run-e2e",
         action="store_true",
         default=False,
-        help="Run Phoenix sync tests (skipped by default)",
+        help="Run End-to-End infrastructure tests (skipped by default)",
     )
 
 
 def pytest_configure(config):
-    """Override marker filter when --run-phoenix is passed."""
-    if config.getoption("--run-phoenix"):
-        # Remove the default marker filter to include phoenix tests
-        # Get current markexpr and modify it
-        markexpr = config.getoption("markexpr", default="")
-        if markexpr == "not phoenix":
-            config.option.markexpr = ""
-        elif "not phoenix" in markexpr:
-            # Remove "not phoenix" from the expression
-            new_expr = markexpr.replace("not phoenix and ", "").replace(" and not phoenix", "").replace("not phoenix", "")
-            config.option.markexpr = new_expr.strip()
+    """Override marker filter when relevant flags are passed."""
+    new_expr = config.getoption("markexpr", default="")
+
+    if config.getoption("--run-e2e"):
+        # Remove "not e2e" from the expression
+        new_expr = new_expr.replace("not e2e and ", "").replace(" and not e2e", "").replace("not e2e", "")
+
+    config.option.markexpr = new_expr.strip()
