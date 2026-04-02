@@ -41,7 +41,7 @@ All configuration variables are prefixed with `EVOLVE_`.
 
 | Variable | Description                                                                   | Default                                  |
 |----------|-------------------------------------------------------------------------------|------------------------------------------|
-| `EVOLVE_BACKEND` | Backend provider (`milvus` or `filesystem`)                                   | `milvus`                                 |
+| `EVOLVE_BACKEND` | Backend provider (`milvus`, `filesystem`, or `postgres`)                      | `milvus`                                 |
 | `EVOLVE_NAMESPACE_ID` | Namespace ID for isolation                                                    | `evolve`                                 |
 | `EVOLVE_TIPS_MODEL` | Model for tip generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
@@ -71,14 +71,28 @@ When `EVOLVE_BACKEND=filesystem`:
 |----------|-------------|---------|
 | `EVOLVE_DATA_DIR` | Directory to store JSON data files | `evolve_data` |
 
+### Postgres Backend Settings
+
+When `EVOLVE_BACKEND=postgres`:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EVOLVE_PG_HOST` | PostgreSQL host | `localhost` |
+| `EVOLVE_PG_PORT` | PostgreSQL port | `5432` |
+| `EVOLVE_PG_USER` | PostgreSQL user | `postgres` |
+| `EVOLVE_PG_PASSWORD` | PostgreSQL password | `postgres` |
+| `EVOLVE_PG_DBNAME` | PostgreSQL database name | `evolve` |
+| `EVOLVE_PG_EMBEDDING_MODEL` | Embedding model used for pgvector-backed entities | `sentence-transformers/all-MiniLM-L6-v2` |
+
 ## Storage Backends
 
-Evolve supports two storage backends:
+Evolve supports three storage backends:
 
 | Backend | Description | Search | Best For |
 |---------|-------------|--------|----------|
 | **Milvus** (default) | Vector database with embeddings | Semantic similarity | Production |
 | **Filesystem** | JSON files, no embeddings | Text substring match | Development/testing |
+| **Postgres** | PostgreSQL with pgvector embeddings | Semantic similarity | Teams already running PostgreSQL |
 
 ### Switching Backends
 
@@ -88,6 +102,9 @@ export EVOLVE_BACKEND=milvus
 
 # Use Filesystem backend
 export EVOLVE_BACKEND=filesystem
+
+# Use Postgres backend
+export EVOLVE_BACKEND=postgres
 ```
 
 ### Filesystem Backend Details
