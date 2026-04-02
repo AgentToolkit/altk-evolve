@@ -1,6 +1,6 @@
 # Evolve Lite
 
-Evolve Lite is a lightweight mode that runs as a Claude Code plugin — no vector store, no MCP servers, no API keys required. It stores entities as plain JSON in your project directory and uses Claude Code's built-in hooks to inject them automatically.
+Evolve Lite is a lightweight mode that runs as a Claude Code plugin — no vector store, no MCP servers, no API keys required. It stores entities as Markdown files with YAML frontmatter under `.evolve/entities/` in your project directory and uses Claude Code's built-in hooks to inject them automatically.
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@ Evolve Lite is a lightweight mode that runs as a Claude Code plugin — no vecto
 ### From Local Directory
 
 ```bash
-claude --plugin-dir /path/to/evolve/repo/plugins/evolve
+claude --plugin-dir /path/to/altk-evolve/platform-integrations/claude/plugins/evolve-lite
 ```
 
 ### From Marketplace
@@ -31,11 +31,15 @@ claude plugin list
 
 Evolve Lite has two halves:
 
-1. **Learn** — You invoke `/evolve:learn` at the end of a conversation. The plugin analyzes what happened and extracts reusable entities (preferences, strategies, recovery patterns) into `.evolve/entities.json`.
+1. **Learn** — You invoke `/evolve:learn` at the end of a conversation. The plugin analyzes what happened, produces an entity JSON payload, and saves each entity as a Markdown file under `.evolve/entities/`.
 
 2. **Recall** — On every subsequent prompt, a `UserPromptSubmit` hook automatically loads stored entities and injects them into the conversation context. Claude applies whichever entities are relevant to the current task.
 
-No external services are involved. The entire loop is a JSON file and two Python scripts.
+No external services are involved. The entire loop is a directory of entity files and two Python scripts.
+
+## Example Walkthrough
+
+The examples below show the learn-then-recall loop across multiple sessions, starting with a simple preference and then a more complex recovery pattern.
 
 ## Example 1 — Learning a user preference
 
@@ -75,7 +79,7 @@ Claude: I've extracted the following entities from this conversation:
         }
 
         Added 1 new entity(ies). Total: 1
-        Entities stored in: /path/to/project/.evolve/entities.json
+        Entities stored in: /path/to/project/.evolve/entities
 ```
 
 ### Session 2 — Preference is applied automatically
@@ -113,7 +117,7 @@ Then run a task to extract metadata from an image:
 just trace=true learn=true sandbox-prompt 'where was the photo @sample.jpg taken. use exif metadata'
 ```
 
-When you run the above, you will see that the agent hits some dead ends (exiftool not found, Pillow not installed), and that it learns guidelines to avoid them in the future (see `demo/workspace/.evolve/entities.json`).
+When you run the above, you will see that the agent hits some dead ends (exiftool not found, Pillow not installed), and that it learns guidelines to avoid them in the future (see `demo/workspace/.evolve/entities/`).
 
 Run the same task again in a new session:
 
@@ -193,7 +197,7 @@ Claude: I've extracted the following entities from this conversation:
         }
 
         Added 2 new entity(ies). Total: 2
-        Entities stored in: /workspace/.evolve/entities.json
+        Entities stored in: /workspace/.evolve/entities
 ```
 
 ### Session 2 — No more dead ends
@@ -228,22 +232,30 @@ The agent skipped both `exiftool` and `Pillow` entirely — it went straight to 
 
 ## Entities Storage
 
-Entities live in `.evolve/entities.json` in the project root:
+Entities live in `.evolve/entities/` in the project root, organized into type-based subdirectories:
 
-```json
-{
-  "entities": [
-    {
-      "content": "Use Python stdlib (struct module) to manually parse JPEG EXIF/GPS metadata when no external tools are available",
-      "rationale": "In sandboxed environments, neither system tools (exiftool) nor third-party libraries (PIL/Pillow) may be installed. Python stdlib is always available.",
-      "category": "strategy",
-      "trigger": "When extracting EXIF or GPS metadata from images in containerized or sandboxed environments"
-    }
-  ]
-}
+```text
+.evolve/entities/
+  strategy/
+    use-python-stdlib-struct-module-to-manually-parse-jpeg-exif-gps.md
 ```
 
-Override the storage location with the `EVOLVE_ENTITIES_FILE` environment variable.
+Each entity file uses Markdown with YAML frontmatter:
+
+```markdown
+---
+type: strategy
+trigger: When extracting EXIF or GPS metadata from images in containerized or sandboxed environments
+---
+
+Use Python stdlib (struct module) to manually parse JPEG EXIF/GPS metadata when no external tools are available
+
+## Rationale
+
+In sandboxed environments, neither system tools (exiftool) nor third-party libraries (PIL/Pillow) may be installed. Python stdlib is always available.
+```
+
+Override the storage location with the `EVOLVE_ENTITIES_DIR` environment variable.
 
 ## Tradeoffs
 
@@ -263,7 +275,7 @@ But it has a number of limitations:
 
 | Capability | Evolve Lite | Full Evolve |
 |------------|-------------|-------------|
-| Entity storage | JSON file | Milvus vector store |
+| Entity storage | Markdown files in `.evolve/entities/` | Milvus vector store |
 | Retrieval | All entities injected via hooks | Semantic search via MCP |
 | Conflict resolution | Append-only | LLM-based merging + garbage collection |
 | Trajectory analysis | Current session only (`/evolve:learn`) | Multi-session, automatic via MCP |

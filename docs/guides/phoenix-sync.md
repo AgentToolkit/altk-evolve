@@ -145,7 +145,7 @@ Two entity types are stored:
 
 ```bash
 # Sync every hour
-0 * * * * cd /path/to/evolve && uv run evolve sync phoenix --limit 100
+0 * * * * cd /path/to/altk-evolve && uv run evolve sync phoenix --limit 100
 ```
 
 ### Systemd Timer
@@ -157,7 +157,7 @@ Description=Evolve Phoenix Sync
 
 [Service]
 Type=oneshot
-WorkingDirectory=/path/to/evolve
+WorkingDirectory=/path/to/altk-evolve
 ExecStart=/path/to/uv run evolve sync phoenix
 Environment=PHOENIX_URL=http://localhost:6006
 Environment=EVOLVE_NAMESPACE_ID=production

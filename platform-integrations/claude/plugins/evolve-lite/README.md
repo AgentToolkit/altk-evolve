@@ -13,7 +13,7 @@ A plugin that helps Claude Code learn from conversations by automatically extrac
 ### From Local Directory
 
 ```bash
-claude --plugin-dir /path/to/evolve/repo/plugins/evolve
+claude --plugin-dir /path/to/altk-evolve/platform-integrations/claude/plugins/evolve-lite
 ```
 
 ### From Marketplace
@@ -45,7 +45,7 @@ By default, you must manually invoke the `/evolve:learn` skill to extract entiti
 
 ## Example Walkthrough
 
-See [EVOLVE_LITE.md](../../EVOLVE_LITE.md#example-walkthrough) for a step-by-step example showing the full learn-then-recall loop across two sessions.
+See the [Evolve Lite guide](../../../../docs/integrations/evolve-lite.md#example-walkthrough) for a step-by-step example showing the full learn-then-recall loop across two sessions.
 
 ## Skills Included
 
@@ -54,7 +54,7 @@ See [EVOLVE_LITE.md](../../EVOLVE_LITE.md#example-walkthrough) for a step-by-ste
 Manually invoke to extract entities from the current conversation:
 - Analyzes task, steps taken, successes and failures
 - Generates proactive entities (what to do, not what to avoid)
-- Outputs JSON for storage
+- Outputs JSON that the save script persists as entity files
 
 ### `/evolve:recall`
 

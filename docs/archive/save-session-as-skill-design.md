@@ -279,7 +279,7 @@ When the skill is invoked, the session history is already available in the conte
 - **Agent responses**: All assistant messages and outputs
 
 **No External Fetching Required**:
-- No need to call Phoenix or extract_trajectories.py
+- No need to call Phoenix or `scripts/extract_trajectories.py`
 - No need to check environment variables
 - Context is provided automatically when skill is invoked
 

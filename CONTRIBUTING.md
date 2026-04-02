@@ -1,6 +1,6 @@
-## How to contribute to ALTK‑Evolve
+## How to Contribute to Evolve
 
-ALTK‑Evolve welcomes external contributions of all kinds. Whether you are fixing bugs, improving existing functionality, or adding new evolution-focused capabilities, we’re glad to work with you.
+Evolve welcomes external contributions of all kinds. Whether you are fixing bugs, improving existing functionality, or adding new evolution-focused capabilities, we’re glad to work with you.
 
 ### Did you find a bug?
 
@@ -9,7 +9,7 @@ ALTK‑Evolve welcomes external contributions of all kinds. Whether you are fixi
 ### Types of contributions
 
 * Fixing bugs
-* Improving existing ALTK‑Evolve components
+* Improving existing Evolve components
 * Adding new components or evolution strategies
 * Improving documentation, examples, or tests
 
@@ -54,9 +54,9 @@ Or:
 pre-commit run --all-files
 ```
 
-### Adding new components to ALTK‑Evolve
+### Adding new components to Evolve
 
-ALTK‑Evolve builds on Agent Lifecycle Toolkit concepts with a focus on agent evolution, adaptation, and improvement over time.
+Evolve builds on Agent Lifecycle Toolkit concepts with a focus on agent evolution, adaptation, and improvement over time.
 
 1. Identify the evolution purpose of your component.
 2. Add a new package under the appropriate module.

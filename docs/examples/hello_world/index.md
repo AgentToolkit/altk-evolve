@@ -14,9 +14,9 @@ uv init
 ```
 
 ## Step 2: Install Evolve
-Install Evolve by following the [installation instructions](../../installation), or run:
+Install Evolve by following the [installation instructions](../../installation/index.md), or run:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```
 ## Step 3: Project Setup
 Open the project directory in IBM Bob IDE, and switch Bob's mode to `Evolve Lite`
@@ -42,4 +42,4 @@ At this point, Bob will correct itself and eventually run `uv sync` and correctl
 Bob should then run some Evolve Lite skills to save the learned correction into memory.
 If it does not, the `/evolve:learn` command can be used to manually run the skill.
 
-In the future, Bob should remember via Evolve-Lite skills that `uv` is used for this project and not make the same mistake. This can be tested in this toy project by deleting the `.venv` and `uv.lock` folder and trying the same utterance again.
+In the future, Bob should remember via Evolve-Lite skills that `uv` is used for this project and not make the same mistake. This can be tested in this toy project by deleting the `.venv` directory and the `uv.lock` file and trying the same utterance again.

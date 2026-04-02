@@ -1,6 +1,6 @@
 # Extract Trajectories from Arize Phoenix
 
-A Python tool to extract agent trajectories from Arize Phoenix traces and convert them to OpenAI chat completion message format.
+A Python utility at `scripts/extract_trajectories.py` for extracting agent trajectories from Arize Phoenix traces and converting them to OpenAI chat completion message format.
 
 ## Features
 
@@ -23,25 +23,25 @@ A Python tool to extract agent trajectories from Arize Phoenix traces and conver
 
 ```bash
 # Get recent trajectories as JSON (pretty-printed)
-python3 extract_trajectories.py --limit 100 --pretty
+python3 scripts/extract_trajectories.py --limit 100 --pretty
 
 # Get a specific trace by ID
-python3 extract_trajectories.py --trace-id a67264f4375a60a1ac26ef3061c7352d --pretty
+python3 scripts/extract_trajectories.py --trace-id a67264f4375a60a1ac26ef3061c7352d --pretty
 
 # Human-readable text format
-python3 extract_trajectories.py --text --trace-id a67264f4375a60a1ac26ef3061c7352d
+python3 scripts/extract_trajectories.py --text --trace-id a67264f4375a60a1ac26ef3061c7352d
 
 # Include failed/error spans
-python3 extract_trajectories.py --include-errors --pretty
+python3 scripts/extract_trajectories.py --include-errors --pretty
 
 # Keep system reminders (don't clean)
-python3 extract_trajectories.py --no-clean --pretty
+python3 scripts/extract_trajectories.py --no-clean --pretty
 
 # Save to file
-python3 extract_trajectories.py --limit 100 -o trajectories.json --pretty
+python3 scripts/extract_trajectories.py --limit 100 -o trajectories.json --pretty
 
 # Custom Phoenix URL
-python3 extract_trajectories.py --url http://localhost:8080 --pretty
+python3 scripts/extract_trajectories.py --url http://localhost:8080 --pretty
 ```
 
 ### CLI Options
@@ -60,7 +60,7 @@ python3 extract_trajectories.py --url http://localhost:8080 --pretty
 ### As a Library
 
 ```python
-from extract_trajectories import (
+from scripts.extract_trajectories import (
     get_trajectories,
     get_trajectory_by_trace_id,
     format_trajectory_as_text

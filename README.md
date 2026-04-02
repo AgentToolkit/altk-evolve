@@ -32,7 +32,7 @@ Prerequisites:
 
 ```bash
 git clone <repository_url>
-cd evolve
+cd altk-evolve
 uv venv --python=3.12 && source .venv/bin/activate
 uv sync
 ```
@@ -44,7 +44,7 @@ For direct OpenAI usage:
 export OPENAI_API_KEY=sk-...
 ```
 
-For LiteLLM proxy usage and model selection (including global fallback via `EVOLVE_MODEL_NAME`), see [CONFIGURATION.md](CONFIGURATION.md).
+For LiteLLM proxy usage and model selection (including global fallback via `EVOLVE_MODEL_NAME`), see [the configuration guide](docs/guides/configuration.md).
 
 ### Running the MCP Server & UI
 
@@ -102,7 +102,7 @@ Evolve automatically tracks the origin of every guideline it generates or stores
 - `creation_mode`: Identifies how the tip was created (`auto-phoenix` via trace observability, `auto-mcp` via trajectory saving tools, or `manual`).
 - `source_task_id`: The ID of the original trace or task that inspired the tip, providing full audibility.
 
-See the [Low-Code Tracing Guide](docs/LOW_CODE_TRACING.md#6-understanding-tip-provenance-metadata) for more details.
+See the [Low-Code Tracing Guide](docs/guides/low-code-tracing.md#6-understanding-tip-provenance-metadata) for more details.
 
 
 ## Community & Feedback
@@ -115,11 +115,13 @@ If you’re experimenting with Evolve or exploring on‑the‑job learning for a
 
 ## Documentation
 
-- [EVOLVE_LITE.md](EVOLVE_LITE.md) - Lightweight mode via Claude Code plugin (no infra required)
-- [CONFIGURATION.md](CONFIGURATION.md) - Detailed configuration options
-- [POLICIES.md](docs/POLICIES.md) - Policy support and schema
-- [CLI.md](CLI.md) - Command-line interface documentation
-- [CLAUDE_CODE_DEMO.md](CLAUDE_CODE_DEMO.md) - Claude Code demo walkthrough
+- [Documentation Home](docs/index.md) - Overview of guides, reference docs, and tutorials
+- [Installation](docs/installation/index.md) - Setup instructions for supported platforms
+- [Configuration](docs/guides/configuration.md) - Environment variables and backend options
+- [CLI Reference](docs/reference/cli.md) - Command-line interface documentation
+- [Evolve Lite](docs/integrations/evolve-lite.md) - Lightweight Claude Code plugin mode
+- [Claude Code Demo](docs/tutorials/claude-code-demo.md) - End-to-end demo walkthrough
+- [Policies](docs/reference/policies.md) - Policy support and schema
 
 ## Development
 
@@ -150,7 +152,7 @@ The test suite is organized into 4 cleanly isolated tiers depending on infrastru
    ```bash
    uv run pytest -m e2e --run-e2e
    ```
-   *(See [docs/LOW_CODE_TRACING.md](docs/LOW_CODE_TRACING.md#end-to-end-verification) for more details).*
+   *(See [the Low-Code Tracing Guide](docs/guides/low-code-tracing.md#end-to-end-verification) for more details).*
 
 5. **LLM Evaluation Tests**
    Tests needing active LLM inference to test resolution pipelines (requires LLM API keys).

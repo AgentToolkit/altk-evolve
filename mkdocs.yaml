@@ -5,8 +5,8 @@ site_description: >-
   Evolve is a component in the Agent Lifecycle Toolkit (ALTK) that gives agent builders the ability to iteratively improve their agents by learning from previous trajectories.
 
 # Repository
-repo_name: AgentToolkit/evolve
-repo_url: https://github.com/AgentToolkit/evolve
+repo_name: AgentToolkit/altk-evolve
+repo_url: https://github.com/AgentToolkit/altk-evolve
 
 # Copyright
 copyright: >
@@ -71,12 +71,23 @@ theme:
 
 nav:
   - Home:
-    - Evolve: index.md
+    - Overview: index.md
     - Installation: installation/index.md
-  - Examples:
-    - Hello World: examples/hello_world/index.md
+  - Guides:
+    - Configuration: guides/configuration.md
+    - Phoenix Sync: guides/phoenix-sync.md
+    - Extract Trajectories: guides/extract-trajectories.md
+    - Low-Code Tracing: guides/low-code-tracing.md
+  - Reference:
+    - CLI: reference/cli.md
+    - Policies: reference/policies.md
   - Integrations:
-    - Roo Code: integrations/roo_code/index.md 
+    - Evolve Lite: integrations/evolve-lite.md
+  - Tutorials:
+    - Claude Code Demo: tutorials/claude-code-demo.md
+    - Hello World: examples/hello_world/index.md
+  - Operations:
+    - Docker Testing: operations/docker-testing.md
 
 extra_css:
   - stylesheets/extra.css
@@ -84,7 +95,7 @@ extra_css:
 extra:
   social:
     - icon: fontawesome/brands/github-alt
-      link: https://github.com/AgentToolkit/evolve
+      link: https://github.com/AgentToolkit/altk-evolve
   consent:
     title: Cookie consent
     description: >-
