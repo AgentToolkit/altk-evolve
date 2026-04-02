@@ -559,7 +559,6 @@ class TestCLIHelp:
 
 
 @pytest.mark.unit
-@pytest.mark.phoenix
 class TestSyncPhoenix:
     """Tests for 'evolve sync phoenix' command."""
 

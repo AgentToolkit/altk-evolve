@@ -12,6 +12,9 @@ import os
 import pytest
 from unittest.mock import patch, MagicMock
 
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
+
 
 class TestFrameworkDetection:
     """Tests for detect_installed_frameworks()"""
@@ -197,7 +200,6 @@ class TestGetTracerProvider:
             auto._tracer_provider = original_provider
 
 
-@pytest.mark.unit
 class TestTracingIntegration:
     """Integration-style tests for the tracing module."""
 

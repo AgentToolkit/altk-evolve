@@ -48,7 +48,9 @@ dev = [
     "anyio",
     "detect-secrets",
     "mypy",
+    "pgvector>=0.3",
     "pre-commit",
+    "psycopg[binary]>=3.1",
     "pytest",
     "pytest-cov",
     "pytest-retry",
@@ -85,12 +87,12 @@ evolve = ["**/*.jinja2"]
 package = true
 
 [tool.pytest.ini_options]
-addopts = "--ignore=explorations -m 'not phoenix and not llm'"
+addopts = "--ignore=explorations -m 'not llm and not e2e'"
 markers = [
     "e2e",
     "unit",
-    "phoenix",
-    "llm"
+    "llm",
+    "platform_integrations"
 ]
 anyio_mode = "auto"
 

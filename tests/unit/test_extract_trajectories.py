@@ -21,9 +21,8 @@ from extract_trajectories import (
     get_trajectories,
 )
 
-# Mark all tests in this module as phoenix tests (skipped by default)
-pytestmark = pytest.mark.phoenix
-
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 
 # =============================================================================
 # parse_content() Tests

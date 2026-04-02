@@ -88,8 +88,33 @@ class TestBobPreservation:
         current_data = json.loads(mcp_file.read_text())
         assert current_data["mcpServers"]["my-server"] == original_data["mcpServers"]["my-server"]
 
-    def test_preserves_all_bob_content_together(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
-        """Install evolve when user has all types of Bob content - all must be preserved."""
+    def test_preserves_all_bob_content_together_lite(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
+        """Install evolve lite mode when user has all types of Bob content - all must be preserved."""
+        # Setup: Create all types of user content
+        custom_skill = bob_fixtures.create_existing_skill(temp_project_dir)
+        custom_command = bob_fixtures.create_existing_command(temp_project_dir)
+        custom_modes = bob_fixtures.create_existing_custom_modes(temp_project_dir)
+
+        # Save original content
+        skill_content = (custom_skill / "SKILL.md").read_text()
+        command_content = custom_command.read_text()
+
+        # Action: Install evolve lite mode
+        install_runner.run("install", platform="bob", mode="lite")
+
+        # Assert: ALL user content is preserved
+        file_assertions.assert_file_unchanged(custom_skill / "SKILL.md", skill_content)
+        file_assertions.assert_file_unchanged(custom_command, command_content)
+
+        assert "slug: my-mode" in custom_modes.read_text()
+
+        # Assert: Evolve lite content is added
+        bob_dir = temp_project_dir / ".bob"
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_sentinel_block_exists(custom_modes, "evolve-lite")
+
+    def test_preserves_all_bob_content_together_full(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
+        """Install evolve full mode when user has all types of Bob content - all must be preserved."""
         # Setup: Create all types of user content
         custom_skill = bob_fixtures.create_existing_skill(temp_project_dir)
         custom_command = bob_fixtures.create_existing_command(temp_project_dir)
@@ -113,10 +138,8 @@ class TestBobPreservation:
         current_mcp = json.loads(mcp_config.read_text())
         assert current_mcp["mcpServers"]["my-server"] == mcp_data["mcpServers"]["my-server"]
 
-        # Assert: Evolve content is added
-        bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
-        file_assertions.assert_sentinel_block_exists(custom_modes, "evolve-lite")
+        # Assert: Evolve full mode content is added (MCP and Evolve custom mode)
+        file_assertions.assert_sentinel_block_exists(custom_modes, "Evolve")
         file_assertions.assert_json_has_key(mcp_config, ["mcpServers", "evolve"])
 
 
