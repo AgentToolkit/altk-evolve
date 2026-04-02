@@ -8,6 +8,7 @@ import pytest
 from unittest.mock import Mock, MagicMock, patch
 
 from evolve.backend.postgres import PostgresEntityBackend
+from evolve.config.postgres import PostgresDBSettings
 from evolve.schema.core import Entity, Namespace, RecordedEntity
 from evolve.schema.conflict_resolution import EntityUpdate
 from evolve.schema.exceptions import NamespaceNotFoundException, EvolveException
@@ -72,6 +73,40 @@ def test_ready(postgres_backend: PostgresEntityBackend):
     with patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context):
         assert postgres_backend.ready()
         mock_cursor.execute.assert_called_with("SELECT 1")
+
+
+@pytest.mark.unit
+def test_postgres_backend_initialization_ensures_extension_before_registering_vector():
+    call_order: list[str] = []
+    config = PostgresDBSettings(
+        host="127.0.0.1",
+        port=5432,
+        user="postgres",
+        password="postgres",  # pragma: allowlist secret
+        dbname="kaizen",
+        embedding_model="custom-model",
+    )
+
+    with (
+        patch("evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("evolve.backend.postgres.register_vector", side_effect=lambda _conn: call_order.append("register_vector")),
+        patch("evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch.object(
+            PostgresEntityBackend,
+            "_ensure_pgvector_extension",
+            autospec=True,
+            side_effect=lambda _self: call_order.append("ensure_extension"),
+        ),
+    ):
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_psycopg.connect.return_value = mock_conn
+
+        backend = PostgresEntityBackend(config)
+
+    assert call_order == ["ensure_extension", "register_vector"]
+    mock_transformer.assert_called_once_with("custom-model")
+    assert backend.conn is mock_conn
 
 
 @pytest.mark.unit

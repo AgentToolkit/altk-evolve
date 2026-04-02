@@ -55,9 +55,9 @@ class PostgresEntityBackend(BaseEntityBackend):
             dbname=settings.dbname,
             autocommit=True,
         )
-        register_vector(self.conn)
         self._ensure_pgvector_extension()
-        self.embedding_model = SentenceTransformer(postgres_db_settings.embedding_model)
+        register_vector(self.conn)
+        self.embedding_model = SentenceTransformer(settings.embedding_model)
 
     def _ensure_pgvector_extension(self):
         """Ensure the pgvector extension is installed."""
