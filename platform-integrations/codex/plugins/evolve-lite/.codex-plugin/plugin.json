@@ -1,5 +1,5 @@
 {
-  "name": "evolve-lite",
+  "name": "evolve",
   "version": "1.0.0",
   "description": "Recall and save Evolve entities in Codex without MCP.",
   "author": {
@@ -12,7 +12,7 @@
   "keywords": ["evolve", "codex", "entities", "memory"],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Evolve Lite",
+    "displayName": "Evolve",
     "shortDescription": "Recall and save reusable Evolve entities.",
     "longDescription": "A lightweight Codex plugin that helps you save reusable entities from successful sessions and recall them automatically on new prompts.",
     "developerName": "AgentToolkit",
