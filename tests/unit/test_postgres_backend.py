@@ -9,9 +9,10 @@ from unittest.mock import Mock, MagicMock, patch
 
 from evolve.backend.postgres import PostgresEntityBackend
 from evolve.config.postgres import PostgresDBSettings
+from evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
+from psycopg import sql
 from evolve.schema.core import Entity, Namespace, RecordedEntity
 from evolve.schema.conflict_resolution import EntityUpdate
-from evolve.schema.exceptions import NamespaceNotFoundException, EvolveException
 
 
 @pytest.fixture(scope="module")
@@ -20,11 +21,12 @@ def postgres_backend() -> PostgresEntityBackend:
     with (
         patch("evolve.backend.postgres.psycopg") as mock_psycopg,
         patch("evolve.backend.postgres.register_vector"),
-        patch("evolve.backend.postgres.SentenceTransformer"),
+        patch("evolve.backend.postgres.SentenceTransformer") as mock_transformer,
     ):
         mock_conn = MagicMock()
         mock_conn.closed = False
         mock_psycopg.connect.return_value = mock_conn
+        mock_transformer.return_value.get_sentence_embedding_dimension.return_value = 384
         backend = PostgresEntityBackend()
         return backend
 
@@ -101,13 +103,70 @@ def test_postgres_backend_initialization_ensures_extension_before_registering_ve
         mock_conn = MagicMock()
         mock_conn.closed = False
         mock_psycopg.connect.return_value = mock_conn
+        mock_transformer.return_value.get_sentence_embedding_dimension.return_value = 768
 
         backend = PostgresEntityBackend(config)
 
     assert call_order == ["ensure_extension", "register_vector"]
     mock_transformer.assert_called_once_with("custom-model")
     assert backend.conn is mock_conn
+    assert backend.embedding_dim == 768
     assert backend.details() == {"backend": "postgres", "host": "127.0.0.2", "port": 6543}
+
+
+@pytest.mark.unit
+def test_postgres_backend_initialization_closes_connection_on_setup_failure():
+    config = PostgresDBSettings(
+        host="127.0.0.2",
+        port=6543,
+        user="postgres",
+        password="postgres",  # pragma: allowlist secret
+        dbname="evolve",
+        embedding_model="custom-model",
+    )
+
+    with (
+        patch("evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("evolve.backend.postgres.register_vector", side_effect=RuntimeError("register failed")),
+        patch("evolve.backend.postgres.SentenceTransformer"),
+        patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
+    ):
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_psycopg.connect.return_value = mock_conn
+
+        with pytest.raises(RuntimeError, match="register failed"):
+            PostgresEntityBackend(config)
+
+    mock_conn.close.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_postgres_backend_initialization_rejects_invalid_embedding_dimension():
+    config = PostgresDBSettings(
+        host="127.0.0.2",
+        port=6543,
+        user="postgres",
+        password="postgres",  # pragma: allowlist secret
+        dbname="evolve",
+        embedding_model="custom-model",
+    )
+
+    with (
+        patch("evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("evolve.backend.postgres.register_vector"),
+        patch("evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
+    ):
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_psycopg.connect.return_value = mock_conn
+        mock_transformer.return_value.get_sentence_embedding_dimension.return_value = None
+
+        with pytest.raises(EvolveException, match="invalid dimension"):
+            PostgresEntityBackend(config)
+
+    mock_conn.close.assert_called_once_with()
 
 
 @pytest.mark.unit
@@ -120,10 +179,12 @@ def test_create_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
     mock_cursor_context = MagicMock()
     mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
     mock_cursor_context.__exit__ = Mock(return_value=False)
+    original_literal = sql.Literal
 
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
         patch("evolve.backend.postgres.SQLiteManager", return_value=db_manager),
+        patch("evolve.backend.postgres.sql.Literal", side_effect=lambda value: original_literal(value)) as mock_literal,
     ):
         result = postgres_backend.create_namespace(namespace_id=namespace_id)
 
@@ -135,6 +196,8 @@ def test_create_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
 
         assert result.id.startswith("ns_")
         assert isinstance(result.created_at, datetime.datetime)
+
+    assert any(call.args == (postgres_backend.embedding_dim,) for call in mock_literal.call_args_list)
 
 
 @pytest.mark.unit

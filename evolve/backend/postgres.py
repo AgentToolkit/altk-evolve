@@ -20,8 +20,6 @@ from evolve.utils.utils import deserialize_content
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db.pgvector")
 
-EMBEDDING_DIM = 384
-
 
 def _entity_row_factory(cursor: psycopg.Cursor[Any]) -> Callable[[Sequence[Any]], RecordedEntity]:
     """Row factory that produces RecordedEntity instances directly from query results."""
@@ -43,6 +41,7 @@ def _entity_row_factory(cursor: psycopg.Cursor[Any]) -> Callable[[Sequence[Any]]
 class PostgresEntityBackend(BaseEntityBackend):
     conn: psycopg.Connection
     embedding_model: SentenceTransformer
+    embedding_dim: int
     _settings: PostgresDBSettings
 
     def __init__(self, config: BaseSettings | None = None):
@@ -56,9 +55,20 @@ class PostgresEntityBackend(BaseEntityBackend):
             dbname=self._settings.dbname,
             autocommit=True,
         )
-        self._ensure_pgvector_extension()
-        register_vector(self.conn)
-        self.embedding_model = SentenceTransformer(self._settings.embedding_model)
+        try:
+            self._ensure_pgvector_extension()
+            register_vector(self.conn)
+            self.embedding_model = SentenceTransformer(self._settings.embedding_model)
+            embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
+            if embedding_dim is None or embedding_dim <= 0:
+                raise EvolveException(
+                    f"Embedding model '{self._settings.embedding_model}' reported an invalid dimension: {embedding_dim!r}"
+                )
+            self.embedding_dim = embedding_dim
+        except Exception:
+            if not self.conn.closed:
+                self.conn.close()
+            raise
 
     def _ensure_pgvector_extension(self):
         """Ensure the pgvector extension is installed."""
@@ -111,7 +121,7 @@ class PostgresEntityBackend(BaseEntityBackend):
                         metadata    JSONB DEFAULT '{{}}'::jsonb
                     )
                     """
-                ).format(table=sql.Identifier(table), dim=sql.Literal(EMBEDDING_DIM))
+                ).format(table=sql.Identifier(table), dim=sql.Literal(self.embedding_dim))
             )
 
         with SQLiteManager() as db_manager:
