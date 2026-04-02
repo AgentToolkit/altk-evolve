@@ -35,6 +35,12 @@ RUN curl -fsSL -o /tmp/install.sh https://claude.ai/install.sh \
 ENV HOME="/home/sandbox"
 ENV PATH="/opt/claude-venv/bin:/home/sandbox/.local/bin:${PATH}"
 
+# Pre-populate bash history with common sandbox commands (most recent last)
+RUN cat <<'EOF' > /home/sandbox/.bash_history
+claude --plugin-dir /plugins/evolve-lite --dangerously-skip-permissions
+claude --dangerously-skip-permissions
+EOF
+
 WORKDIR /workspace
 
 CMD ["bash"]
