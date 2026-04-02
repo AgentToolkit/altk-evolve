@@ -232,8 +232,18 @@ class TestMyFeature:
 4. Merge `custom_modes.yaml` using sentinel blocks
 
 **Codex Lite Mode:**
-1. Copy `plugins/evolve-lite/` → `plugins/evolve-lite/`
-2. Register plugin in Codex marketplace configuration
+(See `install_codex()` in install.sh for implementation details)
+
+1. Copy plugin: `platform-integrations/codex/plugins/evolve-lite/` → `<target_dir>/plugins/evolve-lite/`
+2. Copy shared lib: `platform-integrations/claude/plugins/evolve-lite/lib/` → `<target_dir>/plugins/evolve-lite/lib/`
+3. Register plugin in marketplace: Upsert entry in `<target_dir>/.agents/plugins/marketplace.json`
+4. Register UserPromptSubmit hook: Upsert hook in `<target_dir>/.codex/hooks.json` for automatic recall
+5. **Note:** Automatic recall requires enabling hooks in `~/.codex/config.toml`:
+   ```toml
+   [features]
+   codex_hooks = true
+   ```
+   If hooks are not enabled, invoke the `evolve-lite:recall` skill manually.
 
 ## Important Notes
 
