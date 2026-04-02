@@ -30,9 +30,9 @@ sandbox-setup:
 
 # Run an interactive Claude Code shell in the sandbox
 sandbox-run:
-    docker run --rm -it --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/plugins":/plugins {{image}}
+    docker run --rm -it --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/platform-integrations/claude/plugins":/plugins {{image}}
 
-# Run a one-shot prompt in the sandbox (trace=true to summarize session, learn=true to run /evolve:learn)
+# Run a one-shot prompt in the sandbox (trace=true to summarize session, learn=true to run /evolve-lite:learn)
 sandbox-prompt prompt:
     #!/usr/bin/env sh
     export SANDBOX_PROMPT="$(cat <<'PROMPT_EOF'
@@ -44,17 +44,17 @@ sandbox-prompt prompt:
     if [ "{{trace}}" = "true" ]; then
         TRACE_CMD="
             echo; echo; echo Summarizing the session...; echo
-            claude --plugin-dir /plugins/evolve/ --dangerously-skip-permissions --no-session-persistence -p 'tell me what happened in the newest json file in /home/sandbox/.claude/projects/-workspace/'
+            claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions --no-session-persistence -p 'tell me what happened in the newest json file in /home/sandbox/.claude/projects/-workspace/'
         "
     fi
     if [ "{{learn}}" = "true" ]; then
         LEARN_CMD="
             echo; echo; echo Learning...; echo
-            claude --plugin-dir /plugins/evolve/ --dangerously-skip-permissions --continue -p '/evolve:learn'
+            claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions --continue -p '/evolve-lite:learn'
         "
     fi
-    docker run --rm -it --env SANDBOX_PROMPT --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/plugins":/plugins {{image}} sh -c "
-        claude --plugin-dir /plugins/evolve/ --dangerously-skip-permissions -p \"\$SANDBOX_PROMPT\"
+    docker run --rm -it --env SANDBOX_PROMPT --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/platform-integrations/claude/plugins":/plugins {{image}} sh -c "
+        claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions -p \"\$SANDBOX_PROMPT\"
         $TRACE_CMD
         $LEARN_CMD
     "
