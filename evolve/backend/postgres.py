@@ -11,7 +11,7 @@ from pgvector.psycopg import register_vector
 from sentence_transformers import SentenceTransformer
 
 from evolve.backend.base import BaseEntityBackend, BaseSettings
-from evolve.config.postgres import postgres_db_settings
+from evolve.config.postgres import PostgresDBSettings, postgres_db_settings
 from evolve.db.sqlite_manager import SQLiteManager
 from evolve.schema.core import Namespace, RecordedEntity
 from evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
@@ -43,21 +43,22 @@ def _entity_row_factory(cursor: psycopg.Cursor[Any]) -> Callable[[Sequence[Any]]
 class PostgresEntityBackend(BaseEntityBackend):
     conn: psycopg.Connection
     embedding_model: SentenceTransformer
+    _settings: PostgresDBSettings
 
     def __init__(self, config: BaseSettings | None = None):
         super().__init__(config)
-        settings = config if isinstance(config, type(postgres_db_settings)) else postgres_db_settings
+        self._settings = config if isinstance(config, type(postgres_db_settings)) else postgres_db_settings
         self.conn = psycopg.connect(
-            host=settings.host,
-            port=settings.port,
-            user=settings.user,
-            password=settings.password,
-            dbname=settings.dbname,
+            host=self._settings.host,
+            port=self._settings.port,
+            user=self._settings.user,
+            password=self._settings.password,
+            dbname=self._settings.dbname,
             autocommit=True,
         )
         self._ensure_pgvector_extension()
         register_vector(self.conn)
-        self.embedding_model = SentenceTransformer(settings.embedding_model)
+        self.embedding_model = SentenceTransformer(self._settings.embedding_model)
 
     def _ensure_pgvector_extension(self):
         """Ensure the pgvector extension is installed."""
@@ -90,7 +91,7 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     def details(self) -> dict:
         """Return details about the backend."""
-        return {"backend": "postgres", "host": postgres_db_settings.host, "port": postgres_db_settings.port}
+        return {"backend": "postgres", "host": self._settings.host, "port": self._settings.port}
 
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         """Create a new namespace (PostgreSQL table) for entities."""

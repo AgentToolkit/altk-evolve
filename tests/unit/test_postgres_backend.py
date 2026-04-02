@@ -79,8 +79,8 @@ def test_ready(postgres_backend: PostgresEntityBackend):
 def test_postgres_backend_initialization_ensures_extension_before_registering_vector():
     call_order: list[str] = []
     config = PostgresDBSettings(
-        host="127.0.0.1",
-        port=5432,
+        host="127.0.0.2",
+        port=6543,
         user="postgres",
         password="postgres",  # pragma: allowlist secret
         dbname="evolve",
@@ -107,6 +107,7 @@ def test_postgres_backend_initialization_ensures_extension_before_registering_ve
     assert call_order == ["ensure_extension", "register_vector"]
     mock_transformer.assert_called_once_with("custom-model")
     assert backend.conn is mock_conn
+    assert backend.details() == {"backend": "postgres", "host": "127.0.0.2", "port": 6543}
 
 
 @pytest.mark.unit
