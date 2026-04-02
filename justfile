@@ -53,7 +53,7 @@ sandbox-prompt prompt:
             claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions --continue -p '/evolve-lite:learn'
         "
     fi
-    docker run --rm -it --env SANDBOX_PROMPT --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/plugins":/plugins {{image}} sh -c "
+    docker run --rm -it --env SANDBOX_PROMPT --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/platform-integrations/claude/plugins":/plugins {{image}} sh -c "
         claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions -p \"\$SANDBOX_PROMPT\"
         $TRACE_CMD
         $LEARN_CMD
