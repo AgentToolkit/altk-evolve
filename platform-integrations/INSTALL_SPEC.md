@@ -3,7 +3,7 @@
 ## Overview
 
 `install.sh` is a single-file bash/Python hybrid installer that sets up Evolve integrations
-into a user's project directory for one or more supported platforms: **Bob**, **Roo**, **Claude**, and **Codex**.
+into a user's project directory for one or more supported platforms: **Bob**, **Claude**, and **Codex**.
 
 It is designed to be run:
 - Locally from within the evolve repo: `./install.sh install`
@@ -48,13 +48,13 @@ Commands:
   status     Show what is currently installed
 
 install options:
-  --platform {bob,roo,claude,codex,all}   Platform to install (default: auto-detect + prompt)
+  --platform {bob,claude,codex,all}   Platform to install (default: auto-detect + prompt)
   --mode     {lite,full}            Installation mode for bob (default: lite)
   --dir      DIR                    Target project directory (default: current working dir)
   --dry-run                         Preview changes without modifying files
 
 uninstall options:
-  --platform {bob,roo,claude,codex,all}   Platform to uninstall (default: prompt)
+  --platform {bob,claude,codex,all}   Platform to uninstall (default: prompt)
   --dir      DIR                    Target project directory (default: current working dir)
   --dry-run                         Preview changes without modifying files
 ```
@@ -68,7 +68,6 @@ Detection checks in order (any match = platform considered available):
 | Platform | Detection signals |
 |----------|-------------------|
 | bob      | `.bob/` dir exists in target dir, OR `bob` on PATH |
-| roo      | `.roomodes` file exists in target dir, OR `roo` or `roo-code` on PATH |
 | claude   | `.claude/` dir exists in target dir, OR `claude` on PATH |
 | codex    | `.codex/` dir exists in target dir, OR `.agents/plugins/marketplace.json` exists, OR `codex` on PATH |
 
@@ -95,18 +94,6 @@ All of lite mode, plus:
 
 5. Read `platform-integrations/bob/evolve-full/mcp.json`
 6. Upsert key `mcpServers.evolve` into `.bob/mcp.json`  (JSON key upsert, see JSON Strategy)
-
-### Roo — Lite Mode
-
-Source: `platform-integrations/roo/evolve-lite/`
-Target: project directory
-
-1. Copy `skills/evolve-learn/` → `.roo/skills/evolve-learn/`  (merge, idempotent)
-2. Copy `skills/evolve-recall/` → `.roo/skills/evolve-recall/`  (merge, idempotent)
-3. Merge mode entry from `skills/.roomodes` → `.roomodes` in project dir
-   - Target `.roomodes` may be JSON or YAML; detected by trying `json.loads` first
-   - Upsert by `slug: evolve-lite` (JSON: array upsert; YAML: sentinel block)
-   - If target does not exist, create as YAML
 
 ### Claude — Lite Mode
 
@@ -148,11 +135,6 @@ Codex is currently implemented only in lite mode. Full mode is reserved for futu
 4. Remove sentinel block for `evolve-lite` from `.bob/custom_modes.yaml`
 5. (Full mode) Remove `mcpServers.evolve` key from `.bob/mcp.json`
 
-### Roo
-1. Remove `.roo/skills/evolve-learn/`
-2. Remove `.roo/skills/evolve-recall/`
-3. Remove `evolve-lite` entry from `.roomodes` (JSON array filter or YAML sentinel strip)
-
 ### Claude
 1. Attempt `claude plugin uninstall evolve-lite` via subprocess
 2. If that fails, print manual instructions
@@ -166,7 +148,7 @@ Codex is currently implemented only in lite mode. Full mode is reserved for futu
 
 ## File Operation Strategies
 
-### JSON Strategy (mcp.json, .roomodes, marketplace.json, hooks.json)
+### JSON Strategy (mcp.json, marketplace.json, hooks.json)
 
 All JSON writes use atomic read-modify-write:
 1. Read existing file (or start with `{}` if not found)
@@ -176,12 +158,12 @@ All JSON writes use atomic read-modify-write:
 
 **Key upsert** (`mcpServers.evolve`, `hooks.UserPromptSubmit` scaffolding): navigate nested keys via `dict.setdefault`, merge matching dict values in place, and only replace scalar/list leaves.
 
-**Array upsert** (`.roomodes` `customModes`, `marketplace.json` `plugins`): iterate array, find item where the identity key matches,
+**Array upsert** (`marketplace.json` `plugins`): iterate array, find item where the identity key matches,
 merge matching dict items in place; append if not found.
 
 **Array remove**: filter array by `item["slug"] != target_slug`, write back.
 
-### YAML Strategy (custom_modes.yaml, .roomodes when YAML)
+### YAML Strategy (custom_modes.yaml)
 
 YAML files use sentinel comment blocks:
 
@@ -201,9 +183,6 @@ between sentinels. If no, append sentinel block to end of file.
 
 **Uninstall**: find sentinel start and end lines, remove all lines between them (inclusive).
 
-**Source parsing**: the source `.roomodes` from `platform-integrations/roo/` is YAML format.
-The mode data is extracted via regex from the YAML source and converted to a Python dict
-for JSON insertion. No third-party YAML library is required.
 
 ---
 
@@ -260,7 +239,7 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.2.0/pla
 
 # Non-interactive, specific platform
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | \
-  bash -s -- install --platform roo
+  bash -s -- install --platform bob
 ```
 
 ## Local Install Example
@@ -271,5 +250,5 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platf
 ./platform-integrations/install.sh install --platform bob --mode full
 ./platform-integrations/install.sh install --platform all
 ./platform-integrations/install.sh status
-./platform-integrations/install.sh uninstall --platform roo
+./platform-integrations/install.sh uninstall --platform bob
 ```
