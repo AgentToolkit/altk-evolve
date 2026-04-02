@@ -42,4 +42,4 @@ At this point, Bob will correct itself and eventually run `uv sync` and correctl
 Bob should then run some Evolve Lite skills to save the learned correction into memory.
 If it does not, the `/evolve:learn` command can be used to manually run the skill.
 
-In the future, Bob should remember via Evolve-Lite skills that `uv` is used for this project and not make the same mistake. This can be tested in this toy project by deleting the `.venv` and `uv.lock` folder and trying the same utterance again.
+In the future, Bob should remember via Evolve-Lite skills that `uv` is used for this project and not make the same mistake. This can be tested in this toy project by deleting the `.venv` directory and the `uv.lock` file and trying the same utterance again.

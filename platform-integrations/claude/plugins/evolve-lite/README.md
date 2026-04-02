@@ -54,7 +54,7 @@ See the [Evolve Lite guide](../../../../docs/integrations/evolve-lite.md#example
 Manually invoke to extract entities from the current conversation:
 - Analyzes task, steps taken, successes and failures
 - Generates proactive entities (what to do, not what to avoid)
-- Outputs JSON for storage
+- Outputs JSON that the save script persists as entity files
 
 ### `/evolve:recall`
 
