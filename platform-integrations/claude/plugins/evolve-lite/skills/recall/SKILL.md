@@ -1,6 +1,7 @@
 ---
 name: recall
 description: Retrieves relevant entities from a knowledge base. Designed to be invoked automatically via hooks to inject context-appropriate entities before task execution.
+context: fork
 ---
 
 # Entity Retrieval

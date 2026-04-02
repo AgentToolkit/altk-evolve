@@ -31,6 +31,17 @@ def _get_log_dir():
 _LOG_FILE = os.path.join(_get_log_dir(), "evolve-plugin.log")
 
 
+def auto_learn_flag_path():
+    """Return the path to the auto-learn flag file for the current session.
+
+    Uses ``CLAUDE_SESSION_ID`` if available, otherwise falls back to the
+    parent PID (the Claude Code process).
+    """
+    session_id = os.environ.get("CLAUDE_SESSION_ID") or str(os.getppid())
+    flag_dir = _get_log_dir()
+    return os.path.join(flag_dir, f"auto-learn-{session_id}.flag")
+
+
 def log(component, message):
     """Append a timestamped message to the shared log file.
 

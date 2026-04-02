@@ -10,6 +10,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "Verify that you ran the evolve-lite:learn skill. Run the evolve-lite:learn skill. $ARGUMENTS",
+            "timeout": 120
+          }
+        ]
+      }
     ]
   }
 }
