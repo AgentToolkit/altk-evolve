@@ -7,7 +7,7 @@ description: Extract actionable entities from Codex conversation trajectories. S
 
 ## Overview
 
-This skill analyzes the current Codex conversation to extract actionable entities that would help on similar tasks in the future. It **prioritizes errors encountered during the conversation** such as tool failures, exceptions, wrong approaches, and retry loops, then turns them into proactive recommendations that prevent them from recurring.
+This skill analyzes the current Codex conversation to extract actionable entities that would help on similar tasks in the future. It **prioritizes errors encountered during the conversation** - tool failures, exceptions, wrong approaches, retry loops - and transforms them into proactive recommendations that prevent those errors from recurring.
 
 ## Workflow
 
@@ -48,19 +48,22 @@ Extract 3-5 proactive entities. **Prioritize entities derived from errors identi
 
 Follow these principles:
 
-1. **Reframe failures as proactive recommendations**
-   If an approach failed due to permissions, recommend the alternative first.
+1. **Reframe failures as proactive recommendations:**
+   - If an approach failed due to permissions, recommend the alternative first
+   - If a system tool was unavailable, recommend what worked instead
+   - If an approach hit environment constraints, recommend the constraint-aware approach
 
-2. **Focus on what worked, stated as the primary approach**
-   Bad: "If exiftool fails, use PIL instead"
-   Good: "In sandboxed environments, use Python libraries like PIL or Pillow for image metadata extraction"
+2. **Focus on what worked, stated as the primary approach:**
+   - Bad: "If exiftool fails, use PIL instead"
+   - Good: "In sandboxed environments, use Python libraries like PIL or Pillow for image metadata extraction"
 
-3. **Triggers should be situational context, not failure conditions**
-   Bad trigger: "When apt-get fails"
-   Good trigger: "When working in containerized or sandboxed environments"
+3. **Triggers should be situational context, not failure conditions:**
+   - Bad trigger: "When apt-get fails"
+   - Good trigger: "When working in containerized or sandboxed environments"
 
-4. **For retry loops, recommend the final working approach as the starting point**
-   If three variations were tried before one worked, the entity should recommend the working variation directly.
+4. **For retry loops, recommend the final working approach as the starting point:**
+   - If three variations were tried before one worked, the entity should recommend the working variation directly
+   - Eliminate the trial and error by encoding the answer
 
 ### Step 4: Output Entities JSON
 
@@ -83,7 +86,7 @@ Output entities in this JSON format:
 
 After generating the entities JSON, save them using the helper script:
 
-#### Method 1: Direct Pipe
+#### Method 1: Direct Pipe (Recommended)
 
 ```bash
 echo '<your-json-output>' | python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/learn/scripts/save_entities.py"
@@ -108,10 +111,94 @@ The script will:
 - Deduplicate against existing entities
 - Display confirmation with the total count
 
+**Example:**
+
+```bash
+echo '{
+  "entities": [
+    {
+      "content": "Use Python PIL or Pillow for image metadata extraction in sandboxed environments",
+      "rationale": "System tools may not be available in sandboxed environments",
+      "type": "guideline",
+      "trigger": "When extracting image metadata in containerized or sandboxed environments"
+    }
+  ]
+}' | python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/learn/scripts/save_entities.py"
+```
+
+**Output:**
+
+```text
+Created new entities dir: /path/to/project/.evolve/entities
+Added 1 new entity(ies). Total: 1
+Entities stored in: /path/to/project/.evolve/entities
+```
+
+## Examples
+
+### Good vs Bad Entities
+
+**BAD (reactive):**
+
+```json
+{
+  "content": "Fall back to Python PIL when exiftool is not available",
+  "trigger": "When exiftool command fails"
+}
+```
+
+**GOOD (proactive):**
+
+```json
+{
+  "content": "Use Python PIL or Pillow for image metadata extraction in sandboxed environments",
+  "rationale": "System tools like exiftool may not be available; Python libraries are a better default in constrained environments",
+  "type": "guideline",
+  "trigger": "When extracting image metadata in containerized or sandboxed environments"
+}
+```
+
+### Error-Prevention Entity Examples
+
+**From a retry loop** (tried three `git push` variations):
+
+```json
+{
+  "content": "When pushing a new branch, use `git push -u origin <branch>` to set upstream tracking",
+  "rationale": "Plain `git push` fails on new branches without upstream configured; `-u` sets it in one step",
+  "type": "guideline",
+  "trigger": "When pushing a newly created git branch for the first time"
+}
+```
+
+**From a wrong initial approach** (tried regex, switched to a parser):
+
+```json
+{
+  "content": "Use BeautifulSoup or lxml for HTML content extraction, never regex",
+  "rationale": "Regex cannot reliably handle nested or malformed HTML; a proper parser handles edge cases",
+  "type": "guideline",
+  "trigger": "When extracting data from HTML documents or web pages"
+}
+```
+
+**From a permission error** (`apt-get` blocked in a sandbox):
+
+```json
+{
+  "content": "Install Python packages with `pip` or `uv` instead of system package managers in sandboxed environments",
+  "rationale": "System package managers often require root access, while `pip` and `uv` work in user space",
+  "type": "guideline",
+  "trigger": "When installing dependencies in containerized or sandboxed environments"
+}
+```
+
 ## Best Practices
 
 1. Prioritize error-derived entities first.
-2. Keep entities specific and actionable.
-3. Include rationale so the future agent understands why the guidance matters.
-4. Use situational triggers instead of failure-based triggers.
-5. Limit output to the 3-5 most valuable entities.
+2. One distinct error should normally produce one prevention entity.
+3. Keep entities specific and actionable.
+4. Include rationale so the future agent understands why the guidance matters.
+5. Use situational triggers instead of failure-based triggers.
+6. Limit output to the 3-5 most valuable entities.
+7. If more than five distinct errors appear, merge entities with the same root cause or fix, then rank the rest by severity, frequency, user impact, and recency before dropping the weakest ones.
