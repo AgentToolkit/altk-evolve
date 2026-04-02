@@ -200,7 +200,7 @@ curl "http://localhost:6006/v1/projects/test-agent/spans?limit=5"
 cd evolve_repo
 EVOLVE_BACKEND=filesystem \
 EVOLVE_TIPS_MODEL="gpt-4" \
-uv run python -m evolve.cli sync phoenix \
+uv run evolve sync phoenix \
     --project test-agent \
     --include-errors
 ```
@@ -209,7 +209,7 @@ uv run python -m evolve.cli sync phoenix \
 
 ```bash
 EVOLVE_BACKEND=filesystem \
-uv run python -m evolve.cli entities list evolve --type guideline
+uv run evolve entities list evolve --type guideline
 ```
 
 ### 6. Understanding Tip Provenance (Metadata)
