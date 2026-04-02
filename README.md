@@ -116,28 +116,29 @@ See the [Low-Code Tracing Guide](docs/LOW_CODE_TRACING.md#6-understanding-tip-pr
 
 ### Running Tests
 
-```bash
-uv run pytest
-```
+The test suite is organized into 4 cleanly isolated tiers depending on infrastructure requirements:
 
-#### Phoenix Sync Tests
+1. **Unit Tests (Default)**
+   Fast, fully-mocked tests verifying core logic and offline pipeline schemas.
+   ```bash
+   uv run pytest
+   ```
 
-Tests for the Phoenix trajectory sync functionality are **skipped by default** since they require familiarity with the Phoenix integration. To include them:
+2. **Platform Integration Tests**
+   Fast filesystem-level integration tests verifying local tool installation and idempotency.
+   ```bash
+   uv run pytest -m platform_integrations
+   ```
 
-```bash
-# Run all tests including Phoenix tests
-uv run pytest --run-phoenix
+3. **End-to-End Infrastructure Tests**
+   Heavy tests that autonomously spin up a background Phoenix server and simulate full agent workflows.
+   ```bash
+   uv run pytest -m e2e --run-e2e
+   ```
+   *(See [docs/LOW_CODE_TRACING.md](docs/LOW_CODE_TRACING.md#end-to-end-verification) for more details).*
 
-# Run only Phoenix tests
-uv run pytest -m phoenix
-```
-
-#### End-to-End (E2E) Low-Code Verification
-
-To run the full end-to-end verification pipeline (Agent -> Trace -> Tip):
-
-```bash
-EVOLVE_E2E=true uv run pytest tests/e2e/test_e2e_pipeline.py -s
-```
-
-See [docs/LOW_CODE_TRACING.md](docs/LOW_CODE_TRACING.md#end-to-end-verification) for more details.
+4. **LLM Evaluation Tests**
+   Tests needing active LLM inference to test resolution pipelines (requires LLM API keys).
+   ```bash
+   uv run pytest -m llm
+   ```

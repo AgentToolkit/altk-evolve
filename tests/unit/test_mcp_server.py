@@ -3,6 +3,8 @@ import uuid
 import pytest
 from unittest.mock import patch, MagicMock
 
+pytestmark = pytest.mark.unit
+
 from evolve.frontend.mcp.mcp_server import save_trajectory, create_entity
 from evolve.schema.conflict_resolution import EntityUpdate
 

@@ -8,8 +8,8 @@ import pytest
 from evolve.sync.phoenix_sync import PhoenixSync, SyncResult
 from evolve.schema.tips import TipGenerationResult
 
-# Mark all tests in this module as phoenix tests (skipped by default)
-pytestmark = pytest.mark.phoenix
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
