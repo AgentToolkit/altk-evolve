@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Evolve Platform Installer
-# Installs Evolve Lite (and optionally Full) integrations for Bob, Roo, Claude Code, and Codex.
+# Installs Evolve Lite (and optionally Full) integrations for Bob, Claude Code, and Codex.
 #
 # Usage:
-#   ./install.sh install [--platform bob|roo|claude|codex|all] [--mode lite|full] [--dir DIR] [--dry-run]
-#   ./install.sh uninstall [--platform bob|roo|claude|codex|all] [--dir DIR] [--dry-run]
+#   ./install.sh install [--platform bob|claude|codex|all] [--mode lite|full] [--dir DIR] [--dry-run]
+#   ./install.sh uninstall [--platform bob|claude|codex|all] [--dir DIR] [--dry-run]
 #   ./install.sh status [--dir DIR]
 #
 # Remote:
 #   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform roo
+#   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob
 #
 # Pinned version (SCRIPT_VERSION is substituted by the release process, so the
 # script fetched from a tag already knows its own version — no env var needed):
@@ -142,7 +142,6 @@ EVOLVE_DEBUG = os.environ.get("EVOLVE_DEBUG", "0") == "1"
 DRY_RUN = False   # set to True by --dry-run flag; checked in all write primitives
 
 BOB_SLUG    = "evolve-lite"
-ROO_SLUG    = "evolve-lite"
 CLAUDE_PLUGIN = "evolve-lite"
 CODEX_PLUGIN = "evolve-lite"
 
@@ -587,57 +586,6 @@ def remove_yaml_custom_mode(target_yaml_path, slug):
     atomic_write_text(target_yaml_path, pattern.sub("", text))
 
 
-def load_roo_mode_from_yaml(source_path):
-    """
-    Extract the evolve-lite mode dict from the Roo source .roomodes YAML file
-    using regex, returning a dict suitable for JSON insertion.
-    """
-    with open(str(source_path)) as f:
-        text = f.read()
-
-    def extract(field):
-        # Match simple single-line values at mode definition level (2-4 spaces, optionally with list dash)
-        # First try to match with list dash (for slug field: "  - slug: value")
-        m = re.search(rf"^  - {field}:\s+(.+)$", text, re.MULTILINE)
-        if m:
-            return m.group(1).strip().strip('"')
-        # Then try without dash (for other fields: "    name: value")
-        m = re.search(rf"^    {field}:\s+(.+)$", text, re.MULTILINE)
-        if m:
-            return m.group(1).strip().strip('"')
-        return ""
-
-    def extract_block(field):
-        # Match block scalar (|- or |) at mode definition level (4 spaces, no list dash)
-        m = re.search(rf"^    {field}:\s*\|-?\s*\n((?:[ \t]+.+\n?)*)", text, re.MULTILINE)
-        if m:
-            lines = m.group(1).splitlines()
-            # Find minimum indent
-            min_indent = min((len(l) - len(l.lstrip()) for l in lines if l.strip()), default=0)
-            return "\n".join(l[min_indent:] for l in lines)
-        return extract(field)
-
-    def extract_list(field):
-        # Match list field at mode definition level (4 spaces, no list dash before field name)
-        m = re.search(rf"^    {field}:\s*\n((?:      - .+\n?)*)", text, re.MULTILINE)
-        if m:
-            return [re.sub(r"^\s+- ", "", l) for l in m.group(1).splitlines() if l.strip()]
-        return []
-
-    slug = extract("slug")
-    if not slug:
-        return None
-
-    return {
-        "slug": slug,
-        "name": extract("name"),
-        "firstMessage": extract("firstMessage"),
-        "roleDefinition": extract_block("roleDefinition"),
-        "customInstructions": extract_block("customInstructions"),
-        "groups": extract_list("groups"),
-        "description": extract("description"),
-    }
-
 
 # ── Platform detection ─────────────────────────────────────────────────────────
 
@@ -647,12 +595,6 @@ def detect_platforms(target_dir):
         "bob": (
             shutil.which("bob") is not None or
             (target / ".bob").is_dir()
-        ),
-        "roo": (
-            shutil.which("roo") is not None or
-            shutil.which("roo-code") is not None or
-            (target / ".roomodes").is_file() or
-            (target / ".roo").is_dir()
         ),
         "claude": (
             shutil.which("claude") is not None or
@@ -792,75 +734,6 @@ def status_bob(target_dir):
         has_mcp = "evolve" in mcp.get("mcpServers", {})
     print(f"    mcp.json (full mode) : {'✓' if has_mcp else '✗'}")
 
-
-# ── Roo installer ─────────────────────────────────────────────────────────────
-
-def install_roo(source_dir, target_dir):
-    roo_source = Path(source_dir) / "platform-integrations" / "roo" / "evolve-lite"
-    roo_skills_source = roo_source / "skills"
-
-    info(f"Installing Roo → {target_dir}")
-
-    # Skill directories (exclude .roomodes from copy)
-    copy_tree(roo_skills_source / "evolve-learn",  Path(target_dir) / ".roo" / "skills" / "evolve-learn")
-    copy_tree(roo_skills_source / "evolve-recall", Path(target_dir) / ".roo" / "skills" / "evolve-recall")
-    success("Copied Roo skills")
-
-    # .roomodes — detect target format
-    roomodes_source = roo_skills_source / ".roomodes"   # YAML format in source
-    roomodes_target = Path(target_dir) / ".roomodes"
-
-    if not roomodes_target.is_file():
-        # Target doesn't exist — create as YAML (roo-code preferred format)
-        merge_yaml_custom_mode(roomodes_source, roomodes_target, ROO_SLUG)
-        success(f"Created {roomodes_target} with mode '{ROO_SLUG}' (YAML)")
-    elif is_json_file(roomodes_target):
-        # Target exists and is JSON — load mode from YAML source and upsert into JSON
-        mode_dict = load_roo_mode_from_yaml(roomodes_source)
-        if mode_dict is None:
-            warn(f"Could not extract mode '{ROO_SLUG}' from {roomodes_source}")
-        else:
-            upsert_json_array_item(roomodes_target, "customModes", mode_dict, "slug")
-            success(f"Upserted mode '{ROO_SLUG}' into {roomodes_target} (JSON)")
-    else:
-        # Target exists and is YAML — use sentinel merge
-        merge_yaml_custom_mode(roomodes_source, roomodes_target, ROO_SLUG)
-        success(f"Merged mode '{ROO_SLUG}' into {roomodes_target} (YAML)")
-
-    success("Roo installation complete")
-
-
-def uninstall_roo(target_dir):
-    info(f"Uninstalling Roo from {target_dir}")
-    remove_dir(Path(target_dir) / ".roo" / "skills" / "evolve-learn")
-    remove_dir(Path(target_dir) / ".roo" / "skills" / "evolve-recall")
-
-    roomodes_target = Path(target_dir) / ".roomodes"
-    if roomodes_target.is_file():
-        if is_json_file(roomodes_target):
-            remove_json_array_item(roomodes_target, "customModes", "slug", ROO_SLUG)
-        else:
-            remove_yaml_custom_mode(roomodes_target, ROO_SLUG)
-
-    success("Roo uninstall complete")
-
-
-def status_roo(target_dir):
-    roo_skills = Path(target_dir) / ".roo" / "skills"
-    roomodes = Path(target_dir) / ".roomodes"
-    print(f"  Roo (.roo/ + .roomodes):")
-    print(f"    .roo/skills/evolve-learn  : {'✓' if (roo_skills / 'evolve-learn').is_dir() else '✗'}")
-    print(f"    .roo/skills/evolve-recall : {'✓' if (roo_skills / 'evolve-recall').is_dir() else '✗'}")
-
-    mode_present = False
-    if roomodes.is_file():
-        if is_json_file(roomodes):
-            data = read_json(roomodes)
-            mode_present = any(m.get("slug") == ROO_SLUG for m in data.get("customModes", []))
-        else:
-            with open(roomodes) as f:
-                mode_present = f"slug: {ROO_SLUG}" in f.read()
-    print(f"    .roomodes (evolve-lite)   : {'✓' if mode_present else '✗'}")
 
 
 # ── Claude installer ──────────────────────────────────────────────────────────
@@ -1054,8 +927,6 @@ def cmd_install(args):
         try:
             if platform == "bob":
                 install_bob(SOURCE_DIR, target_dir, mode=args.mode)
-            elif platform == "roo":
-                install_roo(SOURCE_DIR, target_dir)
             elif platform == "claude":
                 install_claude(SOURCE_DIR, target_dir)
             elif platform == "codex":
@@ -1100,8 +971,6 @@ def cmd_uninstall(args):
         try:
             if platform == "bob":
                 uninstall_bob(target_dir)
-            elif platform == "roo":
-                uninstall_roo(target_dir)
             elif platform == "claude":
                 uninstall_claude(target_dir)
             elif platform == "codex":
@@ -1128,8 +997,6 @@ def cmd_status(args):
     print()
     status_bob(target_dir)
     print()
-    status_roo(target_dir)
-    print()
     status_claude(target_dir)
     print()
     status_codex(target_dir)
@@ -1141,14 +1008,14 @@ def cmd_status(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="install.sh",
-        description="Install Evolve integrations for Bob, Roo, Claude Code, and Codex.",
+        description="Install Evolve integrations for Bob, Claude Code, and Codex.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     # install
     p_install = sub.add_parser("install", help="Install Evolve into the current project")
     p_install.add_argument(
-        "--platform", choices=["bob", "roo", "claude", "codex", "all"], default=None,
+        "--platform", choices=["bob", "claude", "codex", "all"], default=None,
         help="Platform to install (default: auto-detect and prompt)",
     )
     p_install.add_argument(
@@ -1167,7 +1034,7 @@ def main():
     # uninstall
     p_uninstall = sub.add_parser("uninstall", help="Remove Evolve from the current project")
     p_uninstall.add_argument(
-        "--platform", choices=["bob", "roo", "claude", "codex", "all"], default=None,
+        "--platform", choices=["bob", "claude", "codex", "all"], default=None,
         help="Platform to uninstall (default: prompt)",
     )
     p_uninstall.add_argument(
