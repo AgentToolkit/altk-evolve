@@ -31,7 +31,6 @@ def _get_log_dir():
 _LOG_FILE = os.path.join(_get_log_dir(), "evolve-plugin.log")
 
 
-
 def log(component, message):
     """Append a timestamped message to the shared log file.
 
