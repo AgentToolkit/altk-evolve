@@ -97,8 +97,15 @@ class TestBobPreservation:
         file_assertions.assert_valid_json(mcp_file)
         current_data = json.loads(mcp_file.read_text())
         evolve_server = current_data["mcpServers"]["evolve"]
+        expected_args = [
+            "run",
+            "-i",
+            "--rm",
+            "1lleatmyhat/evolve:latest-core",
+        ]
 
-        assert evolve_server["command"] == "uv"
+        assert evolve_server["command"] == "docker"
+        assert evolve_server["args"] == expected_args
         assert evolve_server["disabled"] is False
         assert evolve_server["env"] == {"EVOLVE_PROFILE": "local"}
         assert evolve_server["metadata"] == {"managedBy": "user"}
