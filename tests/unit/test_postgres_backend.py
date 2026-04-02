@@ -83,7 +83,7 @@ def test_postgres_backend_initialization_ensures_extension_before_registering_ve
         port=5432,
         user="postgres",
         password="postgres",  # pragma: allowlist secret
-        dbname="kaizen",
+        dbname="evolve",
         embedding_model="custom-model",
     )
 
