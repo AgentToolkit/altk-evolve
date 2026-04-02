@@ -168,111 +168,6 @@ class TestBobPreservation:
 
 
 @pytest.mark.platform_integrations
-class TestRooPreservation:
-    """Test that Roo installation preserves existing user data."""
-
-    def test_preserves_existing_skills(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
-        """Install evolve when user has existing Roo skills - they must be preserved."""
-        # Setup: Create user's custom skill
-        custom_skill = roo_fixtures.create_existing_skill(temp_project_dir)
-        original_content = (custom_skill / "SKILL.md").read_text()
-
-        # Action: Install evolve
-        install_runner.run("install", platform="roo")
-
-        # Assert: User's skill is untouched
-        file_assertions.assert_dir_exists(custom_skill)
-        file_assertions.assert_file_unchanged(custom_skill / "SKILL.md", original_content)
-
-        # Assert: Evolve skills are added
-        roo_dir = temp_project_dir / ".roo"
-        file_assertions.assert_dir_exists(roo_dir / "skills" / "evolve-learn")
-        file_assertions.assert_dir_exists(roo_dir / "skills" / "evolve-recall")
-
-    def test_preserves_existing_roomodes_json(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
-        """Install evolve when user has existing .roomodes (JSON) - it must be preserved."""
-        # Setup: Create user's .roomodes in JSON format
-        roomodes_file = roo_fixtures.create_existing_roomodes_json(temp_project_dir)
-        original_data = json.loads(roomodes_file.read_text())
-
-        # Action: Install evolve
-        install_runner.run("install", platform="roo")
-
-        # Assert: File is still valid JSON
-        file_assertions.assert_valid_json(roomodes_file)
-
-        # Assert: User's mode is still present
-        current_data = json.loads(roomodes_file.read_text())
-        user_modes = [m for m in current_data["customModes"] if m["slug"] == "my-roo-mode"]
-        assert len(user_modes) == 1, "User's custom mode was removed!"
-        assert user_modes[0] == original_data["customModes"][0]
-
-        # Assert: Evolve mode is added
-        evolve_modes = [m for m in current_data["customModes"] if m["slug"] == "evolve-lite"]
-        assert len(evolve_modes) == 1, f"Evolve mode not added. Found {len(evolve_modes)} evolve-lite entries"
-
-    def test_preserves_existing_evolve_roomodes_fields(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
-        """Install evolve when evolve-lite already exists in JSON .roomodes - custom fields on that mode must be preserved."""
-        roomodes_file = roo_fixtures.create_existing_roomodes_json_with_evolve(temp_project_dir)
-
-        install_runner.run("install", platform="roo")
-
-        file_assertions.assert_valid_json(roomodes_file)
-        current_data = json.loads(roomodes_file.read_text())
-        evolve_modes = [m for m in current_data["customModes"] if m["slug"] == "evolve-lite"]
-        assert len(evolve_modes) == 1
-        assert evolve_modes[0]["name"] == "Evolve Lite"
-        assert evolve_modes[0]["metadata"] == {"accent": "teal"}
-        assert evolve_modes[0]["shortcuts"] == ["recall-first"]
-
-    def test_preserves_existing_roomodes_yaml(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
-        """Install evolve when user has existing .roomodes (YAML) - it must be preserved."""
-        # Setup: Create user's .roomodes in YAML format
-        roomodes_file = roo_fixtures.create_existing_roomodes_yaml(temp_project_dir)
-
-        # Action: Install evolve
-        install_runner.run("install", platform="roo")
-
-        # Assert: User's mode is still present
-        current_content = roomodes_file.read_text()
-        assert "slug: my-roo-mode" in current_content, "User's custom mode was removed!"
-        assert "My Roo Mode" in current_content
-
-        # Assert: Evolve mode is added with sentinels
-        file_assertions.assert_sentinel_block_exists(roomodes_file, "evolve-lite")
-        assert "slug: evolve-lite" in current_content
-
-        # Assert: No duplicate user modes
-        assert current_content.count("slug: my-roo-mode") == 1
-
-    def test_preserves_all_roo_content_together(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
-        """Install evolve when user has all types of Roo content - all must be preserved."""
-        # Setup: Create all types of user content
-        custom_skill = roo_fixtures.create_existing_skill(temp_project_dir)
-        roomodes_file = roo_fixtures.create_existing_roomodes_json(temp_project_dir)
-
-        # Save original content
-        skill_content = (custom_skill / "SKILL.md").read_text()
-        roomodes_data = json.loads(roomodes_file.read_text())
-
-        # Action: Install evolve
-        install_runner.run("install", platform="roo")
-
-        # Assert: ALL user content is preserved
-        file_assertions.assert_file_unchanged(custom_skill / "SKILL.md", skill_content)
-
-        current_roomodes = json.loads(roomodes_file.read_text())
-        user_modes = [m for m in current_roomodes["customModes"] if m["slug"] == "my-roo-mode"]
-        assert user_modes[0] == roomodes_data["customModes"][0]
-
-        # Assert: Evolve content is added
-        roo_dir = temp_project_dir / ".roo"
-        file_assertions.assert_dir_exists(roo_dir / "skills" / "evolve-learn")
-        evolve_modes = [m for m in current_roomodes["customModes"] if m["slug"] == "evolve-lite"]
-        assert len(evolve_modes) == 1, f"Expected 1 evolve-lite mode, found {len(evolve_modes)}"
-
-
-@pytest.mark.platform_integrations
 class TestCodexPreservation:
     """Test that Codex installation preserves existing user data."""
 
@@ -335,7 +230,7 @@ class TestMultiPlatformPreservation:
     """Test that installing multiple platforms preserves all user data."""
 
     def test_install_all_platforms_preserves_everything(
-        self, temp_project_dir, install_runner, bob_fixtures, roo_fixtures, codex_fixtures, file_assertions
+        self, temp_project_dir, install_runner, bob_fixtures, codex_fixtures, file_assertions
     ):
         """Install all platforms when user has content everywhere - all must be preserved."""
         # Setup: Create user content for both platforms
@@ -343,8 +238,6 @@ class TestMultiPlatformPreservation:
         bob_command = bob_fixtures.create_existing_command(temp_project_dir)
         bob_modes = bob_fixtures.create_existing_custom_modes(temp_project_dir)
 
-        roo_skill = roo_fixtures.create_existing_skill(temp_project_dir)
-        roo_modes = roo_fixtures.create_existing_roomodes_json(temp_project_dir)
         codex_plugin = codex_fixtures.create_existing_plugin(temp_project_dir)
         codex_marketplace = codex_fixtures.create_existing_marketplace(temp_project_dir)
         codex_hooks = codex_fixtures.create_existing_hooks(temp_project_dir)
@@ -352,7 +245,6 @@ class TestMultiPlatformPreservation:
         # Save original content
         bob_skill_content = (bob_skill / "SKILL.md").read_text()
         bob_command_content = bob_command.read_text()
-        roo_skill_content = (roo_skill / "SKILL.md").read_text()
         codex_plugin_content = (codex_plugin / ".codex-plugin" / "plugin.json").read_text()
         codex_marketplace_data = json.loads(codex_marketplace.read_text())
 
@@ -363,11 +255,6 @@ class TestMultiPlatformPreservation:
         file_assertions.assert_file_unchanged(bob_skill / "SKILL.md", bob_skill_content)
         file_assertions.assert_file_unchanged(bob_command, bob_command_content)
         assert "slug: my-mode" in bob_modes.read_text()
-
-        # Assert: ALL Roo content is preserved
-        file_assertions.assert_file_unchanged(roo_skill / "SKILL.md", roo_skill_content)
-        roo_data = json.loads(roo_modes.read_text())
-        assert any(m["slug"] == "my-roo-mode" for m in roo_data["customModes"])
 
         # Assert: ALL Codex content is preserved
         file_assertions.assert_file_unchanged(codex_plugin / ".codex-plugin" / "plugin.json", codex_plugin_content)
@@ -383,5 +270,4 @@ class TestMultiPlatformPreservation:
 
         # Assert: Evolve content is added everywhere
         file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-learn")
-        file_assertions.assert_dir_exists(temp_project_dir / ".roo" / "skills" / "evolve-learn")
         file_assertions.assert_dir_exists(temp_project_dir / "plugins" / "evolve-lite")

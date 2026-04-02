@@ -1033,7 +1033,7 @@ def cmd_install(args):
 
     # Resolve platforms
     if args.platform == "all":
-        platforms = ["bob", "roo", "claude", "codex"]
+        platforms = ["bob", "claude", "codex"]
     elif args.platform:
         platforms = [args.platform]
     else:
@@ -1087,7 +1087,7 @@ def cmd_uninstall(args):
         info(_c("35", "DRY RUN — no files will be written or deleted"))
 
     if args.platform == "all":
-        platforms = ["bob", "roo", "claude", "codex"]
+        platforms = ["bob", "claude", "codex"]
     elif args.platform:
         platforms = [args.platform]
     else:

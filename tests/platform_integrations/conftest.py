@@ -337,92 +337,6 @@ class BobFixtures:
         return mcp_file
 
 
-class RooFixtures:
-    """Helper class to create Roo platform test fixtures."""
-
-    @staticmethod
-    def create_existing_skill(project_dir: Path, skill_name: str = "my-roo-skill"):
-        """Create a custom skill in .roo/skills/."""
-        skill_dir = project_dir / ".roo" / "skills" / skill_name
-        skill_dir.mkdir(parents=True, exist_ok=True)
-
-        (skill_dir / "SKILL.md").write_text(f"# {skill_name}\n\nThis is a custom Roo skill.\n")
-
-        scripts_dir = skill_dir / "scripts"
-        scripts_dir.mkdir(exist_ok=True)
-        (scripts_dir / "run.py").write_text("#!/usr/bin/env python3\nprint('Custom Roo skill')\n")
-
-        return skill_dir
-
-    @staticmethod
-    def create_existing_roomodes_json(project_dir: Path):
-        """Create a .roomodes file in JSON format with a custom mode."""
-        roomodes_file = project_dir / ".roomodes"
-
-        data = {
-            "customModes": [
-                {
-                    "slug": "my-roo-mode",
-                    "name": "My Roo Mode",
-                    "roleDefinition": "This is my custom Roo mode.",
-                    "customInstructions": "Follow my Roo instructions.",
-                    "groups": ["read", "edit"],
-                }
-            ]
-        }
-
-        roomodes_file.write_text(json.dumps(data, indent=2) + "\n")
-        return roomodes_file
-
-    @staticmethod
-    def create_existing_roomodes_json_with_evolve(project_dir: Path):
-        """Create a JSON .roomodes file that already contains a customized evolve-lite mode."""
-        roomodes_file = project_dir / ".roomodes"
-
-        data = {
-            "customModes": [
-                {
-                    "slug": "my-roo-mode",
-                    "name": "My Roo Mode",
-                    "roleDefinition": "This is my custom Roo mode.",
-                    "customInstructions": "Follow my Roo instructions.",
-                    "groups": ["read", "edit"],
-                },
-                {
-                    "slug": "evolve-lite",
-                    "name": "My Evolve Lite",
-                    "roleDefinition": "Old evolve role definition.",
-                    "customInstructions": "Old evolve instructions.",
-                    "groups": ["read"],
-                    "metadata": {"accent": "teal"},
-                    "shortcuts": ["recall-first"],
-                },
-            ]
-        }
-
-        roomodes_file.write_text(json.dumps(data, indent=2) + "\n")
-        return roomodes_file
-
-    @staticmethod
-    def create_existing_roomodes_yaml(project_dir: Path):
-        """Create a .roomodes file in YAML format with a custom mode."""
-        roomodes_file = project_dir / ".roomodes"
-
-        content = """customModes:
-  - slug: my-roo-mode
-    name: My Roo Mode
-    roleDefinition: |-
-      This is my custom Roo mode.
-    customInstructions: |-
-      Follow my Roo instructions.
-    groups:
-      - read
-      - edit
-"""
-        roomodes_file.write_text(content)
-        return roomodes_file
-
-
 class CodexFixtures:
     """Helper class to create Codex platform test fixtures."""
 
@@ -613,12 +527,6 @@ class CodexFixtures:
 def bob_fixtures():
     """Provide Bob platform test fixtures."""
     return BobFixtures()
-
-
-@pytest.fixture
-def roo_fixtures():
-    """Provide Roo platform test fixtures."""
-    return RooFixtures()
 
 
 @pytest.fixture
