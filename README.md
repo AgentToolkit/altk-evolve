@@ -104,6 +104,15 @@ Evolve automatically tracks the origin of every guideline it generates or stores
 
 See the [Low-Code Tracing Guide](docs/LOW_CODE_TRACING.md#6-understanding-tip-provenance-metadata) for more details.
 
+
+## Community & Feedback
+
+Evolve is an active project, and real‑world usage helps guide its direction.
+
+If Evolve is useful or aligned with your work, consider giving the repo a ⭐ — it helps others discover it.  
+If you’re experimenting with Evolve or exploring on‑the‑job learning for agents, feel free to open an issue or discussion to share use cases, ideas, or feedback.
+
+
 ## Documentation
 
 - [EVOLVE_LITE.md](EVOLVE_LITE.md) - Lightweight mode via Claude Code plugin (no infra required)
