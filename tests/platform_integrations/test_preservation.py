@@ -88,8 +88,10 @@ class TestBobPreservation:
         current_data = json.loads(mcp_file.read_text())
         assert current_data["mcpServers"]["my-server"] == original_data["mcpServers"]["my-server"]
 
-    def test_preserves_existing_evolve_mcp_server_fields(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
-        """Install evolve full mode when evolve already exists - custom fields on that entry must be preserved."""
+    def test_refreshes_managed_evolve_mcp_server_fields_and_preserves_custom_fields(
+        self, temp_project_dir, install_runner, bob_fixtures, file_assertions
+    ):
+        """Install evolve full mode when evolve exists - managed fields should refresh while custom fields are preserved."""
         mcp_file = bob_fixtures.create_existing_mcp_config_with_evolve(temp_project_dir)
 
         install_runner.run("install", platform="bob", mode="full")
