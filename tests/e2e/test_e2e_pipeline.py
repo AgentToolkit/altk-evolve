@@ -6,10 +6,8 @@ import datetime
 import pytest
 import urllib.request
 import urllib.error
-from evolve.config.phoenix import phoenix_settings
 
 # Configuration
-PHOENIX_URL = phoenix_settings.url
 # Use a session-scope timestamp or generate per test?
 # Per-test ensures no collisions even if run in parallel (though these should satisfy sequential)
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -80,7 +78,7 @@ def phoenix_server():
 
 @pytest.mark.e2e
 @pytest.mark.parametrize("agent_config", AGENTS_TO_TEST, ids=[a["name"] for a in AGENTS_TO_TEST])
-def test_e2e_pipeline_agent(agent_config):
+def test_e2e_pipeline_agent(agent_config, phoenix_server):
     """
     Runs the full E2E pipeline for a specific agent configuration:
     1. Executing the agent script
@@ -144,7 +142,7 @@ def test_e2e_pipeline_agent(agent_config):
 import phoenix as px
 import sys
 try:
-    c = px.Client(endpoint='{PHOENIX_URL}')
+    c = px.Client(endpoint='{phoenix_server}')
     df = c.get_spans_dataframe(project_name='{project_name}')
     if df is not None and not df.empty:
         print(f"FOUND_TRACES:{{len(df)}}")
