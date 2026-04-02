@@ -174,10 +174,10 @@ All JSON writes use atomic read-modify-write:
 3. Write to `<path>.evolve.tmp`
 4. `os.replace(tmp, path)` — atomic on POSIX
 
-**Key upsert** (`mcpServers.evolve`, `hooks.UserPromptSubmit` scaffolding): navigate nested keys via `dict.setdefault`, set leaf value.
+**Key upsert** (`mcpServers.evolve`, `hooks.UserPromptSubmit` scaffolding): navigate nested keys via `dict.setdefault`, merge matching dict values in place, and only replace scalar/list leaves.
 
 **Array upsert** (`.roomodes` `customModes`, `marketplace.json` `plugins`): iterate array, find item where the identity key matches,
-replace in-place; append if not found.
+merge matching dict items in place; append if not found.
 
 **Array remove**: filter array by `item["slug"] != target_slug`, write back.
 
@@ -214,7 +214,7 @@ All operations are safe to run multiple times:
 - JSON writes upsert (replace-if-exists, insert-if-not)
 - YAML writes check for sentinel before appending
 - Claude plugin install is idempotent by the Claude CLI itself
-- Codex marketplace and hook writes replace matching Evolve entries and preserve user-owned entries
+- Codex marketplace and hook writes merge matching Evolve entries and preserve user-owned entries
 
 ---
 

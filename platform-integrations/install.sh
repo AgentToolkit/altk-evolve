@@ -125,6 +125,7 @@ resolve_source
 
 exec python3 - "$SOURCE_DIR" "$@" <<'PYEOF'
 import argparse
+import copy
 import json
 import os
 import re
@@ -259,13 +260,25 @@ def remove_file(path):
 
 # ── JSON config helpers ────────────────────────────────────────────────────────
 
+def merge_json_value(existing, desired):
+    """Recursively merge JSON-like values, preserving unknown keys from existing objects."""
+    if isinstance(existing, dict) and isinstance(desired, dict):
+        merged = copy.deepcopy(existing)
+        for key, desired_value in desired.items():
+            merged[key] = merge_json_value(merged.get(key), desired_value)
+        return merged
+    return copy.deepcopy(desired)
+
+
 def upsert_json_key(path, key_path: list, value):
     """Upsert a nested key into a JSON file. key_path = ['a', 'b', 'c'] → data['a']['b']['c'] = value."""
     data = read_json(path)
     cursor = data
     for key in key_path[:-1]:
-        cursor = cursor.setdefault(key, {})
-    cursor[key_path[-1]] = value
+        if not isinstance(cursor.get(key), dict):
+            cursor[key] = {}
+        cursor = cursor[key]
+    cursor[key_path[-1]] = merge_json_value(cursor.get(key_path[-1]), value)
     atomic_write_json(path, data)
 
 
@@ -289,10 +302,10 @@ def upsert_json_array_item(path, array_key: str, item: dict, id_key: str):
     arr = data.setdefault(array_key, [])
     for i, existing in enumerate(arr):
         if existing.get(id_key) == item.get(id_key):
-            arr[i] = item
+            arr[i] = merge_json_value(existing, item)
             break
     else:
-        arr.append(item)
+        arr.append(copy.deepcopy(item))
     atomic_write_json(path, data)
 
 
@@ -337,10 +350,10 @@ def upsert_codex_marketplace_entry(path, item):
 
     for index, existing in enumerate(plugins):
         if isinstance(existing, dict) and existing.get("name") == item.get("name"):
-            plugins[index] = item
+            plugins[index] = merge_json_value(existing, item)
             break
     else:
-        plugins.append(item)
+        plugins.append(copy.deepcopy(item))
 
     atomic_write_json(path, data)
 
@@ -363,22 +376,82 @@ def _is_codex_recall_command(command):
     return isinstance(command, str) and "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in command
 
 
-def _codex_recall_hook_group():
+def _codex_recall_hook():
     return {
-        "matcher": "",
-        "hooks": [
-            {
-                "type": "command",
-                "command": _codex_recall_hook_command(),
-                "statusMessage": "Loading Evolve guidance",
-            }
-        ]
+        "type": "command",
+        "command": _codex_recall_hook_command(),
+        "statusMessage": "Loading Evolve guidance",
     }
 
 
-def _group_contains_codex_recall_command(group):
+def _codex_recall_hook_group():
+    return {
+        "matcher": "",
+        "hooks": [_codex_recall_hook()],
+    }
+
+
+def _iter_group_hooks(group):
     hooks = group.get("hooks", [])
-    return any(isinstance(hook, dict) and _is_codex_recall_command(hook.get("command")) for hook in hooks)
+    if isinstance(hooks, list):
+        return hooks
+    if isinstance(hooks, dict):
+        return hooks.values()
+    return []
+
+
+def _group_contains_codex_recall_command(group):
+    return any(isinstance(hook, dict) and _is_codex_recall_command(hook.get("command")) for hook in _iter_group_hooks(group))
+
+
+def _upsert_codex_recall_hook_into_group(group):
+    updated_group = copy.deepcopy(group)
+    recall_hook = _codex_recall_hook()
+    hooks = updated_group.get("hooks")
+
+    if isinstance(hooks, list):
+        for index, existing_hook in enumerate(hooks):
+            if isinstance(existing_hook, dict) and _is_codex_recall_command(existing_hook.get("command")):
+                hooks[index] = merge_json_value(existing_hook, recall_hook)
+                break
+        else:
+            hooks.append(copy.deepcopy(recall_hook))
+        return updated_group
+
+    if isinstance(hooks, dict):
+        for key, existing_hook in hooks.items():
+            if isinstance(existing_hook, dict) and _is_codex_recall_command(existing_hook.get("command")):
+                hooks[key] = merge_json_value(existing_hook, recall_hook)
+                break
+        else:
+            hooks["evolve-lite"] = copy.deepcopy(recall_hook)
+        return updated_group
+
+    updated_group["hooks"] = [copy.deepcopy(recall_hook)]
+    return updated_group
+
+
+def _remove_codex_recall_hook_from_group(group):
+    updated_group = copy.deepcopy(group)
+    hooks = updated_group.get("hooks")
+
+    if isinstance(hooks, list):
+        updated_group["hooks"] = [
+            hook
+            for hook in hooks
+            if not (isinstance(hook, dict) and _is_codex_recall_command(hook.get("command")))
+        ]
+        return updated_group
+
+    if isinstance(hooks, dict):
+        updated_group["hooks"] = {
+            key: hook
+            for key, hook in hooks.items()
+            if not (isinstance(hook, dict) and _is_codex_recall_command(hook.get("command")))
+        }
+        return updated_group
+
+    return updated_group
 
 
 def upsert_codex_user_prompt_hook(path, group):
@@ -401,10 +474,10 @@ def upsert_codex_user_prompt_hook(path, group):
 
     for index, existing in enumerate(groups):
         if isinstance(existing, dict) and _group_contains_codex_recall_command(existing):
-            groups[index] = group
+            groups[index] = _upsert_codex_recall_hook_into_group(existing)
             break
     else:
-        groups.append(group)
+        groups.append(copy.deepcopy(group))
 
     atomic_write_json(path, data)
 
@@ -424,7 +497,10 @@ def remove_codex_user_prompt_hook(path):
         return
 
     hooks["UserPromptSubmit"] = [
-        group for group in groups if not (isinstance(group, dict) and _group_contains_codex_recall_command(group))
+        _remove_codex_recall_hook_from_group(group)
+        if isinstance(group, dict) and _group_contains_codex_recall_command(group)
+        else group
+        for group in groups
     ]
     if not hooks["UserPromptSubmit"]:
         hooks.pop("UserPromptSubmit", None)

@@ -88,6 +88,21 @@ class TestBobPreservation:
         current_data = json.loads(mcp_file.read_text())
         assert current_data["mcpServers"]["my-server"] == original_data["mcpServers"]["my-server"]
 
+    def test_preserves_existing_evolve_mcp_server_fields(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
+        """Install evolve full mode when evolve already exists - custom fields on that entry must be preserved."""
+        mcp_file = bob_fixtures.create_existing_mcp_config_with_evolve(temp_project_dir)
+
+        install_runner.run("install", platform="bob", mode="full")
+
+        file_assertions.assert_valid_json(mcp_file)
+        current_data = json.loads(mcp_file.read_text())
+        evolve_server = current_data["mcpServers"]["evolve"]
+
+        assert evolve_server["command"] == "uv"
+        assert evolve_server["disabled"] is False
+        assert evolve_server["env"] == {"EVOLVE_PROFILE": "local"}
+        assert evolve_server["metadata"] == {"managedBy": "user"}
+
     def test_preserves_all_bob_content_together_lite(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve lite mode when user has all types of Bob content - all must be preserved."""
         # Setup: Create all types of user content
@@ -186,6 +201,20 @@ class TestRooPreservation:
         # Assert: Evolve mode is added
         evolve_modes = [m for m in current_data["customModes"] if m["slug"] == "evolve-lite"]
         assert len(evolve_modes) == 1, f"Evolve mode not added. Found {len(evolve_modes)} evolve-lite entries"
+
+    def test_preserves_existing_evolve_roomodes_fields(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
+        """Install evolve when evolve-lite already exists in JSON .roomodes - custom fields on that mode must be preserved."""
+        roomodes_file = roo_fixtures.create_existing_roomodes_json_with_evolve(temp_project_dir)
+
+        install_runner.run("install", platform="roo")
+
+        file_assertions.assert_valid_json(roomodes_file)
+        current_data = json.loads(roomodes_file.read_text())
+        evolve_modes = [m for m in current_data["customModes"] if m["slug"] == "evolve-lite"]
+        assert len(evolve_modes) == 1
+        assert evolve_modes[0]["name"] == "Evolve Lite"
+        assert evolve_modes[0]["metadata"] == {"accent": "teal"}
+        assert evolve_modes[0]["shortcuts"] == ["recall-first"]
 
     def test_preserves_existing_roomodes_yaml(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
         """Install evolve when user has existing .roomodes (YAML) - it must be preserved."""
