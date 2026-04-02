@@ -88,6 +88,30 @@ class TestBobPreservation:
         current_data = json.loads(mcp_file.read_text())
         assert current_data["mcpServers"]["my-server"] == original_data["mcpServers"]["my-server"]
 
+    def test_refreshes_managed_evolve_mcp_server_fields_and_preserves_custom_fields(
+        self, temp_project_dir, install_runner, bob_fixtures, file_assertions
+    ):
+        """Install evolve full mode when evolve exists - managed fields should refresh while custom fields are preserved."""
+        mcp_file = bob_fixtures.create_existing_mcp_config_with_evolve(temp_project_dir)
+
+        install_runner.run("install", platform="bob", mode="full")
+
+        file_assertions.assert_valid_json(mcp_file)
+        current_data = json.loads(mcp_file.read_text())
+        evolve_server = current_data["mcpServers"]["evolve"]
+        expected_args = [
+            "run",
+            "-i",
+            "--rm",
+            "1lleatmyhat/evolve:latest-core",
+        ]
+
+        assert evolve_server["command"] == "docker"
+        assert evolve_server["args"] == expected_args
+        assert evolve_server["disabled"] is False
+        assert evolve_server["env"] == {"EVOLVE_PROFILE": "local"}
+        assert evolve_server["metadata"] == {"managedBy": "user"}
+
     def test_preserves_all_bob_content_together_lite(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve lite mode when user has all types of Bob content - all must be preserved."""
         # Setup: Create all types of user content
@@ -187,6 +211,20 @@ class TestRooPreservation:
         evolve_modes = [m for m in current_data["customModes"] if m["slug"] == "evolve-lite"]
         assert len(evolve_modes) == 1, f"Evolve mode not added. Found {len(evolve_modes)} evolve-lite entries"
 
+    def test_preserves_existing_evolve_roomodes_fields(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
+        """Install evolve when evolve-lite already exists in JSON .roomodes - custom fields on that mode must be preserved."""
+        roomodes_file = roo_fixtures.create_existing_roomodes_json_with_evolve(temp_project_dir)
+
+        install_runner.run("install", platform="roo")
+
+        file_assertions.assert_valid_json(roomodes_file)
+        current_data = json.loads(roomodes_file.read_text())
+        evolve_modes = [m for m in current_data["customModes"] if m["slug"] == "evolve-lite"]
+        assert len(evolve_modes) == 1
+        assert evolve_modes[0]["name"] == "Evolve Lite"
+        assert evolve_modes[0]["metadata"] == {"accent": "teal"}
+        assert evolve_modes[0]["shortcuts"] == ["recall-first"]
+
     def test_preserves_existing_roomodes_yaml(self, temp_project_dir, install_runner, roo_fixtures, file_assertions):
         """Install evolve when user has existing .roomodes (YAML) - it must be preserved."""
         # Setup: Create user's .roomodes in YAML format
@@ -235,11 +273,69 @@ class TestRooPreservation:
 
 
 @pytest.mark.platform_integrations
+class TestCodexPreservation:
+    """Test that Codex installation preserves existing user data."""
+
+    def test_preserves_existing_marketplace_entries(self, temp_project_dir, install_runner, codex_fixtures, file_assertions):
+        """Install evolve when user already has marketplace entries - they must be preserved."""
+        codex_fixtures.create_existing_plugin(temp_project_dir)
+        marketplace_file = codex_fixtures.create_existing_marketplace(temp_project_dir)
+        original_data = json.loads(marketplace_file.read_text())
+
+        install_runner.run("install", platform="codex")
+
+        file_assertions.assert_valid_json(marketplace_file)
+        current_data = json.loads(marketplace_file.read_text())
+
+        custom_plugins = [entry for entry in current_data["plugins"] if entry["name"] == "my-codex-plugin"]
+        assert len(custom_plugins) == 1, "User's existing plugin entry was removed or duplicated!"
+        assert custom_plugins[0] == original_data["plugins"][0]
+
+        evolve_plugins = [entry for entry in current_data["plugins"] if entry["name"] == "evolve-lite"]
+        assert len(evolve_plugins) == 1, "Evolve plugin entry missing from marketplace.json"
+
+    def test_preserves_existing_hooks_and_plugin_files(self, temp_project_dir, install_runner, codex_fixtures, file_assertions):
+        """Install evolve when user already has hooks and plugins - they must be preserved."""
+        custom_plugin = codex_fixtures.create_existing_plugin(temp_project_dir)
+        plugin_json = custom_plugin / ".codex-plugin" / "plugin.json"
+        original_plugin_content = plugin_json.read_text()
+        hooks_file = codex_fixtures.create_existing_hooks(temp_project_dir)
+
+        install_runner.run("install", platform="codex")
+
+        file_assertions.assert_file_unchanged(plugin_json, original_plugin_content)
+
+        current_hooks = json.loads(hooks_file.read_text())
+        session_start_hooks = current_hooks["hooks"]["SessionStart"]
+        assert len(session_start_hooks) == 1, "User's SessionStart hook was removed!"
+
+        prompt_hooks = current_hooks["hooks"]["UserPromptSubmit"]
+        custom_prompt_hooks = [
+            hook
+            for group in prompt_hooks
+            for hook in group.get("hooks", [])
+            if hook.get("command") == "python3 ~/.codex/hooks/custom_prompt_memory.py"
+        ]
+        assert len(custom_prompt_hooks) == 1, "User's UserPromptSubmit hook was removed!"
+
+        evolve_hooks = [
+            group
+            for group in prompt_hooks
+            if any(
+                "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+                for hook in group.get("hooks", [])
+            )
+        ]
+        assert len(evolve_hooks) == 1, "Evolve UserPromptSubmit hook was not added!"
+        assert evolve_hooks[0].get("matcher") == ""
+
+
+@pytest.mark.platform_integrations
 class TestMultiPlatformPreservation:
     """Test that installing multiple platforms preserves all user data."""
 
     def test_install_all_platforms_preserves_everything(
-        self, temp_project_dir, install_runner, bob_fixtures, roo_fixtures, file_assertions
+        self, temp_project_dir, install_runner, bob_fixtures, roo_fixtures, codex_fixtures, file_assertions
     ):
         """Install all platforms when user has content everywhere - all must be preserved."""
         # Setup: Create user content for both platforms
@@ -249,11 +345,16 @@ class TestMultiPlatformPreservation:
 
         roo_skill = roo_fixtures.create_existing_skill(temp_project_dir)
         roo_modes = roo_fixtures.create_existing_roomodes_json(temp_project_dir)
+        codex_plugin = codex_fixtures.create_existing_plugin(temp_project_dir)
+        codex_marketplace = codex_fixtures.create_existing_marketplace(temp_project_dir)
+        codex_hooks = codex_fixtures.create_existing_hooks(temp_project_dir)
 
         # Save original content
         bob_skill_content = (bob_skill / "SKILL.md").read_text()
         bob_command_content = bob_command.read_text()
         roo_skill_content = (roo_skill / "SKILL.md").read_text()
+        codex_plugin_content = (codex_plugin / ".codex-plugin" / "plugin.json").read_text()
+        codex_marketplace_data = json.loads(codex_marketplace.read_text())
 
         # Action: Install all platforms
         install_runner.run("install", platform="all")
@@ -268,6 +369,19 @@ class TestMultiPlatformPreservation:
         roo_data = json.loads(roo_modes.read_text())
         assert any(m["slug"] == "my-roo-mode" for m in roo_data["customModes"])
 
-        # Assert: Evolve content is added to both
+        # Assert: ALL Codex content is preserved
+        file_assertions.assert_file_unchanged(codex_plugin / ".codex-plugin" / "plugin.json", codex_plugin_content)
+        current_marketplace = json.loads(codex_marketplace.read_text())
+        assert any(entry["name"] == "my-codex-plugin" for entry in current_marketplace["plugins"])
+        assert codex_marketplace_data["plugins"][0] in current_marketplace["plugins"]
+        current_hooks = json.loads(codex_hooks.read_text())
+        assert any(
+            hook.get("command") == "python3 ~/.codex/hooks/custom_prompt_memory.py"
+            for group in current_hooks["hooks"]["UserPromptSubmit"]
+            for hook in group.get("hooks", [])
+        )
+
+        # Assert: Evolve content is added everywhere
         file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-learn")
         file_assertions.assert_dir_exists(temp_project_dir / ".roo" / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(temp_project_dir / "plugins" / "evolve-lite")

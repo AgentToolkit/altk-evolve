@@ -84,7 +84,7 @@ class InstallRunner:
 
         Args:
             command: Command to run (install, uninstall, status)
-            platform: Platform to target (bob, roo, claude, all, or None for interactive)
+            platform: Platform to target (bob, roo, claude, codex, all, or None for interactive)
             mode: Mode for bob (lite, full)
             dry_run: Whether to use --dry-run flag
             expect_success: Whether to expect the command to succeed
@@ -314,6 +314,28 @@ class BobFixtures:
         mcp_file.write_text(json.dumps(data, indent=2) + "\n")
         return mcp_file
 
+    @staticmethod
+    def create_existing_mcp_config_with_evolve(project_dir: Path):
+        """Create an mcp.json with a user-customized evolve server entry."""
+        mcp_file = project_dir / ".bob" / "mcp.json"
+        mcp_file.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            "mcpServers": {
+                "my-server": {"command": "node", "args": ["server.js"], "disabled": False},
+                "evolve": {
+                    "command": "python3",
+                    "args": ["old_evolve.py"],
+                    "disabled": True,
+                    "env": {"EVOLVE_PROFILE": "local"},
+                    "metadata": {"managedBy": "user"},
+                },
+            }
+        }
+
+        mcp_file.write_text(json.dumps(data, indent=2) + "\n")
+        return mcp_file
+
 
 class RooFixtures:
     """Helper class to create Roo platform test fixtures."""
@@ -353,6 +375,35 @@ class RooFixtures:
         return roomodes_file
 
     @staticmethod
+    def create_existing_roomodes_json_with_evolve(project_dir: Path):
+        """Create a JSON .roomodes file that already contains a customized evolve-lite mode."""
+        roomodes_file = project_dir / ".roomodes"
+
+        data = {
+            "customModes": [
+                {
+                    "slug": "my-roo-mode",
+                    "name": "My Roo Mode",
+                    "roleDefinition": "This is my custom Roo mode.",
+                    "customInstructions": "Follow my Roo instructions.",
+                    "groups": ["read", "edit"],
+                },
+                {
+                    "slug": "evolve-lite",
+                    "name": "My Evolve Lite",
+                    "roleDefinition": "Old evolve role definition.",
+                    "customInstructions": "Old evolve instructions.",
+                    "groups": ["read"],
+                    "metadata": {"accent": "teal"},
+                    "shortcuts": ["recall-first"],
+                },
+            ]
+        }
+
+        roomodes_file.write_text(json.dumps(data, indent=2) + "\n")
+        return roomodes_file
+
+    @staticmethod
     def create_existing_roomodes_yaml(project_dir: Path):
         """Create a .roomodes file in YAML format with a custom mode."""
         roomodes_file = project_dir / ".roomodes"
@@ -372,6 +423,192 @@ class RooFixtures:
         return roomodes_file
 
 
+class CodexFixtures:
+    """Helper class to create Codex platform test fixtures."""
+
+    @staticmethod
+    def create_existing_plugin(project_dir: Path, plugin_name: str = "my-codex-plugin"):
+        """Create a custom plugin in plugins/."""
+        plugin_dir = project_dir / "plugins" / plugin_name / ".codex-plugin"
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        (plugin_dir / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "name": plugin_name,
+                    "version": "0.1.0",
+                    "description": "Custom user plugin",
+                    "skills": "./skills/",
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        return plugin_dir.parent
+
+    @staticmethod
+    def create_existing_marketplace(project_dir: Path):
+        """Create a marketplace.json with a user's existing Codex plugin entry."""
+        marketplace_file = project_dir / ".agents" / "plugins" / "marketplace.json"
+        marketplace_file.parent.mkdir(parents=True, exist_ok=True)
+        marketplace_file.write_text(
+            json.dumps(
+                {
+                    "name": "custom-local",
+                    "interface": {
+                        "displayName": "Custom Local Plugins",
+                    },
+                    "plugins": [
+                        {
+                            "name": "my-codex-plugin",
+                            "source": {
+                                "source": "local",
+                                "path": "./plugins/my-codex-plugin",
+                            },
+                            "policy": {
+                                "installation": "AVAILABLE",
+                                "authentication": "ON_INSTALL",
+                            },
+                            "category": "Productivity",
+                        }
+                    ],
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        return marketplace_file
+
+    @staticmethod
+    def create_existing_hooks(project_dir: Path):
+        """Create a .codex/hooks.json with a user's existing hooks."""
+        hooks_file = project_dir / ".codex" / "hooks.json"
+        hooks_file.parent.mkdir(parents=True, exist_ok=True)
+        hooks_file.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "SessionStart": [
+                            {
+                                "matcher": "startup|resume",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "python3 ~/.codex/hooks/session_start.py",
+                                        "statusMessage": "Loading notes",
+                                    }
+                                ],
+                            }
+                        ],
+                        "UserPromptSubmit": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "python3 ~/.codex/hooks/custom_prompt_memory.py",
+                                        "statusMessage": "Loading custom memory",
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        return hooks_file
+
+    @staticmethod
+    def create_existing_hooks_with_shared_evolve_group(project_dir: Path):
+        """Create a list-based UserPromptSubmit group containing both user hooks and the evolve hook."""
+        hooks_file = project_dir / ".codex" / "hooks.json"
+        hooks_file.parent.mkdir(parents=True, exist_ok=True)
+        hooks_file.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {
+                                "matcher": "src/.*",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "python3 ~/.codex/hooks/custom_prompt_memory.py",
+                                        "statusMessage": "Loading custom memory",
+                                    },
+                                    {
+                                        "type": "command",
+                                        "command": (
+                                            "sh -lc '"
+                                            'd="$PWD"; '
+                                            "while :; do "
+                                            'candidate="$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"; '
+                                            'if [ -f "$candidate" ]; then exec python3 "$candidate"; fi; '
+                                            '[ "$d" = "/" ] && break; '
+                                            'd="$(dirname "$d")"; '
+                                            "done; "
+                                            "exit 1'"
+                                        ),
+                                        "statusMessage": "Old evolve guidance",
+                                        "delayMs": 250,
+                                    },
+                                ],
+                            }
+                        ]
+                    }
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        return hooks_file
+
+    @staticmethod
+    def create_existing_hooks_with_dict_evolve_group(project_dir: Path):
+        """Create a dict-based UserPromptSubmit group containing user hooks and the evolve hook."""
+        hooks_file = project_dir / ".codex" / "hooks.json"
+        hooks_file.parent.mkdir(parents=True, exist_ok=True)
+        hooks_file.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {
+                                "matcher": "src/.*",
+                                "hooks": {
+                                    "memory": {
+                                        "type": "command",
+                                        "command": "python3 ~/.codex/hooks/custom_prompt_memory.py",
+                                        "statusMessage": "Loading custom memory",
+                                    },
+                                    "evolve-lite": {
+                                        "type": "command",
+                                        "command": (
+                                            "sh -lc '"
+                                            'd="$PWD"; '
+                                            "while :; do "
+                                            'candidate="$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"; '
+                                            'if [ -f "$candidate" ]; then exec python3 "$candidate"; fi; '
+                                            '[ "$d" = "/" ] && break; '
+                                            'd="$(dirname "$d")"; '
+                                            "done; "
+                                            "exit 1'"
+                                        ),
+                                        "statusMessage": "Old evolve guidance",
+                                        "delayMs": 250,
+                                    },
+                                },
+                            }
+                        ]
+                    }
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        return hooks_file
+
+
 @pytest.fixture
 def bob_fixtures():
     """Provide Bob platform test fixtures."""
@@ -382,3 +619,9 @@ def bob_fixtures():
 def roo_fixtures():
     """Provide Roo platform test fixtures."""
     return RooFixtures()
+
+
+@pytest.fixture
+def codex_fixtures():
+    """Provide Codex platform test fixtures."""
+    return CodexFixtures()
