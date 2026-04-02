@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Add lib to path so we can import entity_io
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from entity_io import auto_learn_flag_path, find_entities_dir, load_all_entities, log as _log
+from entity_io import find_entities_dir, load_all_entities, log as _log
 
 
 def log(message):
@@ -57,20 +57,7 @@ Review these entities and apply any relevant ones:
     return header + "\n".join(items)
 
 
-def _clear_auto_learn_flag():
-    """Remove the auto-learn flag so the next Stop hook can trigger learn."""
-    flag = auto_learn_flag_path()
-    try:
-        os.unlink(flag)
-        log(f"Cleared auto-learn flag: {flag}")
-    except FileNotFoundError:
-        pass
-    except OSError as e:
-        log(f"Error clearing auto-learn flag: {e}")
-
-
 def main():
-    _clear_auto_learn_flag()
 
     # Read input from stdin (hook provides JSON with prompt)
     try:
