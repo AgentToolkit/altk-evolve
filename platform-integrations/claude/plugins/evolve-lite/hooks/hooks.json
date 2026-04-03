@@ -10,6 +10,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "Run the evolve-lite:learn skill, unless stop_hook_active is set in $ARGUMENTS.",
+            "timeout": 120
+          }
+        ]
+      }
     ]
   }
 }

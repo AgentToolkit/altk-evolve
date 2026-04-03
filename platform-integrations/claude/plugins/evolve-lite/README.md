@@ -5,7 +5,8 @@ A plugin that helps Claude Code learn from conversations by automatically extrac
 ## Features
 
 - **Automatic Retrieval**: At the start of each prompt, relevant entities are automatically injected
-- **Manual Learning**: Use the `/evolve:learn` skill to extract and save entities from conversations
+- **Manual Learning**: Use the `/evolve-lite:learn` skill to extract and save entities from conversations
+- **Automatic Learning**: After each task, entities are automatically extracted and saved via a Stop hook
 - **Zero-config Retrieval**: Hooks are automatically installed when the plugin is enabled
 
 ## Installation
@@ -34,14 +35,23 @@ When you submit a prompt, the plugin automatically:
 2. Formats and injects them into the conversation context
 3. Claude applies relevant entities to the current task
 
-### Entity Generation (Manual by Default)
+### Entity Generation (Automatic)
 
-By default, you must manually invoke the `/evolve:learn` skill to extract entities:
-1. Complete a conversation or task
-2. Invoke `/evolve:learn`
+After Claude completes each task, the plugin automatically invokes the `/evolve-lite:learn` skill via a `Stop` hook:
+1. Claude finishes responding to your prompt
+2. The Stop hook triggers and instructs Claude to run `/evolve-lite:learn`
 3. The plugin analyzes the conversation trajectory
 4. Extracts actionable entities from what worked/failed
 5. Saves new entities as markdown files in `.evolve/entities/{type}/`
+
+You can also manually invoke `/evolve-lite:learn` at any time.
+
+> **UX note:** The Stop hook has an empty matcher (`""`), meaning it fires after *every* task and can add up to ~2 minutes of delay per interaction (the hook's `timeout` is 120s). It also invokes the Claude API on each stop, which incurs additional cost. Learned entities are stored as markdown files in `.evolve/entities/{type}/` — inspect or remove them there at any time.
+>
+> **To disable or limit automatic learning**, edit `hooks/hooks.json` inside the plugin directory:
+> - Remove the entire `"Stop"` block to turn off auto-learning entirely.
+> - Set a specific `"matcher"` string to restrict triggering to prompts that contain that text.
+> - Reduce `"timeout"` to cap how long the learn step can run.
 
 ## Example Walkthrough
 
@@ -49,18 +59,18 @@ See the [Evolve Lite guide](../../../../docs/integrations/evolve-lite.md#example
 
 ## Skills Included
 
-### `/evolve:learn`
+### `/evolve-lite:learn`
 
 Manually invoke to extract entities from the current conversation:
 - Analyzes task, steps taken, successes and failures
 - Generates proactive entities (what to do, not what to avoid)
 - Outputs JSON that the save script persists as entity files
 
-### `/evolve:recall`
+### `/evolve-lite:recall`
 
 Manually invoke to retrieve and display stored entities.
 
-### `/evolve:save`
+### `/evolve-lite:save`
 
 Manually invoke to capture successful workflows from your current session and save them as reusable skills:
 - Analyzes conversation history (user requests, reasoning, tool calls, responses)
@@ -76,7 +86,7 @@ Assistant: "What would you like to name this skill?"
 User: "my-workflow-name"
 ```
 
-### `/evolve:save-trajectory`
+### `/evolve-lite:save-trajectory`
 
 Manually invoke to export the current conversation as a trajectory JSON file:
 - Converts all messages to OpenAI chat completion format (user, assistant, tool calls, tool results)
