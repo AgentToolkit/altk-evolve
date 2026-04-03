@@ -58,7 +58,6 @@ Review these entities and apply any relevant ones:
 
 
 def main():
-
     # Read input from stdin (hook provides JSON with prompt)
     try:
         input_data = json.load(sys.stdin)
