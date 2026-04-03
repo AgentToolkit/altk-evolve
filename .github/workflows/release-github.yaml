@@ -87,6 +87,17 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'altk_evolve/frontend/ui/package-lock.json'
 
+      - name: Build UI
+        working-directory: altk_evolve/frontend/ui
+        run: npm ci && npm run build
+
+      - name: Verify UI build
+        run: |
+          if [ ! -s "altk_evolve/frontend/ui/dist/index.html" ]; then
+            echo "UI build failed: dist/index.html missing or empty"
+            exit 1
+          fi
+
       - name: Run semantic version release
         id: release
         # Adjust tag with desired version if applicable.

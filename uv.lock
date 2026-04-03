@@ -168,6 +168,132 @@ wheels = [
 ]
 
 [[package]]
+name = "altk-evolve"
+version = "1.0.6"
+source = { editable = "." }
+dependencies = [
+    { name = "arize-phoenix" },
+    { name = "fastmcp" },
+    { name = "jinja2" },
+    { name = "litellm" },
+    { name = "milvus-lite", marker = "platform_machine != 'aarch64'" },
+    { name = "pydantic" },
+    { name = "pymilvus" },
+    { name = "pymilvus", extra = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
+    { name = "sentence-transformers" },
+    { name = "typer" },
+    { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+build = [
+    { name = "uv" },
+]
+examples = [
+    { name = "openai" },
+    { name = "openai-agents" },
+    { name = "openinference-instrumentation-litellm" },
+    { name = "openinference-instrumentation-openai" },
+    { name = "openinference-instrumentation-openai-agents" },
+    { name = "openinference-instrumentation-smolagents" },
+    { name = "smolagents", version = "1.22.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'win32'" },
+    { name = "smolagents", version = "1.24.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.14' and platform_machine != 'aarch64') or platform_machine == 'aarch64' or sys_platform != 'win32'" },
+]
+pgvector = [
+    { name = "pgvector" },
+    { name = "psycopg", extra = ["binary"] },
+]
+tracing = [
+    { name = "openinference-instrumentation-litellm" },
+    { name = "openinference-instrumentation-openai" },
+    { name = "openinference-instrumentation-openai-agents" },
+    { name = "openinference-instrumentation-smolagents" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "anyio" },
+    { name = "detect-secrets" },
+    { name = "mypy" },
+    { name = "pgvector" },
+    { name = "pre-commit" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-retry" },
+    { name = "python-dotenv" },
+    { name = "python-semantic-release" },
+    { name = "ruff" },
+    { name = "types-requests" },
+]
+docs = [
+    { name = "griffe-inherited-docstrings" },
+    { name = "griffe-pydantic" },
+    { name = "mkdocs-awesome-nav" },
+    { name = "mkdocs-click" },
+    { name = "mkdocs-enumerate-headings-plugin" },
+    { name = "mkdocs-include-markdown-plugin" },
+    { name = "mkdocs-jupyter" },
+    { name = "mkdocs-material" },
+    { name = "mkdocstrings", extra = ["python"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "altk-evolve", extras = ["tracing"], marker = "extra == 'examples'" },
+    { name = "arize-phoenix", specifier = ">=12.30.0" },
+    { name = "fastmcp" },
+    { name = "jinja2" },
+    { name = "litellm" },
+    { name = "milvus-lite", marker = "platform_machine != 'aarch64'", specifier = ">=2.5.1" },
+    { name = "openai", marker = "extra == 'examples'" },
+    { name = "openai-agents", marker = "extra == 'examples'" },
+    { name = "openinference-instrumentation-litellm", marker = "extra == 'tracing'" },
+    { name = "openinference-instrumentation-openai", marker = "extra == 'tracing'" },
+    { name = "openinference-instrumentation-openai-agents", marker = "extra == 'tracing'" },
+    { name = "openinference-instrumentation-smolagents", marker = "extra == 'tracing'" },
+    { name = "pgvector", marker = "extra == 'pgvector'", specifier = ">=0.3" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
+    { name = "pydantic" },
+    { name = "pymilvus", marker = "platform_machine == 'aarch64'", specifier = ">=2.6.2" },
+    { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64'", specifier = ">=2.6.2" },
+    { name = "sentence-transformers" },
+    { name = "smolagents", marker = "extra == 'examples'" },
+    { name = "typer", specifier = ">=0.9.0" },
+    { name = "uv", marker = "extra == 'build'" },
+    { name = "uvicorn" },
+]
+provides-extras = ["build", "tracing", "pgvector", "examples"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "anyio" },
+    { name = "detect-secrets", git = "https://github.com/ibm/detect-secrets?branch=master" },
+    { name = "mypy" },
+    { name = "pgvector", specifier = ">=0.3" },
+    { name = "pre-commit" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-retry" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "python-semantic-release" },
+    { name = "ruff" },
+    { name = "types-requests", specifier = ">=2.32.4.20260107" },
+]
+docs = [
+    { name = "griffe-inherited-docstrings" },
+    { name = "griffe-pydantic" },
+    { name = "mkdocs-awesome-nav" },
+    { name = "mkdocs-click" },
+    { name = "mkdocs-enumerate-headings-plugin" },
+    { name = "mkdocs-include-markdown-plugin", specifier = ">=7.1.8" },
+    { name = "mkdocs-jupyter" },
+    { name = "mkdocs-material" },
+    { name = "mkdocstrings", extras = ["python"] },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1000,132 +1126,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f5/22/900cb125c76b7aaa450ce02fd727f452243f2e91a61af068b40adba60ea9/email_validator-2.3.0.tar.gz", hash = "sha256:9fc05c37f2f6cf439ff414f8fc46d917929974a82244c20eb10231ba60c54426", size = 51238, upload-time = "2025-08-26T13:09:06.831Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/de/15/545e2b6cf2e3be84bc1ed85613edd75b8aea69807a71c26f4ca6a9258e82/email_validator-2.3.0-py3-none-any.whl", hash = "sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4", size = 35604, upload-time = "2025-08-26T13:09:05.858Z" },
-]
-
-[[package]]
-name = "altk-evolve"
-version = "1.0.5"
-source = { editable = "." }
-dependencies = [
-    { name = "arize-phoenix" },
-    { name = "fastmcp" },
-    { name = "jinja2" },
-    { name = "litellm" },
-    { name = "milvus-lite", marker = "platform_machine != 'aarch64'" },
-    { name = "pydantic" },
-    { name = "pymilvus" },
-    { name = "pymilvus", extra = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
-    { name = "sentence-transformers" },
-    { name = "typer" },
-    { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-build = [
-    { name = "uv" },
-]
-examples = [
-    { name = "openai" },
-    { name = "openai-agents" },
-    { name = "openinference-instrumentation-litellm" },
-    { name = "openinference-instrumentation-openai" },
-    { name = "openinference-instrumentation-openai-agents" },
-    { name = "openinference-instrumentation-smolagents" },
-    { name = "smolagents", version = "1.22.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'win32'" },
-    { name = "smolagents", version = "1.24.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.14' and platform_machine != 'aarch64') or platform_machine == 'aarch64' or sys_platform != 'win32'" },
-]
-pgvector = [
-    { name = "pgvector" },
-    { name = "psycopg", extra = ["binary"] },
-]
-tracing = [
-    { name = "openinference-instrumentation-litellm" },
-    { name = "openinference-instrumentation-openai" },
-    { name = "openinference-instrumentation-openai-agents" },
-    { name = "openinference-instrumentation-smolagents" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "anyio" },
-    { name = "detect-secrets" },
-    { name = "mypy" },
-    { name = "pgvector" },
-    { name = "pre-commit" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-retry" },
-    { name = "python-dotenv" },
-    { name = "python-semantic-release" },
-    { name = "ruff" },
-    { name = "types-requests" },
-]
-docs = [
-    { name = "griffe-inherited-docstrings" },
-    { name = "griffe-pydantic" },
-    { name = "mkdocs-awesome-nav" },
-    { name = "mkdocs-click" },
-    { name = "mkdocs-enumerate-headings-plugin" },
-    { name = "mkdocs-include-markdown-plugin" },
-    { name = "mkdocs-jupyter" },
-    { name = "mkdocs-material" },
-    { name = "mkdocstrings", extra = ["python"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "arize-phoenix", specifier = ">=12.30.0" },
-    { name = "altk-evolve", extras = ["tracing"], marker = "extra == 'examples'" },
-    { name = "fastmcp" },
-    { name = "jinja2" },
-    { name = "litellm" },
-    { name = "milvus-lite", marker = "platform_machine != 'aarch64'", specifier = ">=2.5.1" },
-    { name = "openai", marker = "extra == 'examples'" },
-    { name = "openai-agents", marker = "extra == 'examples'" },
-    { name = "openinference-instrumentation-litellm", marker = "extra == 'tracing'" },
-    { name = "openinference-instrumentation-openai", marker = "extra == 'tracing'" },
-    { name = "openinference-instrumentation-openai-agents", marker = "extra == 'tracing'" },
-    { name = "openinference-instrumentation-smolagents", marker = "extra == 'tracing'" },
-    { name = "pgvector", marker = "extra == 'pgvector'", specifier = ">=0.3" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
-    { name = "pydantic" },
-    { name = "pymilvus", marker = "platform_machine == 'aarch64'", specifier = ">=2.6.2" },
-    { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64'", specifier = ">=2.6.2" },
-    { name = "sentence-transformers" },
-    { name = "smolagents", marker = "extra == 'examples'" },
-    { name = "typer", specifier = ">=0.9.0" },
-    { name = "uv", marker = "extra == 'build'" },
-    { name = "uvicorn" },
-]
-provides-extras = ["build", "tracing", "pgvector", "examples"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "anyio" },
-    { name = "detect-secrets", git = "https://github.com/ibm/detect-secrets?branch=master" },
-    { name = "mypy" },
-    { name = "pgvector", specifier = ">=0.3" },
-    { name = "pre-commit" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-retry" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "python-semantic-release" },
-    { name = "ruff" },
-    { name = "types-requests", specifier = ">=2.32.4.20260107" },
-]
-docs = [
-    { name = "griffe-inherited-docstrings" },
-    { name = "griffe-pydantic" },
-    { name = "mkdocs-awesome-nav" },
-    { name = "mkdocs-click" },
-    { name = "mkdocs-enumerate-headings-plugin" },
-    { name = "mkdocs-include-markdown-plugin", specifier = ">=7.1.8" },
-    { name = "mkdocs-jupyter" },
-    { name = "mkdocs-material" },
-    { name = "mkdocstrings", extras = ["python"] },
 ]
 
 [[package]]

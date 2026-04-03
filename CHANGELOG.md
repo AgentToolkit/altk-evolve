@@ -2,6 +2,210 @@
 
 <!-- version list -->
 
+## v1.0.6 (2026-04-03)
+
+### Bug Fixes
+
+- Add optional implementation_steps to Tip model and prompt
+  ([#124](https://github.com/AgentToolkit/altk-evolve/pull/124),
+  [`d373e7e`](https://github.com/AgentToolkit/altk-evolve/commit/d373e7ebb00ca0b3438aa1017961fbeb9cb5d0d8))
+
+- Clarify task status context in tip generation prompt
+  ([#124](https://github.com/AgentToolkit/altk-evolve/pull/124),
+  [`d373e7e`](https://github.com/AgentToolkit/altk-evolve/commit/d373e7ebb00ca0b3438aa1017961fbeb9cb5d0d8))
+
+- Completely remove all Roo references from install.sh
+  ([#130](https://github.com/AgentToolkit/altk-evolve/pull/130),
+  [`8e6c76d`](https://github.com/AgentToolkit/altk-evolve/commit/8e6c76d13c111da28f486a1c3d3b716f6c39ccdc))
+
+- Normalize implementation_steps to list[str] in combine_cluster
+  ([#124](https://github.com/AgentToolkit/altk-evolve/pull/124),
+  [`d373e7e`](https://github.com/AgentToolkit/altk-evolve/commit/d373e7ebb00ca0b3438aa1017961fbeb9cb5d0d8))
+
+- Remove Roo integration tests and fix install.sh 'all' platform
+  ([#130](https://github.com/AgentToolkit/altk-evolve/pull/130),
+  [`8e6c76d`](https://github.com/AgentToolkit/altk-evolve/commit/8e6c76d13c111da28f486a1c3d3b716f6c39ccdc))
+
+- Resolve CI failures for formatting and type-checking
+  ([#91](https://github.com/AgentToolkit/altk-evolve/pull/91),
+  [`29dba09`](https://github.com/AgentToolkit/altk-evolve/commit/29dba096f1bc33635483558b14d2d599d2a02eb3))
+
+- **bob**: Clarify entity count rule in learn skill
+  ([#122](https://github.com/AgentToolkit/altk-evolve/pull/122),
+  [`824e4d9`](https://github.com/AgentToolkit/altk-evolve/commit/824e4d95be2c49ca2bdb9f5417962f4b42551bdf))
+
+- **claude**: Move marketplace.json back to .claude-plugin directory
+  ([#115](https://github.com/AgentToolkit/altk-evolve/pull/115),
+  [`18ccaa9`](https://github.com/AgentToolkit/altk-evolve/commit/18ccaa9bbd0caec97ecb6fd348a9c17f00fac81c))
+
+- **claude**: Move marketplace.json to .claude-plugin directory
+  ([#107](https://github.com/AgentToolkit/altk-evolve/pull/107),
+  [`a54a976`](https://github.com/AgentToolkit/altk-evolve/commit/a54a976809b61fbba0ca773142991045a0d1117e))
+
+- **claude**: Rename plugin to evolve-lite in marketplace.json
+  ([#116](https://github.com/AgentToolkit/altk-evolve/pull/116),
+  [`2cae903`](https://github.com/AgentToolkit/altk-evolve/commit/2cae90372ba5d8d9655a38a5aab7a42033f869cd))
+
+- **entity-io**: Prevent concurrent write collisions on same slug
+  ([#91](https://github.com/AgentToolkit/altk-evolve/pull/91),
+  [`29dba09`](https://github.com/AgentToolkit/altk-evolve/commit/29dba096f1bc33635483558b14d2d599d2a02eb3))
+
+- **entity-io**: Reject unsafe entity type values before joining paths
+  ([#91](https://github.com/AgentToolkit/altk-evolve/pull/91),
+  [`29dba09`](https://github.com/AgentToolkit/altk-evolve/commit/29dba096f1bc33635483558b14d2d599d2a02eb3))
+
+- **entity-io**: Use start-of-line match for rationale header parsing
+  ([#91](https://github.com/AgentToolkit/altk-evolve/pull/91),
+  [`29dba09`](https://github.com/AgentToolkit/altk-evolve/commit/29dba096f1bc33635483558b14d2d599d2a02eb3))
+
+- **evolve-lite**: Format entity_io.py to satisfy ruff check
+  ([#134](https://github.com/AgentToolkit/altk-evolve/pull/134),
+  [`43c5951`](https://github.com/AgentToolkit/altk-evolve/commit/43c5951cd4aaea27d0f5b9bb4e6b763022ab1341))
+
+- **evolve-lite**: Guard against non-string entity type values
+  ([#122](https://github.com/AgentToolkit/altk-evolve/pull/122),
+  [`824e4d9`](https://github.com/AgentToolkit/altk-evolve/commit/824e4d95be2c49ca2bdb9f5417962f4b42551bdf))
+
+- **evolve-lite**: Guard Stop hook against recursion and clean up noise
+  ([#134](https://github.com/AgentToolkit/altk-evolve/pull/134),
+  [`43c5951`](https://github.com/AgentToolkit/altk-evolve/commit/43c5951cd4aaea27d0f5b9bb4e6b763022ab1341))
+
+- **evolve-lite**: Tighten learn skill to only extract high-signal guidelines
+  ([#122](https://github.com/AgentToolkit/altk-evolve/pull/122),
+  [`824e4d9`](https://github.com/AgentToolkit/altk-evolve/commit/824e4d95be2c49ca2bdb9f5417962f4b42551bdf))
+
+- **justfile**: Correct volume mount path in sandbox-prompt
+  ([#133](https://github.com/AgentToolkit/altk-evolve/pull/133),
+  [`6e2c787`](https://github.com/AgentToolkit/altk-evolve/commit/6e2c787c3c404fecd0dcecc29b532e5aa550a242))
+
+- **platform-integrations**: Add missing entity_io lib to Bob
+  ([#105](https://github.com/AgentToolkit/altk-evolve/pull/105),
+  [`a3be71d`](https://github.com/AgentToolkit/altk-evolve/commit/a3be71ddc11475151116dcdb18d4314e3932bf5b))
+
+- **platform-integrations**: Add missing entity_io lib to Bob integration
+  ([#105](https://github.com/AgentToolkit/altk-evolve/pull/105),
+  [`a3be71d`](https://github.com/AgentToolkit/altk-evolve/commit/a3be71ddc11475151116dcdb18d4314e3932bf5b))
+
+- **platform-integrations**: Clean up Bob evolve-lite skills
+  ([#109](https://github.com/AgentToolkit/altk-evolve/pull/109),
+  [`889c8f1`](https://github.com/AgentToolkit/altk-evolve/commit/889c8f11028c2e4f834da698527587d6197063ab))
+
+- **platform-integrations**: Clean up trailing whitespace and add actionable recall instructions
+  ([#109](https://github.com/AgentToolkit/altk-evolve/pull/109),
+  [`889c8f1`](https://github.com/AgentToolkit/altk-evolve/commit/889c8f11028c2e4f834da698527587d6197063ab))
+
+- **platform-integrations**: Handle SameFileError race in _safe_copy2
+  ([#104](https://github.com/AgentToolkit/altk-evolve/pull/104),
+  [`d88baf1`](https://github.com/AgentToolkit/altk-evolve/commit/d88baf1d7825b5d558b812234e490b774c922170))
+
+- **platform-integrations**: Improve YAML parsing and error handling in install script
+  ([#100](https://github.com/AgentToolkit/altk-evolve/pull/100),
+  [`6bfdbbb`](https://github.com/AgentToolkit/altk-evolve/commit/6bfdbbb7b394fdcf3e4f50be4b7b73726b9e2fec))
+
+- **platform-integrations**: Resolve Step 0 vs Step 1 ordering conflict
+  ([#109](https://github.com/AgentToolkit/altk-evolve/pull/109),
+  [`889c8f1`](https://github.com/AgentToolkit/altk-evolve/commit/889c8f11028c2e4f834da698527587d6197063ab))
+
+- **platform-integrations**: Skip copy when src and dst are same file
+  ([#104](https://github.com/AgentToolkit/altk-evolve/pull/104),
+  [`d88baf1`](https://github.com/AgentToolkit/altk-evolve/commit/d88baf1d7825b5d558b812234e490b774c922170))
+
+- **postgres**: Derive vector schema from embedding model
+  ([#135](https://github.com/AgentToolkit/altk-evolve/pull/135),
+  [`a6b7b33`](https://github.com/AgentToolkit/altk-evolve/commit/a6b7b333358bac89552aec2c17235e2938b325a8))
+
+- **postgres**: Ensure pgvector extension before vector registration
+  ([#135](https://github.com/AgentToolkit/altk-evolve/pull/135),
+  [`a6b7b33`](https://github.com/AgentToolkit/altk-evolve/commit/a6b7b333358bac89552aec2c17235e2938b325a8))
+
+- **tests**: Add postgres dependencies to dev group for testing
+  ([#128](https://github.com/AgentToolkit/altk-evolve/pull/128),
+  [`f2bc745`](https://github.com/AgentToolkit/altk-evolve/commit/f2bc745015f0de9e611590601df572354c1990bd))
+
+- **tests**: Resolve linting errors and force isolated filesystem config in unit test fixture
+  ([#128](https://github.com/AgentToolkit/altk-evolve/pull/128),
+  [`f2bc745`](https://github.com/AgentToolkit/altk-evolve/commit/f2bc745015f0de9e611590601df572354c1990bd))
+
+### Documentation
+
+- Fix Codex Lite Mode installation steps in AGENTS.md
+  ([#136](https://github.com/AgentToolkit/altk-evolve/pull/136),
+  [`427e99d`](https://github.com/AgentToolkit/altk-evolve/commit/427e99da0200d76350f42f754967ecf82550eb22))
+
+- Standardize cli commands to use evolve entrypoint across all readmes
+  ([#128](https://github.com/AgentToolkit/altk-evolve/pull/128),
+  [`f2bc745`](https://github.com/AgentToolkit/altk-evolve/commit/f2bc745015f0de9e611590601df572354c1990bd))
+
+- Sync documentation with supported platforms (add codex, remove roo)
+  ([#136](https://github.com/AgentToolkit/altk-evolve/pull/136),
+  [`427e99d`](https://github.com/AgentToolkit/altk-evolve/commit/427e99da0200d76350f42f754967ecf82550eb22))
+
+- **codex**: Align evolve-lite skill naming and expand Codex skill guidance
+  ([#137](https://github.com/AgentToolkit/altk-evolve/pull/137),
+  [`f962b55`](https://github.com/AgentToolkit/altk-evolve/commit/f962b550e39e001a0bb29c4b156e699cc8c03c4f))
+
+- **config**: Document postgres backend settings
+  ([#135](https://github.com/AgentToolkit/altk-evolve/pull/135),
+  [`a6b7b33`](https://github.com/AgentToolkit/altk-evolve/commit/a6b7b333358bac89552aec2c17235e2938b325a8))
+
+- **evolve-lite**: Document Stop hook UX implications and opt-out mechanism
+  ([#134](https://github.com/AgentToolkit/altk-evolve/pull/134),
+  [`43c5951`](https://github.com/AgentToolkit/altk-evolve/commit/43c5951cd4aaea27d0f5b9bb4e6b763022ab1341))
+
+- **repo**: Align doc examples with integrations
+  ([#131](https://github.com/AgentToolkit/altk-evolve/pull/131),
+  [`58e7727`](https://github.com/AgentToolkit/altk-evolve/commit/58e77272ca42fa0591e12015d38e9b12a4cc99da))
+
+- **repo**: Reorganize documentation structure
+  ([#131](https://github.com/AgentToolkit/altk-evolve/pull/131),
+  [`58e7727`](https://github.com/AgentToolkit/altk-evolve/commit/58e77272ca42fa0591e12015d38e9b12a4cc99da))
+
+### Features
+
+- Improve tip generation prompt with richer guidance
+  ([#124](https://github.com/AgentToolkit/altk-evolve/pull/124),
+  [`d373e7e`](https://github.com/AgentToolkit/altk-evolve/commit/d373e7ebb00ca0b3438aa1017961fbeb9cb5d0d8))
+
+- Introduce Kaizen Web UI and Management Dashboard
+  ([#77](https://github.com/AgentToolkit/altk-evolve/pull/77),
+  [`bd67611`](https://github.com/AgentToolkit/altk-evolve/commit/bd67611088429d1b95d92731d08fec15aaee6383))
+
+- Propagate implementation_steps through tip storage and clustering
+  ([#124](https://github.com/AgentToolkit/altk-evolve/pull/124),
+  [`d373e7e`](https://github.com/AgentToolkit/altk-evolve/commit/d373e7ebb00ca0b3438aa1017961fbeb9cb5d0d8))
+
+- Remove Roo platform integration ([#130](https://github.com/AgentToolkit/altk-evolve/pull/130),
+  [`8e6c76d`](https://github.com/AgentToolkit/altk-evolve/commit/8e6c76d13c111da28f486a1c3d3b716f6c39ccdc))
+
+- **claude**: Auto-invoke learn skill after each task via stop hook
+  ([#134](https://github.com/AgentToolkit/altk-evolve/pull/134),
+  [`43c5951`](https://github.com/AgentToolkit/altk-evolve/commit/43c5951cd4aaea27d0f5b9bb4e6b763022ab1341))
+
+- **evolve-lite**: Auto-invoke learn skill after each task via stop hook
+  ([#134](https://github.com/AgentToolkit/altk-evolve/pull/134),
+  [`43c5951`](https://github.com/AgentToolkit/altk-evolve/commit/43c5951cd4aaea27d0f5b9bb4e6b763022ab1341))
+
+- **platform-integrations**: Add codex evolve-lite installer
+  ([#111](https://github.com/AgentToolkit/altk-evolve/pull/111),
+  [`215704e`](https://github.com/AgentToolkit/altk-evolve/commit/215704e56c4447bc3d74b9600ab7124880fe0d7e))
+
+- **platform-integrations**: Add portable bash/Python installer
+  ([#100](https://github.com/AgentToolkit/altk-evolve/pull/100),
+  [`6bfdbbb`](https://github.com/AgentToolkit/altk-evolve/commit/6bfdbbb7b394fdcf3e4f50be4b7b73726b9e2fec))
+
+- **platform-integrations**: Improve install.sh YAML parsing and add comprehensive tests
+  ([#100](https://github.com/AgentToolkit/altk-evolve/pull/100),
+  [`6bfdbbb`](https://github.com/AgentToolkit/altk-evolve/commit/6bfdbbb7b394fdcf3e4f50be4b7b73726b9e2fec))
+
+- **release**: Automate SCRIPT_VERSION update in install.sh
+  ([#100](https://github.com/AgentToolkit/altk-evolve/pull/100),
+  [`6bfdbbb`](https://github.com/AgentToolkit/altk-evolve/commit/6bfdbbb7b394fdcf3e4f50be4b7b73726b9e2fec))
+
+- **ui**: Formalize entity creation with React dropdowns and array mapped triggers
+  ([#77](https://github.com/AgentToolkit/altk-evolve/pull/77),
+  [`bd67611`](https://github.com/AgentToolkit/altk-evolve/commit/bd67611088429d1b95d92731d08fec15aaee6383))
+
+
 ## v1.0.5 (2026-03-12)
 
 
