@@ -120,7 +120,7 @@ Target: project directory
    [features]
    codex_hooks = true
    ```
-6. Print a manual fallback note that users can invoke `evolve:recall` directly if they do not want to enable Codex hooks
+6. Print a manual fallback note that users can invoke `evolve-lite:recall` directly if they do not want to enable Codex hooks
 
 Codex is currently implemented only in lite mode. Full mode is reserved for future MCP-backed work.
 

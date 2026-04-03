@@ -27,7 +27,7 @@ printf '{"prompt":"Show stored Evolve entities"}' | python3 "$(git rev-parse --s
 
 The installed Codex hook itself does not require `git`; it walks upward from the current working directory until it finds the repo-local plugin script.
 
-If you prefer not to enable Codex hooks, invoke the installed `evolve:recall` skill manually when you want the saved guidance surfaced in the current session.
+If you prefer not to enable Codex hooks, invoke the installed `evolve-lite:recall` skill manually when you want the saved guidance surfaced in the current session.
 
 ## Entities Storage
 

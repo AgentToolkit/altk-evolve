@@ -855,7 +855,7 @@ def install_codex(source_dir, target_dir):
     warn("Automatic Codex recall requires hooks to be enabled in ~/.codex/config.toml:")
     print("      [features]")
     print("      codex_hooks = true")
-    info("If you do not want to enable Codex hooks, invoke the installed evolve:recall skill manually.")
+    info("If you do not want to enable Codex hooks, invoke the installed evolve-lite:recall skill manually.")
 
     success("Codex installation complete")
 
