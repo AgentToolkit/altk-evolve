@@ -215,6 +215,7 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
                         "category": tip.category,
                         "rationale": tip.rationale,
                         "trigger": tip.trigger,
+                        "implementation_steps": tip.implementation_steps,
                         "task_description": result.task_description,
                         "source_task_id": task_id,
                         "creation_mode": "auto-mcp",

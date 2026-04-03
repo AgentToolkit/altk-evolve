@@ -480,6 +480,7 @@ class PhoenixSync:
                         "category": tip.category,
                         "rationale": tip.rationale,
                         "trigger": tip.trigger,
+                        "implementation_steps": tip.implementation_steps,
                         "source_task_id": trajectory["trace_id"],
                         "source_span_id": trajectory["span_id"],
                         "task_description": result.task_description,

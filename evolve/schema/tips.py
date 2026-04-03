@@ -10,6 +10,7 @@ class Tip(BaseModel):
     rationale: str = Field(description="Why this tip helps")
     category: Literal["strategy", "recovery", "optimization"]
     trigger: str = Field(description="When to apply this tip")
+    implementation_steps: list[str] = Field(default_factory=list, description="Specific steps to implement this tip")
 
 
 class TipGenerationResponse(BaseModel):

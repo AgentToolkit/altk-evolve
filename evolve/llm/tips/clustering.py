@@ -157,12 +157,22 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
         dict.fromkeys((e.metadata or {}).get("task_description", "") for e in entities if (e.metadata or {}).get("task_description"))
     )
 
+    def _normalize_steps(raw: object) -> list[str]:
+        if raw is None or raw == []:
+            return []
+        if isinstance(raw, str):
+            return [raw]
+        if isinstance(raw, list):
+            return [str(x) for x in raw]
+        return [str(raw)]
+
     tips = [
         {
             "content": str(e.content),
             "rationale": (e.metadata or {}).get("rationale", ""),
             "category": (e.metadata or {}).get("category", "strategy"),
             "trigger": (e.metadata or {}).get("trigger", ""),
+            "implementation_steps": _normalize_steps((e.metadata or {}).get("implementation_steps")),
         }
         for e in entities
     ]

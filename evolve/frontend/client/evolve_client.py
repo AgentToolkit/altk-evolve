@@ -143,6 +143,7 @@ class EvolveClient:
                             "rationale": tip.rationale,
                             "category": tip.category,
                             "trigger": tip.trigger,
+                            "implementation_steps": tip.implementation_steps,
                         },
                     )
                     for tip in consolidated_tips
