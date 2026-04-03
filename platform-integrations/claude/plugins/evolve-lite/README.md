@@ -46,6 +46,13 @@ After Claude completes each task, the plugin automatically invokes the `/evolve-
 
 You can also manually invoke `/evolve-lite:learn` at any time.
 
+> **UX note:** The Stop hook has an empty matcher (`""`), meaning it fires after *every* task and can add up to ~2 minutes of delay per interaction (the hook's `timeout` is 120s). It also invokes the Claude API on each stop, which incurs additional cost. Learned entities are stored as markdown files in `.evolve/entities/{type}/` — inspect or remove them there at any time.
+>
+> **To disable or limit automatic learning**, edit `hooks/hooks.json` inside the plugin directory:
+> - Remove the entire `"Stop"` block to turn off auto-learning entirely.
+> - Set a specific `"matcher"` string to restrict triggering to prompts that contain that text.
+> - Reduce `"timeout"` to cap how long the learn step can run.
+
 ## Example Walkthrough
 
 See the [Evolve Lite guide](../../../../docs/integrations/evolve-lite.md#example-walkthrough) for a step-by-step example showing the full learn-then-recall loop across two sessions.
