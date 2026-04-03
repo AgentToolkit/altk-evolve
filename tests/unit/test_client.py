@@ -184,7 +184,7 @@ def test_store_user_facts_skips_none_empty_or_whitespace(evolve_client: EvolveCl
 
     monkeypatch.setattr(evolve_client, "ensure_namespace", fail_ensure_namespace)
     monkeypatch.setattr(evolve_client, "update_entities", fail_update_entities)
-    monkeypatch.setattr("evolve.frontend.client.evolve_client.extract_facts_from_messages", fail_extract)
+    monkeypatch.setattr("altk_evolve.frontend.client.evolve_client.extract_facts_from_messages", fail_extract)
 
     result = evolve_client.store_user_facts(namespace_id="foobar", message=message, user_id="u1")
 
@@ -209,7 +209,7 @@ def test_store_user_facts_uses_trimmed_message(evolve_client: EvolveClient, monk
 
     monkeypatch.setattr(evolve_client, "ensure_namespace", ensure_namespace)
     monkeypatch.setattr(evolve_client, "update_entities", update_entities)
-    monkeypatch.setattr("evolve.frontend.client.evolve_client.extract_facts_from_messages", extract)
+    monkeypatch.setattr("altk_evolve.frontend.client.evolve_client.extract_facts_from_messages", extract)
 
     result = evolve_client.store_user_facts(namespace_id="foobar", message="  hello world \n", user_id="u1")
 
