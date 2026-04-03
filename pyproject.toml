@@ -116,8 +116,6 @@ build_command = '''
     perl -i -pe "s|\]\(docs/([^)]*)\)|](https://github.com/AgentToolkit/altk-evolve/blob/v$NEW_VERSION/docs/\$1)|g" README.md
     sed -i 's/^SCRIPT_VERSION="main"/SCRIPT_VERSION="v'"$NEW_VERSION"'"/' platform-integrations/install.sh
     git add platform-integrations/install.sh
-    (cd altk_evolve/frontend/ui && rm -rf dist && npm ci && npm run build)
-    if [ ! -s "altk_evolve/frontend/ui/dist/index.html" ]; then echo "UI build failed: dist/index.html missing or empty" && exit 1; fi
     uv build
     mv README.md.bak README.md
 '''
