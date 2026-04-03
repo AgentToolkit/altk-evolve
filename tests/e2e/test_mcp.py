@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import uuid
-from evolve.config.milvus import milvus_client_settings
+from altk_evolve.config.milvus import milvus_client_settings
 
 __data__ = Path(__file__).parent.parent / "data"
 load_dotenv()
@@ -41,14 +41,14 @@ def mcp(request, tmp_path):
     elif backend_type == "filesystem":
         os.environ["EVOLVE_DATA_DIR"] = str(tmp_path)
 
-    from evolve.frontend.client.evolve_client import EvolveClient
-    from evolve.config.evolve import evolve_config
+    from altk_evolve.frontend.client.evolve_client import EvolveClient
+    from altk_evolve.config.evolve import evolve_config
 
     # Reset loaded settings to pick up new env vars
     evolve_config.__init__()
 
     # Reset the MCP server client
-    import evolve.frontend.mcp.mcp_server as mcp_server_module
+    import altk_evolve.frontend.mcp.mcp_server as mcp_server_module
 
     mcp_server_module._client = None
     mcp_server_module._namespace_initialized = False
@@ -126,8 +126,8 @@ async def test_save_trajectory_and_retrieve_guidelines(mcp):
         assert "# Guidelines for: " in guidelines
 
         # Verify tip provenance in Evolve backend
-        from evolve.frontend.client.evolve_client import EvolveClient
-        from evolve.config.evolve import evolve_config
+        from altk_evolve.frontend.client.evolve_client import EvolveClient
+        from altk_evolve.config.evolve import evolve_config
 
         client = EvolveClient()
         entities = client.search_entities(
@@ -170,7 +170,7 @@ async def test_create_entity_without_conflict_resolution(mcp):
 async def test_create_entity_with_conflict_resolution(mcp):
     """Test creating an entity with conflict resolution enabled."""
     from unittest.mock import patch
-    from evolve.schema.conflict_resolution import EntityUpdate
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
 
     async with Client(transport=mcp) as evolve_mcp:
         # Create first entity
@@ -184,7 +184,7 @@ async def test_create_entity_with_conflict_resolution(mcp):
         first_entity_id = result["id"]
 
         # Mock resolve_conflicts to avoid LLM call timeout
-        patch_target = "evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts"
+        patch_target = "altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts"
 
         with patch(patch_target) as mock_resolve:
             # Configure mock to return an UPDATE event

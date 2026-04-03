@@ -7,16 +7,16 @@ import datetime
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 
-from evolve.backend.milvus import MilvusEntityBackend, parse_milvus_entity
-from evolve.schema.core import Entity, Namespace, RecordedEntity
-from evolve.schema.conflict_resolution import EntityUpdate
-from evolve.schema.exceptions import NamespaceNotFoundException, EvolveException
+from altk_evolve.backend.milvus import MilvusEntityBackend, parse_milvus_entity
+from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.schema.exceptions import NamespaceNotFoundException, EvolveException
 
 
 @pytest.fixture(scope="module")
 def milvus_backend() -> MilvusEntityBackend:
     """Create a MilvusEntityBackend instance for testing."""
-    with patch("evolve.backend.milvus.MilvusClient"), patch("evolve.backend.milvus.SentenceTransformer"):
+    with patch("altk_evolve.backend.milvus.MilvusClient"), patch("altk_evolve.backend.milvus.SentenceTransformer"):
         backend = MilvusEntityBackend()
         return backend
 
@@ -77,14 +77,14 @@ def test_create_namespace(milvus_backend: MilvusEntityBackend, db_manager, monke
     monkeypatch.setattr(milvus_backend.milvus, "has_collection", never_has_collection)
     monkeypatch.setattr(milvus_backend.milvus, "create_collection", noop_create_collection)
 
-    with patch("evolve.backend.milvus.SQLiteManager", return_value=db_manager):
+    with patch("altk_evolve.backend.milvus.SQLiteManager", return_value=db_manager):
         result = milvus_backend.create_namespace(namespace_id=namespace_id)
 
     assert result.id == namespace_id
     assert isinstance(result.created_at, datetime.datetime)
 
     # create a namespace with auto-generated id
-    with patch("evolve.backend.milvus.SQLiteManager", return_value=db_manager):
+    with patch("altk_evolve.backend.milvus.SQLiteManager", return_value=db_manager):
         result = milvus_backend.create_namespace()
 
     assert result.id.startswith("ns_")
@@ -105,7 +105,7 @@ def test_get_namespace_details(milvus_backend: MilvusEntityBackend, db_manager, 
     db_manager.get_namespace = arbitrary_namespace
 
     # Test existing namespace
-    with patch("evolve.backend.milvus.SQLiteManager", return_value=db_manager):
+    with patch("altk_evolve.backend.milvus.SQLiteManager", return_value=db_manager):
         result = milvus_backend.get_namespace_details(namespace_id="test_namespace")
 
     assert result.id == "test_namespace"
@@ -124,7 +124,7 @@ def test_search_namespaces(milvus_backend: MilvusEntityBackend, db_manager, monk
 
     monkeypatch.setattr(milvus_backend.milvus, "get_collection_stats", arbitrary_collection_stats)
 
-    with patch("evolve.backend.milvus.SQLiteManager", return_value=db_manager):
+    with patch("altk_evolve.backend.milvus.SQLiteManager", return_value=db_manager):
         result = milvus_backend.search_namespaces(limit=10)
 
     assert len(result) == 2
@@ -142,7 +142,7 @@ def test_delete_namespace(milvus_backend: MilvusEntityBackend, db_manager, monke
     db_manager.delete_namespace = Mock()
     monkeypatch.setattr(milvus_backend.milvus, "drop_collection", drop_collection)
 
-    with patch("evolve.backend.milvus.SQLiteManager", return_value=db_manager):
+    with patch("altk_evolve.backend.milvus.SQLiteManager", return_value=db_manager):
         milvus_backend.delete_namespace(namespace_id=namespace_id)
 
     drop_collection.assert_called_once_with(collection_name=namespace_id)
@@ -169,7 +169,7 @@ def test_update_entities(milvus_backend: MilvusEntityBackend, monkeypatch):
     monkeypatch.setattr(milvus_backend.embedding_model, "encode", arbitrary_embedding)
     monkeypatch.setattr(milvus_backend, "search_entities", search_entities.__get__(milvus_backend, MilvusEntityBackend))
 
-    with patch("evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts):
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts):
         entities = [Entity(type=entity_update.type, content=entity_update.content, metadata={"key": "value"})]
         result = milvus_backend.update_entities(namespace_id="test_namespace", entities=entities, enable_conflict_resolution=True)
 

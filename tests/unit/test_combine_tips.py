@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.llm.tips.clustering import combine_cluster
-from evolve.schema.core import RecordedEntity
-from evolve.schema.exceptions import EvolveException
-from evolve.schema.tips import Tip, ConsolidationResult
+from altk_evolve.llm.tips.clustering import combine_cluster
+from altk_evolve.schema.core import RecordedEntity
+from altk_evolve.schema.exceptions import EvolveException
+from altk_evolve.schema.tips import Tip, ConsolidationResult
 
 
 def _make_entity(entity_id: str, content: str, task_description: str = "do a task") -> RecordedEntity:
@@ -58,9 +58,9 @@ SAMPLE_TIPS = [
 
 @pytest.mark.unit
 class TestCombineCluster:
-    @patch("evolve.llm.tips.clustering.completion")
-    @patch("evolve.llm.tips.clustering.supports_response_schema", return_value=False)
-    @patch("evolve.llm.tips.clustering.get_supported_openai_params", return_value=[])
+    @patch("altk_evolve.llm.tips.clustering.completion")
+    @patch("altk_evolve.llm.tips.clustering.supports_response_schema", return_value=False)
+    @patch("altk_evolve.llm.tips.clustering.get_supported_openai_params", return_value=[])
     def test_combine_cluster_returns_tips(self, _mock_params, _mock_schema, mock_completion):
         mock_completion.return_value = _mock_completion_response(SAMPLE_TIPS)
 
@@ -77,9 +77,9 @@ class TestCombineCluster:
         assert result[1].category == "optimization"
         mock_completion.assert_called_once()
 
-    @patch("evolve.llm.tips.clustering.completion")
-    @patch("evolve.llm.tips.clustering.supports_response_schema", return_value=False)
-    @patch("evolve.llm.tips.clustering.get_supported_openai_params", return_value=[])
+    @patch("altk_evolve.llm.tips.clustering.completion")
+    @patch("altk_evolve.llm.tips.clustering.supports_response_schema", return_value=False)
+    @patch("altk_evolve.llm.tips.clustering.get_supported_openai_params", return_value=[])
     def test_combine_cluster_retries_on_failure(self, _mock_params, _mock_schema, mock_completion):
         mock_completion.side_effect = [
             ValueError("bad json"),
@@ -94,9 +94,9 @@ class TestCombineCluster:
         assert result[0].content == "Use retry logic for flaky APIs"
         assert mock_completion.call_count == 3
 
-    @patch("evolve.llm.tips.clustering.completion")
-    @patch("evolve.llm.tips.clustering.supports_response_schema", return_value=False)
-    @patch("evolve.llm.tips.clustering.get_supported_openai_params", return_value=[])
+    @patch("altk_evolve.llm.tips.clustering.completion")
+    @patch("altk_evolve.llm.tips.clustering.supports_response_schema", return_value=False)
+    @patch("altk_evolve.llm.tips.clustering.get_supported_openai_params", return_value=[])
     def test_combine_cluster_raises_after_max_retries(self, _mock_params, _mock_schema, mock_completion):
         mock_completion.side_effect = ValueError("always fails")
 
@@ -107,9 +107,9 @@ class TestCombineCluster:
 
         assert mock_completion.call_count == 3
 
-    @patch("evolve.llm.tips.clustering.completion")
-    @patch("evolve.llm.tips.clustering.supports_response_schema", return_value=True)
-    @patch("evolve.llm.tips.clustering.get_supported_openai_params", return_value=["response_format"])
+    @patch("altk_evolve.llm.tips.clustering.completion")
+    @patch("altk_evolve.llm.tips.clustering.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.tips.clustering.get_supported_openai_params", return_value=["response_format"])
     def test_combine_cluster_uses_structured_output(self, _mock_params, _mock_schema, mock_completion):
         mock_completion.return_value = _mock_completion_response(SAMPLE_TIPS[:1])
 
@@ -129,7 +129,7 @@ class TestCombineCluster:
 
 @pytest.mark.unit
 class TestConsolidateTips:
-    @patch("evolve.llm.tips.clustering.combine_cluster")
+    @patch("altk_evolve.llm.tips.clustering.combine_cluster")
     def test_consolidate_tips_deletes_originals_and_inserts_new(self, mock_combine):
         consolidated = [
             Tip(content="Combined tip", rationale="Merged", category="strategy", trigger="Always"),
@@ -144,7 +144,7 @@ class TestConsolidateTips:
         mock_backend = MagicMock()
         mock_backend.search_entities.return_value = entities_cluster
 
-        from evolve.frontend.client.evolve_client import EvolveClient
+        from altk_evolve.frontend.client.evolve_client import EvolveClient
 
         client = EvolveClient.__new__(EvolveClient)
         client.backend = mock_backend
@@ -176,7 +176,7 @@ class TestConsolidateTips:
         first_delete_idx = next(i for i, c in enumerate(call_names) if "delete_entity_by_id" in c)
         assert insert_idx < first_delete_idx
 
-    @patch("evolve.llm.tips.clustering.combine_cluster")
+    @patch("altk_evolve.llm.tips.clustering.combine_cluster")
     def test_consolidate_tips_returns_correct_counts(self, mock_combine):
         # Cluster 1: 3 entities -> 1 consolidated tip
         # Cluster 2: 2 entities -> 2 consolidated tips
@@ -193,7 +193,7 @@ class TestConsolidateTips:
 
         mock_backend = MagicMock()
 
-        from evolve.frontend.client.evolve_client import EvolveClient
+        from altk_evolve.frontend.client.evolve_client import EvolveClient
 
         client = EvolveClient.__new__(EvolveClient)
         client.backend = mock_backend

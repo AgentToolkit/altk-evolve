@@ -5,8 +5,8 @@ import asyncio
 if os.environ.get("EVOLVE_AUTO_ENABLED", "").lower() != "true":
     print("WARNING: EVOLVE_AUTO_ENABLED is not true")
 
-import evolve.auto  # noqa: F401
-from evolve.config.llm import llm_settings
+import altk_evolve.auto  # noqa: F401
+from altk_evolve.config.llm import llm_settings
 
 from agents import Agent, Runner, function_tool, ModelSettings
 from agents.extensions.models.litellm_model import LitellmModel

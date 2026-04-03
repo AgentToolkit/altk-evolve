@@ -53,11 +53,11 @@ Evolve provides both a standard MCP server and a full Web UI (Dashboard & Entity
 > [!IMPORTANT]
 > **Building from Source:** If you cloned this repository (rather than installing a pre-built package), you must build the UI before it can be served.
 > ```bash
-> cd evolve/frontend/ui
+> cd altk_evolve/frontend/ui
 > npm ci && npm run build
 > cd ../../../
 > ```
-> See `evolve/frontend/ui/README.md` for more frontend development details.
+> See `altk_evolve/frontend/ui/README.md` for more frontend development details.
 
 #### Starting Both Automatically
 The easiest way to start both the MCP Server (on standard input/output) and the HTTP UI backend is to run the module directly:
@@ -77,11 +77,11 @@ Then navigate to `http://127.0.0.1:8000/ui/`.
 #### Starting only the MCP Server
 If you're attaching Evolve to an MCP client that requires a direct command (like Claude Desktop):
 ```bash
-uv run fastmcp run evolve/frontend/mcp/mcp_server.py --transport stdio
+uv run fastmcp run altk_evolve/frontend/mcp/mcp_server.py --transport stdio
 ```
 Or for SSE transport:
 ```bash
-uv run fastmcp run evolve/frontend/mcp/mcp_server.py --transport sse --port 8201
+uv run fastmcp run altk_evolve/frontend/mcp/mcp_server.py --transport sse --port 8201
 ```
 
 Verify it's running:

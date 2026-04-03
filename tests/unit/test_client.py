@@ -5,14 +5,12 @@ Simple tests for EvolveClient wrapper interface.
 import datetime
 import pytest
 
-from evolve.backend.base import BaseEntityBackend
-from evolve.schema.core import Entity, Namespace, RecordedEntity
-from evolve.schema.conflict_resolution import EntityUpdate
-from evolve.schema.exceptions import NamespaceNotFoundException, NamespaceAlreadyExistsException
-from evolve.frontend.client.evolve_client import EvolveClient
-
-
-from evolve.config.evolve import EvolveConfig
+from altk_evolve.backend.base import BaseEntityBackend
+from altk_evolve.config.evolve import EvolveConfig
+from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.schema.exceptions import NamespaceNotFoundException, NamespaceAlreadyExistsException
+from altk_evolve.frontend.client.evolve_client import EvolveClient
 
 
 @pytest.fixture(scope="module")
@@ -186,7 +184,7 @@ def test_store_user_facts_skips_none_empty_or_whitespace(evolve_client: EvolveCl
 
     monkeypatch.setattr(evolve_client, "ensure_namespace", fail_ensure_namespace)
     monkeypatch.setattr(evolve_client, "update_entities", fail_update_entities)
-    monkeypatch.setattr("evolve.frontend.client.evolve_client.extract_facts_from_messages", fail_extract)
+    monkeypatch.setattr("altk_evolve.frontend.client.evolve_client.extract_facts_from_messages", fail_extract)
 
     result = evolve_client.store_user_facts(namespace_id="foobar", message=message, user_id="u1")
 
@@ -211,7 +209,7 @@ def test_store_user_facts_uses_trimmed_message(evolve_client: EvolveClient, monk
 
     monkeypatch.setattr(evolve_client, "ensure_namespace", ensure_namespace)
     monkeypatch.setattr(evolve_client, "update_entities", update_entities)
-    monkeypatch.setattr("evolve.frontend.client.evolve_client.extract_facts_from_messages", extract)
+    monkeypatch.setattr("altk_evolve.frontend.client.evolve_client.extract_facts_from_messages", extract)
 
     result = evolve_client.store_user_facts(namespace_id="foobar", message="  hello world \n", user_id="u1")
 

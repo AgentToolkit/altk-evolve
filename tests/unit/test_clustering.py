@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from evolve.llm.tips.clustering import _union_find, cluster_entities
-from evolve.schema.core import RecordedEntity
+from altk_evolve.llm.tips.clustering import _union_find, cluster_entities
+from altk_evolve.schema.core import RecordedEntity
 
 
 def _make_entity(entity_id: str, task_description: str | None = None) -> RecordedEntity:
@@ -79,7 +79,7 @@ def _mock_encode(descriptions, normalize_embeddings=True):
 
 
 @pytest.mark.unit
-@patch("evolve.llm.tips.clustering._get_sentence_transformer")
+@patch("altk_evolve.llm.tips.clustering._get_sentence_transformer")
 class TestClusterEntities:
     def test_groups_similar_tasks(self, mock_st_cls):
         mock_model = MagicMock()
@@ -144,7 +144,7 @@ class TestClusterEntities:
         assert clusters == []
         mock_st_cls.assert_not_called()
 
-    @patch("evolve.config.milvus.milvus_other_settings")
+    @patch("altk_evolve.config.milvus.milvus_other_settings")
     def test_uses_default_embedding_model(self, mock_settings, mock_st_cls):
         mock_settings.embedding_model = "test-default-model"
         mock_model = MagicMock()

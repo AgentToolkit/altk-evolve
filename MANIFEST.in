@@ -1,2 +1,2 @@
-recursive-include evolve *.jinja2
-recursive-include evolve/frontend/ui/dist *
+recursive-include altk_evolve *.jinja2
+recursive-include altk_evolve/frontend/ui/dist *

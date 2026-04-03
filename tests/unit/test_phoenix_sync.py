@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch, Mock
 
 import pytest
 
-from evolve.sync.phoenix_sync import PhoenixSync, SyncResult
-from evolve.schema.tips import TipGenerationResult
+from altk_evolve.sync.phoenix_sync import PhoenixSync, SyncResult
+from altk_evolve.schema.tips import TipGenerationResult
 
 # Mark all tests in this module as unit tests
 pytestmark = pytest.mark.unit
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture
 def phoenix_sync():
     """Create a PhoenixSync instance with mocked client."""
-    with patch("evolve.sync.phoenix_sync.EvolveClient") as mock_client_class:
+    with patch("altk_evolve.sync.phoenix_sync.EvolveClient") as mock_client_class:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
         sync = PhoenixSync(phoenix_url="http://test-phoenix:6006", namespace_id="test_namespace", project="test_project")
@@ -404,11 +404,11 @@ class TestCleanTrajectory:
 class TestSync:
     """Tests for sync method."""
 
-    @patch("evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("evolve.sync.phoenix_sync.generate_tips")
+    @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
+    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
     def test_sync_creates_namespace_if_not_exists(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that sync creates namespace if it doesn't exist."""
-        from evolve.schema.exceptions import NamespaceNotFoundException
+        from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
         phoenix_sync.client.get_namespace_details.side_effect = NamespaceNotFoundException()
         mock_response = MagicMock()
@@ -421,8 +421,8 @@ class TestSync:
 
         phoenix_sync.client.create_namespace.assert_called_once_with("test_namespace")
 
-    @patch("evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("evolve.sync.phoenix_sync.generate_tips")
+    @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
+    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
     def test_sync_skips_already_processed(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that already processed spans are skipped."""
         mock_response = MagicMock()
@@ -452,8 +452,8 @@ class TestSync:
         assert result.skipped == 1
         assert result.processed == 0
 
-    @patch("evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("evolve.sync.phoenix_sync.generate_tips")
+    @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
+    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
     def test_sync_filters_error_spans(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that error spans are filtered by default."""
         mock_response = MagicMock()
@@ -480,8 +480,8 @@ class TestSync:
 
         assert result.processed == 0
 
-    @patch("evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("evolve.sync.phoenix_sync.generate_tips")
+    @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
+    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
     def test_sync_includes_error_spans_when_requested(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that error spans are included when include_errors=True."""
         mock_response = MagicMock()
@@ -514,8 +514,8 @@ class TestSync:
 
         assert result.processed == 1
 
-    @patch("evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("evolve.sync.phoenix_sync.generate_tips")
+    @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
+    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
     def test_sync_filters_non_llm_spans(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that non-LLM spans are filtered out."""
         mock_response = MagicMock()
@@ -532,8 +532,8 @@ class TestSync:
 
         assert result.processed == 0
 
-    @patch("evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("evolve.sync.phoenix_sync.generate_tips")
+    @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
+    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
     def test_sync_processes_valid_spans(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that valid spans are processed."""
         mock_response = MagicMock()
@@ -586,8 +586,8 @@ class TestSync:
         assert all(e.metadata.get("source_span_id") == "s1" for e in tip_entities)
         assert all(e.metadata.get("creation_mode") == "auto-phoenix" for e in tip_entities)
 
-    @patch("evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("evolve.sync.phoenix_sync.generate_tips")
+    @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
+    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
     def test_sync_returns_correct_counts(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that sync returns correct counts in SyncResult."""
         mock_response = MagicMock()
@@ -642,8 +642,8 @@ class TestSync:
         assert result.tips_generated == 1
         assert result.errors == []
 
-    @patch("evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("evolve.sync.phoenix_sync.generate_tips")
+    @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
+    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
     def test_sync_handles_processing_errors(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that processing errors are captured."""
         mock_response = MagicMock()
@@ -697,7 +697,7 @@ class TestEnsureNamespace:
 
     def test_ensure_namespace_creates_if_missing(self, phoenix_sync):
         """Test that missing namespace is created."""
-        from evolve.schema.exceptions import NamespaceNotFoundException
+        from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
         phoenix_sync.client.get_namespace_details.side_effect = NamespaceNotFoundException()
 
@@ -740,7 +740,7 @@ class TestGetProcessedSpanIds:
 
     def test_get_processed_span_ids_namespace_not_found(self, phoenix_sync):
         """Test that missing namespace returns empty set."""
-        from evolve.schema.exceptions import NamespaceNotFoundException
+        from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
         phoenix_sync.client.search_entities.side_effect = NamespaceNotFoundException()
 

@@ -3,22 +3,22 @@ import uuid
 import pytest
 from unittest.mock import patch, MagicMock
 
-from evolve.frontend.mcp.mcp_server import save_trajectory, create_entity
-from evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.frontend.mcp.mcp_server import save_trajectory, create_entity
+from altk_evolve.schema.conflict_resolution import EntityUpdate
 
 pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
 def mock_get_client():
-    with patch("evolve.frontend.mcp.mcp_server.get_client") as mock:
+    with patch("altk_evolve.frontend.mcp.mcp_server.get_client") as mock:
         client_instance = mock.return_value
         yield client_instance
 
 
 def test_save_trajectory_metadata_injection(mock_get_client):
     # Mock tip generation to prevent actual LLM calls
-    with patch("evolve.frontend.mcp.mcp_server.generate_tips") as mock_generate_tips:
+    with patch("altk_evolve.frontend.mcp.mcp_server.generate_tips") as mock_generate_tips:
         mock_result = MagicMock()
         mock_tip = MagicMock()
         mock_tip.content = "Always write unit tests"

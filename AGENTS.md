@@ -43,7 +43,7 @@ Evolve is a Python library and service which enables AI agents to improve throug
 ## First Time Setup
 ```bash
 uv sync && source .venv/bin/activate
-cp .env.example .env  # Configure any environment variables, defined in `./evolve/config`
+cp .env.example .env  # Configure any environment variables, defined in `./altk_evolve/config`
 pre-commit install
 ```
 

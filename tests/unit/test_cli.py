@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from evolve.cli.cli import app
-from evolve.schema.core import Namespace, RecordedEntity
-from evolve.schema.conflict_resolution import EntityUpdate
-from evolve.schema.exceptions import (
+from altk_evolve.cli.cli import app
+from altk_evolve.schema.core import Namespace, RecordedEntity
+from altk_evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.schema.exceptions import (
     NamespaceAlreadyExistsException,
     NamespaceNotFoundException,
     EvolveException,
@@ -22,7 +22,7 @@ runner = CliRunner()
 @pytest.fixture
 def mock_client():
     """Create a mock EvolveClient."""
-    with patch("evolve.cli.cli.get_client") as mock_get_client:
+    with patch("altk_evolve.cli.cli.get_client") as mock_get_client:
         client = MagicMock()
         mock_get_client.return_value = client
         yield client
@@ -564,7 +564,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_default_params(self):
         """Test sync phoenix with default parameters."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -579,7 +579,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_custom_url(self):
         """Test sync phoenix with custom Phoenix URL."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://custom:8080"
             mock_syncer.project = "default"
@@ -594,7 +594,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_custom_namespace(self):
         """Test sync phoenix with custom namespace."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -609,7 +609,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_custom_project(self):
         """Test sync phoenix with custom project."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "my_project"
@@ -624,7 +624,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_custom_limit(self):
         """Test sync phoenix with custom limit."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -639,7 +639,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_with_include_errors(self):
         """Test sync phoenix with include-errors flag."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -654,7 +654,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_displays_results(self):
         """Test sync phoenix displays results in output."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -672,7 +672,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_displays_errors(self):
         """Test sync phoenix displays errors if any."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -690,7 +690,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_handles_exception(self):
         """Test sync phoenix handles exceptions gracefully."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
@@ -706,7 +706,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_displays_parameters(self):
         """Test sync phoenix displays sync parameters."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://test:6006"
             mock_syncer.project = "test_project"
@@ -723,7 +723,7 @@ class TestSyncPhoenix:
 
     def test_sync_phoenix_all_options(self):
         """Test sync phoenix with all options combined."""
-        with patch("evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
             mock_syncer = MagicMock()
             mock_syncer.phoenix_url = "http://custom:9000"
             mock_syncer.project = "prod"
