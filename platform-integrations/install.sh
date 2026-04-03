@@ -363,7 +363,7 @@ def _codex_recall_hook_command():
         'd=\"$PWD\"; '
         "while :; do "
         'candidate=\"$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py\"; '
-        'if [ -f \"$candidate\" ]; then EVOLVE_ENTITIES_DIR=\"$d/.evolve/entities\" exec python3 \"$candidate\"; fi; '
+        'if [ -f \"$candidate\" ]; then EVOLVE_DIR=\"$d/.evolve\" exec python3 \"$candidate\"; fi; '
         '[ \"$d\" = \"/\" ] && break; '
         'd=\"$(dirname \"$d\")\"; '
         "done; "

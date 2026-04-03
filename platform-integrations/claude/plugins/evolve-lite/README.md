@@ -123,8 +123,7 @@ System tools like exiftool may not be available
 
 ## Environment Variables
 
-- `EVOLVE_ENTITIES_DIR`: Override the default entities directory location
-- `CLAUDE_PROJECT_ROOT`: Set by Claude Code, used to locate project-level entities
+- `EVOLVE_DIR`: Override the default `.evolve` directory location (entities, trajectories, config, etc. are stored here)
 
 ## Verification
 
