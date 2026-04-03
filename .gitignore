@@ -12,6 +12,6 @@ demo/workdir/.claude/
 .claude
 dist
 .coverage
-/.evolve
+.evolve
 .secrets
 event.json
