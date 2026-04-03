@@ -6,33 +6,35 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The Agent Lifecycle Toolkit (ALTK) is a library of components to help agent builders improve their agent with minimal integration effort and setup.">
+        <meta name="description" content="Evolve is a component in the Agent Lifecycle Toolkit (ALTK) that gives agent builders the ability to iteratively improve their agents by learning from previous trajectories.">
       
       
       
-        <link rel="canonical" href="https://agenttoolkit.github.io/kaizen/integrations/roo_code/">
+        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/examples/hello_world/bob/">
       
       
-        <link rel="prev" href="../../examples/hello_world/">
+        <link rel="prev" href="../../../integrations/evolve-lite/">
       
+      
+        <link rel="next" href="../../../tutorials/claude-code-demo/">
       
       
         
       
       
-      <link rel="icon" href="../../assets/logo-32x32.png">
+      <link rel="icon" href="../../../assets/logo-32x32.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Roo Code - Kaizen</title>
+        <title>Hello World (IBM Bob IDE) - Evolve</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="../../stylesheets/extra.css">
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
   
@@ -88,7 +90,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#testing-and-installing-the-kaizen-roo-code-mode" class="md-skip">
+        <a href="#hello-world-with-evolve-and-ibm-bob" class="md-skip">
           Skip to content
         </a>
       
@@ -102,9 +104,9 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Kaizen" class="md-header__button md-logo" aria-label="Kaizen" data-md-component="logo">
+    <a href="../../.." title="Evolve" class="md-header__button md-logo" aria-label="Evolve" data-md-component="logo">
       
-  <img src="../../assets/logo-512x512.png" alt="logo">
+  <img src="../../../assets/logo-512x512.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -115,13 +117,13 @@
       <div class="md-header__ellipsis">
         <div class="md-header__topic">
           <span class="md-ellipsis">
-            Kaizen
+            Evolve
           </span>
         </div>
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Roo Code
+              Hello World (IBM Bob IDE)
             
           </span>
         </div>
@@ -213,13 +215,13 @@
     
     
       <div class="md-header__source">
-        <a href="https://github.com/AgentToolkit/kaizen" title="Go to repository" class="md-source" data-md-component="source">
+        <a href="https://github.com/AgentToolkit/altk-evolve" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
   </div>
   <div class="md-source__repository">
-    AgentToolkit/kaizen
+    AgentToolkit/altk-evolve
   </div>
 </a>
       </div>
@@ -246,7 +248,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../.." class="md-tabs__link">
+        <a href="../../.." class="md-tabs__link">
           
   
   
@@ -268,13 +270,57 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../examples/hello_world/" class="md-tabs__link">
+        <a href="../../../guides/configuration/" class="md-tabs__link">
           
   
   
     
   
-  Examples
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../integrations/evolve-lite/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Integrations
 
         </a>
       </li>
@@ -298,7 +344,29 @@
   
     
   
-  Integrations
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../operations/docker-testing/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Operations
 
         </a>
       </li>
@@ -328,22 +396,22 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Kaizen" class="md-nav__button md-logo" aria-label="Kaizen" data-md-component="logo">
+    <a href="../../.." title="Evolve" class="md-nav__button md-logo" aria-label="Evolve" data-md-component="logo">
       
-  <img src="../../assets/logo-512x512.png" alt="logo">
+  <img src="../../../assets/logo-512x512.png" alt="logo">
 
     </a>
-    Kaizen
+    Evolve
   </label>
   
     <div class="md-nav__source">
-      <a href="https://github.com/AgentToolkit/kaizen" title="Go to repository" class="md-source" data-md-component="source">
+      <a href="https://github.com/AgentToolkit/altk-evolve" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
   </div>
   <div class="md-source__repository">
-    AgentToolkit/kaizen
+    AgentToolkit/altk-evolve
   </div>
 </a>
     </div>
@@ -382,7 +450,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../.." class="md-nav__link ">
+            <a href="../../.." class="md-nav__link ">
               
   
   
@@ -426,7 +494,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../installation/" class="md-nav__link">
+      <a href="../../../installation/" class="md-nav__link">
         
   
   
@@ -464,7 +532,11 @@
     
       
         
-          
+      
+        
+      
+        
+      
         
       
     
@@ -483,15 +555,14 @@
         <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
-          <div class="md-nav__link md-nav__container">
-            <a href="../../examples/hello_world/" class="md-nav__link ">
-              
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Examples
+    Guides
   
 
     
@@ -499,21 +570,342 @@
   
   
 
-            </a>
-            
-          </div>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
         
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
   
-    Examples
+    Guides
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/phoenix-sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phoenix Sync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/extract-trajectories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extract Trajectories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/low-code-tracing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Low-Code Tracing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/policies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/evolve-lite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evolve Lite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
           </ul>
@@ -535,7 +927,9 @@
     
       
         
-          
+      
+        
+      
         
       
     
@@ -554,18 +948,17 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
         
           
-          <div class="md-nav__link md-nav__container">
-            <a href="./" class="md-nav__link md-nav__link--active">
-              
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
-    Integrations
+    Tutorials
   
 
     
@@ -573,21 +966,323 @@
   
   
 
-            </a>
-            
-          </div>
+            <span class="md-nav__icon md-icon"></span>
+          </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_3">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
   
-    Integrations
+    Tutorials
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hello World (IBM Bob IDE)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hello World (IBM Bob IDE)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-create-a-new-project-using-uv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Create a new project using uv
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-install-evolve" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Install Evolve
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-project-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Project Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-testing-evolve-with-bob" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Testing Evolve with Bob
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4: Testing Evolve with Bob">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-likely-bob-response" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Likely Bob Response
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recovering-and-remembering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recovering and Remembering
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/claude-code-demo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code Demo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../claude/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Starter Example 2 (Claude Code)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../operations/docker-testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
           </ul>
@@ -624,10 +1319,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
+  <a href="#requirements" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Prerequisites
+        Requirements
       
     </span>
   </a>
@@ -635,10 +1330,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-1-install-the-custom-mode" class="md-nav__link">
+  <a href="#step-1-create-a-new-project-using-uv" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1: Install the Custom Mode
+        Step 1: Create a new project using uv
       
     </span>
   </a>
@@ -646,10 +1341,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-test-the-workflow" class="md-nav__link">
+  <a href="#step-2-install-evolve" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Test the Workflow
+        Step 2: Install Evolve
       
     </span>
   </a>
@@ -657,13 +1352,52 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-3-test-the-rejection-logic" class="md-nav__link">
+  <a href="#step-3-project-setup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Test the Rejection Logic
+        Step 3: Project Setup
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-testing-evolve-with-bob" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Testing Evolve with Bob
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4: Testing Evolve with Bob">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-likely-bob-response" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Likely Bob Response
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recovering-and-remembering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recovering and Remembering
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -693,42 +1427,42 @@
   
 
 
-<h1 id="testing-and-installing-the-kaizen-roo-code-mode">Testing and Installing the Kaizen Roo Code Mode<a class="headerlink" href="#testing-and-installing-the-kaizen-roo-code-mode" title="Permanent link">&para;</a></h1>
-<p>This guide explains how to install the custom Kaizen mode into your local Roo Code extension and verify that it enforces the required workflow.</p>
-<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
-<ol>
-<li>You must have the <strong>Roo Code</strong> extension installed in VS Code.</li>
-<li>You must have the <strong>Kaizen MCP Server</strong> configured in your Roo Code settings. For instructions on how to start the Kaizen MCP server, please refer to the <a href="../../../README.md#running-the-mcp-server">Running the MCP Server</a> section in the main README or the detailed <a href="../../../CONFIGURATION.md">Configuration Guide</a>. (If it is not configured, the agent will not be able to call <code>get_guidelines</code> or <code>save_trajectory</code>).</li>
-</ol>
-<h2 id="step-1-install-the-custom-mode">Step 1: Install the Custom Mode<a class="headerlink" href="#step-1-install-the-custom-mode" title="Permanent link">&para;</a></h2>
-<ol>
-<li>Open this <a href="Kaizen-export.yaml"><code>Kaizen-export.yaml</code></a> file.</li>
-<li>Depending on your Roo Code version, you can either import this YAML directly or manually copy the <code>slug</code>, <code>name</code>, <code>roleDefinition</code>, <code>customInstructions</code>, and <code>groups</code> into a new Custom Mode in the Roo Code settings UI.</li>
-<li>In VS Code, open the Roo Code extension panel.</li>
-<li>Click the <strong>Settings</strong> gear icon (⚙️) in the top right of the Roo Code panel.</li>
-<li>Scroll down to the <strong>Custom Modes</strong> section.</li>
-<li>Paste the configuration fields you copied into the Custom Modes text area.</li>
-<li>Click <strong>Save</strong>.</li>
-<li>You should now see a new mode called <strong>Kaizen</strong> in the mode dropdown menu at the bottom of the Roo Code chat panel.</li>
-</ol>
-<blockquote>
-<p><strong>Alternative method:</strong> If you already have a <code>.roomodes</code> file in the root of your workspace, you can convert the <code>Kaizen-export.yaml</code> to JSON and append it to your existing <code>.roomodes</code> file.</p>
-</blockquote>
-<h2 id="step-2-test-the-workflow">Step 2: Test the Workflow<a class="headerlink" href="#step-2-test-the-workflow" title="Permanent link">&para;</a></h2>
-<p>To ensure the custom instructions are working correctly, try giving the Kaizen mode a simple, generic task.</p>
-<ol>
-<li>Select the <strong>Kaizen</strong> mode from the dropdown in Roo Code.</li>
-<li>Enter a prompt like:</li>
-<li><code>"Create a simple python script that prints hello world. Complete the task as fast as possible."</code></li>
-<li><strong>Observe the Agent's Behavior:</strong></li>
-<li><strong>CORRECT BEHAVIOR:</strong> The agent <em>must</em> first attempt to use the <code>get_guidelines</code> MCP tool. After writing the script, it <em>must</em> attempt to use the <code>save_trajectory</code> tool and ask for your permission to proceed <em>before</em> calling its built-in <code>attempt_completion</code> tool.</li>
-<li><strong>INCORRECT BEHAVIOR:</strong> If the agent simply writes the script and finishes the task without calling the MCP tools, the prompt instructions are not being respected, or the MCP server is not connected. </li>
-</ol>
-<h2 id="step-3-test-the-rejection-logic">Step 3: Test the Rejection Logic<a class="headerlink" href="#step-3-test-the-rejection-logic" title="Permanent link">&para;</a></h2>
-<ol>
-<li>If the agent tries to call <code>attempt_completion</code> without first calling <code>save_trajectory</code>, you should <strong>Reject</strong> the completion and remind it: <em>"You forgot to call save_trajectory first as per your instructions."</em></li>
-<li>A successful test means the agent obeys the workflow described in its <code>roleDefinition</code> perfectly.</li>
-</ol>
+<h1 id="hello-world-with-evolve-and-ibm-bob">"Hello World" with Evolve and IBM Bob<a class="headerlink" href="#hello-world-with-evolve-and-ibm-bob" title="Permanent link">&para;</a></h1>
+<p>In this tutorial, we will create a simple scaffolding project using <code>uv</code> and set up IBM Bob with Evolve.</p>
+<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://docs.astral.sh/uv/getting-started/installation/"><code>uv</code> installed</a></li>
+<li>IBM Bob IDE installed.</li>
+</ul>
+<h2 id="step-1-create-a-new-project-using-uv">Step 1: Create a new project using <code>uv</code><a class="headerlink" href="#step-1-create-a-new-project-using-uv" title="Permanent link">&para;</a></h2>
+<p>Create a new project directory and initialize it with <code>uv init</code>.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>mkdir<span class="w"> </span>hello-world
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>hello-world
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>uv<span class="w"> </span>init
+</code></pre></div></p>
+<h2 id="step-2-install-evolve">Step 2: Install Evolve<a class="headerlink" href="#step-2-install-evolve" title="Permanent link">&para;</a></h2>
+<p>Install Evolve by following the <a href="../../../installation/">installation instructions</a>, or run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>bob<span class="w"> </span>--mode<span class="w"> </span>lite
+</code></pre></div></p>
+<h2 id="step-3-project-setup">Step 3: Project Setup<a class="headerlink" href="#step-3-project-setup" title="Permanent link">&para;</a></h2>
+<p>Open the project directory in IBM Bob IDE, and switch Bob's mode to <code>Evolve Lite</code></p>
+<h2 id="step-4-testing-evolve-with-bob">Step 4: Testing Evolve with Bob<a class="headerlink" href="#step-4-testing-evolve-with-bob" title="Permanent link">&para;</a></h2>
+<p>If we test with the following example, at this point Bob doesn't know that this project is managed with <code>uv</code>, so Bob will probably get it wrong. It's entirely possible that Bob will still figure it out, so alternatively come up with something simple that Bob will get wrong.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Set up the python environment for this project
+</code></pre></div></p>
+<h3 id="a-likely-bob-response">A Likely Bob Response<a class="headerlink" href="#a-likely-bob-response" title="Permanent link">&para;</a></h3>
+<p>Bob should run some Evolve Lite skills to attempt to retrieve relevant guidelines from memory, and find nothing because it's a new project.
+Bob will likely attempt to use <code>python</code> or <code>python3</code>'s <code>venv</code> to create a virtual environment.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+</code></pre></div></p>
+<h3 id="recovering-and-remembering">Recovering and Remembering<a class="headerlink" href="#recovering-and-remembering" title="Permanent link">&para;</a></h3>
+<p>We respond,
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>This is incorrect. This project is supposed to be managed by `uv`.
+</code></pre></div>
+At this point, Bob will correct itself and eventually run <code>uv sync</code> and correctly run <code>uv run main.py</code>.
+Bob should then run some Evolve Lite skills to save the learned correction into memory.
+If it does not, the <code>/evolve:learn</code> command can be used to manually run the skill.</p>
+<p>In the future, Bob should remember via Evolve-Lite skills that <code>uv</code> is used for this project and not make the same mistake. This can be tested in this toy project by deleting the <code>.venv</code> directory and the <code>uv.lock</code> file and trying the same utterance again.</p>
 
 
 
@@ -768,7 +1502,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../examples/hello_world/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Hello World">
+          <a href="../../../integrations/evolve-lite/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Evolve Lite">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -778,11 +1512,27 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Hello World
+                Evolve Lite
               </div>
             </div>
           </a>
         
+        
+          
+          <a href="../../../tutorials/claude-code-demo/" class="md-footer__link md-footer__link--next" aria-label="Next: Claude Code Demo">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Claude Code Demo
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
         
       </nav>
     
@@ -814,7 +1564,7 @@
       
       
     
-    <a href="https://github.com/AgentToolkit/kaizen" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+    <a href="https://github.com/AgentToolkit/altk-evolve" target="_blank" rel="noopener" title="github.com" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M202.1 328.7c0 20.9-10.9 55.1-36.7 55.1s-36.7-34.2-36.7-55.1 10.9-55.1 36.7-55.1 36.7 34.2 36.7 55.1M496 278.2c0 31.9-3.2 65.7-17.5 95-37.9 76.6-142.1 74.8-216.7 74.8-75.8 0-186.2 2.7-225.6-74.8-14.6-29-20.2-63.1-20.2-95 0-41.9 13.9-81.5 41.5-113.6-5.2-15.8-7.7-32.4-7.7-48.8 0-21.5 4.9-32.3 14.6-51.8 45.3 0 74.3 9 108.8 36 29-6.9 58.8-10 88.7-10 27 0 54.2 2.9 80.4 9.2 34-26.7 63-35.2 107.8-35.2 9.8 19.5 14.6 30.3 14.6 51.8 0 16.4-2.6 32.7-7.7 48.2 27.5 32.4 39 72.3 39 114.2m-64.3 50.5c0-43.9-26.7-82.6-73.5-82.6-18.9 0-37 3.4-56 6-14.9 2.3-29.8 3.2-45.1 3.2-15.2 0-30.1-.9-45.1-3.2-18.7-2.6-37-6-56-6-46.8 0-73.5 38.7-73.5 82.6 0 87.8 80.4 101.3 150.4 101.3h48.2c70.3 0 150.6-13.4 150.6-101.3m-82.6-55.1c-25.8 0-36.7 34.2-36.7 55.1s10.9 55.1 36.7 55.1 36.7-34.2 36.7-55.1-10.9-55.1-36.7-55.1"/></svg>
     </a>
   
@@ -910,10 +1660,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tabs.link", "content.code.annotate", "content.code.copy", "content.tooltips", "announce.dismiss", "navigation.footer", "navigation.tabs", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["content.tabs.link", "content.code.annotate", "content.code.copy", "content.tooltips", "announce.dismiss", "navigation.footer", "navigation.tabs", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

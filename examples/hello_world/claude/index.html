@@ -10,31 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/installation/">
+        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/examples/hello_world/claude/">
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../../../tutorials/claude-code-demo/">
       
       
-        <link rel="next" href="../guides/configuration/">
+        <link rel="next" href="../../../operations/docker-testing/">
       
       
         
       
       
-      <link rel="icon" href="../assets/logo-32x32.png">
+      <link rel="icon" href="../../../assets/logo-32x32.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Installation - Evolve</title>
+        <title>Starter Example 2 (Claude Code) - Evolve</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -53,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="../stylesheets/extra.css">
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
   
@@ -90,7 +90,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#installation" class="md-skip">
+        <a href="#starter-example-2-with-evolve-and-claude-code" class="md-skip">
           Skip to content
         </a>
       
@@ -104,9 +104,9 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="Evolve" class="md-header__button md-logo" aria-label="Evolve" data-md-component="logo">
+    <a href="../../.." title="Evolve" class="md-header__button md-logo" aria-label="Evolve" data-md-component="logo">
       
-  <img src="../assets/logo-512x512.png" alt="logo">
+  <img src="../../../assets/logo-512x512.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Installation
+              Starter Example 2 (Claude Code)
             
           </span>
         </div>
@@ -244,13 +244,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href=".." class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../.." class="md-tabs__link">
           
   
   
@@ -272,7 +270,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../guides/configuration/" class="md-tabs__link">
+        <a href="../../../guides/configuration/" class="md-tabs__link">
           
   
   
@@ -294,7 +292,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../reference/cli/" class="md-tabs__link">
+        <a href="../../../reference/cli/" class="md-tabs__link">
           
   
   
@@ -316,7 +314,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../integrations/evolve-lite/" class="md-tabs__link">
+        <a href="../../../integrations/evolve-lite/" class="md-tabs__link">
           
   
   
@@ -334,11 +332,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../examples/hello_world/bob/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../bob/" class="md-tabs__link">
           
   
   
@@ -360,7 +360,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../operations/docker-testing/" class="md-tabs__link">
+        <a href="../../../operations/docker-testing/" class="md-tabs__link">
           
   
   
@@ -396,9 +396,9 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Evolve" class="md-nav__button md-logo" aria-label="Evolve" data-md-component="logo">
+    <a href="../../.." title="Evolve" class="md-nav__button md-logo" aria-label="Evolve" data-md-component="logo">
       
-  <img src="../assets/logo-512x512.png" alt="logo">
+  <img src="../../../assets/logo-512x512.png" alt="logo">
 
     </a>
     Evolve
@@ -422,8 +422,6 @@
       
   
   
-    
-  
   
   
     
@@ -439,23 +437,20 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href=".." class="md-nav__link ">
+            <a href="../../.." class="md-nav__link ">
               
   
   
@@ -473,13 +468,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="">
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -496,37 +491,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
         
   
   
@@ -542,87 +510,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#on-maclinux" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        On Mac/Linux
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="On Mac/Linux">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#bob-quick-start" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Bob Quick Start
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#claude-code-plugin-marketplace" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Claude Code Plugin Marketplace
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#download-install-script" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Download Install Script
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#install-script-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install Script Usage
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -704,7 +591,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/configuration/" class="md-nav__link">
+      <a href="../../../guides/configuration/" class="md-nav__link">
         
   
   
@@ -732,7 +619,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/phoenix-sync/" class="md-nav__link">
+      <a href="../../../guides/phoenix-sync/" class="md-nav__link">
         
   
   
@@ -760,7 +647,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/extract-trajectories/" class="md-nav__link">
+      <a href="../../../guides/extract-trajectories/" class="md-nav__link">
         
   
   
@@ -788,7 +675,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/low-code-tracing/" class="md-nav__link">
+      <a href="../../../guides/low-code-tracing/" class="md-nav__link">
         
   
   
@@ -881,7 +768,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/cli/" class="md-nav__link">
+      <a href="../../../reference/cli/" class="md-nav__link">
         
   
   
@@ -909,7 +796,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/policies/" class="md-nav__link">
+      <a href="../../../reference/policies/" class="md-nav__link">
         
   
   
@@ -1000,7 +887,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../integrations/evolve-lite/" class="md-nav__link">
+      <a href="../../../integrations/evolve-lite/" class="md-nav__link">
         
   
   
@@ -1032,8 +919,10 @@
       
   
   
+    
   
   
+  
     
     
       
@@ -1047,19 +936,22 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
             
   
   
@@ -1077,7 +969,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1095,7 +987,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/hello_world/bob/" class="md-nav__link">
+      <a href="../bob/" class="md-nav__link">
         
   
   
@@ -1123,7 +1015,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/claude-code-demo/" class="md-nav__link">
+      <a href="../../../tutorials/claude-code-demo/" class="md-nav__link">
         
   
   
@@ -1148,10 +1040,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../examples/hello_world/claude/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Starter Example 2 (Claude Code)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1167,6 +1086,115 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-run-claude-in-a-docker-container" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Run Claude in a docker container
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-install-evolve" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Install Evolve
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-running-in-claude-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Running in Claude Code
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Running in Claude Code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-likely-claude-response" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Likely Claude Response
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-try-again" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Try Again
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4: Try Again">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-likely-claude-response_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Likely Claude Response
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1242,7 +1270,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operations/docker-testing/" class="md-nav__link">
+      <a href="../../../operations/docker-testing/" class="md-nav__link">
         
   
   
@@ -1297,55 +1325,83 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#on-maclinux" class="md-nav__link">
+  <a href="#requirements" class="md-nav__link">
     <span class="md-ellipsis">
       
-        On Mac/Linux
+        Requirements
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="On Mac/Linux">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-run-claude-in-a-docker-container" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Run Claude in a docker container
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-install-evolve" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Install Evolve
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-running-in-claude-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Running in Claude Code
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Running in Claude Code">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#bob-quick-start" class="md-nav__link">
+  <a href="#a-likely-claude-response" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Bob Quick Start
+        A Likely Claude Response
       
     </span>
   </a>
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#claude-code-plugin-marketplace" class="md-nav__link">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-try-again" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Claude Code Plugin Marketplace
+        Step 4: Try Again
       
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Step 4: Try Again">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#download-install-script" class="md-nav__link">
+  <a href="#a-likely-claude-response_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Download Install Script
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#install-script-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install Script Usage
+        A Likely Claude Response
       
     </span>
   </a>
@@ -1383,70 +1439,55 @@
   
 
 
-<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<h2 id="on-maclinux">On Mac/Linux<a class="headerlink" href="#on-maclinux" title="Permanent link">&para;</a></h2>
-<h3 id="bob-quick-start">Bob Quick Start<a class="headerlink" href="#bob-quick-start" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>bob<span class="w"> </span>--mode<span class="w"> </span>lite
+<h1 id="starter-example-2-with-evolve-and-claude-code">Starter Example 2 with Evolve and Claude Code<a class="headerlink" href="#starter-example-2-with-evolve-and-claude-code" title="Permanent link">&para;</a></h1>
+<p>Agentic IDEs like Claude Code often repeat the same mistakes over and over again because they start from fresh every time. Using Evolve, we can alleviate this problem.
+In this tutorial, we will use Evolve and Claude Code to create a Python script to automate a simple task. Using Evolve, we will then instruct Claude Code that it should use this script in the future for similar tasks.</p>
+<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://docs.astral.sh/uv/getting-started/installation/"><code>uv</code> installed</a></li>
+<li><a href="https://claude.com/product/claude-code">Claude Code</a> installed.</li>
+<li><a href="https://docs.docker.com/get-docker/">Docker</a> installed.</li>
+</ul>
+<h2 id="step-1-run-claude-in-a-docker-container">Step 1: Run Claude in a docker container<a class="headerlink" href="#step-1-run-claude-in-a-docker-container" title="Permanent link">&para;</a></h2>
+<p>The following command downloads the official devcontainer which is capable of running Claude Code. This is for consistency purposes so that the demo works. You can skip this step, but the demo may not work as intended.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Copy only the .devcontainer directory from the official Claude Code repository</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>--filter<span class="o">=</span>blob:none<span class="w"> </span>--sparse<span class="w"> </span>https://github.com/anthropics/claude-code.git
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">cd</span><span class="w"> </span>claude-code
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>git<span class="w"> </span>sparse-checkout<span class="w"> </span><span class="nb">set</span><span class="w"> </span>.devcontainer
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Build and run</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>my-claude<span class="w"> </span>.devcontainer/
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>my-claude<span class="w"> </span>bash
+</code></pre></div></p>
+<h2 id="step-2-install-evolve">Step 2: Install Evolve<a class="headerlink" href="#step-2-install-evolve" title="Permanent link">&para;</a></h2>
+<p>Install Evolve by following the <a href="../../installation">installation instructions</a></p>
+<h2 id="step-3-running-in-claude-code">Step 3: Running in Claude Code<a class="headerlink" href="#step-3-running-in-claude-code" title="Permanent link">&para;</a></h2>
+<p>In a terminal, run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>claude
 </code></pre></div>
-<h3 id="claude-code-plugin-marketplace">Claude Code Plugin Marketplace<a class="headerlink" href="#claude-code-plugin-marketplace" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>claude<span class="w"> </span>plugin<span class="w"> </span>marketplace<span class="w"> </span>add<span class="w"> </span>AgentToolkit/altk-evolve
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>claude<span class="w"> </span>plugin<span class="w"> </span>install<span class="w"> </span>evolve-lite
+Ask Claude to download the following image:</p>
+<p><img alt="A sample image that should be downloaded" src="../../../assets/sample.jpg" />
+And then ask:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>where was the photo @sample.jpg taken? use exif metadata.
 </code></pre></div>
-<h3 id="download-install-script">Download Install Script<a class="headerlink" href="#download-install-script" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Latest (based on main)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span>-o<span class="w"> </span>install.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>install.sh
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Latest Stable Version</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/platform-integrations/install.sh<span class="w"> </span>-o<span class="w"> </span>install.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>install.sh
+It will ask for permission to use some tools, which should be accepted.</p>
+<p>Have it produce a summary:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>summarize what steps you took, including tool calls, failed attempts, and reasoning guidelines.
+</code></pre></div></p>
+<h3 id="a-likely-claude-response">A Likely Claude Response<a class="headerlink" href="#a-likely-claude-response" title="Permanent link">&para;</a></h3>
+<p>Claude probably attempted to use a system utility like <code>exiftool</code>, but because we intentionally ran it in a docker container, that utility wasn't available, so Claude created a script to read the exif data instead.</p>
+<p>We can learn from this by running a command:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>/evolve-lite:learn
 </code></pre></div>
-<h3 id="install-script-usage">Install Script Usage<a class="headerlink" href="#install-script-usage" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./install.sh<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span><span class="o">{</span>bob,claude,codex,all<span class="o">}</span><span class="w"> </span>--mode<span class="w"> </span><span class="o">{</span>lite,full<span class="o">}</span><span class="w"> </span><span class="o">[</span>--dry-run<span class="o">]</span>
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Platform</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>all</code></td>
-<td>Install all platforms</td>
-</tr>
-<tr>
-<td><code>bob</code></td>
-<td>IBM Bob</td>
-</tr>
-<tr>
-<td><code>claude</code></td>
-<td>Claude Code</td>
-</tr>
-<tr>
-<td><code>codex</code></td>
-<td>Codex</td>
-</tr>
-</tbody>
-</table>
-<table>
-<thead>
-<tr>
-<th>Mode</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>lite</code></td>
-<td>Install only the core components. Some platforms only support lite.</td>
-</tr>
-<tr>
-<td><code>full</code></td>
-<td>Install all components including UI and CLI</td>
-</tr>
-</tbody>
-</table>
-<p>Use <code>--dry-run</code> to see what would be installed without making changes.</p>
+which will produce new guidelines from this experience.</p>
+<h2 id="step-4-try-again">Step 4: Try Again<a class="headerlink" href="#step-4-try-again" title="Permanent link">&para;</a></h2>
+<p>Reset the conversation history using
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>/clear
+</code></pre></div></p>
+<p>Ask a similar question:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>what focal length was used to take the photo @sample.jpg? use exif metadata
+</code></pre></div></p>
+<h3 id="a-likely-claude-response_1">A Likely Claude Response<a class="headerlink" href="#a-likely-claude-response_1" title="Permanent link">&para;</a></h3>
+<p>This time, Claude learns from the guidelines produced by Evolve to use the generated script directly saving time.</p>
 
 
 
@@ -1486,7 +1527,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href=".." class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+          <a href="../../../tutorials/claude-code-demo/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Claude Code Demo">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1496,20 +1537,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Overview
+                Claude Code Demo
               </div>
             </div>
           </a>
         
         
           
-          <a href="../guides/configuration/" class="md-footer__link md-footer__link--next" aria-label="Next: Configuration">
+          <a href="../../../operations/docker-testing/" class="md-footer__link md-footer__link--next" aria-label="Next: Docker Testing">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Configuration
+                Docker Testing
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1644,10 +1685,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.tabs.link", "content.code.annotate", "content.code.copy", "content.tooltips", "announce.dismiss", "navigation.footer", "navigation.tabs", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["content.tabs.link", "content.code.annotate", "content.code.copy", "content.tooltips", "announce.dismiss", "navigation.footer", "navigation.tabs", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

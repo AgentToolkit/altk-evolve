@@ -10,31 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/installation/">
+        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/reference/policies/">
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../cli/">
       
       
-        <link rel="next" href="../guides/configuration/">
+        <link rel="next" href="../../integrations/evolve-lite/">
       
       
         
       
       
-      <link rel="icon" href="../assets/logo-32x32.png">
+      <link rel="icon" href="../../assets/logo-32x32.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Installation - Evolve</title>
+        <title>Policies - Evolve</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -53,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="../stylesheets/extra.css">
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
   
@@ -90,7 +90,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#installation" class="md-skip">
+        <a href="#policy-support-in-evolve" class="md-skip">
           Skip to content
         </a>
       
@@ -104,9 +104,9 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="Evolve" class="md-header__button md-logo" aria-label="Evolve" data-md-component="logo">
+    <a href="../.." title="Evolve" class="md-header__button md-logo" aria-label="Evolve" data-md-component="logo">
       
-  <img src="../assets/logo-512x512.png" alt="logo">
+  <img src="../../assets/logo-512x512.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Installation
+              Policies
             
           </span>
         </div>
@@ -244,13 +244,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href=".." class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
           
   
   
@@ -272,7 +270,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../guides/configuration/" class="md-tabs__link">
+        <a href="../../guides/configuration/" class="md-tabs__link">
           
   
   
@@ -290,11 +288,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../reference/cli/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../cli/" class="md-tabs__link">
           
   
   
@@ -316,7 +316,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../integrations/evolve-lite/" class="md-tabs__link">
+        <a href="../../integrations/evolve-lite/" class="md-tabs__link">
           
   
   
@@ -338,7 +338,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../examples/hello_world/bob/" class="md-tabs__link">
+        <a href="../../examples/hello_world/bob/" class="md-tabs__link">
           
   
   
@@ -360,7 +360,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../operations/docker-testing/" class="md-tabs__link">
+        <a href="../../operations/docker-testing/" class="md-tabs__link">
           
   
   
@@ -396,9 +396,9 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Evolve" class="md-nav__button md-logo" aria-label="Evolve" data-md-component="logo">
+    <a href="../.." title="Evolve" class="md-nav__button md-logo" aria-label="Evolve" data-md-component="logo">
       
-  <img src="../assets/logo-512x512.png" alt="logo">
+  <img src="../../assets/logo-512x512.png" alt="logo">
 
     </a>
     Evolve
@@ -422,8 +422,6 @@
       
   
   
-    
-  
   
   
     
@@ -439,23 +437,20 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href=".." class="md-nav__link ">
+            <a href="../.." class="md-nav__link ">
               
   
   
@@ -473,13 +468,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="">
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -496,37 +491,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
         
   
   
@@ -542,87 +510,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#on-maclinux" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        On Mac/Linux
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="On Mac/Linux">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#bob-quick-start" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Bob Quick Start
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#claude-code-plugin-marketplace" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Claude Code Plugin Marketplace
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#download-install-script" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Download Install Script
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#install-script-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install Script Usage
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -704,7 +591,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/configuration/" class="md-nav__link">
+      <a href="../../guides/configuration/" class="md-nav__link">
         
   
   
@@ -732,7 +619,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/phoenix-sync/" class="md-nav__link">
+      <a href="../../guides/phoenix-sync/" class="md-nav__link">
         
   
   
@@ -760,7 +647,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/extract-trajectories/" class="md-nav__link">
+      <a href="../../guides/extract-trajectories/" class="md-nav__link">
         
   
   
@@ -788,7 +675,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/low-code-tracing/" class="md-nav__link">
+      <a href="../../guides/low-code-tracing/" class="md-nav__link">
         
   
   
@@ -820,8 +707,10 @@
       
   
   
+    
   
   
+  
     
     
       
@@ -833,19 +722,22 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
             
   
   
@@ -863,7 +755,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -881,7 +773,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/cli/" class="md-nav__link">
+      <a href="../cli/" class="md-nav__link">
         
   
   
@@ -906,10 +798,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../reference/policies/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Policies
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -925,6 +844,115 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#policy-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Schema
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Policy Schema">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#policy-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trigger-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trigger Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-mcp-tools-for-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using MCP Tools for Policies
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using MCP Tools for Policies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-creating-a-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Creating a Policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-retrieving-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Retrieving Policies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-backward-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Backward Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1000,7 +1028,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../integrations/evolve-lite/" class="md-nav__link">
+      <a href="../../integrations/evolve-lite/" class="md-nav__link">
         
   
   
@@ -1095,7 +1123,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/hello_world/bob/" class="md-nav__link">
+      <a href="../../examples/hello_world/bob/" class="md-nav__link">
         
   
   
@@ -1123,7 +1151,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/claude-code-demo/" class="md-nav__link">
+      <a href="../../tutorials/claude-code-demo/" class="md-nav__link">
         
   
   
@@ -1151,7 +1179,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/hello_world/claude/" class="md-nav__link">
+      <a href="../../examples/hello_world/claude/" class="md-nav__link">
         
   
   
@@ -1242,7 +1270,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operations/docker-testing/" class="md-nav__link">
+      <a href="../../operations/docker-testing/" class="md-nav__link">
         
   
   
@@ -1297,22 +1325,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#on-maclinux" class="md-nav__link">
+  <a href="#policy-schema" class="md-nav__link">
     <span class="md-ellipsis">
       
-        On Mac/Linux
+        Policy Schema
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="On Mac/Linux">
+    <nav class="md-nav" aria-label="Policy Schema">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#bob-quick-start" class="md-nav__link">
+  <a href="#policy-types" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Bob Quick Start
+        Policy Types
       
     </span>
   </a>
@@ -1320,10 +1348,38 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#claude-code-plugin-marketplace" class="md-nav__link">
+  <a href="#trigger-types" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Claude Code Plugin Marketplace
+        Trigger Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-mcp-tools-for-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using MCP Tools for Policies
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using MCP Tools for Policies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-creating-a-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Creating a Policy
       
     </span>
   </a>
@@ -1331,10 +1387,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#download-install-script" class="md-nav__link">
+  <a href="#2-retrieving-policies" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Download Install Script
+        2. Retrieving Policies
       
     </span>
   </a>
@@ -1342,10 +1398,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#install-script-usage" class="md-nav__link">
+  <a href="#3-backward-compatibility" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install Script Usage
+        3. Backward Compatibility
       
     </span>
   </a>
@@ -1383,70 +1439,50 @@
   
 
 
-<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<h2 id="on-maclinux">On Mac/Linux<a class="headerlink" href="#on-maclinux" title="Permanent link">&para;</a></h2>
-<h3 id="bob-quick-start">Bob Quick Start<a class="headerlink" href="#bob-quick-start" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>bob<span class="w"> </span>--mode<span class="w"> </span>lite
+<h1 id="policy-support-in-evolve">Policy Support in Evolve<a class="headerlink" href="#policy-support-in-evolve" title="Permanent link">&para;</a></h1>
+<p>Evolve supports storing and managing structured <strong>policies</strong> as entities. This allows agents to retrieve behavioral rules, playbooks, and guards using semantic search.</p>
+<h2 id="policy-schema">Policy Schema<a class="headerlink" href="#policy-schema" title="Permanent link">&para;</a></h2>
+<p>Policies are stored as Evolve entities with <code>type="policy"</code>. The core schema is defined in <code>altk_evolve/schema/policy.py</code>.</p>
+<h3 id="policy-types">Policy Types<a class="headerlink" href="#policy-types" title="Permanent link">&para;</a></h3>
+<p>Evolve supports the following CUGA-compatible policy types:
+- <code>intent_guard</code>: Blocks forbidden intents and returns specific responses.
+- <code>playbook</code>: Provides step-by-step Standard Operating Procedures (SOPs).
+- <code>tool_guide</code>: Enriches tool descriptions with additional context.
+- <code>tool_approval</code>: Requires human confirmation before executing sensitive tools.
+- <code>output_formatter</code>: Reformats agent responses.</p>
+<h3 id="trigger-types">Trigger Types<a class="headerlink" href="#trigger-types" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>keyword</code>: Matches specific words or phrases.</li>
+<li><code>natural_language</code>: Matches semantic meaning using vector similarity.</li>
+<li><code>always</code>: Applies to every input/response (e.g., for global output formatters).</li>
+</ul>
+<h2 id="using-mcp-tools-for-policies">Using MCP Tools for Policies<a class="headerlink" href="#using-mcp-tools-for-policies" title="Permanent link">&para;</a></h2>
+<p>The Evolve MCP server provides several tools to manage and retrieve policies.</p>
+<h3 id="1-creating-a-policy">1. Creating a Policy<a class="headerlink" href="#1-creating-a-policy" title="Permanent link">&para;</a></h3>
+<p>Use <code>create_entity</code> with <code>entity_type="policy"</code>. The <code>content</code> should be the serialized JSON representation of the Policy model.</p>
+<p><strong>Example:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Infrastructure Protection&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;intent_guard&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Prevents unauthorized deletion of core infrastructure.&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">&quot;triggers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;natural_language&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">      </span><span class="nt">&quot;value&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;delete the database&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;wipe out the core system&quot;</span><span class="p">],</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">      </span><span class="nt">&quot;target&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;intent&quot;</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="p">],</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Access Denied: You are not authorized to perform infrastructure deletion.&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="p">}</span>
+</code></pre></div></p>
+<h3 id="2-retrieving-policies">2. Retrieving Policies<a class="headerlink" href="#2-retrieving-policies" title="Permanent link">&para;</a></h3>
+<p>Use <code>get_entities</code> with <code>entity_type="policy"</code> to fetch relevant policies for a given task.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Example call</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>get_entities<span class="o">(</span><span class="nv">task</span><span class="o">=</span><span class="s2">&quot;I need to clear the production database&quot;</span>,<span class="w"> </span><span class="nv">entity_type</span><span class="o">=</span><span class="s2">&quot;policy&quot;</span><span class="o">)</span>
 </code></pre></div>
-<h3 id="claude-code-plugin-marketplace">Claude Code Plugin Marketplace<a class="headerlink" href="#claude-code-plugin-marketplace" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>claude<span class="w"> </span>plugin<span class="w"> </span>marketplace<span class="w"> </span>add<span class="w"> </span>AgentToolkit/altk-evolve
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>claude<span class="w"> </span>plugin<span class="w"> </span>install<span class="w"> </span>evolve-lite
-</code></pre></div>
-<h3 id="download-install-script">Download Install Script<a class="headerlink" href="#download-install-script" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Latest (based on main)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span>-o<span class="w"> </span>install.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>install.sh
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Latest Stable Version</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/platform-integrations/install.sh<span class="w"> </span>-o<span class="w"> </span>install.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>install.sh
-</code></pre></div>
-<h3 id="install-script-usage">Install Script Usage<a class="headerlink" href="#install-script-usage" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./install.sh<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span><span class="o">{</span>bob,claude,codex,all<span class="o">}</span><span class="w"> </span>--mode<span class="w"> </span><span class="o">{</span>lite,full<span class="o">}</span><span class="w"> </span><span class="o">[</span>--dry-run<span class="o">]</span>
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Platform</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>all</code></td>
-<td>Install all platforms</td>
-</tr>
-<tr>
-<td><code>bob</code></td>
-<td>IBM Bob</td>
-</tr>
-<tr>
-<td><code>claude</code></td>
-<td>Claude Code</td>
-</tr>
-<tr>
-<td><code>codex</code></td>
-<td>Codex</td>
-</tr>
-</tbody>
-</table>
-<table>
-<thead>
-<tr>
-<th>Mode</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>lite</code></td>
-<td>Install only the core components. Some platforms only support lite.</td>
-</tr>
-<tr>
-<td><code>full</code></td>
-<td>Install all components including UI and CLI</td>
-</tr>
-</tbody>
-</table>
-<p>Use <code>--dry-run</code> to see what would be installed without making changes.</p>
+<h3 id="3-backward-compatibility">3. Backward Compatibility<a class="headerlink" href="#3-backward-compatibility" title="Permanent link">&para;</a></h3>
+<p>The <code>get_guidelines</code> tool is maintained for backward compatibility and specifically targets entities of type <code>guideline</code>. For policies, use the generic <code>get_entities</code> tool.</p>
 
 
 
@@ -1486,7 +1522,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href=".." class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+          <a href="../cli/" class="md-footer__link md-footer__link--prev" aria-label="Previous: CLI">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1496,20 +1532,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Overview
+                CLI
               </div>
             </div>
           </a>
         
         
           
-          <a href="../guides/configuration/" class="md-footer__link md-footer__link--next" aria-label="Next: Configuration">
+          <a href="../../integrations/evolve-lite/" class="md-footer__link md-footer__link--next" aria-label="Next: Evolve Lite">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Configuration
+                Evolve Lite
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1644,10 +1680,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.tabs.link", "content.code.annotate", "content.code.copy", "content.tooltips", "announce.dismiss", "navigation.footer", "navigation.tabs", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tabs.link", "content.code.annotate", "content.code.copy", "content.tooltips", "announce.dismiss", "navigation.footer", "navigation.tabs", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
