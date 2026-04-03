@@ -158,7 +158,7 @@ Then, add one import at the top of your agent to trigger the patching:
 
 ```python
 try:
-    import evolve.auto # noqa: F401
+    import altk_evolve.auto # noqa: F401
 except ImportError:
     pass
 

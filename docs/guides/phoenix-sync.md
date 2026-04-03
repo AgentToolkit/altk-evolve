@@ -66,7 +66,7 @@ uv run evolve sync phoenix \
 ### Python API
 
 ```python
-from evolve.sync.phoenix_sync import PhoenixSync
+from altk_evolve.sync.phoenix_sync import PhoenixSync
 
 # Initialize syncer
 syncer = PhoenixSync(

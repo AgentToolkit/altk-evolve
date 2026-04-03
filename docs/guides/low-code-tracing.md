@@ -7,7 +7,7 @@
 ```mermaid
 flowchart TB
     subgraph Agent["Your Agent"]
-        A1["import evolve.auto"]
+        A1["import altk_evolve.auto"]
         A2["LLM Calls (OpenAI, LiteLLM, etc.)"]
     end
     
@@ -49,7 +49,7 @@ Add one import at the top of your agent:
 
 ```python
 try:
-    import evolve.auto # noqa: F401
+    import altk_evolve.auto # noqa: F401
 except ImportError:
     pass
 
@@ -77,7 +77,7 @@ Use this when you are tracing **raw API calls** directly using the `openai` libr
 
 ```python
 try:
-    import evolve.auto # noqa: F401
+    import altk_evolve.auto # noqa: F401
 except ImportError:
     pass
 
@@ -99,7 +99,7 @@ Use this when using **LiteLLM** to abstract across multiple providers. Evolve tr
 
 ```python
 try:
-    import evolve.auto # noqa: F401
+    import altk_evolve.auto # noqa: F401
 except ImportError:
     pass
 
@@ -128,7 +128,7 @@ Use this for **agentic workflows** built with HuggingFace's `smolagents`. Evolve
 
 ```python
 try:
-    import evolve.auto # noqa: F401
+    import altk_evolve.auto # noqa: F401
 except ImportError:
     pass
 
@@ -150,7 +150,7 @@ Use this for the **OpenAI Agents framework** (`agents`). Evolve traces the high-
 
 ```python
 try:
-    import evolve.auto # noqa: F401
+    import altk_evolve.auto # noqa: F401
 except ImportError:
     pass
 

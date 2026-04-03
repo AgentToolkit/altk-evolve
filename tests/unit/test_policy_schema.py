@@ -1,6 +1,6 @@
 import json
 import pytest
-from evolve.schema.policy import Policy, PolicyType, PolicyTrigger, TriggerType
+from altk_evolve.schema.policy import Policy, PolicyType, PolicyTrigger, TriggerType
 
 pytestmark = pytest.mark.unit
 

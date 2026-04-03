@@ -12,8 +12,8 @@ from typing import TypedDict
 
 import pytest
 
-from evolve.llm.conflict_resolution.conflict_resolution import resolve_conflicts
-from evolve.schema.core import RecordedEntity
+from altk_evolve.llm.conflict_resolution.conflict_resolution import resolve_conflicts
+from altk_evolve.schema.core import RecordedEntity
 
 # ---------------------------------------------------------------------------
 # Helpers

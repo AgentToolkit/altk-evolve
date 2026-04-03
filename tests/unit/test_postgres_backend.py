@@ -7,13 +7,12 @@ import datetime
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 
-from evolve.backend.postgres import PostgresEntityBackend
-from evolve.config.postgres import PostgresDBSettings
-from evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
+from altk_evolve.backend.postgres import PostgresEntityBackend
+from altk_evolve.config.postgres import PostgresDBSettings
+from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.schema.exceptions import NamespaceNotFoundException, EvolveException
 from psycopg import sql
-from evolve.schema.core import Entity, Namespace, RecordedEntity
-from evolve.schema.conflict_resolution import EntityUpdate
-
 
 @pytest.fixture(scope="module")
 def postgres_backend() -> PostgresEntityBackend:

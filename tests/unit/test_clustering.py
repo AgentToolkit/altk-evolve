@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from evolve.llm.tips.clustering import _union_find, cluster_entities
-from evolve.schema.core import RecordedEntity
+from altk_evolve.llm.tips.clustering import _union_find, cluster_entities
+from altk_evolve.schema.core import RecordedEntity
 
 
 def _make_entity(entity_id: str, task_description: str | None = None) -> RecordedEntity:

@@ -84,8 +84,9 @@ nav:
   - Integrations:
     - Evolve Lite: integrations/evolve-lite.md
   - Tutorials:
+    - Hello World (IBM Bob IDE): examples/hello_world/bob.md
     - Claude Code Demo: tutorials/claude-code-demo.md
-    - Hello World: examples/hello_world/index.md
+    - Starter Example 2 (Claude Code): examples/hello_world/claude.md
   - Operations:
     - Docker Testing: operations/docker-testing.md
 

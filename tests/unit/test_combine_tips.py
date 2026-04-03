@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from evolve.llm.tips.clustering import combine_cluster
-from evolve.schema.core import RecordedEntity
-from evolve.schema.exceptions import EvolveException
-from evolve.schema.tips import Tip, ConsolidationResult
+from altk_evolve.llm.tips.clustering import combine_cluster
+from altk_evolve.schema.core import RecordedEntity
+from altk_evolve.schema.exceptions import EvolveException
+from altk_evolve.schema.tips import Tip, ConsolidationResult
 
 
 def _make_entity(entity_id: str, content: str, task_description: str = "do a task") -> RecordedEntity:
@@ -144,7 +144,7 @@ class TestConsolidateTips:
         mock_backend = MagicMock()
         mock_backend.search_entities.return_value = entities_cluster
 
-        from evolve.frontend.client.evolve_client import EvolveClient
+        from altk_evolve.frontend.client.evolve_client import EvolveClient
 
         client = EvolveClient.__new__(EvolveClient)
         client.backend = mock_backend
@@ -193,7 +193,7 @@ class TestConsolidateTips:
 
         mock_backend = MagicMock()
 
-        from evolve.frontend.client.evolve_client import EvolveClient
+        from altk_evolve.frontend.client.evolve_client import EvolveClient
 
         client = EvolveClient.__new__(EvolveClient)
         client.backend = mock_backend

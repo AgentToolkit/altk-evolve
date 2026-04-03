@@ -5,11 +5,11 @@ Simple tests for EvolveClient wrapper interface.
 import datetime
 import pytest
 
-from evolve.backend.base import BaseEntityBackend
-from evolve.schema.core import Entity, Namespace, RecordedEntity
-from evolve.schema.conflict_resolution import EntityUpdate
-from evolve.schema.exceptions import NamespaceNotFoundException, NamespaceAlreadyExistsException
-from evolve.frontend.client.evolve_client import EvolveClient
+from altk_evolve.backend.base import BaseEntityBackend
+from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.schema.exceptions import NamespaceNotFoundException, NamespaceAlreadyExistsException
+from altk_evolve.frontend.client.evolve_client import EvolveClient
 
 
 from evolve.config.evolve import EvolveConfig

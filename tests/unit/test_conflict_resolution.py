@@ -6,12 +6,12 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from evolve.llm.conflict_resolution.conflict_resolution import (
+from altk_evolve.llm.conflict_resolution.conflict_resolution import (
     resolve_conflicts,
     get_update_entities_messages,
 )
-from evolve.schema.conflict_resolution import SimpleEntity
-from evolve.schema.core import RecordedEntity
+from altk_evolve.schema.conflict_resolution import SimpleEntity
+from altk_evolve.schema.core import RecordedEntity
 
 
 # =============================================================================

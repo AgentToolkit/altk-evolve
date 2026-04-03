@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch, Mock
 
 import pytest
 
-from evolve.sync.phoenix_sync import PhoenixSync, SyncResult
-from evolve.schema.tips import TipGenerationResult
+from altk_evolve.sync.phoenix_sync import PhoenixSync, SyncResult
+from altk_evolve.schema.tips import TipGenerationResult
 
 # Mark all tests in this module as unit tests
 pytestmark = pytest.mark.unit
@@ -408,7 +408,7 @@ class TestSync:
     @patch("evolve.sync.phoenix_sync.generate_tips")
     def test_sync_creates_namespace_if_not_exists(self, mock_generate_tips, mock_urlopen, phoenix_sync):
         """Test that sync creates namespace if it doesn't exist."""
-        from evolve.schema.exceptions import NamespaceNotFoundException
+        from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
         phoenix_sync.client.get_namespace_details.side_effect = NamespaceNotFoundException()
         mock_response = MagicMock()
@@ -697,7 +697,7 @@ class TestEnsureNamespace:
 
     def test_ensure_namespace_creates_if_missing(self, phoenix_sync):
         """Test that missing namespace is created."""
-        from evolve.schema.exceptions import NamespaceNotFoundException
+        from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
         phoenix_sync.client.get_namespace_details.side_effect = NamespaceNotFoundException()
 
@@ -740,7 +740,7 @@ class TestGetProcessedSpanIds:
 
     def test_get_processed_span_ids_namespace_not_found(self, phoenix_sync):
         """Test that missing namespace returns empty set."""
-        from evolve.schema.exceptions import NamespaceNotFoundException
+        from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
         phoenix_sync.client.search_entities.side_effect = NamespaceNotFoundException()
 

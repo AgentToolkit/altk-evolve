@@ -7,10 +7,10 @@ import datetime
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 
-from evolve.backend.milvus import MilvusEntityBackend, parse_milvus_entity
-from evolve.schema.core import Entity, Namespace, RecordedEntity
-from evolve.schema.conflict_resolution import EntityUpdate
-from evolve.schema.exceptions import NamespaceNotFoundException, EvolveException
+from altk_evolve.backend.milvus import MilvusEntityBackend, parse_milvus_entity
+from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.schema.exceptions import NamespaceNotFoundException, EvolveException
 
 
 @pytest.fixture(scope="module")

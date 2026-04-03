@@ -92,10 +92,10 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: 'evolve/frontend/ui/package-lock.json'
+          cache-dependency-path: 'altk_evolve/frontend/ui/package-lock.json'
       - name: Install dependencies
-        working-directory: evolve/frontend/ui
+        working-directory: altk_evolve/frontend/ui
         run: npm install
       - name: Run UI Unit Tests
-        working-directory: evolve/frontend/ui
+        working-directory: altk_evolve/frontend/ui
         run: npm run test -- --run

@@ -1003,7 +1003,7 @@ wheels = [
 ]
 
 [[package]]
-name = "evolve"
+name = "altk-evolve"
 version = "1.0.5"
 source = { editable = "." }
 dependencies = [
@@ -1076,7 +1076,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "arize-phoenix", specifier = ">=12.30.0" },
-    { name = "evolve", extras = ["tracing"], marker = "extra == 'examples'" },
+    { name = "altk-evolve", extras = ["tracing"], marker = "extra == 'examples'" },
     { name = "fastmcp" },
     { name = "jinja2" },
     { name = "litellm" },

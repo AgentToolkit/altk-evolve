@@ -4,7 +4,7 @@ Evolve supports storing and managing structured **policies** as entities. This a
 
 ## Policy Schema
 
-Policies are stored as Evolve entities with `type="policy"`. The core schema is defined in `evolve/schema/policy.py`.
+Policies are stored as Evolve entities with `type="policy"`. The core schema is defined in `altk_evolve/schema/policy.py`.
 
 ### Policy Types
 Evolve supports the following CUGA-compatible policy types:

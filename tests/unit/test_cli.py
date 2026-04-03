@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from evolve.cli.cli import app
-from evolve.schema.core import Namespace, RecordedEntity
-from evolve.schema.conflict_resolution import EntityUpdate
-from evolve.schema.exceptions import (
+from altk_evolve.cli.cli import app
+from altk_evolve.schema.core import Namespace, RecordedEntity
+from altk_evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.schema.exceptions import (
     NamespaceAlreadyExistsException,
     NamespaceNotFoundException,
     EvolveException,
