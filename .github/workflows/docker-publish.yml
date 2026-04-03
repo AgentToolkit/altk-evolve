@@ -34,7 +34,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/evolve
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/altk-evolve
           flavor: |
             suffix=-${{ matrix.image-suffix }},onlatest=true
           tags: |
@@ -60,5 +60,5 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ secrets.DOCKERHUB_USERNAME }}/evolve
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/altk-evolve
           readme-filepath: ./README.md
