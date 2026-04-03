@@ -80,6 +80,8 @@ def main():
         log("No entities found")
         return
 
+    log(f"Loaded {len(entities)} entities")
+
     output = format_entities(entities)
     print(output)
     log(f"Output {len(output)} chars to stdout")

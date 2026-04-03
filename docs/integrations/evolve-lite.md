@@ -31,7 +31,7 @@ claude plugin list
 
 Evolve Lite has two halves:
 
-1. **Learn** — You invoke `/evolve:learn` at the end of a conversation. The plugin analyzes what happened, produces an entity JSON payload, and saves each entity as a Markdown file under `.evolve/entities/`.
+1. **Learn** — You invoke `/evolve-lite:learn` at the end of a conversation. The plugin analyzes what happened, produces an entity JSON payload, and saves each entity as a Markdown file under `.evolve/entities/`.
 
 2. **Recall** — On every subsequent prompt, a `UserPromptSubmit` hook automatically loads stored entities and injects them into the conversation context. Claude applies whichever entities are relevant to the current task.
 
@@ -63,7 +63,7 @@ You: For cities in Canada use km only.
 
 Claude: Got it — I'll use kilometres only for Canadian cities.
 
-You: /evolve:learn
+You: /evolve-lite:learn
 
 Claude: I've extracted the following entities from this conversation:
 
@@ -162,10 +162,10 @@ Claude: I'll extract the GPS coordinates from the photo's EXIF metadata.
         Google Maps: https://www.google.com/maps?q=51.493608,0.037561
 ```
 
-The agent got the right answer, but wasted two turns on dead ends (exiftool not found, Pillow not installed). Now the user runs `/evolve:learn`:
+The agent got the right answer, but wasted two turns on dead ends (exiftool not found, Pillow not installed). Now the user runs `/evolve-lite:learn`:
 
 ```text
-You: /evolve:learn
+You: /evolve-lite:learn
 
 Claude: I've extracted the following entities from this conversation:
 
@@ -226,8 +226,8 @@ The agent skipped both `exiftool` and `Pillow` entirely — it went straight to 
 
 | Skill | Description |
 |-------|-------------|
-| `/evolve:learn` | Extract entities from the current conversation and save them |
-| `/evolve:recall` | Manually retrieve and display stored entities |
+| `/evolve-lite:learn` | Extract entities from the current conversation and save them |
+| `/evolve-lite:recall` | Manually retrieve and display stored entities |
 | `/evolve:save` | Capture a successful workflow as a reusable skill |
 
 ## Entities Storage
@@ -278,7 +278,7 @@ But it has a number of limitations:
 | Entity storage | Markdown files in `.evolve/entities/` | Milvus vector store |
 | Retrieval | All entities injected via hooks | Semantic search via MCP |
 | Conflict resolution | Append-only | LLM-based merging + garbage collection |
-| Trajectory analysis | Current session only (`/evolve:learn`) | Multi-session, automatic via MCP |
+| Trajectory analysis | Current session only (`/evolve-lite:learn`) | Multi-session, automatic via MCP |
 | Context efficiency | Consumes main agent context | Processes separately via MCP |
 | Observability | Not required | Ingests from agent logs / trace events |
 | Infrastructure | None | MCP server + vector DB + API key |

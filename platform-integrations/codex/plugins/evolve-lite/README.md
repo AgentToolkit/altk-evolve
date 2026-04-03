@@ -5,8 +5,8 @@ Evolve Lite for Codex provides lightweight file-backed learning and recall witho
 ## Features
 
 - Automatic recall through a repo-level Codex `UserPromptSubmit` hook when Codex hooks are enabled
-- Manual `learn` skill to save reusable entities into `.evolve/entities/`
-- Manual `recall` skill to inspect everything stored for the current repo
+- Manual `evolve-lite:learn` skill to save reusable entities into `.evolve/entities/`
+- Manual `evolve-lite:recall` skill to inspect everything stored for the current repo
 
 ## Storage
 
@@ -60,10 +60,10 @@ The installed Codex hook does not require `git`. It walks upward from the curren
 
 ## Included Skills
 
-### `learn`
+### `evolve-lite:learn`
 
 Analyze the current session and save proactive Evolve entities as markdown files.
 
-### `recall`
+### `evolve-lite:recall`
 
 Show the entities already stored for the current workspace.
