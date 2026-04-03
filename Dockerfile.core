@@ -18,7 +18,7 @@ WORKDIR /app
 
 # Copy project files
 COPY pyproject.toml uv.lock ./
-COPY evolve ./evolve
+COPY altk_evolve ./altk_evolve
 COPY README.md LICENSE MANIFEST.in ./
 
 # Install dependencies using uv (no extras needed for milvus as it's in base dependencies)
@@ -35,4 +35,4 @@ ENV EVOLVE_NAMESPACE_ID=evolve
 ENV PATH="/app/.venv/bin:${PATH}"
 
 # Set the entrypoint to run the MCP server directly from venv
-ENTRYPOINT ["python", "-m", "evolve.frontend.mcp"]
+ENTRYPOINT ["python", "-m", "altk_evolve.frontend.mcp"]
