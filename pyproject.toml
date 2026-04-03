@@ -104,6 +104,7 @@ indent-width = 4
 allow_zero_version = true
 major_on_zero = false
 version_toml = ["pyproject.toml:project.version"]
+version_variables = ["altk_evolve/__init__.py:__version__"]
 commit_parser = "conventional"
 build_command = '''
     python -m pip install -e '.[build]'
