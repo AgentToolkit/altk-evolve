@@ -247,7 +247,7 @@ def test_get_update_entities_messages_default_prompt():
 
 
 @pytest.mark.unit
-@patch("evolve.llm.conflict_resolution.conflict_resolution.completion")
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
 def test_resolve_conflicts_event_types(
     mock_completion,
     sample_recorded_entities,
@@ -308,7 +308,7 @@ def test_resolve_conflicts_event_types(
 
 
 @pytest.mark.unit
-@patch("evolve.llm.conflict_resolution.conflict_resolution.completion")
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
 def test_resolve_conflicts_response_parsing(
     mock_completion,
     sample_recorded_entities,
@@ -351,7 +351,7 @@ def test_resolve_conflicts_response_parsing(
 
 
 @pytest.mark.unit
-@patch("evolve.llm.conflict_resolution.conflict_resolution.completion")
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
 def test_resolve_conflicts_retry_logic(
     mock_completion,
     sample_recorded_entities,
@@ -398,7 +398,7 @@ def test_resolve_conflicts_retry_logic(
 
 
 @pytest.mark.unit
-@patch("evolve.llm.conflict_resolution.conflict_resolution.completion")
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
 def test_resolve_conflicts_edge_cases(
     mock_completion,
     sample_recorded_entities,

@@ -62,7 +62,7 @@ class TestEnableTracing:
         """Should return None if already instrumented and force=False."""
         from altk_evolve.auto import enable_tracing
 
-        with patch("evolve.auto.is_already_instrumented", return_value=True):
+        with patch("altk_evolve.auto.is_already_instrumented", return_value=True):
             tracer = enable_tracing(project="test")
             assert tracer is None
 
@@ -71,7 +71,7 @@ class TestEnableTracing:
         from altk_evolve.auto import enable_tracing
 
         with patch.dict(os.environ, {"EVOLVE_TRACING_PROJECT": "env-project"}):
-            with patch("evolve.auto.is_already_instrumented", return_value=False):
+            with patch("altk_evolve.auto.is_already_instrumented", return_value=False):
                 with patch("phoenix.otel.register") as mock_register:
                     mock_register.return_value = MagicMock()
 
@@ -85,7 +85,7 @@ class TestEnableTracing:
         """Should instrument when force=True even if already instrumented."""
         from altk_evolve.auto import enable_tracing
 
-        with patch("evolve.auto.is_already_instrumented", return_value=True):
+        with patch("altk_evolve.auto.is_already_instrumented", return_value=True):
             with patch("phoenix.otel.register") as mock_register:
                 mock_register.return_value = MagicMock()
 
@@ -207,7 +207,7 @@ class TestTracingIntegration:
         """Test enable_tracing with mocked Phoenix."""
         from altk_evolve.auto import enable_tracing
 
-        with patch("evolve.auto.is_already_instrumented", return_value=False):
+        with patch("altk_evolve.auto.is_already_instrumented", return_value=False):
             with patch("phoenix.otel.register") as mock_register:
                 mock_register.return_value = MagicMock()
 

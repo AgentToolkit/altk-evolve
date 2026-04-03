@@ -14,13 +14,14 @@ from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.exceptions import NamespaceNotFoundException, EvolveException
 from psycopg import sql
 
+
 @pytest.fixture(scope="module")
 def postgres_backend() -> PostgresEntityBackend:
     """Create a PostgresEntityBackend instance with mocked dependencies."""
     with (
-        patch("evolve.backend.postgres.psycopg") as mock_psycopg,
-        patch("evolve.backend.postgres.register_vector"),
-        patch("evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("altk_evolve.backend.postgres.register_vector"),
+        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
     ):
         mock_conn = MagicMock()
         mock_conn.closed = False
@@ -89,9 +90,9 @@ def test_postgres_backend_initialization_ensures_extension_before_registering_ve
     )
 
     with (
-        patch("evolve.backend.postgres.psycopg") as mock_psycopg,
-        patch("evolve.backend.postgres.register_vector", side_effect=lambda _conn: call_order.append("register_vector")),
-        patch("evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("altk_evolve.backend.postgres.register_vector", side_effect=lambda _conn: call_order.append("register_vector")),
+        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
         patch.object(
             PostgresEntityBackend,
             "_ensure_pgvector_extension",
@@ -125,9 +126,9 @@ def test_postgres_backend_initialization_closes_connection_on_setup_failure():
     )
 
     with (
-        patch("evolve.backend.postgres.psycopg") as mock_psycopg,
-        patch("evolve.backend.postgres.register_vector", side_effect=RuntimeError("register failed")),
-        patch("evolve.backend.postgres.SentenceTransformer"),
+        patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("altk_evolve.backend.postgres.register_vector", side_effect=RuntimeError("register failed")),
+        patch("altk_evolve.backend.postgres.SentenceTransformer"),
         patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
     ):
         mock_conn = MagicMock()
@@ -152,9 +153,9 @@ def test_postgres_backend_initialization_rejects_invalid_embedding_dimension():
     )
 
     with (
-        patch("evolve.backend.postgres.psycopg") as mock_psycopg,
-        patch("evolve.backend.postgres.register_vector"),
-        patch("evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("altk_evolve.backend.postgres.register_vector"),
+        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
         patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
     ):
         mock_conn = MagicMock()
@@ -182,8 +183,8 @@ def test_create_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
 
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("evolve.backend.postgres.SQLiteManager", return_value=db_manager),
-        patch("evolve.backend.postgres.sql.Literal", side_effect=lambda value: original_literal(value)) as mock_literal,
+        patch("altk_evolve.backend.postgres.SQLiteManager", return_value=db_manager),
+        patch("altk_evolve.backend.postgres.sql.Literal", side_effect=lambda value: original_literal(value)) as mock_literal,
     ):
         result = postgres_backend.create_namespace(namespace_id=namespace_id)
 
@@ -220,7 +221,7 @@ def test_get_namespace_details(postgres_backend: PostgresEntityBackend, db_manag
     # Test existing namespace
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("evolve.backend.postgres.SQLiteManager", return_value=db_manager),
+        patch("altk_evolve.backend.postgres.SQLiteManager", return_value=db_manager),
     ):
         result = postgres_backend.get_namespace_details(namespace_id="test_namespace")
 
@@ -248,7 +249,7 @@ def test_search_namespaces(postgres_backend: PostgresEntityBackend, db_manager, 
 
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("evolve.backend.postgres.SQLiteManager", return_value=db_manager),
+        patch("altk_evolve.backend.postgres.SQLiteManager", return_value=db_manager),
     ):
         result = postgres_backend.search_namespaces(limit=10)
 
@@ -272,7 +273,7 @@ def test_delete_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
 
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("evolve.backend.postgres.SQLiteManager", return_value=db_manager),
+        patch("altk_evolve.backend.postgres.SQLiteManager", return_value=db_manager),
     ):
         postgres_backend.delete_namespace(namespace_id=namespace_id)
 
@@ -302,7 +303,7 @@ def test_update_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
 
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
-        patch("evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts),
+        patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts),
     ):
         entities = [Entity(type=entity_update.type, content=entity_update.content, metadata={"key": "value"})]
         result = postgres_backend.update_entities(namespace_id="test_namespace", entities=entities, enable_conflict_resolution=True)
