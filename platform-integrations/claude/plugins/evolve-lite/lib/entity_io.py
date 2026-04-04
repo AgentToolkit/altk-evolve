@@ -68,12 +68,8 @@ def get_evolve_dir():
 def find_entities_dir():
     """Locate the entities directory.
 
-    Search order:
-      1. ``{EVOLVE_DIR}/entities/`` (from env var)
-      2. ``.evolve/entities/`` (cwd)
-
-    Returns:
-        Path to the directory if it exists, else ``None``.
+    Uses :func:`get_evolve_dir` to determine the base directory, then
+    returns the ``entities/`` subdirectory Path if it exists, else ``None``.
     """
     c = get_evolve_dir() / "entities"
     return c if c.is_dir() else None
