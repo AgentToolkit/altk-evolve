@@ -58,8 +58,7 @@ def find_entities_dir():
 
     Search order:
       1. ``EVOLVE_ENTITIES_DIR`` env var (authoritative, no fallback)
-      2. ``{CLAUDE_PROJECT_ROOT}/.evolve/entities/``
-      3. ``.evolve/entities/`` (cwd)
+      2. ``.evolve/entities/`` (cwd)
 
     Returns:
         Path to the directory if it exists, else ``None``.
@@ -69,24 +68,14 @@ def find_entities_dir():
         p = Path(env_dir)
         return p if p.is_dir() else None
 
-    project_root = os.environ.get("CLAUDE_PROJECT_ROOT")
-    candidates = []
-    if project_root:
-        candidates.append(Path(project_root) / ".evolve" / "entities")
-    candidates.append(Path(".evolve") / "entities")
-
-    for c in candidates:
-        if c.is_dir():
-            return c
-    return None
+    c = Path(".evolve") / "entities"
+    return c if c.is_dir() else None
 
 
 def get_default_entities_dir():
     """Return (and create) the default entities directory.
 
-    Prefers ``EVOLVE_ENTITIES_DIR``, then
-    ``{CLAUDE_PROJECT_ROOT}/.evolve/entities/``, falls back to
-    ``.evolve/entities/``.
+    Prefers ``EVOLVE_ENTITIES_DIR``, falls back to ``.evolve/entities/``.
     """
     env_dir = os.environ.get("EVOLVE_ENTITIES_DIR")
     if env_dir:
@@ -94,11 +83,7 @@ def get_default_entities_dir():
         base.mkdir(parents=True, exist_ok=True)
         return base.resolve()
 
-    project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
-    if project_root:
-        base = Path(project_root) / ".evolve" / "entities"
-    else:
-        base = Path(".evolve") / "entities"
+    base = Path(".evolve") / "entities"
     base.mkdir(parents=True, exist_ok=True)
     return base.resolve()
 
