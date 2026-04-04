@@ -1,0 +1,65 @@
+/* ─── Project Switcher Nav Bar ─────────────────────────────────────────────── */
+/* Sits inside .md-header, between the main bar and the navigation tabs       */
+
+.project-nav {
+  background-color: var(--md-primary-fg-color);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  width: 100%;
+}
+
+.project-nav__inner {
+  display: flex;
+  align-items: center;
+  padding: 0 0.8rem;
+  overflow-x: auto;
+  scrollbar-width: none; /* Firefox */
+}
+
+.project-nav__inner::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+.project-nav__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.project-nav__item:hover {
+  color: rgba(255, 255, 255, 0.9);
+  border-bottom-color: rgba(255, 255, 255, 0.35);
+}
+
+.project-nav__item--active {
+  color: #ffffff;
+  border-bottom-color: var(--md-accent-fg-color, #fff);
+  pointer-events: none;
+}
+
+.project-nav__icon {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+/* Slightly deeper tint in dark mode */
+[data-md-color-scheme="slate"] .project-nav {
+  border-bottom-color: rgba(0, 0, 0, 0.2);
+}
+
+@media screen and (max-width: 480px) {
+  .project-nav__item {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.65rem;
+  }
+}
+
