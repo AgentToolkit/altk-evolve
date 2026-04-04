@@ -1,3 +1,6 @@
+---
+template: main.html
+---
 # Evolve
 ***_Self-improving agents through iterations._***
 
@@ -26,7 +29,7 @@ Evolve is a system designed to help agents improve over time by learning from th
 
 - [Evolve Lite](integrations/evolve-lite.md): Lightweight Claude Code integration with local entity storage.
 - [Claude Code Demo](tutorials/claude-code-demo.md): Run the filesystem demo with Claude Code and the Evolve MCP server.
-- [Hello World with IBM Bob](examples/hello_world/index.md): A simple Bob walkthrough that shows how memory gets learned.
+- [Hello World with IBM Bob](examples/hello_world/bob.md): A simple Bob walkthrough that shows how memory gets learned.
 
 ## Reference
 

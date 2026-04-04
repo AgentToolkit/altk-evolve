@@ -16,6 +16,7 @@ copyright: >
 # Configuration
 theme:
   name: material
+  custom_dir: docs/overrides
   features:
     - content.tabs.link
     - content.code.annotate
@@ -94,6 +95,21 @@ extra_css:
   - stylesheets/extra.css
 
 extra:
+  # Project switcher nav bar — shown across all ALTK sites.
+  # Set active: true on whichever project this repo represents.
+  # Other repos should copy this list with their own entry marked active.
+  projects:
+    - name: ALTK
+      url: https://agenttoolkit.github.io/altk-main/
+    - name: Evolve
+      url: https://agenttoolkit.github.io/altk-evolve/
+      active: true
+    - name: Agent Lifecycle Toolkit
+      url: https://agenttoolkit.github.io/agent-lifecycle-toolkit/
+    # Add more projects here:
+    # - name: Another Project
+    #   url: https://agenttoolkit.github.io/another-project/
+    #   icon: "🔧"   # optional emoji or text icon
   social:
     - icon: fontawesome/brands/github-alt
       link: https://github.com/AgentToolkit/altk-evolve
