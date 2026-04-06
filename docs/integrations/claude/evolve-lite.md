@@ -108,13 +108,13 @@ This example shows how Evolve Lite helps an agent avoid dead ends it encountered
 To run it, first build the Docker image:
 
 ```bash
-just sandbox-build
+just sandbox-build claude
 ```
 
 Then run a task to extract metadata from an image:
 
 ```bash
-just trace=true learn=true sandbox-prompt 'where was the photo @sample.jpg taken. use exif metadata'
+just trace=true learn=true claude-prompt 'where was the photo @sample.jpg taken. use exif metadata'
 ```
 
 When you run the above, you will see that the agent hits some dead ends (exiftool not found, Pillow not installed), and that it learns guidelines to avoid them in the future (see `demo/workspace/.evolve/entities/`).
@@ -122,7 +122,7 @@ When you run the above, you will see that the agent hits some dead ends (exiftoo
 Run the same task again in a new session:
 
 ```bash
-just trace=true sandbox-prompt 'where was the photo @sample.jpg taken. use exif metadata'
+just trace=true claude-prompt 'where was the photo @sample.jpg taken. use exif metadata'
 ```
 
 You will see that the agent now is more efficient, avoiding the dead ends it encountered in the previous session such as trying to use exiftool.
