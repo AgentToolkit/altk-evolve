@@ -83,7 +83,7 @@ nav:
     - CLI: reference/cli.md
     - Policies: reference/policies.md
   - Integrations:
-    - Evolve Lite: integrations/evolve-lite.md
+    - Evolve Lite (Claude Code): integrations/claude/evolve-lite.md
   - Tutorials:
     - Hello World (IBM Bob IDE): examples/hello_world/bob.md
     - Claude Code Demo: tutorials/claude-code-demo.md

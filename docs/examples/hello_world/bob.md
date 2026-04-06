@@ -14,7 +14,7 @@ uv init
 ```
 
 ## Step 2: Install Evolve
-Install Evolve by following the [installation instructions](../../installation/index.md), or run:
+Install Evolve by following the [installation instructions](../../installation/index.md#bob-quick-start), or run:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```

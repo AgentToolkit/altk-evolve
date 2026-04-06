@@ -55,7 +55,7 @@ You can also manually invoke `/evolve-lite:learn` at any time.
 
 ## Example Walkthrough
 
-See the [Evolve Lite guide](../../../../docs/integrations/evolve-lite.md#example-walkthrough) for a step-by-step example showing the full learn-then-recall loop across two sessions.
+See the [Evolve Lite guide](../../../../docs/integrations/claude/evolve-lite.md#example-walkthrough) for a step-by-step example showing the full learn-then-recall loop across two sessions.
 
 ## Skills Included
 

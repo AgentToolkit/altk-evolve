@@ -119,7 +119,7 @@ If you’re experimenting with Evolve or exploring on‑the‑job learning for a
 - [Installation](docs/installation/index.md) - Setup instructions for supported platforms
 - [Configuration](docs/guides/configuration.md) - Environment variables and backend options
 - [CLI Reference](docs/reference/cli.md) - Command-line interface documentation
-- [Evolve Lite](docs/integrations/evolve-lite.md) - Lightweight Claude Code plugin mode
+- [Evolve Lite](docs/integrations/claude/evolve-lite.md) - Lightweight Claude Code plugin mode
 - [Claude Code Demo](docs/tutorials/claude-code-demo.md) - End-to-end demo walkthrough
 - [Policies](docs/reference/policies.md) - Policy support and schema
 

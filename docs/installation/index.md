@@ -5,12 +5,14 @@
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```
+Next: [Hello World with IBM Bob](../examples/hello_world/bob.md)
 
 ### Claude Code Plugin Marketplace
 ```bash
 claude plugin marketplace add AgentToolkit/altk-evolve
 claude plugin install evolve-lite
 ```
+Next: [Hello World with Claude Code](../examples/hello_world/claude.md)
 
 ### Download Install Script
 ```bash
