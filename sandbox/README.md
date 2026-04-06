@@ -77,7 +77,7 @@ See [docs/integrations/evolve-lite.md](../docs/integrations/evolve-lite.md) for 
 just codex-run
 ```
 
-This mounts the full repository at `/workspace` and starts Codex in `demo/workspace`. By default, the Codex home lives only inside the container for that run.
+This mounts the full repository at `/workspace` and starts Codex in `/workspace/demo/workspace`. By default, the Codex home lives only inside the container for that run.
 
 On first run, authenticate via device auth:
 
@@ -104,9 +104,9 @@ Once inside Codex:
 1. Run `/plugins`
 2. Open `Evolve Local Plugins`
 3. Install `evolve`
-4. Start a new thread in `/workspace`
+4. Start a new thread in `/workspace/demo/workspace`
 
-The plugin manifest is at `demo/workspace/plugins/evolve-lite/.codex-plugin/plugin.json`. Entities are read from and written to `demo/workspace/.evolve/entities/`.
+The plugin manifest is at `/workspace/demo/workspace/plugins/evolve-lite/.codex-plugin/plugin.json`. Entities are read from and written to `/workspace/demo/workspace/.evolve/entities/`.
 
 ### Smoke test
 

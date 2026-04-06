@@ -43,14 +43,16 @@ just codex-run
 codex
 ```
 
+This starts the demo session in `/workspace/demo/workspace`.
+
 Then:
 
 1. Run `/plugins`
 2. Open `Evolve Local Plugins`
 3. Install `evolve`
-4. Start a new thread in `/workspace`
+4. Start a new thread in `/workspace/demo/workspace`
 
-The demo plugin manifest lives at `demo/workspace/plugins/evolve-lite/.codex-plugin/plugin.json`.
+The demo plugin manifest lives at `/workspace/demo/workspace/plugins/evolve-lite/.codex-plugin/plugin.json`.
 
 ## How It Works
 

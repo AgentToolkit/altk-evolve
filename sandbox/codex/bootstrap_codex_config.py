@@ -20,14 +20,20 @@ def resolve_config_path(argv: list[str]) -> Path:
 
 def ensure_top_level_setting(lines: list[str], key: str, value: str) -> bool:
     prefix = f"{key} ="
-    if any(line.strip().startswith(prefix) for line in lines):
-        return False
+    rendered = f'{key} = "{value}"\n'
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(prefix):
+            if stripped == rendered.strip():
+                return False
+            lines[index] = rendered
+            return True
 
     insert_at = 0
     while insert_at < len(lines) and not lines[insert_at].strip():
         insert_at += 1
 
-    lines.insert(insert_at, f'{key} = "{value}"\n')
+    lines.insert(insert_at, rendered)
     return True
 
 
@@ -63,7 +69,10 @@ def ensure_feature_setting(lines: list[str], key: str, value: str) -> bool:
     assert end is not None
     for index in range(start + 1, end):
         if lines[index].strip().startswith(f"{key} ="):
-            return False
+            if lines[index].strip() == rendered.strip():
+                return False
+            lines[index] = rendered
+            return True
 
     lines.insert(end, rendered)
     return True
