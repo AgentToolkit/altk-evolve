@@ -19,6 +19,7 @@ learn := "false"
 # Build sandbox Docker image(s). Use target=claude or target=codex to build only one.
 sandbox-build target="all":
     #!/usr/bin/env sh
+    set -e
     if [ "{{target}}" = "all" ] || [ "{{target}}" = "claude" ]; then
         docker build --target claude -t {{claude_image}} {{sandbox_dir}}
     fi
