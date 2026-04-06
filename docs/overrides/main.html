@@ -9,7 +9,7 @@
     {% for project in config.extra.projects %}
     <a href="{{ project.url }}"
        class="project-nav__item{% if project.active %} project-nav__item--active{% endif %}"
-       {% if not project.active %}target="_blank" rel="noopener noreferrer"{% endif %}
+       {% if not project.active %}target="_self" rel="noopener noreferrer"{% endif %}
        aria-current="{% if project.active %}page{% else %}false{% endif %}">
       {% if project.icon %}<span class="project-nav__icon">{{ project.icon }}</span>{% endif %}
       {{ project.name }}
