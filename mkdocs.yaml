@@ -71,9 +71,12 @@ theme:
     repo: fontawesome/brands/github
 
 nav:
-  - Home:
-    - Overview: index.md
-    - Installation: installation/index.md
+  - Home: index.md
+  - Installation: installation/index.md
+  - Tutorials:
+    - Hello World (IBM Bob IDE): examples/hello_world/bob.md
+    - Claude Code Demo: tutorials/claude-code-demo.md
+    - Starter Example 2 (Claude Code): examples/hello_world/claude.md
   - Guides:
     - Configuration: guides/configuration.md
     - Phoenix Sync: guides/phoenix-sync.md
@@ -84,10 +87,6 @@ nav:
     - Policies: reference/policies.md
   - Integrations:
     - Evolve Lite (Claude Code): integrations/claude/evolve-lite.md
-  - Tutorials:
-    - Hello World (IBM Bob IDE): examples/hello_world/bob.md
-    - Claude Code Demo: tutorials/claude-code-demo.md
-    - Starter Example 2 (Claude Code): examples/hello_world/claude.md
   - Results:
     - Benchmarks: results/index.md
   - Operations:
@@ -125,24 +124,30 @@ extra:
     property: !ENV GOOGLE_ANALYTICS_KEY
 
 markdown_extensions:
-  - toc:
-      permalink: true
-  - pymdownx.highlight:
-      anchor_linenums: true
-  - pymdownx.inlinehilite
-  - pymdownx.snippets
   - admonition
+  - attr_list
+  - footnotes
+  - md_in_html
   - pymdownx.arithmatex:
       generic: true
-  - footnotes
   - pymdownx.details
-  - pymdownx.superfences
-  - pymdownx.mark
-  - attr_list
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:materialx.emoji.to_svg
-
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.mark
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
 plugins:
   - include-markdown
   - search

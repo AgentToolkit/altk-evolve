@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 820"
+   width="500"
+   height="760"
+   font-family="Arial, Helvetica, sans-serif" font-size="13"
+   aria-label="Architecture diagram showing Application, Interaction, Processing, and Persistence layers">
+   <defs id="defs1">
+      <style id="style1">
+         :root {
+         --c-layer-fill: #ffffff;
+         --c-layer-stroke: #26a699;
+         --c-box-fill: #009485;
+         --c-box-stroke: #444444;
+         --c-text: #ffffff;
+         --c-text-dim: #dddddd;
+         --c-italic: #444444;
+         --c-arrow: #333333;
+         }
+         @media (prefers-color-scheme: dark) {
+         :root {
+         --c-layer-fill: #1e1e1e00;
+         --c-layer-stroke: #000000;
+         --c-box-fill: #1e1e1e;
+         --c-box-stroke: #aaaaaa;
+         --c-text: #dddddd;
+         --c-text-dim: #999999;
+         --c-italic: #bbbbbb;
+         --c-arrow: #aaaaaa;
+         }
+         }
+         .layer    { fill: var(--c-layer-fill);   stroke: var(--c-layer-stroke); stroke-width: 1; }
+         .box      { fill: var(--c-box-fill);      stroke: var(--c-box-stroke);   stroke-width: 1.5; }
+         .db-side  { fill: var(--c-box-fill);      stroke: var(--c-box-stroke);   stroke-width: 1.5; }
+         .db-ell   { fill: var(--c-box-fill);      stroke: var(--c-box-stroke);   stroke-width: 1.5; }
+         .db-cap   { fill: var(--c-box-fill);      stroke: none; }
+         .lbl      { fill: var(--c-italic);        font-style: italic; font-size: 14px; }
+         .txt      { fill: var(--c-text);          text-anchor: middle; dominant-baseline: middle; }
+         .stxt     { fill: var(--c-text-dim);      text-anchor: middle; font-size: 11px; }
+         .arr      { fill: none; stroke: var(--c-arrow); stroke-width: 1.5;
+                     marker-end: url(#ah); }
+         #ah       { fill: var(--c-arrow); }
+         .albl     { fill: var(--c-arrow);         font-size: 11px; }
+         .human    { fill: none; stroke: var(--c-arrow); stroke-width: 1.5; }
+         .human-hd { fill: var(--c-box-fill);      stroke: var(--c-arrow); stroke-width: 1.5; }
+      </style>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto">
+         <path d="M 0,0 10,5 0,10 Z" id="ah-path"/>
+      </marker>
+   </defs>
+
+   <!-- ═══════════════════════════════════════════════
+        APPLICATION LAYER
+   ═══════════════════════════════════════════════ -->
+   <g id="application-layer" transform="translate(20, 20)">
+      <rect class="layer" x="0" y="0" width="460" height="110" rx="4" id="rect1"/>
+      <text class="lbl" x="230" y="20" text-anchor="middle" id="text1">Application layer</text>
+
+      <g id="agent" transform="translate(165, 34)">
+         <rect class="box" x="0" y="0" width="130" height="52" rx="3" id="rect5"/>
+         <text class="txt" x="65" y="26" id="text5">Agent</text>
+      </g>
+   </g>
+
+   <!-- ═══════════════════════════════════════════════
+        INTERACTION LAYER
+   ═══════════════════════════════════════════════ -->
+   <g id="interaction-layer" transform="translate(20, 150)">
+      <rect class="layer" x="0" y="0" width="460" height="160" rx="4" id="rect2"/>
+      <text class="lbl" x="230" y="20" text-anchor="middle" id="text2">Interaction layer</text>
+
+      <g id="logs" transform="translate(20, 44)">
+         <rect class="db-side" x="0" y="0" width="120" height="80" id="rect6"/>
+         <ellipse class="db-ell" cx="60" cy="0"  rx="60"   ry="14"   id="ellipse6"/>
+         <ellipse class="db-ell" cx="60" cy="80" rx="60"   ry="14"   id="ellipse8"/>
+         <text class="txt"  x="60" y="32" id="text9">Logs</text>
+         <text class="stxt" x="60" y="50" id="text10">(Agent trajectories)</text>
+      </g>
+
+      <g id="entities-mcp-server" transform="translate(280,59)">
+         <rect class="box" x="0" y="0" width="160" height="62" rx="3" id="rect10"/>
+         <text class="txt" x="80" y="24" id="text11">Entities MCP</text>
+         <text class="txt" x="80" y="42" id="text12">server</text>
+      </g>
+   </g>
+
+   <!-- ═══════════════════════════════════════════════
+        PROCESSING LAYER
+   ═══════════════════════════════════════════════ -->
+   <g id="processing-layer" transform="translate(20, 330)">
+      <rect class="layer" x="0" y="0" width="460" height="110" rx="4" id="rect3"/>
+      <text class="lbl" x="230" y="20" text-anchor="middle" id="text3">Processing layer</text>
+
+      <g id="extract" transform="translate(20, 40)">
+         <rect class="box" x="0" y="0" width="120" height="50" rx="3" id="rect12"/>
+         <text class="txt" x="60" y="25" id="text13">Extract</text>
+      </g>
+
+      <g id="retrieve" transform="translate(320, 40)">
+         <rect class="box" x="0" y="0" width="120" height="50" rx="3" id="rect13"/>
+         <text class="txt" x="60" y="25" id="text14">Retrieve</text>
+      </g>
+   </g>
+
+   <!-- ═══════════════════════════════════════════════
+        PERSISTENCE LAYER
+   ═══════════════════════════════════════════════ -->
+   <g id="persistence-layer" transform="translate(20, 460)">
+      <rect class="layer" x="0" y="0" width="460" height="220" rx="4" id="rect4"/>
+      <text class="lbl" x="230" y="20" text-anchor="middle" id="text4">Persistence layer</text>
+      <g id="database" transform="translate(140, 60)">
+         <rect class="db-side" x="0" y="0" width="180" height="120" id="rect14"/>
+         <ellipse class="db-ell" cx="90" cy="0"   rx="90"   ry="20"   id="ellipse14"/>
+         <ellipse class="db-ell" cx="90" cy="120" rx="90"   ry="20"   id="ellipse16"/>
+         <text class="txt"  x="90" y="34" id="text17">Entities DB</text>
+         <text class="stxt" x="90" y="54" id="text18">Guidelines, tips, policies,</text>
+         <text class="stxt" x="90" y="71" id="text19">scripts, patterns, rules, plans,</text>
+         <text class="stxt" x="90" y="88" id="text20">SOPs, etc.</text>
+      </g>
+   </g>
+
+   <!-- ═══════════════════════════════════════════════
+        HUMAN FIGURE
+   ═══════════════════════════════════════════════ -->
+   <g id="human" transform="translate(250, 712)">
+      <circle class="human-hd" cx="0"   cy="0"  r="12" id="circle20"/>
+      <line   class="human"    x1="0"  y1="12"  x2="0"   y2="42"  id="line20"/>
+      <line   class="human"    x1="-16" y1="27" x2="16"  y2="27"  id="line21"/>
+      <line   class="human"    x1="0"  y1="42"  x2="-14" y2="64"  id="line22"/>
+      <line   class="human"    x1="0"  y1="42"  x2="14"  y2="64"  id="line23"/>
+      <text   class="txt" x="0" y="80" font-size="12px" id="text23">Human</text>
+   </g>
+
+   <!-- ═══════════════════════════════════════════════
+        ARROWS  (canvas coordinates)
+   ═══════════════════════════════════════════════ -->
+   <!-- 1. Events: Agent (left side) → horizontal left → vertical down into Logs (top) -->
+   <g id="arrow-events">
+      <path class="arr" d="M 185,80 H 100 V 180" id="path23"/>
+      <text class="albl" x="115" y="75" text-anchor="middle" id="text24">Events</text>
+   </g>
+   <!-- 2. Guidelines: Entities MCP server (right) → right channel up → Agent (right side) -->
+   <g id="arrow-guidelines">
+      <path class="arr" d="m 315,80 H 400 V 208" id="path24"/>
+      <text class="albl" x="400" y="75" text-anchor="end" id="text25">Guidelines</text>
+   </g>
+   <!-- 3. Logs (bottom) → Extract (top) — straight vertical -->
+   <path class="arr" d="M 100,290 V 370" id="path25"/>
+   <!-- 4. Retrieve (top) → Entities MCP server (bottom) — straight vertical -->
+   <path class="arr" d="M 400,370 V 272" id="path26"/>
+   <!-- 5. Extract (bottom) → Entities DB (left wall), 90° bend -->
+   <path class="arr" d="M 100,420 V 580 H 160" id="path27"/>
+   <!-- 6. Retrieve (bottom) → Entities DB (right wall), 90° bend -->
+   <path class="arr" d="M 340,580 H 400 V 420" id="path28"/>
+   <!-- 7. Human → Entities DB (bottom wall), straight vertical -->
+   <path class="arr" d="M 250,700 V 660" id="path29"/>
+</svg>

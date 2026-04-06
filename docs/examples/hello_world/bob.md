@@ -14,7 +14,7 @@ uv init
 ```
 
 ## Step 2: Install Evolve
-Install Evolve by following the [installation instructions](../../installation/index.md#bob-quick-start), or run:
+Install Evolve by following the [installation instructions →](../../installation/index.md#bob-quick-start), or run:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```
@@ -22,25 +22,33 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platf
 ## Step 3: Project Setup
 Open the project directory in IBM Bob IDE, and switch Bob's mode to `Evolve Lite`
 
+!!! failure "`Evolve Lite` mode not found?"
+    If Bob is running while you install Evolve, the `Evolve Lite` mode will not have been loaded. Try restarting IBM Bob IDE.
+
 ## Step 4: Testing Evolve with Bob
 If we test with the following example, at this point Bob doesn't know that this project is managed with `uv`, so Bob will probably get it wrong. It's entirely possible that Bob will still figure it out, so alternatively come up with something simple that Bob will get wrong.
-```
-Set up the python environment for this project
-```
+!!! user-message "Let's Ask Bob"
+    Set up the python environment for this project
 
-### A Likely Bob Response
-Bob should run some Evolve Lite skills to attempt to retrieve relevant guidelines from memory, and find nothing because it's a new project.
-Bob will likely attempt to use `python` or `python3`'s `venv` to create a virtual environment.
-```bash
-python3 -m venv .venv
-```
-### Recovering and Remembering
-We respond,
-```
-This is incorrect. This project is supposed to be managed by `uv`.
-```
-At this point, Bob will correct itself and eventually run `uv sync` and correctly run `uv run main.py`.
-Bob should then run some Evolve Lite skills to save the learned correction into memory.
-If it does not, the `/evolve:learn` command can be used to manually run the skill.
+
+!!! agent-message "A Likely Bob Response"
+    Bob should run some Evolve Lite skills to attempt to retrieve relevant guidelines from memory, and find nothing because it's a new project.
+    Bob will likely attempt to use `python` or `python3`'s `venv` to create a virtual environment.
+    ```bash
+    python3 -m venv .venv
+    ```
+
+!!! system-message "Course Correcting"
+    
+!!! user-message "Let's Ask Bob"
+    This is incorrect. This project is supposed to be managed by `uv`.
+
+!!! agent-message "A Likely Bob Response"
+    At this point, Bob will correct itself and eventually run `uv sync` and correctly run `uv run main.py`.
+    Bob should then run some Evolve Lite skills to save the learned correction into memory.
+    If it does not, the `/evolve:learn` command can be used to manually run the skill.
 
 In the future, Bob should remember via Evolve-Lite skills that `uv` is used for this project and not make the same mistake. This can be tested in this toy project by deleting the `.venv` directory and the `uv.lock` file and trying the same utterance again.
+
+## Troubleshooting
+The `install.sh` script adds a section for Evolve into a shared `custom_modes.yaml` used by IBM Bob IDE. It is much like a `.bashrc` file, and so may become malformed. Check the project-level or user-level `custom_modes.yaml` for any issues.

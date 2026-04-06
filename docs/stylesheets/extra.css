@@ -63,3 +63,210 @@
   }
 }
 
+/* User Message — text-message bubble (right-aligned, teal) */
+:root {
+  --md-admonition-icon--user-message: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M240 192C240 147.8 275.8 112 320 112C364.2 112 400 147.8 400 192C400 236.2 364.2 272 320 272C275.8 272 240 236.2 240 192zM448 192C448 121.3 390.7 64 320 64C249.3 64 192 121.3 192 192C192 262.7 249.3 320 320 320C390.7 320 448 262.7 448 192zM144 544C144 473.3 201.3 416 272 416L368 416C438.7 416 496 473.3 496 544L496 552C496 565.3 506.7 576 520 576C533.3 576 544 565.3 544 552L544 544C544 446.8 465.2 368 368 368L272 368C174.8 368 96 446.8 96 544L96 552C96 565.3 106.7 576 120 576C133.3 576 144 565.3 144 552L144 544z"/></svg>');
+  --user-message-bubble-color: #218aff;
+}
+
+.md-typeset .admonition.user-message,
+.md-typeset details.user-message {
+  border: none !important;
+  border-radius: 18px 18px 4px 18px;
+  background-color: var(--user-message-bubble-color);
+  color: #fff;
+  margin-left: 15%;
+  margin-right: 1.2rem;  /* room for the tail */
+  position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+/* Speech-bubble tail — bottom-right corner */
+.md-typeset .admonition.user-message::after,
+.md-typeset details.user-message::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: -10px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 12px 0 0 12px;
+  border-color: transparent transparent transparent var(--user-message-bubble-color);
+}
+
+.md-typeset .user-message > .admonition-title,
+.md-typeset .user-message > summary {
+  background-color: rgba(0, 0, 0, 0.12) !important;
+  border-radius: 16px 16px 0 0;
+  color: #fff;
+}
+
+.md-typeset .user-message > .admonition-title::before,
+.md-typeset .user-message > summary::before {
+  background-color: #fff;
+  -webkit-mask-image: var(--md-admonition-icon--user-message);
+          mask-image: var(--md-admonition-icon--user-message);
+}
+
+/* Ensure body text is white inside the bubble */
+.md-typeset .admonition.user-message p,
+.md-typeset .admonition.user-message li,
+.md-typeset .admonition.user-message code {
+  color: #fff;
+}
+
+/* Agent Message — text-message bubble (left-aligned, gray) */
+:root {
+  --md-admonition-icon--agent-message: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M352 64C352 46.3 337.7 32 320 32C302.3 32 288 46.3 288 64L288 128L192 128C139 128 96 171 96 224L96 448C96 501 139 544 192 544L448 544C501 544 544 501 544 448L544 224C544 171 501 128 448 128L352 128L352 64zM160 432C160 418.7 170.7 408 184 408L216 408C229.3 408 240 418.7 240 432C240 445.3 229.3 456 216 456L184 456C170.7 456 160 445.3 160 432zM280 432C280 418.7 290.7 408 304 408L336 408C349.3 408 360 418.7 360 432C360 445.3 349.3 456 336 456L304 456C290.7 456 280 445.3 280 432zM400 432C400 418.7 410.7 408 424 408L456 408C469.3 408 480 418.7 480 432C480 445.3 469.3 456 456 456L424 456C410.7 456 400 445.3 400 432zM224 240C250.5 240 272 261.5 272 288C272 314.5 250.5 336 224 336C197.5 336 176 314.5 176 288C176 261.5 197.5 240 224 240zM368 288C368 261.5 389.5 240 416 240C442.5 240 464 261.5 464 288C464 314.5 442.5 336 416 336C389.5 336 368 314.5 368 288zM64 288C64 270.3 49.7 256 32 256C14.3 256 0 270.3 0 288L0 384C0 401.7 14.3 416 32 416C49.7 416 64 401.7 64 384L64 288zM608 256C590.3 256 576 270.3 576 288L576 384C576 401.7 590.3 416 608 416C625.7 416 640 401.7 640 384L640 288C640 270.3 625.7 256 608 256z"/></svg>');
+  --agent-message-bubble-color: #e5e5ea;
+  --agent-message-text-color: #1c1c1e;
+}
+
+.md-typeset .admonition.agent-message,
+.md-typeset details.agent-message {
+  border: none !important;
+  border-radius: 18px 18px 18px 4px;
+  background-color: var(--agent-message-bubble-color);
+  color: var(--agent-message-text-color);
+  margin-left: 1.2rem;  /* room for the tail */
+  margin-right: 15%;
+  position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* Speech-bubble tail — bottom-left corner */
+.md-typeset .admonition.agent-message::after,
+.md-typeset details.agent-message::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -10px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 12px 12px 0 0;
+  border-color: transparent var(--agent-message-bubble-color) transparent transparent;
+}
+
+.md-typeset .agent-message > .admonition-title,
+.md-typeset .agent-message > summary {
+  background-color: rgba(0, 0, 0, 0.07) !important;
+  border-radius: 16px 16px 0 0;
+  color: var(--agent-message-text-color);
+}
+
+.md-typeset .agent-message > .admonition-title::before,
+.md-typeset .agent-message > summary::before {
+  background-color: #555;
+  -webkit-mask-image: var(--md-admonition-icon--agent-message);
+          mask-image: var(--md-admonition-icon--agent-message);
+}
+
+/* Ensure body text uses dark color inside the gray bubble */
+.md-typeset .admonition.agent-message p,
+.md-typeset .admonition.agent-message li,
+.md-typeset .admonition.agent-message code {
+  color: var(--agent-message-text-color);
+}
+
+/* Dark mode adjustments */
+[data-md-color-scheme="slate"] .md-typeset .admonition.agent-message,
+[data-md-color-scheme="slate"] .md-typeset details.agent-message {
+  --agent-message-bubble-color: #3a3a3c;
+  --agent-message-text-color: #f2f2f7;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .agent-message > .admonition-title::before,
+[data-md-color-scheme="slate"] .md-typeset .agent-message > summary::before {
+  background-color: #aaa;
+}
+
+/* System Message — centered timestamp / status label, no bubble */
+:root {
+  --md-admonition-icon--system-message: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M424.5 355.1C449 329.2 464 294.4 464 256C464 176.5 399.5 112 320 112C240.5 112 176 176.5 176 256C176 294.4 191 329.2 215.5 355.1C236.8 377.5 260.4 409.1 268.8 448L371.2 448C379.6 409 403.2 377.5 424.5 355.1zM459.3 388.1C435.7 413 416 443.4 416 477.7L416 496C416 540.2 380.2 576 336 576L304 576C259.8 576 224 540.2 224 496L224 477.7C224 443.4 204.3 413 180.7 388.1C148 353.7 128 307.2 128 256C128 150 214 64 320 64C426 64 512 150 512 256C512 307.2 492 353.7 459.3 388.1zM272 248C272 261.3 261.3 272 248 272C234.7 272 224 261.3 224 248C224 199.4 263.4 160 312 160C325.3 160 336 170.7 336 184C336 197.3 325.3 208 312 208C289.9 208 272 225.9 272 248z"/></svg>');
+}
+
+.md-typeset .admonition.system-message,
+.md-typeset details.system-message {
+  border: none !important;
+  background: none !important;
+  box-shadow: none !important;
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0.25rem 0;
+}
+
+/* No tail */
+.md-typeset .admonition.system-message::after,
+.md-typeset details.system-message::after {
+  display: none;
+}
+
+.md-typeset .system-message > .admonition-title,
+.md-typeset .system-message > summary {
+  background: none !important;
+  border-radius: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: #8e8e93;
+  /* override the default large padding-left that reserves space for the icon */
+  padding: 0.2rem 0.5rem;
+  text-transform: none;
+}
+
+.md-typeset .system-message > .admonition-title::before,
+.md-typeset .system-message > summary::before {
+  background-color: #8e8e93;
+  -webkit-mask-image: var(--md-admonition-icon--system-message);
+          mask-image: var(--md-admonition-icon--system-message);
+  width: 0.75rem;
+  height: 0.75rem;
+  /* pull icon out of its default absolute/offset position and sit it inline */
+  position: relative;
+  left: auto;
+  top: auto;
+  margin-right: 0.3rem;
+  flex-shrink: 0;
+}
+
+/* Body text: small, centered, muted */
+.md-typeset .admonition.system-message p,
+.md-typeset .admonition.system-message li {
+  color: #8e8e93;
+  font-size: 0.72rem;
+  text-align: center;
+  margin: 0.1rem 0;
+}
+
+/* Dark mode — slightly lighter gray on dark backgrounds */
+[data-md-color-scheme="slate"] .md-typeset .system-message > .admonition-title,
+[data-md-color-scheme="slate"] .md-typeset .system-message > summary,
+[data-md-color-scheme="slate"] .md-typeset .admonition.system-message p {
+  color: #aeaeb2;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .system-message > .admonition-title::before,
+[data-md-color-scheme="slate"] .md-typeset .system-message > summary::before {
+  background-color: #aeaeb2;
+}
+
+/* ─── Architecture diagram — responsive SVG swap ───────────────────────────── */
+
+.md-content {
+    container-type: inline-size;
+    container-name: md-content;
+}
+
+.md-typeset figure img.arch-narrow { display: block; }
+.md-typeset figure img.arch-wide   { display: none;  }
+
+@container md-content (min-width: 1000px) {
+    .md-typeset figure img.arch-narrow { display: none;  }
+    .md-typeset figure img.arch-wide   { display: block; }
+}
