@@ -24,8 +24,18 @@ Install Evolve by following the [installation instructions →](../../installati
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```
 
+**Important:** After installation completes, you must **restart Bob IDE** for the new mode to appear.
+
 ## Step 3: Project Setup
-Open the project directory in IBM Bob IDE, and switch Bob's mode to `Evolve Lite`
+1. **Restart Bob IDE** if you haven't already (close and reopen the application)
+2. Open the project directory (`hello-world`) in IBM Bob IDE
+3. **Switch Bob's mode to `Evolve Lite`** - Look for the mode selector in Bob's interface and select "Evolve Lite"
+
+**Troubleshooting:** If "Evolve Lite" doesn't appear in the mode list:
+- Verify the installation completed without errors
+- Check that `~/.bob/settings/custom_modes.yaml` exists and contains the evolve-lite configuration
+- Try restarting Bob IDE again
+- Re-run the install script (it's safe to run multiple times)
 
 !!! failure "`Evolve Lite` mode not found?"
     If Bob is running while you install Evolve, the `Evolve Lite` mode will not have been loaded. Try restarting IBM Bob IDE.
