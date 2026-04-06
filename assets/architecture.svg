@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-80 0 491.71115 720.87861"
+     width="491.71115"
+     height="720.8786"
+     font-family="Arial, Helvetica, sans-serif" font-size="13"
+     aria-label="Architecture diagram showing Application, Interaction, Processing, and Persistence layers">
+  <defs
+     id="defs1">
+    <style
+       id="style1">
+      :root {
+        --c-layer-fill:   #ffffff;
+        --c-layer-stroke: #26a699;
+        --c-box-fill:     #009485;
+        --c-box-stroke:   #444444;
+        --c-text:         #ffffff;
+        --c-text-dim:     #dddddd;
+        --c-italic:       #444444;
+        --c-arrow:        #333333;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --c-layer-fill:   #1e1e1e00;
+          --c-layer-stroke: #000000;
+          --c-box-fill:     #1e1e1e;
+          --c-box-stroke:   #aaaaaa;
+          --c-text:         #dddddd;
+          --c-text-dim:     #999999;
+          --c-italic:       #bbbbbb;
+          --c-arrow:        #aaaaaa;
+        }
+      }
+      .layer    { fill: var(--c-layer-fill); stroke: var(--c-layer-stroke); stroke-width: 1; }
+      .box      { fill: var(--c-box-fill);   stroke: var(--c-box-stroke);   stroke-width: 1.5; }
+      .db-side  { fill: var(--c-box-fill);   stroke: var(--c-box-stroke);   stroke-width: 1.5; }
+      .db-ell   { fill: var(--c-box-fill);   stroke: var(--c-box-stroke);   stroke-width: 1.5; }
+      .db-cap   { fill: var(--c-box-fill);   stroke: none; }
+      .lbl      { fill: var(--c-italic);     font-style: italic; font-size: 14px; }
+      .txt      { fill: var(--c-text);       text-anchor: middle; dominant-baseline: middle; }
+      .stxt     { fill: var(--c-text-dim);   text-anchor: middle; font-size: 11px; }
+      .arr      { fill: none; stroke: var(--c-arrow); stroke-width: 1.5;
+                  marker-end: url(#ah); }
+      .albl     { fill: var(--c-arrow);   font-size: 11px; }
+      .human    { fill: none; stroke: var(--c-arrow); stroke-width: 1.5; }
+      .human-hd { fill: var(--c-box-fill);  stroke: var(--c-arrow); stroke-width: 1.5; }
+    </style>
+    <marker
+       id="ah"
+       viewBox="0 0 10 10"
+       refX="9"
+       refY="5"
+       markerWidth="6"
+       markerHeight="6"
+       orient="auto">
+      <path
+         d="M 0,0 10,5 0,10 Z"
+         fill="#333333"
+         id="path1" />
+    </marker>
+    <marker
+       id="ah-1"
+       viewBox="0 0 10 10"
+       refX="9"
+       refY="5"
+       markerWidth="6"
+       markerHeight="6"
+       orient="auto">
+      <path
+         d="M 0,0 10,5 0,10 Z"
+         fill="#333333"
+         id="path1-7" />
+    </marker>
+  </defs>
+  <!-- ═══════════════════════════════════════════════
+       LAYER BACKGROUNDS
+  ═══════════════════════════════════════════════ -->
+  <!-- Application layer -->
+  <rect
+     class="layer"
+     x="-79.5"
+     y="0.5"
+     width="490"
+     height="110"
+     rx="4"
+     id="rect1" />
+  <text
+     class="lbl"
+     x="165.5"
+     y="18.5"
+     text-anchor="middle"
+     id="text1">Application layer</text>
+  <!-- Interaction layer -->
+  <rect
+     class="layer"
+     x="-79.5"
+     y="120.5"
+     width="490"
+     height="158"
+     rx="4"
+     id="rect2" />
+  <text
+     class="lbl"
+     x="165.5"
+     y="138.5"
+     text-anchor="middle"
+     id="text2">Interaction layer</text>
+  <!-- Processing layer -->
+  <rect
+     class="layer"
+     x="-79.586571"
+     y="288.41342"
+     width="490.17316"
+     height="90.215141"
+     rx="4.0014133"
+     id="rect3" />
+  <text
+     class="lbl"
+     x="165.5"
+     y="306.5"
+     text-anchor="middle"
+     id="text3">Processing layer</text>
+  <!-- Persistence layer -->
+  <!-- ═══════════════════════════════════════════════
+       AGENT BOX  (Application layer)
+  ═══════════════════════════════════════════════ -->
+  <rect
+     class="box"
+     x="100.5"
+     y="28.5"
+     width="130"
+     height="52"
+     rx="3"
+     id="rect5" />
+  <text
+     class="txt"
+     x="165.5"
+     y="54.5"
+     id="text5">Agent</text>
+  <!-- ═══════════════════════════════════════════════
+       LOGS CYLINDER  (Interaction layer, left)
+  ═══════════════════════════════════════════════ -->
+  <rect
+     class="db-side"
+     x="-42.5"
+     y="158.5"
+     width="116"
+     height="82"
+     id="rect6" />
+  <ellipse
+     class="db-ell"
+     cx="15.5"
+     cy="158.5"
+     rx="58"
+     ry="14"
+     id="ellipse6" />
+  <ellipse
+     class="db-cap"
+     cx="15.5"
+     cy="158.5"
+     rx="56.5"
+     ry="12.5"
+     id="ellipse7" />
+  <ellipse
+     class="db-ell"
+     cx="15.5"
+     cy="240.5"
+     rx="58"
+     ry="14"
+     id="ellipse8" />
+  <ellipse
+     class="db-cap"
+     cx="15.5"
+     cy="240.5"
+     rx="56.5"
+     ry="12.5"
+     id="ellipse9" />
+  <text
+     class="txt"
+     x="15.5"
+     y="190.5"
+     id="text9">Logs</text>
+  <text
+     class="stxt"
+     x="15.5"
+     y="208.5"
+     id="text10">(Agent trajectories)</text>
+  <!-- ═══════════════════════════════════════════════
+       ENTITIES MCP SERVER BOX  (Interaction layer, right)
+  ═══════════════════════════════════════════════ -->
+  <rect
+     class="box"
+     x="217.5"
+     y="147.5"
+     width="162"
+     height="62"
+     rx="3"
+     id="rect10" />
+  <text
+     class="txt"
+     x="298.5"
+     y="171.5"
+     id="text11">Entities MCP</text>
+  <text
+     class="txt"
+     x="298.5"
+     y="189.5"
+     id="text12">server</text>
+  <!-- ═══════════════════════════════════════════════
+       EXTRACT BOX  (Processing layer, left)
+  ═══════════════════════════════════════════════ -->
+  <rect
+     class="box"
+     x="-46.5"
+     y="312.5"
+     width="124"
+     height="52"
+     rx="3"
+     id="rect12" />
+  <text
+     class="txt"
+     x="15.5"
+     y="338.5"
+     id="text13">Extract</text>
+  <!-- ═══════════════════════════════════════════════
+       RETRIEVE BOX  (Processing layer, right)
+  ═══════════════════════════════════════════════ -->
+  <rect
+     class="box"
+     x="253.5"
+     y="312.5"
+     width="124"
+     height="52"
+     rx="3"
+     id="rect13" />
+  <text
+     class="txt"
+     x="315.5"
+     y="338.5"
+     id="text14">Retrieve</text>
+  <!-- ═══════════════════════════════════════════════
+       ENTITIES DB CYLINDER  (Persistence layer, centre)
+  ═══════════════════════════════════════════════ -->
+  <g
+     id="g32"
+     transform="translate(0.71115255,-41.958001)">
+    <rect
+       class="layer"
+       x="-79.5"
+       y="430.5"
+       width="490"
+       height="220"
+       rx="4"
+       id="rect4" />
+    <text
+       class="lbl"
+       x="164.0777"
+       y="448.5"
+       text-anchor="middle"
+       id="text4">Persistence layer</text>
+    <g
+       id="g31"
+       transform="translate(9.9561359)">
+      <rect
+         class="db-side"
+         x="63.5"
+         y="480.5"
+         width="184"
+         height="118"
+         id="rect14" />
+      <ellipse
+         class="db-ell"
+         cx="155.5"
+         cy="480.5"
+         rx="92"
+         ry="20"
+         id="ellipse14" />
+      <ellipse
+         class="db-cap"
+         cx="155.5"
+         cy="480.5"
+         rx="90.5"
+         ry="18.5"
+         id="ellipse15" />
+      <ellipse
+         class="db-ell"
+         cx="155.5"
+         cy="598.5"
+         rx="92"
+         ry="20"
+         id="ellipse16" />
+      <ellipse
+         class="db-cap"
+         cx="155.5"
+         cy="598.5"
+         rx="90.5"
+         ry="18.5"
+         id="ellipse17" />
+      <text
+         class="txt"
+         x="155.5"
+         y="514.5"
+         id="text17">Entities DB</text>
+      <text
+         class="stxt"
+         x="155.5"
+         y="534.5"
+         id="text18">Guidelines, tips, policies,</text>
+      <text
+         class="stxt"
+         x="155.5"
+         y="551.5"
+         id="text19">scripts, patterns, rules, plans,</text>
+      <text
+         class="stxt"
+         x="155.5"
+         y="568.5"
+         id="text20">SOPs, etc.</text>
+    </g>
+  </g>
+  <!-- ═══════════════════════════════════════════════
+       HUMAN FIGURE  (left side, outside all layers)
+  ═══════════════════════════════════════════════ -->
+  <g
+     id="g29"
+     transform="translate(209.91016,119.62667)">
+    <circle
+       class="human-hd"
+       cx="-45"
+       cy="518"
+       r="12"
+       id="circle20" />
+    <line
+       class="human"
+       x1="-45"
+       y1="530"
+       x2="-45"
+       y2="560"
+       id="line20" />
+    <line
+       class="human"
+       x1="-61"
+       y1="545"
+       x2="-29"
+       y2="545"
+       id="line21" />
+    <line
+       class="human"
+       x1="-45"
+       y1="560"
+       x2="-59"
+       y2="582"
+       id="line22" />
+    <line
+       class="human"
+       x1="-45"
+       y1="560"
+       x2="-31"
+       y2="582"
+       id="line23" />
+    <text
+       class="txt"
+       x="-45"
+       y="598"
+       font-size="12px"
+       id="text23">Human</text>
+  </g>
+  <!-- ═══════════════════════════════════════════════
+       ARROWS
+  ═══════════════════════════════════════════════ -->
+  <!-- 1. Events: Agent (left side) → horizontal left → vertical down into Logs (top) -->
+  <path
+     class="arr"
+     d="m 100.5,54.5 h -85 v 90"
+     id="path23" />
+  <text
+     class="albl"
+     x="55.5"
+     y="65.5"
+     text-anchor="middle"
+     id="text24">Events</text>
+  <!-- 2. Guidelines: Entities MCP server (right) → right channel up → Agent (right side) -->
+  <path
+     class="arr"
+     d="m 315.5,147.5 v -93 h -85"
+     id="path24" />
+  <text
+     class="albl"
+     x="377.33087"
+     y="67.112938"
+     text-anchor="end"
+     id="text25">Guidelines</text>
+  <!-- 3. Logs (bottom) → Extract (top) — straight vertical -->
+  <path
+     class="arr"
+     d="m 15.5,254.5 v 58"
+     id="path25" />
+  <!-- 4. Retrieve (top) → Entities MCP server (bottom) — straight vertical -->
+  <path
+     class="arr"
+     d="m 315.5,312.5 v -103"
+     id="path26" />
+  <path
+     class="arr"
+     d="M 165.18744,624.41827 V 578.04798"
+     id="path26-3"
+     style="fill:none;stroke:#333333;stroke-width:1.00645;marker-end:url(#ah-1)" />
+  <!-- 5. Extract (bottom) → Entities DB (left wall), 90° bend -->
+  <path
+     class="arr"
+     d="M 15.500727,364.54075 V 499.51861 H 72.006284"
+     id="path27" />
+  <!-- 6. Retrieve (bottom) → Entities DB (right wall), 90° bend -->
+  <path
+     class="arr"
+     d="m 315.71399,364.56386 v 135.22218 h -57.0736"
+     id="path28" />
+  <!-- 7. Human → Entities DB (left wall), straight horizontal -->
+</svg>
