@@ -1,5 +1,5 @@
 # Project information
-site_name: Evolve
+site_name: Agent Lifecycle Toolkit (ALTK)
 site_url: https://agenttoolkit.github.io/evolve
 site_description: >-
   Evolve is a component in the Agent Lifecycle Toolkit (ALTK) that gives agent builders the ability to iteratively improve their agents by learning from previous trajectories.
@@ -104,8 +104,6 @@ extra:
     - name: Evolve
       url: https://agenttoolkit.github.io/altk-evolve/
       active: true
-    - name: Agent Lifecycle Toolkit
-      url: https://agenttoolkit.github.io/agent-lifecycle-toolkit/
     # Add more projects here:
     # - name: Another Project
     #   url: https://agenttoolkit.github.io/another-project/
