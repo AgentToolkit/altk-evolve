@@ -2,6 +2,8 @@
 
 A plugin that helps Claude Code learn from conversations by automatically extracting and applying entities.
 
+⭐ Star the repo: https://github.com/AgentToolkit/altk-evolve
+
 ## Features
 
 - **Automatic Retrieval**: At the start of each prompt, relevant entities are automatically injected
@@ -154,7 +156,3 @@ evolve/
 │   └── hooks.json               # Auto-configured hooks
 └── README.md
 ```
-
-## License
-
-MIT
