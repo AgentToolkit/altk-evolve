@@ -28,7 +28,7 @@ just sandbox-setup
 Then edit `sandbox/myenv` and set:
 
 - `ANTHROPIC_API_KEY` — required for Claude Code
-- `OPENAI_API_KEY` — required for Codex (or use device auth, see below)
+- `OPENAI_API_KEY` — required for Codex unless using device auth
 
 ## Claude Code
 
