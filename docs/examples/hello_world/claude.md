@@ -1,4 +1,4 @@
-# Starter Example 2 with Evolve and Claude Code
+# Starter Example with Evolve and Claude Code
 Agentic IDEs like Claude Code often repeat the same mistakes over and over again because they start from fresh every time. Using Evolve, we can alleviate this problem.
 In this tutorial, we will use Evolve and Claude Code to create a Python script to automate a simple task. Using Evolve, we will then instruct Claude Code that it should use this script in the future for similar tasks.
 

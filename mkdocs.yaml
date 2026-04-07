@@ -74,10 +74,10 @@ nav:
   - Home: index.md
   - Installation: installation/index.md
   - Tutorials:
-    - Hello World (IBM Bob IDE): examples/hello_world/bob.md
-    - Claude Code Demo: tutorials/claude-code-demo.md
-    - Starter Example 2 (Claude Code): examples/hello_world/claude.md
-    - Hello World (Codex): examples/hello_world/codex.md
+    - tutorials/index.md
+    - Starter Example (IBM Bob): examples/hello_world/bob.md
+    - Starter Example (Claude Code): examples/hello_world/claude.md
+    - Starter Example (Codex): examples/hello_world/codex.md
   - Guides:
     - Configuration: guides/configuration.md
     - Phoenix Sync: guides/phoenix-sync.md
