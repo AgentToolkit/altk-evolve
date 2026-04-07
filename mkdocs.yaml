@@ -77,6 +77,7 @@ nav:
     - Hello World (IBM Bob IDE): examples/hello_world/bob.md
     - Claude Code Demo: tutorials/claude-code-demo.md
     - Starter Example 2 (Claude Code): examples/hello_world/claude.md
+    - Hello World (Codex): examples/hello_world/codex.md
   - Guides:
     - Configuration: guides/configuration.md
     - Phoenix Sync: guides/phoenix-sync.md
