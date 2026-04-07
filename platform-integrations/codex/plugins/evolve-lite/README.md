@@ -1,6 +1,8 @@
 # Evolve Lite Plugin for Codex
 
-Evolve Lite for Codex provides lightweight file-backed learning and recall without MCP.
+A plugin that helps Codex learn from conversations by automatically extracting and applying entities.
+
+⭐ Star the repo: https://github.com/AgentToolkit/altk-evolve
 
 ## Features
 
