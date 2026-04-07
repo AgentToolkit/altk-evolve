@@ -192,7 +192,7 @@ class TestMyFeature:
         
         # Assert: Evolve installed
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
 ```
 
 ### Rules for New Tests
@@ -226,8 +226,8 @@ class TestMyFeature:
 ### Platform-Specific Behavior
 
 **Bob Lite Mode:**
-1. Copy `skills/evolve-learn/` → `.bob/skills/evolve-learn/`
-2. Copy `skills/evolve-recall/` → `.bob/skills/evolve-recall/`
+1. Copy `skills/evolve-lite:learn/` → `.bob/skills/evolve-lite:learn/`
+2. Copy `skills/evolve-lite:recall/` → `.bob/skills/evolve-lite:recall/`
 3. Copy `commands/` → `.bob/commands/`
 4. Merge `custom_modes.yaml` using sentinel blocks
 

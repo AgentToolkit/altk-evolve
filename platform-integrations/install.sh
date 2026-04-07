@@ -662,8 +662,8 @@ def install_bob(source_dir, target_dir, mode="lite"):
         success("Copied Bob lib")
 
         # Skills
-        copy_tree(bob_source_lite / "skills" / "evolve-learn",  bob_target / "skills" / "evolve-learn")
-        copy_tree(bob_source_lite / "skills" / "evolve-recall", bob_target / "skills" / "evolve-recall")
+        copy_tree(bob_source_lite / "skills" / "evolve-lite:learn",  bob_target / "skills" / "evolve-lite:learn")
+        copy_tree(bob_source_lite / "skills" / "evolve-lite:recall", bob_target / "skills" / "evolve-lite:recall")
         success("Copied Bob skills")
 
         # Commands
@@ -706,10 +706,10 @@ def uninstall_bob(target_dir, mode="full"):
     info(f"Uninstalling Bob from {bob_target}")
 
     remove_dir(bob_target / "evolve-lib")
-    remove_dir(bob_target / "skills" / "evolve-learn")
-    remove_dir(bob_target / "skills" / "evolve-recall")
-    remove_file(bob_target / "commands" / "evolve:learn.md")
-    remove_file(bob_target / "commands" / "evolve:recall.md")
+    remove_dir(bob_target / "skills" / "evolve-lite:learn")
+    remove_dir(bob_target / "skills" / "evolve-lite:recall")
+    remove_file(bob_target / "commands" / "evolve-lite:learn.md")
+    remove_file(bob_target / "commands" / "evolve-lite:recall.md")
     # Remove both lite and full mode custom modes
     remove_yaml_custom_mode(bob_target / "custom_modes.yaml", BOB_SLUG)  # evolve-lite
     remove_yaml_custom_mode(bob_target / "custom_modes.yaml", "Evolve")  # full mode
@@ -722,9 +722,9 @@ def status_bob(target_dir):
     bob_target = Path(target_dir) / ".bob"
     print(f"  Bob (.bob/):")
     print(f"    evolve-lib/entity_io  : {'✓' if (bob_target / 'evolve-lib' / 'entity_io.py').is_file() else '✗'}")
-    print(f"    skills/evolve-learn  : {'✓' if (bob_target / 'skills' / 'evolve-learn').is_dir() else '✗'}")
-    print(f"    skills/evolve-recall : {'✓' if (bob_target / 'skills' / 'evolve-recall').is_dir() else '✗'}")
-    print(f"    commands/            : {'✓' if (bob_target / 'commands' / 'evolve:learn.md').is_file() else '✗'}")
+    print(f"    skills/evolve-lite:learn  : {'✓' if (bob_target / 'skills' / 'evolve-lite:learn').is_dir() else '✗'}")
+    print(f"    skills/evolve-lite:recall : {'✓' if (bob_target / 'skills' / 'evolve-lite:recall').is_dir() else '✗'}")
+    print(f"    commands/            : {'✓' if (bob_target / 'commands' / 'evolve-lite:learn.md').is_file() else '✗'}")
     print(f"    custom_modes.yaml    : {'✓' if (bob_target / 'custom_modes.yaml').is_file() else '✗'}")
 
     mcp_path = bob_target / "mcp.json"

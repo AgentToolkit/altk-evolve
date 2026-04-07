@@ -83,8 +83,8 @@ lets the user pick one, multiple, or all.
 Source: `platform-integrations/bob/evolve-lite/`
 Target: `.bob/` in project directory
 
-1. Copy `skills/evolve-learn/` → `.bob/skills/evolve-learn/`  (merge, idempotent)
-2. Copy `skills/evolve-recall/` → `.bob/skills/evolve-recall/`  (merge, idempotent)
+1. Copy `skills/evolve-lite:learn/` → `.bob/skills/evolve-lite:learn/`  (merge, idempotent)
+2. Copy `skills/evolve-lite:recall/` → `.bob/skills/evolve-lite:recall/`  (merge, idempotent)
 3. Copy `commands/` → `.bob/commands/`  (merge, idempotent)
 4. Merge `custom_modes.yaml` → `.bob/custom_modes.yaml`  (sentinel block, see YAML Strategy)
 
@@ -129,9 +129,9 @@ Codex is currently implemented only in lite mode. Full mode is reserved for futu
 ## Uninstall Actions
 
 ### Bob
-1. Remove `.bob/skills/evolve-learn/`
-2. Remove `.bob/skills/evolve-recall/`
-3. Remove `.bob/commands/evolve:learn.md` and `evolve:recall.md`
+1. Remove `.bob/skills/evolve-lite:learn/`
+2. Remove `.bob/skills/evolve-lite:recall/`
+3. Remove `.bob/commands/evolve-lite:learn.md` and `evolve-lite:recall.md`
 4. Remove sentinel block for `evolve-lite` from `.bob/custom_modes.yaml`
 5. (Full mode) Remove `mcpServers.evolve` key from `.bob/mcp.json`
 

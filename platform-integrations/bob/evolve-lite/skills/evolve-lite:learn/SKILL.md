@@ -63,7 +63,7 @@ echo '{
       "trigger": "Situational context when this applies"
     }
   ]
-}' | python3 .bob/skills/evolve-learn/scripts/save_entities.py
+}' | python3 .bob/skills/evolve-lite:learn/scripts/save_entities.py
 ```
 
 The script will:

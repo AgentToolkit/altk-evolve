@@ -32,8 +32,8 @@ class TestBobIdempotency:
         assert first_content.count("# <<<evolve:evolve-lite<<<") == 1
 
         # Assert: Skills still exist
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-recall")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:recall")
 
     def test_multiple_full_installs(self, temp_project_dir, install_runner, file_assertions):
         """Running install twice for Bob full mode should be safe."""
@@ -66,17 +66,17 @@ class TestBobIdempotency:
         # Manually delete one skill
         import shutil
 
-        shutil.rmtree(bob_dir / "skills" / "evolve-learn")
+        shutil.rmtree(bob_dir / "skills" / "evolve-lite:learn")
 
         # Reinstall
         install_runner.run("install", platform="bob")
 
         # Assert: Deleted skill is restored
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
-        file_assertions.assert_file_exists(bob_dir / "skills" / "evolve-learn" / "SKILL.md")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
+        file_assertions.assert_file_exists(bob_dir / "skills" / "evolve-lite:learn" / "SKILL.md")
 
         # Assert: Other components still intact
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-recall")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:recall")
         file_assertions.assert_file_exists(bob_dir / "custom_modes.yaml")
 
 
@@ -147,20 +147,20 @@ class TestUninstallInstallCycle:
         install_runner.run("install", platform="bob")
 
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
 
         # Uninstall
         install_runner.run("uninstall", platform="bob")
 
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-learn")
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-recall")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite:learn")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite:recall")
 
         # Reinstall
         install_runner.run("install", platform="bob")
 
         # Assert: Evolve content is back
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-recall")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:recall")
         file_assertions.assert_sentinel_block_exists(bob_dir / "custom_modes.yaml", "evolve-lite")
 
         # Assert: User content still intact

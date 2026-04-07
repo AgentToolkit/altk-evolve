@@ -28,8 +28,8 @@ class TestBobPreservation:
 
         # Assert: Evolve skills are added
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-recall")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:recall")
 
     def test_preserves_existing_commands(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve when user has existing commands - they must be preserved."""
@@ -45,8 +45,8 @@ class TestBobPreservation:
 
         # Assert: Evolve commands are added
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve:learn.md")
-        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve:recall.md")
+        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve-lite:learn.md")
+        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve-lite:recall.md")
 
     def test_preserves_existing_custom_modes_yaml(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve when user has existing custom modes - they must be preserved."""
@@ -134,7 +134,7 @@ class TestBobPreservation:
 
         # Assert: Evolve lite content is added
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
         file_assertions.assert_sentinel_block_exists(custom_modes, "evolve-lite")
 
     def test_preserves_all_bob_content_together_full(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
@@ -269,5 +269,5 @@ class TestMultiPlatformPreservation:
         )
 
         # Assert: Evolve content is added everywhere
-        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-learn")
+        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-lite:learn")
         file_assertions.assert_dir_exists(temp_project_dir / "plugins" / "evolve-lite")
