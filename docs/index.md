@@ -17,7 +17,7 @@ Evolve is a system designed to help agents improve over time by learning from th
 
     [General Installation](installation/index.md){ .md-button }
 
-    [Claude Code](examples/hello_world/claude.md){ .md-button } [IBM Bob](examples/hello_world/bob.md){ .md-button } [Codex](#){ .md-button }
+    [Claude Code](examples/hello_world/claude.md){ .md-button } [IBM Bob](examples/hello_world/bob.md){ .md-button } [Codex](examples/hello_world/codex.md){ .md-button }
 
 === "Full"
     Total Control
@@ -61,6 +61,26 @@ Evolve is a system designed to help agents improve over time by learning from th
 
     - [CLI Reference](reference/cli.md): Manage namespaces, entities, and sync jobs from the command line.
     - [Policies](reference/policies.md): Structured policy entities and how to retrieve them with MCP tools.
+
+## Demos
+
+=== "Claude Code"
+
+    <div class="video-wrapper">
+        <iframe width="1280" height="720" src="https://www.youtube.com/embed/XIlYA79pYp4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    </div>
+
+=== "IBM Bob"
+
+    <div class="video-wrapper">
+        <iframe width="1280" height="720" src="https://www.youtube.com/embed/YlTJoSJ4eDg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    </div>
+
+=== "Codex"
+
+    <div class="video-wrapper">
+        <iframe width="1280" height="720" src="https://www.youtube.com/embed/IBc59bLjdi8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    </div>
 
 ## How It Works
 
