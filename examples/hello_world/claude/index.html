@@ -767,17 +767,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#step-4-try-again" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 4: Try Again
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -1417,17 +1406,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#step-4-try-again" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 4: Try Again
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -1524,32 +1502,41 @@ In this tutorial, we will use Evolve and Claude Code to create a Python script t
 <h2 id="step-2-running-in-claude-code">Step 2: Running in Claude Code<a class="headerlink" href="#step-2-running-in-claude-code" title="Permanent link">&para;</a></h2>
 <p>In a terminal, run:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>claude
-</code></pre></div>
-Ask Claude to download the following image:</p>
-<p><img alt="A sample image that should be downloaded" src="../../../assets/sample.jpg" /></p>
-<p>And then ask:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>where was the photo @sample.jpg taken? use exif metadata.
-</code></pre></div>
-It will ask for permission to use some tools, which should be accepted.</p>
-<p>Have it produce a summary:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>summarize what steps you took, including tool calls, failed attempts, and reasoning guidelines.
 </code></pre></div></p>
-<div class="admonition quote">
+<div class="admonition user-message">
+<p class="admonition-title">Let's Ask Claude</p>
+<p>Can you download this image?</p>
+<p><img alt="A sample image that should be downloaded" src="../../../assets/sample.jpg" /></p>
+</div>
+<div class="admonition user-message">
+<p class="admonition-title">Let's Ask Claude</p>
+<p>where was the photo @sample.jpg taken? use exif metadata.</p>
+</div>
+<div class="admonition agent-message">
+<p class="admonition-title">A Likely Claude Response</p>
+<p>I need access to some tools...</p>
+</div>
+<div class="admonition user-message">
+<p class="admonition-title">Let's Ask Bob</p>
+<p>summarize what steps you took, including tool calls, failed attempts, and reasoning guidelines.</p>
+</div>
+<div class="admonition agent-message">
 <p class="admonition-title">A Likely Claude Response</p>
 <p>Claude probably attempted to use a system utility like <code>exiftool</code>, but because we intentionally ran it in a docker container, that utility wasn't available, so Claude created a script to read the exif data instead.</p>
 </div>
-<p>We can learn from this by running a command:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>/evolve-lite:learn
-</code></pre></div>
-which will produce new guidelines from this experience.</p>
-<h2 id="step-4-try-again">Step 4: Try Again<a class="headerlink" href="#step-4-try-again" title="Permanent link">&para;</a></h2>
-<p>Reset the conversation history using
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>/clear
-</code></pre></div></p>
-<p>Ask a similar question:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>what focal length was used to take the photo @sample.jpg? use exif metadata
-</code></pre></div></p>
-<div class="admonition quote">
+<div class="admonition system-message">
+<p class="admonition-title">Learning From the Past</p>
+<p><code>/evolve-lite:learn</code> will produce new guidelines from this experience.</p>
+</div>
+<div class="admonition system-message">
+<p class="admonition-title">One Eternity Later</p>
+<p>Reset the conversation history using <code>/clear</code></p>
+</div>
+<div class="admonition user-message">
+<p class="admonition-title">Let's Ask Claude</p>
+<p>what focal length was used to take the photo @sample.jpg? use exif metadata</p>
+</div>
+<div class="admonition agent-message">
 <p class="admonition-title">A Likely Claude Response</p>
 <p>This time, Claude learns from the guidelines produced by Evolve to use the generated script directly saving time.</p>
 </div>
