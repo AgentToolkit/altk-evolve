@@ -30,6 +30,7 @@
          .albl     { fill: var(--c-arrow);         font-size: 11px; }
          .human    { fill: none; stroke: var(--c-arrow); stroke-width: 1.5; }
          .human-hd { fill: var(--c-box-fill);      stroke: var(--c-arrow); stroke-width: 1.5; }
+         #human text { fill: var(--c-arrow); text-anchor: middle; dominant-baseline: middle; }
       </style>
       <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
               markerWidth="6" markerHeight="6" orient="auto">
