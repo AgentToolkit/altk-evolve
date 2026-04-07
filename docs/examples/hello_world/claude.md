@@ -31,39 +31,32 @@ In a terminal, run:
 ```bash
 claude
 ```
-Ask Claude to download the following image:
 
-![A sample image that should be downloaded](../../assets/sample.jpg)
+!!! user-message "Let's Ask Claude"
+    Can you download this image?
 
-And then ask:
-```text
-where was the photo @sample.jpg taken? use exif metadata.
-```
-It will ask for permission to use some tools, which should be accepted.
+    ![A sample image that should be downloaded](../../assets/sample.jpg)
 
-Have it produce a summary:
-```text
-summarize what steps you took, including tool calls, failed attempts, and reasoning guidelines.
-```
-!!! quote "A Likely Claude Response"
+!!! user-message "Let's Ask Claude"
+    where was the photo @sample.jpg taken? use exif metadata.
+
+!!! agent-message "A Likely Claude Response"
+    I need access to some tools...
+
+!!! user-message "Let's Ask Bob"
+    summarize what steps you took, including tool calls, failed attempts, and reasoning guidelines.
+
+!!! agent-message "A Likely Claude Response"
     Claude probably attempted to use a system utility like `exiftool`, but because we intentionally ran it in a docker container, that utility wasn't available, so Claude created a script to read the exif data instead.
 
-We can learn from this by running a command:
-```text
-/evolve-lite:learn
-```
-which will produce new guidelines from this experience.
+!!! system-message "Learning From the Past"
+    `/evolve-lite:learn` will produce new guidelines from this experience.
 
-## Step 4: Try Again
-Reset the conversation history using
-```text
-/clear
-```
+!!! system-message "One Eternity Later"
+    Reset the conversation history using `/clear`
 
-Ask a similar question:
-```text
-what focal length was used to take the photo @sample.jpg? use exif metadata
-```
+!!! user-message "Let's Ask Claude"
+    what focal length was used to take the photo @sample.jpg? use exif metadata
 
-!!! quote "A Likely Claude Response"
+!!! agent-message "A Likely Claude Response"
     This time, Claude learns from the guidelines produced by Evolve to use the generated script directly saving time.
