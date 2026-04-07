@@ -47,7 +47,7 @@ claude
 !!! agent-message "A Likely Claude Response"
     I need access to some tools...
 
-!!! user-message "Let's Ask Bob"
+!!! user-message "Let's Ask Claude"
     summarize what steps you took, including tool calls, failed attempts, and reasoning guidelines.
 
 !!! agent-message "A Likely Claude Response"
