@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platf
 **Post-Installation Steps:**
 1. **Restart Bob** - Close and reopen IBM Bob IDE to load the new mode
 2. **Switch to Evolve Lite mode** - In Bob, select "Evolve Lite" from the mode dropdown
-3. **Verify installation** - The mode should appear in `~/.bob/settings/custom_modes.yaml`
+3. **Verify installation** - The mode should appear in `~/.bob/custom_modes.yaml`
 
 Next: [Hello World with IBM Bob](../examples/hello_world/bob.md)
 
@@ -60,11 +60,11 @@ After running the install script:
 
 1. **Restart Bob IDE** - The new mode will not appear until you restart
 2. **Locate the mode** - Open Bob and look for "Evolve Lite" in the mode selector
-3. **Verify files** - Check that `~/.bob/settings/custom_modes.yaml` contains the Evolve Lite configuration
+3. **Verify files** - Check that `~/.bob/custom_modes.yaml` contains the Evolve Lite configuration
 4. **Test the installation** - Try the [Hello World tutorial](../examples/hello_world/bob.md)
 
 **Troubleshooting:**
-- If the mode doesn't appear after restart, check `~/.bob/settings/custom_modes.yaml` exists
+- If the mode doesn't appear after restart, check `~/.bob/custom_modes.yaml` exists
 - Ensure the install script completed without errors
 - Try running the install script again (it's idempotent)
 
@@ -103,7 +103,7 @@ If you encounter issues:
 ### "No modes showing after install"
 
 For Bob specifically:
-- The mode is installed to `~/.bob/settings/custom_modes.yaml`, not the project directory
+- The mode is installed to `~/.bob/custom_modes.yaml`, not the project directory
 - You must restart Bob IDE completely (not just reload)
 - Check the file exists and contains the `evolve-lite` mode definition
 

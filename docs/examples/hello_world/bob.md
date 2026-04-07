@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platf
 
 **Troubleshooting:** If "Evolve Lite" doesn't appear in the mode list:
 - Verify the installation completed without errors
-- Check that `~/.bob/settings/custom_modes.yaml` exists and contains the evolve-lite configuration
+- Check that `~/.bob/custom_modes.yaml` exists and contains the evolve-lite configuration
 - Try restarting Bob IDE again
 - Re-run the install script (it's safe to run multiple times)
 
