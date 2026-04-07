@@ -255,3 +255,18 @@
 [data-md-color-scheme="slate"] .md-typeset .system-message > summary::before {
   background-color: #aeaeb2;
 }
+
+/* ─── Architecture diagram — responsive SVG swap ───────────────────────────── */
+
+.md-content {
+    container-type: inline-size;
+    container-name: md-content;
+}
+
+.md-typeset figure img.arch-narrow { display: block; }
+.md-typeset figure img.arch-wide   { display: none;  }
+
+@container md-content (min-width: 1000px) {
+    .md-typeset figure img.arch-narrow { display: none;  }
+    .md-typeset figure img.arch-wide   { display: block; }
+}
