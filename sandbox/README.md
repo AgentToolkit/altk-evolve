@@ -67,7 +67,7 @@ just trace=true learn=true claude-prompt 'where was the photo @sample.jpg taken.
 just claude-test
 ```
 
-See [docs/integrations/evolve-lite.md](../docs/integrations/evolve-lite.md) for the full learn/recall walkthrough.
+See [docs/integrations/claude/evolve-lite-claude.md](../docs/integrations/claude/evolve-lite-claude.md) for the full learn/recall walkthrough.
 
 ## Codex
 

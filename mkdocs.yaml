@@ -86,7 +86,7 @@ nav:
     - CLI: reference/cli.md
     - Policies: reference/policies.md
   - Integrations:
-    - Evolve Lite (Claude Code): integrations/claude/evolve-lite.md
+    - Evolve Lite (Claude Code): integrations/claude/evolve-lite-claude.md
   - Results:
     - Benchmarks: results/index.md
   - Operations:
