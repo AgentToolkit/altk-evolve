@@ -11,6 +11,9 @@
 
 Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
 
+> [!IMPORTANT]
+> ⭐ **Star the repo**: it helps others discover it.  
+
 ## Features
 
 - **MCP Server**: Exposes tools to get guidelines and save trajectories.
@@ -109,7 +112,6 @@ See the [Low-Code Tracing Guide](docs/guides/low-code-tracing.md#6-understanding
 
 Evolve is an active project, and real‑world usage helps guide its direction.
 
-If Evolve is useful or aligned with your work, consider giving the repo a ⭐ — it helps others discover it.  
 If you’re experimenting with Evolve or exploring on‑the‑job learning for agents, feel free to open an issue or discussion to share use cases, ideas, or feedback.
 
 
