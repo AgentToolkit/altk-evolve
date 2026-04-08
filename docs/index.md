@@ -12,6 +12,9 @@ Coding agents repeat the same mistakes because they start fresh every session. E
 On the AppWorld benchmark, Evolve improved agent reliability by **+8.9 points** overall, with a **74% relative increase** on hard multi-step tasks. See the [full results](results/index.md) and the [paper (arXiv:2603.10600)](https://arxiv.org/abs/2603.10600).
 Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
 
+> [!IMPORTANT]
+> ⭐ **Star the repo**: it helps others discover it.  
+
 === "Lite"
     When setting up API keys and extra services are too much
 
