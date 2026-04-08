@@ -21,10 +21,9 @@ set -euo pipefail
 EVOLVE_REPO="${EVOLVE_REPO:-AgentToolkit/altk-evolve}"
 EVOLVE_DEBUG="${EVOLVE_DEBUG:-0}"
 
-# SCRIPT_VERSION is substituted by the release process (e.g. sed to "v1.2.0").
-# This means a script fetched from a tag URL already knows its own version,
-# so callers never need to set EVOLVE_VERSION manually.
-SCRIPT_VERSION="v1.0.6"
+# Default to "main" so the installer always pulls the latest source.
+# Callers can still pin a specific tag: EVOLVE_VERSION=v1.0.6 bash install.sh ...
+SCRIPT_VERSION="main"
 EVOLVE_VERSION="${EVOLVE_VERSION:-${SCRIPT_VERSION}}"
 
 # ─── Colours ──────────────────────────────────────────────────────────────────
