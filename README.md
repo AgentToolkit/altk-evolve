@@ -20,7 +20,7 @@ Evolve is a system designed to help agents improve over time by learning from th
 
 ## Architecture
 
-<img src="docs/assets/architecture.png" alt="Architecture" width="480">
+<img src="docs/assets/architecture-wide-light.svg" alt="Architecture" width="480">
 
 ## Quick Start
 
