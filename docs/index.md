@@ -16,8 +16,8 @@ On the AppWorld benchmark, Evolve improved agent reliability by **+8.9 points** 
 **Blog posts:** [IBM announcement](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) | [Hugging Face blog](https://huggingface.co/blog/ibm-research/altk-evolve)
 
 
-> [!IMPORTANT]
-> ⭐ **Star the repo**: it helps others discover it.  
+!!! important
+    ⭐ **Star the repo**: it helps others discover it.
 
 === "Lite"
     When setting up API keys and extra services are too much
