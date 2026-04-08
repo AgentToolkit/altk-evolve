@@ -12,7 +12,7 @@
 Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
 
 > [!IMPORTANT]
-> ⭐ **Please star the repo** if you find ALTK‑Evolve useful — it helps others discover it.  
+> ⭐ **Star the repo**: it helps others discover it.  
 
 ## Features
 
