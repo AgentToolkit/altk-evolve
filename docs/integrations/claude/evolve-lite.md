@@ -18,7 +18,7 @@ claude --plugin-dir /path/to/altk-evolve/platform-integrations/claude/plugins/ev
 
 ```bash
 claude plugin marketplace add AgentToolkit/altk-evolve
-claude plugin install evolve@evolve-marketplace
+claude plugin install evolve-lite@evolve-marketplace
 ```
 
 Verify the plugin is active:
