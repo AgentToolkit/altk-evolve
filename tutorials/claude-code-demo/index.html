@@ -1530,6 +1530,26 @@
       
     
 <script src="../../components/github-repo-card.js"></script>
+<script>
+  (function () {
+    function syncTheme() {
+      const scheme = document.body.getAttribute("data-md-color-scheme");
+      const theme = scheme === "slate" ? "dark" : "light";
+      document.querySelectorAll("github-repo-card").forEach(function (card) {
+        card.setAttribute("theme", theme);
+      });
+    }
+
+    // Set on initial load
+    syncTheme();
+
+    // Re-sync whenever MkDocs changes the color scheme (palette toggle)
+    new MutationObserver(syncTheme).observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-md-color-scheme"],
+    });
+  })();
+</script>
 
   </body>
 </html>
