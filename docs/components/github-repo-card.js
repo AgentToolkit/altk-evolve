@@ -20,6 +20,8 @@ class GitHubRepoCard extends HTMLElement {
      color-mix(), so overriding a base color cascades to all its uses.
   ───────────────────────────────────────────────────────────────────────── */
   :host {
+    color-scheme: light dark;
+
     /* Typography */
     --ghrc-font:          -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --ghrc-font-size-sm:  0.75rem;
@@ -32,16 +34,16 @@ class GitHubRepoCard extends HTMLElement {
     --ghrc-font-weight-bold: 700;
 
     /* Surfaces */
-    --ghrc-surface:       #161b22;   /* card & input surface */
+    --ghrc-surface:       #ffffff;   /* card & input surface */
 
     /* Borders */
-    --ghrc-border:        #30363d;
-    --ghrc-border-subtle: #21262d;   /* footer divider, skeleton base */
+    --ghrc-border:        #d0d7de;
+    --ghrc-border-subtle: #d8dee4;   /* footer divider, skeleton base */
 
     /* Text */
-    --ghrc-text:          #8b949e;
-    --ghrc-text-bold:     #e6edf3;
-    --ghrc-text-subtle:   #6e7681;
+    --ghrc-text:          #57606a;
+    --ghrc-text-bold:     #24292f;
+    --ghrc-text-subtle:   #6e7781;
 
     /* Accent — links, focus rings */
     --ghrc-accent:        #58a6ff;
@@ -98,6 +100,35 @@ class GitHubRepoCard extends HTMLElement {
     display: block;
     font-family: var(--ghrc-font);
     color: var(--ghrc-text)
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :host {
+      --ghrc-surface:       #161b22;
+      --ghrc-border:        #30363d;
+      --ghrc-border-subtle: #21262d;
+      --ghrc-text:          #8b949e;
+      --ghrc-text-bold:     #e6edf3;
+      --ghrc-text-subtle:   #6e7681;
+    }
+  }
+
+  :host([theme="light"]) {
+    --ghrc-surface:       #ffffff;
+    --ghrc-border:        #d0d7de;
+    --ghrc-border-subtle: #d8dee4;
+    --ghrc-text:          #57606a;
+    --ghrc-text-bold:     #24292f;
+    --ghrc-text-subtle:   #6e7781;
+  }
+
+  :host([theme="dark"]) {
+    --ghrc-surface:       #161b22;
+    --ghrc-border:        #30363d;
+    --ghrc-border-subtle: #21262d;
+    --ghrc-text:          #8b949e;
+    --ghrc-text-bold:     #e6edf3;
+    --ghrc-text-subtle:   #6e7681;
   }
 
   /* ── Card ── */
@@ -591,7 +622,7 @@ class GitHubRepoCard extends HTMLElement {
   </div>
 `;
   static get observedAttributes() {
-    return ["repo", "cache-ttl", "compact"];
+    return ["repo", "cache-ttl", "compact", "theme"];
   }
 
   constructor() {
@@ -633,6 +664,18 @@ class GitHubRepoCard extends HTMLElement {
 
   set compact(value) {
     this.toggleAttribute("compact", Boolean(value));
+  }
+
+  get theme() {
+    return this.getAttribute("theme") ?? "auto";
+  }
+
+  set theme(value) {
+    if (value == null || value === "" || value === "auto") {
+      this.removeAttribute("theme");
+      return;
+    }
+    this.setAttribute("theme", value);
   }
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ Evolve is a system designed to help agents improve over time by learning from th
 On the AppWorld benchmark, Evolve improved agent reliability by **+8.9 points** overall, with a **74% relative increase** on hard multi-step tasks.
 Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
 
-[The Announcement →](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) [Check out the Blog →](https://huggingface.co/blog/ibm-research/altk-evolve){ .md-button } [Read the Paper →](https://arxiv.org/abs/2603.10600){ .md-button } [See the Results →](http://127.0.0.1:8000/evolve/results/){ .md-button }
+[The Announcement →](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents){ .md-button } [Check out the Blog →](https://huggingface.co/blog/ibm-research/altk-evolve){ .md-button } [Read the Paper →](https://arxiv.org/abs/2603.10600){ .md-button } [See the Results →](http://127.0.0.1:8000/evolve/results/){ .md-button }
 
 <github-repo-card repo="agenttoolkit/altk-evolve"></github-repo-card>
 
