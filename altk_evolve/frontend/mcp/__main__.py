@@ -1,3 +1,4 @@
+import argparse
 import logging
 import sys
 import threading
@@ -6,6 +7,28 @@ import uvicorn
 from altk_evolve.frontend.mcp.mcp_server import mcp, app
 
 logger = logging.getLogger("evolve-mcp")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run the Evolve MCP server")
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "sse"),
+        default="stdio",
+        help="MCP transport to use (default: stdio)",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host for SSE transport (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8201,
+        help="Port for SSE transport (default: 8201)",
+    )
+    return parser
 
 
 def run_api_server():
@@ -21,13 +44,17 @@ def main():
     """
     Main entry point for the server.
     """
-    # Start the HTTP API/UI server in a daemon thread so it dies when the parent dies
-    api_thread = threading.Thread(target=run_api_server, daemon=True)
-    api_thread.start()
+    args = _build_parser().parse_args()
 
     try:
-        # Start FastMCP using stdio (which blocks)
-        mcp.run()
+        if args.transport == "stdio":
+            # Start the HTTP API/UI server in a daemon thread so it dies when the parent dies
+            api_thread = threading.Thread(target=run_api_server, daemon=True)
+            api_thread.start()
+            # Start FastMCP using stdio (which blocks)
+            mcp.run()
+        else:
+            mcp.run(transport="sse", host=args.host, port=args.port)
     except KeyboardInterrupt:
         logger.info("MCP server stopped by user (KeyboardInterrupt)")
         sys.exit(0)
