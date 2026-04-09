@@ -4,6 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
+[![Documentation](https://shields.io/badge/Documentation-Available-blue)](https://agenttoolkit.github.io/altk-evolve)
 [![arXiv](https://img.shields.io/badge/arXiv-2603.10600-b31b1b)](https://arxiv.org/pdf/2603.10600)
 ![License](https://img.shields.io/github/license/AgentToolkit/altk-evolve)
 ![Stars](https://img.shields.io/github/stars/AgentToolkit/altk-evolve?style=social)
