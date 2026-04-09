@@ -1,5 +1,20 @@
 {% extends "base.html" %}
 
+{% block styles %}
+{{ super() }}
+<style>
+  github-repo-card {
+    max-width: 800px;
+    --ghrc-radius-lg: 0px;
+  }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ base_url }}/components/github-repo-card.js"></script>
+{% endblock %}
+
 
 {% block tabs %}
 {# Project switcher — sits between the main header bar and the navigation tabs #}
