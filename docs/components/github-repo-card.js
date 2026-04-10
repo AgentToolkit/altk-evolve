@@ -906,6 +906,7 @@ class GitHubRepoCard extends HTMLElement {
       cacheRefreshBtn: this._shadow.querySelector(".cache-refresh-btn"),
       skDesc: this._shadow.querySelector(".sk-desc"),
       skDesc2: this._shadow.querySelector(".sk-desc2"),
+      skFooterUpdated: this._shadow.querySelector(".sk-footer-line"),
       skFooterLicense: this._shadow.querySelector(".sk-footer-line.license"),
       skRefresh: this._shadow.querySelector(".sk-refresh"),
       stars: this._shadow.querySelector("[data-stat='stars']"),
@@ -960,9 +961,11 @@ class GitHubRepoCard extends HTMLElement {
     const {
       cacheRefreshBtn,
       footerLicense,
+      footerUpdated,
       repoDescription,
       skDesc,
       skDesc2,
+      skFooterUpdated,
       skFooterLicense,
       skRefresh,
     } = this._els;
@@ -970,8 +973,10 @@ class GitHubRepoCard extends HTMLElement {
     repoDescription.hidden = compact;
     skDesc.hidden = compact;
     skDesc2.hidden = compact;
-    if (footerLicense) footerLicense.hidden = compact || !this._hasFooterLicense;
-    if (skFooterLicense) skFooterLicense.hidden = compact;
+    if (footerLicense) footerLicense.hidden = !this._hasFooterLicense;
+    if (footerUpdated) footerUpdated.hidden = compact;
+    if (skFooterUpdated) skFooterUpdated.hidden = compact;
+    if (skFooterLicense) skFooterLicense.hidden = !compact;
     cacheRefreshBtn.hidden = compact;
     if (skRefresh) skRefresh.hidden = compact;
 
@@ -1034,6 +1039,7 @@ class GitHubRepoCard extends HTMLElement {
       year: "numeric", month: "short", day: "numeric",
     });
     footerUpdated.textContent = `Last push: ${updated}`;
+    footerUpdated.hidden = this._isCompact;
 
     const licenseText = (() => {
       const spdx = data.license?.spdx_id;
@@ -1047,7 +1053,7 @@ class GitHubRepoCard extends HTMLElement {
     })();
     this._hasFooterLicense = Boolean(licenseText);
     footerLicense.textContent = licenseText ? `License: ${licenseText}` : "";
-    footerLicense.hidden = this._isCompact || !this._hasFooterLicense;
+    footerLicense.hidden = !this._hasFooterLicense;
 
     if (cachedAt || isStale) {
       cacheRefreshBtn.className = `cache-refresh-btn ${isStale ? "stale" : "fresh"}`;
