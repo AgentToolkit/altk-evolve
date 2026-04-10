@@ -2,70 +2,70 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://agenttoolkit.github.io/evolve/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/archive/save-session-as-skill-design/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/examples/hello_world/bob/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/examples/hello_world/claude/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/examples/hello_world/codex/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/guides/configuration/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/guides/extract-trajectories/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/guides/low-code-tracing/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/guides/phoenix-sync/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/installation/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/integrations/claude/evolve-lite/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/operations/docker-testing/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/reference/cli/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/reference/policies/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/results/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/tutorials/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
     <url>
          <loc>https://agenttoolkit.github.io/evolve/tutorials/claude-code-demo/</loc>
-         <lastmod>2026-04-09</lastmod>
+         <lastmod>2026-04-10</lastmod>
     </url>
 </urlset>
