@@ -209,7 +209,7 @@ class GitHubRepoCard extends HTMLElement {
     height: var(--ghrc-skeleton-line-height);
     width: var(--ghrc-skeleton-updated-width);
   }
-  .sk-footer-line.size {
+  .sk-footer-line.license {
     width: var(--ghrc-skeleton-size-width);
   }
   .sk-refresh {
@@ -387,11 +387,11 @@ class GitHubRepoCard extends HTMLElement {
 
   @media (max-width: 640px) and (orientation: portrait) {
     .repo-description,
-    .footer-size,
+    .footer-license,
     .cache-refresh-btn,
     .sk-desc,
     .sk-desc2,
-    .sk-footer-line.size,
+    .sk-footer-line.license,
     .sk-refresh {
       display: none !important;
     }
@@ -552,8 +552,8 @@ class GitHubRepoCard extends HTMLElement {
       </div>
       <div class="sk-footer">
         <div class="sk-footer-meta">
+          <div class="skeleton sk-footer-line license"></div>
           <div class="skeleton sk-footer-line"></div>
-          <div class="skeleton sk-footer-line size"></div>
         </div>
         <div class="sk-footer-right">
           <div class="skeleton sk-refresh"></div>
@@ -610,8 +610,8 @@ class GitHubRepoCard extends HTMLElement {
 
       <div class="card-footer">
         <div class="footer-left">
+          <span class="footer-license"></span>
           <span class="footer-updated"></span>
-          <span class="footer-size"></span>
         </div>
         <div class="footer-right">
           <button class="cache-refresh-btn" hidden></button>
@@ -630,6 +630,7 @@ class GitHubRepoCard extends HTMLElement {
     this._shadow = this.attachShadow({ mode: "open" });
     this._abortController = null;
     this._requestId = 0;
+    this._hasFooterLicense = false;
     this._els = null;
     this._render();
   }
@@ -899,13 +900,13 @@ class GitHubRepoCard extends HTMLElement {
       repoDescription: this._shadow.querySelector(".repo-description"),
       repoBadges: this._shadow.querySelector(".repo-badges"),
       badgesSlot: this._shadow.querySelector("slot"),
+      footerLicense: this._shadow.querySelector(".footer-license"),
       footerUpdated: this._shadow.querySelector(".footer-updated"),
-      footerSize: this._shadow.querySelector(".footer-size"),
       githubLink: this._shadow.querySelector(".github-link"),
       cacheRefreshBtn: this._shadow.querySelector(".cache-refresh-btn"),
       skDesc: this._shadow.querySelector(".sk-desc"),
       skDesc2: this._shadow.querySelector(".sk-desc2"),
-      skFooterSize: this._shadow.querySelector(".sk-footer-line.size"),
+      skFooterLicense: this._shadow.querySelector(".sk-footer-line.license"),
       skRefresh: this._shadow.querySelector(".sk-refresh"),
       stars: this._shadow.querySelector("[data-stat='stars']"),
       forks: this._shadow.querySelector("[data-stat='forks']"),
@@ -958,19 +959,19 @@ class GitHubRepoCard extends HTMLElement {
     const compact = this._isCompact;
     const {
       cacheRefreshBtn,
-      footerSize,
+      footerLicense,
       repoDescription,
       skDesc,
       skDesc2,
-      skFooterSize,
+      skFooterLicense,
       skRefresh,
     } = this._els;
 
     repoDescription.hidden = compact;
     skDesc.hidden = compact;
     skDesc2.hidden = compact;
-    if (footerSize) footerSize.hidden = compact;
-    if (skFooterSize) skFooterSize.hidden = compact;
+    if (footerLicense) footerLicense.hidden = compact || !this._hasFooterLicense;
+    if (skFooterLicense) skFooterLicense.hidden = compact;
     cacheRefreshBtn.hidden = compact;
     if (skRefresh) skRefresh.hidden = compact;
 
@@ -987,7 +988,7 @@ class GitHubRepoCard extends HTMLElement {
     const {
       avatar,
       cacheRefreshBtn,
-      footerSize,
+      footerLicense,
       footerUpdated,
       githubLink,
       issues,
@@ -1034,10 +1035,19 @@ class GitHubRepoCard extends HTMLElement {
     });
     footerUpdated.textContent = `Last push: ${updated}`;
 
-    const sizeFmt = data.size >= 1024
-      ? `${(data.size / 1024).toFixed(1)} MB`
-      : `${data.size} KB`;
-    footerSize.textContent = `Size: ${sizeFmt}`;
+    const licenseText = (() => {
+      const spdx = data.license?.spdx_id;
+      if (spdx && spdx !== "NOASSERTION") return spdx;
+
+      const key = data.license?.key;
+      if (key && key !== "other") return key.toUpperCase();
+
+      const name = data.license?.name;
+      return name || "";
+    })();
+    this._hasFooterLicense = Boolean(licenseText);
+    footerLicense.textContent = licenseText ? `License: ${licenseText}` : "";
+    footerLicense.hidden = this._isCompact || !this._hasFooterLicense;
 
     if (cachedAt || isStale) {
       cacheRefreshBtn.className = `cache-refresh-btn ${isStale ? "stale" : "fresh"}`;
