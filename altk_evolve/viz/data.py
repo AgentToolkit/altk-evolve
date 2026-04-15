@@ -13,6 +13,7 @@ from pathlib import Path
 # Frontmatter parser (simple key: value, no nested structures needed)
 # ---------------------------------------------------------------------------
 
+
 def _parse_frontmatter(text: str) -> dict:
     result = {}
     for line in text.strip().splitlines():
@@ -55,6 +56,7 @@ def _parse_entity_file(path: Path) -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def load_entities(evolve_dir: Path) -> list[dict]:
     """Load all entity files from <evolve_dir>/entities/."""
     entities_dir = evolve_dir / "entities"
@@ -94,14 +96,16 @@ def load_trajectories(evolve_dir: Path, entities: list[dict]) -> list[dict]:
             data = json.loads(json_file.read_text(encoding="utf-8"))
             fname = json_file.name
             linked = traj_index.get(fname, [])
-            results.append({
-                "filename": fname,
-                "model": data.get("model", ""),
-                "timestamp": data.get("timestamp", ""),
-                "message_count": len(data.get("messages", [])),
-                "guideline_count": len(linked),
-                "guidelines": linked,
-            })
+            results.append(
+                {
+                    "filename": fname,
+                    "model": data.get("model", ""),
+                    "timestamp": data.get("timestamp", ""),
+                    "message_count": len(data.get("messages", [])),
+                    "guideline_count": len(linked),
+                    "guidelines": linked,
+                }
+            )
         except Exception:
             pass
     return results

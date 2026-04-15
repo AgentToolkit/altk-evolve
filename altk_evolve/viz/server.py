@@ -6,6 +6,7 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import ClassVar, Optional
 
 from .data import (
     load_entities,
@@ -18,8 +19,9 @@ from .data import (
 # Request handler
 # ---------------------------------------------------------------------------
 
+
 class VizHandler(BaseHTTPRequestHandler):
-    evolve_dir: Path = None  # set before starting server
+    evolve_dir: ClassVar[Optional[Path]] = None  # set before starting server
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -31,14 +33,14 @@ class VizHandler(BaseHTTPRequestHandler):
             entities = load_entities(self.evolve_dir)
             self._serve_json(load_trajectories(self.evolve_dir, entities))
         elif path.startswith("/api/trajectories/"):
-            filename = urllib.parse.unquote(path[len("/api/trajectories/"):])
+            filename = urllib.parse.unquote(path[len("/api/trajectories/") :])
             entities = load_entities(self.evolve_dir)
             detail = load_trajectory_detail(self.evolve_dir, filename, entities)
             self._serve_json(detail, not_found=detail is None)
         elif path == "/api/entities":
             self._serve_json(load_entities(self.evolve_dir))
         elif path.startswith("/api/entities/"):
-            slug = urllib.parse.unquote(path[len("/api/entities/"):])
+            slug = urllib.parse.unquote(path[len("/api/entities/") :])
             detail = load_entity_detail(self.evolve_dir, slug)
             self._serve_json(detail, not_found=detail is None)
         else:
@@ -71,6 +73,7 @@ class VizHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def serve(evolve_dir: Path, port: int = 7891, open_browser: bool = True):
     VizHandler.evolve_dir = evolve_dir
