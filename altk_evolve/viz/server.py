@@ -16,6 +16,24 @@ from .data import (
 )
 
 # ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+_PATH_SEP = frozenset("/\\")
+_GLOB_CHARS = frozenset("*?[")
+
+
+def _safe_filename(filename: str) -> bool:
+    """Return True if filename is safe to use as a bare filename (no path traversal)."""
+    return bool(filename) and not any(c in _PATH_SEP for c in filename) and filename != ".." and not filename.startswith(".")
+
+
+def _safe_slug(slug: str) -> bool:
+    """Return True if slug contains no path separators or glob metacharacters."""
+    return bool(slug) and not any(c in (_PATH_SEP | _GLOB_CHARS) for c in slug)
+
+
+# ---------------------------------------------------------------------------
 # Request handler
 # ---------------------------------------------------------------------------
 
@@ -34,6 +52,9 @@ class VizHandler(BaseHTTPRequestHandler):
             self._serve_json(load_trajectories(self.evolve_dir, entities))
         elif path.startswith("/api/trajectories/"):
             filename = urllib.parse.unquote(path[len("/api/trajectories/") :])
+            if not _safe_filename(filename):
+                self.send_error(400)
+                return
             entities = load_entities(self.evolve_dir)
             detail = load_trajectory_detail(self.evolve_dir, filename, entities)
             self._serve_json(detail, not_found=detail is None)
@@ -41,6 +62,9 @@ class VizHandler(BaseHTTPRequestHandler):
             self._serve_json(load_entities(self.evolve_dir))
         elif path.startswith("/api/entities/"):
             slug = urllib.parse.unquote(path[len("/api/entities/") :])
+            if not _safe_slug(slug):
+                self.send_error(400)
+                return
             detail = load_entity_detail(self.evolve_dir, slug)
             self._serve_json(detail, not_found=detail is None)
         else:
