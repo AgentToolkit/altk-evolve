@@ -138,9 +138,10 @@ def load_entity_detail(evolve_dir: Path, slug: str) -> dict | None:
     entities_dir = evolve_dir / "entities"
     if not entities_dir.exists():
         return None
-    for md_file in entities_dir.rglob(f"{slug}.md"):
+    matches = list(entities_dir.rglob(f"{slug}.md"))
+    if len(matches) == 1:
         try:
-            return _parse_entity_file(md_file)
+            return _parse_entity_file(matches[0])
         except Exception:
             return None
     return None
