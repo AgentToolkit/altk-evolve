@@ -66,7 +66,7 @@ The server reads from two subdirectories of `--evolve-dir`:
 | `entities/` | Guideline markdown files (any depth) |
 | `trajectories/` | Trajectory JSON files |
 
-Entities are linked to their source trajectory via the `trajectory` frontmatter field, which the [learn skill](../integrations/index.md) sets automatically when saving guidelines.
+Entities are linked to their source trajectory via the `trajectory` frontmatter field, which the [learn skill](../integrations/claude/evolve-lite.md) sets automatically when saving guidelines.
 
 ## Options
 
