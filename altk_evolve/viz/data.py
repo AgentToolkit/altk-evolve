@@ -38,7 +38,8 @@ def _parse_entity_file(path: Path) -> dict:
 
     # Split content from ## Rationale section
     rationale_match = re.search(r"## Rationale\s*\n(.*?)(?=\n## |\Z)", body, re.DOTALL)
-    content = body[: body.index("\n## ")].strip() if "\n## " in body else body
+    rationale_idx = body.find("\n## Rationale")
+    content = body[:rationale_idx].strip() if rationale_idx != -1 else body
     rationale = rationale_match.group(1).strip() if rationale_match else ""
 
     return {
