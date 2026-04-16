@@ -73,8 +73,8 @@ For each selected entity file, run:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish/scripts/publish.py \
-  --entity {filename} \
-  --user {identity.user}
+  --entity "{filename}" \
+  --user "{identity.user}"
 ```
 
 ### Step 5: Commit and push
@@ -82,7 +82,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish/scripts/publish.py \
 ```bash
 git -C .evolve/public add .
 git -C .evolve/public commit -m "[evolve] publish: {name}"
-git -C .evolve/public push origin {public_repo.branch}
+git -C .evolve/public push origin "{public_repo.branch}"
 ```
 
 Where `{public_repo.branch}` defaults to `main` if not set in config.

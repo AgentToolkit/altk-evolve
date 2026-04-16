@@ -61,7 +61,7 @@ def main():
 
     # Audit log
     audit_append(
-        project_root=str(evolve_dir.parent) if evolve_dir.name != ".evolve" else ".",
+        project_root=str(evolve_dir.resolve().parent),
         action="publish",
         actor=args.user or "unknown",
         entity=args.entity,

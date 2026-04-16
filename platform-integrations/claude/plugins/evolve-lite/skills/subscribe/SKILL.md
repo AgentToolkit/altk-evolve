@@ -57,8 +57,8 @@ Then stop.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/subscribe/scripts/subscribe.py \
-  --name {name} \
-  --remote {remote} \
+  --name "{name}" \
+  --remote "{remote}" \
   --branch main
 ```
 

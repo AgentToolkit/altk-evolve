@@ -24,8 +24,8 @@ def main():
     parser.add_argument("--branch", default="main", help="Branch to track (default: main)")
     args = parser.parse_args()
 
-    project_root = "."
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
+    project_root = str(evolve_dir.resolve().parent)
 
     # Validate name: resolve and confirm it stays within the subscribed directory
     subscribed_base = (evolve_dir / "subscribed").resolve()

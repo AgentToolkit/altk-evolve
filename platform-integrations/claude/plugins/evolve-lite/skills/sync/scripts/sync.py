@@ -22,13 +22,21 @@ from config import load_config
 from audit import append as audit_append
 
 
+_GIT_TIMEOUT = 30  # seconds
+
+
 def git_pull(repo_path, branch):
-    """Pull latest from origin. Returns CompletedProcess."""
-    return subprocess.run(
-        ["git", "-C", str(repo_path), "pull", "origin", branch, "--ff-only"],
-        capture_output=True,
-        text=True,
-    )
+    """Pull latest from origin. Returns CompletedProcess, or None on timeout."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo_path), "pull", "origin", branch, "--ff-only"],
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"Warning: git pull timed out for {repo_path} (branch: {branch})", file=sys.stderr)
+        return None
 
 
 def copy_entities(subscribed_repo_path, entities_subscribed_path):
@@ -56,6 +64,7 @@ def count_delta(repo_path):
         ["git", "-C", str(repo_path), "diff", "--name-status", "HEAD@{1}", "HEAD"],
         capture_output=True,
         text=True,
+        timeout=_GIT_TIMEOUT,
     )
     added = updated = removed = 0
     for line in result.stdout.splitlines():
@@ -134,6 +143,11 @@ def main():
             continue
 
         pull_result = git_pull(repo_path, branch)
+        if pull_result is None or pull_result.returncode != 0:
+            summaries.append(f"{name} (pull failed — skipping mirror)")
+            total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
+            continue
+
         delta = count_delta(repo_path)
         total_delta[name] = delta
 
