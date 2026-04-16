@@ -11,6 +11,17 @@
         ]
       }
     ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/skills/sync/scripts/sync.py --quiet"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",

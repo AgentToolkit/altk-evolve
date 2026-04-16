@@ -16,6 +16,7 @@ import pytest
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "platform_integrations: tests for platform-integrations/install.sh")
+    config.addinivalue_line("markers", "integration: tests that require git and perform subprocess I/O")
 
 
 @pytest.fixture
@@ -533,3 +534,70 @@ def bob_fixtures():
 def codex_fixtures():
     """Provide Codex platform test fixtures."""
     return CodexFixtures()
+
+
+# ---------------------------------------------------------------------------
+# Evolve-lite plugin fixtures
+# ---------------------------------------------------------------------------
+
+EVOLVE_PLUGIN_ROOT = (
+    Path(__file__).parent.parent.parent
+    / "platform-integrations/claude/plugins/evolve-lite"
+)
+
+
+@pytest.fixture
+def git_env():
+    """git environment with author info set so commits work in CI without ~/.gitconfig."""
+    return {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Test User",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test User",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+    }
+
+
+@pytest.fixture
+def local_repo(tmp_path, git_env):
+    """A local bare git repo acting as a mock remote for subscribe/sync tests.
+
+    Returns a dict:
+      bare  — Path to the bare repo (pass as --remote to subscribe.py)
+      work  — Path to a working clone (push new commits here to simulate updates)
+      env   — git env dict (reuse for any git subprocess calls in tests)
+    """
+    # 1. Init a scratch working dir and pin the default branch to 'main'
+    init = tmp_path / "init_work"
+    init.mkdir()
+    subprocess.run(["git", "init", str(init)], check=True, capture_output=True, env=git_env)
+    subprocess.run(
+        ["git", "-C", str(init), "symbolic-ref", "HEAD", "refs/heads/main"],
+        check=True, capture_output=True, env=git_env,
+    )
+
+    # Seed one entity
+    guideline = init / "guideline"
+    guideline.mkdir()
+    (guideline / "tip-one.md").write_text("---\ntype: guideline\n---\n\nAlways write tests.\n")
+    subprocess.run(["git", "-C", str(init), "add", "."], check=True, capture_output=True, env=git_env)
+    subprocess.run(
+        ["git", "-C", str(init), "commit", "-m", "init"],
+        check=True, capture_output=True, env=git_env,
+    )
+
+    # 2. Create a bare clone (this is the "remote")
+    bare = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "clone", "--bare", str(init), str(bare)],
+        check=True, capture_output=True, env=git_env,
+    )
+
+    # 3. Create a working clone of the bare (for pushing new commits in tests)
+    work = tmp_path / "work"
+    subprocess.run(
+        ["git", "clone", str(bare), str(work)],
+        check=True, capture_output=True, env=git_env,
+    )
+
+    return {"bare": bare, "work": work, "env": git_env}
