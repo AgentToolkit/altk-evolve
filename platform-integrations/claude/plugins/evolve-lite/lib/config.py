@@ -4,30 +4,12 @@ pyyaml is not assumed to be installed. This module implements a minimal
 YAML reader/writer that handles the flat and single-level-nested structures
 used by evolve-lite config files (scalars and lists of scalar-valued dicts).
 """
-
 import pathlib
 
 
 # ---------------------------------------------------------------------------
 # Minimal YAML helpers (no pyyaml dependency)
 # ---------------------------------------------------------------------------
-
-
-def _strip_comment_preserving_quotes(line):
-    """Strip a trailing YAML comment (#...) while preserving # inside quotes."""
-    result = []
-    in_single = False
-    in_double = False
-    for c in line:
-        if c == '"' and not in_single:
-            in_double = not in_double
-        elif c == "'" and not in_double:
-            in_single = not in_single
-        elif c == "#" and not in_single and not in_double:
-            break
-        result.append(c)
-    return "".join(result).rstrip()
-
 
 def _parse_block(lines, start, parent_indent):
     """Parse an indented block starting at `start`.
@@ -42,14 +24,14 @@ def _parse_block(lines, start, parent_indent):
     # Peek ahead to determine type: list or mapping
     # Skip blank lines first
     while i < len(lines):
-        stripped = _strip_comment_preserving_quotes(lines[i])
+        stripped = lines[i].split("#", 1)[0].rstrip()
         if stripped.strip():
             break
         i += 1
     if i >= len(lines):
         return {}, i
 
-    first_content = _strip_comment_preserving_quotes(lines[i])
+    first_content = lines[i].split("#", 1)[0].rstrip()
     block_indent = len(first_content) - len(first_content.lstrip())
 
     if block_indent <= parent_indent:
@@ -60,7 +42,7 @@ def _parse_block(lines, start, parent_indent):
         # List
         items = []
         while i < len(lines):
-            raw = _strip_comment_preserving_quotes(lines[i])
+            raw = lines[i].split("#", 1)[0].rstrip()
             if not raw.strip():
                 i += 1
                 continue
@@ -77,7 +59,7 @@ def _parse_block(lines, start, parent_indent):
                     i += 1
                     # Collect more keys at deeper indent for this list item
                     while i < len(lines):
-                        cont = _strip_comment_preserving_quotes(lines[i])
+                        cont = lines[i].split("#", 1)[0].rstrip()
                         if not cont.strip():
                             i += 1
                             continue
@@ -100,7 +82,7 @@ def _parse_block(lines, start, parent_indent):
         # Nested mapping
         mapping = {}
         while i < len(lines):
-            raw = _strip_comment_preserving_quotes(lines[i])
+            raw = lines[i].split("#", 1)[0].rstrip()
             if not raw.strip():
                 i += 1
                 continue
@@ -137,7 +119,7 @@ def _parse_yaml(text):
     i = 0
     while i < len(lines):
         line = lines[i]
-        stripped = _strip_comment_preserving_quotes(line)
+        stripped = line.split("#", 1)[0].rstrip()
         if not stripped.strip():
             i += 1
             continue
@@ -182,7 +164,8 @@ def _cast(value):
     if value == "[]":
         return []
     # Strip surrounding quotes
-    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+    if (value.startswith('"') and value.endswith('"')) or \
+       (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     return value
 
@@ -224,9 +207,6 @@ def _scalar(v):
         return "false"
     if v is None:
         return "null"
-    if isinstance(v, str):
-        escaped = v.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
     return str(v)
 
 
@@ -235,13 +215,12 @@ def _scalar(v):
 # ---------------------------------------------------------------------------
 
 
-def load_config(project_root=".", filepath=None):
+def load_config(project_root="."):
     """Read evolve.config.yaml from the project root and return a dict.
 
     Returns {} if the file does not exist.
-    If filepath is given, it is used directly instead of project_root.
     """
-    path = pathlib.Path(filepath) if filepath is not None else pathlib.Path(project_root) / "evolve.config.yaml"
+    path = pathlib.Path(project_root) / "evolve.config.yaml"
     if not path.exists():
         return {}
     text = path.read_text(encoding="utf-8")
@@ -257,13 +236,14 @@ def save_config(cfg, project_root="."):
 
 if __name__ == "__main__":
     # Quick self-test
-    import tempfile
-
+    import tempfile, os
     with tempfile.TemporaryDirectory() as d:
         cfg = {
             "identity": {"user": "alice"},
             "public_repo": {"remote": "git@github.com:alice/evolve.git", "branch": "main"},
-            "subscriptions": [{"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}],
+            "subscriptions": [
+                {"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}
+            ],
             "sync": {"on_session_start": True},
         }
         save_config(cfg, d)

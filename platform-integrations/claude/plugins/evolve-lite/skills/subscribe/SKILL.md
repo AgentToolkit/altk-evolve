@@ -17,7 +17,7 @@ Check whether `evolve.config.yaml` exists in the project root.
 
 If it does **not** exist, ask the user:
 
-> "No `evolve.config.yaml` found. What username would you like to use? (e.g. `alice`)"
+> "No `evolve.config.yaml` found. What username would you like to use? (e.g. `vatche`)"
 
 Then create `evolve.config.yaml` with this minimal content:
 
@@ -57,8 +57,8 @@ Then stop.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/subscribe/scripts/subscribe.py \
-  --name "{name}" \
-  --remote "{remote}" \
+  --name {name} \
+  --remote {remote} \
   --branch main
 ```
 

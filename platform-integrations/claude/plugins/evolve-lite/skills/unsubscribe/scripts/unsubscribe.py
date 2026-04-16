@@ -5,7 +5,6 @@ Usage:
   --list          Print subscriptions as a JSON array and exit.
   --name {name}   Remove named subscription from config and delete local dir.
 """
-
 import argparse
 import json
 import os
@@ -26,8 +25,8 @@ def main():
     group.add_argument("--name", help="Name of subscription to remove")
     args = parser.parse_args()
 
+    project_root = "."
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
-    project_root = str(evolve_dir.parent) if "EVOLVE_DIR" in os.environ else "."
 
     cfg = load_config(project_root)
     subscriptions = cfg.get("subscriptions", [])
@@ -40,26 +39,25 @@ def main():
 
     # --name: remove the named subscription
     name = args.name
-
-    # Validate name: resolve and confirm it stays within the subscribed directory
-    subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
-    dest = (evolve_dir / "entities" / "subscribed" / name).resolve()
-    if not dest.is_relative_to(subscribed_base) or dest == subscribed_base:
-        print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
-        sys.exit(1)
-
     new_subs = [s for s in subscriptions if not (isinstance(s, dict) and s.get("name") == name)]
 
     if len(new_subs) == len(subscriptions):
         print(f"Error: subscription '{name}' not found.", file=sys.stderr)
         sys.exit(1)
 
-    # Delete local clone (also removes mirrored entities since they live here)
+    # Delete local clone
+    dest = evolve_dir / "subscribed" / name
     if dest.exists():
         shutil.rmtree(dest)
         print(f"Deleted {dest}")
     else:
         print(f"Warning: {dest} did not exist.", file=sys.stderr)
+
+    # Delete mirrored entities so they stop appearing in recall
+    entities_dest = evolve_dir / "entities" / "subscribed" / name
+    if entities_dest.exists():
+        shutil.rmtree(entities_dest)
+        print(f"Deleted {entities_dest}")
 
     # Update config
     cfg["subscriptions"] = new_subs
