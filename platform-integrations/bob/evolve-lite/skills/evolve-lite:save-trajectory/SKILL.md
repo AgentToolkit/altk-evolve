@@ -96,7 +96,7 @@ Strip `<system-reminder>...</system-reminder>` tags and their contents from all 
 Wrap the messages array in the trajectory envelope and pipe it to the save script using a heredoc. The script handles directory creation, timestamped filename, and file writing.
 
 ```bash
-python3 .bob/skills/evolve-save-trajectory/scripts/save_trajectory.py << 'TRAJECTORY_END'
+python3 .bob/skills/evolve-lite:save-trajectory/scripts/save_trajectory.py << 'TRAJECTORY_END'
 {
   "model": "<model-id-from-session>",
   "timestamp": "2025-01-15T10:30:00Z",

@@ -663,7 +663,7 @@ def install_bob(source_dir, target_dir, mode="lite"):
         # Skills
         copy_tree(bob_source_lite / "skills" / "evolve-lite:learn",  bob_target / "skills" / "evolve-lite:learn")
         copy_tree(bob_source_lite / "skills" / "evolve-lite:recall", bob_target / "skills" / "evolve-lite:recall")
-        copy_tree(bob_source_lite / "skills" / "evolve-save-trajectory", bob_target / "skills" / "evolve-save-trajectory")
+        copy_tree(bob_source_lite / "skills" / "evolve-lite:save-trajectory", bob_target / "skills" / "evolve-lite:save-trajectory")
         success("Copied Bob skills")
 
         # Commands
