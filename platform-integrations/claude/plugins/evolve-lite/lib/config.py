@@ -256,7 +256,7 @@ def save_config(cfg, project_root="."):
 
 if __name__ == "__main__":
     # Quick self-test
-    import tempfile, os
+    import tempfile
 
     with tempfile.TemporaryDirectory() as d:
         cfg = {

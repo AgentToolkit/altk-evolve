@@ -67,9 +67,9 @@ class TestRetrieve:
 
     def test_owned_entities_not_annotated_with_from(self, evolve_dir):
         result = run_retrieve(evolve_dir=evolve_dir)
-        own_lines = [l for l in result.stdout.splitlines() if "Keep functions small." in l]
+        own_lines = [line for line in result.stdout.splitlines() if "Keep functions small." in line]
         assert own_lines
-        assert not any("[from:" in l for l in own_lines)
+        assert not any("[from:" in line for line in own_lines)
 
     def test_output_includes_type_annotation(self, evolve_dir):
         result = run_retrieve(evolve_dir=evolve_dir)

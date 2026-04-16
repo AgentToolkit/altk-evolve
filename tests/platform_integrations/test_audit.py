@@ -46,7 +46,7 @@ class TestAuditAppend:
         audit.append(project_root=str(temp_project_dir), action="unsubscribe", name="alice")
         lines = (temp_project_dir / ".evolve" / "audit.log").read_text().splitlines()
         assert len(lines) == 3
-        actions = [json.loads(l)["action"] for l in lines]
+        actions = [json.loads(line)["action"] for line in lines]
         assert actions == ["subscribe", "sync", "unsubscribe"]
 
     def test_extra_fields_are_preserved(self, temp_project_dir):

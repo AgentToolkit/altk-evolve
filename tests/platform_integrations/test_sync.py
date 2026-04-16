@@ -107,7 +107,7 @@ class TestSync:
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
         log_path = p["project_dir"] / ".evolve" / "audit.log"
         assert log_path.exists()
-        actions = [json.loads(l)["action"] for l in log_path.read_text().splitlines() if l.strip()]
+        actions = [json.loads(line)["action"] for line in log_path.read_text().splitlines() if line.strip()]
         assert "sync" in actions
 
     def test_removed_entity_disappears_after_sync(self, subscribed_project):
