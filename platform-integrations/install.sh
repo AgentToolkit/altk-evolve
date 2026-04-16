@@ -23,8 +23,8 @@ EVOLVE_DEBUG="${EVOLVE_DEBUG:-0}"
 
 # Default to "main" so the installer always pulls the latest source.
 # Callers can still pin a specific tag: EVOLVE_VERSION=v1.0.6 bash install.sh ...
-SCRIPT_VERSION="v1.0.8"
-EVOLVE_VERSION="${EVOLVE_VERSION:-${SCRIPT_VERSION}}"
+SCRIPT_VERSION="v1.0.9"
+EVOLVE_VERSION="${EVOLVE_VERSION:-main}"
 
 # ─── Colours ──────────────────────────────────────────────────────────────────
 if [ -t 1 ]; then
