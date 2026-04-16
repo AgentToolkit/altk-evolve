@@ -133,7 +133,7 @@ class TestSaveConfig:
     def test_content_is_readable(self, tmp_path):
         cfg_module.save_config({"key": "val"}, str(tmp_path))
         text = (tmp_path / "evolve.config.yaml").read_text()
-        assert "key: val" in text
+        assert 'key: "val"' in text
 
 
 class TestRoundtrip:

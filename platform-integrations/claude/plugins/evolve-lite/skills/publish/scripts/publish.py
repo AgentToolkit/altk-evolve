@@ -26,7 +26,13 @@ def main():
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
-    src_path = evolve_dir / "entities" / "guideline" / args.entity
+
+    # Validate entity name: resolve and confirm it stays within the intended dir
+    src_base = (evolve_dir / "entities" / "guideline").resolve()
+    src_path = (evolve_dir / "entities" / "guideline" / args.entity).resolve()
+    if not src_path.is_relative_to(src_base):
+        print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
+        sys.exit(1)
 
     if not src_path.exists():
         print(f"Error: entity file not found: {src_path}", file=sys.stderr)
@@ -44,7 +50,11 @@ def main():
     # Write to public directory
     dest_dir = evolve_dir / "public" / "guideline"
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / args.entity
+    dest_base = dest_dir.resolve()
+    dest_path = (dest_dir / args.entity).resolve()
+    if not dest_path.is_relative_to(dest_base):
+        print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
+        sys.exit(1)
 
     content = entity_to_markdown(entity)
     dest_path.write_text(content, encoding="utf-8")

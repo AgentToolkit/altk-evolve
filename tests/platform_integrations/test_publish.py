@@ -83,3 +83,8 @@ class TestPublish:
         run_publish(project_dir, ["--entity", "my-tip.md"])
         content = (project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").read_text()
         assert "visibility: public" in content
+
+    def test_rejects_path_traversal_in_entity_name(self, project_dir):
+        result = run_publish(project_dir, ["--entity", "../../etc/passwd"], expect_success=False)
+        assert result.returncode != 0
+        assert "invalid entity name" in result.stderr

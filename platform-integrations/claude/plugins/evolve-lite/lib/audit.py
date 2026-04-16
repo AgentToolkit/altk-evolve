@@ -13,7 +13,7 @@ def append(project_root=".", **fields):
     """
     path = pathlib.Path(project_root) / ".evolve" / "audit.log"
     path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {"ts": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"), **fields}
+    entry = {**fields, "ts": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")}
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
 

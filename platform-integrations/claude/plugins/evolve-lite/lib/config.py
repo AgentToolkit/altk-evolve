@@ -11,6 +11,22 @@ import pathlib
 # Minimal YAML helpers (no pyyaml dependency)
 # ---------------------------------------------------------------------------
 
+def _strip_comment_preserving_quotes(line):
+    """Strip a trailing YAML comment (#...) while preserving # inside quotes."""
+    result = []
+    in_single = False
+    in_double = False
+    for c in line:
+        if c == '"' and not in_single:
+            in_double = not in_double
+        elif c == "'" and not in_double:
+            in_single = not in_single
+        elif c == '#' and not in_single and not in_double:
+            break
+        result.append(c)
+    return ''.join(result).rstrip()
+
+
 def _parse_block(lines, start, parent_indent):
     """Parse an indented block starting at `start`.
 
@@ -24,14 +40,14 @@ def _parse_block(lines, start, parent_indent):
     # Peek ahead to determine type: list or mapping
     # Skip blank lines first
     while i < len(lines):
-        stripped = lines[i].split("#", 1)[0].rstrip()
+        stripped = _strip_comment_preserving_quotes(lines[i])
         if stripped.strip():
             break
         i += 1
     if i >= len(lines):
         return {}, i
 
-    first_content = lines[i].split("#", 1)[0].rstrip()
+    first_content = _strip_comment_preserving_quotes(lines[i])
     block_indent = len(first_content) - len(first_content.lstrip())
 
     if block_indent <= parent_indent:
@@ -42,7 +58,7 @@ def _parse_block(lines, start, parent_indent):
         # List
         items = []
         while i < len(lines):
-            raw = lines[i].split("#", 1)[0].rstrip()
+            raw = _strip_comment_preserving_quotes(lines[i])
             if not raw.strip():
                 i += 1
                 continue
@@ -59,7 +75,7 @@ def _parse_block(lines, start, parent_indent):
                     i += 1
                     # Collect more keys at deeper indent for this list item
                     while i < len(lines):
-                        cont = lines[i].split("#", 1)[0].rstrip()
+                        cont = _strip_comment_preserving_quotes(lines[i])
                         if not cont.strip():
                             i += 1
                             continue
@@ -82,7 +98,7 @@ def _parse_block(lines, start, parent_indent):
         # Nested mapping
         mapping = {}
         while i < len(lines):
-            raw = lines[i].split("#", 1)[0].rstrip()
+            raw = _strip_comment_preserving_quotes(lines[i])
             if not raw.strip():
                 i += 1
                 continue
@@ -119,7 +135,7 @@ def _parse_yaml(text):
     i = 0
     while i < len(lines):
         line = lines[i]
-        stripped = line.split("#", 1)[0].rstrip()
+        stripped = _strip_comment_preserving_quotes(line)
         if not stripped.strip():
             i += 1
             continue
@@ -207,6 +223,9 @@ def _scalar(v):
         return "false"
     if v is None:
         return "null"
+    if isinstance(v, str):
+        escaped = v.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
     return str(v)
 
 

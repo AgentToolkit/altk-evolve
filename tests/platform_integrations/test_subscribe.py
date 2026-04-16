@@ -84,6 +84,16 @@ class TestSubscribe:
         assert result.returncode != 0
         assert "already exists" in result.stderr
 
+    def test_rejects_path_traversal_in_name(self, tmp_path, local_repo):
+        evolve_dir = tmp_path / ".evolve"
+        result = run_script(
+            SUBSCRIBE_SCRIPT, tmp_path,
+            ["--name", "../../evil", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            evolve_dir=evolve_dir, expect_success=False,
+        )
+        assert result.returncode != 0
+        assert "invalid subscription name" in result.stderr
+
     def test_cloned_repo_contains_initial_entity(self, tmp_path, local_repo):
         evolve_dir = tmp_path / ".evolve"
         run_script(
@@ -148,3 +158,12 @@ class TestUnsubscribe:
         result = run_script(UNSUBSCRIBE_SCRIPT, tmp_path, ["--list"], evolve_dir=evolve_dir)
         data = json.loads(result.stdout)
         assert data == []
+
+    def test_rejects_path_traversal_in_name(self, tmp_path, local_repo):
+        evolve_dir = self._subscribe(tmp_path, local_repo)
+        result = run_script(
+            UNSUBSCRIBE_SCRIPT, tmp_path, ["--name", "../../evil"],
+            evolve_dir=evolve_dir, expect_success=False,
+        )
+        assert result.returncode != 0
+        assert "invalid subscription name" in result.stderr

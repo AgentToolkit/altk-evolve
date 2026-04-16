@@ -27,6 +27,13 @@ def main():
     project_root = "."
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
 
+    # Validate name: resolve and confirm it stays within the subscribed directory
+    subscribed_base = (evolve_dir / "subscribed").resolve()
+    dest = (evolve_dir / "subscribed" / args.name).resolve()
+    if not dest.is_relative_to(subscribed_base):
+        print(f"Error: invalid subscription name: {args.name!r}", file=sys.stderr)
+        sys.exit(1)
+
     cfg = load_config(project_root)
 
     # Ensure subscriptions list exists
@@ -44,7 +51,6 @@ def main():
             sys.exit(1)
 
     # Clone the repo
-    dest = evolve_dir / "subscribed" / args.name
     if dest.exists():
         print(f"Warning: {dest} already exists, skipping clone.", file=sys.stderr)
     else:
