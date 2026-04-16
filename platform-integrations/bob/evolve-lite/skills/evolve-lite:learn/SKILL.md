@@ -51,7 +51,7 @@ Principles:
 
 ### Step 3: Save Entities
 
-Output entities as JSON and pipe to the save script. Include the `trajectory` field with the path output by the evolve-save-trajectory skill earlier in this conversation. The `type` field must always be `"guideline"` — no other types are accepted.
+Output entities as JSON and pipe to the save script. The `type` field must always be `"guideline"` — no other types are accepted.
 
 ```bash
 echo '{
@@ -60,8 +60,7 @@ echo '{
       "content": "Proactive entity stating what TO DO",
       "rationale": "Why this approach works better",
       "type": "guideline",
-      "trigger": "Situational context when this applies",
-      "trajectory": ".evolve/trajectories/trajectory_2025-01-15T10-30-00.json"
+      "trigger": "Situational context when this applies"
     }
   ]
 }' | python3 .bob/skills/evolve-lite:learn/scripts/save_entities.py

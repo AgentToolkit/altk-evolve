@@ -126,7 +126,7 @@ def unique_filename(directory, slug):
 # Markdown <-> dict conversion
 # ---------------------------------------------------------------------------
 
-_FRONTMATTER_KEYS = ("type", "trigger", "trajectory")
+_FRONTMATTER_KEYS = ("type", "trigger")
 
 
 def entity_to_markdown(entity):
