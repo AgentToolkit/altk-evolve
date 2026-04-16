@@ -5,6 +5,7 @@
 - Clones the remote into .evolve/subscribed/{name}
 - Appends to audit.log
 """
+
 import argparse
 import os
 import subprocess
@@ -57,11 +58,14 @@ def main():
         dest.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             [
-                "git", "clone",
+                "git",
+                "clone",
                 args.remote,
                 str(dest),
-                "--branch", args.branch,
-                "--depth", "1",
+                "--branch",
+                args.branch,
+                "--depth",
+                "1",
             ],
             check=True,
         )

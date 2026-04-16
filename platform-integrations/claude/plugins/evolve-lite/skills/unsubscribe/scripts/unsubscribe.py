@@ -5,6 +5,7 @@ Usage:
   --list          Print subscriptions as a JSON array and exit.
   --name {name}   Remove named subscription from config and delete local dir.
 """
+
 import argparse
 import json
 import os

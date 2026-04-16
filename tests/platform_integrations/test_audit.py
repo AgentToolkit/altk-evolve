@@ -16,40 +16,40 @@ pytestmark = pytest.mark.platform_integrations
 
 
 class TestAuditAppend:
-    def test_creates_log_file_on_first_call(self, tmp_path):
-        audit.append(project_root=str(tmp_path), action="test")
-        assert (tmp_path / ".evolve" / "audit.log").exists()
+    def test_creates_log_file_on_first_call(self, temp_project_dir):
+        audit.append(project_root=str(temp_project_dir), action="test")
+        assert (temp_project_dir / ".evolve" / "audit.log").exists()
 
-    def test_creates_parent_directories(self, tmp_path):
-        nested = tmp_path / "deep" / "project"
+    def test_creates_parent_directories(self, temp_project_dir):
+        nested = temp_project_dir / "deep" / "project"
         nested.mkdir(parents=True)
         audit.append(project_root=str(nested), action="test")
         assert (nested / ".evolve" / "audit.log").exists()
 
-    def test_entry_is_valid_json(self, tmp_path):
-        audit.append(project_root=str(tmp_path), action="publish", actor="alice", entity="tip.md")
-        line = (tmp_path / ".evolve" / "audit.log").read_text().strip()
+    def test_entry_is_valid_json(self, temp_project_dir):
+        audit.append(project_root=str(temp_project_dir), action="publish", actor="alice", entity="tip.md")
+        line = (temp_project_dir / ".evolve" / "audit.log").read_text().strip()
         entry = json.loads(line)
         assert entry["action"] == "publish"
         assert entry["actor"] == "alice"
         assert entry["entity"] == "tip.md"
 
-    def test_timestamp_field_present_and_utc(self, tmp_path):
-        audit.append(project_root=str(tmp_path), action="sync")
-        entry = json.loads((tmp_path / ".evolve" / "audit.log").read_text().strip())
+    def test_timestamp_field_present_and_utc(self, temp_project_dir):
+        audit.append(project_root=str(temp_project_dir), action="sync")
+        entry = json.loads((temp_project_dir / ".evolve" / "audit.log").read_text().strip())
         assert "ts" in entry
         assert entry["ts"].endswith("Z")
 
-    def test_multiple_calls_produce_multiple_lines(self, tmp_path):
-        audit.append(project_root=str(tmp_path), action="subscribe", name="alice")
-        audit.append(project_root=str(tmp_path), action="sync")
-        audit.append(project_root=str(tmp_path), action="unsubscribe", name="alice")
-        lines = (tmp_path / ".evolve" / "audit.log").read_text().splitlines()
+    def test_multiple_calls_produce_multiple_lines(self, temp_project_dir):
+        audit.append(project_root=str(temp_project_dir), action="subscribe", name="alice")
+        audit.append(project_root=str(temp_project_dir), action="sync")
+        audit.append(project_root=str(temp_project_dir), action="unsubscribe", name="alice")
+        lines = (temp_project_dir / ".evolve" / "audit.log").read_text().splitlines()
         assert len(lines) == 3
         actions = [json.loads(l)["action"] for l in lines]
         assert actions == ["subscribe", "sync", "unsubscribe"]
 
-    def test_extra_fields_are_preserved(self, tmp_path):
-        audit.append(project_root=str(tmp_path), action="sync", delta={"alice": {"added": 2}})
-        entry = json.loads((tmp_path / ".evolve" / "audit.log").read_text().strip())
+    def test_extra_fields_are_preserved(self, temp_project_dir):
+        audit.append(project_root=str(temp_project_dir), action="sync", delta={"alice": {"added": 2}})
+        entry = json.loads((temp_project_dir / ".evolve" / "audit.log").read_text().strip())
         assert entry["delta"]["alice"]["added"] == 2

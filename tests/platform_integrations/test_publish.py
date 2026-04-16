@@ -10,22 +10,17 @@ import pytest
 
 pytestmark = pytest.mark.platform_integrations
 
-_PLUGIN_ROOT = (
-    Path(__file__).parent.parent.parent
-    / "platform-integrations/claude/plugins/evolve-lite"
-)
+_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
 PUBLISH_SCRIPT = _PLUGIN_ROOT / "skills/publish/scripts/publish.py"
 
 
 @pytest.fixture
-def project_dir(tmp_path):
+def project_dir(temp_project_dir):
     """A temp project with one private guideline entity."""
-    guideline_dir = tmp_path / ".evolve" / "entities" / "guideline"
+    guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
     guideline_dir.mkdir(parents=True)
-    (guideline_dir / "my-tip.md").write_text(
-        "---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n"
-    )
-    return tmp_path
+    (guideline_dir / "my-tip.md").write_text("---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n")
+    return temp_project_dir
 
 
 def run_publish(project_dir, args, expect_success=True):

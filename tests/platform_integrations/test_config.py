@@ -81,12 +81,7 @@ class TestParseYaml:
         assert result["sync"]["on_session_start"] is True
 
     def test_list_of_dicts(self):
-        text = (
-            "subscriptions:\n"
-            "  - name: bob\n"
-            "    remote: git@github.com:bob/evolve.git\n"
-            "    branch: main\n"
-        )
+        text = "subscriptions:\n  - name: bob\n    remote: git@github.com:bob/evolve.git\n    branch: main\n"
         result = cfg_module._parse_yaml(text)
         subs = result["subscriptions"]
         assert isinstance(subs, list)
@@ -116,45 +111,43 @@ class TestParseYaml:
 
 
 class TestLoadConfig:
-    def test_returns_empty_dict_when_file_missing(self, tmp_path):
-        assert cfg_module.load_config(str(tmp_path)) == {}
+    def test_returns_empty_dict_when_file_missing(self, temp_project_dir):
+        assert cfg_module.load_config(str(temp_project_dir)) == {}
 
-    def test_parses_existing_file(self, tmp_path):
-        (tmp_path / "evolve.config.yaml").write_text("identity:\n  user: alice\n")
-        result = cfg_module.load_config(str(tmp_path))
+    def test_parses_existing_file(self, temp_project_dir):
+        (temp_project_dir / "evolve.config.yaml").write_text("identity:\n  user: alice\n")
+        result = cfg_module.load_config(str(temp_project_dir))
         assert result["identity"]["user"] == "alice"
 
 
 class TestSaveConfig:
-    def test_creates_file(self, tmp_path):
-        cfg_module.save_config({"key": "val"}, str(tmp_path))
-        assert (tmp_path / "evolve.config.yaml").exists()
+    def test_creates_file(self, temp_project_dir):
+        cfg_module.save_config({"key": "val"}, str(temp_project_dir))
+        assert (temp_project_dir / "evolve.config.yaml").exists()
 
-    def test_content_is_readable(self, tmp_path):
-        cfg_module.save_config({"key": "val"}, str(tmp_path))
-        text = (tmp_path / "evolve.config.yaml").read_text()
+    def test_content_is_readable(self, temp_project_dir):
+        cfg_module.save_config({"key": "val"}, str(temp_project_dir))
+        text = (temp_project_dir / "evolve.config.yaml").read_text()
         assert 'key: "val"' in text
 
 
 class TestRoundtrip:
-    def test_full_config_roundtrip(self, tmp_path):
+    def test_full_config_roundtrip(self, temp_project_dir):
         original = {
             "identity": {"user": "alice"},
             "public_repo": {"remote": "git@github.com:alice/evolve.git", "branch": "main"},
-            "subscriptions": [
-                {"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}
-            ],
+            "subscriptions": [{"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}],
             "sync": {"on_session_start": True},
         }
-        cfg_module.save_config(original, str(tmp_path))
-        loaded = cfg_module.load_config(str(tmp_path))
+        cfg_module.save_config(original, str(temp_project_dir))
+        loaded = cfg_module.load_config(str(temp_project_dir))
 
         assert loaded["identity"]["user"] == "alice"
         assert loaded["public_repo"]["branch"] == "main"
         assert loaded["sync"]["on_session_start"] is True
         assert loaded["subscriptions"][0]["name"] == "bob"
 
-    def test_empty_subscriptions_roundtrip(self, tmp_path):
-        cfg_module.save_config({"subscriptions": []}, str(tmp_path))
-        loaded = cfg_module.load_config(str(tmp_path))
+    def test_empty_subscriptions_roundtrip(self, temp_project_dir):
+        cfg_module.save_config({"subscriptions": []}, str(temp_project_dir))
+        loaded = cfg_module.load_config(str(temp_project_dir))
         assert loaded["subscriptions"] == []

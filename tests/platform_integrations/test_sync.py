@@ -10,10 +10,7 @@ import pytest
 
 pytestmark = pytest.mark.platform_integrations
 
-_PLUGIN_ROOT = (
-    Path(__file__).parent.parent.parent
-    / "platform-integrations/claude/plugins/evolve-lite"
-)
+_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
 SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
 SYNC_SCRIPT = _PLUGIN_ROOT / "skills/sync/scripts/sync.py"
 
@@ -33,15 +30,16 @@ def run_script(script, project_dir, args=None, evolve_dir=None, expect_success=T
 
 
 @pytest.fixture
-def subscribed_project(tmp_path, local_repo):
+def subscribed_project(temp_project_dir, local_repo):
     """A project already subscribed to local_repo."""
-    evolve_dir = tmp_path / ".evolve"
+    evolve_dir = temp_project_dir / ".evolve"
     run_script(
-        SUBSCRIBE_SCRIPT, tmp_path,
+        SUBSCRIBE_SCRIPT,
+        temp_project_dir,
         ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
         evolve_dir=evolve_dir,
     )
-    return {"project_dir": tmp_path, "evolve_dir": evolve_dir, "local_repo": local_repo}
+    return {"project_dir": temp_project_dir, "evolve_dir": evolve_dir, "local_repo": local_repo}
 
 
 class TestSync:
@@ -74,19 +72,19 @@ class TestSync:
         subprocess.run(["git", "-C", str(lr["work"]), "add", "."], check=True, env=git_env)
         subprocess.run(
             ["git", "-C", str(lr["work"]), "commit", "-m", "add tip-two"],
-            check=True, env=git_env,
+            check=True,
+            env=git_env,
         )
         subprocess.run(
             ["git", "-C", str(lr["work"]), "push", "origin", "main"],
-            check=True, env=git_env,
+            check=True,
+            env=git_env,
         )
 
         # Second sync — should pick up tip-two
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
 
-        mirrored = (
-            p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "tip-two.md"
-        )
+        mirrored = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "tip-two.md"
         assert mirrored.exists()
         assert "Delete dead code promptly." in mirrored.read_text()
 
@@ -98,9 +96,9 @@ class TestSync:
         result = run_script(SYNC_SCRIPT, p["project_dir"], ["--quiet"], evolve_dir=p["evolve_dir"])
         assert result.stdout.strip() == ""
 
-    def test_no_subscriptions_exits_cleanly(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
-        result = run_script(SYNC_SCRIPT, tmp_path, evolve_dir=evolve_dir)
+    def test_no_subscriptions_exits_cleanly(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
         assert "No subscriptions" in result.stdout
 
@@ -109,11 +107,7 @@ class TestSync:
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
         log_path = p["project_dir"] / ".evolve" / "audit.log"
         assert log_path.exists()
-        actions = [
-            json.loads(l)["action"]
-            for l in log_path.read_text().splitlines()
-            if l.strip()
-        ]
+        actions = [json.loads(l)["action"] for l in log_path.read_text().splitlines() if l.strip()]
         assert "sync" in actions
 
     def test_removed_entity_disappears_after_sync(self, subscribed_project):
@@ -130,15 +124,18 @@ class TestSync:
         # Delete tip-one from remote
         subprocess.run(
             ["git", "-C", str(lr["work"]), "rm", "guideline/tip-one.md"],
-            check=True, env=git_env,
+            check=True,
+            env=git_env,
         )
         subprocess.run(
             ["git", "-C", str(lr["work"]), "commit", "-m", "remove tip-one"],
-            check=True, env=git_env,
+            check=True,
+            env=git_env,
         )
         subprocess.run(
             ["git", "-C", str(lr["work"]), "push", "origin", "main"],
-            check=True, env=git_env,
+            check=True,
+            env=git_env,
         )
 
         # Second sync — mirror is cleared and re-copied without tip-one

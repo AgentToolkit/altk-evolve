@@ -10,10 +10,7 @@ import pytest
 
 pytestmark = pytest.mark.platform_integrations
 
-_PLUGIN_ROOT = (
-    Path(__file__).parent.parent.parent
-    / "platform-integrations/claude/plugins/evolve-lite"
-)
+_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
 RETRIEVE_SCRIPT = _PLUGIN_ROOT / "skills/recall/scripts/retrieve_entities.py"
 
 # The hook pipes this JSON to the script on stdin
@@ -35,9 +32,9 @@ def run_retrieve(evolve_dir=None, stdin_data=None):
 
 
 @pytest.fixture
-def evolve_dir(tmp_path):
+def evolve_dir(temp_project_dir):
     """An .evolve dir with one owned entity and one subscribed entity."""
-    d = tmp_path / ".evolve"
+    d = temp_project_dir / ".evolve"
 
     # Owned entity
     own_dir = d / "entities" / "guideline"
@@ -47,16 +44,14 @@ def evolve_dir(tmp_path):
     # Subscribed entity (lives under entities/subscribed/{name}/)
     sub_dir = d / "entities" / "subscribed" / "alice" / "guideline"
     sub_dir.mkdir(parents=True)
-    (sub_dir / "alice-tip.md").write_text(
-        "---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n"
-    )
+    (sub_dir / "alice-tip.md").write_text("---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n")
 
     return d
 
 
 class TestRetrieve:
-    def test_exits_cleanly_with_no_output_when_no_entities_dir(self, tmp_path):
-        result = run_retrieve(evolve_dir=tmp_path / ".evolve")
+    def test_exits_cleanly_with_no_output_when_no_entities_dir(self, temp_project_dir):
+        result = run_retrieve(evolve_dir=temp_project_dir / ".evolve")
         assert result.returncode == 0
         assert result.stdout.strip() == ""
 
@@ -89,12 +84,10 @@ class TestRetrieve:
         result = run_retrieve(evolve_dir=evolve_dir)
         assert "Entities for this task" in result.stdout
 
-    def test_entities_with_trigger_include_when_line(self, tmp_path):
-        d = tmp_path / ".evolve"
+    def test_entities_with_trigger_include_when_line(self, temp_project_dir):
+        d = temp_project_dir / ".evolve"
         gdir = d / "entities" / "guideline"
         gdir.mkdir(parents=True)
-        (gdir / "tip.md").write_text(
-            "---\ntype: guideline\ntrigger: when writing tests\n---\n\nAssert the important thing.\n"
-        )
+        (gdir / "tip.md").write_text("---\ntype: guideline\ntrigger: when writing tests\n---\n\nAssert the important thing.\n")
         result = run_retrieve(evolve_dir=d)
         assert "when writing tests" in result.stdout

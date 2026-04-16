@@ -4,12 +4,14 @@ pyyaml is not assumed to be installed. This module implements a minimal
 YAML reader/writer that handles the flat and single-level-nested structures
 used by evolve-lite config files (scalars and lists of scalar-valued dicts).
 """
+
 import pathlib
 
 
 # ---------------------------------------------------------------------------
 # Minimal YAML helpers (no pyyaml dependency)
 # ---------------------------------------------------------------------------
+
 
 def _strip_comment_preserving_quotes(line):
     """Strip a trailing YAML comment (#...) while preserving # inside quotes."""
@@ -21,10 +23,10 @@ def _strip_comment_preserving_quotes(line):
             in_double = not in_double
         elif c == "'" and not in_double:
             in_single = not in_single
-        elif c == '#' and not in_single and not in_double:
+        elif c == "#" and not in_single and not in_double:
             break
         result.append(c)
-    return ''.join(result).rstrip()
+    return "".join(result).rstrip()
 
 
 def _parse_block(lines, start, parent_indent):
@@ -180,8 +182,7 @@ def _cast(value):
     if value == "[]":
         return []
     # Strip surrounding quotes
-    if (value.startswith('"') and value.endswith('"')) or \
-       (value.startswith("'") and value.endswith("'")):
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     return value
 
@@ -256,13 +257,12 @@ def save_config(cfg, project_root="."):
 if __name__ == "__main__":
     # Quick self-test
     import tempfile, os
+
     with tempfile.TemporaryDirectory() as d:
         cfg = {
             "identity": {"user": "alice"},
             "public_repo": {"remote": "git@github.com:alice/evolve.git", "branch": "main"},
-            "subscriptions": [
-                {"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}
-            ],
+            "subscriptions": [{"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}],
             "sync": {"on_session_start": True},
         }
         save_config(cfg, d)

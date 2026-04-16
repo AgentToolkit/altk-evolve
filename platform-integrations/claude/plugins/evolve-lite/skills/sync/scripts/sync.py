@@ -9,6 +9,7 @@ Usage:
   --quiet        Suppress output if no changes.
   --config PATH  Path to config file (default: evolve.config.yaml at project root).
 """
+
 import argparse
 import os
 import shutil
@@ -104,6 +105,7 @@ def main():
         # Load config from explicit path by temporarily reading the file
         if cfg_path.exists():
             from config import _parse_yaml
+
             cfg = _parse_yaml(cfg_path.read_text(encoding="utf-8"))
         else:
             cfg = {}
@@ -159,11 +161,7 @@ def main():
         entities_subscribed = evolve_dir / "entities" / "subscribed" / name
         copy_entities(repo_path, entities_subscribed)
 
-        delta_str = (
-            f"+{delta['added']} added, "
-            f"{delta['updated']} updated, "
-            f"{delta['removed']} removed"
-        )
+        delta_str = f"+{delta['added']} added, {delta['updated']} updated, {delta['removed']} removed"
         summaries.append(f"{name} ({delta_str})")
 
     # Audit

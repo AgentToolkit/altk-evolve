@@ -17,6 +17,7 @@ def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "platform_integrations: tests for platform-integrations/install.sh")
     config.addinivalue_line("markers", "integration: tests that require git and perform subprocess I/O")
+    config.addinivalue_line("markers", "e2e: end-to-end tests that exercise real filesystem and subprocesses")
 
 
 @pytest.fixture
@@ -540,10 +541,7 @@ def codex_fixtures():
 # Evolve-lite plugin fixtures
 # ---------------------------------------------------------------------------
 
-EVOLVE_PLUGIN_ROOT = (
-    Path(__file__).parent.parent.parent
-    / "platform-integrations/claude/plugins/evolve-lite"
-)
+EVOLVE_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
 
 
 @pytest.fixture
@@ -573,7 +571,9 @@ def local_repo(tmp_path, git_env):
     subprocess.run(["git", "init", str(init)], check=True, capture_output=True, env=git_env)
     subprocess.run(
         ["git", "-C", str(init), "symbolic-ref", "HEAD", "refs/heads/main"],
-        check=True, capture_output=True, env=git_env,
+        check=True,
+        capture_output=True,
+        env=git_env,
     )
 
     # Seed one entity
@@ -583,21 +583,27 @@ def local_repo(tmp_path, git_env):
     subprocess.run(["git", "-C", str(init), "add", "."], check=True, capture_output=True, env=git_env)
     subprocess.run(
         ["git", "-C", str(init), "commit", "-m", "init"],
-        check=True, capture_output=True, env=git_env,
+        check=True,
+        capture_output=True,
+        env=git_env,
     )
 
     # 2. Create a bare clone (this is the "remote")
     bare = tmp_path / "remote.git"
     subprocess.run(
         ["git", "clone", "--bare", str(init), str(bare)],
-        check=True, capture_output=True, env=git_env,
+        check=True,
+        capture_output=True,
+        env=git_env,
     )
 
     # 3. Create a working clone of the bare (for pushing new commits in tests)
     work = tmp_path / "work"
     subprocess.run(
         ["git", "clone", str(bare), str(work)],
-        check=True, capture_output=True, env=git_env,
+        check=True,
+        capture_output=True,
+        env=git_env,
     )
 
     return {"bare": bare, "work": work, "env": git_env}

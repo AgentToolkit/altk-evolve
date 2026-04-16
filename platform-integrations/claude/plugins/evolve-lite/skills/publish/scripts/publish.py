@@ -6,6 +6,7 @@
 - Updates frontmatter: visibility=public, owner={user}, published_at={now}
 - Appends to audit.log
 """
+
 import argparse
 import datetime
 import os

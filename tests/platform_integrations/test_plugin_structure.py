@@ -7,10 +7,7 @@ import pytest
 
 pytestmark = pytest.mark.platform_integrations
 
-_PLUGIN_ROOT = (
-    Path(__file__).parent.parent.parent
-    / "platform-integrations/claude/plugins/evolve-lite"
-)
+_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
 
 
 class TestPluginManifest:
@@ -57,22 +54,23 @@ class TestHooksManifest:
                         py_tokens = [t for t in resolved.split() if t.endswith(".py")]
                         assert py_tokens, f"No .py script found in hook command: {cmd}"
                         script_path = Path(py_tokens[0])
-                        assert script_path.exists(), (
-                            f"Hook script missing: {script_path} (event: {event})"
-                        )
+                        assert script_path.exists(), f"Hook script missing: {script_path} (event: {event})"
 
 
 class TestSkillScripts:
     """Verify that every skill script referenced in the plugin exists on disk."""
 
-    @pytest.mark.parametrize("script_rel", [
-        "skills/publish/scripts/publish.py",
-        "skills/subscribe/scripts/subscribe.py",
-        "skills/unsubscribe/scripts/unsubscribe.py",
-        "skills/sync/scripts/sync.py",
-        "skills/recall/scripts/retrieve_entities.py",
-        "skills/learn/scripts/save_entities.py",
-    ])
+    @pytest.mark.parametrize(
+        "script_rel",
+        [
+            "skills/publish/scripts/publish.py",
+            "skills/subscribe/scripts/subscribe.py",
+            "skills/unsubscribe/scripts/unsubscribe.py",
+            "skills/sync/scripts/sync.py",
+            "skills/recall/scripts/retrieve_entities.py",
+            "skills/learn/scripts/save_entities.py",
+        ],
+    )
     def test_script_exists(self, script_rel):
         script = _PLUGIN_ROOT / script_rel
         assert script.exists(), f"Script not found: {script}"
@@ -81,10 +79,13 @@ class TestSkillScripts:
 class TestLibModules:
     """Verify that the shared lib modules the scripts depend on exist."""
 
-    @pytest.mark.parametrize("module", [
-        "lib/entity_io.py",
-        "lib/config.py",
-        "lib/audit.py",
-    ])
+    @pytest.mark.parametrize(
+        "module",
+        [
+            "lib/entity_io.py",
+            "lib/config.py",
+            "lib/audit.py",
+        ],
+    )
     def test_lib_module_exists(self, module):
         assert (_PLUGIN_ROOT / module).exists(), f"Lib module not found: {module}"
