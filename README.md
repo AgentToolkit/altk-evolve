@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
-[![Documentation](https://shields.io/badge/Documentation-Available-blue)](https://agenttoolkit.github.io/altk-evolve)
+[![Documentation](https://shields.io/badge/Official%20Webpage-Documentation-blue)](https://agenttoolkit.github.io/altk-evolve)
 [![arXiv](https://img.shields.io/badge/arXiv-2603.10600-b31b1b)](https://arxiv.org/pdf/2603.10600)
 [![License](https://img.shields.io/github/license/AgentToolkit/altk-evolve)](https://www.apache.org/licenses/LICENSE-2.0)
 ![Stars](https://img.shields.io/github/stars/AgentToolkit/altk-evolve?style=social)
@@ -12,38 +12,43 @@
 **Blog posts:** [IBM announcement](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) | [Hugging Face blog](https://huggingface.co/blog/ibm-research/altk-evolve)
 </div>
 
-Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
+Coding agents repeat the same mistakes because they start fresh every session. Evolve gives agents memory — they learn from what worked and what didn't, so each session is better than the last.
+
+Evolve is a system designed to help agents improve over time by learning from their trajectories. The Lite version is designed to effortlessly slot into existing agent assistants like Claude Code and Codex. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
+
+On the AppWorld benchmark, Evolve improved agent reliability by +8.9 points overall, with a 74% relative increase on hard multi-step tasks. Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
 
 > [!IMPORTANT]
 > ⭐ **Star the repo**: it helps others discover it.  
 
-## Features
+## Quick Start (Lite)
+[IBM Bob →](https://agenttoolkit.github.io/altk-evolve/examples/hello_world/bob/)
 
-- **MCP Server**: Exposes tools to get guidelines and save trajectories.
-- **Conflict Resolution**: Intelligently merges new insights with existing guidelines using LLMs.
-- **Trajectory Analysis**: Automatically analyzes agent trajectories to generate guidelines and best practices.
-- **Milvus Integration**: Uses Milvus (or Milvus Lite) for efficient vector storage and retrieval.
+[Claude Code →](https://agenttoolkit.github.io/altk-evolve/examples/hello_world/claude)
 
-## Architecture
+[Codex →](https://agenttoolkit.github.io/altk-evolve/examples/hello_world/codex/)
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-wide-dark.svg">
-  <img src="docs/assets/architecture-wide-light.svg" alt="Architecture" width="480">
-</picture>
-
-## Quick Start
-
+## Quick Start (Evolve MCP Server)
 ### Installation
-
 Prerequisites:
 - Python 3.12 or higher
 - `uv` (recommended) or `pip`
 
+From Source
 ```bash
-git clone <repository_url>
+# Clone the repository and install dependencies
+git clone https://github.com/agenttoolkit/altk-evolve.git
 cd altk-evolve
 uv venv --python=3.12 && source .venv/bin/activate
 uv sync
+# Build the UI
+cd frontend/ui
+npm ci && npm run build
+cd ../..
+```
+From PyPI
+```bash
+pip install altk-evolve
 ```
 
 ### Configuration
@@ -55,35 +60,21 @@ export OPENAI_API_KEY=sk-...
 
 For LiteLLM proxy usage and model selection (including global fallback via `EVOLVE_MODEL_NAME`), see [the configuration guide](docs/guides/configuration.md).
 
-### Running the MCP Server & UI
-
-Evolve provides both a standard MCP server and a full Web UI (Dashboard & Entity Explorer).
-
-> [!IMPORTANT]
-> **Building from Source:** If you cloned this repository (rather than installing a pre-built package), you must build the UI before it can be served.
-> ```bash
-> cd altk_evolve/frontend/ui
-> npm ci && npm run build
-> cd ../../../
-> ```
-> See `altk_evolve/frontend/ui/README.md` for more frontend development details.
-
-#### Starting Both Automatically
-The easiest way to start both the MCP Server (on standard input/output) and the HTTP UI backend is to run the exported launcher:
+### Running Services
+Start the Web UI and MCP server
 ```bash
 uv run evolve-mcp
 ```
-This will start the UI server in the background on port `8000` and the MCP server in the foreground. You can then access the UI locally by opening your browser to:
-`http://127.0.0.1:8000/ui/`
+The Web UI can be accessed from: `http://127.0.0.1:8000/ui/`
 
-#### Starting the UI Standalone
+### Starting the Web UI and MCP Server
 If you only want to access the Web UI and API (without the MCP server stdio blocking the terminal), you can run the FastAPI application directly using `uvicorn`:
 ```bash
 uv run uvicorn altk_evolve.frontend.mcp.mcp_server:app --host 127.0.0.1 --port 8000
 ```
 Then navigate to `http://127.0.0.1:8000/ui/`.
 
-#### Starting only the MCP Server
+### Starting only the MCP Server
 If you're attaching Evolve to an MCP client that requires a direct command (like Claude Desktop):
 ```bash
 uv run evolve-mcp
@@ -105,8 +96,21 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 - `create_entity(content: str, entity_type: str, metadata: str | None, enable_conflict_resolution: bool)`: Create a single entity in the namespace.
 - `delete_entity(entity_id: str)`: Delete a specific entity by its ID.
 
-## Tip Provenance
+## Features
+- **Proactive**: Learns how to recognize problems and their solutions, and generates guidelines that get automatically applied to new tasks.
+- **Conflict Resolution**: Update existing guidelines when new information contradicts them.
+- **On Command**: An array of tools to manage guidelines whether in the agent or through a CLI
 
+## Architecture
+Evolve is built on a modular architecture which forms a feedback loop, taking conversation traces (trajectories) from an agent, extracting key insights into a database, feeding it back into the agent.
+
+_Lite Mode omits the Interaction layer. All activity is performed in-agent_
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-wide-dark.svg">
+  <img src="docs/assets/architecture-wide-light.svg" alt="Architecture" width="480">
+</picture>
+
+## Tip Provenance
 Evolve automatically tracks the origin of every guideline it generates or stores. Every tip entity contains `metadata` identifying its source:
 - `creation_mode`: Identifies how the tip was created (`auto-phoenix` via trace observability, `auto-mcp` via trajectory saving tools, or `manual`).
 - `source_task_id`: The ID of the original trace or task that inspired the tip, providing full audibility.
@@ -114,56 +118,9 @@ Evolve automatically tracks the origin of every guideline it generates or stores
 See the [Low-Code Tracing Guide](docs/guides/low-code-tracing.md#6-understanding-tip-provenance-metadata) for more details.
 
 
-## Community & Feedback
-
+## Contributing, Community, and Feedback
 Evolve is an active project, and real‑world usage helps guide its direction.
 
 If you’re experimenting with Evolve or exploring on‑the‑job learning for agents, feel free to open an issue or discussion to share use cases, ideas, or feedback.
 
-
-## Documentation
-
-- [Documentation Home](docs/index.md) - Overview of guides, reference docs, and tutorials
-- [Installation](docs/installation/index.md) - Setup instructions for supported platforms
-- [Configuration](docs/guides/configuration.md) - Environment variables and backend options
-- [CLI Reference](docs/reference/cli.md) - Command-line interface documentation
-- [Evolve Lite](docs/integrations/claude/evolve-lite.md) - Lightweight Claude Code plugin mode
-- [Claude Code Demo](docs/tutorials/claude-code-demo.md) - End-to-end demo walkthrough
-- [Policies](docs/reference/policies.md) - Policy support and schema
-
-## Development
-
-### Running Tests
-
-The test suite is organized into 4 cleanly isolated tiers depending on infrastructure requirements:
-
-1. **Default Local Suite**
-   Runs both fast logic tests (`unit`) and filesystem script verifications (`platform_integrations`).
-   ```bash
-   uv run pytest
-   ```
-
-2. **Unit Tests (Only)**
-   Fast, fully-mocked tests verifying core logic and offline pipeline schemas.
-   ```bash
-   uv run pytest -m unit
-   ```
-
-3. **Platform Integration Tests**
-   Fast filesystem-level integration tests verifying local tool installation and idempotency.
-   ```bash
-   uv run pytest -m platform_integrations
-   ```
-
-4. **End-to-End Infrastructure Tests**
-   Heavy tests that autonomously spin up a background Phoenix server and simulate full agent workflows.
-   ```bash
-   uv run pytest -m e2e --run-e2e
-   ```
-   *(See [the Low-Code Tracing Guide](docs/guides/low-code-tracing.md#end-to-end-verification) for more details).*
-
-5. **LLM Evaluation Tests**
-   Tests needing active LLM inference to test resolution pipelines (requires LLM API keys).
-   ```bash
-   uv run pytest -m llm
-   ```
+See the [Contributing Guide](CONTRIBUTING.md) to understand our development process, or how to submit changes, report bugs, or propose features.

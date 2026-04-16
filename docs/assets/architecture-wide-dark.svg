@@ -130,7 +130,7 @@
    </g>
    <!-- 2. Guidelines: Entities MCP server (right) → right channel up → Agent (right side) -->
    <g id="arrow-guidelines">
-      <path class="arr" d="m 120,176 V 226 H 259" id="path24"/>
+      <path class="arr" d="m 259,226 H 120 V 176" id="path24"/>
       <text class="albl" x="170" y="238" text-anchor="end" id="text25">Guidelines</text>
    </g>
    <!-- 3. Logs (right) → Extract (left) — straight horizontal -->
