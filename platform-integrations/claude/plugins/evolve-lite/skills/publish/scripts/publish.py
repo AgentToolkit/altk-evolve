@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Publish a private guideline entity to the public directory.
 
-- Reads source from .evolve/entities/guideline/{filename}
-- Copies to .evolve/public/guideline/{filename}
+- Moves source from .evolve/entities/guideline/{filename}
+- to .evolve/public/guideline/{filename}
 - Updates frontmatter: visibility=public, owner={user}, published_at={now}
 - Appends to audit.log
 """
@@ -10,6 +10,7 @@
 import argparse
 import datetime
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -17,6 +18,23 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
 from entity_io import markdown_to_entity, entity_to_markdown
 from audit import append as audit_append
+from config import load_config
+
+
+def _resolve_source(cfg, user_arg):
+    """Derive a source label from config or fallback to user arg."""
+    remote = cfg.get("public_repo", {})
+    if isinstance(remote, dict):
+        remote = remote.get("remote", "")
+    if remote:
+        # Extract user/repo from SSH or HTTPS remote URLs
+        m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", remote)
+        if m:
+            return m.group(1)
+    identity = cfg.get("identity", {})
+    if isinstance(identity, dict) and identity.get("user"):
+        return identity["user"]
+    return user_arg
 
 
 def main():
@@ -46,6 +64,10 @@ def main():
     if args.user:
         entity["owner"] = args.user
     entity["published_at"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    cfg = load_config(str(evolve_dir.resolve().parent))
+    source = _resolve_source(cfg, args.user)
+    if source:
+        entity["source"] = source
 
     # Write to public directory
     dest_dir = evolve_dir / "public" / "guideline"
@@ -58,6 +80,7 @@ def main():
 
     content = entity_to_markdown(entity)
     dest_path.write_text(content, encoding="utf-8")
+    src_path.unlink()
 
     # Audit log
     audit_append(
