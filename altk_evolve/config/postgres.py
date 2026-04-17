@@ -10,6 +10,8 @@ class PostgresDBSettings(BaseSettings):
     user: str = Field(default="postgres")
     password: str = Field(default="postgres")
     dbname: str = Field(default="evolve")
+    auto_create_db: bool = Field(default=False)
+    bootstrap_db: str = Field(default="postgres")
 
 
 # to reload settings call postgres_db_settings.__init__()

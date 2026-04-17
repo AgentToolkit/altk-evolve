@@ -51,6 +51,22 @@ From PyPI
 pip install altk-evolve
 ```
 
+**Optional Backend Dependencies:**
+
+The default filesystem backend uses simple text matching and requires no additional dependencies. For semantic vector similarity search, install one of these backends:
+
+For PostgreSQL with pgvector support (recommended for production):
+```bash
+uv sync --extra pgvector
+```
+
+For Milvus support (optimized for large-scale vector search):
+```bash
+uv sync --extra milvus
+```
+
+See the [Backend Configuration Guide](docs/guides/backend-configuration.md) for detailed comparison and setup instructions.
+
 ### Configuration
 
 For direct OpenAI usage:

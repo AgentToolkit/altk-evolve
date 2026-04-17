@@ -1,9 +1,12 @@
+import datetime
 import json
 import uuid
 import pytest
 from unittest.mock import patch, MagicMock
 
+import altk_evolve.frontend.mcp.mcp_server as mcp_server_module
 from altk_evolve.frontend.mcp.mcp_server import save_trajectory, create_entity
+from altk_evolve.schema.core import Namespace
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 
 pytestmark = pytest.mark.unit
@@ -98,3 +101,28 @@ def test_create_entity_no_metadata_injection_for_other_types(mock_get_client):
 
     assert entity.type == "log"
     assert "creation_mode" not in (entity.metadata or {})
+
+
+def test_get_client_uses_idempotent_namespace_bootstrap(monkeypatch):
+    original_client = mcp_server_module._client
+    original_initialized = mcp_server_module._namespace_initialized
+
+    fake_client = MagicMock()
+    created_namespace = Namespace(id="evolve", created_at=datetime.datetime.now(datetime.UTC))
+    fake_client.ensure_namespace.return_value = created_namespace
+
+    try:
+        mcp_server_module._client = None
+        mcp_server_module._namespace_initialized = False
+
+        monkeypatch.setattr(mcp_server_module, "EvolveClient", lambda: fake_client)
+
+        client = mcp_server_module.get_client()
+
+        assert client is fake_client
+        fake_client.ensure_namespace.assert_called_once_with(mcp_server_module.evolve_config.namespace_id)
+        fake_client.get_namespace_details.assert_not_called()
+        fake_client.create_namespace.assert_not_called()
+    finally:
+        mcp_server_module._client = original_client
+        mcp_server_module._namespace_initialized = original_initialized

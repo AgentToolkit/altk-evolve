@@ -47,14 +47,7 @@ class PostgresEntityBackend(BaseEntityBackend):
     def __init__(self, config: BaseSettings | None = None):
         super().__init__(config)
         self._settings = config if isinstance(config, type(postgres_db_settings)) else postgres_db_settings
-        self.conn = psycopg.connect(
-            host=self._settings.host,
-            port=self._settings.port,
-            user=self._settings.user,
-            password=self._settings.password,
-            dbname=self._settings.dbname,
-            autocommit=True,
-        )
+        self.conn = self._connect_target_db()
         try:
             self._ensure_pgvector_extension()
             register_vector(self.conn)
@@ -69,6 +62,80 @@ class PostgresEntityBackend(BaseEntityBackend):
             if not self.conn.closed:
                 self.conn.close()
             raise
+
+    def _connect(self, dbname: str) -> psycopg.Connection:
+        return psycopg.connect(
+            host=self._settings.host,
+            port=self._settings.port,
+            user=self._settings.user,
+            password=self._settings.password,
+            dbname=dbname,
+            autocommit=True,
+        )
+
+    def _is_missing_database_error(self, error: Exception) -> bool:
+        # Check for SQL state code 3D000 (invalid catalog name)
+        if getattr(error, "sqlstate", None) == "3D000":
+            return True
+        # Also check error message for database does not exist
+        error_msg = str(error).lower()
+        return "database" in error_msg and "does not exist" in error_msg
+
+    def _create_database(self) -> None:
+        logger.info(
+            "Database '%s' not found; attempting bootstrap via '%s'",
+            self._settings.dbname,
+            self._settings.bootstrap_db,
+        )
+
+        # Try multiple common administrative databases as fallbacks
+        bootstrap_candidates = [
+            self._settings.bootstrap_db,  # User-configured (default: "postgres")
+            "template1",  # PostgreSQL default template database
+            self._settings.user,  # User's default database (often created automatically)
+        ]
+
+        # Remove duplicates while preserving order
+        seen = set()
+        bootstrap_dbs = []
+        for db in bootstrap_candidates:
+            if db not in seen:
+                seen.add(db)
+                bootstrap_dbs.append(db)
+
+        last_error = None
+        for bootstrap_db in bootstrap_dbs:
+            try:
+                logger.debug("Attempting to connect to bootstrap database: %s", bootstrap_db)
+                admin_conn = self._connect(bootstrap_db)
+                try:
+                    with admin_conn.cursor() as cur:
+                        cur.execute(sql.SQL("CREATE DATABASE {dbname}").format(dbname=sql.Identifier(self._settings.dbname)))
+                    logger.info("Successfully created database '%s' using bootstrap database '%s'", self._settings.dbname, bootstrap_db)
+                    return
+                finally:
+                    if not admin_conn.closed:
+                        admin_conn.close()
+            except Exception as e:
+                last_error = e
+                logger.debug("Failed to use bootstrap database '%s': %s", bootstrap_db, e)
+                continue
+
+        # If all bootstrap databases failed, raise the last error with helpful message
+        raise EvolveException(
+            f"Failed to create database '{self._settings.dbname}'. "
+            f"Tried bootstrap databases: {', '.join(bootstrap_dbs)}. "
+            f"Last error: {last_error}"
+        )
+
+    def _connect_target_db(self) -> psycopg.Connection:
+        try:
+            return self._connect(self._settings.dbname)
+        except Exception as e:
+            if not self._settings.auto_create_db or not self._is_missing_database_error(e):
+                raise
+            self._create_database()
+            return self._connect(self._settings.dbname)
 
     def _ensure_pgvector_extension(self):
         """Ensure the pgvector extension is installed."""

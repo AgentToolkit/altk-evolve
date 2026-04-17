@@ -82,6 +82,8 @@ When `EVOLVE_BACKEND=postgres`:
 | `EVOLVE_PG_USER` | PostgreSQL user | `postgres` |
 | `EVOLVE_PG_PASSWORD` | PostgreSQL password | `postgres` |
 | `EVOLVE_PG_DBNAME` | PostgreSQL database name | `evolve` |
+| `EVOLVE_PG_AUTO_CREATE_DB` | Automatically create `EVOLVE_PG_DBNAME` when missing | `false` |
+| `EVOLVE_PG_BOOTSTRAP_DB` | Existing database to connect to for `CREATE DATABASE` bootstrap | `postgres` |
 | `EVOLVE_PG_EMBEDDING_MODEL` | Embedding model used for pgvector-backed entities | `sentence-transformers/all-MiniLM-L6-v2` |
 
 ## Storage Backends

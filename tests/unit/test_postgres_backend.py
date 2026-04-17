@@ -115,6 +115,154 @@ def test_postgres_backend_initialization_ensures_extension_before_registering_ve
 
 
 @pytest.mark.unit
+def test_postgres_backend_initialization_auto_creates_missing_database():
+    call_order: list[str] = []
+    config = PostgresDBSettings(
+        host="127.0.0.2",
+        port=6543,
+        user="postgres",
+        password="postgres",  # pragma: allowlist secret
+        dbname="evolve",
+        bootstrap_db="postgres",
+        auto_create_db=True,
+        embedding_model="custom-model",
+    )
+
+    class MissingDatabaseError(Exception):
+        sqlstate = "3D000"
+
+    initial_error = MissingDatabaseError("database does not exist")
+    admin_conn = MagicMock()
+    admin_conn.closed = False
+    target_conn = MagicMock()
+    target_conn.closed = False
+
+    admin_cursor = MagicMock()
+    admin_cursor_context = MagicMock()
+    admin_cursor_context.__enter__ = Mock(return_value=admin_cursor)
+    admin_cursor_context.__exit__ = Mock(return_value=False)
+    admin_conn.cursor.return_value = admin_cursor_context
+
+    with (
+        patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("altk_evolve.backend.postgres.register_vector", side_effect=lambda _conn: call_order.append("register_vector")),
+        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch.object(
+            PostgresEntityBackend,
+            "_ensure_pgvector_extension",
+            autospec=True,
+            side_effect=lambda _self: call_order.append("ensure_extension"),
+        ),
+    ):
+        mock_psycopg.connect.side_effect = [initial_error, admin_conn, target_conn]
+        mock_transformer.return_value.get_sentence_embedding_dimension.return_value = 768
+
+        backend = PostgresEntityBackend(config)
+
+    assert backend.conn is target_conn
+    assert mock_psycopg.connect.call_args_list[0].kwargs["dbname"] == "evolve"
+    assert mock_psycopg.connect.call_args_list[1].kwargs["dbname"] == "postgres"
+    assert mock_psycopg.connect.call_args_list[2].kwargs["dbname"] == "evolve"
+    admin_cursor.execute.assert_called_once()
+    admin_conn.close.assert_called_once_with()
+    assert call_order == ["ensure_extension", "register_vector"]
+
+
+@pytest.mark.unit
+def test_postgres_backend_initialization_auto_creates_with_fallback_bootstrap_db():
+    """Test that database creation falls back to alternative bootstrap databases."""
+    call_order: list[str] = []
+    config = PostgresDBSettings(
+        host="127.0.0.2",
+        port=6543,
+        user="testuser",
+        password="testpass",  # pragma: allowlist secret
+        dbname="evolve",
+        bootstrap_db="nonexistent_db",  # This will fail
+        auto_create_db=True,
+        embedding_model="custom-model",
+    )
+
+    class MissingDatabaseError(Exception):
+        sqlstate = None
+
+        def __str__(self):
+            return "database does not exist"
+
+    initial_error = MissingDatabaseError()
+    first_bootstrap_error = MissingDatabaseError()
+    template1_conn = MagicMock()
+    template1_conn.closed = False
+    target_conn = MagicMock()
+    target_conn.closed = False
+
+    template1_cursor = MagicMock()
+    template1_cursor_context = MagicMock()
+    template1_cursor_context.__enter__ = Mock(return_value=template1_cursor)
+    template1_cursor_context.__exit__ = Mock(return_value=False)
+    template1_conn.cursor.return_value = template1_cursor_context
+
+    with (
+        patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("altk_evolve.backend.postgres.register_vector", side_effect=lambda _conn: call_order.append("register_vector")),
+        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch.object(
+            PostgresEntityBackend,
+            "_ensure_pgvector_extension",
+            autospec=True,
+            side_effect=lambda _self: call_order.append("ensure_extension"),
+        ),
+    ):
+        # First call: try to connect to target db (fails)
+        # Second call: try nonexistent_db bootstrap (fails)
+        # Third call: try template1 bootstrap (succeeds)
+        # Fourth call: connect to target db (succeeds)
+        mock_psycopg.connect.side_effect = [initial_error, first_bootstrap_error, template1_conn, target_conn]
+        mock_transformer.return_value.get_sentence_embedding_dimension.return_value = 768
+
+        backend = PostgresEntityBackend(config)
+
+    assert backend.conn is target_conn
+    # Verify the connection attempts
+    assert mock_psycopg.connect.call_args_list[0].kwargs["dbname"] == "evolve"
+    assert mock_psycopg.connect.call_args_list[1].kwargs["dbname"] == "nonexistent_db"
+    assert mock_psycopg.connect.call_args_list[2].kwargs["dbname"] == "template1"
+    assert mock_psycopg.connect.call_args_list[3].kwargs["dbname"] == "evolve"
+    template1_cursor.execute.assert_called_once()
+    template1_conn.close.assert_called_once_with()
+    assert call_order == ["ensure_extension", "register_vector"]
+
+
+@pytest.mark.unit
+def test_postgres_backend_initialization_missing_database_without_auto_create_raises():
+    config = PostgresDBSettings(
+        host="127.0.0.2",
+        port=6543,
+        user="postgres",
+        password="postgres",  # pragma: allowlist secret
+        dbname="evolve",
+        auto_create_db=False,
+        embedding_model="custom-model",
+    )
+
+    class MissingDatabaseError(Exception):
+        sqlstate = "3D000"
+
+    with (
+        patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("altk_evolve.backend.postgres.register_vector"),
+        patch("altk_evolve.backend.postgres.SentenceTransformer"),
+        patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
+    ):
+        mock_psycopg.connect.side_effect = MissingDatabaseError("database does not exist")
+
+        with pytest.raises(MissingDatabaseError, match="does not exist"):
+            PostgresEntityBackend(config)
+
+    assert mock_psycopg.connect.call_count == 1
+
+
+@pytest.mark.unit
 def test_postgres_backend_initialization_closes_connection_on_setup_failure():
     config = PostgresDBSettings(
         host="127.0.0.2",
