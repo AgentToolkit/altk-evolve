@@ -11,8 +11,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob
 #
-# Pinned version (SCRIPT_VERSION is substituted by the release process, so the
-# script fetched from a tag already knows its own version — no env var needed):
+# Pinned version:
 #   curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.2.0/platform-integrations/install.sh | bash
 
 set -euo pipefail
@@ -21,9 +20,11 @@ set -euo pipefail
 EVOLVE_REPO="${EVOLVE_REPO:-AgentToolkit/altk-evolve}"
 EVOLVE_DEBUG="${EVOLVE_DEBUG:-0}"
 
-# Default to "main" so the installer always pulls the latest source.
-# Callers can still pin a specific tag: EVOLVE_VERSION=v1.0.6 bash install.sh ...
-SCRIPT_VERSION="v1.0.8"
+# SCRIPT_VERSION refers to a branch or a version tag. This value is substituted
+# during the release process, so that a script always knows it's own version,
+# and downloads the correct artifact bundle.
+# Callers can manually override: EVOLVE_VERSION=v1.0.6 bash install.sh ...
+SCRIPT_VERSION="main"
 EVOLVE_VERSION="${EVOLVE_VERSION:-${SCRIPT_VERSION}}"
 
 # ─── Colours ──────────────────────────────────────────────────────────────────

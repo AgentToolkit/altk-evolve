@@ -116,8 +116,8 @@ build_command = '''
     perl -i -pe "s|\]\(([A-Z_]*\.md)\)|](https://github.com/AgentToolkit/altk-evolve/blob/v$NEW_VERSION/\$1)|g" README.md
     perl -i -pe "s|\]\(docs/([^)]*)\)|](https://github.com/AgentToolkit/altk-evolve/blob/v$NEW_VERSION/docs/\$1)|g" README.md
     sed -i 's/^SCRIPT_VERSION="main"/SCRIPT_VERSION="v'"$NEW_VERSION"'"/' platform-integrations/install.sh
-    git add platform-integrations/install.sh
     uv build
+    git checkout platform-integrations/install.sh
     mv README.md.bak README.md
 '''
 tag_format = "v{version}"
