@@ -234,6 +234,69 @@ def test_postgres_backend_initialization_auto_creates_with_fallback_bootstrap_db
 
 
 @pytest.mark.unit
+def test_postgres_backend_initialization_handles_database_creation_race_condition():
+    """Test that database creation race condition (duplicate_database error) is handled gracefully."""
+    config = PostgresDBSettings(
+        host="127.0.0.2",
+        port=6543,
+        user="postgres",
+        password="postgres",  # pragma: allowlist secret
+        dbname="evolve",
+        bootstrap_db="postgres",
+        auto_create_db=True,
+        embedding_model="custom-model",
+    )
+
+    class MissingDatabaseError(Exception):
+        sqlstate = None
+
+        def __str__(self):
+            return "database does not exist"
+
+    class DuplicateDatabaseError(Exception):
+        pgcode = "42P04"  # duplicate_database
+
+        def __str__(self):
+            return "database already exists"
+
+    initial_error = MissingDatabaseError()
+    duplicate_error = DuplicateDatabaseError()
+    admin_conn = MagicMock()
+    admin_conn.closed = False
+    target_conn = MagicMock()
+    target_conn.closed = False
+
+    admin_cursor = MagicMock()
+    admin_cursor.execute.side_effect = duplicate_error  # Simulate race condition
+    admin_cursor_context = MagicMock()
+    admin_cursor_context.__enter__ = Mock(return_value=admin_cursor)
+    admin_cursor_context.__exit__ = Mock(return_value=False)
+    admin_conn.cursor.return_value = admin_cursor_context
+
+    with (
+        patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
+        patch("altk_evolve.backend.postgres.register_vector"),
+        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
+    ):
+        # First call: try to connect to target db (fails - doesn't exist)
+        # Second call: connect to bootstrap db (succeeds)
+        # Third call: connect to target db after "creation" (succeeds)
+        mock_psycopg.connect.side_effect = [initial_error, admin_conn, target_conn]
+        mock_transformer.return_value.get_sentence_embedding_dimension.return_value = 768
+
+        backend = PostgresEntityBackend(config)
+
+    # Verify the backend connected successfully despite the race condition
+    assert backend.conn is target_conn
+    assert mock_psycopg.connect.call_args_list[0].kwargs["dbname"] == "evolve"
+    assert mock_psycopg.connect.call_args_list[1].kwargs["dbname"] == "postgres"
+    assert mock_psycopg.connect.call_args_list[2].kwargs["dbname"] == "evolve"
+    admin_cursor.execute.assert_called_once()  # Attempted to create database
+    admin_conn.close.assert_called_once_with()
+
+
+@pytest.mark.unit
 def test_postgres_backend_initialization_missing_database_without_auto_create_raises():
     config = PostgresDBSettings(
         host="127.0.0.2",

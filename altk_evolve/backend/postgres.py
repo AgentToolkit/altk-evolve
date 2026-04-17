@@ -113,6 +113,13 @@ class PostgresEntityBackend(BaseEntityBackend):
                         cur.execute(sql.SQL("CREATE DATABASE {dbname}").format(dbname=sql.Identifier(self._settings.dbname)))
                     logger.info("Successfully created database '%s' using bootstrap database '%s'", self._settings.dbname, bootstrap_db)
                     return
+                except Exception as create_error:
+                    # Check if database already exists (race condition with another process)
+                    pgcode = getattr(create_error, "pgcode", None)
+                    if pgcode == "42P04":  # duplicate_database
+                        logger.debug("Database '%s' already exists (created by another process)", self._settings.dbname)
+                        return  # Treat as success
+                    raise  # Re-raise other errors
                 finally:
                     if not admin_conn.closed:
                         admin_conn.close()
