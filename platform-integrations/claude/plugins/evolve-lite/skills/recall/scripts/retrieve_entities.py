@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Add lib to path so we can import entity_io
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from entity_io import find_entities_dir, markdown_to_entity, log as _log
+from entity_io import find_entities_dir, get_evolve_dir, markdown_to_entity, log as _log
 
 
 def log(message):
@@ -110,11 +110,16 @@ def main():
 
     entities_dir = find_entities_dir()
     log(f"Entities dir: {entities_dir}")
-    if not entities_dir:
-        log("No entities directory found")
-        return
 
-    entities = load_entities_with_source(entities_dir)
+    entities = []
+    if entities_dir:
+        entities = load_entities_with_source(entities_dir)
+
+    public_dir = get_evolve_dir() / "public"
+    if public_dir.is_dir():
+        log(f"Loading public entities from: {public_dir}")
+        entities += load_entities_with_source(public_dir)
+
     if not entities:
         log("No entities found")
         return

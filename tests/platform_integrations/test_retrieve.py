@@ -84,6 +84,27 @@ class TestRetrieve:
         result = run_retrieve(evolve_dir=evolve_dir)
         assert "Entities for this task" in result.stdout
 
+    def test_public_entities_included_in_recall(self, temp_project_dir):
+        d = temp_project_dir / ".evolve"
+        (d / "public" / "guideline").mkdir(parents=True)
+        (d / "public" / "guideline" / "pub.md").write_text(
+            "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n"
+        )
+        result = run_retrieve(evolve_dir=d)
+        assert result.returncode == 0
+        assert "Prefer immutable data structures." in result.stdout
+
+    def test_public_entities_not_annotated_with_from(self, temp_project_dir):
+        d = temp_project_dir / ".evolve"
+        (d / "public" / "guideline").mkdir(parents=True)
+        (d / "public" / "guideline" / "pub.md").write_text(
+            "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n"
+        )
+        result = run_retrieve(evolve_dir=d)
+        pub_lines = [l for l in result.stdout.splitlines() if "Prefer immutable data structures." in l]
+        assert pub_lines
+        assert not any("[from:" in l for l in pub_lines)
+
     def test_entities_with_trigger_include_when_line(self, temp_project_dir):
         d = temp_project_dir / ".evolve"
         gdir = d / "entities" / "guideline"
