@@ -36,7 +36,7 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
         model=llm_settings.tips_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
-    constrained_decoding_supported = supports_response_format and response_schema_enabled
+    constrained_decoding_supported = bool(supports_response_format and response_schema_enabled)
 
     prompt = _SEGMENT_TEMPLATE.render(
         trajectory_summary=trajectory_data["trajectory_summary"],
@@ -44,11 +44,12 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
         constrained_decoding_supported=constrained_decoding_supported,
     )
 
+    litellm.enable_json_schema_validation = constrained_decoding_supported
+
     last_error: Exception | None = None
     for attempt in range(3):
         try:
             if constrained_decoding_supported:
-                litellm.enable_json_schema_validation = True
                 clean_response = (
                     completion(
                         model=llm_settings.tips_model,
@@ -60,7 +61,6 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
                     .message.content
                 )
             else:
-                litellm.enable_json_schema_validation = False
                 raw = (
                     completion(
                         model=llm_settings.tips_model,
@@ -72,10 +72,15 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
                 )
                 clean_response = clean_llm_response(raw)
 
+            if not clean_response:
+                logger.debug(f"Segmentation attempt {attempt + 1}: empty response")
+                continue
+
             subtasks = SegmentationResponse.model_validate(json.loads(clean_response)).subtasks
             return subtasks
 
-        except (JSONDecodeError, ValidationError, Exception) as e:
+        except (JSONDecodeError, ValidationError) as e:
+            logger.debug(f"Segmentation attempt {attempt + 1} failed: {e}")
             last_error = e
             continue
 

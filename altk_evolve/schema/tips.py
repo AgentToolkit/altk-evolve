@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Literal
 
 DEFAULT_TASK_DESCRIPTION = "Task description unknown"
@@ -18,14 +18,22 @@ class TipGenerationResponse(BaseModel):
 
 
 class SubtaskSegment(BaseModel):
-    generalized_description: str
-    start_step: int
-    end_step: int
-    purpose: str
+    generalized_description: str = Field(
+        description="Value-agnostic description of the subtask, applicable to any agent performing a similar operation"
+    )
+    start_step: int = Field(ge=1, description="Inclusive 1-based start step index in the trajectory")
+    end_step: int = Field(ge=1, description="Inclusive 1-based end step index in the trajectory")
+    purpose: str = Field(description="What this subtask achieves (phase/output-oriented)")
+
+    @model_validator(mode="after")
+    def _check_range(self) -> "SubtaskSegment":
+        if self.end_step < self.start_step:
+            raise ValueError("end_step must be >= start_step")
+        return self
 
 
 class SegmentationResponse(BaseModel):
-    subtasks: list[SubtaskSegment]
+    subtasks: list[SubtaskSegment] = Field(description="Contiguous, non-overlapping logical subtasks of the trajectory")
 
 
 @dataclass(frozen=True)

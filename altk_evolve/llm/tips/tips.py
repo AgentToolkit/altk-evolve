@@ -96,15 +96,13 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
             steps_list.append(f"**Step {i} - Reasoning:**\n{content}")
         elif step_type == "action":
             steps_list.append(f"**Step {i} - Action:**\n{content}")
-        elif step_type == "observation":
-            steps_list.append(f"**Step {i} - Observation:**\n{content}")
 
     return {
         "task_instruction": task_instruction or DEFAULT_TASK_DESCRIPTION,
         "trajectory_summary": "\n\n".join(steps_list),
         "steps_list": steps_list,
         "function_calls": function_calls,
-        "num_steps": len([s for s in agent_steps if s["type"] in ["action", "reasoning"]]),
+        "num_steps": len([s for s in agent_steps[:50] if s["type"] in ["action", "reasoning"]]),
     }
 
 
@@ -193,7 +191,11 @@ def generate_tips(messages: list[dict]) -> list[TipGenerationResult]:
     if evolve_config.segmentation_enabled:
         from altk_evolve.llm.tips.segmentation import segment_trajectory  # avoid circular import
 
-        subtasks = segment_trajectory(messages)
+        try:
+            subtasks = segment_trajectory(messages)
+        except Exception as e:
+            logger.warning(f"Trajectory segmentation failed, falling back to full trajectory: {e}")
+            subtasks = []
 
     if len(subtasks) >= 2:
         results = []

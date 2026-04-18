@@ -46,14 +46,13 @@ def test_segment_trajectory_returns_subtasks(mock_schema, mock_params, mock_comp
 @patch("altk_evolve.llm.tips.segmentation.completion")
 @patch("altk_evolve.llm.tips.segmentation.get_supported_openai_params", return_value=[])
 @patch("altk_evolve.llm.tips.segmentation.supports_response_schema", return_value=False)
-def test_segment_trajectory_returns_empty_on_llm_failure(mock_schema, mock_params, mock_completion):
+def test_segment_trajectory_propagates_non_parse_errors(mock_schema, mock_params, mock_completion):
     mock_completion.side_effect = Exception("LLM unavailable")
 
     from altk_evolve.llm.tips.segmentation import segment_trajectory
 
-    result = segment_trajectory(MESSAGES)
-
-    assert result == []
+    with pytest.raises(Exception, match="LLM unavailable"):
+        segment_trajectory(MESSAGES)
 
 
 @patch("altk_evolve.llm.tips.segmentation.completion")
@@ -84,3 +83,30 @@ def test_segment_trajectory_returns_empty_after_max_retries(mock_schema, mock_pa
 
     assert result == []
     assert mock_completion.call_count == 3
+
+
+def test_subtask_segment_rejects_inverted_range():
+    from pydantic import ValidationError as PydanticValidationError
+
+    from altk_evolve.schema.tips import SubtaskSegment
+
+    with pytest.raises(PydanticValidationError, match="end_step must be >= start_step"):
+        SubtaskSegment(
+            generalized_description="Bad range",
+            start_step=10,
+            end_step=5,
+            purpose="Should fail",
+        )
+
+
+def test_subtask_segment_accepts_valid_range():
+    from altk_evolve.schema.tips import SubtaskSegment
+
+    seg = SubtaskSegment(
+        generalized_description="Good range",
+        start_step=3,
+        end_step=7,
+        purpose="Should pass",
+    )
+    assert seg.start_step == 3
+    assert seg.end_step == 7
