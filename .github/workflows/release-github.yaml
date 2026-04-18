@@ -116,3 +116,14 @@ jobs:
         with:
           github_token: ${{ secrets.CI_PUSH_TOKEN }}
           tag: ${{ steps.release.outputs.tag }}
+
+      - name: Upload install.sh to GitHub release assets
+        if: steps.release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CI_PUSH_TOKEN }}
+        run: |
+          sed 's/^SCRIPT_VERSION="main"/SCRIPT_VERSION="${{ steps.release.outputs.tag }}"/' \
+            platform-integrations/install.sh > /tmp/install.sh
+          gh release upload ${{ steps.release.outputs.tag }} \
+            /tmp/install.sh#install.sh \
+            --clobber

@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v1.0.9 (2026-04-17)
+
+### Bug Fixes
+
+- Publish install.sh as a versioned release artifact
+  ([#195](https://github.com/AgentToolkit/altk-evolve/pull/195),
+  [`0b055da`](https://github.com/AgentToolkit/altk-evolve/commit/0b055da765c03fa51348defb7630643f4a48c0f1))
+
+### Features
+
+- **bob**: Add save-trajectory skill to Bob evolve-lite
+  ([#184](https://github.com/AgentToolkit/altk-evolve/pull/184),
+  [`9ca94e5`](https://github.com/AgentToolkit/altk-evolve/commit/9ca94e5ced9d0ebca03552703e3a7fe2417aae5a))
+
+
 ## v1.0.8 (2026-04-09)
 
 
