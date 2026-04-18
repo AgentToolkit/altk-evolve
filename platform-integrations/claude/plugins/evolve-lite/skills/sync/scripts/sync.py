@@ -147,7 +147,10 @@ def main():
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             continue
 
-        delta = count_delta(repo_path)
+        if "Already up to date" in (pull_result.stdout or ""):
+            delta = {"added": 0, "updated": 0, "removed": 0}
+        else:
+            delta = count_delta(repo_path)
         total_delta[name] = delta
 
         has_changes = any(v > 0 for v in delta.values())

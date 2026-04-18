@@ -90,7 +90,7 @@ Others can then subscribe using that remote URL.
 
 Use `/evolve-lite:subscribe` to pull in guidelines from another user's public repo:
 
-```
+```text
 /evolve-lite:subscribe
 > Remote URL: git@github.com:alice/evolve-guidelines.git
 > Short name: alice
@@ -102,7 +102,7 @@ The repo is cloned to `.evolve/subscribed/alice/` and mirrored into `.evolve/ent
 
 Use `/evolve-lite:sync` to pull the latest changes from all subscribed repos:
 
-```
+```text
 /evolve-lite:sync
 > Synced 2 repo(s): alice (+2 added, 0 updated, 0 removed), bob (+0 added, 1 updated, 0 removed)
 ```
@@ -113,7 +113,7 @@ If `sync.on_session_start: true` is set in config, this runs automatically at th
 
 Use `/evolve-lite:unsubscribe` to remove a subscription and delete its locally cloned files:
 
-```
+```text
 /evolve-lite:unsubscribe
 > Which subscription would you like to remove?
 > 1. alice
