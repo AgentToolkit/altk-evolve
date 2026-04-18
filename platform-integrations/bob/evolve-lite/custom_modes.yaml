@@ -39,6 +39,17 @@ customModes:
       - The trajectory path from evolve-lite:save-trajectory is available in conversation context — do not re-run it.
       - If no errors or non-obvious discoveries occurred, saving zero entities is correct — do not force low-quality entities.
 
+      MEMORY SHARING (Optional):
+      The following skills enable sharing guidelines with others:
+      - evolve-lite:publish — Publish your private guidelines to a public Git repo
+      - evolve-lite:subscribe — Subscribe to another user's public guidelines
+      - evolve-lite:unsubscribe — Remove a subscription
+      - evolve-lite:sync — Pull latest updates from all subscribed repos (manual invocation required)
+      
+      These skills are OPTIONAL and do not affect the core workflow. Use them when you want to:
+      - Share your learnings with teammates
+      - Learn from others' guidelines
+      - Keep subscribed guidelines up to date
 
       PRE-COMPLETION GATE:
       Before calling attempt_completion, ask yourself:
