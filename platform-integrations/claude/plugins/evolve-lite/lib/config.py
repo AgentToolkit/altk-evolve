@@ -168,7 +168,7 @@ def _cast(value):
         return True
     if value in ("false", "False", "no"):
         return False
-    if value in ("null", "~", ""):
+    if value in ("null", "~"):
         return None
     try:
         return int(value)
@@ -235,12 +235,13 @@ def _scalar(v):
 # ---------------------------------------------------------------------------
 
 
-def load_config(project_root="."):
+def load_config(project_root=".", filepath=None):
     """Read evolve.config.yaml from the project root and return a dict.
 
     Returns {} if the file does not exist.
+    If filepath is given, it is used directly instead of project_root.
     """
-    path = pathlib.Path(project_root) / "evolve.config.yaml"
+    path = pathlib.Path(filepath) if filepath is not None else pathlib.Path(project_root) / "evolve.config.yaml"
     if not path.exists():
         return {}
     text = path.read_text(encoding="utf-8")

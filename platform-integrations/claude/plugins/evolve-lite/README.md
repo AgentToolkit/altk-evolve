@@ -55,6 +55,88 @@ You can also manually invoke `/evolve-lite:learn` at any time.
 > - Set a specific `"matcher"` string to restrict triggering to prompts that contain that text.
 > - Reduce `"timeout"` to cap how long the learn step can run.
 
+## Sharing Guidelines
+
+Evolve Lite supports sharing guidelines between users via public Git repositories. You can publish your own guidelines so others can subscribe to them, and subscribe to guidelines published by others.
+
+### Setup
+
+Sharing requires an `evolve.config.yaml` at the project root. If it doesn't exist, the subscribe or publish skills will prompt you to create one. Minimal structure:
+
+```yaml
+identity:
+  user: yourname          # used to stamp ownership on published guidelines
+public_repo:
+  remote: git@github.com:yourname/evolve-guidelines.git
+  branch: main
+subscriptions: []
+sync:
+  on_session_start: true  # auto-sync on each session start
+```
+
+The `.evolve/` directory is kept out of version control — the skills automatically add it to `.gitignore`.
+
+### Publishing Guidelines
+
+Use `/evolve-lite:publish` to share one or more of your local guidelines with others:
+
+1. The skill lists files in `.evolve/entities/guideline/`
+2. You pick which ones to publish
+3. Each selected file is copied to `.evolve/public/`, stamped with your username as the owner, committed, and pushed to your `public_repo.remote`
+
+Others can then subscribe using that remote URL.
+
+### Subscribing to Guidelines
+
+Use `/evolve-lite:subscribe` to pull in guidelines from another user's public repo:
+
+```
+/evolve-lite:subscribe
+> Remote URL: git@github.com:alice/evolve-guidelines.git
+> Short name: alice
+```
+
+The repo is cloned to `.evolve/subscribed/alice/` and mirrored into `.evolve/entities/subscribed/alice/` so recall picks them up immediately.
+
+### Syncing Subscriptions
+
+Use `/evolve-lite:sync` to pull the latest changes from all subscribed repos:
+
+```
+/evolve-lite:sync
+> Synced 2 repo(s): alice (+2 added, 0 updated, 0 removed), bob (+0 added, 1 updated, 0 removed)
+```
+
+If `sync.on_session_start: true` is set in config, this runs automatically at the start of each session.
+
+### Unsubscribing
+
+Use `/evolve-lite:unsubscribe` to remove a subscription and delete its locally cloned files:
+
+```
+/evolve-lite:unsubscribe
+> Which subscription would you like to remove?
+> 1. alice
+> 2. bob
+```
+
+The skill confirms before deleting `.evolve/subscribed/{name}/` and its mirror under `.evolve/entities/subscribed/{name}/`.
+
+### Sharing Storage Layout
+
+```text
+.evolve/
+  public/                     # git repo pushed to your public remote
+    guideline-name.md         # owner-stamped guideline
+  subscribed/
+    alice/                    # git clone of alice's public repo
+      her-guideline.md
+  entities/
+    subscribed/
+      alice/                  # mirrored for recall
+        her-guideline.md
+```
+
 ## Example Walkthrough
 
 See the [Evolve Lite guide](../../../../docs/integrations/claude/evolve-lite.md#example-walkthrough) for a step-by-step example showing the full learn-then-recall loop across two sessions.

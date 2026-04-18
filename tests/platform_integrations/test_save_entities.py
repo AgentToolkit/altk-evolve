@@ -84,10 +84,10 @@ class TestSaveEntities:
 
     def test_skips_entities_without_content(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
-        run_save(temp_project_dir, [{"type": "guideline"}], evolve_dir=evolve_dir)
+        result = run_save(temp_project_dir, [{"type": "guideline"}], evolve_dir=evolve_dir)
         guideline_dir = evolve_dir / "entities" / "guideline"
-        if guideline_dir.exists():
-            assert list(guideline_dir.glob("*.md")) == []
+        assert not guideline_dir.exists() or list(guideline_dir.glob("*.md")) == []
+        assert "Added 0" in result.stdout
 
     def test_exits_cleanly_when_empty_entities_list(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"

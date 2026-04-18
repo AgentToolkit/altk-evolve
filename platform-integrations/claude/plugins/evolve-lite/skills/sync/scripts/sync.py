@@ -67,6 +67,10 @@ def count_delta(repo_path):
         text=True,
         timeout=_GIT_TIMEOUT,
     )
+    if result.returncode != 0:
+        # HEAD@{1} doesn't exist (initial sync) — count all .md files as added
+        added = len(list(repo_path.glob("**/*.md")))
+        return {"added": added, "updated": 0, "removed": 0}
     added = updated = removed = 0
     for line in result.stdout.splitlines():
         if not line.strip():
@@ -96,19 +100,12 @@ def main():
     )
     args = parser.parse_args()
 
-    project_root = "."
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
+    project_root = str(evolve_dir.parent) if "EVOLVE_DIR" in os.environ else "."
 
     # Determine config path
     if args.config:
-        cfg_path = Path(args.config)
-        # Load config from explicit path by temporarily reading the file
-        if cfg_path.exists():
-            from config import _parse_yaml
-
-            cfg = _parse_yaml(cfg_path.read_text(encoding="utf-8"))
-        else:
-            cfg = {}
+        cfg = load_config(filepath=args.config)
     else:
         cfg = load_config(project_root)
 
