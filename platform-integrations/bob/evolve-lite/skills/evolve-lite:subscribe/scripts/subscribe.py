@@ -21,7 +21,7 @@ for parent in current.parents:
         break
 
 from config import load_config, save_config  # noqa: E402
-from audit import append as audit_append
+from audit import append as audit_append  # noqa: E402 # noqa: E402
 
 
 def main():

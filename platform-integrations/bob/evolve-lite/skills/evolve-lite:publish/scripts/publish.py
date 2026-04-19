@@ -23,8 +23,8 @@ for parent in current.parents:
         break
 
 from entity_io import markdown_to_entity, entity_to_markdown  # noqa: E402
-from audit import append as audit_append
-from config import load_config
+from audit import append as audit_append  # noqa: E402 # noqa: E402
+from config import load_config  # noqa: E402 # noqa: E402
 
 
 def _resolve_source(cfg, user_arg):

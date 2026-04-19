@@ -26,7 +26,7 @@ for parent in current.parents:
         break
 
 from config import load_config, _parse_yaml  # noqa: E402
-from audit import append as audit_append
+from audit import append as audit_append  # noqa: E402 # noqa: E402
 
 
 _GIT_TIMEOUT = 30  # seconds
