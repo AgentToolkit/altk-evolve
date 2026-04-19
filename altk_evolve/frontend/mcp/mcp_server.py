@@ -323,6 +323,7 @@ def publish_entity(entity_id: str, user_id: str | None = None) -> str:
     logger.info(f"publish entity={entity_id} owner={user_id} namespace={evolve_config.namespace_id}")
     try:
         from datetime import datetime, UTC
+
         updated = get_client().patch_entity_metadata(
             namespace_id=evolve_config.namespace_id,
             entity_id=entity_id,

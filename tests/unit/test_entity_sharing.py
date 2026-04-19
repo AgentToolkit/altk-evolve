@@ -22,6 +22,7 @@ def mock_get_client():
 
 # ── create_entity ─────────────────────────────────────────────────────────────
 
+
 def test_create_entity_stores_visibility(mock_get_client):
     mock_get_client.update_entities.return_value = [
         EntityUpdate(id="1", type="guideline", content="test", event="ADD", metadata={"visibility": "private"})
@@ -48,15 +49,14 @@ def test_create_entity_invalid_visibility(mock_get_client):
 
 
 def test_create_entity_no_owner_id_omitted(mock_get_client):
-    mock_get_client.update_entities.return_value = [
-        EntityUpdate(id="1", type="note", content="x", event="ADD", metadata={})
-    ]
+    mock_get_client.update_entities.return_value = [EntityUpdate(id="1", type="note", content="x", event="ADD", metadata={})]
     create_entity(content="x", entity_type="note")
     entities = mock_get_client.update_entities.call_args[1]["entities"]
     assert "owner_id" not in entities[0].metadata
 
 
 # ── publish_entity ─────────────────────────────────────────────────────────────
+
 
 def _make_entity(entity_id="42", visibility="private", owner_id=None):
     meta = {"visibility": visibility}
@@ -92,6 +92,7 @@ def test_publish_entity_no_user_id(mock_get_client):
 
 def test_publish_entity_not_found(mock_get_client):
     from altk_evolve.schema.exceptions import EvolveException
+
     mock_get_client.patch_entity_metadata.side_effect = EvolveException("Entity '99' not found")
 
     result = json.loads(publish_entity(entity_id="99", user_id="alice"))
@@ -99,6 +100,7 @@ def test_publish_entity_not_found(mock_get_client):
 
 
 # ── unpublish_entity ───────────────────────────────────────────────────────────
+
 
 def test_unpublish_entity_reverts_to_private(mock_get_client):
     updated = _make_entity(visibility="private")
@@ -113,6 +115,7 @@ def test_unpublish_entity_reverts_to_private(mock_get_client):
 
 
 # ── get_entities with include_public ──────────────────────────────────────────
+
 
 def test_get_entities_include_public_annotates_results(mock_get_client):
     private = _make_entity(entity_id="1", visibility="private")
@@ -149,11 +152,10 @@ def test_get_entities_deduplicates_public_already_in_private(mock_get_client):
 
 # ── backward compatibility ─────────────────────────────────────────────────────
 
+
 def test_create_entity_backward_compat_no_visibility_args(mock_get_client):
     """Calling create_entity without new args should still work and default to private."""
-    mock_get_client.update_entities.return_value = [
-        EntityUpdate(id="1", type="fact", content="x", event="ADD", metadata={})
-    ]
+    mock_get_client.update_entities.return_value = [EntityUpdate(id="1", type="fact", content="x", event="ADD", metadata={})]
     result = json.loads(create_entity(content="x", entity_type="fact"))
     assert "error" not in result
     entities = mock_get_client.update_entities.call_args[1]["entities"]

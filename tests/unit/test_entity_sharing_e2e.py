@@ -27,6 +27,7 @@ def ns(client):
 
 # ── get_entity_by_id ──────────────────────────────────────────────────────────
 
+
 def test_get_entity_by_id_returns_entity(client, ns):
     updates = client.update_entities(ns, [Entity(type="guideline", content="be concise")], enable_conflict_resolution=False)
     entity_id = updates[0].id
@@ -43,9 +44,11 @@ def test_get_entity_by_id_missing_returns_none(client, ns):
 
 # ── patch_entity_metadata ─────────────────────────────────────────────────────
 
+
 def test_patch_entity_metadata_merges_without_touching_content(client, ns):
     updates = client.update_entities(
-        ns, [Entity(type="guideline", content="original content", metadata={"creation_mode": "manual"})],
+        ns,
+        [Entity(type="guideline", content="original content", metadata={"creation_mode": "manual"})],
         enable_conflict_resolution=False,
     )
     entity_id = updates[0].id
@@ -75,6 +78,7 @@ def test_patch_entity_metadata_raises_for_missing_entity(client, ns):
 
 
 # ── publish / unpublish round-trip ────────────────────────────────────────────
+
 
 def test_publish_makes_entity_appear_in_public_search(client, ns):
     updates = client.update_entities(ns, [Entity(type="guideline", content="use context managers")], enable_conflict_resolution=False)
@@ -106,13 +110,12 @@ def test_private_entities_not_returned_by_get_public(client, ns):
 
 # ── cross-namespace public discovery ──────────────────────────────────────────
 
+
 def test_public_entity_in_one_namespace_visible_from_another(client):
     ns_a = client.create_namespace("user_a").id
     ns_b = client.create_namespace("user_b").id
 
-    updates = client.update_entities(
-        ns_a, [Entity(type="guideline", content="always write tests")], enable_conflict_resolution=False
-    )
+    updates = client.update_entities(ns_a, [Entity(type="guideline", content="always write tests")], enable_conflict_resolution=False)
     entity_id = updates[0].id
     client.patch_entity_metadata(ns_a, entity_id, {"visibility": "public", "owner_id": "alice"})
 
