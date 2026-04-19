@@ -57,7 +57,7 @@ def load_entities_with_source(entities_dir, kind="private"):
     the subscription name so format_entities can annotate them. The owner field
     written by publish.py is preserved; _source is just a routing key used
     internally and is never written to disk.
-    
+
     Args:
         entities_dir: Directory to load entities from
         kind: Source kind tag - "private", "public", or "subscribed"
