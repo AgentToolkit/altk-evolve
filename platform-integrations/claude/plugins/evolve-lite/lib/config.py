@@ -168,7 +168,7 @@ def _cast(value):
         return True
     if value in ("false", "False", "no"):
         return False
-    if value in ("null", "~"):
+    if value in ("null", "~", ""):
         return None
     try:
         return int(value)

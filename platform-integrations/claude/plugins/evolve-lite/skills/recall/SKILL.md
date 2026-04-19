@@ -14,19 +14,26 @@ This skill retrieves relevant entities from a stored knowledge base based on the
 
 1. Hook fires on user prompt submission
 2. Script reads prompt from stdin (JSON with `prompt` field)
-3. Loads all entities from the entities directory (`.evolve/entities/`)
+3. Loads entities from two sources: `.evolve/entities/` (private + subscribed) and `.evolve/public/` (your published guidelines)
 4. Outputs formatted entities to stdout
 5. Claude receives entities as additional context and applies relevant ones
 
 ## Entities Storage
 
-Entities are stored as individual markdown files in `.evolve/entities/`, nested by type:
+Entities are loaded from two locations:
 
 ```
 .evolve/entities/
   guideline/
-    use-context-managers-for-file-operations.md
-    cache-api-responses-locally.md
+    use-context-managers-for-file-operations.md   ← private
+  subscribed/
+    alice/
+      guideline/
+        alice-tip.md                              ← annotated [from: alice]
+
+.evolve/public/
+  guideline/
+    published-tip.md                              ← your own public, no annotation
 ```
 
 Each file uses markdown with YAML frontmatter:
