@@ -79,6 +79,18 @@ class TestPublish:
         content = (project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").read_text()
         assert "visibility: public" in content
 
+    def test_exits_nonzero_when_public_entity_already_exists(self, project_dir):
+        public_path = project_dir / ".evolve" / "public" / "guideline" / "my-tip.md"
+        public_path.parent.mkdir(parents=True)
+        public_path.write_text("---\ntype: guideline\nvisibility: public\n---\n\nExisting public content.\n")
+
+        result = run_publish(project_dir, ["--entity", "my-tip.md"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "already published" in result.stderr
+        assert public_path.read_text() == "---\ntype: guideline\nvisibility: public\n---\n\nExisting public content.\n"
+        assert (project_dir / ".evolve" / "entities" / "guideline" / "my-tip.md").exists()
+
     def test_rejects_path_traversal_in_entity_name(self, project_dir):
         result = run_publish(project_dir, ["--entity", "../../etc/passwd"], expect_success=False)
         assert result.returncode != 0

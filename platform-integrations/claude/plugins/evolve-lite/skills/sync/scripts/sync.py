@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -50,6 +51,8 @@ def copy_entities(subscribed_repo_path, entities_subscribed_path):
     if entities_subscribed_path.exists():
         shutil.rmtree(entities_subscribed_path)
     for md in sorted(subscribed_repo_path.glob("**/*.md")):
+        if md.is_symlink():
+            continue
         rel = md.relative_to(subscribed_repo_path)
         dest = entities_subscribed_path / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -109,9 +112,10 @@ def main():
     else:
         cfg = load_config(project_root)
 
-    # Check sync.on_session_start
+    # Check sync.on_session_start — only short-circuits automatic hook runs
+    # (which pass --quiet). Manual invocations always execute.
     sync_cfg = cfg.get("sync", {})
-    if isinstance(sync_cfg, dict) and sync_cfg.get("on_session_start") is False:
+    if args.quiet and isinstance(sync_cfg, dict) and sync_cfg.get("on_session_start") is False:
         sys.exit(0)
 
     subscriptions = cfg.get("subscriptions", [])
@@ -130,11 +134,18 @@ def main():
     total_delta = {}
     any_changes = False
 
+    _SAFE_NAME = re.compile(r'^[A-Za-z0-9._-]+$')
+
     for sub in subscriptions:
         if not isinstance(sub, dict):
             continue
         name = sub.get("name", "unknown")
         branch = sub.get("branch", "main")
+
+        if not _SAFE_NAME.match(name):
+            summaries.append(f"{name!r} (skipped — invalid subscription name)")
+            continue
+
         repo_path = evolve_dir / "subscribed" / name
 
         if not repo_path.is_dir():

@@ -110,6 +110,41 @@ class TestSync:
         actions = [json.loads(line)["action"] for line in log_path.read_text().splitlines() if line.strip()]
         assert "sync" in actions
 
+    def test_skips_symlinked_entities(self, subscribed_project):
+        p = subscribed_project
+        lr = p["local_repo"]
+        # Create a real file and a symlink pointing at it in the subscribed clone
+        real_file = lr["work"] / "guideline" / "real.md"
+        real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
+        symlink_file = lr["work"] / "guideline" / "link.md"
+        symlink_file.symlink_to(real_file)
+        run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
+        mirrored = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline"
+        assert not (mirrored / "link.md").exists()
+
+    def test_skips_invalid_subscription_name(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        # Write config manually with an unsafe name
+        cfg_path = temp_project_dir / "evolve.config.yaml"
+        cfg_path.write_text(
+            "subscriptions:\n  - name: ../evil\n    remote: git@github.com:x/y.git\n    branch: main\n"
+        )
+        result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
+        assert result.returncode == 0
+        assert "invalid subscription name" in result.stdout
+        assert not (evolve_dir / "subscribed" / ".." / "evil").exists()
+
+    def test_manual_run_ignores_on_session_start_false(self, subscribed_project):
+        p = subscribed_project
+        cfg_path = p["project_dir"] / "evolve.config.yaml"
+        cfg_path.write_text(
+            "sync:\n  on_session_start: false\nsubscriptions:\n  - name: alice\n    remote: x\n    branch: main\n"
+        )
+        # Manual run (no --quiet) must still execute even with on_session_start: false
+        result = run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
+        assert result.returncode == 0
+        assert "Synced" in result.stdout
+
     def test_removed_entity_disappears_after_sync(self, subscribed_project):
         """Entities deleted from the remote are removed from the mirror on next sync."""
         p = subscribed_project

@@ -96,6 +96,35 @@ class TestSubscribe:
         assert result.returncode != 0
         assert "invalid subscription name" in result.stderr
 
+    def test_fails_when_dest_already_exists(self, temp_project_dir, local_repo):
+        evolve_dir = temp_project_dir / ".evolve"
+        dest = evolve_dir / "subscribed" / "alice"
+        dest.mkdir(parents=True)
+        result = run_script(
+            SUBSCRIBE_SCRIPT,
+            temp_project_dir,
+            ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            evolve_dir=evolve_dir,
+            expect_success=False,
+        )
+        assert result.returncode != 0
+        assert "already exists" in result.stderr
+        cfg = cfg_module.load_config(str(temp_project_dir))
+        assert cfg.get("subscriptions", []) == []
+
+    def test_rejects_empty_or_dot_name(self, temp_project_dir, local_repo):
+        evolve_dir = temp_project_dir / ".evolve"
+        for bad_name in [".", ""]:
+            result = run_script(
+                SUBSCRIBE_SCRIPT,
+                temp_project_dir,
+                ["--name", bad_name, "--remote", str(local_repo["bare"]), "--branch", "main"],
+                evolve_dir=evolve_dir,
+                expect_success=False,
+            )
+            assert result.returncode != 0, f"Expected failure for name={bad_name!r}"
+            assert "invalid subscription name" in result.stderr
+
     def test_cloned_repo_contains_initial_entity(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
         run_script(
