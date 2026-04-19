@@ -52,12 +52,15 @@ Ensure `.evolve/` is gitignored at the project root:
 grep -qxF '.evolve/' .gitignore 2>/dev/null || echo '.evolve/' >> .gitignore
 ```
 
-If `.evolve/public/` does not already contain a `.git` directory, initialise it and add the remote:
+If `.evolve/public/` does not already contain a `.git` directory, initialise it, create the branch, and add the remote:
 
 ```bash
 git init .evolve/public
+git -C .evolve/public checkout -b "{public_repo.branch}"
 git -C .evolve/public remote add origin {public_repo.remote}
 ```
+
+Where `{public_repo.branch}` defaults to `main` if not set in config. Creating the branch explicitly ensures the subsequent push will succeed regardless of the system's `init.defaultBranch` setting.
 
 ### Step 3: List and select entities
 

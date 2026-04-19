@@ -67,10 +67,19 @@ def main():
 
     # Update frontmatter fields
     entity["visibility"] = "public"
-    if args.user:
-        entity["owner"] = args.user
     entity["published_at"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     cfg = load_config(str(evolve_dir.resolve().parent))
+    
+    # Determine user: prefer args.user, fallback to cfg.identity.user
+    user = args.user
+    if not user:
+        identity = cfg.get("identity", {})
+        if isinstance(identity, dict):
+            user = identity.get("user")
+    
+    if user:
+        entity["owner"] = user
+    
     source = _resolve_source(cfg, args.user)
     if source:
         entity["source"] = source
@@ -84,6 +93,10 @@ def main():
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
 
+    if dest_path.exists():
+        print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
+        sys.exit(1)
+
     content = entity_to_markdown(entity)
     dest_path.write_text(content, encoding="utf-8")
     src_path.unlink()
@@ -92,7 +105,7 @@ def main():
     audit_append(
         project_root=str(evolve_dir.resolve().parent),
         action="publish",
-        actor=args.user or "unknown",
+        actor=user or "unknown",
         entity=args.entity,
     )
 
