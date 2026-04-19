@@ -109,8 +109,12 @@ def main():
     )
     args = parser.parse_args()
 
-    project_root = "."
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
+    # Derive project_root from evolve_dir to ensure consistency
+    if evolve_dir.is_absolute():
+        project_root = str(evolve_dir.parent)
+    else:
+        project_root = "."
 
     # Determine config path
     if args.config:
