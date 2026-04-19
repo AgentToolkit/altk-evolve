@@ -45,7 +45,11 @@ def main():
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
 
-    # Validate entity name: resolve and confirm it stays within the intended dir
+    # Validate entity name: must be a plain filename with no path components
+    if len(Path(args.entity).parts) != 1 or args.entity in (".", ".."):
+        print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
+        sys.exit(1)
+
     src_base = (evolve_dir / "entities" / "guideline").resolve()
     src_path = (evolve_dir / "entities" / "guideline" / args.entity).resolve()
     if not src_path.is_relative_to(src_base):

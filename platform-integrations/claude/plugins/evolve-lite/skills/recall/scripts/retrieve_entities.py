@@ -88,7 +88,7 @@ def load_entities_with_source(entities_dir):
             if rel_parts[0] == "subscribed" and len(rel_parts) > 1:
                 entity["_source"] = rel_parts[1]
             entities.append(entity)
-        except OSError:
+        except (OSError, UnicodeError):
             pass
     return entities
 
