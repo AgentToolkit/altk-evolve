@@ -79,9 +79,11 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish/scripts/publish.py \
 
 ### Step 5: Commit and push
 
+Build `{filenames_list}` as a comma-joined list of all selected filenames (e.g. `foo.md, bar.md`).
+
 ```bash
 git -C .evolve/public add .
-git -C .evolve/public commit -m "[evolve] publish: {name}"
+git -C .evolve/public commit -m "[evolve] publish: {filenames_list}"
 git -C .evolve/public push origin "{public_repo.branch}"
 ```
 
@@ -91,4 +93,4 @@ Where `{public_repo.branch}` defaults to `main` if not set in config.
 
 Tell the user:
 
-> "Published {name} to {public_repo.remote}."
+> "Published {filenames_list} to {public_repo.remote}."
