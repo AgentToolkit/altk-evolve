@@ -37,7 +37,7 @@ def main():
     # Validate name: resolve and confirm it stays within the subscribed directory
     subscribed_base = (evolve_dir / "subscribed").resolve()
     dest = (evolve_dir / "subscribed" / args.name).resolve()
-    if not dest.is_relative_to(subscribed_base):
+    if not dest.is_relative_to(subscribed_base) or dest == subscribed_base:
         print(f"Error: invalid subscription name: {args.name!r}", file=sys.stderr)
         sys.exit(1)
 
@@ -60,8 +60,7 @@ def main():
     # Clone the repo
     if dest.exists():
         print(
-            f"Error: directory already exists: {dest}\n"
-            f"Run evolve-lite:unsubscribe to remove it before re-subscribing.",
+            f"Error: directory already exists: {dest}\nRun evolve-lite:unsubscribe to remove it before re-subscribing.",
             file=sys.stderr,
         )
         sys.exit(1)
