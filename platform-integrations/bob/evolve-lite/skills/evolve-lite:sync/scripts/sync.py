@@ -25,7 +25,7 @@ for parent in current.parents:
         sys.path.insert(0, str(lib_path))
         break
 
-from config import load_config, _parse_yaml
+from config import load_config, _parse_yaml  # noqa: E402
 from audit import append as audit_append
 
 

@@ -13,7 +13,7 @@ for parent in current.parents:
         sys.path.insert(0, str(lib_path))
         break
 
-from entity_io import find_entities_dir, markdown_to_entity, log as _log
+from entity_io import find_entities_dir, markdown_to_entity, log as _log  # noqa: E402
 
 
 def log(message):

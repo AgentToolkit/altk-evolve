@@ -22,7 +22,7 @@ for parent in current.parents:
         sys.path.insert(0, str(lib_path))
         break
 
-from entity_io import markdown_to_entity, entity_to_markdown
+from entity_io import markdown_to_entity, entity_to_markdown  # noqa: E402
 from audit import append as audit_append
 from config import load_config
 

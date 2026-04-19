@@ -21,7 +21,7 @@ for parent in current.parents:
         sys.path.insert(0, str(lib_path))
         break
 
-from config import load_config, save_config
+from config import load_config, save_config  # noqa: E402
 from audit import append as audit_append
 
 
