@@ -168,6 +168,13 @@ class FilesystemEntityBackend(BaseEntityBackend):
         self._save_namespace_data(namespace_id, self._active_data)
         self._active_data = None
 
+    def patch_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
+        """Override to load namespace data, call _update_entity, then persist."""
+        with self._lock:
+            self._active_data = self._load_namespace_data(namespace_id)
+            self._update_entity(namespace_id, entity_id, entity_type, content_str, timestamp, metadata)
+            self._post_update(namespace_id)
+
     def update_entities(
         self,
         namespace_id: str,

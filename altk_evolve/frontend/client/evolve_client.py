@@ -1,3 +1,4 @@
+import datetime
 import logging
 from typing import Any
 
@@ -6,8 +7,9 @@ from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.llm.fact_extraction.fact_extraction import ExtractedFact, extract_facts_from_messages
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
-from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
+from altk_evolve.schema.exceptions import EvolveException, NamespaceAlreadyExistsException, NamespaceNotFoundException
 from altk_evolve.schema.guidelines import ConsolidationResult
+from altk_evolve.utils.utils import serialize_content
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,31 @@ class EvolveClient:
     def delete_entity_by_id(self, namespace_id: str, entity_id: str) -> None:
         """Delete a specific entity by its ID."""
         self.backend.delete_entity_by_id(namespace_id, entity_id)
+
+    def get_entity_by_id(self, namespace_id: str, entity_id: str) -> RecordedEntity | None:
+        """Fetch a single entity by its ID. Returns None if not found."""
+        results = self.search_entities(namespace_id, filters={"id": entity_id}, limit=1)
+        return results[0] if results else None
+
+    def patch_entity_metadata(self, namespace_id: str, entity_id: str, metadata_updates: dict) -> RecordedEntity:
+        """Fetch entity, merge metadata_updates, and write back without changing content or ID."""
+        entity = self.get_entity_by_id(namespace_id, entity_id)
+        if entity is None:
+            raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
+        merged_metadata = {**entity.metadata, **metadata_updates}
+        timestamp = int(datetime.datetime.now(datetime.UTC).timestamp())
+        self.backend.patch_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged_metadata)
+        return RecordedEntity(**{**entity.model_dump(), "metadata": merged_metadata})
+
+    def get_public_entities(self, query: str | None = None, entity_type: str | None = None, limit: int = 100) -> list[RecordedEntity]:
+        """Search for public entities across all namespaces."""
+        all_results: list[RecordedEntity] = []
+        for ns in self.search_namespaces(limit=1000):
+            filters: dict = {"metadata.visibility": "public"}
+            if entity_type:
+                filters["type"] = entity_type
+            all_results.extend(self.search_entities(ns.id, query=query, filters=filters, limit=limit))
+        return all_results
 
     def cluster_guidelines(self, namespace_id: str, threshold: float | None = None, limit: int = 10000) -> list[list[RecordedEntity]]:
         """Cluster guideline entities by task description similarity.

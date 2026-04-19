@@ -118,28 +118,39 @@ def get_client() -> EvolveClient:
         return _client
 
 
-def get_entities_logic(task: str, entity_type: str = "guideline") -> str:
+def get_entities_logic(task: str, entity_type: str = "guideline", include_public: bool = False) -> str:
     """Implementation logic for get_entities tool."""
-    logger.info(f"Getting entities of type '{entity_type}' for task: {task}")
-    # Get relevant entities
-    results = get_client().search_entities(
+    logger.info(f"Getting entities of type '{entity_type}' for task: {task} (include_public={include_public})")
+    client = get_client()
+
+    private_results = client.search_entities(
         namespace_id=evolve_config.namespace_id,
         query=task,
         filters={"type": entity_type},
     )
 
-    # Format the response
     header = f"# {entity_type.capitalize()}s for: {task}"
     response_lines = [f"{header}\n"]
 
-    for i, entity in enumerate(results, 1):
+    seen_ids = {e.id for e in private_results}
+    for i, entity in enumerate(private_results, 1):
         response_lines.append(f"{i}. {entity.content}")
+
+    if include_public:
+        public_results = client.get_public_entities(query=task, entity_type=entity_type)
+        offset = len(private_results) + 1
+        for i, entity in enumerate(public_results, offset):
+            if entity.id in seen_ids:
+                continue
+            seen_ids.add(entity.id)
+            owner = (entity.metadata or {}).get("owner_id", "unknown")
+            response_lines.append(f"{i}. [public: {owner}] {entity.content}")
 
     return "\n".join(response_lines)
 
 
 @mcp.tool()
-def get_entities(task: str, entity_type: str = "guideline") -> str:
+def get_entities(task: str, entity_type: str = "guideline", include_public: bool = False) -> str:
     """
     Get relevant entities for a given task, filtered by type.
     Provide a task description and receive applicable best practices, guidelines, or policies.
@@ -147,8 +158,9 @@ def get_entities(task: str, entity_type: str = "guideline") -> str:
     Args:
         task: A description of the task you want entities for
         entity_type: The type of entities to retrieve (e.g., 'guideline', 'policy'). Defaults to 'guideline'.
+        include_public: If True, also include public entities from all namespaces. Defaults to False.
     """
-    return get_entities_logic(task, entity_type)
+    return get_entities_logic(task, entity_type, include_public)
 
 
 @mcp.tool()
@@ -165,13 +177,14 @@ def get_guidelines(task: str) -> str:
 
 
 @mcp.tool()
-def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[RecordedEntity]:
+def save_trajectory(trajectory_data: str, task_id: str | None = None, owner_id: str | None = None) -> list[RecordedEntity]:
     """
     Save the full agent trajectory to the Entity DB and generate guidelines
 
     Args:
         trajectory_data: A JSON formatted OpenAI conversation.
         task_id: Optional identifier for the task.
+        owner_id: Optional user ID to record as the owner of generated guidelines.
     """
     task_id = task_id or str(uuid.uuid4())
     entities = []
@@ -183,7 +196,7 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
                 content=message["content"] if isinstance(message["content"], str) else str(message["content"]),
                 metadata={
                     "task_id": task_id,
-                    "message": message,  # store the original message for reference
+                    "message": message,
                 },
             )
         )
@@ -196,6 +209,14 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
     result = generate_guidelines(messages)
 
     if result.guidelines:
+        guideline_metadata_base = {
+            "task_description": result.task_description,
+            "source_task_id": task_id,
+            "creation_mode": "auto-mcp",
+        }
+        if owner_id:
+            guideline_metadata_base["owner_id"] = owner_id
+
         get_client().update_entities(
             namespace_id=evolve_config.namespace_id,
             entities=[
@@ -203,13 +224,11 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
                     type="guideline",
                     content=guideline.content,
                     metadata={
+                        **guideline_metadata_base,
                         "category": guideline.category,
                         "rationale": guideline.rationale,
                         "trigger": guideline.trigger,
                         "implementation_steps": guideline.implementation_steps,
-                        "task_description": result.task_description,
-                        "source_task_id": task_id,
-                        "creation_mode": "auto-mcp",
                     },
                 )
                 for guideline in result.guidelines
@@ -225,7 +244,14 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
 
 
 @mcp.tool()
-def create_entity(content: str, entity_type: str, metadata: str | None = None, enable_conflict_resolution: bool = False) -> str:
+def create_entity(
+    content: str,
+    entity_type: str,
+    metadata: str | None = None,
+    enable_conflict_resolution: bool = False,
+    owner_id: str | None = None,
+    visibility: str = "private",
+) -> str:
     """
     Create a single entity in the namespace.
 
@@ -234,13 +260,17 @@ def create_entity(content: str, entity_type: str, metadata: str | None = None, e
         entity_type: The type/category of the entity (e.g., 'guideline', 'note', 'fact')
         metadata: Optional JSON string containing arbitrary metadata related to the entity
         enable_conflict_resolution: If True, uses LLM to check for conflicts with existing entities
+        owner_id: Optional user ID to record as the owner of this entity
+        visibility: Visibility of the entity — 'private' (default) or 'public'
 
     Returns:
         JSON string with the entity update details (ADD/UPDATE/DELETE/NONE) and entity ID
     """
     logger.info(f"Creating entity of type: {entity_type}")
     try:
-        # Parse metadata if provided
+        if visibility not in ("private", "public"):
+            return json.dumps({"error": f"Invalid visibility '{visibility}': must be 'private' or 'public'"})
+
         metadata_dict = {}
         if metadata:
             try:
@@ -249,19 +279,19 @@ def create_entity(content: str, entity_type: str, metadata: str | None = None, e
                 logger.exception(f"Invalid JSON in metadata parameter: {str(e)}")
                 return json.dumps({"error": "Invalid JSON", "message": f"Failed to parse metadata: {str(e)}", "invalid_metadata": metadata})
 
-        # Inject creation mode for manually created guidelines/policies if not present
         if entity_type in ("guideline", "policy"):
             metadata_dict.setdefault("creation_mode", "manual")
 
-        # Create the entity using the Entity schema
+        metadata_dict["visibility"] = visibility
+        if owner_id:
+            metadata_dict["owner_id"] = owner_id
+
         entity = Entity(type=entity_type, content=content, metadata=metadata_dict)
 
-        # Use EvolveClient.update_entities() to create the entity
         updates = get_client().update_entities(
             namespace_id=evolve_config.namespace_id, entities=[entity], enable_conflict_resolution=enable_conflict_resolution
         )
 
-        # Return the first (and only) update result
         if updates:
             update = updates[0]
             return json.dumps(
@@ -276,6 +306,58 @@ def create_entity(content: str, entity_type: str, metadata: str | None = None, e
         traceback.print_exc()
         logger.exception(f"CRASH IN CREATE_ENTITY: {e}")
         return json.dumps({"error": f"Server Error: {str(e)}"})
+
+
+@mcp.tool()
+def publish_entity(entity_id: str, user_id: str | None = None) -> str:
+    """
+    Make an entity publicly visible to all users.
+
+    Args:
+        entity_id: The ID of the entity to publish
+        user_id: Optional caller identity to record as owner
+
+    Returns:
+        JSON string with the updated entity, or an error message
+    """
+    logger.info(f"publish entity={entity_id} owner={user_id} namespace={evolve_config.namespace_id}")
+    try:
+        from datetime import datetime, UTC
+        updated = get_client().patch_entity_metadata(
+            namespace_id=evolve_config.namespace_id,
+            entity_id=entity_id,
+            metadata_updates={
+                "visibility": "public",
+                "owner_id": user_id,
+                "published_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        return json.dumps({"id": updated.id, "type": updated.type, "content": updated.content, "metadata": updated.metadata})
+    except EvolveException as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def unpublish_entity(entity_id: str) -> str:
+    """
+    Revert an entity to private visibility.
+
+    Args:
+        entity_id: The ID of the entity to unpublish
+
+    Returns:
+        JSON string with the updated entity, or an error message
+    """
+    logger.info(f"unpublish entity={entity_id} namespace={evolve_config.namespace_id}")
+    try:
+        updated = get_client().patch_entity_metadata(
+            namespace_id=evolve_config.namespace_id,
+            entity_id=entity_id,
+            metadata_updates={"visibility": "private", "published_at": None},
+        )
+        return json.dumps({"id": updated.id, "type": updated.type, "content": updated.content, "metadata": updated.metadata})
+    except EvolveException as e:
+        return json.dumps({"error": str(e)})
 
 
 @mcp.tool()

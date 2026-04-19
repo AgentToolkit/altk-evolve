@@ -123,6 +123,7 @@ Existing integrations that stored custom fields in entity metadata should update
 - **Proactive**: Learns how to recognize problems and their solutions, and generates guidelines that get automatically applied to new tasks.
 - **Conflict Resolution**: Update existing guidelines when new information contradicts them.
 - **On Command**: An array of tools to manage guidelines whether in the agent or through a CLI
+- **Sharing**: Publish individual entities so other agents can discover and retrieve them across namespaces.
 
 ## Architecture
 Evolve is built on a modular architecture which forms a feedback loop, taking conversation traces (trajectories) from an agent, extracting key insights into a database, feeding it back into the agent.
@@ -132,6 +133,46 @@ _Lite Mode omits the Interaction layer. All activity is performed in-agent_
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-wide-dark.svg">
   <img src="docs/assets/architecture-wide-light.svg" alt="Architecture" width="480">
 </picture>
+
+## Entity Sharing
+
+Evolve supports sharing entities across namespaces using a simple public/private visibility model.
+
+**Visibility** is stored in each entity's metadata and is private by default. Existing entities without a `visibility` field are unaffected.
+
+| Metadata field | Description |
+|---|---|
+| `owner_id` | User ID who created or last published the entity |
+| `visibility` | `"private"` (default) or `"public"` |
+| `published_at` | ISO-8601 timestamp of the most recent publish |
+
+### MCP Tools
+
+**Publishing an entity:**
+```
+publish_entity(entity_id="42", user_id="alice")
+```
+Sets `visibility=public` and records the owner and publish timestamp.
+
+**Unpublishing:**
+```
+unpublish_entity(entity_id="42")
+```
+Reverts the entity to private. The entity stays in its namespace — only its visibility changes.
+
+**Retrieving public entities from all namespaces:**
+```
+get_entities(task="write safer code", include_public=True)
+```
+Merges results from the caller's namespace with public entities from all other namespaces. Public results are annotated with `[public: {owner_id}]`.
+
+**Creating an entity with visibility:**
+```
+create_entity(content="...", entity_type="guideline", visibility="public", owner_id="alice")
+```
+
+### What's deferred (Phase 1C)
+REST API endpoints (`GET /api/entities/public`, publish/unpublish routes) and UI controls are not yet implemented.
 
 ## Guideline Provenance
 Evolve automatically tracks the origin of every guideline it generates or stores. Every guideline entity contains `metadata` identifying its source:
