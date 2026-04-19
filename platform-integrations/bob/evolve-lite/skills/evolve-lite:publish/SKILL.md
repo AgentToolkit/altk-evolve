@@ -18,7 +18,6 @@ Check whether `evolve.config.yaml` exists in the project root.
 **If it does not exist**, ask the user:
 
 > "No `evolve.config.yaml` found. What username would you like to use? (e.g. `vatche`)"
-
 > "What is the remote URL for your public guidelines repo? (e.g. `git@github.com:vatche/evolve-guidelines.git`)"
 
 Create `evolve.config.yaml`:
