@@ -29,7 +29,7 @@ Ask the user:
 
 Ask the user:
 
-> "This will remove '{name}' and delete `.evolve/subscribed/{name}/`. Continue? (y/n)"
+> "This will remove '{name}' and delete `.evolve/subscribed/{name}/` and `.evolve/entities/subscribed/{name}/`. Continue? (y/n)"
 
 If the user answers anything other than `y` or `yes`, stop and tell them the operation was cancelled.
 
