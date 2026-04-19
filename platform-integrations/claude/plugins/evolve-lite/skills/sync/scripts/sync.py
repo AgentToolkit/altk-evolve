@@ -134,7 +134,7 @@ def main():
     total_delta = {}
     any_changes = False
 
-    _SAFE_NAME = re.compile(r'^[A-Za-z0-9._-]+$')
+    _SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
     for sub in subscriptions:
         if not isinstance(sub, dict):

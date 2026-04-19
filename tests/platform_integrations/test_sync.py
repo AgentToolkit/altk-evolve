@@ -126,9 +126,7 @@ class TestSync:
         evolve_dir = temp_project_dir / ".evolve"
         # Write config manually with an unsafe name
         cfg_path = temp_project_dir / "evolve.config.yaml"
-        cfg_path.write_text(
-            "subscriptions:\n  - name: ../evil\n    remote: git@github.com:x/y.git\n    branch: main\n"
-        )
+        cfg_path.write_text("subscriptions:\n  - name: ../evil\n    remote: git@github.com:x/y.git\n    branch: main\n")
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
         assert "invalid subscription name" in result.stdout
@@ -137,9 +135,7 @@ class TestSync:
     def test_manual_run_ignores_on_session_start_false(self, subscribed_project):
         p = subscribed_project
         cfg_path = p["project_dir"] / "evolve.config.yaml"
-        cfg_path.write_text(
-            "sync:\n  on_session_start: false\nsubscriptions:\n  - name: alice\n    remote: x\n    branch: main\n"
-        )
+        cfg_path.write_text("sync:\n  on_session_start: false\nsubscriptions:\n  - name: alice\n    remote: x\n    branch: main\n")
         # Manual run (no --quiet) must still execute even with on_session_start: false
         result = run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
         assert result.returncode == 0

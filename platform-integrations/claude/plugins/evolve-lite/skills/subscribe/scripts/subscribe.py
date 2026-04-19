@@ -53,22 +53,26 @@ def main():
 
     # Clone the repo
     if dest.exists():
-        print(f"Warning: {dest} already exists, skipping clone.", file=sys.stderr)
-    else:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                args.remote,
-                str(dest),
-                "--branch",
-                args.branch,
-                "--depth",
-                "1",
-            ],
-            check=True,
+        print(
+            f"Error: directory already exists: {dest}\nRun /evolve-lite:unsubscribe to remove it before re-subscribing.",
+            file=sys.stderr,
         )
+        sys.exit(1)
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            args.remote,
+            str(dest),
+            "--branch",
+            args.branch,
+            "--depth",
+            "1",
+        ],
+        check=True,
+    )
 
     # Update config
     subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
