@@ -26,8 +26,8 @@ def main():
     group.add_argument("--name", help="Name of subscription to remove")
     args = parser.parse_args()
 
-    project_root = "."
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
+    project_root = str(evolve_dir.parent) if "EVOLVE_DIR" in os.environ else "."
 
     cfg = load_config(project_root)
     subscriptions = cfg.get("subscriptions", [])
