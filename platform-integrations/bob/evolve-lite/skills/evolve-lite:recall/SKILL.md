@@ -44,7 +44,7 @@ python3 scripts/retrieve_entities.py --sources subscribed
 
 Entities are stored as individual markdown files in `.evolve/entities/`, organized by source:
 
-```
+```text
 .evolve/entities/
   guideline/                    # Private entities
     use-context-managers.md
