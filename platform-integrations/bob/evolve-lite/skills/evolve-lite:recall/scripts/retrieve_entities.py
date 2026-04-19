@@ -84,7 +84,7 @@ def load_entities_with_source(entities_dir, kind="private"):
                 entity["_source"] = rel_parts[1]
                 entity["_kind"] = "subscribed"
             entities.append(entity)
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             pass
     return entities
 

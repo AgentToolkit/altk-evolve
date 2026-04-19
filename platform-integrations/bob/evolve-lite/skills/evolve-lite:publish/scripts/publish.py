@@ -51,6 +51,13 @@ def main():
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
 
+    # Validate entity name is a simple basename (no path separators or special components)
+    from pathlib import PurePath
+
+    if PurePath(args.entity).name != args.entity or args.entity in (".", ".."):
+        print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
+        sys.exit(1)
+
     # Validate entity name: resolve and confirm it stays within the intended dir
     src_base = (evolve_dir / "entities" / "guideline").resolve()
     src_path = (evolve_dir / "entities" / "guideline" / args.entity).resolve()
