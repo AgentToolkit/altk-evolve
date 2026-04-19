@@ -78,18 +78,15 @@ def load_entities_with_source(entities_dir):
     for md in sorted(entities_dir.glob("**/*.md")):
         try:
             entity = markdown_to_entity(md)
+            entity.pop("_source", None)
             if not entity.get("content"):
                 continue
-            # Detect subscribed entities using path relative to entities_dir
-            # to avoid matching "subscribed" in ancestor directory names.
             try:
                 rel_parts = md.relative_to(entities_dir).parts
             except ValueError:
                 rel_parts = md.parts
-            for i, part in enumerate(rel_parts):
-                if part == "subscribed" and i + 1 < len(rel_parts):
-                    entity["_source"] = rel_parts[i + 1]
-                    break
+            if rel_parts[0] == "subscribed" and len(rel_parts) > 1:
+                entity["_source"] = rel_parts[1]
             entities.append(entity)
         except OSError:
             pass

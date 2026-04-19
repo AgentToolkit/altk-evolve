@@ -22,7 +22,7 @@ This skill retrieves relevant entities from a stored knowledge base based on the
 
 Entities are loaded from two locations:
 
-```
+```text
 .evolve/entities/
   guideline/
     use-context-managers-for-file-operations.md   ← private
