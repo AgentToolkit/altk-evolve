@@ -101,9 +101,9 @@ class TestRetrieve:
             "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n"
         )
         result = run_retrieve(evolve_dir=d)
-        pub_lines = [l for l in result.stdout.splitlines() if "Prefer immutable data structures." in l]
+        pub_lines = [line for line in result.stdout.splitlines() if "Prefer immutable data structures." in line]
         assert pub_lines
-        assert not any("[from:" in l for l in pub_lines)
+        assert not any("[from:" in line for line in pub_lines)
 
     def test_entities_with_trigger_include_when_line(self, temp_project_dir):
         d = temp_project_dir / ".evolve"
