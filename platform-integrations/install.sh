@@ -749,14 +749,34 @@ def install_claude(source_dir, target_dir):
     plugin_source = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite"
     info(f"Installing Claude plugin from {plugin_source}")
 
+    marketplace_dir = Path(target_dir).resolve()
+    has_local_marketplace = (marketplace_dir / ".claude-plugin" / "marketplace.json").is_file()
+    marketplace_source = str(marketplace_dir) if has_local_marketplace else EVOLVE_REPO
+    if has_local_marketplace:
+        info(f"📁 Marketplace source: {_c('1', marketplace_source)} (local)")
+    else:
+        info(f"🌐 Marketplace source: {_c('1', marketplace_source)} (GitHub)")
     claude = shutil.which("claude")
     if claude:
         if DRY_RUN:
-            dryrun(f"run: claude plugin install {plugin_source.resolve()}")
+            dryrun(f"run: claude plugin marketplace add {marketplace_source}")
+            dryrun(f"run: claude plugin install evolve-lite@evolve-marketplace")
             return
         try:
             result = subprocess.run(
-                [claude, "plugin", "install", str(plugin_source.resolve())],
+                [claude, "plugin", "marketplace", "add", marketplace_source],
+                capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                warn(f"claude plugin marketplace add exited with code {result.returncode}")
+                if result.stderr.strip():
+                    warn(f"    {result.stderr.strip()}")
+            else:
+                if result.stdout.strip():
+                    print(f"    {result.stdout.strip()}")
+
+            result = subprocess.run(
+                [claude, "plugin", "install", "evolve-lite@evolve-marketplace"],
                 capture_output=True, text=True
             )
             if result.returncode == 0:
@@ -772,12 +792,11 @@ def install_claude(source_dir, target_dir):
             warn(f"claude plugin install failed: {e}")
 
     # Fallback: manual instructions
-    abs_path = plugin_source.resolve()
     warn("Could not install Claude plugin automatically. To install manually, run:")
     print()
-    print(f"    claude --plugin-dir {abs_path}")
+    print(f"    claude plugin marketplace add {marketplace_source}")
+    print(f"    claude plugin install evolve-lite@evolve-marketplace")
     print()
-    print("  Or add this to your Claude startup command.")
 
 
 def uninstall_claude(target_dir):
