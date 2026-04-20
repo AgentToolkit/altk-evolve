@@ -18,6 +18,7 @@ set -euo pipefail
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 EVOLVE_REPO="${EVOLVE_REPO:-AgentToolkit/altk-evolve}"
+export EVOLVE_REPO
 EVOLVE_DEBUG="${EVOLVE_DEBUG:-0}"
 
 # SCRIPT_VERSION refers to a branch or a version tag. This value is substituted
@@ -139,6 +140,7 @@ SOURCE_DIR = sys.argv[1]
 CLI_ARGS   = sys.argv[2:]
 
 EVOLVE_DEBUG = os.environ.get("EVOLVE_DEBUG", "0") == "1"
+EVOLVE_REPO  = os.environ.get("EVOLVE_REPO", "AgentToolkit/altk-evolve")
 DRY_RUN = False   # set to True by --dry-run flag; checked in all write primitives
 
 BOB_SLUG    = "evolve-lite"
