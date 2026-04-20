@@ -143,8 +143,21 @@ def main():
         repo_path = evolve_dir / "entities" / "subscribed" / name
 
         if not repo_path.is_dir():
-            summaries.append(f"{name} (not cloned — run /evolve-lite-subscribe first)")
-            continue
+            remote = sub.get("remote")
+            if not remote:
+                summaries.append(f"{name} (not cloned — no remote in config, run /evolve-lite:subscribe first)")
+                continue
+            repo_path.parent.mkdir(parents=True, exist_ok=True)
+            clone_result = subprocess.run(
+                ["git", "clone", remote, str(repo_path), "--branch", branch, "--depth", "1"],
+                capture_output=True,
+                text=True,
+                timeout=_GIT_TIMEOUT,
+            )
+            if clone_result.returncode != 0:
+                summaries.append(f"{name} (re-clone failed: {clone_result.stderr.strip()})")
+                total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
+                continue
 
         pull_result = git_sync(repo_path, branch)
         if pull_result is None or pull_result.returncode != 0:
