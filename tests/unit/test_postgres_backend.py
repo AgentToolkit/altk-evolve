@@ -581,6 +581,31 @@ def test_search_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
 
 
 @pytest.mark.unit
+def test_search_entities_routes_unknown_filters_to_metadata(postgres_backend: PostgresEntityBackend, monkeypatch):
+    """Test that non-schema filters are applied against JSON metadata."""
+    monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))
+    monkeypatch.setattr(postgres_backend.embedding_model, "encode", arbitrary_embedding)
+
+    mock_cursor = MagicMock()
+    mock_cursor.fetchall.return_value = []
+    mock_cursor_context = MagicMock()
+    mock_cursor_context.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_context.__exit__ = Mock(return_value=False)
+
+    with patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context):
+        postgres_backend.search_entities(
+            namespace_id="test_namespace",
+            query="test_query",
+            filters={"type": "trajectory", "task_id": "123", "metadata.source_task_id": "456", "ignored": None},
+            limit=10,
+        )
+
+    _, params = mock_cursor.execute.call_args.args
+    expected_embedding = str(arbitrary_embedding("test_query").tolist())
+    assert params == ["trajectory", '{"task_id": "123"}', '{"source_task_id": "456"}', expected_embedding, 10]
+
+
+@pytest.mark.unit
 def test_delete_entity_by_id(postgres_backend: PostgresEntityBackend, monkeypatch):
     """Test deleting an entity by ID."""
     monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))

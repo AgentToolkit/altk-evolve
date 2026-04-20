@@ -43,6 +43,7 @@ class PostgresEntityBackend(BaseEntityBackend):
     embedding_model: SentenceTransformer
     embedding_dim: int
     _settings: PostgresDBSettings
+    _schema_filter_fields = {"id", "type", "content", "created_at"}
 
     def __init__(self, config: BaseSettings | None = None):
         super().__init__(config)
@@ -289,10 +290,19 @@ class PostgresEntityBackend(BaseEntityBackend):
         filters = filters or {}
 
         where_parts = []
-        params: list = []
-        for k, v in filters.items():
-            where_parts.append(sql.SQL("{} = %s").format(sql.Identifier(k)))
-            params.append(v)
+        params: list[Any] = []
+        for key, value in filters.items():
+            if value is None:
+                continue
+
+            if key in self._schema_filter_fields:
+                where_parts.append(sql.SQL("{} = %s").format(sql.Identifier(key)))
+                params.append(value)
+                continue
+
+            metadata_key = key.split(".", 1)[1] if key.startswith("metadata.") else str(key)
+            where_parts.append(sql.SQL("metadata @> %s::jsonb"))
+            params.append(json.dumps({metadata_key: value}))
         where_clause = sql.SQL(" AND ").join(where_parts) if where_parts else sql.SQL("TRUE")
 
         if query is None:
