@@ -23,11 +23,13 @@ namespaces_app = typer.Typer(help="Namespace management commands")
 entities_app = typer.Typer(help="Entity management commands")
 sync_app = typer.Typer(help="Sync commands")
 skills_app = typer.Typer(help="Skill management commands")
+viz_app = typer.Typer(help="Visualization commands")
 
 app.add_typer(namespaces_app, name="namespaces")
 app.add_typer(entities_app, name="entities")
 app.add_typer(sync_app, name="sync")
 app.add_typer(skills_app, name="skills")
+app.add_typer(viz_app, name="viz")
 
 console = Console()
 
@@ -542,6 +544,23 @@ def package_skills(
     else:
         console.print(f"\n[bold yellow]Packaged {packaged}/{len(skill_dirs)} skill(s); {failed} failed[/bold yellow]")
         sys.exit(1)
+
+
+# =============================================================================
+# Viz Commands
+# =============================================================================
+
+
+@viz_app.command("serve")
+def serve_viz(
+    evolve_dir: Annotated[Path, typer.Option("--evolve-dir", "-d", help="Path to .evolve directory")] = Path(".evolve"),
+    port: Annotated[int, typer.Option("--port", "-p", help="Port to serve on")] = 7891,
+    no_browser: Annotated[bool, typer.Option("--no-browser", help="Don't open browser automatically")] = False,
+):
+    """Serve the Evolve Viz web interface for browsing entities and trajectories."""
+    from altk_evolve.viz.server import serve
+
+    serve(evolve_dir=evolve_dir.resolve(), port=port, open_browser=not no_browser)
 
 
 if __name__ == "__main__":

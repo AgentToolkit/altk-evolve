@@ -122,6 +122,26 @@ uv run evolve skills package --dry-run  # Preview first
 uv run evolve skills package --clean    # Package with clean output
 ```
 
+### Viz
+
+```bash
+# Start the local viz server (opens browser automatically)
+evolve viz serve
+
+# Custom .evolve directory and port
+evolve viz serve --evolve-dir /path/to/.evolve --port 8080
+
+# Don't open the browser
+evolve viz serve --no-browser
+```
+
+**Options:**
+- `--evolve-dir, -d`: Path to `.evolve` directory (default: `.evolve`)
+- `--port, -p`: Port to serve on (default: `7891`)
+- `--no-browser`: Skip opening the browser automatically
+
+See the [Evolve Viz guide](../guides/viz.md) for full usage.
+
 ## Environment Variables
 
 The CLI uses the same environment variables as the MCP server. See the [Configuration](README.md#configuration) section in the main README.
