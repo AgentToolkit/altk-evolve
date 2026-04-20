@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Pull the latest guidelines from all subscribed repos.
 
-After pulling, copies .md files from .evolve/subscribed/{name}/ into
-.evolve/entities/subscribed/{name}/ so the existing recall hook picks them
-up without any changes.
+Subscribed repos are cloned directly into .evolve/entities/subscribed/{name}/
+so the recall hook can read them without a separate mirror step.
 
 Usage:
   --quiet        Suppress output if no changes.
@@ -13,7 +12,6 @@ Usage:
 import argparse
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -39,24 +37,6 @@ def git_pull(repo_path, branch):
     except subprocess.TimeoutExpired:
         print(f"Warning: git pull timed out for {repo_path} (branch: {branch})", file=sys.stderr)
         return None
-
-
-def copy_entities(subscribed_repo_path, entities_subscribed_path):
-    """Mirror .md files from the subscribed git clone into entities/subscribed/{name}/.
-
-    Clears the destination first so removed files don't linger.
-    The owner field stamped at publish time travels with the file — no
-    frontmatter manipulation needed here.
-    """
-    if entities_subscribed_path.exists():
-        shutil.rmtree(entities_subscribed_path)
-    for md in sorted(subscribed_repo_path.glob("**/*.md")):
-        if md.is_symlink():
-            continue
-        rel = md.relative_to(subscribed_repo_path)
-        dest = entities_subscribed_path / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(md, dest)
 
 
 def count_delta(repo_path):
@@ -146,7 +126,7 @@ def main():
             summaries.append(f"{name!r} (skipped — invalid subscription name)")
             continue
 
-        repo_path = evolve_dir / "subscribed" / name
+        repo_path = evolve_dir / "entities" / "subscribed" / name
 
         if not repo_path.is_dir():
             summaries.append(f"{name} (not cloned — run /evolve-lite-subscribe first)")
@@ -167,10 +147,6 @@ def main():
         has_changes = any(v > 0 for v in delta.values())
         if has_changes:
             any_changes = True
-
-        # Mirror entities into .evolve/entities/subscribed/{name}/
-        entities_subscribed = evolve_dir / "entities" / "subscribed" / name
-        copy_entities(repo_path, entities_subscribed)
 
         delta_str = f"+{delta['added']} added, {delta['updated']} updated, {delta['removed']} removed"
         summaries.append(f"{name} ({delta_str})")
