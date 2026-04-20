@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v1.0.10 (2026-04-20)
+
+### Bug Fixes
+
+- **mcp**: Align metadata filters and harden SSE teardown
+  ([`a0bcc6d`](https://github.com/AgentToolkit/altk-evolve/commit/a0bcc6db5ac5fdb4808d6e11e451eb3156ba9596))
+
+- **postgres**: Prevent ambiguous filter behavior across backends
+  ([`a0bcc6d`](https://github.com/AgentToolkit/altk-evolve/commit/a0bcc6db5ac5fdb4808d6e11e451eb3156ba9596))
+
+
 ## v1.0.9 (2026-04-17)
 
 ### Bug Fixes
