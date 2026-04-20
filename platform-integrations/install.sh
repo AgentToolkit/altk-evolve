@@ -728,7 +728,10 @@ def status_bob(target_dir):
     print(f"    skills/evolve-lite:learn  : {'✓' if (bob_target / 'skills' / 'evolve-lite:learn').is_dir() else '✗'}")
     print(f"    skills/evolve-lite:recall : {'✓' if (bob_target / 'skills' / 'evolve-lite:recall').is_dir() else '✗'}")
     print(f"    skills/evolve-lite:save-trajectory : {'✓' if (bob_target / 'skills' / 'evolve-lite:save-trajectory').is_dir() else '✗'}")
-    print(f"    commands/            : {'✓' if (bob_target / 'commands' / 'evolve-lite:learn.md').is_file() else '✗'}")
+    learn_cmd = (bob_target / 'commands' / 'evolve-lite:learn.md').is_file()
+    save_cmd = (bob_target / 'commands' / 'evolve-lite:save-trajectory.md').is_file()
+    print(f"    commands/evolve-lite:learn : {'✓' if learn_cmd else '✗'}")
+    print(f"    commands/evolve-lite:save-trajectory : {'✓' if save_cmd else '✗'}")
     print(f"    custom_modes.yaml    : {'✓' if (bob_target / 'custom_modes.yaml').is_file() else '✗'}")
 
     mcp_path = bob_target / "mcp.json"
