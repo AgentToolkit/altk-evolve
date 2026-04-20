@@ -51,6 +51,22 @@ From PyPI
 pip install altk-evolve
 ```
 
+**Optional Backend Dependencies:**
+
+The default filesystem backend uses simple text matching and requires no additional dependencies. For semantic vector similarity search, install one of these backends:
+
+For PostgreSQL with pgvector support (recommended for production):
+```bash
+uv sync --extra pgvector
+```
+
+For Milvus support (optimized for large-scale vector search):
+```bash
+uv sync --extra milvus
+```
+
+See the [Backend Configuration Guide](docs/guides/backend-configuration.md) for detailed comparison and setup instructions.
+
 ### Configuration
 
 For direct OpenAI usage:
@@ -95,6 +111,13 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 - `save_trajectory(trajectory_data: str, task_id: str | None)`: Save a conversation trajectory and generate new guidelines.
 - `create_entity(content: str, entity_type: str, metadata: str | None, enable_conflict_resolution: bool)`: Create a single entity in the namespace.
 - `delete_entity(entity_id: str)`: Delete a specific entity by its ID.
+
+### Filter Migration Note
+Entity search filters reserve bare keys for top-level schema columns only: `id`, `type`, `content`, and `created_at`.
+
+If you need to filter on JSON metadata, use the `metadata.<key>` form. For example, use `filters={"type": "trajectory", "metadata.task_id": "123"}` instead of `filters={"type": "trajectory", "task_id": "123"}`.
+
+Existing integrations that stored custom fields in entity metadata should update filter writers to add the `metadata.` prefix for those keys.
 
 ## Features
 - **Proactive**: Learns how to recognize problems and their solutions, and generates guidelines that get automatically applied to new tasks.
