@@ -32,9 +32,10 @@ def git_sync(repo_path, branch):
     files, discards any local modifications. Subscribed repos are read-only mirrors
     so there is nothing worth preserving locally.
     """
+    git_base = ["git", "-c", f"safe.directory={repo_path}", "-C", str(repo_path)]
     try:
         fetch = subprocess.run(
-            ["git", "-C", str(repo_path), "fetch", "origin", branch],
+            [*git_base, "fetch", "origin", branch],
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT,
@@ -42,7 +43,7 @@ def git_sync(repo_path, branch):
         if fetch.returncode != 0:
             return fetch
         return subprocess.run(
-            ["git", "-C", str(repo_path), "reset", "--hard", f"origin/{branch}"],
+            [*git_base, "reset", "--hard", f"origin/{branch}"],
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT,
@@ -58,7 +59,7 @@ def count_delta(repo_path):
     Returns dict: {added: int, updated: int, removed: int}
     """
     result = subprocess.run(
-        ["git", "-C", str(repo_path), "diff", "--name-status", "HEAD@{1}", "HEAD"],
+        ["git", "-c", f"safe.directory={repo_path}", "-C", str(repo_path), "diff", "--name-status", "HEAD@{1}", "HEAD"],
         capture_output=True,
         text=True,
         timeout=_GIT_TIMEOUT,
