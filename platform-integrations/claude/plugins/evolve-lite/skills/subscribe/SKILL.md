@@ -17,7 +17,7 @@ Check whether `evolve.config.yaml` exists in the project root.
 
 If it does **not** exist, ask the user:
 
-> "No `evolve.config.yaml` found. What username would you like to use? (e.g. `vatche`)"
+> "No `evolve.config.yaml` found. What username would you like to use? (e.g. `alice`)"
 
 Then create `evolve.config.yaml` with this minimal content:
 
