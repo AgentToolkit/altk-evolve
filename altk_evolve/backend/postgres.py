@@ -289,7 +289,7 @@ class PostgresEntityBackend(BaseEntityBackend):
         table = self._table_name(namespace_id)
         filters = filters or {}
 
-        where_parts = []
+        where_parts: list[sql.Composable] = []
         params: list[Any] = []
         for key, value in filters.items():
             if value is None:
