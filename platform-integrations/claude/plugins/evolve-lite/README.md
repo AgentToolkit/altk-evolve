@@ -109,6 +109,8 @@ Use `/evolve-lite:sync` to pull the latest changes from all subscribed repos:
 
 If `sync.on_session_start: true` is set in config, this runs automatically at the start of each session.
 
+> **Note:** Sync uses `git fetch` + `git reset --hard` on each cloned subscription repo, so local state always matches the remote exactly. Accidentally deleted or modified files are automatically restored on the next sync.
+
 ### Unsubscribing
 
 Use `/evolve-lite:unsubscribe` to remove a subscription and delete its locally cloned files:
