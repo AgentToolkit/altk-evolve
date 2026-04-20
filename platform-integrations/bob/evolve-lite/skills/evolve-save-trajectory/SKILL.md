@@ -29,9 +29,14 @@ Convert each message to the appropriate format:
 {"role": "user", "content": "the user's message text"}
 ```
 
-**Assistant text response:**
+**Assistant text response (no thinking):**
 ```json
 {"role": "assistant", "content": "the assistant's response text"}
+```
+
+**Assistant text response (with thinking):**
+```json
+{"role": "assistant", "content": "the assistant's response text", "thinking": "the thinking/reasoning text"}
 ```
 
 **Assistant tool call (no visible text):**
@@ -80,7 +85,7 @@ Convert each message to the appropriate format:
 - **Tool call arguments must be a JSON string**, not a nested object. Use `json.dumps()` on the arguments object.
 - **Tool call IDs**: Use the actual tool call ID from the conversation. If not available, generate a unique ID like `call_001`, `call_002`, etc.
 - **Multiple tool calls**: If the assistant made multiple tool calls in one turn, include all of them in a single assistant message's `tool_calls` array, followed by separate tool result messages for each.
-- **Thinking blocks**: Internal reasoning is not persisted. If a visible reasoning summary is needed, include it in the `content` field.
+- **Thinking blocks**: If the assistant had both thinking and text in the same turn, combine them into one message with both `content` and `thinking` fields.
 
 ### Step 3: Clean Content
 
