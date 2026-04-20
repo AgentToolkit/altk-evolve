@@ -43,7 +43,7 @@ def main():
         filename = f"{base}.json" if n == 0 else f"{base}_{n}.json"
         output_path = trajectories_dir / filename
         try:
-            fd = os.open(str(output_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            fd = os.open(str(output_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             break
         except FileExistsError:
             n += 1
