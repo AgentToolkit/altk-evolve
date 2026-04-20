@@ -748,8 +748,7 @@ def status_bob(target_dir):
 # ── Claude installer ──────────────────────────────────────────────────────────
 
 def install_claude(source_dir, target_dir):
-    plugin_source = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite"
-    info(f"Installing Claude plugin from {plugin_source}")
+    info("Installing Claude plugin via marketplace")
 
     marketplace_dir = Path(target_dir).resolve()
     has_local_marketplace = (marketplace_dir / ".claude-plugin" / "marketplace.json").is_file()
