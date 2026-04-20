@@ -104,17 +104,23 @@ def main():
         print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
         sys.exit(1)
 
+    # Write to temp file first, then atomic move
     content = entity_to_markdown(entity)
-    dest_path.write_text(content, encoding="utf-8")
+    temp_path = src_path.with_suffix(".tmp")
+    temp_path.write_text(content, encoding="utf-8")
+    temp_path.replace(dest_path)
     src_path.unlink()
 
-    # Audit log
-    audit_append(
-        project_root=str(evolve_dir.resolve().parent),
-        action="publish",
-        actor=user or "unknown",
-        entity=args.entity,
-    )
+    # Audit log (don't let audit failures break the operation)
+    try:
+        audit_append(
+            project_root=str(evolve_dir.resolve().parent),
+            action="publish",
+            actor=user or "unknown",
+            entity=args.entity,
+        )
+    except Exception as e:
+        print(f"Warning: failed to write audit log: {e}", file=sys.stderr)
 
     print(f"Published: {args.entity} -> {dest_path}")
 

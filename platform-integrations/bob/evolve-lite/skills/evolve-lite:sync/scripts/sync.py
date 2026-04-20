@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Pull the latest guidelines from all subscribed repos.
 
-After pulling, copies .md files from .evolve/subscribed/{name}/ into
-.evolve/entities/subscribed/{name}/ so the existing recall hook picks them
-up without any changes.
+Subscribed repos are cloned directly into .evolve/entities/subscribed/{name}/
+so the recall hook can read them without a separate mirror step.
 
 Usage:
   --quiet        Suppress output if no changes.
@@ -13,7 +12,6 @@ Usage:
 import argparse
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -27,42 +25,37 @@ for parent in current.parents:
         break
 
 from config import load_config, _parse_yaml  # noqa: E402
-from audit import append as audit_append  # noqa: E402 # noqa: E402
+from audit import append as audit_append  # noqa: E402
 
 
 _GIT_TIMEOUT = 30  # seconds
 
 
-def git_pull(repo_path, branch):
-    """Pull latest from origin. Returns CompletedProcess, or None on timeout."""
+def git_sync(repo_path, branch):
+    """Fetch and hard-reset to origin. Returns CompletedProcess, or None on timeout.
+
+    Hard reset ensures local clone always matches remote exactly — restores deleted
+    files, discards any local modifications. Subscribed repos are read-only mirrors
+    so there is nothing worth preserving locally.
+    """
     try:
+        fetch = subprocess.run(
+            ["git", "-C", str(repo_path), "fetch", "origin", branch],
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT,
+        )
+        if fetch.returncode != 0:
+            return fetch
         return subprocess.run(
-            ["git", "-C", str(repo_path), "pull", "origin", branch, "--ff-only"],
+            ["git", "-C", str(repo_path), "reset", "--hard", f"origin/{branch}"],
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
-        print(f"Warning: git pull timed out for {repo_path} (branch: {branch})", file=sys.stderr)
+        print(f"Warning: git sync timed out for {repo_path} (branch: {branch})", file=sys.stderr)
         return None
-
-
-def copy_entities(subscribed_repo_path, entities_subscribed_path):
-    """Mirror .md files from the subscribed git clone into entities/subscribed/{name}/.
-
-    Clears the destination first so removed files don't linger.
-    The owner field stamped at publish time travels with the file — no
-    frontmatter manipulation needed here.
-    """
-    if entities_subscribed_path.exists():
-        shutil.rmtree(entities_subscribed_path)
-    for md in sorted(subscribed_repo_path.glob("**/*.md")):
-        if md.is_symlink():
-            continue
-        rel = md.relative_to(subscribed_repo_path)
-        dest = entities_subscribed_path / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(md, dest)
 
 
 def count_delta(repo_path):
@@ -110,22 +103,19 @@ def main():
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
-    # Derive project_root from evolve_dir to ensure consistency
-    if evolve_dir.is_absolute():
-        project_root = str(evolve_dir.parent)
-    else:
-        project_root = "."
+    project_root = str(evolve_dir.parent) if "EVOLVE_DIR" in os.environ else "."
 
     # Determine config path
     if args.config:
-        cfg_path = Path(args.config)
-        # Load config from explicit path by temporarily reading the file
-        if cfg_path.exists():
-            cfg = _parse_yaml(cfg_path.read_text(encoding="utf-8"))
-        else:
-            cfg = {}
+        cfg = load_config(filepath=args.config)
     else:
         cfg = load_config(project_root)
+
+    # Check sync.on_session_start — only short-circuits automatic hook runs
+    # (which pass --quiet). Manual invocations always execute.
+    sync_cfg = cfg.get("sync", {})
+    if args.quiet and isinstance(sync_cfg, dict) and sync_cfg.get("on_session_start") is False:
+        sys.exit(0)
 
     subscriptions = cfg.get("subscriptions", [])
     if not isinstance(subscriptions, list):
@@ -155,31 +145,24 @@ def main():
             summaries.append(f"{name!r} (skipped — invalid subscription name)")
             continue
 
-        repo_path = evolve_dir / "subscribed" / name
+        repo_path = evolve_dir / "entities" / "subscribed" / name
 
         if not repo_path.is_dir():
             summaries.append(f"{name} (not cloned — run evolve-lite:subscribe first)")
             continue
 
-        pull_result = git_pull(repo_path, branch)
+        pull_result = git_sync(repo_path, branch)
         if pull_result is None or pull_result.returncode != 0:
-            summaries.append(f"{name} (pull failed — skipping mirror)")
+            summaries.append(f"{name} (sync failed — skipping)")
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             continue
 
-        if "Already up to date" in (pull_result.stdout or ""):
-            delta = {"added": 0, "updated": 0, "removed": 0}
-        else:
-            delta = count_delta(repo_path)
+        delta = count_delta(repo_path)
         total_delta[name] = delta
 
         has_changes = any(v > 0 for v in delta.values())
         if has_changes:
             any_changes = True
-
-        # Mirror entities into .evolve/entities/subscribed/{name}/
-        entities_subscribed = evolve_dir / "entities" / "subscribed" / name
-        copy_entities(repo_path, entities_subscribed)
 
         delta_str = f"+{delta['added']} added, {delta['updated']} updated, {delta['removed']} removed"
         summaries.append(f"{name} ({delta_str})")

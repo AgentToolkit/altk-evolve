@@ -2,7 +2,7 @@
 """Subscribe to another user's public guidelines repo.
 
 - Adds entry to subscriptions list in evolve.config.yaml
-- Clones the remote into .evolve/subscribed/{name}
+- Clones the remote into .evolve/entities/subscribed/{name}
 - Appends to audit.log
 """
 
@@ -21,7 +21,7 @@ for parent in current.parents:
         break
 
 from config import load_config, save_config  # noqa: E402
-from audit import append as audit_append  # noqa: E402 # noqa: E402
+from audit import append as audit_append  # noqa: E402
 
 
 def main():
@@ -35,8 +35,8 @@ def main():
     project_root = str(evolve_dir.resolve().parent)
 
     # Validate name: resolve and confirm it stays within the subscribed directory
-    subscribed_base = (evolve_dir / "subscribed").resolve()
-    dest = (evolve_dir / "subscribed" / args.name).resolve()
+    subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
+    dest = (evolve_dir / "entities" / "subscribed" / args.name).resolve()
     if not dest.is_relative_to(subscribed_base) or dest == subscribed_base:
         print(f"Error: invalid subscription name: {args.name!r}", file=sys.stderr)
         sys.exit(1)

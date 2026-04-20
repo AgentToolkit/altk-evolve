@@ -51,17 +51,10 @@ def main():
     # --name: remove the named subscription
     name = args.name
 
-    # Validate name: resolve both deletion targets and confirm they stay within
-    # their intended directories before any filesystem operations
-    subscribed_base = (evolve_dir / "subscribed").resolve()
-    dest = (evolve_dir / "subscribed" / name).resolve()
-    if not dest.is_relative_to(subscribed_base):
-        print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
-        sys.exit(1)
-
-    entities_base = (evolve_dir / "entities" / "subscribed").resolve()
-    entities_dest = (evolve_dir / "entities" / "subscribed" / name).resolve()
-    if not entities_dest.is_relative_to(entities_base):
+    # Validate name: resolve and confirm it stays within the subscribed directory
+    subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
+    dest = (evolve_dir / "entities" / "subscribed" / name).resolve()
+    if not dest.is_relative_to(subscribed_base) or dest == subscribed_base:
         print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
         sys.exit(1)
 
@@ -77,11 +70,6 @@ def main():
         print(f"Deleted {dest}")
     else:
         print(f"Warning: {dest} did not exist.", file=sys.stderr)
-
-    # Delete mirrored entities so they stop appearing in recall
-    if entities_dest.exists():
-        shutil.rmtree(entities_dest)
-        print(f"Deleted {entities_dest}")
 
     # Update config
     cfg["subscriptions"] = new_subs
