@@ -20,6 +20,10 @@ learn := "false"
 sandbox-build target="all":
     #!/usr/bin/env sh
     set -e
+    if [ "{{target}}" != "all" ] && [ "{{target}}" != "claude" ] && [ "{{target}}" != "codex" ]; then
+        echo "Error: target must be one of: all, claude, codex" >&2
+        exit 1
+    fi
     if [ "{{target}}" = "all" ] || [ "{{target}}" = "claude" ]; then
         docker build --target claude -t {{claude_image}} {{sandbox_dir}}
     fi
@@ -39,6 +43,10 @@ sandbox-setup:
 # Remove sandbox Docker image(s). Use target=claude or target=codex to remove only one.
 sandbox-clean target="all":
     #!/usr/bin/env sh
+    if [ "{{target}}" != "all" ] && [ "{{target}}" != "claude" ] && [ "{{target}}" != "codex" ]; then
+        echo "Error: target must be one of: all, claude, codex" >&2
+        exit 1
+    fi
     if [ "{{target}}" = "all" ] || [ "{{target}}" = "claude" ]; then
         docker rmi {{claude_image}} || true
     fi

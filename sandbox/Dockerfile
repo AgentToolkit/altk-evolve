@@ -79,11 +79,12 @@ COPY --from=node:20-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/nod
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
-RUN npm install --global @openai/codex@latest \
+RUN npm install --global @openai/codex@0.122.0 \
     && npm cache clean --force
 
 RUN mkdir -p /codex-home \
-    && chmod 0777 /codex-home
+    && chown sandbox:sandbox /codex-home \
+    && chmod 0700 /codex-home
 
 COPY codex/bootstrap_codex_config.py /usr/local/bin/bootstrap_codex_config.py
 COPY codex/entrypoint.sh /usr/local/bin/codex-container-entrypoint

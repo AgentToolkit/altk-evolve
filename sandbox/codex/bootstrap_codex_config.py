@@ -23,6 +23,8 @@ def ensure_top_level_setting(lines: list[str], key: str, value: str) -> bool:
     rendered = f'{key} = "{value}"\n'
     for index, line in enumerate(lines):
         stripped = line.strip()
+        if stripped.startswith("["):
+            break
         if stripped.startswith(prefix):
             if stripped == rendered.strip():
                 return False
@@ -30,8 +32,12 @@ def ensure_top_level_setting(lines: list[str], key: str, value: str) -> bool:
             return True
 
     insert_at = 0
-    while insert_at < len(lines) and not lines[insert_at].strip():
-        insert_at += 1
+    for index, line in enumerate(lines):
+        if line.strip().startswith("["):
+            insert_at = index
+            break
+    else:
+        insert_at = len(lines)
 
     lines.insert(insert_at, rendered)
     return True
