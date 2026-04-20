@@ -24,13 +24,24 @@ AGENTS_TO_TEST = [
 def phoenix_server():
     """Ensure a Phoenix server is running before executing E2E tests, and shut it down afterward."""
     # 1. Check if it's already running locally
-    try:
-        urllib.request.urlopen("http://localhost:6006/status", timeout=2)
+    otlp_ready = False
+    for _ in range(2):
+        try:
+            req = urllib.request.Request("http://localhost:6006/v1/traces", method="POST")
+            urllib.request.urlopen(req, timeout=1)
+            otlp_ready = True
+            break
+        except urllib.error.HTTPError:
+            # A valid HTTPError (405, 400) means the receiver is bound and responding
+            otlp_ready = True
+            break
+        except (urllib.error.URLError, ConnectionError):
+            time.sleep(1)
+
+    if otlp_ready:
         print("\nPhoenix is already running on port 6006.")
         yield "http://localhost:6006"
         return
-    except (urllib.error.URLError, ConnectionError):
-        pass
 
     import sys
 
@@ -50,8 +61,13 @@ def phoenix_server():
     max_retries = 30
     for _ in range(max_retries):
         try:
-            # specifically hit the status endpoint
-            urllib.request.urlopen("http://localhost:6006/status", timeout=2)
+            # specifically poll the OTLP endpoint
+            req = urllib.request.Request("http://localhost:6006/v1/traces", method="POST")
+            urllib.request.urlopen(req, timeout=1)
+            print("Phoenix server is up and running.")
+            break
+        except urllib.error.HTTPError:
+            # A valid HTTPError (405, 400) means the endpoint is bound and responding
             print("Phoenix server is up and running.")
             break
         except Exception:

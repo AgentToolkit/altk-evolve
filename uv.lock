@@ -169,17 +169,14 @@ wheels = [
 
 [[package]]
 name = "altk-evolve"
-version = "1.0.9"
+version = "1.0.10"
 source = { editable = "." }
 dependencies = [
     { name = "arize-phoenix" },
     { name = "fastmcp" },
     { name = "jinja2" },
     { name = "litellm" },
-    { name = "milvus-lite", marker = "platform_machine != 'aarch64'" },
     { name = "pydantic" },
-    { name = "pymilvus" },
-    { name = "pymilvus", extra = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
     { name = "sentence-transformers" },
     { name = "typer" },
     { name = "uvicorn" },
@@ -198,6 +195,11 @@ examples = [
     { name = "openinference-instrumentation-smolagents" },
     { name = "smolagents", version = "1.22.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'win32'" },
     { name = "smolagents", version = "1.24.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.14' and platform_machine != 'aarch64') or platform_machine == 'aarch64' or sys_platform != 'win32'" },
+]
+milvus = [
+    { name = "milvus-lite", marker = "platform_machine != 'aarch64'" },
+    { name = "pymilvus" },
+    { name = "pymilvus", extra = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
 ]
 pgvector = [
     { name = "pgvector" },
@@ -245,7 +247,7 @@ requires-dist = [
     { name = "fastmcp" },
     { name = "jinja2" },
     { name = "litellm" },
-    { name = "milvus-lite", marker = "platform_machine != 'aarch64'", specifier = ">=2.5.1" },
+    { name = "milvus-lite", marker = "platform_machine != 'aarch64' and extra == 'milvus'", specifier = ">=2.5.1" },
     { name = "openai", marker = "extra == 'examples'" },
     { name = "openai-agents", marker = "extra == 'examples'" },
     { name = "openinference-instrumentation-litellm", marker = "extra == 'tracing'" },
@@ -255,15 +257,15 @@ requires-dist = [
     { name = "pgvector", marker = "extra == 'pgvector'", specifier = ">=0.3" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
     { name = "pydantic" },
-    { name = "pymilvus", marker = "platform_machine == 'aarch64'", specifier = ">=2.6.2" },
-    { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64'", specifier = ">=2.6.2" },
+    { name = "pymilvus", marker = "platform_machine == 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
+    { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
     { name = "sentence-transformers" },
     { name = "smolagents", marker = "extra == 'examples'" },
     { name = "typer", specifier = ">=0.9.0" },
     { name = "uv", marker = "extra == 'build'" },
     { name = "uvicorn" },
 ]
-provides-extras = ["build", "tracing", "pgvector", "examples"]
+provides-extras = ["build", "tracing", "milvus", "pgvector", "examples"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -21,7 +21,7 @@ from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.frontend.api.routes import router as api_router
 from altk_evolve.llm.tips.tips import generate_tips
 from altk_evolve.schema.core import Entity, RecordedEntity
-from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
+from altk_evolve.schema.exceptions import EvolveException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-mcp")
@@ -107,20 +107,11 @@ def get_client() -> EvolveClient:
         if not _namespace_initialized:
             logger.info("Ensuring namespace exists...")
             try:
-                _client.get_namespace_details(evolve_config.namespace_id)
-                logger.info(f"Namespace '{evolve_config.namespace_id}' already exists")
-            except NamespaceNotFoundException:
-                logger.info(f"Creating namespace '{evolve_config.namespace_id}'")
-                _client.create_namespace(evolve_config.namespace_id)
-                logger.info(f"Namespace '{evolve_config.namespace_id}' created successfully")
+                _client.ensure_namespace(evolve_config.namespace_id)
+                logger.info(f"Namespace '{evolve_config.namespace_id}' is ready")
             except Exception as e:
-                logger.error(f"Error ensuring namespace: {e}")
-                try:
-                    _client.create_namespace(evolve_config.namespace_id)
-                    logger.info(f"Namespace '{evolve_config.namespace_id}' created after error")
-                except Exception as create_error:
-                    logger.error(f"Failed to create namespace: {create_error}")
-                    raise
+                logger.error(f"Failed to ensure namespace '{evolve_config.namespace_id}': {e}")
+                raise
             _namespace_initialized = True
             logger.info("Namespace initialization complete")
 
@@ -228,7 +219,7 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
 
     return get_client().search_entities(
         namespace_id=evolve_config.namespace_id,
-        filters={"type": "trajectory", "task_id": task_id},
+        filters={"type": "trajectory", "metadata.task_id": task_id},
         limit=1000,
     )
 
