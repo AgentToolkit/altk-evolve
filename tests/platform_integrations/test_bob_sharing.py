@@ -544,18 +544,5 @@ class TestBobRetrieveEntities:
         assert "Subscribed tip" in result.stdout
         assert "[from: alice]" in result.stdout
 
-    def test_sources_filter_works(self, temp_project_dir):
-        evolve_dir = temp_project_dir / ".evolve"
-        # Create entities in different locations
-        (evolve_dir / "entities" / "guideline").mkdir(parents=True)
-        (evolve_dir / "entities" / "guideline" / "private.md").write_text("---\ntype: guideline\n---\n\nPrivate.\n")
-        (evolve_dir / "public" / "guideline").mkdir(parents=True)
-        (evolve_dir / "public" / "guideline" / "public.md").write_text("---\ntype: guideline\nvisibility: public\n---\n\nPublic.\n")
-
-        # Filter for only private
-        result = run_script(RETRIEVE_SCRIPT, temp_project_dir, ["--sources", "private"], evolve_dir=evolve_dir)
-        assert "Private" in result.stdout
-        assert "Public" not in result.stdout
-
 
 # Made with Bob

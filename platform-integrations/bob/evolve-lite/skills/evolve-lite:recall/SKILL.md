@@ -23,22 +23,11 @@ Entities can come from multiple sources:
 
 ## Usage
 
-### Retrieve All Entities (Default)
 ```bash
 python3 scripts/retrieve_entities.py
 ```
 
-### Filter by Source
-```bash
-# Only private entities
-python3 scripts/retrieve_entities.py --sources private
-
-# Only your public entities
-python3 scripts/retrieve_entities.py --sources public
-
-# Only subscribed entities from others
-python3 scripts/retrieve_entities.py --sources subscribed
-```
+This retrieves all entities from all sources (private, public, and subscribed).
 
 ## Entities Storage
 

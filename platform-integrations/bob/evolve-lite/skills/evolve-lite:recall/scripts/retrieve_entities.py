@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Retrieve and output entities for Bob to filter."""
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -50,39 +49,28 @@ Review these entities and apply any relevant ones:
     return header + "\n".join(items)
 
 
-def load_entities_with_source(entities_dir, kind="private"):
+def load_entities_with_source(entities_dir):
     """Glob all .md files under entities_dir and parse each.
 
     Entities stored under entities/subscribed/{name}/ have ``_source`` set to
     the subscription name so format_entities can annotate them. The owner field
     written by publish.py is preserved; _source is just a routing key used
     internally and is never written to disk.
-
-    Args:
-        entities_dir: Directory to load entities from
-        kind: Source kind tag - "private", "public", or "subscribed"
     """
     entities_dir = Path(entities_dir)
     entities = []
     for md in sorted(entities_dir.glob("**/*.md")):
         try:
             entity = markdown_to_entity(md)
+            entity.pop("_source", None)
             if not entity.get("content"):
                 continue
-            # Clear any _source from frontmatter to ensure provenance is derived
-            # exclusively from the file path structure
-            entity.pop("_source", None)
-            # Tag with source kind for filtering
-            entity["_kind"] = kind
-            # Detect subscribed entities using path relative to entities_dir
-            # Only set _source when the FIRST path segment is "subscribed"
             try:
                 rel_parts = md.relative_to(entities_dir).parts
             except ValueError:
                 rel_parts = md.parts
-            if len(rel_parts) > 1 and rel_parts[0] == "subscribed":
+            if rel_parts[0] == "subscribed" and len(rel_parts) > 1:
                 entity["_source"] = rel_parts[1]
-                entity["_kind"] = "subscribed"
             entities.append(entity)
         except (OSError, UnicodeDecodeError):
             pass
@@ -90,42 +78,23 @@ def load_entities_with_source(entities_dir, kind="private"):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Retrieve entities from knowledge base")
-    parser.add_argument(
-        "--sources",
-        choices=["all", "private", "public", "subscribed"],
-        default="all",
-        help="Which entity sources to include (default: all)",
-    )
-    args = parser.parse_args()
-
-    log(f"Script started with sources={args.sources}")
+    log("Script started")
 
     entities_dir = find_entities_dir()
     log(f"Entities dir: {entities_dir}")
 
-    # Load entities from all sources
     entities = []
     if entities_dir:
-        entities = load_entities_with_source(entities_dir, kind="private")
-        log(f"Loaded {len(entities)} private entities")
+        entities = load_entities_with_source(entities_dir)
 
     public_dir = get_evolve_dir() / "public"
     if public_dir.is_dir():
-        public_entities = load_entities_with_source(public_dir, kind="public")
-        log(f"Loaded {len(public_entities)} public entities")
-        entities += public_entities
+        log(f"Loading public entities from: {public_dir}")
+        entities += load_entities_with_source(public_dir)
 
     if not entities:
-        log("No entities found in any source")
-        print("No entities found in knowledge base.")
+        log("No entities found")
         return
-
-    # Filter by source kind if requested
-    if args.sources != "all":
-        original_count = len(entities)
-        entities = [e for e in entities if e.get("_kind") == args.sources]
-        log(f"Filtered from {original_count} to {len(entities)} entities (sources={args.sources})")
 
     log(f"Loaded {len(entities)} entities")
     output = format_entities(entities)
