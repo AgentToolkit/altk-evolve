@@ -12,7 +12,7 @@ sys.path.insert(
 )
 import audit
 
-pytestmark = pytest.mark.platform_integrations
+pytestmark = [pytest.mark.platform_integrations, pytest.mark.unit]
 
 
 class TestAuditAppend:

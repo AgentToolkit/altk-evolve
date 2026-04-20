@@ -36,9 +36,11 @@ def run_publish(project_dir, args, expect_success=True):
 
 
 class TestPublish:
-    def test_copies_entity_to_public_dir(self, project_dir):
+    def test_moves_entity_to_public_dir(self, project_dir):
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-tip.md"
         run_publish(project_dir, ["--entity", "my-tip.md"])
         assert (project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").exists()
+        assert not source.exists()
 
     def test_sets_visibility_public(self, project_dir):
         run_publish(project_dir, ["--entity", "my-tip.md"])
@@ -54,6 +56,11 @@ class TestPublish:
         run_publish(project_dir, ["--entity", "my-tip.md", "--user", "alice"])
         content = (project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").read_text()
         assert "owner: alice" in content
+
+    def test_stamps_source_from_user_when_user_flag_given(self, project_dir):
+        run_publish(project_dir, ["--entity", "my-tip.md", "--user", "alice"])
+        content = (project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").read_text()
+        assert "source: alice" in content
 
     def test_preserves_original_content(self, project_dir):
         run_publish(project_dir, ["--entity", "my-tip.md"])

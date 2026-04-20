@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.platform_integrations
+pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
 SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
@@ -118,6 +118,18 @@ class TestSync:
         real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
         symlink_file = lr["work"] / "guideline" / "link.md"
         symlink_file.symlink_to(real_file)
+        git_env = lr["env"]
+        subprocess.run(["git", "-C", str(lr["work"]), "add", "."], check=True, env=git_env)
+        subprocess.run(
+            ["git", "-C", str(lr["work"]), "commit", "-m", "add symlinked entity"],
+            check=True,
+            env=git_env,
+        )
+        subprocess.run(
+            ["git", "-C", str(lr["work"]), "push", "origin", "main"],
+            check=True,
+            env=git_env,
+        )
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
         mirrored = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline"
         assert not (mirrored / "link.md").exists()

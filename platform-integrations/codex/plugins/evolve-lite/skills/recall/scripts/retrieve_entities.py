@@ -10,14 +10,19 @@ from pathlib import Path
 _script = Path(__file__).resolve()
 _lib = None
 for _ancestor in _script.parents:
-    _candidate = _ancestor / "lib"
-    if (_candidate / "entity_io.py").is_file():
-        _lib = _candidate
+    for _candidate in (
+        _ancestor / "lib",
+        _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
+    ):
+        if (_candidate / "entity_io.py").is_file():
+            _lib = _candidate
+            break
+    if _lib is not None:
         break
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
-from entity_io import find_entities_dir, load_all_entities, log as _log  # noqa: E402
+from entity_io import find_recall_entity_dirs, markdown_to_entity, log as _log  # noqa: E402
 
 
 def log(message):
@@ -39,6 +44,9 @@ Review these stored entities and apply any that are relevant to the user's reque
         content = entity.get("content")
         if not content:
             continue
+        source = entity.get("_source")
+        if source:
+            content = f"[from: {source}] {content}"
         item = f"- **[{entity.get('type', 'general')}]** {content}"
         if entity.get("rationale"):
             item += f"\n  Rationale: {entity['rationale']}"
@@ -47,6 +55,32 @@ Review these stored entities and apply any that are relevant to the user's reque
         items.append(item)
 
     return header + "\n".join(items)
+
+
+def load_entities_with_source(entities_dirs):
+    """Load markdown entities from recall roots and annotate subscribed content."""
+    entities = []
+    for entities_dir in entities_dirs:
+        entities_dir = Path(entities_dir)
+        for md in sorted(entities_dir.glob("**/*.md")):
+            if md.is_symlink():
+                continue
+            try:
+                entity = markdown_to_entity(md)
+            except (OSError, UnicodeError):
+                continue
+            if not entity.get("content"):
+                continue
+
+            parts = md.relative_to(entities_dir).parts
+            for index, part in enumerate(parts):
+                if part == "subscribed" and index + 1 < len(parts):
+                    entity["_source"] = parts[index + 1]
+                    break
+
+            entities.append(entity)
+
+    return entities
 
 
 def main():
@@ -69,13 +103,13 @@ def main():
             log(f"  {key}={value}")
     log("=== End Environment Variables ===")
 
-    entities_dir = find_entities_dir()
-    log(f"Entities dir: {entities_dir}")
-    if not entities_dir:
-        log("No entities directory found")
+    entities_dirs = find_recall_entity_dirs()
+    log(f"Recall entity dirs: {entities_dirs}")
+    if not entities_dirs:
+        log("No recall entity directories found")
         return
 
-    entities = load_all_entities(entities_dir)
+    entities = load_entities_with_source(entities_dirs)
     if not entities:
         log("No entities found")
         return
