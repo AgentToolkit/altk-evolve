@@ -51,7 +51,7 @@ Principles:
 
 ### Step 3: Save Entities
 
-Output entities as JSON and pipe to the save script. Include the `trajectory` field with the path output by the evolve-save-trajectory skill earlier in this conversation. The `type` field must always be `"guideline"` — no other types are accepted.
+Output entities as JSON and pipe to the save script. Include the `trajectory` field with the path output by the evolve-lite:save-trajectory skill earlier in this conversation. The `type` field must always be `"guideline"` — no other types are accepted.
 
 ```bash
 echo '{

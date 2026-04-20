@@ -23,6 +23,7 @@ def find_evolve_dir():
 
 
 def main():
+    """Read trajectory JSON from stdin and write to a timestamped file."""
     try:
         trajectory = json.load(sys.stdin)
     except json.JSONDecodeError as e:
