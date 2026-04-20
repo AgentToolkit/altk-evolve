@@ -12,6 +12,7 @@ import datetime
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 # Add lib to path
@@ -90,16 +91,28 @@ def main():
         sys.exit(1)
 
     content = entity_to_markdown(entity)
-    dest_path.write_text(content, encoding="utf-8")
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=dest_path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        Path(tmp_path).replace(dest_path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
     src_path.unlink()
 
-    # Audit log
-    audit_append(
-        project_root=str(evolve_dir.resolve().parent),
-        action="publish",
-        actor=effective_user or "unknown",
-        entity=args.entity,
-    )
+    try:
+        audit_append(
+            project_root=str(evolve_dir.resolve().parent),
+            action="publish",
+            actor=effective_user or "unknown",
+            entity=args.entity,
+        )
+    except Exception as e:
+        print(f"Warning: audit log failed: {e}", file=sys.stderr)
 
     print(f"Published: {args.entity} -> {dest_path}")
 

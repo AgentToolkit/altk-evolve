@@ -44,7 +44,7 @@ def main():
     # Validate name: resolve and confirm it stays within the subscribed directory
     subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
     dest = (evolve_dir / "entities" / "subscribed" / name).resolve()
-    if not dest.is_relative_to(subscribed_base):
+    if not dest.is_relative_to(subscribed_base) or dest == subscribed_base:
         print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
         sys.exit(1)
 
