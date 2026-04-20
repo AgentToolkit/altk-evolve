@@ -219,7 +219,7 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
 
     return get_client().search_entities(
         namespace_id=evolve_config.namespace_id,
-        filters={"type": "trajectory", "task_id": task_id},
+        filters={"type": "trajectory", "metadata.task_id": task_id},
         limit=1000,
     )
 

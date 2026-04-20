@@ -112,6 +112,13 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 - `create_entity(content: str, entity_type: str, metadata: str | None, enable_conflict_resolution: bool)`: Create a single entity in the namespace.
 - `delete_entity(entity_id: str)`: Delete a specific entity by its ID.
 
+### Filter Migration Note
+Entity search filters reserve bare keys for top-level schema columns only: `id`, `type`, `content`, and `created_at`.
+
+If you need to filter on JSON metadata, use the `metadata.<key>` form. For example, use `filters={"type": "trajectory", "metadata.task_id": "123"}` instead of `filters={"type": "trajectory", "task_id": "123"}`.
+
+Existing integrations that stored custom fields in entity metadata should update filter writers to add the `metadata.` prefix for those keys.
+
 ## Features
 - **Proactive**: Learns how to recognize problems and their solutions, and generates guidelines that get automatically applied to new tasks.
 - **Conflict Resolution**: Update existing guidelines when new information contradicts them.

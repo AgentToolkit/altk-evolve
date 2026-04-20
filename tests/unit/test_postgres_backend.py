@@ -254,7 +254,7 @@ def test_postgres_backend_initialization_handles_database_creation_race_conditio
             return "database does not exist"
 
     class DuplicateDatabaseError(Exception):
-        pgcode = "42P04"  # duplicate_database
+        sqlstate = "42P04"  # duplicate_database
 
         def __str__(self):
             return "database already exists"
@@ -581,8 +581,8 @@ def test_search_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
 
 
 @pytest.mark.unit
-def test_search_entities_routes_unknown_filters_to_metadata(postgres_backend: PostgresEntityBackend, monkeypatch):
-    """Test that non-schema filters are applied against JSON metadata."""
+def test_search_entities_routes_prefixed_metadata_filters(postgres_backend: PostgresEntityBackend, monkeypatch):
+    """Test that metadata filters require and honor the metadata. prefix."""
     monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))
     monkeypatch.setattr(postgres_backend.embedding_model, "encode", arbitrary_embedding)
 
@@ -596,13 +596,30 @@ def test_search_entities_routes_unknown_filters_to_metadata(postgres_backend: Po
         postgres_backend.search_entities(
             namespace_id="test_namespace",
             query="test_query",
-            filters={"type": "trajectory", "task_id": "123", "metadata.source_task_id": "456", "ignored": None},
+            filters={"type": "trajectory", "metadata.task_id": "123", "metadata.source_task_id": "456", "ignored": None},
             limit=10,
         )
 
     _, params = mock_cursor.execute.call_args.args
     expected_embedding = str(arbitrary_embedding("test_query").tolist())
     assert params == ["trajectory", '{"task_id": "123"}', '{"source_task_id": "456"}', expected_embedding, 10]
+
+
+@pytest.mark.unit
+def test_search_entities_rejects_unknown_bare_filter_keys(postgres_backend: PostgresEntityBackend, monkeypatch, caplog):
+    """Test that bare non-schema filter keys are rejected with a clear error."""
+    monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))
+
+    with pytest.raises(ValueError, match="Invalid filter key 'task_id'"):
+        postgres_backend.search_entities(
+            namespace_id="test_namespace",
+            query=None,
+            filters={"type": "trajectory", "task_id": "123"},
+        )
+
+    assert "Accepted schema keys" in caplog.text
+    assert "metadata." in caplog.text
+    assert "filters={'type': 'trajectory', 'task_id': '123'}" in caplog.text
 
 
 @pytest.mark.unit

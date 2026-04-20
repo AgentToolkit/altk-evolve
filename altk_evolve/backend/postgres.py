@@ -44,6 +44,7 @@ class PostgresEntityBackend(BaseEntityBackend):
     embedding_dim: int
     _settings: PostgresDBSettings
     _schema_filter_fields = {"id", "type", "content", "created_at"}
+    _metadata_filter_prefix = "metadata."
 
     def __init__(self, config: BaseSettings | None = None):
         super().__init__(config)
@@ -116,8 +117,8 @@ class PostgresEntityBackend(BaseEntityBackend):
                     return
                 except Exception as create_error:
                     # Check if database already exists (race condition with another process)
-                    pgcode = getattr(create_error, "pgcode", None)
-                    if pgcode == "42P04":  # duplicate_database
+                    sqlstate = getattr(create_error, "sqlstate", None)
+                    if sqlstate == "42P04":  # duplicate_database
                         logger.debug("Database '%s' already exists (created by another process)", self._settings.dbname)
                         return  # Treat as success
                     raise  # Re-raise other errors
@@ -300,7 +301,25 @@ class PostgresEntityBackend(BaseEntityBackend):
                 params.append(value)
                 continue
 
-            metadata_key = key.split(".", 1)[1] if key.startswith("metadata.") else str(key)
+            if not key.startswith(self._metadata_filter_prefix):
+                accepted_keys = sorted(self._schema_filter_fields)
+                logger.error(
+                    "Invalid Postgres search filter key %r. Accepted schema keys: %s. "
+                    "Metadata filters must be prefixed with %r. filters=%r metadata_key=%r where_parts=%r params=%r",
+                    key,
+                    accepted_keys,
+                    self._metadata_filter_prefix,
+                    filters,
+                    None,
+                    [repr(part) for part in where_parts],
+                    params,
+                )
+                raise ValueError(
+                    f"Invalid filter key '{key}'. Accepted schema keys: {accepted_keys}. "
+                    f"Metadata filters must use the '{self._metadata_filter_prefix}<key>' form."
+                )
+
+            metadata_key = key.split(".", 1)[1]
             where_parts.append(sql.SQL("metadata @> %s::jsonb"))
             params.append(json.dumps({metadata_key: value}))
         where_clause = sql.SQL(" AND ").join(where_parts) if where_parts else sql.SQL("TRUE")

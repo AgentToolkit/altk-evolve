@@ -1,7 +1,11 @@
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from altk_evolve.frontend.mcp import __main__ as launcher
+
+pytestmark = pytest.mark.unit
 
 
 def test_pyproject_exports_mcp_launcher_script() -> None:
