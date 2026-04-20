@@ -44,8 +44,8 @@ class TestSubscribe:
             ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
         )
-        assert (evolve_dir / "subscribed" / "alice").is_dir()
-        assert (evolve_dir / "subscribed" / "alice" / ".git").exists()
+        assert (evolve_dir / "entities" / "subscribed" / "alice").is_dir()
+        assert (evolve_dir / "entities" / "subscribed" / "alice" / ".git").exists()
 
     def test_updates_config_with_subscription(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -98,7 +98,7 @@ class TestSubscribe:
 
     def test_fails_when_dest_already_exists(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
-        dest = evolve_dir / "subscribed" / "alice"
+        dest = evolve_dir / "entities" / "subscribed" / "alice"
         dest.mkdir(parents=True)
         result = run_script(
             SUBSCRIBE_SCRIPT,
@@ -133,7 +133,7 @@ class TestSubscribe:
             ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
         )
-        cloned = evolve_dir / "subscribed" / "alice" / "guideline" / "tip-one.md"
+        cloned = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
         assert cloned.exists()
         assert "Always write tests." in cloned.read_text()
 
@@ -152,7 +152,7 @@ class TestUnsubscribe:
     def test_removes_local_clone(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
         run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--name", "alice"], evolve_dir=evolve_dir)
-        assert not (evolve_dir / "subscribed" / "alice").exists()
+        assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
 
     def test_removes_subscription_from_config(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
@@ -181,13 +181,11 @@ class TestUnsubscribe:
 
     def test_removes_mirrored_entities(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
-        # Simulate mirrored entities (sync would create these)
-        mirrored = evolve_dir / "entities" / "subscribed" / "alice"
-        mirrored.mkdir(parents=True)
-        (mirrored / "tip.md").write_text("---\ntype: guideline\n---\n\nA tip.\n")
+        cloned = evolve_dir / "entities" / "subscribed" / "alice"
+        assert cloned.is_dir()
 
         run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--name", "alice"], evolve_dir=evolve_dir)
-        assert not mirrored.exists()
+        assert not cloned.exists()
 
     def test_list_empty_when_no_subscriptions(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
