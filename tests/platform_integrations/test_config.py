@@ -81,12 +81,7 @@ class TestParseYaml:
         assert result["sync"]["on_session_start"] is True
 
     def test_list_of_dicts(self):
-        text = (
-            "subscriptions:\n"
-            "  - name: bob\n"
-            "    remote: git@github.com:bob/evolve.git\n"
-            "    branch: main\n"
-        )
+        text = "subscriptions:\n  - name: bob\n    remote: git@github.com:bob/evolve.git\n    branch: main\n"
         result = cfg_module._parse_yaml(text)
         subs = result["subscriptions"]
         assert isinstance(subs, list)
@@ -141,9 +136,7 @@ class TestRoundtrip:
         original = {
             "identity": {"user": "alice"},
             "public_repo": {"remote": "git@github.com:alice/evolve.git", "branch": "main"},
-            "subscriptions": [
-                {"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}
-            ],
+            "subscriptions": [{"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}],
             "sync": {"on_session_start": True},
         }
         cfg_module.save_config(original, str(tmp_path))

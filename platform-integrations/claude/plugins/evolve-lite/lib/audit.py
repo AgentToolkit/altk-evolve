@@ -1,4 +1,5 @@
 """Append-only audit log writer for .evolve/audit.log."""
+
 import datetime
 import json
 import pathlib
@@ -20,6 +21,7 @@ def append(project_root=".", **fields):
 
 if __name__ == "__main__":
     import tempfile
+
     with tempfile.TemporaryDirectory() as d:
         append(project_root=d, action="test", actor="alice")
         log_path = __import__("pathlib").Path(d) / ".evolve" / "audit.log"

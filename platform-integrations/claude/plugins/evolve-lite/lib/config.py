@@ -4,12 +4,14 @@ pyyaml is not assumed to be installed. This module implements a minimal
 YAML reader/writer that handles the flat and single-level-nested structures
 used by evolve-lite config files (scalars and lists of scalar-valued dicts).
 """
+
 import pathlib
 
 
 # ---------------------------------------------------------------------------
 # Minimal YAML helpers (no pyyaml dependency)
 # ---------------------------------------------------------------------------
+
 
 def _parse_block(lines, start, parent_indent):
     """Parse an indented block starting at `start`.
@@ -164,8 +166,7 @@ def _cast(value):
     if value == "[]":
         return []
     # Strip surrounding quotes
-    if (value.startswith('"') and value.endswith('"')) or \
-       (value.startswith("'") and value.endswith("'")):
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     return value
 
@@ -237,13 +238,12 @@ def save_config(cfg, project_root="."):
 if __name__ == "__main__":
     # Quick self-test
     import tempfile, os
+
     with tempfile.TemporaryDirectory() as d:
         cfg = {
             "identity": {"user": "alice"},
             "public_repo": {"remote": "git@github.com:alice/evolve.git", "branch": "main"},
-            "subscriptions": [
-                {"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}
-            ],
+            "subscriptions": [{"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}],
             "sync": {"on_session_start": True},
         }
         save_config(cfg, d)
