@@ -6,6 +6,7 @@ with a timestamped filename.
 """
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,18 +29,29 @@ def main():
         print(f"Error: Invalid JSON input - {e}", file=sys.stderr)
         sys.exit(1)
 
-    trajectories_dir = find_evolve_dir() / "trajectories"
+    evolve_dir = find_evolve_dir()
+    trajectories_dir = evolve_dir / "trajectories"
     trajectories_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    filename = f"trajectory_{timestamp}.json"
-    output_path = trajectories_dir / filename
+    base = f"trajectory_{timestamp}"
 
-    with open(output_path, "w", encoding="utf-8") as f:
+    # Atomic create with collision avoidance for same-second writes
+    n = 0
+    while True:
+        filename = f"{base}.json" if n == 0 else f"{base}_{n}.json"
+        output_path = trajectories_dir / filename
+        try:
+            fd = os.open(str(output_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            n += 1
+
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(trajectory, f, indent=2, ensure_ascii=False)
 
     try:
-        rel_path = output_path.relative_to(Path.cwd())
+        rel_path = output_path.relative_to(evolve_dir.parent)
     except ValueError:
         rel_path = output_path
 
