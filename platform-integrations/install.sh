@@ -120,9 +120,10 @@ EVOLVE_REPO    = os.environ.get("EVOLVE_REPO", "AgentToolkit/altk-evolve")
 EVOLVE_VERSION = os.environ.get("EVOLVE_VERSION", "main")
 DRY_RUN = False
 
-BOB_SLUG      = "evolve-lite"
-CLAUDE_PLUGIN = "evolve-lite"
-CODEX_PLUGIN  = "evolve-lite"
+BOB_SLUG          = "evolve-lite"
+CLAUDE_PLUGIN     = "evolve-lite"
+CLAW_CODE_PLUGIN  = "evolve-lite"
+CODEX_PLUGIN      = "evolve-lite"
 
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -426,6 +427,10 @@ def detect_platforms(target_dir):
             shutil.which("claude") is not None or
             (target / ".claude").is_dir()
         ),
+        "claw-code": (
+            shutil.which("claw") is not None or
+            (target / ".claw").is_dir()
+        ),
         "codex": (
             shutil.which("codex") is not None or
             (target / ".codex").is_dir() or
@@ -642,6 +647,68 @@ class ClaudeInstaller:
         try:
             result = subprocess.run([claude, "plugin", "list"], capture_output=True, text=True)
             installed = CLAUDE_PLUGIN in result.stdout
+            print(f"    evolve-lite plugin  : {'✓' if installed else '✗ (not installed)'}")
+        except Exception:
+            print(f"    evolve-lite plugin  : ? (could not query)")
+
+
+# ── Claw Code ─────────────────────────────────────────────────────────────────
+
+class ClawCodeInstaller:
+    def __init__(self, ops: FileOps):
+        self.ops = ops
+
+    def install(self, target_dir):
+        _ensure_source_dir()
+        plugin_source = Path(SOURCE_DIR) / "platform-integrations" / "claw-code" / "plugins" / CLAW_CODE_PLUGIN
+        info(f"Installing Claw Code plugin from {plugin_source}")
+
+        claw = shutil.which("claw")
+        if not claw:
+            warn("Claw CLI not found on PATH. To install manually, run:")
+            print()
+            print(f"    claw plugins install {plugin_source.resolve()}")
+            print()
+            return
+
+        result = self.ops.run_subprocess([claw, "plugins", "install", str(plugin_source.resolve())])
+        if result.returncode == 0:
+            if self.ops.is_dry_run:
+                dryrun("Claw Code plugin would be installed via CLI")
+            else:
+                success("Claw Code plugin installed via CLI")
+        else:
+            warn(f"claw plugins install exited with code {result.returncode}")
+            warn("To install manually, run:")
+            print()
+            print(f"    claw plugins install {plugin_source.resolve()}")
+            print()
+
+    def uninstall(self, target_dir):
+        info("Uninstalling Claw Code plugin")
+        claw = shutil.which("claw")
+        if not claw:
+            warn("Could not uninstall Claw Code plugin automatically.")
+            warn(f"Run manually: claw plugins uninstall {CLAW_CODE_PLUGIN}@external")
+            return
+
+        result = self.ops.run_subprocess([claw, "plugins", "uninstall", f"{CLAW_CODE_PLUGIN}@external"])
+        if result.returncode == 0:
+            success("Claw Code plugin uninstalled via CLI")
+        else:
+            warn(f"claw plugins uninstall exited with code {result.returncode}")
+            warn(f"Run manually: claw plugins uninstall {CLAW_CODE_PLUGIN}@external")
+
+    def status(self, target_dir):
+        print(f"  Claw Code:")
+        claw = shutil.which("claw")
+        if not claw:
+            print(f"    claw CLI            : ✗ (not found on PATH)")
+            return
+        print(f"    claw CLI            : ✓")
+        try:
+            result = subprocess.run([claw, "plugins", "list"], capture_output=True, text=True)
+            installed = CLAW_CODE_PLUGIN in result.stdout
             print(f"    evolve-lite plugin  : {'✓' if installed else '✗ (not installed)'}")
         except Exception:
             print(f"    evolve-lite plugin  : ? (could not query)")
@@ -1010,9 +1077,10 @@ class CodexInstaller:
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
 PLATFORM_CLASSES = {
-    "bob":    BobInstaller,
-    "claude": ClaudeInstaller,
-    "codex":  CodexInstaller,
+    "bob":       BobInstaller,
+    "claude":    ClaudeInstaller,
+    "claw-code": ClawCodeInstaller,
+    "codex":     CodexInstaller,
 }
 
 
@@ -1021,7 +1089,7 @@ def cmd_install(args):
     ops = DryRunFileOps() if DRY_RUN else FileOps()
 
     if args.platform == "all":
-        platforms = ["bob", "claude", "codex"]
+        platforms = ["bob", "claude", "claw-code", "codex"]
     elif args.platform:
         platforms = [args.platform]
     else:
@@ -1070,7 +1138,7 @@ def cmd_uninstall(args):
         info(_c("35", "DRY RUN — no files will be written or deleted"))
 
     if args.platform == "all":
-        platforms = ["bob", "claude", "codex"]
+        platforms = ["bob", "claude", "claw-code", "codex"]
     elif args.platform:
         platforms = [args.platform]
     else:
@@ -1106,6 +1174,8 @@ def cmd_status(args):
     print()
     ClaudeInstaller(ops).status(target_dir)
     print()
+    ClawCodeInstaller(ops).status(target_dir)
+    print()
     CodexInstaller(ops).status(target_dir)
     print()
 
@@ -1121,7 +1191,7 @@ def main():
 
     p_install = sub.add_parser("install", help="Install Evolve into the current project")
     p_install.add_argument(
-        "--platform", choices=["bob", "claude", "codex", "all"], default=None,
+        "--platform", choices=["bob", "claude", "claw-code", "codex", "all"], default=None,
         help="Platform to install (default: auto-detect and prompt)",
     )
     p_install.add_argument(
@@ -1134,7 +1204,7 @@ def main():
 
     p_uninstall = sub.add_parser("uninstall", help="Remove Evolve from the current project")
     p_uninstall.add_argument(
-        "--platform", choices=["bob", "claude", "codex", "all"], default=None,
+        "--platform", choices=["bob", "claude", "claw-code", "codex", "all"], default=None,
         help="Platform to uninstall (default: prompt)",
     )
     p_uninstall.add_argument("--dir", default=os.getcwd(), help="Target project directory (default: cwd)")
