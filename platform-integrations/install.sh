@@ -89,33 +89,8 @@ resolve_source() {
     return
   fi
 
-  # Remote: download tarball
-  info "Downloading evolve source (${EVOLVE_VERSION})..."
-
-  for cmd in curl tar; do
-    command -v "$cmd" &>/dev/null || die "'$cmd' is required for remote install but not found."
-  done
-
-  TMPDIR_DOWNLOAD="$(mktemp -d)"
-  trap 'rm -rf "$TMPDIR_DOWNLOAD"' EXIT
-
-  local url
-  if [ "$EVOLVE_VERSION" = "main" ] || [ "$EVOLVE_VERSION" = "latest" ]; then
-    url="https://github.com/${EVOLVE_REPO}/archive/refs/heads/main.tar.gz"
-  else
-    url="https://github.com/${EVOLVE_REPO}/archive/refs/tags/${EVOLVE_VERSION}.tar.gz"
-  fi
-
-  if ! curl -fsSL "$url" | tar -xz -C "$TMPDIR_DOWNLOAD" --strip-components=1; then
-    die "Failed to download or extract evolve from: ${url}"
-  fi
-
-  if [ ! -d "${TMPDIR_DOWNLOAD}/platform-integrations" ]; then
-    die "Downloaded archive does not contain platform-integrations/. Check EVOLVE_REPO and EVOLVE_VERSION."
-  fi
-
-  SOURCE_DIR="$TMPDIR_DOWNLOAD"
-  success "Downloaded evolve ${EVOLVE_VERSION}"
+  # No local source found; Python will download on demand if needed.
+  SOURCE_DIR=""
 }
 
 resolve_source
@@ -139,8 +114,9 @@ from pathlib import Path
 SOURCE_DIR = sys.argv[1]
 CLI_ARGS   = sys.argv[2:]
 
-EVOLVE_DEBUG = os.environ.get("EVOLVE_DEBUG", "0") == "1"
-EVOLVE_REPO  = os.environ.get("EVOLVE_REPO", "AgentToolkit/altk-evolve")
+EVOLVE_DEBUG   = os.environ.get("EVOLVE_DEBUG", "0") == "1"
+EVOLVE_REPO    = os.environ.get("EVOLVE_REPO", "AgentToolkit/altk-evolve")
+EVOLVE_VERSION = os.environ.get("EVOLVE_VERSION", "main")
 DRY_RUN = False   # set to True by --dry-run flag; checked in all write primitives
 
 BOB_SLUG    = "evolve-lite"
@@ -158,6 +134,48 @@ def error(msg):   print(_c("31", "✗") + " " + msg, file=sys.stderr)
 def debug(msg):
     if EVOLVE_DEBUG: print(_c("35", "·") + " " + msg)
 def dryrun(msg): print(_c("35", "[dry-run]") + " " + msg)
+
+
+# ── Source resolution ──────────────────────────────────────────────────────────
+
+_tmpdir_download = None
+
+def _ensure_source_dir():
+    """Download the evolve source tarball if SOURCE_DIR was not resolved locally."""
+    global SOURCE_DIR, _tmpdir_download
+    if SOURCE_DIR:
+        return
+
+    import atexit, tempfile
+    info(f"Downloading evolve source ({EVOLVE_VERSION})...")
+
+    for cmd in ("curl", "tar"):
+        if not shutil.which(cmd):
+            error(f"'{cmd}' is required for remote install but not found.")
+            sys.exit(1)
+
+    _tmpdir_download = tempfile.mkdtemp()
+    atexit.register(lambda: shutil.rmtree(_tmpdir_download, ignore_errors=True))
+
+    if EVOLVE_VERSION in ("main", "latest"):
+        url = f"https://github.com/{EVOLVE_REPO}/archive/refs/heads/main.tar.gz"
+    else:
+        url = f"https://github.com/{EVOLVE_REPO}/archive/refs/tags/{EVOLVE_VERSION}.tar.gz"
+
+    result = subprocess.run(
+        f"curl -fsSL {url} | tar -xz -C {_tmpdir_download} --strip-components=1",
+        shell=True,
+    )
+    if result.returncode != 0:
+        error(f"Failed to download or extract evolve from: {url}")
+        sys.exit(1)
+
+    if not os.path.isdir(os.path.join(_tmpdir_download, "platform-integrations")):
+        error("Downloaded archive does not contain platform-integrations/. Check EVOLVE_REPO and EVOLVE_VERSION.")
+        sys.exit(1)
+
+    SOURCE_DIR = _tmpdir_download
+    success(f"Downloaded evolve {EVOLVE_VERSION}")
 
 
 # ── File utilities ─────────────────────────────────────────────────────────────
@@ -649,6 +667,8 @@ def interactive_select(detected):
 # ── Bob installer ─────────────────────────────────────────────────────────────
 
 def install_bob(source_dir, target_dir, mode="lite"):
+    _ensure_source_dir()
+    source_dir = SOURCE_DIR
     bob_source_lite = Path(source_dir) / "platform-integrations" / "bob" / "evolve-lite"
     bob_target = Path(target_dir) / ".bob"
 
@@ -844,6 +864,8 @@ def status_claude(target_dir):
 # ── Codex installer ───────────────────────────────────────────────────────────
 
 def install_codex(source_dir, target_dir):
+    _ensure_source_dir()
+    source_dir = SOURCE_DIR
     plugin_source = Path(source_dir) / "platform-integrations" / "codex" / "plugins" / CODEX_PLUGIN
     plugin_target = Path(target_dir) / "plugins" / CODEX_PLUGIN
     info(f"Installing Codex → {plugin_target}")
