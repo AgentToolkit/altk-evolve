@@ -600,6 +600,12 @@ class ClaudeInstaller:
         result = self.ops.run_subprocess([claude, "plugin", "marketplace", "add", marketplace_source])
         if result.returncode != 0:
             warn(f"claude plugin marketplace add exited with code {result.returncode}")
+            warn("To install manually, run:")
+            print()
+            print(f"    claude plugin marketplace add {marketplace_source}")
+            print(f"    claude plugin install evolve-lite@evolve-marketplace")
+            print()
+            return
 
         result = self.ops.run_subprocess([claude, "plugin", "install", "evolve-lite@evolve-marketplace"])
         if result.returncode == 0:
