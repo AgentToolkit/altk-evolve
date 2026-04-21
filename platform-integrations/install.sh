@@ -226,6 +226,8 @@ class FileOps:
     a no-op run that logs what would happen instead.
     """
 
+    is_dry_run = False
+
     # ── Primitives ────────────────────────────────────────────────────────────
 
     def atomic_write_json(self, path, data):
@@ -377,6 +379,8 @@ class FileOps:
 
 class DryRunFileOps(FileOps):
     """No-op variant: logs what would happen instead of writing anything."""
+
+    is_dry_run = True
 
     def atomic_write_json(self, path, data):
         dryrun(f"write JSON → {path}")
@@ -581,9 +585,12 @@ class ClaudeInstaller:
 
         result = self.ops.run_subprocess([claude, "plugin", "install", "evolve-lite@evolve-marketplace"])
         if result.returncode == 0:
-            success("Claude plugin installed via CLI")
-            if result.stdout.strip():
-                print(f"    {result.stdout.strip()}")
+            if self.ops.is_dry_run:
+                dryrun("Claude plugin would be installed via CLI")
+            else:
+                success("Claude plugin installed via CLI")
+                if result.stdout.strip():
+                    print(f"    {result.stdout.strip()}")
         else:
             warn(f"claude plugin install exited with code {result.returncode}")
             if result.stderr.strip():
