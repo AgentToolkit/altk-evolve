@@ -98,12 +98,18 @@ class EvolveClient:
 
     def get_public_entities(self, query: str | None = None, entity_type: str | None = None, limit: int = 100) -> list[RecordedEntity]:
         """Search for public entities across all namespaces."""
+        if limit <= 0:
+            return []
+
         all_results: list[RecordedEntity] = []
         for ns in self.search_namespaces(limit=1000):
+            remaining = limit - len(all_results)
+            if remaining <= 0:
+                break
             filters: dict = {"metadata.visibility": "public"}
             if entity_type:
                 filters["type"] = entity_type
-            all_results.extend(self.search_entities(ns.id, query=query, filters=filters, limit=limit))
+            all_results.extend(self.search_entities(ns.id, query=query, filters=filters, limit=remaining))
         return all_results
 
     def cluster_guidelines(self, namespace_id: str, threshold: float | None = None, limit: int = 10000) -> list[list[RecordedEntity]]:
