@@ -6,6 +6,7 @@ All tests run in isolated temporary directories to avoid contaminating the repo.
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -223,6 +224,23 @@ class FileAssertions:
 
         assert start_sentinel not in content, f"Start sentinel '{start_sentinel}' should not be in {path}"
         assert end_sentinel not in content, f"End sentinel '{end_sentinel}' should not be in {path}"
+
+    @staticmethod
+    def assert_all_bob_skills_installed(bob_dir: Path):
+        """Assert every skill in the bob/evolve-lite source tree is installed."""
+        repo_root = Path(__file__).parent.parent.parent
+        skills_src = repo_root / "platform-integrations" / "bob" / "evolve-lite" / "skills"
+        for skill_dir in sorted(skills_src.iterdir()):
+            if skill_dir.is_dir():
+                FileAssertions.assert_dir_exists(bob_dir / "skills" / skill_dir.name)
+
+    @staticmethod
+    def assert_all_bob_commands_installed(bob_dir: Path):
+        """Assert every evolve-lite command in the source tree is installed."""
+        repo_root = Path(__file__).parent.parent.parent
+        commands_src = repo_root / "platform-integrations" / "bob" / "evolve-lite" / "commands"
+        for cmd_file in sorted(commands_src.glob("evolve-lite:*.md")):
+            FileAssertions.assert_file_exists(bob_dir / "commands" / cmd_file.name)
 
     @staticmethod
     def read_json(path: Path) -> Dict[str, Any]:
@@ -523,6 +541,38 @@ class CodexFixtures:
             + "\n"
         )
         return hooks_file
+
+
+@pytest.fixture
+def remote_install_script(tmp_path_factory):
+    """
+    Copy install.sh to an isolated temp dir that has no platform-integrations/ sibling.
+
+    This simulates the curl | bash scenario where the script runs from a directory
+    that is not the repo root, so SCRIPT_DIR points to no local source tree.
+
+    Returns:
+        Path: Path to the copied install.sh
+    """
+    repo_root = Path(__file__).parent.parent.parent
+    src = repo_root / "platform-integrations" / "install.sh"
+    assert src.exists(), f"install.sh not found at {src}"
+
+    isolated_dir = tmp_path_factory.mktemp("remote_script")
+    dst = isolated_dir / "install.sh"
+    shutil.copy2(src, dst)
+    return dst
+
+
+@pytest.fixture
+def remote_install_runner(remote_install_script, temp_project_dir):
+    """
+    InstallRunner backed by the isolated (remote-simulating) install.sh copy.
+
+    Returns:
+        InstallRunner: Helper to run install.sh commands from a dir with no local source
+    """
+    return InstallRunner(remote_install_script, temp_project_dir)
 
 
 @pytest.fixture
