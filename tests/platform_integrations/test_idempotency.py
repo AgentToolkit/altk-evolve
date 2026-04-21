@@ -3,6 +3,7 @@ Tests to ensure install.sh is idempotent - running it multiple times is safe.
 """
 
 import json
+
 import pytest
 
 
@@ -31,9 +32,8 @@ class TestBobIdempotency:
         assert first_content.count("# >>>evolve:evolve-lite<<<") == 1
         assert first_content.count("# <<<evolve:evolve-lite<<<") == 1
 
-        # Assert: Skills still exist
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:recall")
+        # Assert: All skills still exist
+        file_assertions.assert_all_bob_skills_installed(bob_dir)
 
     def test_multiple_full_installs(self, temp_project_dir, install_runner, file_assertions):
         """Running install twice for Bob full mode should be safe."""
@@ -71,12 +71,8 @@ class TestBobIdempotency:
         # Reinstall
         install_runner.run("install", platform="bob")
 
-        # Assert: Deleted skill is restored
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
-        file_assertions.assert_file_exists(bob_dir / "skills" / "evolve-lite:learn" / "SKILL.md")
-
-        # Assert: Other components still intact
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:recall")
+        # Assert: All skills are restored
+        file_assertions.assert_all_bob_skills_installed(bob_dir)
         file_assertions.assert_file_exists(bob_dir / "custom_modes.yaml")
 
 
@@ -159,8 +155,7 @@ class TestUninstallInstallCycle:
         install_runner.run("install", platform="bob")
 
         # Assert: Evolve content is back
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:recall")
+        file_assertions.assert_all_bob_skills_installed(bob_dir)
         file_assertions.assert_sentinel_block_exists(bob_dir / "custom_modes.yaml", "evolve-lite")
 
         # Assert: User content still intact

@@ -5,6 +5,7 @@ import threading
 import uvicorn
 
 from altk_evolve.frontend.mcp.mcp_server import mcp, app
+from altk_evolve.frontend.mcp.http_transport import create_resilient_sse_app
 
 logger = logging.getLogger("evolve-mcp")
 
@@ -40,6 +41,12 @@ def run_api_server():
         logging.error(f"Failed to start UI server: {e}")
 
 
+def run_sse_server(host: str, port: int) -> None:
+    """Run the MCP server over SSE with disconnect-safe transport handling."""
+    sse_app = create_resilient_sse_app(mcp)
+    uvicorn.run(sse_app, host=host, port=port, log_level="warning")
+
+
 def main():
     """
     Main entry point for the server.
@@ -54,7 +61,7 @@ def main():
             # Start FastMCP using stdio (which blocks)
             mcp.run()
         else:
-            mcp.run(transport="sse", host=args.host, port=args.port)
+            run_sse_server(host=args.host, port=args.port)
     except KeyboardInterrupt:
         logger.info("MCP server stopped by user (KeyboardInterrupt)")
         sys.exit(0)

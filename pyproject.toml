@@ -1,6 +1,6 @@
 [project]
 name = "altk-evolve"
-version = "1.0.9"
+version = "1.0.10"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,9 +10,6 @@ dependencies = [
     "jinja2",
     "litellm",
     "pydantic",
-    "pymilvus[milvus-lite]>=2.6.2; platform_machine != 'aarch64'",
-    "pymilvus>=2.6.2; platform_machine == 'aarch64'",
-    "milvus-lite>=2.5.1; platform_machine != 'aarch64'",  # TODO: remove once 2.5.2+ is released (pkg_resources deprecation)
     "sentence-transformers",
     "typer>=0.9.0",
     "uvicorn",
@@ -26,6 +23,12 @@ tracing = [
     "openinference-instrumentation-litellm",
     "openinference-instrumentation-smolagents",
     "openinference-instrumentation-openai-agents",
+]
+
+milvus = [
+    "pymilvus[milvus-lite]>=2.6.2; platform_machine != 'aarch64'",
+    "pymilvus>=2.6.2; platform_machine == 'aarch64'",
+    "milvus-lite>=2.5.1; platform_machine != 'aarch64'",
 ]
 
 pgvector = [
