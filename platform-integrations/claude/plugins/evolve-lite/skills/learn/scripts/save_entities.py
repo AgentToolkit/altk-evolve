@@ -5,6 +5,7 @@ Reads entities from stdin JSON and writes each as a markdown file
 in the entities directory, organized by type.
 """
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -33,6 +34,10 @@ def normalize(text):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--user", default=None, help="Stamp owner on every entity written")
+    args = parser.parse_args()
+
     # Read entities from stdin
     try:
         input_data = json.load(sys.stdin)
@@ -76,6 +81,11 @@ def main():
         if normalize(content) in existing_contents:
             log(f"Skipping duplicate: {content[:60]}")
             continue
+
+        if args.user and not entity.get("owner"):
+            entity["owner"] = args.user
+        if not entity.get("visibility"):
+            entity["visibility"] = "private"
 
         path = write_entity_file(entities_dir, entity)
         existing_contents.add(normalize(content))
