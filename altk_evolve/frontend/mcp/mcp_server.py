@@ -279,7 +279,9 @@ def create_entity(
                 logger.exception(f"Invalid JSON in metadata parameter: {str(e)}")
                 return json.dumps({"error": "Invalid JSON", "message": f"Failed to parse metadata: {str(e)}", "invalid_metadata": metadata})
             if not isinstance(metadata_dict, dict):
-                return json.dumps({"error": "Invalid metadata type", "message": "metadata must be a JSON object", "invalid_metadata": metadata})
+                return json.dumps(
+                    {"error": "Invalid metadata type", "message": "metadata must be a JSON object", "invalid_metadata": metadata}
+                )
 
         if entity_type in ("guideline", "policy"):
             metadata_dict.setdefault("creation_mode", "manual")
