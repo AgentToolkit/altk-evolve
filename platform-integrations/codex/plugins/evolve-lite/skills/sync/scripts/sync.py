@@ -122,8 +122,19 @@ def main():
     for sub in subscriptions:
         if not isinstance(sub, dict):
             continue
-        name = sub.get("name", "unknown")
-        branch = sub.get("branch", "main")
+        raw_name = sub.get("name", "unknown")
+        raw_branch = sub.get("branch", "main")
+
+        if not isinstance(raw_name, str) or not isinstance(raw_branch, str):
+            summaries.append(f"{raw_name!r} (skipped - invalid subscription config)")
+            continue
+
+        name = raw_name.strip()
+        branch = raw_branch.strip()
+
+        if not name or not branch:
+            summaries.append(f"{raw_name!r} (skipped - invalid subscription config)")
+            continue
 
         if not safe_name.match(name):
             summaries.append(f"{name!r} (skipped - invalid subscription name)")

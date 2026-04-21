@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -35,11 +36,12 @@ def main():
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
+    safe_name = re.compile(r"^[A-Za-z0-9._-]+$")
     project_root = str(evolve_dir.resolve()) if evolve_dir.name != ".evolve" else str(evolve_dir.resolve().parent)
     subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
     dest = (evolve_dir / "entities" / "subscribed" / args.name).resolve()
     legacy_dest = (evolve_dir / "subscribed" / args.name).resolve()
-    if args.name in {"", "."} or dest == subscribed_base or not dest.is_relative_to(subscribed_base):
+    if args.name in {"", "."} or not safe_name.match(args.name) or dest == subscribed_base or not dest.is_relative_to(subscribed_base):
         print(f"Error: invalid subscription name: {args.name!r}", file=sys.stderr)
         sys.exit(1)
 

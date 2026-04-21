@@ -57,8 +57,8 @@ def main():
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
 
-    if not src_path.exists():
-        print(f"Error: entity file not found: {src_path}", file=sys.stderr)
+    if not src_path.is_file():
+        print(f"Error: entity file not found or is a directory: {src_path}", file=sys.stderr)
         sys.exit(1)
 
     # Parse entity
@@ -91,18 +91,26 @@ def main():
         sys.exit(1)
 
     content = entity_to_markdown(entity)
-    tmp_fd, tmp_path = tempfile.mkstemp(dir=dest_path.parent, suffix=".tmp")
+    tmp_path = None
     try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        Path(tmp_path).replace(dest_path)
-    except Exception:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-    src_path.unlink()
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=dest_path.parent,
+            prefix=f".{args.entity}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            tmp_path = Path(temp_file.name)
+
+        tmp_path.replace(dest_path)
+        src_path.unlink()
+    finally:
+        if tmp_path is not None and tmp_path.exists():
+            tmp_path.unlink()
 
     try:
         audit_append(

@@ -6,6 +6,7 @@ import datetime
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path, PurePath
 
 # Walk up from the script location to find the installed plugin lib directory.
@@ -64,8 +65,8 @@ def main():
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
 
-    if not src_path.exists():
-        print(f"Error: entity file not found: {src_path}", file=sys.stderr)
+    if not src_path.is_file():
+        print(f"Error: entity file not found or is a directory: {src_path}", file=sys.stderr)
         sys.exit(1)
 
     entity = markdown_to_entity(src_path)
@@ -91,8 +92,27 @@ def main():
     if dest_path.exists():
         print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
         sys.exit(1)
-    src_path.write_text(entity_to_markdown(entity), encoding="utf-8")
-    src_path.replace(dest_path)
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=dest_dir,
+            prefix=f".{args.entity}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_file.write(entity_to_markdown(entity))
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            temp_path = Path(temp_file.name)
+
+        temp_path.replace(dest_path)
+        src_path.unlink()
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
 
     try:
         audit_append(

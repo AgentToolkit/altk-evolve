@@ -22,7 +22,7 @@ for _ancestor in _script.parents:
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
-from entity_io import find_recall_entity_dirs, markdown_to_entity, log as _log  # noqa: E402
+from entity_io import find_entities_dir, get_evolve_dir, markdown_to_entity, log as _log  # noqa: E402
 
 
 def log(message):
@@ -57,27 +57,26 @@ Review these stored entities and apply any that are relevant to the user's reque
     return header + "\n".join(items)
 
 
-def load_entities_with_source(entities_dirs):
-    """Load markdown entities from recall roots and annotate subscribed content."""
+def load_entities_with_source(entities_dir):
+    """Load markdown entities from one recall root and annotate subscribed content."""
+    entities_dir = Path(entities_dir)
     entities = []
-    for entities_dir in entities_dirs:
-        entities_dir = Path(entities_dir)
-        for md in sorted(entities_dir.glob("**/*.md")):
-            if md.is_symlink():
-                continue
-            try:
-                entity = markdown_to_entity(md)
-            except (OSError, UnicodeError):
-                continue
-            if not entity.get("content"):
-                continue
+    for md in sorted(entities_dir.glob("**/*.md")):
+        if md.is_symlink():
+            continue
+        try:
+            entity = markdown_to_entity(md)
+        except (OSError, UnicodeError):
+            continue
+        if not entity.get("content"):
+            continue
 
-            entity.pop("_source", None)
-            parts = md.relative_to(entities_dir).parts
-            if parts and parts[0] == "subscribed" and len(parts) > 1:
-                entity["_source"] = parts[1]
+        entity.pop("_source", None)
+        parts = md.relative_to(entities_dir).parts
+        if parts and parts[0] == "subscribed" and len(parts) > 1:
+            entity["_source"] = parts[1]
 
-            entities.append(entity)
+        entities.append(entity)
 
     return entities
 
@@ -102,13 +101,18 @@ def main():
             log(f"  {key}={value}")
     log("=== End Environment Variables ===")
 
-    entities_dirs = find_recall_entity_dirs()
-    log(f"Recall entity dirs: {entities_dirs}")
-    if not entities_dirs:
-        log("No recall entity directories found")
-        return
+    entities_dir = find_entities_dir()
+    log(f"Entities dir: {entities_dir}")
 
-    entities = load_entities_with_source(entities_dirs)
+    entities = []
+    if entities_dir:
+        entities = load_entities_with_source(entities_dir)
+
+    public_dir = get_evolve_dir() / "public"
+    if public_dir.is_dir():
+        log(f"Loading public entities from: {public_dir}")
+        entities += load_entities_with_source(public_dir)
+
     if not entities:
         log("No entities found")
         return

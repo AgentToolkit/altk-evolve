@@ -10,19 +10,24 @@ import pytest
 
 pytestmark = pytest.mark.platform_integrations
 
-_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
-RETRIEVE_SCRIPT = _PLUGIN_ROOT / "skills/recall/scripts/retrieve_entities.py"
+_REPO_ROOT = Path(__file__).parent.parent.parent
+CLAUDE_RETRIEVE_SCRIPT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
+CODEX_RETRIEVE_SCRIPT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
+SCRIPT_VARIANTS = [
+    ("claude", CLAUDE_RETRIEVE_SCRIPT, "Entities for this task"),
+    ("codex", CODEX_RETRIEVE_SCRIPT, "Evolve entities for this task"),
+]
 
 # The hook pipes this JSON to the script on stdin
 HOOK_INPUT = json.dumps({"prompt": "How do I write clean code?"})
 
 
-def run_retrieve(evolve_dir=None, stdin_data=None):
+def run_retrieve(script_path, evolve_dir=None, stdin_data=None):
     env = {**os.environ}
     if evolve_dir:
         env["EVOLVE_DIR"] = str(evolve_dir)
     return subprocess.run(
-        [sys.executable, str(RETRIEVE_SCRIPT)],
+        [sys.executable, str(script_path)],
         input=stdin_data or HOOK_INPUT,
         capture_output=True,
         text=True,
@@ -50,65 +55,75 @@ def evolve_dir(temp_project_dir):
 
 
 class TestRetrieve:
-    def test_exits_cleanly_with_no_output_when_no_entities_dir(self, temp_project_dir):
-        result = run_retrieve(evolve_dir=temp_project_dir / ".evolve")
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_exits_cleanly_with_no_output_when_no_entities_dir(self, temp_project_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(retrieve_script, evolve_dir=temp_project_dir / ".evolve")
         assert result.returncode == 0
         assert result.stdout.strip() == ""
 
-    def test_outputs_owned_entities(self, evolve_dir):
-        result = run_retrieve(evolve_dir=evolve_dir)
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_outputs_owned_entities(self, evolve_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(retrieve_script, evolve_dir=evolve_dir)
         assert result.returncode == 0
         assert "Keep functions small." in result.stdout
 
-    def test_annotates_subscribed_entities_with_from_source(self, evolve_dir):
-        result = run_retrieve(evolve_dir=evolve_dir)
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_annotates_subscribed_entities_with_from_source(self, evolve_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(retrieve_script, evolve_dir=evolve_dir)
         assert "[from: alice]" in result.stdout
         assert "Always write tests." in result.stdout
 
-    def test_owned_entities_not_annotated_with_from(self, evolve_dir):
-        result = run_retrieve(evolve_dir=evolve_dir)
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_owned_entities_not_annotated_with_from(self, evolve_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(retrieve_script, evolve_dir=evolve_dir)
         own_lines = [line for line in result.stdout.splitlines() if "Keep functions small." in line]
         assert own_lines
         assert not any("[from:" in line for line in own_lines)
 
-    def test_output_includes_type_annotation(self, evolve_dir):
-        result = run_retrieve(evolve_dir=evolve_dir)
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_output_includes_type_annotation(self, evolve_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(retrieve_script, evolve_dir=evolve_dir)
         assert "[guideline]" in result.stdout
 
-    def test_handles_invalid_json_stdin_gracefully(self, evolve_dir):
-        result = run_retrieve(evolve_dir=evolve_dir, stdin_data="not valid json")
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_handles_invalid_json_stdin_gracefully(self, evolve_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(retrieve_script, evolve_dir=evolve_dir, stdin_data="not valid json")
         assert result.returncode == 0
         assert result.stdout.strip() == ""
 
-    def test_output_has_header(self, evolve_dir):
-        result = run_retrieve(evolve_dir=evolve_dir)
-        assert "Entities for this task" in result.stdout
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_output_has_header(self, evolve_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(retrieve_script, evolve_dir=evolve_dir)
+        assert expected_header in result.stdout
 
-    def test_public_entities_included_in_recall(self, temp_project_dir):
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_public_entities_included_in_recall(self, temp_project_dir, retrieve_script, expected_header, platform_name):
         d = temp_project_dir / ".evolve"
         (d / "public" / "guideline").mkdir(parents=True)
         (d / "public" / "guideline" / "pub.md").write_text(
             "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n"
         )
-        result = run_retrieve(evolve_dir=d)
+        result = run_retrieve(retrieve_script, evolve_dir=d)
         assert result.returncode == 0
         assert "Prefer immutable data structures." in result.stdout
 
-    def test_public_entities_not_annotated_with_from(self, temp_project_dir):
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_public_entities_not_annotated_with_from(self, temp_project_dir, retrieve_script, expected_header, platform_name):
         d = temp_project_dir / ".evolve"
         (d / "public" / "guideline").mkdir(parents=True)
         (d / "public" / "guideline" / "pub.md").write_text(
             "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n"
         )
-        result = run_retrieve(evolve_dir=d)
+        result = run_retrieve(retrieve_script, evolve_dir=d)
         pub_lines = [line for line in result.stdout.splitlines() if "Prefer immutable data structures." in line]
         assert pub_lines
         assert not any("[from:" in line for line in pub_lines)
 
-    def test_entities_with_trigger_include_when_line(self, temp_project_dir):
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_entities_with_trigger_include_when_line(self, temp_project_dir, retrieve_script, expected_header, platform_name):
         d = temp_project_dir / ".evolve"
         gdir = d / "entities" / "guideline"
         gdir.mkdir(parents=True)
         (gdir / "tip.md").write_text("---\ntype: guideline\ntrigger: when writing tests\n---\n\nAssert the important thing.\n")
-        result = run_retrieve(evolve_dir=d)
+        result = run_retrieve(retrieve_script, evolve_dir=d)
         assert "when writing tests" in result.stdout
