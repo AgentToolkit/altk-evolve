@@ -99,7 +99,7 @@ resolve_source
 # Pass SOURCE_DIR as argv[1], then all original CLI args.
 # The heredoc uses single-quoted PYEOF so bash does not interpolate inside it.
 
-exec python3 - "$SOURCE_DIR" "$@" <<'PYEOF'
+exec python3 -u - "$SOURCE_DIR" "$@" <<'PYEOF'
 import argparse
 import copy
 import json
@@ -484,7 +484,7 @@ class BobInstaller:
 
         if mode == "lite":
             shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
-            if not shared_lib.is_dir():
+            if not self.ops.is_dry_run and not shared_lib.is_dir():
                 raise RuntimeError(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
             self.ops.copy_tree(shared_lib, bob_target / "evolve-lib")
             success("Copied Bob lib")
@@ -507,7 +507,7 @@ class BobInstaller:
         elif mode == "full":
             bob_source_full = Path(source_dir) / "platform-integrations" / "bob" / "evolve-full"
             mcp_source = bob_source_full / "mcp.json"
-            if not mcp_source.exists():
+            if not self.ops.is_dry_run and not mcp_source.exists():
                 raise RuntimeError(f"Source MCP config not found: {mcp_source}")
             mcp_data = read_json(mcp_source)
             self.ops.upsert_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"], mcp_data["mcpServers"]["evolve"])
@@ -786,7 +786,7 @@ class CodexInstaller:
         success("Copied Codex plugin")
 
         shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
-        if not shared_lib.is_dir():
+        if not self.ops.is_dry_run and not shared_lib.is_dir():
             raise RuntimeError(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
         self.ops.copy_tree(shared_lib, plugin_target / "lib")
         success("Copied Codex lib")
