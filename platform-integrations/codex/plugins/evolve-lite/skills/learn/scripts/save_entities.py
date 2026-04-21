@@ -92,10 +92,8 @@ def main():
             log(f"Skipping duplicate: {content[:60]}")
             continue
 
-        if args.user and not entity.get("owner"):
-            entity["owner"] = args.user
-        if not entity.get("visibility"):
-            entity["visibility"] = "private"
+        entity["owner"] = args.user or "unknown"
+        entity["visibility"] = "private"
 
         path = write_entity_file(entities_dir, entity)
         existing_contents.add(normalize(content))

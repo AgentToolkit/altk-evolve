@@ -152,10 +152,14 @@ def main():
 
         pull_result = git_pull(repo_path, branch)
         if pull_result is None or pull_result.returncode != 0:
-            error_lines = (pull_result.stderr or pull_result.stdout or "").strip().splitlines()
-            short_error = error_lines[-1] if error_lines else "unknown error"
+            if pull_result is None:
+                short_error = "timeout"
+            else:
+                error_lines = (pull_result.stderr or pull_result.stdout or "").strip().splitlines()
+                short_error = error_lines[-1] if error_lines else f"git exited with {pull_result.returncode}"
             summaries.append(f"{name} (git pull failed: {short_error})")
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
+            any_changes = True
             continue
 
         if "Already up to date" in (pull_result.stdout or ""):

@@ -15,7 +15,7 @@ sys.path.insert(
 )
 import entity_io
 
-pytestmark = pytest.mark.platform_integrations
+pytestmark = [pytest.mark.platform_integrations, pytest.mark.unit]
 
 
 class TestSlugify:

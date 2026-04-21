@@ -20,7 +20,7 @@ SYNC_SCRIPT = _PLUGIN_ROOT / "skills/sync/scripts/sync.py"
 HOOK_INPUT = json.dumps({"prompt": "How do I write clean code?"})
 
 
-def run_script(script, project_dir=None, args=None, evolve_dir=None, stdin=None, expect_success=True):
+def run_script(script, project_dir, args=None, evolve_dir=None, stdin=None, expect_success=True):
     env = {**os.environ}
     if evolve_dir:
         env["EVOLVE_DIR"] = str(evolve_dir)
@@ -29,7 +29,7 @@ def run_script(script, project_dir=None, args=None, evolve_dir=None, stdin=None,
         input=stdin,
         capture_output=True,
         text=True,
-        cwd=str(project_dir) if project_dir else None,
+        cwd=str(project_dir),
         env=env,
         check=expect_success,
     )
@@ -51,6 +51,34 @@ class TestCodexSaveAndRetrieve:
         assert "owner: alice" in content
         assert "visibility: private" in content
 
+    def test_save_ignores_incoming_owner_and_visibility(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        run_script(
+            SAVE_SCRIPT,
+            project_dir=temp_project_dir,
+            args=["--user", "alice"],
+            evolve_dir=evolve_dir,
+            stdin=json.dumps(
+                {
+                    "entities": [
+                        {
+                            "type": "guideline",
+                            "content": "Prefer small, reversible changes.",
+                            "owner": "mallory",
+                            "visibility": "public",
+                        }
+                    ]
+                }
+            ),
+        )
+        files = list((evolve_dir / "entities" / "guideline").glob("*.md"))
+        assert len(files) == 1
+        content = files[0].read_text()
+        assert "owner: alice" in content
+        assert "owner: mallory" not in content
+        assert "visibility: private" in content
+        assert "visibility: public" not in content
+
     def test_retrieve_annotates_subscribed_entities(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         own_dir = evolve_dir / "entities" / "guideline"
@@ -60,7 +88,13 @@ class TestCodexSaveAndRetrieve:
         sub_dir.mkdir(parents=True)
         (sub_dir / "alice-tip.md").write_text("---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n")
 
-        result = run_script(RETRIEVE_SCRIPT, evolve_dir=evolve_dir, stdin=HOOK_INPUT, expect_success=False)
+        result = run_script(
+            RETRIEVE_SCRIPT,
+            project_dir=temp_project_dir,
+            evolve_dir=evolve_dir,
+            stdin=HOOK_INPUT,
+            expect_success=False,
+        )
         assert result.returncode == 0
         assert "Keep functions small." in result.stdout
         assert "[from: alice]" in result.stdout
@@ -77,7 +111,13 @@ class TestCodexSaveAndRetrieve:
             "---\ntype: guideline\nvisibility: public\nsource: alice/evolve-guidelines\n---\n\nDocument edge cases.\n"
         )
 
-        result = run_script(RETRIEVE_SCRIPT, evolve_dir=evolve_dir, stdin=HOOK_INPUT, expect_success=False)
+        result = run_script(
+            RETRIEVE_SCRIPT,
+            project_dir=temp_project_dir,
+            evolve_dir=evolve_dir,
+            stdin=HOOK_INPUT,
+            expect_success=False,
+        )
         assert result.returncode == 0
         assert "Keep functions small." in result.stdout
         assert "Document edge cases." in result.stdout

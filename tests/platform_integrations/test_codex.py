@@ -47,6 +47,7 @@ def _iter_group_hooks(group):
 
 
 @pytest.mark.platform_integrations
+@pytest.mark.e2e
 class TestCodexInstall:
     """Test the Codex install flow."""
 

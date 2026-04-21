@@ -142,7 +142,7 @@ class TestSync:
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
         assert "invalid subscription name" in result.stdout
-        assert not (evolve_dir / "subscribed" / ".." / "evil").exists()
+        assert not (evolve_dir / "entities" / "evil").exists()
 
     def test_manual_run_ignores_on_session_start_false(self, subscribed_project):
         p = subscribed_project

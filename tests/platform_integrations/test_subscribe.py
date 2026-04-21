@@ -14,7 +14,7 @@ sys.path.insert(
 )
 import config as cfg_module
 
-pytestmark = pytest.mark.platform_integrations
+pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
 SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
