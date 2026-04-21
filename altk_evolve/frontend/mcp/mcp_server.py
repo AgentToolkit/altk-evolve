@@ -138,13 +138,14 @@ def get_entities_logic(task: str, entity_type: str = "guideline", include_public
 
     if include_public:
         public_results = client.get_public_entities(query=task, entity_type=entity_type)
-        offset = len(private_results) + 1
-        for i, entity in enumerate(public_results, offset):
+        idx = len(private_results) + 1
+        for entity in public_results:
             if entity.id in seen_ids:
                 continue
             seen_ids.add(entity.id)
             owner = (entity.metadata or {}).get("owner_id", "unknown")
-            response_lines.append(f"{i}. [public: {owner}] {entity.content}")
+            response_lines.append(f"{idx}. [public: {owner}] {entity.content}")
+            idx += 1
 
     return "\n".join(response_lines)
 
@@ -271,6 +272,8 @@ def create_entity(
         if visibility not in ("private", "public"):
             return json.dumps({"error": f"Invalid visibility '{visibility}': must be 'private' or 'public'"})
 
+        _RESERVED_KEYS = {"owner_id", "visibility", "published_at", "creation_mode"}
+
         metadata_dict = {}
         if metadata:
             try:
@@ -282,6 +285,8 @@ def create_entity(
                 return json.dumps(
                     {"error": "Invalid metadata type", "message": "metadata must be a JSON object", "invalid_metadata": metadata}
                 )
+            for key in _RESERVED_KEYS:
+                metadata_dict.pop(key, None)
 
         if entity_type in ("guideline", "policy"):
             metadata_dict.setdefault("creation_mode", "manual")
@@ -324,7 +329,7 @@ def publish_entity(entity_id: str, user_id: str | None = None) -> str:
     Returns:
         JSON string with the updated entity, or an error message
     """
-    logger.info(f"publish entity={entity_id} owner={user_id} namespace={evolve_config.namespace_id}")
+    logger.info(f"publish entity={entity_id} owner_present={user_id is not None} namespace={evolve_config.namespace_id}")
     try:
         from datetime import datetime, UTC
 
