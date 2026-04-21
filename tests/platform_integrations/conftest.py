@@ -6,6 +6,7 @@ All tests run in isolated temporary directories to avoid contaminating the repo.
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -521,6 +522,38 @@ class CodexFixtures:
             + "\n"
         )
         return hooks_file
+
+
+@pytest.fixture
+def remote_install_script(tmp_path_factory):
+    """
+    Copy install.sh to an isolated temp dir that has no platform-integrations/ sibling.
+
+    This simulates the curl | bash scenario where the script runs from a directory
+    that is not the repo root, so SCRIPT_DIR points to no local source tree.
+
+    Returns:
+        Path: Path to the copied install.sh
+    """
+    repo_root = Path(__file__).parent.parent.parent
+    src = repo_root / "platform-integrations" / "install.sh"
+    assert src.exists(), f"install.sh not found at {src}"
+
+    isolated_dir = tmp_path_factory.mktemp("remote_script")
+    dst = isolated_dir / "install.sh"
+    shutil.copy2(src, dst)
+    return dst
+
+
+@pytest.fixture
+def remote_install_runner(remote_install_script, temp_project_dir):
+    """
+    InstallRunner backed by the isolated (remote-simulating) install.sh copy.
+
+    Returns:
+        InstallRunner: Helper to run install.sh commands from a dir with no local source
+    """
+    return InstallRunner(remote_install_script, temp_project_dir)
 
 
 @pytest.fixture

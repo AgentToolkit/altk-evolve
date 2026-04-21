@@ -6,7 +6,26 @@ commands, modes, and configurations are preserved during installation.
 """
 
 import json
+from pathlib import Path
+
 import pytest
+
+
+_REPO_ROOT = Path(__file__).parent.parent.parent
+_BOB_LITE_SOURCE = _REPO_ROOT / "platform-integrations" / "bob" / "evolve-lite"
+
+
+def _assert_all_bob_skills_installed(bob_dir, file_assertions):
+    skills_src = _BOB_LITE_SOURCE / "skills"
+    for skill_dir in sorted(skills_src.iterdir()):
+        if skill_dir.is_dir():
+            file_assertions.assert_dir_exists(bob_dir / "skills" / skill_dir.name)
+
+
+def _assert_all_bob_commands_installed(bob_dir, file_assertions):
+    commands_src = _BOB_LITE_SOURCE / "commands"
+    for cmd_file in sorted(commands_src.glob("evolve-lite:*.md")):
+        file_assertions.assert_file_exists(bob_dir / "commands" / cmd_file.name)
 
 
 @pytest.mark.platform_integrations
@@ -26,10 +45,9 @@ class TestBobPreservation:
         file_assertions.assert_dir_exists(custom_skill)
         file_assertions.assert_file_unchanged(custom_skill / "SKILL.md", original_content)
 
-        # Assert: Evolve skills are added
+        # Assert: All evolve skills from the source tree are installed
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:recall")
+        _assert_all_bob_skills_installed(bob_dir, file_assertions)
 
     def test_preserves_existing_commands(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve when user has existing commands - they must be preserved."""
@@ -43,10 +61,9 @@ class TestBobPreservation:
         # Assert: User's command is untouched
         file_assertions.assert_file_unchanged(custom_command, original_content)
 
-        # Assert: Evolve commands are added
+        # Assert: All evolve commands from the source tree are installed
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve-lite:learn.md")
-        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve-lite:recall.md")
+        _assert_all_bob_commands_installed(bob_dir, file_assertions)
 
     def test_preserves_existing_custom_modes_yaml(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve when user has existing custom modes - they must be preserved."""
@@ -134,7 +151,7 @@ class TestBobPreservation:
 
         # Assert: Evolve lite content is added
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
+        _assert_all_bob_skills_installed(bob_dir, file_assertions)
         file_assertions.assert_sentinel_block_exists(custom_modes, "evolve-lite")
 
     def test_preserves_all_bob_content_together_full(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):

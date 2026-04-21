@@ -492,9 +492,15 @@ class BobInstaller:
             self.ops.copy_tree(shared_lib, bob_target / "evolve-lib")
             success("Copied Bob lib")
 
-            self.ops.copy_tree(bob_source_lite / "skills" / "evolve-lite:learn",           bob_target / "skills" / "evolve-lite:learn")
-            self.ops.copy_tree(bob_source_lite / "skills" / "evolve-lite:recall",          bob_target / "skills" / "evolve-lite:recall")
-            self.ops.copy_tree(bob_source_lite / "skills" / "evolve-lite:save-trajectory", bob_target / "skills" / "evolve-lite:save-trajectory")
+            skills_src = bob_source_lite / "skills"
+            if not self.ops.is_dry_run and not skills_src.is_dir():
+                raise RuntimeError(f"Skills source not found: {skills_src}")
+            if skills_src.is_dir():
+                for skill_dir in sorted(skills_src.iterdir()):
+                    if skill_dir.is_dir():
+                        self.ops.copy_tree(skill_dir, bob_target / "skills" / skill_dir.name)
+            else:
+                self.ops.copy_tree(skills_src, bob_target / "skills")
             success("Copied Bob skills")
 
             self.ops.copy_tree(bob_source_lite / "commands", bob_target / "commands")
@@ -533,10 +539,14 @@ class BobInstaller:
         info(f"Uninstalling Bob from {bob_target}")
 
         self.ops.remove_dir(bob_target / "evolve-lib")
-        self.ops.remove_dir(bob_target / "skills" / "evolve-lite:learn")
-        self.ops.remove_dir(bob_target / "skills" / "evolve-lite:recall")
-        self.ops.remove_file(bob_target / "commands" / "evolve-lite:learn.md")
-        self.ops.remove_file(bob_target / "commands" / "evolve-lite:recall.md")
+        skills_dir = bob_target / "skills"
+        if skills_dir.is_dir():
+            for skill_dir in sorted(skills_dir.glob("evolve-lite:*")):
+                self.ops.remove_dir(skill_dir)
+        commands_dir = bob_target / "commands"
+        if commands_dir.is_dir():
+            for cmd_file in sorted(commands_dir.glob("evolve-lite:*.md")):
+                self.ops.remove_file(cmd_file)
         self.ops.remove_yaml_custom_mode(bob_target / "custom_modes.yaml", BOB_SLUG)
         self.ops.remove_yaml_custom_mode(bob_target / "custom_modes.yaml", "Evolve")
         self.ops.remove_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"])
@@ -547,9 +557,16 @@ class BobInstaller:
         bob_target = Path(target_dir) / ".bob"
         print(f"  Bob (.bob/):")
         print(f"    evolve-lib/entity_io      : {'✓' if (bob_target / 'evolve-lib' / 'entity_io.py').is_file() else '✗'}")
-        print(f"    skills/evolve-lite:learn  : {'✓' if (bob_target / 'skills' / 'evolve-lite:learn').is_dir() else '✗'}")
-        print(f"    skills/evolve-lite:recall : {'✓' if (bob_target / 'skills' / 'evolve-lite:recall').is_dir() else '✗'}")
-        print(f"    commands/                 : {'✓' if (bob_target / 'commands' / 'evolve-lite:learn.md').is_file() else '✗'}")
+        skills_dir = bob_target / "skills"
+        installed_skills = sorted(skills_dir.glob("evolve-lite:*")) if skills_dir.is_dir() else []
+        if installed_skills:
+            for s in installed_skills:
+                print(f"    skills/{s.name} : ✓")
+        else:
+            print(f"    skills/evolve-lite:*      : ✗")
+        commands_dir = bob_target / "commands"
+        installed_cmds = sorted(commands_dir.glob("evolve-lite:*.md")) if commands_dir.is_dir() else []
+        print(f"    commands/ ({len(installed_cmds)} evolve commands) : {'✓' if installed_cmds else '✗'}")
         print(f"    custom_modes.yaml         : {'✓' if (bob_target / 'custom_modes.yaml').is_file() else '✗'}")
         has_mcp = "evolve" in read_json(bob_target / "mcp.json").get("mcpServers", {}) if (bob_target / "mcp.json").is_file() else False
         print(f"    mcp.json (full mode)      : {'✓' if has_mcp else '✗'}")
