@@ -10,9 +10,15 @@ import pytest
 
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
-_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
-SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
-SYNC_SCRIPT = _PLUGIN_ROOT / "skills/sync/scripts/sync.py"
+_REPO_ROOT = Path(__file__).parent.parent.parent
+CLAUDE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
+CODEX_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite"
+SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
+SYNC_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/sync/scripts/sync.py"
+SYNC_SCRIPT_VARIANTS = [
+    ("claude", CLAUDE_PLUGIN_ROOT / "skills/sync/scripts/sync.py"),
+    ("codex", CODEX_PLUGIN_ROOT / "skills/sync/scripts/sync.py"),
+]
 
 
 def run_script(script, project_dir, args=None, evolve_dir=None, expect_success=True):
@@ -27,6 +33,28 @@ def run_script(script, project_dir, args=None, evolve_dir=None, expect_success=T
         env=env,
         check=expect_success,
     )
+
+
+@pytest.mark.parametrize(("platform_name", "sync_script"), SYNC_SCRIPT_VARIANTS)
+@pytest.mark.parametrize(
+    "config_text",
+    [
+        'subscriptions:\n  - name: 123\n    remote: git@github.com:x/y.git\n    branch: main\n',
+        'subscriptions:\n  - name: alice\n    remote: git@github.com:x/y.git\n    branch: 123\n',
+        'subscriptions:\n  - name: "   "\n    remote: git@github.com:x/y.git\n    branch: main\n',
+        'subscriptions:\n  - name: alice\n    remote: git@github.com:x/y.git\n    branch: "   "\n',
+    ],
+)
+def test_sync_skips_malformed_subscription_entries(temp_project_dir, sync_script, platform_name, config_text):
+    evolve_dir = temp_project_dir / ".evolve"
+    cfg_path = temp_project_dir / "evolve.config.yaml"
+    cfg_path.write_text(config_text)
+
+    result = run_script(sync_script, temp_project_dir, evolve_dir=evolve_dir)
+    assert result.returncode == 0
+    assert "skipped" in result.stdout
+    assert "Traceback" not in result.stderr
+    assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
 
 
 @pytest.fixture

@@ -82,7 +82,7 @@ Use `/evolve-lite:publish` to share one or more of your local guidelines with ot
 
 1. The skill lists files in `.evolve/entities/guideline/`
 2. You pick which ones to publish
-3. Each selected file is copied to `.evolve/public/`, stamped with your username as the owner, committed, and pushed to your `public_repo.remote`
+3. Each selected file is moved into `.evolve/public/guideline/`, stamped with `visibility: public`, `published_at`, and your username as the owner, committed, and pushed to your `public_repo.remote`
 
 Others can then subscribe using that remote URL.
 
@@ -97,6 +97,7 @@ Use `/evolve-lite:subscribe` to pull in guidelines from another user's public re
 ```
 
 The repo is cloned to `.evolve/subscribed/alice/` and mirrored into `.evolve/entities/subscribed/alice/` so recall picks them up immediately.
+The repo is cloned directly into `.evolve/entities/subscribed/alice/` so recall can pick it up immediately. Subscription names must use only letters, numbers, `.`, `_`, and `-`.
 
 ### Syncing Subscriptions
 
@@ -122,21 +123,22 @@ Use `/evolve-lite:unsubscribe` to remove a subscription and delete its locally c
 > 2. bob
 ```
 
-The skill confirms before deleting `.evolve/subscribed/{name}/` and its mirror under `.evolve/entities/subscribed/{name}/`.
+The skill confirms before deleting `.evolve/entities/subscribed/{name}/`.
 
 ### Sharing Storage Layout
 
 ```text
 .evolve/
-  public/                     # git repo pushed to your public remote
-    guideline-name.md         # owner-stamped guideline
-  subscribed/
-    alice/                    # git clone of alice's public repo
-      her-guideline.md
+  public/
+    guideline/
+      guideline-name.md       # owner-stamped published guideline
   entities/
+    guideline/
+      private-guideline.md
     subscribed/
-      alice/                  # mirrored for recall
-        her-guideline.md
+      alice/                  # git clone used directly by recall
+        guideline/
+          her-guideline.md
 ```
 
 ## Example Walkthrough

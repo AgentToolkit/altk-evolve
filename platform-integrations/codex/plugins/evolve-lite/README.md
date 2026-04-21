@@ -140,11 +140,11 @@ Others can then subscribe using that public remote URL.
 
 Use `evolve-lite:subscribe` to pull in guidelines from another user's public repo.
 
-The repo is cloned to `.evolve/subscribed/{name}/` and mirrored into `.evolve/entities/subscribed/{name}/` so recall can pick them up immediately.
+The repo is cloned directly into `.evolve/entities/subscribed/{name}/` so recall can pick it up immediately. Subscription names must use only letters, numbers, `.`, `_`, and `-`.
 
 ### Syncing Subscriptions
 
-Use `evolve-lite:sync` to pull the latest changes from all subscribed repos.
+Use `evolve-lite:sync` to pull the latest changes from all subscribed repos already cloned under `.evolve/entities/subscribed/`.
 
 If `sync.on_session_start: true` is set in config, this runs automatically whenever a Codex session starts or resumes.
 
@@ -152,7 +152,7 @@ If `sync.on_session_start: true` is set in config, this runs automatically whene
 
 Use `evolve-lite:unsubscribe` to remove a subscription and delete its locally cloned files.
 
-This removes both `.evolve/subscribed/{name}/` and its mirrored recall copy under `.evolve/entities/subscribed/{name}/`.
+This removes `.evolve/entities/subscribed/{name}/`. If an older workspace still has `.evolve/subscribed/{name}/`, unsubscribe cleans that up too.
 
 ### Sharing Storage Layout
 
@@ -161,17 +161,13 @@ This removes both `.evolve/subscribed/{name}/` and its mirrored recall copy unde
   public/
     guideline/
       guideline-name.md         # published guideline, included in recall
-  subscribed/
-    alice/
-      guideline/
-        her-guideline.md        # git clone of alice's public repo
   entities/
     guideline/
       private-guideline.md      # private local guideline
     subscribed/
       alice/
         guideline/
-          her-guideline.md      # mirrored for recall, annotated [from: alice]
+          her-guideline.md      # git clone used directly by recall, annotated [from: alice]
 ```
 
 ## Example Walkthrough
@@ -194,15 +190,15 @@ Move selected private guidelines into `.evolve/public/`, stamp them as public, a
 
 ### `evolve-lite:subscribe`
 
-Clone another user's public guideline repo into `.evolve/subscribed/` and register it in `evolve.config.yaml`.
+Clone another user's public guideline repo into `.evolve/entities/subscribed/` and register it in `evolve.config.yaml`.
 
 ### `evolve-lite:unsubscribe`
 
-Remove a configured subscription and delete its local clones and mirrored recall entities.
+Remove a configured subscription and delete its local cloned subscription data.
 
 ### `evolve-lite:sync`
 
-Pull every configured subscription and mirror its markdown files into `.evolve/entities/subscribed/` so recall can include them automatically.
+Pull every configured subscription under `.evolve/entities/subscribed/` so recall sees the latest shared guidelines automatically.
 
 ## Environment Variables
 
