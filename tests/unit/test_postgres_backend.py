@@ -679,9 +679,7 @@ def test_update_entity_metadata_merges_and_returns(postgres_backend: PostgresEnt
     mock_cursor_ctx.__exit__ = Mock(return_value=False)
 
     with patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_ctx):
-        result = postgres_backend.update_entity_metadata(
-            "test_namespace", "42", {"visibility": "public", "owner_id": "alice"}
-        )
+        result = postgres_backend.update_entity_metadata("test_namespace", "42", {"visibility": "public", "owner_id": "alice"})
 
     # Verify the SQL used the jsonb merge operator and RETURNING clause
     executed_sql = str(mock_cursor.execute.call_args[0][0])
@@ -692,6 +690,7 @@ def test_update_entity_metadata_merges_and_returns(postgres_backend: PostgresEnt
     call_params = mock_cursor.execute.call_args[0][1]
     assert call_params[1] == 42  # entity_id cast to int
     import json
+
     patch_dict = json.loads(call_params[0])
     assert patch_dict == {"visibility": "public", "owner_id": "alice"}
 

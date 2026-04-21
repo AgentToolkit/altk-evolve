@@ -436,9 +436,7 @@ def test_update_entity_metadata_merges_and_returns(milvus_backend: MilvusEntityB
     monkeypatch.setattr(milvus_backend.milvus, "load_collection", load)
     monkeypatch.setattr(milvus_backend.embedding_model, "encode", arbitrary_embedding)
 
-    result = milvus_backend.update_entity_metadata(
-        "test_namespace", "42", {"visibility": "public", "owner_id": "alice"}
-    )
+    result = milvus_backend.update_entity_metadata("test_namespace", "42", {"visibility": "public", "owner_id": "alice"})
 
     # query must use direct id filter, not search_entities fan-out
     query.assert_called_once_with(

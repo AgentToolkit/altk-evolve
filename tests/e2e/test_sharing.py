@@ -23,9 +23,7 @@ async def test_publish_entity_makes_it_retrievable_publicly(mcp):
         entity_id = entity["id"]
 
         # Publish it
-        pub_resp = await client.call_tool_mcp(
-            "publish_entity", {"entity_id": entity_id, "user_id": "alice"}
-        )
+        pub_resp = await client.call_tool_mcp("publish_entity", {"entity_id": entity_id, "user_id": "alice"})
         published = json.loads(pub_resp.content[0].text)
         assert published["metadata"]["visibility"] == "public"
         assert published["metadata"]["owner_id"] == "alice"

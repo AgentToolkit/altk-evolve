@@ -51,6 +51,7 @@ def mcp(request, tmp_path):
     if backend_type == "milvus":
         try:
             from pymilvus import connections
+
             for alias, _ in connections.list_connections():
                 try:
                     connections.disconnect(alias)
@@ -61,6 +62,7 @@ def mcp(request, tmp_path):
 
         try:
             from milvus_lite.server_manager import server_manager_instance
+
             server_manager_instance.release_all()
         except Exception:
             pass
