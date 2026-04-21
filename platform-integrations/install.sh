@@ -164,11 +164,10 @@ def _ensure_source_dir():
     else:
         url = f"https://github.com/{EVOLVE_REPO}/archive/refs/tags/{EVOLVE_VERSION}.tar.gz"
 
-    result = subprocess.run(
-        f"curl -fsSL {url} | tar -xz -C {_tmpdir_download} --strip-components=1",
-        shell=True,
-    )
-    if result.returncode != 0:
+    curl = subprocess.Popen(["curl", "-fsSL", url], stdout=subprocess.PIPE)
+    tar  = subprocess.run(["tar", "-xz", "-C", _tmpdir_download, "--strip-components=1"], stdin=curl.stdout)
+    curl.wait()
+    if curl.returncode != 0 or tar.returncode != 0:
         raise RuntimeError(f"Failed to download or extract evolve from: {url}")
     if not os.path.isdir(os.path.join(_tmpdir_download, "platform-integrations")):
         raise RuntimeError("Downloaded archive does not contain platform-integrations/. Check EVOLVE_REPO and EVOLVE_VERSION.")
@@ -581,8 +580,8 @@ class ClaudeInstaller:
     def install(self, target_dir):
         info("Installing Claude plugin via marketplace")
 
-        marketplace_dir = Path(target_dir).resolve()
-        has_local_marketplace = (marketplace_dir / ".claude-plugin" / "marketplace.json").is_file()
+        marketplace_dir = Path(SOURCE_DIR).resolve() if SOURCE_DIR else None
+        has_local_marketplace = marketplace_dir is not None and (marketplace_dir / ".claude-plugin" / "marketplace.json").is_file()
         marketplace_source = str(marketplace_dir) if has_local_marketplace else EVOLVE_REPO
         if has_local_marketplace:
             info(f"📁 Marketplace source: {_c('1', marketplace_source)} (local)")
