@@ -54,6 +54,8 @@ def main():
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
+    resolved_evolve_dir = evolve_dir.resolve()
+    project_root = str(resolved_evolve_dir) if evolve_dir.name != ".evolve" else str(resolved_evolve_dir.parent)
     if PurePath(args.entity).name != args.entity or args.entity in {".", ".."}:
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
@@ -70,7 +72,7 @@ def main():
         sys.exit(1)
 
     entity = markdown_to_entity(src_path)
-    config = load_config(str(evolve_dir.resolve().parent))
+    config = load_config(project_root)
     identity = config.get("identity", {})
     effective_user = args.user or (identity.get("user") if isinstance(identity, dict) else None)
 
@@ -116,7 +118,7 @@ def main():
 
     try:
         audit_append(
-            project_root=str(evolve_dir.resolve()) if evolve_dir.name != ".evolve" else str(evolve_dir.resolve().parent),
+            project_root=project_root,
             action="publish",
             actor=effective_user or "unknown",
             entity=args.entity,
