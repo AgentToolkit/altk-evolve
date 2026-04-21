@@ -410,6 +410,9 @@ class DryRunFileOps(FileOps):
         dryrun(f"run: {' '.join(cmd_list)}")
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
+    def merge_yaml_custom_mode(self, source_yaml_path, target_yaml_path, slug):
+        dryrun(f"merge YAML custom mode '{slug}' → {target_yaml_path}")
+
 
 # ── Platform detection ────────────────────────────────────────────────────────
 
@@ -509,8 +512,11 @@ class BobInstaller:
             mcp_source = bob_source_full / "mcp.json"
             if not self.ops.is_dry_run and not mcp_source.exists():
                 raise RuntimeError(f"Source MCP config not found: {mcp_source}")
-            mcp_data = read_json(mcp_source)
-            self.ops.upsert_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"], mcp_data["mcpServers"]["evolve"])
+            if not self.ops.is_dry_run:
+                mcp_data = read_json(mcp_source)
+                self.ops.upsert_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"], mcp_data["mcpServers"]["evolve"])
+            else:
+                self.ops.upsert_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"], {})
             success(f"Upserted MCP server config in {bob_target / 'mcp.json'}")
 
             self.ops.merge_yaml_custom_mode(
