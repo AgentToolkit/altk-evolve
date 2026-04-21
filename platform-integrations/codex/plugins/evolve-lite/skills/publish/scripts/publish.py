@@ -91,15 +91,18 @@ def main():
     if dest_path.exists():
         print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
         sys.exit(1)
-    dest_path.write_text(entity_to_markdown(entity), encoding="utf-8")
-    src_path.unlink()
+    src_path.write_text(entity_to_markdown(entity), encoding="utf-8")
+    src_path.replace(dest_path)
 
-    audit_append(
-        project_root=str(evolve_dir.resolve()) if evolve_dir.name != ".evolve" else str(evolve_dir.resolve().parent),
-        action="publish",
-        actor=effective_user or "unknown",
-        entity=args.entity,
-    )
+    try:
+        audit_append(
+            project_root=str(evolve_dir.resolve()) if evolve_dir.name != ".evolve" else str(evolve_dir.resolve().parent),
+            action="publish",
+            actor=effective_user or "unknown",
+            entity=args.entity,
+        )
+    except Exception as exc:
+        print(f"Warning: failed to append audit entry for publish: {exc}", file=sys.stderr)
 
     print(f"Published: {args.entity} -> {dest_path}")
 

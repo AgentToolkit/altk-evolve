@@ -72,11 +72,10 @@ def load_entities_with_source(entities_dirs):
             if not entity.get("content"):
                 continue
 
+            entity.pop("_source", None)
             parts = md.relative_to(entities_dir).parts
-            for index, part in enumerate(parts):
-                if part == "subscribed" and index + 1 < len(parts):
-                    entity["_source"] = parts[index + 1]
-                    break
+            if parts and parts[0] == "subscribed" and len(parts) > 1:
+                entity["_source"] = parts[1]
 
             entities.append(entity)
 

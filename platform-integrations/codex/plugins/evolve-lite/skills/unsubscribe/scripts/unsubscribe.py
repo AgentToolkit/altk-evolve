@@ -50,13 +50,13 @@ def main():
     name = args.name
     subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
     dest = (evolve_dir / "entities" / "subscribed" / name).resolve()
-    if not dest.is_relative_to(subscribed_base):
+    if name in {"", "."} or dest == subscribed_base or not dest.is_relative_to(subscribed_base):
         print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
         sys.exit(1)
 
     legacy_base = (evolve_dir / "subscribed").resolve()
     legacy_dest = (evolve_dir / "subscribed" / name).resolve()
-    if not legacy_dest.is_relative_to(legacy_base):
+    if legacy_dest == legacy_base or not legacy_dest.is_relative_to(legacy_base):
         print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
         sys.exit(1)
 

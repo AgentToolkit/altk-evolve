@@ -389,7 +389,7 @@ class TestCodexSharingScripts:
         )
 
         assert result.returncode == 0
-        assert ". (invalid subscription name)" in result.stdout
+        assert "'.' (skipped - invalid subscription name)" in result.stdout
         assert not (evolve_dir / "entities" / "subscribed").exists()
 
     def test_sync_uses_workspace_config_with_custom_evolve_dir(self, temp_project_dir, local_repo):

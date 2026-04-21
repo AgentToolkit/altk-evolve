@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -27,22 +28,35 @@ from audit import append as audit_append  # noqa: E402
 from config import _parse_yaml, load_config  # noqa: E402
 
 
+_GIT_TIMEOUT = 30  # seconds
+
+
 def git_pull(repo_path, branch):
-    """Pull latest from origin."""
-    return subprocess.run(
-        ["git", "-C", str(repo_path), "pull", "origin", branch, "--ff-only"],
-        capture_output=True,
-        text=True,
-    )
+    """Pull latest from origin. Returns CompletedProcess, or None on timeout."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo_path), "pull", "origin", branch, "--ff-only"],
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"Warning: git pull timed out for {repo_path} (branch: {branch})", file=sys.stderr)
+        return None
 
 
 def count_delta(repo_path):
-    """Count added, modified, and deleted markdown files since last pull."""
+    """Count added/modified/deleted .md files since last pull."""
     result = subprocess.run(
         ["git", "-C", str(repo_path), "diff", "--name-status", "HEAD@{1}", "HEAD"],
         capture_output=True,
         text=True,
+        timeout=_GIT_TIMEOUT,
     )
+    if result.returncode != 0:
+        # HEAD@{1} doesn't exist (initial sync) — count all .md files as added.
+        added = len(list(repo_path.glob("**/*.md")))
+        return {"added": added, "updated": 0, "removed": 0}
     added = updated = removed = 0
     for line in result.stdout.splitlines():
         if not line.strip():
@@ -103,19 +117,25 @@ def main():
     summaries = []
     total_delta = {}
     any_changes = False
+    safe_name = re.compile(r"^[A-Za-z0-9._-]+$")
 
     for sub in subscriptions:
         if not isinstance(sub, dict):
             continue
         name = sub.get("name", "unknown")
         branch = sub.get("branch", "main")
+
+        if not safe_name.match(name):
+            summaries.append(f"{name!r} (skipped - invalid subscription name)")
+            continue
+
         subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
         repo_path = (evolve_dir / "entities" / "subscribed" / name).resolve()
         legacy_base = (evolve_dir / "subscribed").resolve()
         legacy_repo_path = (evolve_dir / "subscribed" / name).resolve()
 
         if repo_path == subscribed_base or not repo_path.is_relative_to(subscribed_base):
-            summaries.append(f"{name} (invalid subscription name)")
+            summaries.append(f"{name!r} (skipped - invalid subscription name)")
             continue
 
         if legacy_repo_path != legacy_base and legacy_repo_path.is_relative_to(legacy_base):
@@ -131,13 +151,17 @@ def main():
             continue
 
         pull_result = git_pull(repo_path, branch)
-        if pull_result.returncode != 0:
+        if pull_result is None or pull_result.returncode != 0:
             error_lines = (pull_result.stderr or pull_result.stdout or "").strip().splitlines()
             short_error = error_lines[-1] if error_lines else "unknown error"
             summaries.append(f"{name} (git pull failed: {short_error})")
+            total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             continue
 
-        delta = count_delta(repo_path)
+        if "Already up to date" in (pull_result.stdout or ""):
+            delta = {"added": 0, "updated": 0, "removed": 0}
+        else:
+            delta = count_delta(repo_path)
         total_delta[name] = delta
         if any(value > 0 for value in delta.values()):
             any_changes = True
