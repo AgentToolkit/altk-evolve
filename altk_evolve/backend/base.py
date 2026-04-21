@@ -88,6 +88,24 @@ class BaseEntityBackend(ABC):
         """
         self._update_entity(namespace_id, entity_id, entity_type, content_str, timestamp, metadata)
 
+    def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+        """Merge metadata_patch into an entity's metadata without touching content.
+
+        The default implementation fetches via search_entities, merges, then calls patch_entity.
+        DB-backed backends should override with a native atomic update.
+        """
+        from altk_evolve.utils.utils import serialize_content
+
+        results = self.search_entities(namespace_id, filters={"id": entity_id}, limit=1)
+        if not results:
+            from altk_evolve.schema.exceptions import EvolveException
+            raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
+        entity = results[0]
+        merged = {**(entity.metadata or {}), **metadata_patch}
+        timestamp = int(datetime.datetime.now(datetime.UTC).timestamp())
+        self.patch_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged)
+        return RecordedEntity(**{**entity.model_dump(), "metadata": merged})
+
     def update_entities(
         self,
         namespace_id: str,

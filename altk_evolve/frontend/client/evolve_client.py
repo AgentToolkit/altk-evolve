@@ -1,4 +1,3 @@
-import datetime
 import logging
 from typing import Any
 
@@ -94,14 +93,8 @@ class EvolveClient:
         return results[0] if results else None
 
     def patch_entity_metadata(self, namespace_id: str, entity_id: str, metadata_updates: dict) -> RecordedEntity:
-        """Fetch entity, merge metadata_updates, and write back without changing content or ID."""
-        entity = self.get_entity_by_id(namespace_id, entity_id)
-        if entity is None:
-            raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
-        merged_metadata = {**entity.metadata, **metadata_updates}
-        timestamp = int(datetime.datetime.now(datetime.UTC).timestamp())
-        self.backend.patch_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged_metadata)
-        return RecordedEntity(**{**entity.model_dump(), "metadata": merged_metadata})
+        """Merge metadata_updates into an entity without touching content or ID."""
+        return self.backend.update_entity_metadata(namespace_id, entity_id, metadata_updates)
 
     def get_public_entities(self, query: str | None = None, entity_type: str | None = None, limit: int = 100) -> list[RecordedEntity]:
         """Search for public entities across all namespaces."""

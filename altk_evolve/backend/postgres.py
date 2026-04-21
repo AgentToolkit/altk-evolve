@@ -277,6 +277,26 @@ class PostgresEntityBackend(BaseEntityBackend):
     def _delete_entity(self, namespace_id: str, entity_id: str) -> None:
         self.delete_entity_by_id(namespace_id=namespace_id, entity_id=entity_id)
 
+    def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+        try:
+            entity_id_int = int(entity_id)
+        except ValueError:
+            raise EvolveException(f"Invalid entity ID '{entity_id}': must be numeric.")
+        self._validate_namespace(namespace_id)
+        table = self._table_name(namespace_id)
+        with self.conn.cursor(row_factory=_entity_row_factory) as cur:
+            cur.execute(
+                sql.SQL(
+                    "UPDATE {table} SET metadata = metadata || %s::jsonb WHERE id = %s "
+                    "RETURNING id, type, content, created_at, metadata"
+                ).format(table=sql.Identifier(table)),
+                (json.dumps(metadata_patch), entity_id_int),
+            )
+            results = cur.fetchall()
+        if not results:
+            raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
+        return results[0]
+
     # ── search / delete ──────────────────────────────────────────────
 
     def search_entities(
