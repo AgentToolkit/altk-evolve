@@ -39,8 +39,8 @@ def run_script(script, project_dir, args=None, evolve_dir=None, expect_success=T
 @pytest.mark.parametrize(
     "config_text",
     [
-        'subscriptions:\n  - name: 123\n    remote: git@github.com:x/y.git\n    branch: main\n',
-        'subscriptions:\n  - name: alice\n    remote: git@github.com:x/y.git\n    branch: 123\n',
+        "subscriptions:\n  - name: 123\n    remote: git@github.com:x/y.git\n    branch: main\n",
+        "subscriptions:\n  - name: alice\n    remote: git@github.com:x/y.git\n    branch: 123\n",
         'subscriptions:\n  - name: "   "\n    remote: git@github.com:x/y.git\n    branch: main\n',
         'subscriptions:\n  - name: alice\n    remote: git@github.com:x/y.git\n    branch: "   "\n',
     ],
