@@ -306,8 +306,9 @@ class MilvusEntityBackend(BaseEntityBackend):
             raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
         entity = parse_milvus_entity(results[0])
         merged = {**(entity.metadata or {}), **metadata_patch}
-        timestamp = int(datetime.datetime.now(datetime.UTC).timestamp())
+        timestamp = int(entity.created_at.timestamp())
         from altk_evolve.utils.utils import serialize_content
+
         self._update_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged)
         self._post_update(namespace_id)
         return RecordedEntity(**{**entity.model_dump(), "metadata": merged})

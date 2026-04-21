@@ -11,7 +11,7 @@ from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.schema.core import Entity
 from altk_evolve.schema.exceptions import EvolveException
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.e2e
 
 
 @pytest.fixture

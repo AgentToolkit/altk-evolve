@@ -149,25 +149,25 @@ Evolve supports sharing entities across namespaces using a simple public/private
 ### MCP Tools
 
 **Publishing an entity:**
-```
+```python
 publish_entity(entity_id="42", user_id="alice")
 ```
 Sets `visibility=public` and records the owner and publish timestamp.
 
 **Unpublishing:**
-```
+```python
 unpublish_entity(entity_id="42")
 ```
 Reverts the entity to private. The entity stays in its namespace — only its visibility changes.
 
 **Retrieving public entities from all namespaces:**
-```
+```python
 get_entities(task="write safer code", include_public=True)
 ```
 Merges results from the caller's namespace with public entities from all other namespaces. Public results are annotated with `[public: {owner_id}]`.
 
 **Creating an entity with visibility:**
-```
+```python
 create_entity(content="...", entity_type="guideline", visibility="public", owner_id="alice")
 ```
 

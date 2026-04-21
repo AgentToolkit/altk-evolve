@@ -3,19 +3,24 @@ import uuid
 import pytest
 from altk_evolve.config.milvus import milvus_client_settings
 
+_EVOLVE_ENV_KEYS = ("EVOLVE_NAMESPACE_ID", "EVOLVE_BACKEND", "EVOLVE_SQLITE_PATH", "EVOLVE_DATA_DIR")
+
 
 @pytest.fixture(params=["filesystem", "milvus"])
 def mcp(request, tmp_path):
     backend_type = request.param
+
+    # Snapshot env before mutating so teardown can restore exactly
+    original_env = {key: os.environ.get(key) for key in _EVOLVE_ENV_KEYS}
+    original_milvus_uri = milvus_client_settings.uri
+
     os.environ["EVOLVE_NAMESPACE_ID"] = "test"
     os.environ["EVOLVE_BACKEND"] = backend_type
     os.environ["EVOLVE_SQLITE_PATH"] = str(tmp_path / f"test_{backend_type}.sqlite.db")
 
     milvus_db_file = None
-    original_milvus_uri = None
 
     if backend_type == "milvus":
-        original_milvus_uri = milvus_client_settings.uri
         _env_uri = os.getenv("EVOLVE_URI", "")
         if _env_uri.startswith("http"):
             milvus_client_settings.uri = _env_uri
@@ -43,6 +48,13 @@ def mcp(request, tmp_path):
 
     yield mcp_server_module.mcp
 
+    # Close the MCP singleton backend before NoneOut
+    if mcp_server_module._client is not None:
+        try:
+            mcp_server_module._client.backend.close()
+        except Exception:
+            pass
+
     try:
         evolve_client.backend.close()
     except Exception:
@@ -67,8 +79,7 @@ def mcp(request, tmp_path):
         except Exception:
             pass
 
-        if original_milvus_uri:
-            milvus_client_settings.uri = original_milvus_uri
+        milvus_client_settings.uri = original_milvus_uri
 
         for path in [milvus_db_file, f"{milvus_db_file}.lock"] if milvus_db_file else []:
             if path and os.path.exists(path):
@@ -76,6 +87,13 @@ def mcp(request, tmp_path):
                     os.remove(path)
                 except Exception:
                     pass
+
+    # Restore env vars to their pre-test state
+    for key, original_value in original_env.items():
+        if original_value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = original_value
 
     mcp_server_module._client = None
     mcp_server_module._namespace_initialized = False

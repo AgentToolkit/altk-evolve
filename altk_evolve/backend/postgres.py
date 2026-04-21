@@ -287,8 +287,7 @@ class PostgresEntityBackend(BaseEntityBackend):
         with self.conn.cursor(row_factory=_entity_row_factory) as cur:
             cur.execute(
                 sql.SQL(
-                    "UPDATE {table} SET metadata = metadata || %s::jsonb WHERE id = %s "
-                    "RETURNING id, type, content, created_at, metadata"
+                    "UPDATE {table} SET metadata = metadata || %s::jsonb WHERE id = %s RETURNING id, type, content, created_at, metadata"
                 ).format(table=sql.Identifier(table)),
                 (json.dumps(metadata_patch), entity_id_int),
             )

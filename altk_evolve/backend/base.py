@@ -99,10 +99,11 @@ class BaseEntityBackend(ABC):
         results = self.search_entities(namespace_id, filters={"id": entity_id}, limit=1)
         if not results:
             from altk_evolve.schema.exceptions import EvolveException
+
             raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
         entity = results[0]
         merged = {**(entity.metadata or {}), **metadata_patch}
-        timestamp = int(datetime.datetime.now(datetime.UTC).timestamp())
+        timestamp = int(entity.created_at.timestamp())
         self.patch_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged)
         return RecordedEntity(**{**entity.model_dump(), "metadata": merged})
 

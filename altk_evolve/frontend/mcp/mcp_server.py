@@ -278,6 +278,8 @@ def create_entity(
             except json.JSONDecodeError as e:
                 logger.exception(f"Invalid JSON in metadata parameter: {str(e)}")
                 return json.dumps({"error": "Invalid JSON", "message": f"Failed to parse metadata: {str(e)}", "invalid_metadata": metadata})
+            if not isinstance(metadata_dict, dict):
+                return json.dumps({"error": "Invalid metadata type", "message": "metadata must be a JSON object", "invalid_metadata": metadata})
 
         if entity_type in ("guideline", "policy"):
             metadata_dict.setdefault("creation_mode", "manual")
@@ -324,14 +326,16 @@ def publish_entity(entity_id: str, user_id: str | None = None) -> str:
     try:
         from datetime import datetime, UTC
 
+        metadata_updates: dict = {
+            "visibility": "public",
+            "published_at": datetime.now(UTC).isoformat(),
+        }
+        if user_id is not None:
+            metadata_updates["owner_id"] = user_id
         updated = get_client().patch_entity_metadata(
             namespace_id=evolve_config.namespace_id,
             entity_id=entity_id,
-            metadata_updates={
-                "visibility": "public",
-                "owner_id": user_id,
-                "published_at": datetime.now(UTC).isoformat(),
-            },
+            metadata_updates=metadata_updates,
         )
         return json.dumps({"id": updated.id, "type": updated.type, "content": updated.content, "metadata": updated.metadata})
     except EvolveException as e:

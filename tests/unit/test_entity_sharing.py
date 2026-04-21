@@ -87,7 +87,7 @@ def test_publish_entity_no_user_id(mock_get_client):
     publish_entity(entity_id="42")
 
     call_kwargs = mock_get_client.patch_entity_metadata.call_args[1]
-    assert call_kwargs["metadata_updates"]["owner_id"] is None
+    assert "owner_id" not in call_kwargs["metadata_updates"]
 
 
 def test_publish_entity_not_found(mock_get_client):
