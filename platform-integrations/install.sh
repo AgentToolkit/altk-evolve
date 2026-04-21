@@ -590,11 +590,7 @@ class ClaudeInstaller:
 
         claude = shutil.which("claude")
         if not claude:
-            warn("Could not install Claude plugin automatically. To install manually, run:")
-            print()
-            print(f"    claude plugin marketplace add {marketplace_source}")
-            print(f"    claude plugin install evolve-lite@evolve-marketplace")
-            print()
+            warn("Claude CLI not found. Install it from https://claude.ai/download, then re-run this script.")
             return
 
         result = self.ops.run_subprocess([claude, "plugin", "marketplace", "add", marketplace_source])
