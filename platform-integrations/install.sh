@@ -888,7 +888,9 @@ def cmd_install(args):
     print()
 
     errors = []
-    for platform in platforms:
+    for i, platform in enumerate(platforms):
+        if i > 0:
+            print()
         try:
             installer = PLATFORM_CLASSES[platform](ops)
             if platform == "bob":
@@ -927,7 +929,9 @@ def cmd_uninstall(args):
 
     print()
     errors = []
-    for platform in platforms:
+    for i, platform in enumerate(platforms):
+        if i > 0:
+            print()
         try:
             PLATFORM_CLASSES[platform](ops).uninstall(target_dir)
         except Exception as e:
