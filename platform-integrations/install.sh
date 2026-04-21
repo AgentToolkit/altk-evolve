@@ -274,7 +274,7 @@ class FileOps:
         return False
 
     def run_subprocess(self, cmd_list):
-        return subprocess.run(cmd_list, capture_output=True, text=True)
+        return subprocess.run(cmd_list)
 
     # ── JSON helpers ──────────────────────────────────────────────────────────
 
@@ -578,10 +578,6 @@ class ClaudeInstaller:
         result = self.ops.run_subprocess([claude, "plugin", "marketplace", "add", marketplace_source])
         if result.returncode != 0:
             warn(f"claude plugin marketplace add exited with code {result.returncode}")
-            if result.stderr.strip():
-                warn(f"    {result.stderr.strip()}")
-        elif result.stdout.strip():
-            print(f"    {result.stdout.strip()}")
 
         result = self.ops.run_subprocess([claude, "plugin", "install", "evolve-lite@evolve-marketplace"])
         if result.returncode == 0:
@@ -589,12 +585,8 @@ class ClaudeInstaller:
                 dryrun("Claude plugin would be installed via CLI")
             else:
                 success("Claude plugin installed via CLI")
-                if result.stdout.strip():
-                    print(f"    {result.stdout.strip()}")
         else:
             warn(f"claude plugin install exited with code {result.returncode}")
-            if result.stderr.strip():
-                warn(f"    {result.stderr.strip()}")
             warn("To install manually, run:")
             print()
             print(f"    claude plugin marketplace add {marketplace_source}")
@@ -613,7 +605,7 @@ class ClaudeInstaller:
         if result.returncode == 0:
             success("Claude plugin uninstalled via CLI")
         else:
-            warn(f"claude plugin uninstall exited with code {result.returncode}: {result.stderr.strip()}")
+            warn(f"claude plugin uninstall exited with code {result.returncode}")
             warn(f"Run manually: claude plugin uninstall {CLAUDE_PLUGIN}")
 
     def status(self, target_dir):
