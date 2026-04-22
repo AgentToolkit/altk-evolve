@@ -67,6 +67,7 @@ def _make_entity(entity_id="42", visibility="private", owner_id=None):
 
 def test_publish_entity_sets_public(mock_get_client):
     updated = _make_entity(visibility="public", owner_id="alice")
+    mock_get_client.get_entity_by_id.return_value = _make_entity(owner_id="alice")
     mock_get_client.patch_entity_metadata.return_value = updated
 
     result = json.loads(publish_entity(entity_id="42", user_id="alice"))
@@ -82,6 +83,7 @@ def test_publish_entity_sets_public(mock_get_client):
 
 def test_publish_entity_no_user_id(mock_get_client):
     updated = _make_entity(visibility="public")
+    mock_get_client.get_entity_by_id.return_value = _make_entity()
     mock_get_client.patch_entity_metadata.return_value = updated
 
     publish_entity(entity_id="42")
@@ -91,9 +93,7 @@ def test_publish_entity_no_user_id(mock_get_client):
 
 
 def test_publish_entity_not_found(mock_get_client):
-    from altk_evolve.schema.exceptions import EvolveException
-
-    mock_get_client.patch_entity_metadata.side_effect = EvolveException("Entity '99' not found")
+    mock_get_client.get_entity_by_id.return_value = None
 
     result = json.loads(publish_entity(entity_id="99", user_id="alice"))
     assert "error" in result
@@ -104,6 +104,7 @@ def test_publish_entity_not_found(mock_get_client):
 
 def test_unpublish_entity_reverts_to_private(mock_get_client):
     updated = _make_entity(visibility="private")
+    mock_get_client.get_entity_by_id.return_value = _make_entity()
     mock_get_client.patch_entity_metadata.return_value = updated
 
     result = json.loads(unpublish_entity(entity_id="42"))

@@ -144,10 +144,11 @@ def get_entities_logic(task: str, entity_type: str = "guideline", include_public
             entity_type=entity_type,
             exclude_namespace_ids=[evolve_config.namespace_id],
         )
+        private_ids: set[str] = {e.id for e in private_results}
         seen_public_ids: set[str] = set()
         idx = len(private_results) + 1
         for entity in public_results:
-            if entity.id in seen_public_ids:
+            if entity.id in private_ids or entity.id in seen_public_ids:
                 continue
             seen_public_ids.add(entity.id)
             owner = (entity.metadata or {}).get("owner_id", "unknown")
@@ -356,7 +357,7 @@ def publish_entity(entity_id: str, user_id: str | None = None) -> str:
             "visibility": "public",
             "published_at": datetime.now(UTC).isoformat(),
         }
-        if user_id is not None and existing_owner is None:
+        if user_id is not None:
             metadata_updates["owner_id"] = user_id
         updated = get_client().patch_entity_metadata(
             namespace_id=evolve_config.namespace_id,
