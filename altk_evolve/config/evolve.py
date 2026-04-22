@@ -3,7 +3,7 @@ from typing import Literal
 
 
 class EvolveConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="EVOLVE_")
+    model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
     backend: Literal["milvus", "filesystem", "postgres"] = "filesystem"
     namespace_id: str = "evolve"
     settings: BaseSettings | None = None

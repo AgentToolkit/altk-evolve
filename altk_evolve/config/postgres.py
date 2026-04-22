@@ -3,7 +3,7 @@ from pydantic import Field
 
 
 class PostgresDBSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="EVOLVE_PG_")
+    model_config = SettingsConfigDict(env_prefix="EVOLVE_PG_", env_file=".env", extra="ignore")
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     host: str = Field(default="localhost")
     port: int = Field(default=5432)

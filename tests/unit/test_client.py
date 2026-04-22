@@ -3,6 +3,8 @@ Simple tests for EvolveClient wrapper interface.
 """
 
 import datetime
+import importlib
+
 import pytest
 
 from altk_evolve.backend.base import BaseEntityBackend
@@ -18,6 +20,27 @@ def evolve_client() -> EvolveClient:
     config = EvolveConfig(backend="filesystem")
     evolve_client = EvolveClient(config=config)
     return evolve_client
+
+
+@pytest.mark.unit
+def test_evolve_config_reads_backend_from_dotenv(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("EVOLVE_BACKEND=postgres\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("EVOLVE_BACKEND", raising=False)
+
+    import altk_evolve.config.evolve as evolve_module
+
+    original_backend = evolve_module.evolve_config.backend
+    reloaded_module = importlib.reload(evolve_module)
+
+    try:
+        assert reloaded_module.EvolveConfig().backend == "postgres"
+        assert reloaded_module.evolve_config.backend == "postgres"
+    finally:
+        reloaded_module.evolve_config.backend = original_backend
+        importlib.reload(reloaded_module)
 
 
 @pytest.mark.unit
