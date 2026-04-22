@@ -15,6 +15,7 @@ CLAUDE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-l
 CODEX_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite"
 SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
 SYNC_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/sync/scripts/sync.py"
+RETRIEVE_SCRIPT = CODEX_PLUGIN_ROOT / "skills/recall/scripts/retrieve_entities.py"
 SYNC_SCRIPT_VARIANTS = [
     ("claude", CLAUDE_PLUGIN_ROOT / "skills/sync/scripts/sync.py"),
     ("codex", CODEX_PLUGIN_ROOT / "skills/sync/scripts/sync.py"),
@@ -160,7 +161,22 @@ class TestSync:
         )
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
         mirrored = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline"
-        assert not (mirrored / "link.md").exists()
+        assert (mirrored / "link.md").exists()
+
+        env = {**os.environ, "EVOLVE_DIR": str(p["evolve_dir"])}
+        result = subprocess.run(
+            [sys.executable, str(RETRIEVE_SCRIPT)],
+            input=json.dumps({"prompt": "How do I write clean code?"}),
+            capture_output=True,
+            text=True,
+            cwd=str(p["project_dir"]),
+            env=env,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert "Real content." in result.stdout
+        assert "link.md" not in result.stdout
 
     def test_skips_invalid_subscription_name(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
