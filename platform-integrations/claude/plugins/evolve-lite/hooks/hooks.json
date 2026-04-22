@@ -27,9 +27,8 @@
         "matcher": "",
         "hooks": [
           {
-            "type": "agent",
-            "prompt": "Run the evolve-lite:learn skill, unless stop_hook_active is set in $ARGUMENTS.",
-            "timeout": 120
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/on_stop.sh"
           }
         ]
       }
