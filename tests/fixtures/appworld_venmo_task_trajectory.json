@@ -100,7 +100,7 @@
     "content": "Output:\n```\n[\n {\n  \"account_name\": \"amazon\",\n  \"password\": \"Dd^+uzP\"\n },\n {\n  \"account_name\": \"file_system\",\n  \"password\": \"QF^61f3\"\n },\n {\n  \"account_name\": \"gmail\",\n  \"password\": \"*WytI+J\"\n },\n {\n  \"account_name\": \"phone\",\n  \"password\": \"u&Xg}+5\"\n },\n {\n  \"account_name\": \"simple_note\",\n  \"password\": \"jXbJu50\"\n },\n {\n  \"account_name\": \"splitwise\",\n  \"password\": \"mi)AdQ3\"\n },\n {\n  \"account_name\": \"spotify\",\n  \"password\": \"Q3c_DvY\"\n },\n {\n  \"account_name\": \"todoist\",\n  \"password\": \"=Z$WBI0\"\n },\n {\n  \"account_name\": \"venmo\",\n  \"password\": \"z*@]t]Q\"\n }\n]\n```\n\n"
   },
   {
-    "content": "Now I'll log in to the phone app using your phone number and the password retrieved.\n\n```python\nphone_login = apis.phone.login(username=\"7273731063\", password=\"u&Xg}+5\")\nprint(phone_login)\n```\n\n",
+    "content": "Now I'll log in to the phone app using your phone number and the password retrieved.\n\n```python\nphone_login = apis.phone.login(**phone_credentials)\nprint(phone_login)\n```\n\n",
     "refusal": null,
     "role": "assistant",
     "annotations": [],
@@ -113,7 +113,7 @@
   },
   {
     "role": "user",
-    "content": "Output:\n```\n{\n \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwaG9uZSs3MjczNzMxMDYzIiwiZXhwIjoxNjg0NDEyMDk4fQ.jo0TktWpkHfQr2HWWPdBNOb_RCVSYDCCCzau-mi9hTc\",\n \"token_type\": \"Bearer\"\n}\n```\n\n"
+    "content": "Output:\n```\n{\n \"access_token\": \"REDACTED_FAKE_JWT\",\n \"token_type\": \"Bearer\"\n}\n```\n\n"
   },
   {
     "content": "Now I'll search your contacts for roommates by using the `relationship` parameter set to \"roommate\". I'll retrieve all pages to ensure I get all roommates.\n\n```python\nroommates = []\npage_index = 0\nwhile True:\n    result = apis.phone.search_contacts(\n        access_token=phone_login[\"access_token\"],\n        relationship=\"roommate\",\n        page_index=page_index,\n        page_limit=20\n    )\n    if not result or len(result) == 0:\n        break\n    roommates.extend(result)\n    page_index += 1\nprint(roommates)\n```\n\n",
@@ -164,7 +164,7 @@
     "content": "Output:\n```\n{\n \"app_name\": \"venmo\",\n \"api_name\": \"login\",\n \"path\": \"/venmo/auth/token\",\n \"method\": \"POST\",\n \"description\": \"Login to your account.\",\n \"parameters\": [\n  {\n   \"name\": \"username\",\n   \"type\": \"string\",\n   \"required\": true,\n   \"description\": \"Your account email.\",\n   \"default\": null,\n   \"constraints\": []\n  },\n  {\n   \"name\": \"password\",\n   \"type\": \"string\",\n   \"required\": true,\n   \"description\": \"Your account password.\",\n   \"default\": null,\n   \"constraints\": []\n  }\n ],\n \"response_schemas\": {\n  \"success\": {\n   \"access_token\": \"string\",\n   \"token_type\": \"string\"\n  },\n  \"failure\": {\n   \"message\": \"string\"\n  }\n }\n}\n```\n\n"
   },
   {
-    "content": "Let's log in to Venmo using your email and password.\n\n```python\nvenmo_login = apis.venmo.login(username=\"tr_solo@gmail.com\", password=\"z*@]t]Q\")\nprint(venmo_login)\n```\n\n",
+    "content": "Let's log in to Venmo using your email and password.\n\n```python\nvenmo_login = apis.venmo.login(**venmo_credentials)\nprint(venmo_login)\n```\n\n",
     "refusal": null,
     "role": "assistant",
     "annotations": [],
@@ -177,7 +177,7 @@
   },
   {
     "role": "user",
-    "content": "Output:\n```\n{\n \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZW5tbyt0cl9zb2xvQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjc0MX0.CnnFJ-eY44bM2SuBZSiYPVEJ2y6ltC8EDHnTzUyB6mg\",\n \"token_type\": \"Bearer\"\n}\n```\n\n"
+    "content": "Output:\n```\n{\n \"access_token\": \"REDACTED_FAKE_JWT\",\n \"token_type\": \"Bearer\"\n}\n```\n\n"
   },
   {
     "content": "Now, let's check the Venmo API for making payment requests to others.\n\n```python\nprint(apis.api_docs.show_api_doc(app_name='venmo', api_name='request_payment'))\n```\n\n",
