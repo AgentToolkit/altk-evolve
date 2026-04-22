@@ -1,4 +1,4 @@
-"""Cluster tip entities by task description similarity."""
+"""Cluster guideline entities by task description similarity."""
 
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ from sentence_transformers import SentenceTransformer
 from altk_evolve.config.llm import llm_settings
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
-from altk_evolve.schema.tips import Tip, TipGenerationResponse
+from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResponse
 from altk_evolve.utils.utils import clean_llm_response
 
 logger = logging.getLogger(__name__)
 
 MAX_CLUSTER_ENTITIES = 5000
 
-_COMBINE_TIPS_TEMPLATE = Template((Path(__file__).parent / "prompts/combine_tips.jinja2").read_text())
+_COMBINE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/combine_guidelines.jinja2").read_text())
 
 
 @lru_cache(maxsize=4)
@@ -127,27 +127,27 @@ def cluster_entities(
     return clusters
 
 
-def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
-    """Combine tips from a cluster of related entities into consolidated guidelines.
+def combine_cluster(entities: list[RecordedEntity]) -> list[Guideline]:
+    """Combine guidelines from a cluster of related entities into consolidated guidelines.
 
-    Uses an LLM to merge overlapping tips into fewer, non-redundant guidelines.
+    Uses an LLM to merge overlapping guidelines into fewer, non-redundant guidelines.
 
     Args:
         entities: Cluster of related entities to combine.
 
     Returns:
-        Consolidated list of tips.
+        Consolidated list of guidelines.
 
     Raises:
         EvolveException: If the LLM call fails after 3 attempts.
     """
     supported_params = get_supported_openai_params(
-        model=llm_settings.tips_model,
+        model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
     supports_response_format = bool(supported_params and "response_format" in supported_params)
     response_schema_enabled = supports_response_schema(
-        model=llm_settings.tips_model,
+        model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
     constrained_decoding_supported = supports_response_format and response_schema_enabled
@@ -166,7 +166,7 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
             return [str(x) for x in raw]
         return [str(raw)]
 
-    tips = [
+    guidelines = [
         {
             "content": str(e.content),
             "rationale": (e.metadata or {}).get("rationale", ""),
@@ -177,9 +177,9 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
         for e in entities
     ]
 
-    prompt = _COMBINE_TIPS_TEMPLATE.render(
+    prompt = _COMBINE_GUIDELINES_TEMPLATE.render(
         task_descriptions=task_descriptions,
-        tips=tips,
+        guidelines=guidelines,
         constrained_decoding_supported=constrained_decoding_supported,
     )
 
@@ -191,9 +191,9 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
             if constrained_decoding_supported:
                 content = (
                     completion(
-                        model=llm_settings.tips_model,
+                        model=llm_settings.guidelines_model,
                         messages=[{"role": "user", "content": prompt}],
-                        response_format=TipGenerationResponse,
+                        response_format=GuidelineGenerationResponse,
                         custom_llm_provider=llm_settings.custom_llm_provider,
                     )
                     .choices[0]
@@ -205,7 +205,7 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
             else:
                 content = (
                     completion(
-                        model=llm_settings.tips_model,
+                        model=llm_settings.guidelines_model,
                         messages=[{"role": "user", "content": prompt}],
                         custom_llm_provider=llm_settings.custom_llm_provider,
                     )
@@ -216,10 +216,10 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Tip]:
                     raise EvolveException("LLM returned None content for combine_cluster")
                 clean_response = clean_llm_response(content)
 
-            return TipGenerationResponse.model_validate(json.loads(clean_response)).tips
+            return GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
         except Exception as e:
             last_error = e
             if attempt < 2:
                 continue
 
-    raise EvolveException("Failed to combine cluster tips after 3 attempts") from last_error
+    raise EvolveException("Failed to combine cluster guidelines after 3 attempts") from last_error

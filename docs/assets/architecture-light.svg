@@ -102,7 +102,7 @@
          <ellipse class="db-ell" cx="90" cy="0"   rx="90"   ry="20"   id="ellipse14"/>
          <ellipse class="db-ell" cx="90" cy="120" rx="90"   ry="20"   id="ellipse16"/>
          <text class="txt"  x="90" y="34" id="text17">Entities DB</text>
-         <text class="stxt" x="90" y="54" id="text18">Guidelines, tips, policies,</text>
+         <text class="stxt" x="90" y="54" id="text18">Guidelines, guidelines, policies,</text>
          <text class="stxt" x="90" y="71" id="text19">scripts, patterns, rules, plans,</text>
          <text class="stxt" x="90" y="88" id="text20">SOPs, etc.</text>
       </g>

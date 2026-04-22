@@ -1,11 +1,11 @@
 """
-Phoenix Sync - Fetch trajectories from Arize Phoenix and generate tips.
+Phoenix Sync - Fetch trajectories from Arize Phoenix and generate guidelines.
 
 This module provides functionality to:
 1. Fetch agent trajectories from Phoenix's REST API
 2. Deduplicate already-processed trajectories
-3. Generate tips/guidelines from new trajectories
-4. Store both trajectories and tips in the Evolve backend
+3. Generate guidelines from new trajectories
+4. Store both trajectories and guidelines in the Evolve backend
 """
 
 import json
@@ -17,7 +17,7 @@ from typing import Any
 from altk_evolve.config.phoenix import phoenix_settings
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
-from altk_evolve.llm.tips.tips import generate_tips
+from altk_evolve.llm.guidelines.guidelines import generate_guidelines
 from altk_evolve.schema.core import Entity
 from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
@@ -31,7 +31,7 @@ class SyncResult:
 
     processed: int
     skipped: int
-    tips_generated: int
+    guidelines_generated: int
     errors: list[str]
 
 
@@ -442,9 +442,9 @@ class PhoenixSync:
         return {**trajectory, "messages": cleaned_messages}
 
     def _process_trajectory(self, trajectory: dict) -> int:
-        """Process a single trajectory: store it and generate tips.
+        """Process a single trajectory: store it and generate guidelines.
 
-        Returns the number of tips generated.
+        Returns the number of guidelines generated.
         """
         # Store trajectory as a single entity with all messages
         messages = trajectory.get("messages", [])
@@ -468,34 +468,34 @@ class PhoenixSync:
                 enable_conflict_resolution=False,
             )
 
-        # Generate tips from the trajectory
-        result = generate_tips(trajectory["messages"])
+        # Generate guidelines from the trajectory
+        result = generate_guidelines(trajectory["messages"])
 
-        if result.tips:
-            tip_entities = [
+        if result.guidelines:
+            guideline_entities = [
                 Entity(
                     type="guideline",
-                    content=tip.content,
+                    content=guideline.content,
                     metadata={
-                        "category": tip.category,
-                        "rationale": tip.rationale,
-                        "trigger": tip.trigger,
-                        "implementation_steps": tip.implementation_steps,
+                        "category": guideline.category,
+                        "rationale": guideline.rationale,
+                        "trigger": guideline.trigger,
+                        "implementation_steps": guideline.implementation_steps,
                         "source_task_id": trajectory["trace_id"],
                         "source_span_id": trajectory["span_id"],
                         "task_description": result.task_description,
                         "creation_mode": "auto-phoenix",
                     },
                 )
-                for tip in result.tips
+                for guideline in result.guidelines
             ]
             self.client.update_entities(
                 namespace_id=self.namespace_id,
-                entities=tip_entities,
+                entities=guideline_entities,
                 enable_conflict_resolution=True,
             )
 
-        return len(result.tips)
+        return len(result.guidelines)
 
     def sync(
         self,
@@ -503,14 +503,14 @@ class PhoenixSync:
         include_errors: bool = False,
     ) -> SyncResult:
         """
-        Fetch new trajectories from Phoenix and generate tips.
+        Fetch new trajectories from Phoenix and generate guidelines.
 
         Args:
             limit: Maximum number of spans to fetch from Phoenix
             include_errors: Whether to include failed/error spans
 
         Returns:
-            SyncResult with counts of processed, skipped, and tips generated
+            SyncResult with counts of processed, skipped, and guidelines generated
         """
         logger.info(f"Starting sync from {self.phoenix_url} to namespace '{self.namespace_id}'")
 
@@ -526,7 +526,7 @@ class PhoenixSync:
 
         processed = 0
         skipped = 0
-        tips_generated = 0
+        guidelines_generated = 0
         errors = []
 
         for span in spans:
@@ -557,10 +557,10 @@ class PhoenixSync:
                 trajectory = self._clean_trajectory(trajectory)
 
                 if trajectory["messages"]:
-                    tips_count = self._process_trajectory(trajectory)
+                    guidelines_count = self._process_trajectory(trajectory)
                     processed += 1
-                    tips_generated += tips_count
-                    logger.info(f"Processed span {span_id[:12]}... - generated {tips_count} tips")
+                    guidelines_generated += guidelines_count
+                    logger.info(f"Processed span {span_id[:12]}... - generated {guidelines_count} guidelines")
             except Exception as e:
                 error_msg = f"Error processing span {span_id}: {e}"
                 logger.exception(error_msg)
@@ -569,10 +569,12 @@ class PhoenixSync:
         result = SyncResult(
             processed=processed,
             skipped=skipped,
-            tips_generated=tips_generated,
+            guidelines_generated=guidelines_generated,
             errors=errors,
         )
 
-        logger.info(f"Sync complete: {processed} processed, {skipped} skipped, {tips_generated} tips generated, {len(errors)} errors")
+        logger.info(
+            f"Sync complete: {processed} processed, {skipped} skipped, {guidelines_generated} guidelines generated, {len(errors)} errors"
+        )
 
         return result

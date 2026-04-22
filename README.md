@@ -133,12 +133,12 @@ _Lite Mode omits the Interaction layer. All activity is performed in-agent_
   <img src="docs/assets/architecture-wide-light.svg" alt="Architecture" width="480">
 </picture>
 
-## Tip Provenance
-Evolve automatically tracks the origin of every guideline it generates or stores. Every tip entity contains `metadata` identifying its source:
-- `creation_mode`: Identifies how the tip was created (`auto-phoenix` via trace observability, `auto-mcp` via trajectory saving tools, or `manual`).
-- `source_task_id`: The ID of the original trace or task that inspired the tip, providing full audibility.
+## Guideline Provenance
+Evolve automatically tracks the origin of every guideline it generates or stores. Every guideline entity contains `metadata` identifying its source:
+- `creation_mode`: Identifies how the guideline was created (`auto-phoenix` via trace observability, `auto-mcp` via trajectory saving tools, or `manual`).
+- `source_task_id`: The ID of the original trace or task that inspired the guideline, providing full audibility.
 
-See the [Low-Code Tracing Guide](docs/guides/low-code-tracing.md#6-understanding-tip-provenance-metadata) for more details.
+See the [Low-Code Tracing Guide](docs/guides/low-code-tracing.md#6-understanding-guideline-provenance-metadata) for more details.
 
 
 ## Contributing, Community, and Feedback

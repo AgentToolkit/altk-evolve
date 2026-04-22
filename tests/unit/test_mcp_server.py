@@ -20,27 +20,27 @@ def mock_get_client():
 
 
 def test_save_trajectory_metadata_injection(mock_get_client):
-    # Mock tip generation to prevent actual LLM calls
-    with patch("altk_evolve.frontend.mcp.mcp_server.generate_tips") as mock_generate_tips:
+    # Mock guideline generation to prevent actual LLM calls
+    with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_generate_guidelines:
         mock_result = MagicMock()
         mock_tip = MagicMock()
         mock_tip.content = "Always write unit tests"
         mock_tip.category = "testing"
         mock_tip.rationale = "Helps catch bugs early"
         mock_tip.trigger = "writing code"
-        mock_result.tips = [mock_tip]
+        mock_result.guidelines = [mock_tip]
         mock_result.task_description = "Add feature"
-        mock_generate_tips.return_value = mock_result
+        mock_generate_guidelines.return_value = mock_result
 
         trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
         task_id = str(uuid.uuid4())
 
         save_trajectory(trajectory_data=trajectory_data, task_id=task_id)
 
-        # Ensure update_entities was called twice (once for trajectory, once for tips)
+        # Ensure update_entities was called twice (once for trajectory, once for guidelines)
         assert mock_get_client.update_entities.call_count == 2
 
-        # Second call is for tips
+        # Second call is for guidelines
         call_args = mock_get_client.update_entities.call_args_list[1][1]
         entities = call_args["entities"]
 

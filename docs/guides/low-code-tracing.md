@@ -25,7 +25,7 @@ flowchart TB
     
     subgraph Sync["evolve sync phoenix"]
         S1["Fetch Traces"]
-        S2["Generate Tips"]
+        S2["Generate Guidelines"]
         S3["Store in DB"]
     end
     
@@ -66,7 +66,7 @@ export EVOLVE_TRACING_PROJECT=my-agent  # Optional, defaults to "evolve-agent"
 export EVOLVE_TRACING_ENDPOINT=http://localhost:6006/v1/traces  # Optional
 
 # For Evolve example scripts only (e.g. examples/low_code/smolagents_demo.py):
-export EVOLVE_EXAMPLE_AGENT_MODEL="Azure/gpt-4.1" # Overrides default tips model for agent execution
+export EVOLVE_EXAMPLE_AGENT_MODEL="Azure/gpt-4.1" # Overrides default guidelines model for agent execution
 ```
 
 > **Note**: Auto-patching will skip if existing tracing is detected. Use `enable_tracing(force=True)` to override.
@@ -205,16 +205,16 @@ uv run evolve sync phoenix \
     --include-errors
 ```
 
-### 5. Verify Generated Tips
+### 5. Verify Generated Guidelines
 
 ```bash
 EVOLVE_BACKEND=filesystem \
 uv run evolve entities list evolve --type guideline
 ```
 
-### 6. Understanding Tip Provenance (Metadata)
+### 6. Understanding Guideline Provenance (Metadata)
 
-When Evolve generates tips from traced trajectories (or from explicit `save_trajectory` calls), it automatically injects provenance metadata into the resulting `guideline` entities. This helps you track exactly *where* a tip came from and *how* it was created.
+When Evolve generates guidelines from traced trajectories (or from explicit `save_trajectory` calls), it automatically injects provenance metadata into the resulting `guideline` entities. This helps you track exactly *where* a guideline came from and *how* it was created.
 
 ```json
 {
@@ -229,17 +229,17 @@ When Evolve generates tips from traced trajectories (or from explicit `save_traj
 }
 ```
 
-*   **`creation_mode`**: Describes the origin of the tip.
+*   **`creation_mode`**: Describes the origin of the guideline.
     *   `"auto-phoenix"`: Auto-generated from observability traces via `evolve sync phoenix`.
     *   `"auto-mcp"`: Auto-generated when an agent directly calls the Evolve `save_trajectory` MCP tool.
     *   `"manual"`: Explicitly created by a human or agent (e.g., via the `create_entity` MCP tool).
-*   **`source_task_id`**: The originating trace ID (for Phoenix) or task ID (for MCP), linking the tip back to the specific execution that inspired it.
+*   **`source_task_id`**: The originating trace ID (for Phoenix) or task ID (for MCP), linking the guideline back to the specific execution that inspired it.
 
 ---
 
 ## End-to-End Verification
 
-Evolve includes a comprehensive E2E verification suite to ensure that tracing and tip generation work correctly across all supported agents.
+Evolve includes a comprehensive E2E verification suite to ensure that tracing and guideline generation work correctly across all supported agents.
 
 ### Running the E2E Pipeline
 
@@ -266,9 +266,9 @@ uv run pytest tests/e2e/test_e2e_pipeline.py -k openai_agents -m e2e --run-e2e -
 The pipeline performs the following for each agent:
 1.  **Executes the Agent**: Run the agent script (e.g., `smolagents_demo.py`) with auto-instrumentation enabled.
 2.  **Verifies Traces**: Checks the Phoenix server for the existence of traces in a unique, timestamped project.
-3.  **Generates Tips**: Runs `evolve sync` on the generated traces to verify that tips are successfully created from the agent's execution.
+3.  **Generates Guidelines**: Runs `evolve sync` on the generated traces to verify that guidelines are successfully created from the agent's execution.
 
-This ensures the entire "Agent -> Traces -> Tips" loop is functional.
+This ensures the entire "Agent -> Traces -> Guidelines" loop is functional.
 
 ---
 

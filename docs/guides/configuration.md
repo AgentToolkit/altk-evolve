@@ -43,7 +43,7 @@ All configuration variables are prefixed with `EVOLVE_`.
 |----------|-------------------------------------------------------------------------------|------------------------------------------|
 | `EVOLVE_BACKEND` | Backend provider (`milvus`, `filesystem`, or `postgres`)                      | `milvus`                                 |
 | `EVOLVE_NAMESPACE_ID` | Namespace ID for isolation                                                    | `evolve`                                 |
-| `EVOLVE_TIPS_MODEL` | Model for tip generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
+| `EVOLVE_TIPS_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_FACT_EXTRACTION_MODEL` | Model for fact extraction only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_MODEL_NAME` | Global fallback model for all Evolve LLM calls | `gpt-4o` |

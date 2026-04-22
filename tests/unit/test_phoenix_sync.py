@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch, Mock
 import pytest
 
 from altk_evolve.sync.phoenix_sync import PhoenixSync, SyncResult
-from altk_evolve.schema.tips import TipGenerationResult
+from altk_evolve.schema.guidelines import GuidelineGenerationResult
 
 # Mark all tests in this module as unit tests
 pytestmark = pytest.mark.unit
@@ -405,8 +405,8 @@ class TestSync:
     """Tests for sync method."""
 
     @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
-    def test_sync_creates_namespace_if_not_exists(self, mock_generate_tips, mock_urlopen, phoenix_sync):
+    @patch("altk_evolve.sync.phoenix_sync.generate_guidelines")
+    def test_sync_creates_namespace_if_not_exists(self, mock_generate_guidelines, mock_urlopen, phoenix_sync):
         """Test that sync creates namespace if it doesn't exist."""
         from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
@@ -422,8 +422,8 @@ class TestSync:
         phoenix_sync.client.create_namespace.assert_called_once_with("test_namespace")
 
     @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
-    def test_sync_skips_already_processed(self, mock_generate_tips, mock_urlopen, phoenix_sync):
+    @patch("altk_evolve.sync.phoenix_sync.generate_guidelines")
+    def test_sync_skips_already_processed(self, mock_generate_guidelines, mock_urlopen, phoenix_sync):
         """Test that already processed spans are skipped."""
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps(
@@ -453,8 +453,8 @@ class TestSync:
         assert result.processed == 0
 
     @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
-    def test_sync_filters_error_spans(self, mock_generate_tips, mock_urlopen, phoenix_sync):
+    @patch("altk_evolve.sync.phoenix_sync.generate_guidelines")
+    def test_sync_filters_error_spans(self, mock_generate_guidelines, mock_urlopen, phoenix_sync):
         """Test that error spans are filtered by default."""
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps(
@@ -481,8 +481,8 @@ class TestSync:
         assert result.processed == 0
 
     @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
-    def test_sync_includes_error_spans_when_requested(self, mock_generate_tips, mock_urlopen, phoenix_sync):
+    @patch("altk_evolve.sync.phoenix_sync.generate_guidelines")
+    def test_sync_includes_error_spans_when_requested(self, mock_generate_guidelines, mock_urlopen, phoenix_sync):
         """Test that error spans are included when include_errors=True."""
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps(
@@ -508,15 +508,15 @@ class TestSync:
         mock_urlopen.return_value = mock_response
 
         phoenix_sync.client.search_entities.return_value = []
-        mock_generate_tips.return_value = TipGenerationResult(tips=[], task_description="Task description unknown")
+        mock_generate_guidelines.return_value = GuidelineGenerationResult(guidelines=[], task_description="Task description unknown")
 
         result = phoenix_sync.sync(limit=10, include_errors=True)
 
         assert result.processed == 1
 
     @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
-    def test_sync_filters_non_llm_spans(self, mock_generate_tips, mock_urlopen, phoenix_sync):
+    @patch("altk_evolve.sync.phoenix_sync.generate_guidelines")
+    def test_sync_filters_non_llm_spans(self, mock_generate_guidelines, mock_urlopen, phoenix_sync):
         """Test that non-LLM spans are filtered out."""
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps(
@@ -533,8 +533,8 @@ class TestSync:
         assert result.processed == 0
 
     @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
-    def test_sync_processes_valid_spans(self, mock_generate_tips, mock_urlopen, phoenix_sync):
+    @patch("altk_evolve.sync.phoenix_sync.generate_guidelines")
+    def test_sync_processes_valid_spans(self, mock_generate_guidelines, mock_urlopen, phoenix_sync):
         """Test that valid spans are processed."""
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps(
@@ -559,26 +559,26 @@ class TestSync:
         mock_urlopen.return_value = mock_response
 
         phoenix_sync.client.search_entities.return_value = []
-        # Create mock Tip objects with required attributes
+        # Create mock Guideline objects with required attributes
         mock_tip1 = MagicMock()
-        mock_tip1.content = "Tip 1 content"
+        mock_tip1.content = "Guideline 1 content"
         mock_tip1.category = "strategy"
-        mock_tip1.rationale = "Tip 1 rationale"
-        mock_tip1.trigger = "Tip 1 trigger"
+        mock_tip1.rationale = "Guideline 1 rationale"
+        mock_tip1.trigger = "Guideline 1 trigger"
         mock_tip2 = MagicMock()
-        mock_tip2.content = "Tip 2 content"
+        mock_tip2.content = "Guideline 2 content"
         mock_tip2.category = "optimization"
-        mock_tip2.rationale = "Tip 2 rationale"
-        mock_tip2.trigger = "Tip 2 trigger"
-        mock_generate_tips.return_value = TipGenerationResult(tips=[mock_tip1, mock_tip2], task_description="Hello")
+        mock_tip2.rationale = "Guideline 2 rationale"
+        mock_tip2.trigger = "Guideline 2 trigger"
+        mock_generate_guidelines.return_value = GuidelineGenerationResult(guidelines=[mock_tip1, mock_tip2], task_description="Hello")
 
         result = phoenix_sync.sync(limit=10)
 
         assert result.processed == 1
-        assert result.tips_generated == 2
+        assert result.guidelines_generated == 2
         phoenix_sync.client.update_entities.assert_called()
 
-        # Verify provenance metadata is persisted in tip entities
+        # Verify provenance metadata is persisted in guideline entities
         tip_update_call = phoenix_sync.client.update_entities.call_args_list[-1]
         tip_entities = tip_update_call.kwargs["entities"]
         assert all(e.metadata.get("task_description") == "Hello" for e in tip_entities)
@@ -587,8 +587,8 @@ class TestSync:
         assert all(e.metadata.get("creation_mode") == "auto-phoenix" for e in tip_entities)
 
     @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
-    def test_sync_returns_correct_counts(self, mock_generate_tips, mock_urlopen, phoenix_sync):
+    @patch("altk_evolve.sync.phoenix_sync.generate_guidelines")
+    def test_sync_returns_correct_counts(self, mock_generate_guidelines, mock_urlopen, phoenix_sync):
         """Test that sync returns correct counts in SyncResult."""
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps(
@@ -626,25 +626,25 @@ class TestSync:
         mock_entity = MagicMock()
         mock_entity.metadata = {"span_id": "old_span"}
         phoenix_sync.client.search_entities.return_value = [mock_entity]
-        # Create mock Tip object with required attributes
+        # Create mock Guideline object with required attributes
         mock_tip = MagicMock()
-        mock_tip.content = "Generated tip content"
+        mock_tip.content = "Generated guideline content"
         mock_tip.category = "strategy"
-        mock_tip.rationale = "Tip rationale"
-        mock_tip.trigger = "Tip trigger"
-        mock_generate_tips.return_value = TipGenerationResult(tips=[mock_tip], task_description="New message")
+        mock_tip.rationale = "Guideline rationale"
+        mock_tip.trigger = "Guideline trigger"
+        mock_generate_guidelines.return_value = GuidelineGenerationResult(guidelines=[mock_tip], task_description="New message")
 
         result = phoenix_sync.sync(limit=10)
 
         assert isinstance(result, SyncResult)
         assert result.processed == 1
         assert result.skipped == 1
-        assert result.tips_generated == 1
+        assert result.guidelines_generated == 1
         assert result.errors == []
 
     @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
-    @patch("altk_evolve.sync.phoenix_sync.generate_tips")
-    def test_sync_handles_processing_errors(self, mock_generate_tips, mock_urlopen, phoenix_sync):
+    @patch("altk_evolve.sync.phoenix_sync.generate_guidelines")
+    def test_sync_handles_processing_errors(self, mock_generate_guidelines, mock_urlopen, phoenix_sync):
         """Test that processing errors are captured."""
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps(
@@ -669,13 +669,13 @@ class TestSync:
         mock_urlopen.return_value = mock_response
 
         phoenix_sync.client.search_entities.return_value = []
-        mock_generate_tips.side_effect = Exception("Tip generation failed")
+        mock_generate_guidelines.side_effect = Exception("Guideline generation failed")
 
         result = phoenix_sync.sync(limit=10)
 
         assert result.processed == 0
         assert len(result.errors) == 1
-        assert "Tip generation failed" in result.errors[0]
+        assert "Guideline generation failed" in result.errors[0]
 
 
 # =============================================================================

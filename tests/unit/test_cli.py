@@ -569,7 +569,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=5, skipped=2, tips_generated=10, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=5, skipped=2, guidelines_generated=10, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix"])
@@ -584,7 +584,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://custom:8080"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--url", "http://custom:8080"])
@@ -599,7 +599,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "my_namespace"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--namespace", "my_namespace"])
@@ -614,7 +614,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "my_project"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--project", "my_project"])
@@ -629,7 +629,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--limit", "50"])
@@ -644,7 +644,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--include-errors"])
@@ -659,7 +659,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=10, skipped=5, tips_generated=20, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=10, skipped=5, guidelines_generated=20, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix"])
@@ -668,7 +668,7 @@ class TestSyncPhoenix:
             assert "Sync Results" in result.stdout
             assert "10" in result.stdout  # processed
             assert "5" in result.stdout  # skipped
-            assert "20" in result.stdout  # tips_generated
+            assert "20" in result.stdout  # guidelines_generated
 
     def test_sync_phoenix_displays_errors(self):
         """Test sync phoenix displays errors if any."""
@@ -678,7 +678,7 @@ class TestSyncPhoenix:
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
             mock_syncer.sync.return_value = MagicMock(
-                processed=1, skipped=0, tips_generated=0, errors=["Error processing span abc: Connection failed"]
+                processed=1, skipped=0, guidelines_generated=0, errors=["Error processing span abc: Connection failed"]
             )
             MockSync.return_value = mock_syncer
 
@@ -711,7 +711,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://test:6006"
             mock_syncer.project = "test_project"
             mock_syncer.namespace_id = "test_namespace"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix"])
@@ -728,7 +728,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://custom:9000"
             mock_syncer.project = "prod"
             mock_syncer.namespace_id = "production"
-            mock_syncer.sync.return_value = MagicMock(processed=100, skipped=50, tips_generated=200, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=100, skipped=50, guidelines_generated=200, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(

@@ -44,12 +44,12 @@ def evolve_dir(temp_project_dir):
     # Owned entity
     own_dir = d / "entities" / "guideline"
     own_dir.mkdir(parents=True)
-    (own_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
+    (own_dir / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
 
     # Subscribed entity (lives under entities/subscribed/{name}/)
     sub_dir = d / "entities" / "subscribed" / "alice" / "guideline"
     sub_dir.mkdir(parents=True)
-    (sub_dir / "alice-tip.md").write_text("---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n")
+    (sub_dir / "alice-guideline.md").write_text("---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n")
 
     return d
 
@@ -124,6 +124,6 @@ class TestRetrieve:
         d = temp_project_dir / ".evolve"
         gdir = d / "entities" / "guideline"
         gdir.mkdir(parents=True)
-        (gdir / "tip.md").write_text("---\ntype: guideline\ntrigger: when writing tests\n---\n\nAssert the important thing.\n")
+        (gdir / "guideline.md").write_text("---\ntype: guideline\ntrigger: when writing tests\n---\n\nAssert the important thing.\n")
         result = run_retrieve(retrieve_script, evolve_dir=d)
         assert "when writing tests" in result.stdout

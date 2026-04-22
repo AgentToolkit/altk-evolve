@@ -35,11 +35,11 @@
 
 ### Bug Fixes
 
-- Add optional implementation_steps to Tip model and prompt
+- Add optional implementation_steps to Guideline model and prompt
   ([#124](https://github.com/AgentToolkit/altk-evolve/pull/124),
   [`d373e7e`](https://github.com/AgentToolkit/altk-evolve/commit/d373e7ebb00ca0b3438aa1017961fbeb9cb5d0d8))
 
-- Clarify task status context in tip generation prompt
+- Clarify task status context in guideline generation prompt
   ([#124](https://github.com/AgentToolkit/altk-evolve/pull/124),
   [`d373e7e`](https://github.com/AgentToolkit/altk-evolve/commit/d373e7ebb00ca0b3438aa1017961fbeb9cb5d0d8))
 
@@ -191,7 +191,7 @@
 
 ### Features
 
-- Improve tip generation prompt with richer guidance
+- Improve guideline generation prompt with richer guidance
   ([#124](https://github.com/AgentToolkit/altk-evolve/pull/124),
   [`d373e7e`](https://github.com/AgentToolkit/altk-evolve/commit/d373e7ebb00ca0b3438aa1017961fbeb9cb5d0d8))
 
@@ -199,7 +199,7 @@
   ([#77](https://github.com/AgentToolkit/altk-evolve/pull/77),
   [`bd67611`](https://github.com/AgentToolkit/altk-evolve/commit/bd67611088429d1b95d92731d08fec15aaee6383))
 
-- Propagate implementation_steps through tip storage and clustering
+- Propagate implementation_steps through guideline storage and clustering
   ([#124](https://github.com/AgentToolkit/altk-evolve/pull/124),
   [`d373e7e`](https://github.com/AgentToolkit/altk-evolve/commit/d373e7ebb00ca0b3438aa1017961fbeb9cb5d0d8))
 
@@ -311,7 +311,7 @@
 
 ### Bug Fixes
 
-- Add Pydantic validation error handling for LLM tip generation and validate trajectory data input.
+- Add Pydantic validation error handling for LLM guideline generation and validate trajectory data input.
   ([#56](https://github.com/AgentToolkit/altk-evolve/pull/56),
   [`d2a4d0a`](https://github.com/AgentToolkit/altk-evolve/commit/d2a4d0a8e107d1a6475c31b052c9afe77e5b4784))
 
@@ -323,7 +323,7 @@
   ([#60](https://github.com/AgentToolkit/altk-evolve/pull/60),
   [`8ea2051`](https://github.com/AgentToolkit/altk-evolve/commit/8ea20516b0509bd7b9e8a5c02d6943dcf0e58bd5))
 
-- Address CodeRabbit review feedback on tip clustering
+- Address CodeRabbit review feedback on guideline clustering
   ([#60](https://github.com/AgentToolkit/altk-evolve/pull/60),
   [`8ea2051`](https://github.com/AgentToolkit/altk-evolve/commit/8ea20516b0509bd7b9e8a5c02d6943dcf0e58bd5))
 
@@ -335,19 +335,19 @@
   ([#80](https://github.com/AgentToolkit/altk-evolve/pull/80),
   [`0b3a8e8`](https://github.com/AgentToolkit/altk-evolve/commit/0b3a8e827c4f2a088389d901fb50f9542d24eae1))
 
-- Enhance LLM tip generation robustness ([#56](https://github.com/AgentToolkit/altk-evolve/pull/56),
+- Enhance LLM guideline generation robustness ([#56](https://github.com/AgentToolkit/altk-evolve/pull/56),
   [`d2a4d0a`](https://github.com/AgentToolkit/altk-evolve/commit/d2a4d0a8e107d1a6475c31b052c9afe77e5b4784))
 
-- Enhance LLM tip generation robustness by skipping empty assistant messages and handling
+- Enhance LLM guideline generation robustness by skipping empty assistant messages and handling
   malformed/empty responses, and add validation for trajectory data.
   ([#56](https://github.com/AgentToolkit/altk-evolve/pull/56),
   [`d2a4d0a`](https://github.com/AgentToolkit/altk-evolve/commit/d2a4d0a8e107d1a6475c31b052c9afe77e5b4784))
 
-- Guard against empty tips list in MCP save_trajectory
+- Guard against empty guidelines list in MCP save_trajectory
   ([#60](https://github.com/AgentToolkit/altk-evolve/pull/60),
   [`8ea2051`](https://github.com/AgentToolkit/altk-evolve/commit/8ea20516b0509bd7b9e8a5c02d6943dcf0e58bd5))
 
-- Guard against empty tips list in MCP save_trajectory
+- Guard against empty guidelines list in MCP save_trajectory
   ([#58](https://github.com/AgentToolkit/altk-evolve/pull/58),
   [`ce1ead3`](https://github.com/AgentToolkit/altk-evolve/commit/ce1ead30664f5c92c93a72f604bae75e6b80a2b7))
 
@@ -407,18 +407,18 @@
   ([#75](https://github.com/AgentToolkit/altk-evolve/pull/75),
   [`647aea0`](https://github.com/AgentToolkit/altk-evolve/commit/647aea01e94fed91cba3706d11cb9ab21df77096))
 
-- Add tip provenance tracking and metadata ([#73](https://github.com/AgentToolkit/altk-evolve/pull/73),
+- Add guideline provenance tracking and metadata ([#73](https://github.com/AgentToolkit/altk-evolve/pull/73),
   [`1154b4a`](https://github.com/AgentToolkit/altk-evolve/commit/1154b4a4cded47264abeaa2cfd4b9a96c56edee9))
 
-- Cluster tips by task description cosine similarity
+- Cluster guidelines by task description cosine similarity
   ([#60](https://github.com/AgentToolkit/altk-evolve/pull/60),
   [`8ea2051`](https://github.com/AgentToolkit/altk-evolve/commit/8ea20516b0509bd7b9e8a5c02d6943dcf0e58bd5))
 
-- Cluster tips by task description similarity
+- Cluster guidelines by task description similarity
   ([#60](https://github.com/AgentToolkit/altk-evolve/pull/60),
   [`8ea2051`](https://github.com/AgentToolkit/altk-evolve/commit/8ea20516b0509bd7b9e8a5c02d6943dcf0e58bd5))
 
-- Combine tips within clusters via LLM consolidation
+- Combine guidelines within clusters via LLM consolidation
   ([#60](https://github.com/AgentToolkit/altk-evolve/pull/60),
   [`8ea2051`](https://github.com/AgentToolkit/altk-evolve/commit/8ea20516b0509bd7b9e8a5c02d6943dcf0e58bd5))
 
@@ -426,11 +426,11 @@
   ([#67](https://github.com/AgentToolkit/altk-evolve/pull/67),
   [`9dcdc54`](https://github.com/AgentToolkit/altk-evolve/commit/9dcdc5412a81941d9f580f371179f776f55fa9ae))
 
-- Persist task description in tip entity metadata
+- Persist task description in guideline entity metadata
   ([#60](https://github.com/AgentToolkit/altk-evolve/pull/60),
   [`8ea2051`](https://github.com/AgentToolkit/altk-evolve/commit/8ea20516b0509bd7b9e8a5c02d6943dcf0e58bd5))
 
-- Persist task description in tip entity metadata
+- Persist task description in guideline entity metadata
   ([#58](https://github.com/AgentToolkit/altk-evolve/pull/58),
   [`ce1ead3`](https://github.com/AgentToolkit/altk-evolve/commit/ce1ead30664f5c92c93a72f604bae75e6b80a2b7))
 

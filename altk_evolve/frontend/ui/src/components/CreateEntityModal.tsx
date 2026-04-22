@@ -212,7 +212,7 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
                                     className="form-control"
                                     value={guideRationale}
                                     onChange={(e) => setGuideRationale(e.target.value)}
-                                    placeholder="Why this tip helps..."
+                                    placeholder="Why this guideline helps..."
                                     rows={2}
                                     required
                                 />
@@ -237,7 +237,7 @@ export default function CreateEntityModal({ namespaceId, onClose, onCreated }: C
                                         className="form-control"
                                         value={guideTrigger}
                                         onChange={(e) => setGuideTrigger(e.target.value)}
-                                        placeholder="When to apply this tip..."
+                                        placeholder="When to apply this guideline..."
                                         required
                                     />
                                 </div>

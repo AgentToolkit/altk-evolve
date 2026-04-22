@@ -39,7 +39,7 @@ def multiply(a: int, b: int) -> int:
 def main():
     # Use LiteLLMModel to support generic providers
     # Exact match of Evolve's internal usage pattern:
-    model_id = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or llm_settings.tips_model
+    model_id = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or llm_settings.guidelines_model
     custom_provider = llm_settings.custom_llm_provider
 
     print(f"Running Smolagents CodeAgent (Model: {model_id}, Provider: {custom_provider})...")

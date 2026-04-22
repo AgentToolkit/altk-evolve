@@ -125,7 +125,7 @@ async def test_save_trajectory_and_retrieve_guidelines(mcp):
         guidelines = response.content[0].text
         assert "# Guidelines for: " in guidelines
 
-        # Verify tip provenance in Evolve backend
+        # Verify guideline provenance in Evolve backend
         from altk_evolve.frontend.client.evolve_client import EvolveClient
         from altk_evolve.config.evolve import evolve_config
 

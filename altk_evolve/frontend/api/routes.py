@@ -210,12 +210,12 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
 
     # 2. Enforce specific schema typing prior to insertion
     if entity_type == "guideline":
-        from altk_evolve.schema.tips import Tip
+        from altk_evolve.schema.guidelines import Guideline
 
         try:
-            # Tip expects content at the root, so we map req.content and unpack the metadata
+            # Guideline expects content at the root, so we map req.content and unpack the metadata
             tip_meta = {k: v for k, v in req.metadata.items() if k != "content"}
-            Tip(content=req.content, **tip_meta)
+            Guideline(content=req.content, **tip_meta)
         except Exception as e:
             logger.error(f"Guideline validation failed: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid guideline metadata schema: {e}")
