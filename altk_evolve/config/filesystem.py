@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class FilesystemSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="EVOLVE_")
+    model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
     data_dir: str = Field(default="evolve_data", description="Directory to store JSON data files")
 
 

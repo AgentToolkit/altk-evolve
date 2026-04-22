@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class PhoenixSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PHOENIX_")
+    model_config = SettingsConfigDict(env_prefix="PHOENIX_", env_file=".env", extra="ignore")
     url: str = Field(default="http://localhost:6006", description="Phoenix server URL")
     project: str = Field(default="default", description="Phoenix project name")
 
