@@ -335,7 +335,7 @@ def publish_entity(entity_id: str, user_id: str | None = None) -> str:
 
     Args:
         entity_id: The ID of the entity to publish
-        user_id: Optional caller identity to record as owner
+        user_id: Caller identity; must match the entity's owner_id if one is set
 
     Returns:
         JSON string with the updated entity, or an error message
@@ -344,11 +344,19 @@ def publish_entity(entity_id: str, user_id: str | None = None) -> str:
     try:
         from datetime import datetime, UTC
 
+        entity = get_client().get_entity_by_id(namespace_id=evolve_config.namespace_id, entity_id=entity_id)
+        if entity is None:
+            return json.dumps({"error": f"Entity {entity_id} not found"})
+
+        existing_owner = (entity.metadata or {}).get("owner_id")
+        if existing_owner is not None and user_id != existing_owner:
+            return json.dumps({"error": "Permission denied: caller is not the owner of this entity"})
+
         metadata_updates: dict = {
             "visibility": "public",
             "published_at": datetime.now(UTC).isoformat(),
         }
-        if user_id is not None:
+        if user_id is not None and existing_owner is None:
             metadata_updates["owner_id"] = user_id
         updated = get_client().patch_entity_metadata(
             namespace_id=evolve_config.namespace_id,
@@ -361,18 +369,27 @@ def publish_entity(entity_id: str, user_id: str | None = None) -> str:
 
 
 @mcp.tool()
-def unpublish_entity(entity_id: str) -> str:
+def unpublish_entity(entity_id: str, user_id: str | None = None) -> str:
     """
     Revert an entity to private visibility.
 
     Args:
         entity_id: The ID of the entity to unpublish
+        user_id: Caller identity; must match the entity's owner_id if one is set
 
     Returns:
         JSON string with the updated entity, or an error message
     """
     logger.info(f"unpublish entity={entity_id} namespace={evolve_config.namespace_id}")
     try:
+        entity = get_client().get_entity_by_id(namespace_id=evolve_config.namespace_id, entity_id=entity_id)
+        if entity is None:
+            return json.dumps({"error": f"Entity {entity_id} not found"})
+
+        existing_owner = (entity.metadata or {}).get("owner_id")
+        if existing_owner is not None and user_id != existing_owner:
+            return json.dumps({"error": "Permission denied: caller is not the owner of this entity"})
+
         updated = get_client().patch_entity_metadata(
             namespace_id=evolve_config.namespace_id,
             entity_id=entity_id,
