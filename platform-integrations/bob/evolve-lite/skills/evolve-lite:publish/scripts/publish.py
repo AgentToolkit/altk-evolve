@@ -74,7 +74,7 @@ def main():
 
     # Update frontmatter fields
     entity["visibility"] = "public"
-    entity["published_at"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    entity["published_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cfg = load_config(str(evolve_dir.resolve().parent))
 
     # Determine user: prefer args.user, fallback to cfg.identity.user

@@ -148,6 +148,14 @@ def _parse_yaml(text):
 
 def _cast(value):
     """Cast a YAML scalar string to an appropriate Python type."""
+    # Strip surrounding quotes first to handle quoted empty strings correctly
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        stripped = value[1:-1]
+        # Quoted empty string should return empty string, not None
+        if stripped == "":
+            return ""
+        value = stripped
+    
     if value in ("true", "True", "yes"):
         return True
     if value in ("false", "False", "no"):
@@ -165,9 +173,6 @@ def _cast(value):
     # Empty list literal
     if value == "[]":
         return []
-    # Strip surrounding quotes
-    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-        return value[1:-1]
     return value
 
 
@@ -202,13 +207,48 @@ def _dump_yaml(obj, indent=0):
 
 
 def _scalar(v):
+    """Convert a Python value to a YAML scalar string, quoting when necessary."""
     if v is True:
         return "true"
     if v is False:
         return "false"
     if v is None:
         return "null"
-    return str(v)
+    
+    # For non-string types, convert to string
+    if not isinstance(v, str):
+        return str(v)
+    
+    # Reserved YAML tokens that must be quoted
+    reserved_tokens = {
+        "true", "True", "TRUE",
+        "false", "False", "FALSE",
+        "null", "Null", "NULL", "~",
+        "yes", "Yes", "YES",
+        "no", "No", "NO",
+        "on", "On", "ON",
+        "off", "Off", "OFF",
+    }
+    
+    # YAML indicator characters that require quoting
+    yaml_indicators = set("-?:[]{},'&*#!|>'\"%@`")
+    
+    # Check if quoting is needed
+    needs_quoting = (
+        v in reserved_tokens or  # Reserved token
+        v == "" or  # Empty string
+        v[0] in " \t" or v[-1] in " \t" or  # Leading/trailing whitespace
+        "#" in v or  # Comment character
+        any(c in yaml_indicators for c in v) or  # YAML special characters
+        v[0] in yaml_indicators  # Starts with indicator
+    )
+    
+    if needs_quoting:
+        # Use single quotes and escape embedded single quotes by doubling them
+        escaped = v.replace("'", "''")
+        return f"'{escaped}'"
+    
+    return v
 
 
 # ---------------------------------------------------------------------------

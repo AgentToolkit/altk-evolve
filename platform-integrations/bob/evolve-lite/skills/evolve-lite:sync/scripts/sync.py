@@ -63,12 +63,17 @@ def count_delta(repo_path):
 
     Returns dict: {added: int, updated: int, removed: int}
     """
-    result = subprocess.run(
-        ["git", "-C", str(repo_path), "diff", "--name-status", "HEAD@{1}", "HEAD"],
-        capture_output=True,
-        text=True,
-        timeout=_GIT_TIMEOUT,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "diff", "--name-status", "HEAD@{1}", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"Warning: git diff timed out for {repo_path} after {_GIT_TIMEOUT} seconds", file=sys.stderr)
+        return {"added": 0, "updated": 0, "removed": 0}
+    
     if result.returncode != 0:
         # HEAD@{1} doesn't exist (initial sync) — count all .md files as added
         added = len(list(repo_path.glob("**/*.md")))
@@ -103,19 +108,18 @@ def main():
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
-    project_root = str(evolve_dir.parent) if "EVOLVE_DIR" in os.environ else "."
-
-    # Determine config path
+    
+    # Determine project_root from config path or EVOLVE_DIR
     if args.config:
-        cfg = load_config(filepath=args.config)
+        # Derive project_root from the directory containing the config file
+        config_path = Path(args.config).resolve()
+        project_root = str(config_path.parent)
+    elif "EVOLVE_DIR" in os.environ:
+        project_root = str(evolve_dir.parent)
     else:
-        cfg = load_config(project_root)
-
-    # Check sync.on_session_start — only short-circuits automatic hook runs
-    # (which pass --quiet). Manual invocations always execute.
-    sync_cfg = cfg.get("sync", {})
-    if args.quiet and isinstance(sync_cfg, dict) and sync_cfg.get("on_session_start") is False:
-        sys.exit(0)
+        project_root = "."
+    
+    cfg = load_config(project_root)
 
     subscriptions = cfg.get("subscriptions", [])
     if not isinstance(subscriptions, list):
@@ -134,6 +138,7 @@ def main():
     any_changes = False
 
     _SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+    subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
 
     for sub in subscriptions:
         if not isinstance(sub, dict):
@@ -141,11 +146,18 @@ def main():
         name = sub.get("name", "unknown")
         branch = sub.get("branch", "main")
 
-        if not _SAFE_NAME.match(name):
+        # Reject path traversal attempts
+        if name in {".", ".."} or not _SAFE_NAME.match(name):
             summaries.append(f"{name!r} (skipped — invalid subscription name)")
             continue
 
         repo_path = evolve_dir / "entities" / "subscribed" / name
+        
+        # Defense-in-depth: verify resolved path is within subscribed directory
+        repo_path_resolved = repo_path.resolve()
+        if not repo_path_resolved.is_relative_to(subscribed_base) or repo_path_resolved == subscribed_base:
+            summaries.append(f"{name!r} (skipped — path traversal detected)")
+            continue
 
         if not repo_path.is_dir():
             summaries.append(f"{name} (not cloned — run evolve-lite:subscribe first)")

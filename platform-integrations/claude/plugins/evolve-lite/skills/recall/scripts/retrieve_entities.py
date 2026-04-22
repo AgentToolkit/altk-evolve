@@ -84,10 +84,15 @@ def load_entities_with_source(entities_dir):
                 continue
             # Detect subscribed entities by path: .../entities/subscribed/{name}/...
             parts = md.parts
-            for i, part in enumerate(parts):
-                if part == "subscribed" and i + 1 < len(parts):
-                    entity["_source"] = parts[i + 1]
-                    break
+            try:
+                entities_index = parts.index("entities")
+                # Verify the structure is .../entities/subscribed/{name}/...
+                if (entities_index + 2 < len(parts) and
+                    parts[entities_index + 1] == "subscribed"):
+                    entity["_source"] = parts[entities_index + 2]
+            except (ValueError, IndexError):
+                # "entities" not found or invalid structure - not a subscribed entity
+                pass
             entities.append(entity)
         except OSError:
             pass

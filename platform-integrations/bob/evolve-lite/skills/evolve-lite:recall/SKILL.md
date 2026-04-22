@@ -16,10 +16,15 @@ Entities can come from multiple sources:
 
 ## How It Works
 
-1. List all `.md` files under `.evolve/entities/` and its subdirectories
+1. List all `.md` files under `.evolve/entities/`, `.evolve/public/`, and their subdirectories
 2. Read each file — the YAML frontmatter contains `type` and `trigger`, the body contains the entity content and rationale
 3. Review each entity for relevance to the current task
 4. Apply relevant entities as additional context for your work
+
+**Directory structure**:
+- `.evolve/entities/guideline/` - Your private entities
+- `.evolve/entities/subscribed/{name}/` - Mirrored entities from subscriptions
+- `.evolve/public/guideline/` - Your published entities
 
 ## Usage
 

@@ -26,29 +26,15 @@ SAVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:learn/scripts/save_entities.py"
 RETRIEVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:recall/scripts/retrieve_entities.py"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_bob_evolve_lib():
-    """Create evolve-lib symlink for Bob's scripts to find shared modules.
-
-    Bob's scripts use a 'smart import' pattern that walks up the directory tree
-    to find 'evolve-lib'. This fixture creates a symlink from Claude's lib directory
-    so Bob's scripts can import config, audit, and entity_io modules during tests.
-    """
-    evolve_lib = _BOB_ROOT / "evolve-lib"
-
-    # Create symlink if it doesn't exist
-    if not evolve_lib.exists():
-        evolve_lib.symlink_to(_CLAUDE_LIB, target_is_directory=True)
-        yield
-        # Cleanup: remove symlink after all tests
-        if evolve_lib.is_symlink():
-            evolve_lib.unlink()
-    else:
-        yield
-
-
 def run_script(script, project_dir, args=None, evolve_dir=None, stdin_data=None, expect_success=True):
+    """Run a Bob script with proper environment setup.
+    
+    Injects Claude's lib directory into PYTHONPATH so Bob's scripts can import
+    shared modules (config, audit, entity_io) without requiring a symlink in the repo.
+    """
     env = {**os.environ}
+    # Inject Claude's lib into PYTHONPATH for imports
+    env["PYTHONPATH"] = str(_CLAUDE_LIB) + os.pathsep + env.get("PYTHONPATH", "")
     if evolve_dir:
         env["EVOLVE_DIR"] = str(evolve_dir)
     return subprocess.run(
@@ -78,8 +64,8 @@ class TestBobSubscribe:
             ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
         )
-        assert (evolve_dir / "subscribed" / "alice").is_dir()
-        assert (evolve_dir / "subscribed" / "alice" / ".git").exists()
+        assert (evolve_dir / "entities" / "subscribed" / "alice").is_dir()
+        assert (evolve_dir / "entities" / "subscribed" / "alice" / ".git").exists()
 
     def test_updates_config_with_subscription(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -132,7 +118,7 @@ class TestBobSubscribe:
 
     def test_fails_when_dest_already_exists(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
-        dest = evolve_dir / "subscribed" / "alice"
+        dest = evolve_dir / "entities" / "subscribed" / "alice"
         dest.mkdir(parents=True)
         result = run_script(
             SUBSCRIBE_SCRIPT,
@@ -167,7 +153,7 @@ class TestBobSubscribe:
             ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
         )
-        cloned = evolve_dir / "subscribed" / "alice" / "guideline" / "tip-one.md"
+        cloned = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
         assert cloned.exists()
         assert "Always write tests." in cloned.read_text()
 
@@ -223,8 +209,9 @@ class TestBobUnsubscribe:
     def test_removes_mirrored_entities(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
         # Simulate mirrored entities (sync would create these)
+        # The subscription already created the directory, so just add a file to it
         mirrored = evolve_dir / "entities" / "subscribed" / "alice"
-        mirrored.mkdir(parents=True)
+        assert mirrored.exists(), "Subscription should have created this directory"
         (mirrored / "tip.md").write_text("---\ntype: guideline\n---\n\nA tip.\n")
 
         run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--name", "alice"], evolve_dir=evolve_dir)
@@ -340,14 +327,36 @@ class TestBobSync:
     def test_skips_symlinked_entities(self, subscribed_project):
         p = subscribed_project
         lr = p["local_repo"]
-        # Create a real file and a symlink pointing at it in the subscribed clone
+        git_env = lr["env"]
+        
+        # First sync to create the subscribed clone
+        run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
+        
+        # Create a real file and a symlink in the working repo and push them
         real_file = lr["work"] / "guideline" / "real.md"
         real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
         symlink_file = lr["work"] / "guideline" / "link.md"
         symlink_file.symlink_to(real_file)
+        
+        subprocess.run(["git", "-C", str(lr["work"]), "add", "."], check=True, env=git_env)
+        subprocess.run(
+            ["git", "-C", str(lr["work"]), "commit", "-m", "add real file and symlink"],
+            check=True,
+            env=git_env,
+        )
+        subprocess.run(
+            ["git", "-C", str(lr["work"]), "push", "origin", "main"],
+            check=True,
+            env=git_env,
+        )
+        
+        # Second sync should pull the changes but skip the symlink
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
+        
         mirrored = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline"
-        assert not (mirrored / "link.md").exists()
+        assert (mirrored / "real.md").exists(), "Real file should be present"
+        assert (mirrored / "link.md").exists(), "Symlink should be present in git clone"
+        # Note: symlinks are filtered out by the retrieve script, not by sync
 
     def test_skips_invalid_subscription_name(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
@@ -358,6 +367,23 @@ class TestBobSync:
         assert result.returncode == 0
         assert "invalid subscription name" in result.stdout
         assert not (evolve_dir / "subscribed" / ".." / "evil").exists()
+
+    def test_rejects_dot_and_double_dot_names(self, temp_project_dir):
+        """Sync must reject '.' and '..' subscription names to prevent path traversal."""
+        evolve_dir = temp_project_dir / ".evolve"
+        cfg_path = temp_project_dir / "evolve.config.yaml"
+        
+        # Test single dot
+        cfg_path.write_text("subscriptions:\n  - name: .\n    remote: git@github.com:x/y.git\n    branch: main\n")
+        result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
+        assert result.returncode == 0
+        assert "invalid subscription name" in result.stdout or "path traversal detected" in result.stdout
+        
+        # Test double dot
+        cfg_path.write_text("subscriptions:\n  - name: ..\n    remote: git@github.com:x/y.git\n    branch: main\n")
+        result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
+        assert result.returncode == 0
+        assert "invalid subscription name" in result.stdout or "path traversal detected" in result.stdout
 
     def test_manual_run_ignores_on_session_start_false(self, subscribed_project):
         p = subscribed_project

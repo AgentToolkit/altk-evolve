@@ -10,17 +10,13 @@ import json
 import sys
 from pathlib import Path
 
-# Walk up from script to find evolve-lib
-_script = Path(__file__).resolve()
-_lib = None
-for _ancestor in _script.parents:
-    _candidate = _ancestor / "evolve-lib"
-    if _candidate.is_dir():
-        _lib = _candidate
+# Smart import: walk up to find evolve-lib
+current = Path(__file__).resolve()
+for parent in current.parents:
+    lib_path = parent / "evolve-lib"
+    if lib_path.exists():
+        sys.path.insert(0, str(lib_path))
         break
-if _lib is None:
-    raise ImportError(f"Cannot find evolve-lib directory above {_script}")
-sys.path.insert(0, str(_lib))
 from entity_io import (  # noqa: E402
     find_entities_dir,
     get_default_entities_dir,

@@ -23,6 +23,8 @@ for parent in current.parents:
 from config import load_config, save_config  # noqa: E402
 from audit import append as audit_append  # noqa: E402
 
+_GIT_TIMEOUT = 30  # seconds
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -66,19 +68,29 @@ def main():
         sys.exit(1)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        [
-            "git",
-            "clone",
-            args.remote,
-            str(dest),
-            "--branch",
-            args.branch,
-            "--depth",
-            "1",
-        ],
-        check=True,
-    )
+    try:
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                args.remote,
+                str(dest),
+                "--branch",
+                args.branch,
+                "--depth",
+                "1",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"Error: git clone timed out after {_GIT_TIMEOUT} seconds", file=sys.stderr)
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"Error: git clone failed: {e.stderr}", file=sys.stderr)
+        sys.exit(1)
 
     # Update config
     subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
