@@ -132,17 +132,24 @@ def get_entities_logic(task: str, entity_type: str = "guideline", include_public
     header = f"# {entity_type.capitalize()}s for: {task}"
     response_lines = [f"{header}\n"]
 
-    seen_ids = {e.id for e in private_results}
     for i, entity in enumerate(private_results, 1):
         response_lines.append(f"{i}. {entity.content}")
 
     if include_public:
-        public_results = client.get_public_entities(query=task, entity_type=entity_type)
+        # Exclude the caller's own namespace: those entities are already in private_results,
+        # and using a bare entity ID for cross-namespace dedup risks false-positives when
+        # different namespaces share the same auto-assigned numeric IDs.
+        public_results = client.get_public_entities(
+            query=task,
+            entity_type=entity_type,
+            exclude_namespace_ids=[evolve_config.namespace_id],
+        )
+        seen_public_ids: set[str] = set()
         idx = len(private_results) + 1
         for entity in public_results:
-            if entity.id in seen_ids:
+            if entity.id in seen_public_ids:
                 continue
-            seen_ids.add(entity.id)
+            seen_public_ids.add(entity.id)
             owner = (entity.metadata or {}).get("owner_id", "unknown")
             response_lines.append(f"{idx}. [public: {owner}] {entity.content}")
             idx += 1

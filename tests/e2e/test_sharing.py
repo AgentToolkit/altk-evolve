@@ -6,6 +6,8 @@ The `mcp` fixture is parameterized in conftest.py — every test here runs twice
 """
 
 import json
+import uuid
+
 import pytest
 from fastmcp.client import Client
 
@@ -81,6 +83,55 @@ async def test_create_entity_with_visibility_public(mcp):
         result = json.loads(resp.content[0].text)
         assert result["metadata"]["visibility"] == "public"
         assert result["metadata"]["owner_id"] == "bob"
+
+
+@pytest.mark.e2e
+async def test_cross_namespace_public_discovery(mcp):
+    """Entities published in a second namespace appear only when include_public=True."""
+    from altk_evolve.frontend.client.evolve_client import EvolveClient
+    from altk_evolve.schema.core import Entity
+
+    second_ns = f"test_x_{uuid.uuid4().hex[:6]}"
+    second_client = EvolveClient()
+    second_client.create_namespace(second_ns)
+
+    try:
+        second_client.update_entities(
+            second_ns,
+            [
+                Entity(
+                    type="guideline",
+                    content="use dependency injection for testability",
+                    metadata={"visibility": "public", "owner_id": "alice"},
+                )
+            ],
+            enable_conflict_resolution=False,
+        )
+
+        async with Client(transport=mcp) as client:
+            # With include_public=True the cross-namespace entity should surface
+            with_public = await client.call_tool_mcp(
+                "get_entities",
+                {"task": "dependency injection", "entity_type": "guideline", "include_public": True},
+            )
+            assert "dependency injection" in with_public.content[0].text
+            assert "[public: alice]" in with_public.content[0].text
+
+            # Without include_public it must NOT appear (it lives in a different namespace)
+            without_public = await client.call_tool_mcp(
+                "get_entities",
+                {"task": "dependency injection", "entity_type": "guideline", "include_public": False},
+            )
+            assert "dependency injection" not in without_public.content[0].text
+    finally:
+        try:
+            second_client.delete_namespace(second_ns)
+        except Exception:
+            pass
+        try:
+            second_client.backend.close()
+        except Exception:
+            pass
 
 
 @pytest.mark.e2e

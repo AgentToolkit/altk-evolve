@@ -96,13 +96,30 @@ class EvolveClient:
         """Merge metadata_updates into an entity without touching content or ID."""
         return self.backend.update_entity_metadata(namespace_id, entity_id, metadata_updates)
 
-    def get_public_entities(self, query: str | None = None, entity_type: str | None = None, limit: int = 100) -> list[RecordedEntity]:
-        """Search for public entities across all namespaces."""
+    def get_public_entities(
+        self,
+        query: str | None = None,
+        entity_type: str | None = None,
+        limit: int = 100,
+        exclude_namespace_ids: list[str] | None = None,
+    ) -> list[RecordedEntity]:
+        """Search for public entities across all namespaces.
+
+        Args:
+            query: Optional semantic search query.
+            entity_type: Optional type filter (e.g. 'guideline').
+            limit: Maximum total results to return.
+            exclude_namespace_ids: Namespace IDs to skip (e.g. the caller's own
+                namespace whose entities are already returned via a private search).
+        """
         if limit <= 0:
             return []
 
+        excluded = set(exclude_namespace_ids or [])
         all_results: list[RecordedEntity] = []
         for ns in self.search_namespaces(limit=1000):
+            if ns.id in excluded:
+                continue
             remaining = limit - len(all_results)
             if remaining <= 0:
                 break
