@@ -872,7 +872,7 @@ class CodexInstaller:
         # Prune empty groups (groups with no hooks left)
         hooks["UserPromptSubmit"] = [
             group for group in hooks["UserPromptSubmit"]
-            if not isinstance(group, dict) or len(self._iter_group_hooks(group)) > 0
+            if not isinstance(group, dict) or self._iter_group_hooks(group)
         ]
         if not hooks["UserPromptSubmit"]:
             hooks.pop("UserPromptSubmit", None)
