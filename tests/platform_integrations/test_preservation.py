@@ -201,7 +201,15 @@ class TestCodexPreservation:
 
         current_hooks = json.loads(hooks_file.read_text())
         session_start_hooks = current_hooks["hooks"]["SessionStart"]
-        assert len(session_start_hooks) == 1, "User's SessionStart hook was removed!"
+        assert len(session_start_hooks) == 2, "Expected the user's SessionStart hook plus the Evolve sync hook."
+        assert any(
+            any(hook.get("command") == "python3 ~/.codex/hooks/session_start.py" for hook in group.get("hooks", []))
+            for group in session_start_hooks
+        ), "User's SessionStart hook was removed!"
+        assert any(
+            any("plugins/evolve-lite/skills/sync/scripts/sync.py" in hook.get("command", "") for hook in group.get("hooks", []))
+            for group in session_start_hooks
+        ), "Evolve SessionStart hook was not added!"
 
         prompt_hooks = current_hooks["hooks"]["UserPromptSubmit"]
         custom_prompt_hooks = [

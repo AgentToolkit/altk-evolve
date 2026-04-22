@@ -686,6 +686,36 @@ class CodexInstaller:
         return {"matcher": "", "hooks": [CodexInstaller._recall_hook()]}
 
     @staticmethod
+    def _sync_hook_command():
+        return (
+            "sh -lc '"
+            'd=\"$PWD\"; '
+            "while :; do "
+            'candidate=\"$d/plugins/evolve-lite/skills/sync/scripts/sync.py\"; '
+            'if [ -f \"$candidate\" ]; then EVOLVE_DIR=\"$d/.evolve\" exec python3 \"$candidate\" --quiet --session-start; fi; '
+            '[ \"$d\" = \"/\" ] && break; '
+            'd=\"$(dirname \"$d\")\"; '
+            "done; "
+            "exit 1'"
+        )
+
+    @staticmethod
+    def _is_sync_command(command):
+        return isinstance(command, str) and "plugins/evolve-lite/skills/sync/scripts/sync.py" in command
+
+    @staticmethod
+    def _sync_hook():
+        return {
+            "type": "command",
+            "command": CodexInstaller._sync_hook_command(),
+            "statusMessage": "Syncing Evolve subscriptions",
+        }
+
+    @staticmethod
+    def _sync_hook_group():
+        return {"matcher": "startup|resume", "hooks": [CodexInstaller._sync_hook()]}
+
+    @staticmethod
     def _iter_group_hooks(group):
         hooks = group.get("hooks", [])
         if isinstance(hooks, list): return hooks
@@ -696,6 +726,13 @@ class CodexInstaller:
     def _group_has_recall(group):
         return any(
             isinstance(h, dict) and CodexInstaller._is_recall_command(h.get("command"))
+            for h in CodexInstaller._iter_group_hooks(group)
+        )
+
+    @staticmethod
+    def _group_has_sync(group):
+        return any(
+            isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command"))
             for h in CodexInstaller._iter_group_hooks(group)
         )
 
@@ -723,6 +760,29 @@ class CodexInstaller:
         return updated
 
     @staticmethod
+    def _upsert_sync_into_group(group):
+        updated = copy.deepcopy(group)
+        sync = CodexInstaller._sync_hook()
+        hooks = updated.get("hooks")
+        if isinstance(hooks, list):
+            for i, h in enumerate(hooks):
+                if isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command")):
+                    hooks[i] = merge_json_value(h, sync)
+                    break
+            else:
+                hooks.append(copy.deepcopy(sync))
+        elif isinstance(hooks, dict):
+            for key, h in hooks.items():
+                if isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command")):
+                    hooks[key] = merge_json_value(h, sync)
+                    break
+            else:
+                hooks["evolve-lite"] = copy.deepcopy(sync)
+        else:
+            updated["hooks"] = [copy.deepcopy(sync)]
+        return updated
+
+    @staticmethod
     def _remove_recall_from_group(group):
         updated = copy.deepcopy(group)
         hooks = updated.get("hooks")
@@ -735,6 +795,22 @@ class CodexInstaller:
             updated["hooks"] = {
                 k: h for k, h in hooks.items()
                 if not (isinstance(h, dict) and CodexInstaller._is_recall_command(h.get("command")))
+            }
+        return updated
+
+    @staticmethod
+    def _remove_sync_from_group(group):
+        updated = copy.deepcopy(group)
+        hooks = updated.get("hooks")
+        if isinstance(hooks, list):
+            updated["hooks"] = [
+                h for h in hooks
+                if not (isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command")))
+            ]
+        elif isinstance(hooks, dict):
+            updated["hooks"] = {
+                k: h for k, h in hooks.items()
+                if not (isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command")))
             }
         return updated
 
@@ -797,6 +873,50 @@ class CodexInstaller:
             hooks.pop("UserPromptSubmit", None)
         self.ops.atomic_write_json(path, data)
 
+    def _upsert_session_start_hook(self, path, group):
+        data = read_json(path)
+        if not data:
+            data = {"hooks": {}}
+        if not isinstance(data, dict):
+            raise ValueError(f"{path} must contain a JSON object.")
+        hooks = data.setdefault("hooks", {})
+        if not isinstance(hooks, dict):
+            hooks = {}
+            data["hooks"] = hooks
+        groups = hooks.setdefault("SessionStart", [])
+        if not isinstance(groups, list):
+            groups = []
+            hooks["SessionStart"] = groups
+        for i, existing in enumerate(groups):
+            if isinstance(existing, dict) and self._group_has_sync(existing):
+                groups[i] = self._upsert_sync_into_group(existing)
+                break
+        else:
+            groups.append(copy.deepcopy(group))
+        self.ops.atomic_write_json(path, data)
+
+    def _remove_session_start_hook(self, path):
+        if not os.path.isfile(str(path)):
+            return
+        data = read_json(path)
+        hooks = data.get("hooks")
+        if not isinstance(hooks, dict):
+            return
+        groups = hooks.get("SessionStart", [])
+        if not isinstance(groups, list):
+            return
+        hooks["SessionStart"] = [
+            self._remove_sync_from_group(g) if isinstance(g, dict) and self._group_has_sync(g) else g
+            for g in groups
+        ]
+        hooks["SessionStart"] = [
+            group for group in hooks["SessionStart"]
+            if not isinstance(group, dict) or self._iter_group_hooks(group)
+        ]
+        if not hooks["SessionStart"]:
+            hooks.pop("SessionStart", None)
+        self.ops.atomic_write_json(path, data)
+
     # ── Public interface ──────────────────────────────────────────────────────
 
     def install(self, target_dir):
@@ -829,7 +949,9 @@ class CodexInstaller:
 
         hooks_target = Path(target_dir) / ".codex" / "hooks.json"
         self._upsert_user_prompt_hook(hooks_target, self._recall_hook_group())
+        self._upsert_session_start_hook(hooks_target, self._sync_hook_group())
         success(f"Upserted Codex UserPromptSubmit hook in {hooks_target}")
+        success(f"Upserted Codex SessionStart hook in {hooks_target}")
         warn("Automatic Codex recall requires hooks to be enabled in ~/.codex/config.toml:")
         print("      [features]")
         print("      codex_hooks = true")
@@ -846,6 +968,7 @@ class CodexInstaller:
             "plugins", "name", CODEX_PLUGIN,
         )
         self._remove_user_prompt_hook(Path(target_dir) / ".codex" / "hooks.json")
+        self._remove_session_start_hook(Path(target_dir) / ".codex" / "hooks.json")
 
         success("Codex uninstall complete")
 
@@ -870,7 +993,13 @@ class CodexInstaller:
                 for g in read_json(hooks_path).get("hooks", {}).get("UserPromptSubmit", []))
             if hooks_path.is_file() else False
         )
+        session_hook_present = (
+            any(isinstance(g, dict) and self._group_has_sync(g)
+                for g in read_json(hooks_path).get("hooks", {}).get("SessionStart", []))
+            if hooks_path.is_file() else False
+        )
         print(f"    .codex/hooks.json entry   : {'✓' if hook_present else '✗'}")
+        print(f"    SessionStart sync hook    : {'✓' if session_hook_present else '✗'}")
 
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────

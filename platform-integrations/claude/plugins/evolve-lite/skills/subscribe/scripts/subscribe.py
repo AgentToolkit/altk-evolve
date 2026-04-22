@@ -8,6 +8,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
 from config import load_config, save_config
 from audit import append as audit_append
+
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def main():
@@ -27,6 +30,13 @@ def main():
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
     project_root = str(evolve_dir.resolve().parent)
+
+    if not _SAFE_NAME.match(args.name):
+        print(
+            f"Error: invalid subscription name: {args.name!r} (only A-Z, a-z, 0-9, '.', '_', '-' allowed)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Validate name: resolve and confirm it stays within the subscribed directory
     subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()

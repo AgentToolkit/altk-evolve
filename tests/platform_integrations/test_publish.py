@@ -10,8 +10,14 @@ import pytest
 
 pytestmark = pytest.mark.platform_integrations
 
-_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
-PUBLISH_SCRIPT = _PLUGIN_ROOT / "skills/publish/scripts/publish.py"
+_REPO_ROOT = Path(__file__).parent.parent.parent
+CLAUDE_PUBLISH_SCRIPT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/publish/scripts/publish.py"
+CODEX_PUBLISH_SCRIPT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/publish/scripts/publish.py"
+PUBLISH_SCRIPT = CLAUDE_PUBLISH_SCRIPT
+PUBLISH_SCRIPT_VARIANTS = [
+    ("claude", CLAUDE_PUBLISH_SCRIPT),
+    ("codex", CODEX_PUBLISH_SCRIPT),
+]
 
 
 @pytest.fixture
@@ -35,10 +41,24 @@ def run_publish(project_dir, args, expect_success=True):
     )
 
 
+def run_publish_script(script_path, project_dir, args, expect_success=True):
+    env = {**os.environ, "EVOLVE_DIR": str(project_dir / ".evolve")}
+    return subprocess.run(
+        [sys.executable, str(script_path)] + args,
+        capture_output=True,
+        text=True,
+        cwd=str(project_dir),
+        env=env,
+        check=expect_success,
+    )
+
+
 class TestPublish:
-    def test_copies_entity_to_public_dir(self, project_dir):
+    def test_moves_entity_to_public_dir(self, project_dir):
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-tip.md"
         run_publish(project_dir, ["--entity", "my-tip.md"])
         assert (project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").exists()
+        assert not source.exists()
 
     def test_sets_visibility_public(self, project_dir):
         run_publish(project_dir, ["--entity", "my-tip.md"])
@@ -54,6 +74,11 @@ class TestPublish:
         run_publish(project_dir, ["--entity", "my-tip.md", "--user", "alice"])
         content = (project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").read_text()
         assert "owner: alice" in content
+
+    def test_stamps_source_from_user_when_user_flag_given(self, project_dir):
+        run_publish(project_dir, ["--entity", "my-tip.md", "--user", "alice"])
+        content = (project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").read_text()
+        assert "source: alice" in content
 
     def test_preserves_original_content(self, project_dir):
         run_publish(project_dir, ["--entity", "my-tip.md"])
@@ -95,3 +120,15 @@ class TestPublish:
         result = run_publish(project_dir, ["--entity", "../../etc/passwd"], expect_success=False)
         assert result.returncode != 0
         assert "invalid entity name" in result.stderr
+
+
+@pytest.mark.parametrize(("platform_name", "publish_script"), PUBLISH_SCRIPT_VARIANTS)
+def test_publish_rejects_directory_entity_path(temp_project_dir, publish_script, platform_name):
+    guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
+    entity_dir = guideline_dir / "my-tip.md"
+    entity_dir.mkdir(parents=True)
+
+    result = run_publish_script(publish_script, temp_project_dir, ["--entity", "my-tip.md"], expect_success=False)
+    assert result.returncode != 0
+    assert "not found or is a directory" in result.stderr
+    assert entity_dir.is_dir()
