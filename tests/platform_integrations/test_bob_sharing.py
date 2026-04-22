@@ -14,7 +14,7 @@ sys.path.insert(
 )
 import config as cfg_module  # noqa: E402
 
-pytestmark = pytest.mark.platform_integrations
+pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
 _BOB_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/bob/evolve-lite"
 _CLAUDE_LIB = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib"
@@ -28,7 +28,7 @@ RETRIEVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:recall/scripts/retrieve_entiti
 
 def run_script(script, project_dir, args=None, evolve_dir=None, stdin_data=None, expect_success=True):
     """Run a Bob script with proper environment setup.
-    
+
     Injects Claude's lib directory into PYTHONPATH so Bob's scripts can import
     shared modules (config, audit, entity_io) without requiring a symlink in the repo.
     """
@@ -328,16 +328,16 @@ class TestBobSync:
         p = subscribed_project
         lr = p["local_repo"]
         git_env = lr["env"]
-        
+
         # First sync to create the subscribed clone
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
-        
+
         # Create a real file and a symlink in the working repo and push them
         real_file = lr["work"] / "guideline" / "real.md"
         real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
         symlink_file = lr["work"] / "guideline" / "link.md"
         symlink_file.symlink_to(real_file)
-        
+
         subprocess.run(["git", "-C", str(lr["work"]), "add", "."], check=True, env=git_env)
         subprocess.run(
             ["git", "-C", str(lr["work"]), "commit", "-m", "add real file and symlink"],
@@ -349,10 +349,10 @@ class TestBobSync:
             check=True,
             env=git_env,
         )
-        
+
         # Second sync should pull the changes but skip the symlink
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
-        
+
         mirrored = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline"
         assert (mirrored / "real.md").exists(), "Real file should be present"
         assert (mirrored / "link.md").exists(), "Symlink should be present in git clone"
@@ -372,13 +372,13 @@ class TestBobSync:
         """Sync must reject '.' and '..' subscription names to prevent path traversal."""
         evolve_dir = temp_project_dir / ".evolve"
         cfg_path = temp_project_dir / "evolve.config.yaml"
-        
+
         # Test single dot
         cfg_path.write_text("subscriptions:\n  - name: .\n    remote: git@github.com:x/y.git\n    branch: main\n")
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
         assert "invalid subscription name" in result.stdout or "path traversal detected" in result.stdout
-        
+
         # Test double dot
         cfg_path.write_text("subscriptions:\n  - name: ..\n    remote: git@github.com:x/y.git\n    branch: main\n")
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)

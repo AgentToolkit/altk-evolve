@@ -155,7 +155,7 @@ def _cast(value):
         if stripped == "":
             return ""
         value = stripped
-    
+
     if value in ("true", "True", "yes"):
         return True
     if value in ("false", "False", "no"):
@@ -214,40 +214,56 @@ def _scalar(v):
         return "false"
     if v is None:
         return "null"
-    
+
     # For non-string types, convert to string
     if not isinstance(v, str):
         return str(v)
-    
+
     # Reserved YAML tokens that must be quoted
     reserved_tokens = {
-        "true", "True", "TRUE",
-        "false", "False", "FALSE",
-        "null", "Null", "NULL", "~",
-        "yes", "Yes", "YES",
-        "no", "No", "NO",
-        "on", "On", "ON",
-        "off", "Off", "OFF",
+        "true",
+        "True",
+        "TRUE",
+        "false",
+        "False",
+        "FALSE",
+        "null",
+        "Null",
+        "NULL",
+        "~",
+        "yes",
+        "Yes",
+        "YES",
+        "no",
+        "No",
+        "NO",
+        "on",
+        "On",
+        "ON",
+        "off",
+        "Off",
+        "OFF",
     }
-    
+
     # YAML indicator characters that require quoting
     yaml_indicators = set("-?:[]{},'&*#!|>'\"%@`")
-    
+
     # Check if quoting is needed
     needs_quoting = (
-        v in reserved_tokens or  # Reserved token
-        v == "" or  # Empty string
-        v[0] in " \t" or v[-1] in " \t" or  # Leading/trailing whitespace
-        "#" in v or  # Comment character
-        any(c in yaml_indicators for c in v) or  # YAML special characters
-        v[0] in yaml_indicators  # Starts with indicator
+        v in reserved_tokens  # Reserved token
+        or v == ""  # Empty string
+        or v[0] in " \t"
+        or v[-1] in " \t"  # Leading/trailing whitespace
+        or "#" in v  # Comment character
+        or any(c in yaml_indicators for c in v)  # YAML special characters
+        or v[0] in yaml_indicators  # Starts with indicator
     )
-    
+
     if needs_quoting:
         # Use single quotes and escape embedded single quotes by doubling them
         escaped = v.replace("'", "''")
         return f"'{escaped}'"
-    
+
     return v
 
 

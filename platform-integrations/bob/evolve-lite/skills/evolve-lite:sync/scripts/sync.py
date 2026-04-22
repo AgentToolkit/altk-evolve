@@ -24,7 +24,7 @@ for parent in current.parents:
         sys.path.insert(0, str(lib_path))
         break
 
-from config import load_config, _parse_yaml  # noqa: E402
+from config import load_config  # noqa: E402
 from audit import append as audit_append  # noqa: E402
 
 
@@ -73,7 +73,7 @@ def count_delta(repo_path):
     except subprocess.TimeoutExpired:
         print(f"Warning: git diff timed out for {repo_path} after {_GIT_TIMEOUT} seconds", file=sys.stderr)
         return {"added": 0, "updated": 0, "removed": 0}
-    
+
     if result.returncode != 0:
         # HEAD@{1} doesn't exist (initial sync) — count all .md files as added
         added = len(list(repo_path.glob("**/*.md")))
@@ -108,7 +108,7 @@ def main():
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
-    
+
     # Determine project_root from config path or EVOLVE_DIR
     if args.config:
         # Derive project_root from the directory containing the config file
@@ -118,7 +118,7 @@ def main():
         project_root = str(evolve_dir.parent)
     else:
         project_root = "."
-    
+
     cfg = load_config(project_root)
 
     subscriptions = cfg.get("subscriptions", [])
@@ -152,7 +152,7 @@ def main():
             continue
 
         repo_path = evolve_dir / "entities" / "subscribed" / name
-        
+
         # Defense-in-depth: verify resolved path is within subscribed directory
         repo_path_resolved = repo_path.resolve()
         if not repo_path_resolved.is_relative_to(subscribed_base) or repo_path_resolved == subscribed_base:

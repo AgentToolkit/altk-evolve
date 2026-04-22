@@ -87,8 +87,7 @@ def load_entities_with_source(entities_dir):
             try:
                 entities_index = parts.index("entities")
                 # Verify the structure is .../entities/subscribed/{name}/...
-                if (entities_index + 2 < len(parts) and
-                    parts[entities_index + 1] == "subscribed"):
+                if entities_index + 2 < len(parts) and parts[entities_index + 1] == "subscribed":
                     entity["_source"] = parts[entities_index + 2]
             except (ValueError, IndexError):
                 # "entities" not found or invalid structure - not a subscribed entity
