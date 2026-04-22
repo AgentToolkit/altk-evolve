@@ -15,7 +15,7 @@ def mcp(request, tmp_path):
     original_milvus_uri = milvus_client_settings.uri
 
     # Use a per-run namespace to avoid collisions on shared remote backends
-    namespace_id = f"test-{uuid.uuid4().hex[:8]}"
+    namespace_id = f"test_{uuid.uuid4().hex[:8]}"
 
     milvus_db_file = None
     evolve_client_ref = [None]
@@ -105,9 +105,6 @@ def mcp(request, tmp_path):
 
     evolve_client = EvolveClient()
     evolve_client_ref[0] = evolve_client
-    try:
-        evolve_client.create_namespace(namespace_id)
-    except Exception:
-        pass
+    evolve_client.ensure_namespace(namespace_id)
 
     yield mcp_server_module.mcp

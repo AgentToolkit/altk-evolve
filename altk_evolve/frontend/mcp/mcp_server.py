@@ -292,6 +292,10 @@ def create_entity(
             metadata_dict.setdefault("creation_mode", "manual")
 
         metadata_dict["visibility"] = visibility
+        if visibility == "public":
+            from datetime import UTC, datetime
+
+            metadata_dict.setdefault("published_at", datetime.now(UTC).isoformat())
         if owner_id:
             metadata_dict["owner_id"] = owner_id
 
