@@ -111,7 +111,7 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 - `save_trajectory(trajectory_data: str, task_id: str | None, owner_id: str | None)`: Save a conversation trajectory and generate new guidelines.
 - `create_entity(content: str, entity_type: str, metadata: str | None, enable_conflict_resolution: bool, owner_id: str | None, visibility: str = "private")`: Create a single entity. Pass `visibility="public"` and `owner_id` to make it immediately discoverable by other namespaces.
 - `publish_entity(entity_id: str, user_id: str | None)`: Make an entity publicly visible to all namespaces. Records the caller as owner and stamps `published_at`.
-- `unpublish_entity(entity_id: str)`: Revert an entity to private visibility.
+- `unpublish_entity(entity_id: str, user_id: str | None = None)`: Revert an entity to private visibility. Ownership is enforced server-side: if the entity has an `owner_id`, `user_id` must match it.
 - `delete_entity(entity_id: str)`: Delete a specific entity by its ID.
 
 ### Filter Migration Note
@@ -158,7 +158,7 @@ Sets `visibility=public` and records the owner and publish timestamp.
 
 **Unpublishing:**
 ```python
-unpublish_entity(entity_id="42")
+unpublish_entity(entity_id="42", user_id="alice")
 ```
 Reverts the entity to private. The entity stays in its namespace — only its visibility changes.
 

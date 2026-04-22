@@ -118,7 +118,7 @@ def get_client() -> EvolveClient:
         return _client
 
 
-def get_entities_logic(task: str, entity_type: str = "guideline", include_public: bool = False) -> str:
+def get_entities_logic(task: str, entity_type: str = "guideline", include_public: bool = False, limit: int = 10) -> str:
     """Implementation logic for get_entities tool."""
     logger.info(f"Getting entities of type '{entity_type}' for task: {task} (include_public={include_public})")
     client = get_client()
@@ -127,6 +127,7 @@ def get_entities_logic(task: str, entity_type: str = "guideline", include_public
         namespace_id=evolve_config.namespace_id,
         query=task,
         filters={"type": entity_type},
+        limit=limit,
     )
 
     header = f"# {entity_type.capitalize()}s for: {task}"
@@ -143,6 +144,7 @@ def get_entities_logic(task: str, entity_type: str = "guideline", include_public
             query=task,
             entity_type=entity_type,
             exclude_namespace_ids=[evolve_config.namespace_id],
+            limit=limit,
         )
         private_ids: set[str] = {e.id for e in private_results}
         seen_public_ids: set[str] = set()
@@ -159,7 +161,7 @@ def get_entities_logic(task: str, entity_type: str = "guideline", include_public
 
 
 @mcp.tool()
-def get_entities(task: str, entity_type: str = "guideline", include_public: bool = False) -> str:
+def get_entities(task: str, entity_type: str = "guideline", include_public: bool = False, limit: int = 10) -> str:
     """
     Get relevant entities for a given task, filtered by type.
     Provide a task description and receive applicable best practices, guidelines, or policies.
@@ -168,8 +170,9 @@ def get_entities(task: str, entity_type: str = "guideline", include_public: bool
         task: A description of the task you want entities for
         entity_type: The type of entities to retrieve (e.g., 'guideline', 'policy'). Defaults to 'guideline'.
         include_public: If True, also include public entities from all namespaces. Defaults to False.
+        limit: Maximum number of results to return from each source (private and public). Defaults to 10.
     """
-    return get_entities_logic(task, entity_type, include_public)
+    return get_entities_logic(task, entity_type, include_public, limit)
 
 
 @mcp.tool()
@@ -279,6 +282,8 @@ def create_entity(
     try:
         if visibility not in ("private", "public"):
             return json.dumps({"error": f"Invalid visibility '{visibility}': must be 'private' or 'public'"})
+        if visibility == "public" and not owner_id:
+            return json.dumps({"error": "Missing owner_id", "message": "public entities must have an owner_id"})
 
         _RESERVED_KEYS = {"owner_id", "visibility", "published_at", "creation_mode"}
 

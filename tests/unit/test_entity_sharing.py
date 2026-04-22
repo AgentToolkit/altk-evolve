@@ -115,6 +115,26 @@ def test_unpublish_entity_reverts_to_private(mock_get_client):
     assert result["metadata"]["visibility"] == "private"
 
 
+def test_publish_entity_ownership_mismatch_denied(mock_get_client):
+    mock_get_client.get_entity_by_id.return_value = _make_entity(owner_id="bob")
+
+    result = json.loads(publish_entity(entity_id="42", user_id="alice"))
+
+    assert "error" in result
+    assert "Permission denied" in result["error"]
+    mock_get_client.patch_entity_metadata.assert_not_called()
+
+
+def test_unpublish_entity_ownership_mismatch_denied(mock_get_client):
+    mock_get_client.get_entity_by_id.return_value = _make_entity(owner_id="bob")
+
+    result = json.loads(unpublish_entity(entity_id="42", user_id="alice"))
+
+    assert "error" in result
+    assert "Permission denied" in result["error"]
+    mock_get_client.patch_entity_metadata.assert_not_called()
+
+
 # ── get_entities with include_public ──────────────────────────────────────────
 
 

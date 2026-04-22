@@ -42,19 +42,27 @@ async def test_publish_entity_makes_it_retrievable_publicly(mcp):
 
 @pytest.mark.e2e
 async def test_unpublish_entity_removes_it_from_public_results(mcp):
-    """unpublish_entity reverts visibility to private."""
+    """unpublish_entity reverts visibility to private and removes the entity from public results."""
     async with Client(transport=mcp) as client:
         create_resp = await client.call_tool_mcp(
             "create_entity",
-            {"content": "prefer list comprehensions", "entity_type": "guideline", "enable_conflict_resolution": False},
+            {"content": "prefer list comprehensions", "entity_type": "guideline", "enable_conflict_resolution": False, "owner_id": "alice"},
         )
         entity_id = json.loads(create_resp.content[0].text)["id"]
 
-        await client.call_tool_mcp("publish_entity", {"entity_id": entity_id})
+        await client.call_tool_mcp("publish_entity", {"entity_id": entity_id, "user_id": "alice"})
 
-        unpub_resp = await client.call_tool_mcp("unpublish_entity", {"entity_id": entity_id})
+        unpub_resp = await client.call_tool_mcp("unpublish_entity", {"entity_id": entity_id, "user_id": "alice"})
         unpublished = json.loads(unpub_resp.content[0].text)
         assert unpublished["metadata"]["visibility"] == "private"
+
+        get_resp = await client.call_tool_mcp(
+            "get_entities",
+            {"task": "list comprehensions", "entity_type": "guideline", "include_public": True},
+        )
+        public_output = get_resp.content[0].text
+        entity_lines = [line for line in public_output.splitlines() if "list comprehensions" in line]
+        assert not any("[public:" in line for line in entity_lines)
 
 
 @pytest.mark.e2e
