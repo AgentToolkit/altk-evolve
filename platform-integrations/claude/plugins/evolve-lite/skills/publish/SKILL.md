@@ -73,8 +73,8 @@ For each selected entity file, run:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish/scripts/publish.py \
-  --entity {filename} \
-  --user {identity.user}
+  --entity "{filename}" \
+  --user "{identity.user}"
 ```
 
 ### Step 5: Commit and push

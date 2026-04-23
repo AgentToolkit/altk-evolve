@@ -53,6 +53,18 @@ def git_sync(repo_path, branch):
         return None
 
 
+def _head_hash(repo_path):
+    result = subprocess.run(
+        ["git", "-c", f"safe.directory={repo_path}", "-C", str(repo_path), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=_GIT_TIMEOUT,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
 def count_delta(repo_path):
     """Count added/modified/deleted .md files since last pull.
 
@@ -169,13 +181,16 @@ def main():
                 total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
                 continue
 
+        head_before = _head_hash(repo_path)
+
         pull_result = git_sync(repo_path, branch)
         if pull_result is None or pull_result.returncode != 0:
             summaries.append(f"{name} (sync failed — skipping)")
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             continue
 
-        if "Already up to date" in (pull_result.stdout or ""):
+        head_after = _head_hash(repo_path)
+        if head_before is not None and head_before == head_after:
             delta = {"added": 0, "updated": 0, "removed": 0}
         else:
             delta = count_delta(repo_path)

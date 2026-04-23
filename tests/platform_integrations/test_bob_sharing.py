@@ -8,11 +8,18 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(
-    0,
-    str(Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib"),
-)
-import config as cfg_module  # noqa: E402
+import importlib.util
+
+
+def _load_claude_config_module():
+    path = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/config.py"
+    spec = importlib.util.spec_from_file_location("claude_evolve_lite_config", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+cfg_module = _load_claude_config_module()
 
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
@@ -179,7 +186,7 @@ class TestBobUnsubscribe:
     def test_removes_local_clone(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
         run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--name", "alice"], evolve_dir=evolve_dir)
-        assert not (evolve_dir / "subscribed" / "alice").exists()
+        assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
 
     def test_removes_subscription_from_config(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
@@ -324,7 +331,7 @@ class TestBobSync:
         actions = [json.loads(line)["action"] for line in log_path.read_text().splitlines() if line.strip()]
         assert "sync" in actions
 
-    def test_skips_symlinked_entities(self, subscribed_project):
+    def test_sync_preserves_symlinks_in_clone(self, subscribed_project):
         p = subscribed_project
         lr = p["local_repo"]
         git_env = lr["env"]
@@ -366,7 +373,7 @@ class TestBobSync:
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
         assert "invalid subscription name" in result.stdout
-        assert not (evolve_dir / "subscribed" / ".." / "evil").exists()
+        assert not (evolve_dir / "entities" / "subscribed" / "evil").exists()
 
     def test_rejects_dot_and_double_dot_names(self, temp_project_dir):
         """Sync must reject '.' and '..' subscription names to prevent path traversal."""
@@ -449,8 +456,8 @@ class TestBobPublish:
         assert not entity.exists()
         assert "visibility: public" in public_entity.read_text()
 
-    def test_initializes_git_repo_if_needed(self, temp_project_dir):
-        """Bob's publish script doesn't auto-initialize git repo - that's done separately."""
+    def test_publishes_when_public_git_repo_exists(self, temp_project_dir):
+        """Verifies publish succeeds when a git repo is already present in the public directory."""
         evolve_dir = temp_project_dir / ".evolve"
         entities_dir = evolve_dir / "entities" / "guideline"
         entities_dir.mkdir(parents=True)
@@ -569,6 +576,19 @@ class TestBobRetrieveEntities:
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert "Subscribed tip" in result.stdout
         assert "[from: alice]" in result.stdout
+
+    def test_retrieve_filters_symlinked_entities(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        subscribed_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
+        subscribed_dir.mkdir(parents=True)
+        real_file = subscribed_dir / "real.md"
+        real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
+        link_file = subscribed_dir / "link.md"
+        link_file.symlink_to(real_file)
+
+        result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
+        assert "Real content" in result.stdout
+        assert result.stdout.count("Real content") == 1, "Symlinked duplicate should be filtered out"
 
 
 # Made with Bob
