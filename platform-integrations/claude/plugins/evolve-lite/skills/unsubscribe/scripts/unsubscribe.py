@@ -9,6 +9,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -17,6 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
 from config import load_config, save_config
 from audit import append as audit_append
+
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def main():
@@ -40,6 +43,9 @@ def main():
 
     # --name: remove the named subscription
     name = args.name
+    if not _SAFE_NAME.match(name):
+        print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
+        sys.exit(1)
     new_subs = [s for s in subscriptions if not (isinstance(s, dict) and s.get("name") == name)]
 
     if len(new_subs) == len(subscriptions):
@@ -47,7 +53,7 @@ def main():
         sys.exit(1)
 
     # Delete local clone
-    dest = evolve_dir / "subscribed" / name
+    dest = evolve_dir / "entities" / "subscribed" / name
     if dest.exists():
         shutil.rmtree(dest)
         print(f"Deleted {dest}")

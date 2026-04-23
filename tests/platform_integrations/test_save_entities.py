@@ -1,4 +1,4 @@
-"""Tests for skills/learn/scripts/save_entities.py."""
+"""Tests for the Claude plugin's skills/learn/scripts/save_entities.py."""
 
 import json
 import os
@@ -10,8 +10,8 @@ import pytest
 
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
-_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/bob/evolve-lite"
-SAVE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite:learn/scripts/save_entities.py"
+_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
+SAVE_SCRIPT = _PLUGIN_ROOT / "skills/learn/scripts/save_entities.py"
 
 
 def run_save(project_dir, entities, args=None, evolve_dir=None, expect_success=True):

@@ -535,6 +535,54 @@ class TestBobSaveEntities:
         files = list((evolve_dir / "entities" / "guideline").glob("*.md"))
         assert "owner: alice" in files[0].read_text()
 
+    def test_deduplicates_exact_content(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        entity = {"type": "guideline", "content": "No magic numbers."}
+        run_script(SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": [entity]}), evolve_dir=evolve_dir)
+        run_script(SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": [entity]}), evolve_dir=evolve_dir)
+        files = list((evolve_dir / "entities" / "guideline").glob("*.md"))
+        assert len(files) == 1
+
+    def test_dedup_is_case_and_whitespace_insensitive(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        run_script(SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": [{"type": "guideline", "content": "No magic numbers."}]}), evolve_dir=evolve_dir)
+        run_script(SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": [{"type": "guideline", "content": "NO MAGIC  NUMBERS."}]}), evolve_dir=evolve_dir)
+        files = list((evolve_dir / "entities" / "guideline").glob("*.md"))
+        assert len(files) == 1
+
+    def test_multiple_entities_all_written(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        run_script(
+            SAVE_SCRIPT,
+            temp_project_dir,
+            stdin_data=json.dumps({"entities": [{"type": "guideline", "content": "First tip."}, {"type": "guideline", "content": "Second tip."}]}),
+            evolve_dir=evolve_dir,
+        )
+        files = list((evolve_dir / "entities" / "guideline").glob("*.md"))
+        assert len(files) == 2
+
+    def test_skips_entities_without_content(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        run_script(SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": [{"type": "guideline"}]}), evolve_dir=evolve_dir)
+        guideline_dir = evolve_dir / "entities" / "guideline"
+        if guideline_dir.exists():
+            assert list(guideline_dir.glob("*.md")) == []
+
+    def test_exits_cleanly_when_empty_entities_list(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        result = run_script(SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": []}), evolve_dir=evolve_dir, expect_success=False)
+        assert result.returncode == 0
+
+    def test_output_reports_added_count(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        result = run_script(
+            SAVE_SCRIPT,
+            temp_project_dir,
+            stdin_data=json.dumps({"entities": [{"type": "guideline", "content": "Tip A."}, {"type": "guideline", "content": "Tip B."}]}),
+            evolve_dir=evolve_dir,
+        )
+        assert "Added 2" in result.stdout
+
 
 # ============================================================================
 # Retrieve Entities Tests

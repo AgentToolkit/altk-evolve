@@ -60,6 +60,8 @@ def load_entities_with_source(entities_dir):
     entities_dir = Path(entities_dir)
     entities = []
     for md in sorted(entities_dir.glob("**/*.md")):
+        if md.is_symlink():
+            continue
         try:
             entity = markdown_to_entity(md)
             entity.pop("_source", None)
