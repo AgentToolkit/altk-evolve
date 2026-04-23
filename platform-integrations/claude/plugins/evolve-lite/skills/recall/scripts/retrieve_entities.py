@@ -93,7 +93,7 @@ def load_entities_with_source(entities_dir):
                 # "entities" not found or invalid structure - not a subscribed entity
                 pass
             entities.append(entity)
-        except OSError:
+        except (OSError, UnicodeError):
             pass
     return entities
 

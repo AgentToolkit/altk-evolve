@@ -164,6 +164,7 @@ def main():
 
         repo_path = evolve_dir / "entities" / "subscribed" / name
 
+        head_before = None
         if not repo_path.is_dir():
             remote = sub.get("remote")
             if not remote:
@@ -180,8 +181,8 @@ def main():
                 summaries.append(f"{name} (re-clone failed: {clone_result.stderr.strip()})")
                 total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
                 continue
-
-        head_before = _head_hash(repo_path)
+        else:
+            head_before = _head_hash(repo_path)
 
         pull_result = git_sync(repo_path, branch)
         if pull_result is None or pull_result.returncode != 0:
