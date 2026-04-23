@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Add lib to path so we can import entity_io
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from entity_io import find_entities_dir, markdown_to_entity, log as _log
+from entity_io import find_recall_entity_dirs, markdown_to_entity, log as _log
 
 
 def log(message):
@@ -110,13 +110,15 @@ def main():
         log(f"Failed to parse JSON input: {e}")
         return
 
-    entities_dir = find_entities_dir()
-    log(f"Entities dir: {entities_dir}")
-    if not entities_dir:
+    recall_dirs = find_recall_entity_dirs()
+    log(f"Recall dirs: {recall_dirs}")
+    if not recall_dirs:
         log("No entities directory found")
         return
 
-    entities = load_entities_with_source(entities_dir)
+    entities = []
+    for entities_dir in recall_dirs:
+        entities.extend(load_entities_with_source(entities_dir))
     if not entities:
         log("No entities found")
         return

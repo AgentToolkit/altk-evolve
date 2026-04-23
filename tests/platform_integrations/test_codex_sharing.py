@@ -286,7 +286,7 @@ class TestCodexSharingScripts:
             evolve_dir=evolve_dir,
         )
         config_text = (temp_project_dir / "evolve.config.yaml").read_text()
-        assert 'name: "alice"' in config_text
+        assert "name: alice" in config_text
 
         result = run_script(
             SUBSCRIBE_SCRIPT,

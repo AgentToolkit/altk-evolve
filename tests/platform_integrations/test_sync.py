@@ -22,12 +22,13 @@ SYNC_SCRIPT_VARIANTS = [
 ]
 
 
-def run_script(script, project_dir, args=None, evolve_dir=None, expect_success=True):
+def run_script(script, project_dir, args=None, evolve_dir=None, stdin_data=None, expect_success=True):
     env = {**os.environ}
     if evolve_dir:
         env["EVOLVE_DIR"] = str(evolve_dir)
     return subprocess.run(
         [sys.executable, str(script)] + (args or []),
+        input=stdin_data,
         capture_output=True,
         text=True,
         cwd=str(project_dir),
@@ -139,7 +140,7 @@ class TestSync:
         actions = [json.loads(line)["action"] for line in log_path.read_text().splitlines() if line.strip()]
         assert "sync" in actions
 
-    def test_skips_symlinked_entities(self, subscribed_project):
+    def test_sync_preserves_symlinks_in_clone(self, subscribed_project):
         p = subscribed_project
         lr = p["local_repo"]
         # Create a real file and a symlink pointing at it in the subscribed clone

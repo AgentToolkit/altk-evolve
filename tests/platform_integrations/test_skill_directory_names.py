@@ -59,55 +59,14 @@ class TestSkillDirectoryNames:
                 f"This will cause installation failures because install.sh expects the 'evolve-lite:' prefix."
             )
 
-    def test_bob_lite_install_script_references_match_actual_directories(self, platform_integrations_dir, install_script):
-        """Verify that skill names in install.sh match actual directory names."""
-        # Read install.sh and extract skill directory references
+    def test_bob_lite_install_script_uses_dynamic_copying(self, install_script):
+        """Verify that install.sh uses dynamic skill copying (not hardcoded skill names)."""
         install_content = install_script.read_text()
-
-        # Find the lines that copy skills
-        # Looking for patterns like: copy_tree(bob_source_lite / "skills" / "evolve-lite:learn", ...)
-        import re
-
-        pattern = r'bob_source_lite / "skills" / "([^"]+)"'
-        referenced_skills = re.findall(pattern, install_content)
-
-        assert referenced_skills, "Could not find skill references in install.sh"
-
-        # Verify each referenced skill exists
-        bob_lite_skills = platform_integrations_dir / "bob" / "evolve-lite" / "skills"
-
-        for skill_name in referenced_skills:
-            skill_dir = bob_lite_skills / skill_name
-            assert skill_dir.is_dir(), (
-                f"install.sh references skill '{skill_name}' but directory doesn't exist: {skill_dir}\n"
-                f"This will cause 'Source directory not found' errors during installation."
-            )
-
-    def test_bob_lite_no_orphaned_skill_directories(self, platform_integrations_dir, install_script):
-        """Verify there are no skill directories that aren't referenced in install.sh."""
-        bob_lite_skills = platform_integrations_dir / "bob" / "evolve-lite" / "skills"
-
-        if not bob_lite_skills.exists():
-            pytest.skip("Bob lite skills directory doesn't exist")
-
-        # Get actual skill directories
-        actual_skills = {d.name for d in bob_lite_skills.iterdir() if d.is_dir()}
-
-        # Get referenced skills from install.sh
-        install_content = install_script.read_text()
-        import re
-
-        pattern = r'bob_source_lite / "skills" / "([^"]+)"'
-        referenced_skills = set(re.findall(pattern, install_content))
-
-        # Find orphaned directories (exist but not referenced)
-        orphaned = actual_skills - referenced_skills
-
-        assert not orphaned, (
-            f"Found skill directories that aren't referenced in install.sh: {orphaned}\n"
-            f"These skills won't be installed. Either:\n"
-            f"1. Add them to install.sh if they should be installed, or\n"
-            f"2. Remove them if they're obsolete"
+        
+        # Verify the script uses iterdir() to copy all skills dynamically
+        assert "for skill_dir in sorted(skills_src.iterdir())" in install_content, (
+            "install.sh should use dynamic skill copying with iterdir() "
+            "to automatically install all skills in the skills directory"
         )
 
     def test_bob_lite_installation_succeeds(self, temp_project_dir, install_runner, file_assertions):
