@@ -1,5 +1,6 @@
 """Tests for subscribe.py and unsubscribe.py."""
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -10,11 +11,16 @@ import pytest
 
 _IS_WINDOWS = sys.platform == "win32"
 
-sys.path.insert(
-    0,
-    str(Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib"),
-)
-import config as cfg_module
+
+def _load_claude_config_module():
+    path = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/config.py"
+    spec = importlib.util.spec_from_file_location("claude_evolve_lite_config_subscribe", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+cfg_module = _load_claude_config_module()
 
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 

@@ -118,6 +118,7 @@ def main():
         # Rollback: remove cloned directory if config save failed
         if cloned_now and dest.exists():
             import shutil
+
             shutil.rmtree(dest)
         raise
 
