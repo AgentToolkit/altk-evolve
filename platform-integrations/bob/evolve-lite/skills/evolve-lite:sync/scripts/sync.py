@@ -146,8 +146,8 @@ def main():
         name = sub.get("name", "unknown")
         branch = sub.get("branch", "main")
 
-        # Reject path traversal attempts
-        if name in {".", ".."} or not _SAFE_NAME.match(name):
+        # Reject path traversal attempts and non-string names
+        if not isinstance(name, str) or name in {".", ".."} or not _SAFE_NAME.match(name):
             summaries.append(f"{name!r} (skipped — invalid subscription name)")
             continue
 
