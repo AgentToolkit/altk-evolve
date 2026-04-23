@@ -302,7 +302,7 @@ class TestCodexSharingScripts:
         result = run_script(
             SUBSCRIBE_SCRIPT,
             project_dir=temp_project_dir,
-            args=["--name", "../../evil", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            args=["--name", "../../outside", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=temp_project_dir / ".evolve",
             expect_success=False,
         )
@@ -378,7 +378,7 @@ class TestCodexSharingScripts:
         result = run_script(
             UNSUBSCRIBE_SCRIPT,
             project_dir=temp_project_dir,
-            args=["--name", "../../evil"],
+            args=["--name", "../../outside"],
             evolve_dir=evolve_dir,
             expect_success=False,
         )

@@ -114,7 +114,7 @@ class TestSubscribe:
         result = run_script(
             SUBSCRIBE_SCRIPT,
             temp_project_dir,
-            ["--name", "../../evil", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            ["--name", "../../outside", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
             expect_success=False,
         )
@@ -223,7 +223,7 @@ class TestUnsubscribe:
         result = run_script(
             UNSUBSCRIBE_SCRIPT,
             temp_project_dir,
-            ["--name", "../../evil"],
+            ["--name", "../../outside"],
             evolve_dir=evolve_dir,
             expect_success=False,
         )
