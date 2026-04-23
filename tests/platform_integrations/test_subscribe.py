@@ -14,11 +14,17 @@ sys.path.insert(
 )
 import config as cfg_module
 
-pytestmark = pytest.mark.platform_integrations
+pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
-_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
-SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
-UNSUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/unsubscribe/scripts/unsubscribe.py"
+_REPO_ROOT = Path(__file__).parent.parent.parent
+CLAUDE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
+CODEX_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite"
+SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
+UNSUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/unsubscribe/scripts/unsubscribe.py"
+SUBSCRIBE_SCRIPT_VARIANTS = [
+    ("claude", CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"),
+    ("codex", CODEX_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"),
+]
 
 
 def run_script(script, project_dir, args, evolve_dir=None, expect_success=True):
@@ -33,6 +39,21 @@ def run_script(script, project_dir, args, evolve_dir=None, expect_success=True):
         env=env,
         check=expect_success,
     )
+
+
+@pytest.mark.parametrize(("platform_name", "subscribe_script"), SUBSCRIBE_SCRIPT_VARIANTS)
+@pytest.mark.parametrize("bad_name", ["foo/bar", "../etc", "alice:bob", "alice bob"])
+def test_subscribe_rejects_invalid_name_characters(temp_project_dir, local_repo, subscribe_script, platform_name, bad_name):
+    evolve_dir = temp_project_dir / ".evolve"
+    result = run_script(
+        subscribe_script,
+        temp_project_dir,
+        ["--name", bad_name, "--remote", str(local_repo["bare"]), "--branch", "main"],
+        evolve_dir=evolve_dir,
+        expect_success=False,
+    )
+    assert result.returncode != 0
+    assert "invalid subscription name" in result.stderr
 
 
 class TestSubscribe:

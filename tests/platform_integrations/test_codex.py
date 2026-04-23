@@ -9,6 +9,7 @@ import pytest
 
 EVOLVE_PLUGIN = "evolve-lite"
 EVOLVE_HOOK_SNIPPET = "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
+EVOLVE_SYNC_SNIPPET = "plugins/evolve-lite/skills/sync/scripts/sync.py"
 
 
 def _marketplace_has_evolve_plugin(path):
@@ -26,6 +27,16 @@ def _hooks_have_evolve_recall(path):
     return False
 
 
+def _hooks_have_evolve_sync(path):
+    data = json.loads(path.read_text())
+    groups = data.get("hooks", {}).get("SessionStart", [])
+    for group in groups:
+        for hook in _iter_group_hooks(group):
+            if EVOLVE_SYNC_SNIPPET in hook.get("command", ""):
+                return group.get("matcher") == "startup|resume"
+    return False
+
+
 def _iter_group_hooks(group):
     hooks = group.get("hooks", [])
     if isinstance(hooks, list):
@@ -36,6 +47,7 @@ def _iter_group_hooks(group):
 
 
 @pytest.mark.platform_integrations
+@pytest.mark.e2e
 class TestCodexInstall:
     """Test the Codex install flow."""
 
@@ -49,8 +61,16 @@ class TestCodexInstall:
         file_assertions.assert_file_exists(plugin_dir / "README.md")
         file_assertions.assert_dir_exists(plugin_dir / "skills" / "learn")
         file_assertions.assert_dir_exists(plugin_dir / "skills" / "recall")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "publish")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "subscribe")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "unsubscribe")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "sync")
         file_assertions.assert_file_exists(plugin_dir / "skills" / "learn" / "scripts" / "save_entities.py")
         file_assertions.assert_file_exists(plugin_dir / "skills" / "recall" / "scripts" / "retrieve_entities.py")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "publish" / "scripts" / "publish.py")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "subscribe" / "scripts" / "subscribe.py")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "unsubscribe" / "scripts" / "unsubscribe.py")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "sync" / "scripts" / "sync.py")
         file_assertions.assert_file_exists(plugin_dir / "lib" / "entity_io.py")
 
         marketplace_path = temp_project_dir / ".agents" / "plugins" / "marketplace.json"
@@ -60,6 +80,7 @@ class TestCodexInstall:
         hooks_path = temp_project_dir / ".codex" / "hooks.json"
         file_assertions.assert_valid_json(hooks_path)
         assert _hooks_have_evolve_recall(hooks_path), "Evolve recall hook missing from .codex/hooks.json"
+        assert _hooks_have_evolve_sync(hooks_path), "Evolve sync hook missing from .codex/hooks.json"
 
         hooks_data = json.loads(hooks_path.read_text())
         evolve_groups = [
@@ -81,6 +102,25 @@ class TestCodexInstall:
             "exit 1'"
         )
         assert evolve_hook["command"] == expected_command
+        sync_groups = [
+            group
+            for group in hooks_data.get("hooks", {}).get("SessionStart", [])
+            if any(EVOLVE_SYNC_SNIPPET in hook.get("command", "") for hook in group.get("hooks", []))
+        ]
+        assert sync_groups[0]["matcher"] == "startup|resume"
+        sync_hook = next(hook for hook in sync_groups[0]["hooks"] if EVOLVE_SYNC_SNIPPET in hook.get("command", ""))
+        expected_sync_command = (
+            "sh -lc '"
+            'd="$PWD"; '
+            "while :; do "
+            'candidate="$d/plugins/evolve-lite/skills/sync/scripts/sync.py"; '
+            'if [ -f "$candidate" ]; then EVOLVE_DIR="$d/.evolve" exec python3 "$candidate" --quiet --session-start; fi; '
+            '[ "$d" = "/" ] && break; '
+            'd="$(dirname "$d")"; '
+            "done; "
+            "exit 1'"
+        )
+        assert sync_hook["command"] == expected_sync_command
         assert "~/.codex/config.toml" in result.stdout
         assert "codex_hooks = true" in result.stdout
         assert "evolve-lite:recall" in result.stdout
@@ -129,6 +169,21 @@ class TestCodexInstall:
         assert evolve_hook["statusMessage"] == "Loading Evolve guidance"
         assert evolve_hook["delayMs"] == 250
 
+    def test_install_adds_session_start_sync_hook(self, temp_project_dir, install_runner, codex_fixtures):
+        """Installing should preserve user SessionStart hooks and add the sync hook."""
+        hooks_path = codex_fixtures.create_existing_hooks(temp_project_dir)
+
+        install_runner.run("install", platform="codex")
+
+        hooks_data = json.loads(hooks_path.read_text())
+        session_groups = hooks_data["hooks"]["SessionStart"]
+        assert len(session_groups) == 2
+        assert any(
+            any(hook.get("command") == "python3 ~/.codex/hooks/session_start.py" for hook in _iter_group_hooks(group))
+            for group in session_groups
+        )
+        assert any(any(EVOLVE_SYNC_SNIPPET in hook.get("command", "") for hook in _iter_group_hooks(group)) for group in session_groups)
+
     def test_uninstall_removes_only_evolve_hook_from_matching_group(self, temp_project_dir, install_runner, codex_fixtures):
         """Uninstalling should remove only the evolve hook entry and preserve the shared group."""
         hooks_path = codex_fixtures.create_existing_hooks_with_dict_evolve_group(temp_project_dir)
@@ -145,6 +200,33 @@ class TestCodexInstall:
         assert "memory" in remaining_group["hooks"]
         assert "evolve-lite" not in remaining_group["hooks"]
         assert all(EVOLVE_HOOK_SNIPPET not in hook.get("command", "") for hook in _iter_group_hooks(remaining_group))
+
+    def test_uninstall_removes_session_start_sync_hook_only(self, temp_project_dir, install_runner, codex_fixtures):
+        """Uninstalling should remove the Evolve SessionStart hook and preserve user hooks."""
+        hooks_path = codex_fixtures.create_existing_hooks(temp_project_dir)
+        install_runner.run("install", platform="codex")
+
+        install_runner.run("uninstall", platform="codex")
+
+        hooks_data = json.loads(hooks_path.read_text())
+        session_groups = hooks_data["hooks"]["SessionStart"]
+        assert len(session_groups) == 1
+        assert any(hook.get("command") == "python3 ~/.codex/hooks/session_start.py" for hook in _iter_group_hooks(session_groups[0]))
+        assert all(EVOLVE_SYNC_SNIPPET not in hook.get("command", "") for group in session_groups for hook in _iter_group_hooks(group))
+
+    def test_uninstall_prunes_evolve_only_hook_groups(self, temp_project_dir, install_runner, file_assertions):
+        """Uninstalling after a clean install should remove empty Evolve-only hook groups."""
+        install_runner.run("install", platform="codex")
+
+        hooks_path = temp_project_dir / ".codex" / "hooks.json"
+        file_assertions.assert_valid_json(hooks_path)
+
+        install_runner.run("uninstall", platform="codex")
+
+        hooks_data = json.loads(hooks_path.read_text())
+        hooks = hooks_data.get("hooks", {})
+        assert "UserPromptSubmit" not in hooks
+        assert "SessionStart" not in hooks
 
     def test_codex_dry_run_does_not_write_files(self, temp_project_dir, install_runner):
         """Dry-run should report actions without writing files."""
@@ -164,3 +246,4 @@ class TestCodexInstall:
         assert "plugins/evolve-lite" in result.stdout
         assert "marketplace.json entry" in result.stdout
         assert ".codex/hooks.json entry" in result.stdout
+        assert "SessionStart sync hook" in result.stdout
