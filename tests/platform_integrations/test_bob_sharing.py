@@ -545,8 +545,18 @@ class TestBobSaveEntities:
 
     def test_dedup_is_case_and_whitespace_insensitive(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
-        run_script(SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": [{"type": "guideline", "content": "No magic numbers."}]}), evolve_dir=evolve_dir)
-        run_script(SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": [{"type": "guideline", "content": "NO MAGIC  NUMBERS."}]}), evolve_dir=evolve_dir)
+        run_script(
+            SAVE_SCRIPT,
+            temp_project_dir,
+            stdin_data=json.dumps({"entities": [{"type": "guideline", "content": "No magic numbers."}]}),
+            evolve_dir=evolve_dir,
+        )
+        run_script(
+            SAVE_SCRIPT,
+            temp_project_dir,
+            stdin_data=json.dumps({"entities": [{"type": "guideline", "content": "NO MAGIC  NUMBERS."}]}),
+            evolve_dir=evolve_dir,
+        )
         files = list((evolve_dir / "entities" / "guideline").glob("*.md"))
         assert len(files) == 1
 
@@ -555,7 +565,9 @@ class TestBobSaveEntities:
         run_script(
             SAVE_SCRIPT,
             temp_project_dir,
-            stdin_data=json.dumps({"entities": [{"type": "guideline", "content": "First tip."}, {"type": "guideline", "content": "Second tip."}]}),
+            stdin_data=json.dumps(
+                {"entities": [{"type": "guideline", "content": "First tip."}, {"type": "guideline", "content": "Second tip."}]}
+            ),
             evolve_dir=evolve_dir,
         )
         files = list((evolve_dir / "entities" / "guideline").glob("*.md"))
@@ -570,7 +582,9 @@ class TestBobSaveEntities:
 
     def test_exits_cleanly_when_empty_entities_list(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
-        result = run_script(SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": []}), evolve_dir=evolve_dir, expect_success=False)
+        result = run_script(
+            SAVE_SCRIPT, temp_project_dir, stdin_data=json.dumps({"entities": []}), evolve_dir=evolve_dir, expect_success=False
+        )
         assert result.returncode == 0
 
     def test_output_reports_added_count(self, temp_project_dir):
