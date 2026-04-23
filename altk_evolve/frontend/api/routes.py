@@ -213,9 +213,12 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
         from altk_evolve.schema.guidelines import Guideline
 
         try:
-            # Guideline expects content at the root, so we map req.content and unpack the metadata
+            # Keep compact guideline entities backward-compatible and only enforce
+            # the structured generation schema when callers provide those fields.
             guideline_meta = {k: v for k, v in req.metadata.items() if k != "content"}
-            Guideline(content=req.content, **guideline_meta)
+            structured_fields = {"rationale", "category", "trigger"}
+            if structured_fields <= guideline_meta.keys():
+                Guideline(content=req.content, **guideline_meta)
         except Exception as e:
             logger.error(f"Guideline validation failed: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid guideline metadata schema: {e}")
