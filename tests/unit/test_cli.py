@@ -4,9 +4,10 @@ import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from click.exceptions import Exit
 from typer.testing import CliRunner
 
-from altk_evolve.cli.cli import app
+from altk_evolve.cli.cli import app, consolidate_entities
 from altk_evolve.schema.core import Namespace, RecordedEntity
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.exceptions import (
@@ -666,10 +667,38 @@ class TestSyncPhoenix:
 
             assert result.exit_code == 0
             assert "Sync Results" in result.stdout
+            assert "Guidelines generated" in result.stdout
+            assert "Tips generated" not in result.stdout
             assert "10" in result.stdout  # processed
             assert "5" in result.stdout  # skipped
             assert "20" in result.stdout  # guidelines_generated
 
+
+@pytest.mark.unit
+class TestEntitiesConsolidate:
+    def test_consolidate_entities_handles_value_error_from_clustering(self, mock_client):
+        mock_client.cluster_guidelines.side_effect = ValueError("embedding model is not configured")
+
+        result = runner.invoke(app, ["entities", "consolidate", "test-ns"])
+
+        assert result.exit_code == 1
+        assert "Clustering unavailable" in result.stdout
+        assert "embedding model is not configured" in result.stdout
+
+    def test_consolidate_entities_handles_value_error_from_consolidation(self, mock_client):
+        entity = MagicMock()
+        entity.id = "entity-1"
+        entity.metadata = {"task_description": "test task"}
+        entity.content = "test content"
+        mock_client.cluster_guidelines.return_value = [[entity]]
+        mock_client.consolidate_guidelines.side_effect = ValueError("embedding model is not configured")
+
+        with pytest.raises(Exit):
+            consolidate_entities("test-ns", dry_run=False)
+
+
+@pytest.mark.unit
+class TestSyncPhoenixMore:
     def test_sync_phoenix_displays_errors(self):
         """Test sync phoenix displays errors if any."""
         with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:

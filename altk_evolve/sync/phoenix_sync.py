@@ -11,6 +11,7 @@ This module provides functionality to:
 import json
 import logging
 import urllib.request
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,6 +34,16 @@ class SyncResult:
     skipped: int
     guidelines_generated: int
     errors: list[str]
+
+    @property
+    def tips_generated(self) -> int:
+        """Temporary compatibility alias for one release cycle."""
+        warnings.warn(
+            "SyncResult.tips_generated is deprecated; use SyncResult.guidelines_generated instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.guidelines_generated
 
 
 class PhoenixSync:

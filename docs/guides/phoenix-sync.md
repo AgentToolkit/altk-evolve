@@ -127,16 +127,16 @@ Two entity types are stored:
                     ┌─────────────────────┼─────────────────────┐
                     │                     │                     │
                     ▼                     ▼                     ▼
-            ┌───────────────┐    ┌───────────────┐    ┌───────────────┐
-            │  Deduplicate  │    │   Convert to  │    │   Generate    │
-            │  (by span_id) │    │ OpenAI format │    │     Guidelines      │
-            └───────────────┘    └───────────────┘    └───────┬───────┘
-                                                              │
-                                                              ▼
-                                                    ┌───────────────┐
-                                                    │    Evolve     │
-                                                    │   Backend     │
-                                                    └───────────────┘
+            ┌────────────────┐    ┌────────────────┐    ┌────────────────┐
+            │  Deduplicate   │    │   Convert to   │    │   Generate     │
+            │  (by span_id)  │    │ OpenAI format  │    │   Guidelines   │
+            └────────────────┘    └────────────────┘    └────────┬───────┘
+                                                                  │
+                                                                  ▼
+                                                        ┌───────────────┐
+                                                        │    Evolve     │
+                                                        │   Backend     │
+                                                        └───────────────┘
 ```
 
 ## Running on a Schedule

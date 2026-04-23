@@ -189,8 +189,8 @@ class TestSync:
 
         # First sync
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
-        tip_one = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
-        assert tip_one.exists()
+        guideline_one = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
+        assert guideline_one.exists()
 
         # Delete guideline-one from remote
         subprocess.run(
@@ -211,4 +211,4 @@ class TestSync:
 
         # Second sync — mirror is cleared and re-copied without guideline-one
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
-        assert not tip_one.exists()
+        assert not guideline_one.exists()

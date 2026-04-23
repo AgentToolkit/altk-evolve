@@ -23,12 +23,12 @@ def test_save_trajectory_metadata_injection(mock_get_client):
     # Mock guideline generation to prevent actual LLM calls
     with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_generate_guidelines:
         mock_result = MagicMock()
-        mock_tip = MagicMock()
-        mock_tip.content = "Always write unit tests"
-        mock_tip.category = "testing"
-        mock_tip.rationale = "Helps catch bugs early"
-        mock_tip.trigger = "writing code"
-        mock_result.guidelines = [mock_tip]
+        mock_guideline = MagicMock()
+        mock_guideline.content = "Always write unit tests"
+        mock_guideline.category = "testing"
+        mock_guideline.rationale = "Helps catch bugs early"
+        mock_guideline.trigger = "writing code"
+        mock_result.guidelines = [mock_guideline]
         mock_result.task_description = "Add feature"
         mock_generate_guidelines.return_value = mock_result
 
@@ -45,10 +45,10 @@ def test_save_trajectory_metadata_injection(mock_get_client):
         entities = call_args["entities"]
 
         assert len(entities) == 1
-        tip_entity = entities[0]
-        assert tip_entity.type == "guideline"
-        assert tip_entity.metadata["source_task_id"] == task_id
-        assert tip_entity.metadata["creation_mode"] == "auto-mcp"
+        guideline_entity = entities[0]
+        assert guideline_entity.type == "guideline"
+        assert guideline_entity.metadata["source_task_id"] == task_id
+        assert guideline_entity.metadata["creation_mode"] == "auto-mcp"
 
 
 def test_create_entity_metadata_injection_manual_guideline(mock_get_client):

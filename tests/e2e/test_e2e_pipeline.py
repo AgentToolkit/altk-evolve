@@ -207,7 +207,7 @@ except Exception as e:
         universal_newlines=True,
     )
 
-    tips_found = False
+    guidelines_found = False
     sync_start = time.time()
     timeout = 120  # 2 minute timeout for sync
     output_lines = []
@@ -232,10 +232,11 @@ except Exception as e:
             # Check target log pattern
             match = re.search(r"generated (\d+) guidelines", line_stripped)
             if match:
-                count = match.group(1)
-                print(f"\n✅ SUCCESS: Generated {count} guidelines!")
-                tips_found = True
-                break
+                count = int(match.group(1))
+                if count > 0:
+                    print(f"\n✅ SUCCESS: Generated {count} guidelines!")
+                    guidelines_found = True
+                    break
     finally:
         if process.poll() is None:
             print("Stopping sync process...")
@@ -245,7 +246,7 @@ except Exception as e:
             except subprocess.TimeoutExpired:
                 process.kill()
 
-    if not tips_found:
+    if not guidelines_found:
         full_output = "".join(output_lines)
         print(f"Final Sync Output:\n{full_output}")
         pytest.fail(f"Failed to detect guideline generation for {agent_name} within {timeout}s.")

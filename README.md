@@ -136,7 +136,7 @@ _Lite Mode omits the Interaction layer. All activity is performed in-agent_
 ## Guideline Provenance
 Evolve automatically tracks the origin of every guideline it generates or stores. Every guideline entity contains `metadata` identifying its source:
 - `creation_mode`: Identifies how the guideline was created (`auto-phoenix` via trace observability, `auto-mcp` via trajectory saving tools, or `manual`).
-- `source_task_id`: The ID of the original trace or task that inspired the guideline, providing full audibility.
+- `source_task_id`: The ID of the original trace or task that inspired the guideline, providing full auditability.
 
 See the [Low-Code Tracing Guide](docs/guides/low-code-tracing.md#6-understanding-guideline-provenance-metadata) for more details.
 

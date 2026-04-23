@@ -12,6 +12,18 @@ def _default_model_name() -> str:
     return "gpt-4o"
 
 
+def _default_guidelines_model_name() -> str:
+    model_name = os.getenv("EVOLVE_GUIDELINES_MODEL")
+    if model_name and model_name.strip():
+        return model_name.strip()
+
+    legacy_model_name = os.getenv("EVOLVE_TIPS_MODEL")
+    if legacy_model_name and legacy_model_name.strip():
+        return legacy_model_name.strip()
+
+    return _default_model_name()
+
+
 def _default_custom_provider() -> str | None:
     # If OpenAI env vars are configured, default provider to openai.
     # Explicit EVOLVE_CUSTOM_LLM_PROVIDER still has higher priority via BaseSettings.
@@ -22,7 +34,7 @@ def _default_custom_provider() -> str | None:
 
 class LLMSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
-    guidelines_model: str = Field(default_factory=_default_model_name)
+    guidelines_model: str = Field(default_factory=_default_guidelines_model_name)
     conflict_resolution_model: str = Field(default_factory=_default_model_name)
     fact_extraction_model: str = Field(default_factory=_default_model_name)
     categorization_mode: Literal["predefined", "dynamic", "hybrid"] = "predefined"

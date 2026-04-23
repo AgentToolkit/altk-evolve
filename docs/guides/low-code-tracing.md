@@ -199,7 +199,7 @@ curl "http://localhost:6006/v1/projects/test-agent/spans?limit=5"
 ```bash
 cd evolve_repo
 EVOLVE_BACKEND=filesystem \
-EVOLVE_TIPS_MODEL="gpt-4" \
+EVOLVE_GUIDELINES_MODEL="gpt-4" \
 uv run evolve sync phoenix \
     --project test-agent \
     --include-errors

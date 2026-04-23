@@ -1,6 +1,7 @@
 """Tests for Phoenix Sync functionality."""
 
 import json
+import warnings
 from unittest.mock import MagicMock, patch, Mock
 
 import pytest
@@ -73,6 +74,17 @@ class TestParseContent:
         content = "not valid {json or python"
         result = phoenix_sync._parse_content(content)
         assert result == content
+
+
+def test_sync_result_tips_generated_warns_and_returns_guidelines_count():
+    result = SyncResult(processed=1, skipped=2, guidelines_generated=3, errors=[])
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert result.tips_generated == 3
+
+    assert len(caught) == 1
+    assert caught[0].category is DeprecationWarning
 
 
 # =============================================================================
@@ -560,17 +572,20 @@ class TestSync:
 
         phoenix_sync.client.search_entities.return_value = []
         # Create mock Guideline objects with required attributes
-        mock_tip1 = MagicMock()
-        mock_tip1.content = "Guideline 1 content"
-        mock_tip1.category = "strategy"
-        mock_tip1.rationale = "Guideline 1 rationale"
-        mock_tip1.trigger = "Guideline 1 trigger"
-        mock_tip2 = MagicMock()
-        mock_tip2.content = "Guideline 2 content"
-        mock_tip2.category = "optimization"
-        mock_tip2.rationale = "Guideline 2 rationale"
-        mock_tip2.trigger = "Guideline 2 trigger"
-        mock_generate_guidelines.return_value = GuidelineGenerationResult(guidelines=[mock_tip1, mock_tip2], task_description="Hello")
+        mock_guideline1 = MagicMock()
+        mock_guideline1.content = "Guideline 1 content"
+        mock_guideline1.category = "strategy"
+        mock_guideline1.rationale = "Guideline 1 rationale"
+        mock_guideline1.trigger = "Guideline 1 trigger"
+        mock_guideline2 = MagicMock()
+        mock_guideline2.content = "Guideline 2 content"
+        mock_guideline2.category = "optimization"
+        mock_guideline2.rationale = "Guideline 2 rationale"
+        mock_guideline2.trigger = "Guideline 2 trigger"
+        mock_generate_guidelines.return_value = GuidelineGenerationResult(
+            guidelines=[mock_guideline1, mock_guideline2],
+            task_description="Hello",
+        )
 
         result = phoenix_sync.sync(limit=10)
 
@@ -579,12 +594,12 @@ class TestSync:
         phoenix_sync.client.update_entities.assert_called()
 
         # Verify provenance metadata is persisted in guideline entities
-        tip_update_call = phoenix_sync.client.update_entities.call_args_list[-1]
-        tip_entities = tip_update_call.kwargs["entities"]
-        assert all(e.metadata.get("task_description") == "Hello" for e in tip_entities)
-        assert all(e.metadata.get("source_task_id") == "t1" for e in tip_entities)
-        assert all(e.metadata.get("source_span_id") == "s1" for e in tip_entities)
-        assert all(e.metadata.get("creation_mode") == "auto-phoenix" for e in tip_entities)
+        guideline_update_call = phoenix_sync.client.update_entities.call_args_list[-1]
+        guideline_entities = guideline_update_call.kwargs["entities"]
+        assert all(e.metadata.get("task_description") == "Hello" for e in guideline_entities)
+        assert all(e.metadata.get("source_task_id") == "t1" for e in guideline_entities)
+        assert all(e.metadata.get("source_span_id") == "s1" for e in guideline_entities)
+        assert all(e.metadata.get("creation_mode") == "auto-phoenix" for e in guideline_entities)
 
     @patch("altk_evolve.sync.phoenix_sync.urllib.request.urlopen")
     @patch("altk_evolve.sync.phoenix_sync.generate_guidelines")
@@ -627,12 +642,12 @@ class TestSync:
         mock_entity.metadata = {"span_id": "old_span"}
         phoenix_sync.client.search_entities.return_value = [mock_entity]
         # Create mock Guideline object with required attributes
-        mock_tip = MagicMock()
-        mock_tip.content = "Generated guideline content"
-        mock_tip.category = "strategy"
-        mock_tip.rationale = "Guideline rationale"
-        mock_tip.trigger = "Guideline trigger"
-        mock_generate_guidelines.return_value = GuidelineGenerationResult(guidelines=[mock_tip], task_description="New message")
+        mock_guideline = MagicMock()
+        mock_guideline.content = "Generated guideline content"
+        mock_guideline.category = "strategy"
+        mock_guideline.rationale = "Guideline rationale"
+        mock_guideline.trigger = "Guideline trigger"
+        mock_generate_guidelines.return_value = GuidelineGenerationResult(guidelines=[mock_guideline], task_description="New message")
 
         result = phoenix_sync.sync(limit=10)
 

@@ -19,7 +19,7 @@ export OPENAI_API_KEY="your-api-key"
 export OPENAI_BASE_URL="https://your-litellm-proxy.com/v1"
 
 # Evolve Model Configuration
-export EVOLVE_TIPS_MODEL="openai/gpt-4o-mini"
+export EVOLVE_GUIDELINES_MODEL="openai/gpt-4o-mini"
 export EVOLVE_CONFLICT_RESOLUTION_MODEL="openai/gpt-4o-mini"
 export EVOLVE_FACT_EXTRACTION_MODEL="openai/gpt-4o-mini"
 export EVOLVE_MODEL_NAME="openai/gpt-4o-mini"
@@ -27,9 +27,11 @@ export EVOLVE_CUSTOM_LLM_PROVIDER="openai"
 ```
 
 Model selection precedence:
-1. Task-specific models: `EVOLVE_TIPS_MODEL`, `EVOLVE_CONFLICT_RESOLUTION_MODEL`, `EVOLVE_FACT_EXTRACTION_MODEL`
+1. Task-specific models: `EVOLVE_GUIDELINES_MODEL`, `EVOLVE_CONFLICT_RESOLUTION_MODEL`, `EVOLVE_FACT_EXTRACTION_MODEL`
 2. Global Evolve fallback: `EVOLVE_MODEL_NAME`
 3. Built-in default: `gpt-4o`
+
+`EVOLVE_TIPS_MODEL` is still accepted as a deprecated fallback for one release cycle.
 
 If `EVOLVE_*_MODEL` are unset, set `EVOLVE_MODEL_NAME` to control all Evolve LLM calls.
 
@@ -43,7 +45,7 @@ All configuration variables are prefixed with `EVOLVE_`.
 |----------|-------------------------------------------------------------------------------|------------------------------------------|
 | `EVOLVE_BACKEND` | Backend provider (`milvus`, `filesystem`, or `postgres`)                      | `milvus`                                 |
 | `EVOLVE_NAMESPACE_ID` | Namespace ID for isolation                                                    | `evolve`                                 |
-| `EVOLVE_TIPS_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
+| `EVOLVE_GUIDELINES_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_FACT_EXTRACTION_MODEL` | Model for fact extraction only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_MODEL_NAME` | Global fallback model for all Evolve LLM calls | `gpt-4o` |

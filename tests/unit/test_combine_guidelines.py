@@ -35,7 +35,7 @@ def _mock_completion_response(guidelines: list[dict]) -> MagicMock:
     return response
 
 
-SAMPLE_TIPS = [
+SAMPLE_GUIDELINES = [
     {
         "content": "Use retry logic for flaky APIs",
         "rationale": "APIs can fail transiently",
@@ -61,8 +61,8 @@ class TestCombineCluster:
     @patch("altk_evolve.llm.guidelines.clustering.completion")
     @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
     @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
-    def test_combine_cluster_returns_tips(self, _mock_params, _mock_schema, mock_completion):
-        mock_completion.return_value = _mock_completion_response(SAMPLE_TIPS)
+    def test_combine_cluster_returns_guidelines(self, _mock_params, _mock_schema, mock_completion):
+        mock_completion.return_value = _mock_completion_response(SAMPLE_GUIDELINES)
 
         entities = [
             _make_entity("1", "Always retry on failure"),
@@ -84,7 +84,7 @@ class TestCombineCluster:
         mock_completion.side_effect = [
             ValueError("bad json"),
             ValueError("bad json again"),
-            _mock_completion_response(SAMPLE_TIPS[:1]),
+            _mock_completion_response(SAMPLE_GUIDELINES[:1]),
         ]
 
         entities = [_make_entity("1", "Guideline A"), _make_entity("2", "Guideline B")]
@@ -111,7 +111,7 @@ class TestCombineCluster:
     @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=["response_format"])
     def test_combine_cluster_uses_structured_output(self, _mock_params, _mock_schema, mock_completion):
-        mock_completion.return_value = _mock_completion_response(SAMPLE_TIPS[:1])
+        mock_completion.return_value = _mock_completion_response(SAMPLE_GUIDELINES[:1])
 
         entities = [_make_entity("1", "Guideline A"), _make_entity("2", "Guideline B")]
         result = combine_cluster(entities)

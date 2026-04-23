@@ -46,14 +46,14 @@ class TestUniqueFilename:
         path = entity_io.unique_filename(temp_project_dir, "my-guideline")
         assert path == temp_project_dir / "my-guideline.md"
 
-    def test_increments_suffix_on_collision(self, temp_project_dir):
-        (temp_project_dir / "my-guideline.md").touch()
+    def test_increments_suffix_on_collision(self, temp_project_dir, file_assertions):
+        file_assertions.write_text(temp_project_dir / "my-guideline.md", "")
         path = entity_io.unique_filename(temp_project_dir, "my-guideline")
         assert path == temp_project_dir / "my-guideline-2.md"
 
-    def test_keeps_incrementing(self, temp_project_dir):
-        (temp_project_dir / "my-guideline.md").touch()
-        (temp_project_dir / "my-guideline-2.md").touch()
+    def test_keeps_incrementing(self, temp_project_dir, file_assertions):
+        file_assertions.write_text(temp_project_dir / "my-guideline.md", "")
+        file_assertions.write_text(temp_project_dir / "my-guideline-2.md", "")
         path = entity_io.unique_filename(temp_project_dir, "my-guideline")
         assert path == temp_project_dir / "my-guideline-3.md"
 

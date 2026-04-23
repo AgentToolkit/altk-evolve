@@ -355,6 +355,10 @@ def consolidate_entities(
     except NamespaceNotFoundException:
         console.print(f"[red]Namespace '{namespace}' not found.[/red]")
         raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]Clustering unavailable:[/red] {e}")
+        console.print("[yellow]Configure the embedding model/backend before clustering guidelines.[/yellow]")
+        raise typer.Exit(1)
 
     if not clusters:
         console.print("[yellow]No clusters found. Guidelines have dissimilar task descriptions.[/yellow]")
@@ -396,6 +400,10 @@ def consolidate_entities(
         console.print(f"  Guidelines after: {result.guidelines_after}")
     except EvolveException as e:
         console.print(f"[red]Consolidation failed: {e}[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]Consolidation unavailable:[/red] {e}")
+        console.print("[yellow]Configure the embedding model/backend before consolidating guidelines.[/yellow]")
         raise typer.Exit(1)
 
 
