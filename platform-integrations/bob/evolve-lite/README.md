@@ -95,7 +95,7 @@ evolve-lite:subscribe
 > Short name: alice
 ```
 
-The repo is cloned to `.evolve/subscribed/alice/` and mirrored into `.evolve/entities/subscribed/alice/` so recall picks them up immediately.
+The repo is cloned directly into `.evolve/entities/subscribed/alice/` (this directory serves as both the git clone and the recall mirror).
 
 ### Syncing Subscriptions
 
@@ -117,7 +117,7 @@ evolve-lite:unsubscribe
 > 2. bob
 ```
 
-The skill confirms before deleting `.evolve/subscribed/{name}/` and its mirror under `.evolve/entities/subscribed/{name}/`.
+The skill confirms before deleting `.evolve/entities/subscribed/{name}/`.
 
 ### Sharing Storage Layout
 
@@ -126,15 +126,11 @@ The skill confirms before deleting `.evolve/subscribed/{name}/` and its mirror u
   public/                     # git repo pushed to your public remote
     guideline/
       guideline-name.md       # owner-stamped guideline
-  subscribed/
-    alice/                    # git clone of alice's public repo
-      guideline/
-        her-guideline.md
   entities/
     guideline/                # your private guidelines
       my-guideline.md
     subscribed/
-      alice/                  # mirrored for recall
+      alice/                  # git clone (also serves as recall mirror)
         guideline/
           her-guideline.md
 ```

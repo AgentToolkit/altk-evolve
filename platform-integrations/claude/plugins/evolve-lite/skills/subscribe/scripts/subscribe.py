@@ -9,6 +9,7 @@
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -84,22 +85,27 @@ def main():
         check=True,
     )
 
-    # Update config
-    subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
-    cfg["subscriptions"] = subscriptions
-    save_config(cfg, project_root)
+    # Update config and audit — roll back clone on any failure
+    try:
+        subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
+        cfg["subscriptions"] = subscriptions
+        save_config(cfg, project_root)
 
-    # Read identity.user for audit
-    identity = cfg.get("identity", {})
-    actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
+        # Read identity.user for audit
+        identity = cfg.get("identity", {})
+        actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
 
-    audit_append(
-        project_root=project_root,
-        action="subscribe",
-        actor=actor,
-        name=args.name,
-        remote=args.remote,
-    )
+        audit_append(
+            project_root=project_root,
+            action="subscribe",
+            actor=actor,
+            name=args.name,
+            remote=args.remote,
+        )
+    except Exception as exc:
+        shutil.rmtree(dest, ignore_errors=True)
+        print(f"Error: failed to record subscription — clone removed: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Subscribed to '{args.name}' from {args.remote}")
 

@@ -4,6 +4,7 @@
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -74,19 +75,27 @@ def main():
             check=True,
         )
 
-    subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
-    cfg["subscriptions"] = subscriptions
-    save_config(cfg, project_root)
+    try:
+        subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
+        cfg["subscriptions"] = subscriptions
+        save_config(cfg, project_root)
+    except Exception:
+        if dest.exists():
+            shutil.rmtree(dest)
+        raise
 
     identity = cfg.get("identity", {})
     actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
-    audit_append(
-        project_root=project_root,
-        action="subscribe",
-        actor=actor,
-        name=args.name,
-        remote=args.remote,
-    )
+    try:
+        audit_append(
+            project_root=project_root,
+            action="subscribe",
+            actor=actor,
+            name=args.name,
+            remote=args.remote,
+        )
+    except Exception as exc:
+        print(f"Warning: failed to append audit entry for subscribe: {exc}", file=sys.stderr)
 
     print(f"Subscribed to '{args.name}' from {args.remote}")
 

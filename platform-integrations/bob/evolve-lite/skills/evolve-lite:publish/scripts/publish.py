@@ -58,9 +58,15 @@ def main():
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
 
+    # Check for symlinks before resolving
+    original_path = evolve_dir / "entities" / "guideline" / args.entity
+    if original_path.is_symlink():
+        print(f"Error: cannot publish symlinked entity: {args.entity}", file=sys.stderr)
+        sys.exit(1)
+
     # Validate entity name: resolve and confirm it stays within the intended dir
     src_base = (evolve_dir / "entities" / "guideline").resolve()
-    src_path = (evolve_dir / "entities" / "guideline" / args.entity).resolve()
+    src_path = original_path.resolve()
     if not src_path.is_relative_to(src_base):
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
@@ -104,12 +110,12 @@ def main():
         print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
         sys.exit(1)
 
-    # Write to temp file first, then atomic move
+    # Write to temp file in destination directory first, then atomic move
     content = entity_to_markdown(entity)
-    temp_path = src_path.with_suffix(".tmp")
+    temp_path = dest_path.with_suffix(".tmp")
     temp_path.write_text(content, encoding="utf-8")
     temp_path.replace(dest_path)
-    src_path.unlink()
+    original_path.unlink()
 
     # Audit log (don't let audit failures break the operation)
     try:

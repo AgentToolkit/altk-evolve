@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+_IS_WINDOWS = sys.platform == "win32"
+
 sys.path.insert(
     0,
     str(Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib"),
@@ -161,6 +163,53 @@ class TestSubscribe:
         cloned = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
         assert cloned.exists()
         assert "Always write tests." in cloned.read_text()
+
+    @pytest.mark.skipif(_IS_WINDOWS, reason="chmod not supported on Windows")
+    def test_rolls_back_clone_if_config_write_fails(self, temp_project_dir, local_repo):
+        """If save_config raises after a successful clone, the clone directory is removed."""
+        evolve_dir = temp_project_dir / ".evolve"
+        # Make the config file read-only so save_config raises PermissionError
+        cfg_path = temp_project_dir / "evolve.config.yaml"
+        cfg_path.write_text("subscriptions: []\n")
+        cfg_path.chmod(0o444)
+        try:
+            result = run_script(
+                SUBSCRIBE_SCRIPT,
+                temp_project_dir,
+                ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
+                evolve_dir=evolve_dir,
+                expect_success=False,
+            )
+        finally:
+            cfg_path.chmod(0o644)
+        assert result.returncode != 0
+        assert "failed to record subscription" in result.stderr
+        dest = evolve_dir / "entities" / "subscribed" / "alice"
+        assert not dest.exists(), "Clone should be rolled back when config write fails"
+
+    @pytest.mark.skipif(_IS_WINDOWS, reason="chmod not supported on Windows")
+    def test_rolls_back_clone_if_audit_write_fails(self, temp_project_dir, local_repo):
+        """If audit_append raises after a successful clone + config write, the clone is removed."""
+        evolve_dir = temp_project_dir / ".evolve"
+        evolve_dir.mkdir(parents=True)
+        # Pre-create a read-only audit.log so audit_append raises PermissionError
+        audit_log = evolve_dir / "audit.log"
+        audit_log.write_text("")
+        audit_log.chmod(0o444)
+        try:
+            result = run_script(
+                SUBSCRIBE_SCRIPT,
+                temp_project_dir,
+                ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
+                evolve_dir=evolve_dir,
+                expect_success=False,
+            )
+        finally:
+            audit_log.chmod(0o644)
+        assert result.returncode != 0
+        assert "failed to record subscription" in result.stderr
+        dest = evolve_dir / "entities" / "subscribed" / "alice"
+        assert not dest.exists(), "Clone should be rolled back when audit write fails"
 
 
 class TestUnsubscribe:

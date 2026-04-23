@@ -60,6 +60,7 @@ def main():
             sys.exit(1)
 
     # Clone the repo
+    cloned_now = False
     if dest.exists():
         print(
             f"Error: directory already exists: {dest}\nRun evolve-lite:unsubscribe to remove it before re-subscribing.",
@@ -85,6 +86,7 @@ def main():
             text=True,
             timeout=_GIT_TIMEOUT,
         )
+        cloned_now = True
     except subprocess.TimeoutExpired:
         print(f"Error: git clone timed out after {_GIT_TIMEOUT} seconds", file=sys.stderr)
         sys.exit(1)
@@ -92,22 +94,32 @@ def main():
         print(f"Error: git clone failed: {e.stderr}", file=sys.stderr)
         sys.exit(1)
 
-    # Update config
-    subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
-    cfg["subscriptions"] = subscriptions
-    save_config(cfg, project_root)
+    # Update config and audit - rollback clone on failure
+    try:
+        subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
+        cfg["subscriptions"] = subscriptions
+        save_config(cfg, project_root)
 
-    # Read identity.user for audit
-    identity = cfg.get("identity", {})
-    actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
+        # Read identity.user for audit
+        identity = cfg.get("identity", {})
+        actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
 
-    audit_append(
-        project_root=project_root,
-        action="subscribe",
-        actor=actor,
-        name=args.name,
-        remote=args.remote,
-    )
+        try:
+            audit_append(
+                project_root=project_root,
+                action="subscribe",
+                actor=actor,
+                name=args.name,
+                remote=args.remote,
+            )
+        except Exception as e:
+            print(f"Warning: audit log failed: {e}", file=sys.stderr)
+    except Exception:
+        # Rollback: remove cloned directory if config save failed
+        if cloned_now and dest.exists():
+            import shutil
+            shutil.rmtree(dest)
+        raise
 
     print(f"Subscribed to '{args.name}' from {args.remote}")
 
