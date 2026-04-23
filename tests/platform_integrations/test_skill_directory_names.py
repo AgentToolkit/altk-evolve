@@ -62,11 +62,10 @@ class TestSkillDirectoryNames:
     def test_bob_lite_install_script_uses_dynamic_copying(self, install_script):
         """Verify that install.sh uses dynamic skill copying (not hardcoded skill names)."""
         install_content = install_script.read_text()
-        
+
         # Verify the script uses iterdir() to copy all skills dynamically
         assert "for skill_dir in sorted(skills_src.iterdir())" in install_content, (
-            "install.sh should use dynamic skill copying with iterdir() "
-            "to automatically install all skills in the skills directory"
+            "install.sh should use dynamic skill copying with iterdir() to automatically install all skills in the skills directory"
         )
 
     def test_bob_lite_installation_succeeds(self, temp_project_dir, install_runner, file_assertions):
