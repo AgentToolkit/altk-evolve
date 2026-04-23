@@ -3,7 +3,7 @@ from pydantic import Field
 
 
 class MilvusDBSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="EVOLVE_")
+    model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
     uri: str = Field(default="entities.milvus.db")
     user: str = Field(default="")
     password: str = Field(default="")
@@ -15,7 +15,7 @@ class MilvusDBSettings(BaseSettings):
 
 
 class MilvusOtherSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="EVOLVE_")
+    model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
 

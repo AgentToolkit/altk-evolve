@@ -6,6 +6,7 @@ All tests run in isolated temporary directories to avoid contaminating the repo.
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -16,6 +17,8 @@ import pytest
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "platform_integrations: tests for platform-integrations/install.sh")
+    config.addinivalue_line("markers", "integration: tests that require git and perform subprocess I/O")
+    config.addinivalue_line("markers", "e2e: end-to-end tests that exercise real filesystem and subprocesses")
 
 
 @pytest.fixture
@@ -221,6 +224,23 @@ class FileAssertions:
 
         assert start_sentinel not in content, f"Start sentinel '{start_sentinel}' should not be in {path}"
         assert end_sentinel not in content, f"End sentinel '{end_sentinel}' should not be in {path}"
+
+    @staticmethod
+    def assert_all_bob_skills_installed(bob_dir: Path):
+        """Assert every skill in the bob/evolve-lite source tree is installed."""
+        repo_root = Path(__file__).parent.parent.parent
+        skills_src = repo_root / "platform-integrations" / "bob" / "evolve-lite" / "skills"
+        for skill_dir in sorted(skills_src.iterdir()):
+            if skill_dir.is_dir():
+                FileAssertions.assert_dir_exists(bob_dir / "skills" / skill_dir.name)
+
+    @staticmethod
+    def assert_all_bob_commands_installed(bob_dir: Path):
+        """Assert every evolve-lite command in the source tree is installed."""
+        repo_root = Path(__file__).parent.parent.parent
+        commands_src = repo_root / "platform-integrations" / "bob" / "evolve-lite" / "commands"
+        for cmd_file in sorted(commands_src.glob("evolve-lite:*.md")):
+            FileAssertions.assert_file_exists(bob_dir / "commands" / cmd_file.name)
 
     @staticmethod
     def read_json(path: Path) -> Dict[str, Any]:
@@ -524,6 +544,38 @@ class CodexFixtures:
 
 
 @pytest.fixture
+def remote_install_script(tmp_path_factory):
+    """
+    Copy install.sh to an isolated temp dir that has no platform-integrations/ sibling.
+
+    This simulates the curl | bash scenario where the script runs from a directory
+    that is not the repo root, so SCRIPT_DIR points to no local source tree.
+
+    Returns:
+        Path: Path to the copied install.sh
+    """
+    repo_root = Path(__file__).parent.parent.parent
+    src = repo_root / "platform-integrations" / "install.sh"
+    assert src.exists(), f"install.sh not found at {src}"
+
+    isolated_dir = tmp_path_factory.mktemp("remote_script")
+    dst = isolated_dir / "install.sh"
+    shutil.copy2(src, dst)
+    return dst
+
+
+@pytest.fixture
+def remote_install_runner(remote_install_script, temp_project_dir):
+    """
+    InstallRunner backed by the isolated (remote-simulating) install.sh copy.
+
+    Returns:
+        InstallRunner: Helper to run install.sh commands from a dir with no local source
+    """
+    return InstallRunner(remote_install_script, temp_project_dir)
+
+
+@pytest.fixture
 def bob_fixtures():
     """Provide Bob platform test fixtures."""
     return BobFixtures()
@@ -533,3 +585,75 @@ def bob_fixtures():
 def codex_fixtures():
     """Provide Codex platform test fixtures."""
     return CodexFixtures()
+
+
+# ---------------------------------------------------------------------------
+# Evolve-lite plugin fixtures
+# ---------------------------------------------------------------------------
+
+EVOLVE_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
+
+
+@pytest.fixture
+def git_env():
+    """git environment with author info set so commits work in CI without ~/.gitconfig."""
+    return {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Test User",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test User",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+    }
+
+
+@pytest.fixture
+def local_repo(tmp_path, git_env):
+    """A local bare git repo acting as a mock remote for subscribe/sync tests.
+
+    Returns a dict:
+      bare  — Path to the bare repo (pass as --remote to subscribe.py)
+      work  — Path to a working clone (push new commits here to simulate updates)
+      env   — git env dict (reuse for any git subprocess calls in tests)
+    """
+    # 1. Init a scratch working dir and pin the default branch to 'main'
+    init = tmp_path / "init_work"
+    init.mkdir()
+    subprocess.run(["git", "init", str(init)], check=True, capture_output=True, env=git_env)
+    subprocess.run(
+        ["git", "-C", str(init), "symbolic-ref", "HEAD", "refs/heads/main"],
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+
+    # Seed one entity
+    guideline = init / "guideline"
+    guideline.mkdir()
+    (guideline / "tip-one.md").write_text("---\ntype: guideline\n---\n\nAlways write tests.\n")
+    subprocess.run(["git", "-C", str(init), "add", "."], check=True, capture_output=True, env=git_env)
+    subprocess.run(
+        ["git", "-C", str(init), "commit", "-m", "init"],
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+
+    # 2. Create a bare clone (this is the "remote")
+    bare = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "clone", "--bare", str(init), str(bare)],
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+
+    # 3. Create a working clone of the bare (for pushing new commits in tests)
+    work = tmp_path / "work"
+    subprocess.run(
+        ["git", "clone", str(bare), str(work)],
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+
+    return {"bare": bare, "work": work, "env": git_env}

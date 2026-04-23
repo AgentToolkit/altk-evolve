@@ -21,7 +21,7 @@ def _default_custom_provider() -> str | None:
 
 
 class LLMSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="EVOLVE_")
+    model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
     tips_model: str = Field(default_factory=_default_model_name)
     conflict_resolution_model: str = Field(default_factory=_default_model_name)
     fact_extraction_model: str = Field(default_factory=_default_model_name)

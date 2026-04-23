@@ -6,6 +6,7 @@ commands, modes, and configurations are preserved during installation.
 """
 
 import json
+
 import pytest
 
 
@@ -26,10 +27,9 @@ class TestBobPreservation:
         file_assertions.assert_dir_exists(custom_skill)
         file_assertions.assert_file_unchanged(custom_skill / "SKILL.md", original_content)
 
-        # Assert: Evolve skills are added
+        # Assert: All evolve skills from the source tree are installed
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:recall")
+        file_assertions.assert_all_bob_skills_installed(bob_dir)
 
     def test_preserves_existing_commands(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve when user has existing commands - they must be preserved."""
@@ -43,10 +43,9 @@ class TestBobPreservation:
         # Assert: User's command is untouched
         file_assertions.assert_file_unchanged(custom_command, original_content)
 
-        # Assert: Evolve commands are added
+        # Assert: All evolve commands from the source tree are installed
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve-lite:learn.md")
-        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve-lite:recall.md")
+        file_assertions.assert_all_bob_commands_installed(bob_dir)
 
     def test_preserves_existing_custom_modes_yaml(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve when user has existing custom modes - they must be preserved."""
@@ -134,7 +133,7 @@ class TestBobPreservation:
 
         # Assert: Evolve lite content is added
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
+        file_assertions.assert_all_bob_skills_installed(bob_dir)
         file_assertions.assert_sentinel_block_exists(custom_modes, "evolve-lite")
 
     def test_preserves_all_bob_content_together_full(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
@@ -202,7 +201,15 @@ class TestCodexPreservation:
 
         current_hooks = json.loads(hooks_file.read_text())
         session_start_hooks = current_hooks["hooks"]["SessionStart"]
-        assert len(session_start_hooks) == 1, "User's SessionStart hook was removed!"
+        assert len(session_start_hooks) == 2, "Expected the user's SessionStart hook plus the Evolve sync hook."
+        assert any(
+            any(hook.get("command") == "python3 ~/.codex/hooks/session_start.py" for hook in group.get("hooks", []))
+            for group in session_start_hooks
+        ), "User's SessionStart hook was removed!"
+        assert any(
+            any("plugins/evolve-lite/skills/sync/scripts/sync.py" in hook.get("command", "") for hook in group.get("hooks", []))
+            for group in session_start_hooks
+        ), "Evolve SessionStart hook was not added!"
 
         prompt_hooks = current_hooks["hooks"]["UserPromptSubmit"]
         custom_prompt_hooks = [
