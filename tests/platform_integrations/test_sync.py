@@ -182,11 +182,11 @@ class TestSync:
         evolve_dir = temp_project_dir / ".evolve"
         # Write config manually with an unsafe name
         cfg_path = temp_project_dir / "evolve.config.yaml"
-        cfg_path.write_text("subscriptions:\n  - name: ../evil\n    remote: git@github.com:x/y.git\n    branch: main\n")
+        cfg_path.write_text("subscriptions:\n  - name: ../outside\n    remote: git@github.com:x/y.git\n    branch: main\n")
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
         assert "invalid subscription name" in result.stdout
-        assert not (evolve_dir / "entities" / "evil").exists()
+        assert not (evolve_dir / "entities" / "outside").exists()
 
     def test_manual_run_ignores_on_session_start_false(self, subscribed_project):
         p = subscribed_project
