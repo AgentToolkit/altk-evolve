@@ -127,3 +127,18 @@ class TestRetrieve:
         (gdir / "tip.md").write_text("---\ntype: guideline\ntrigger: when writing tests\n---\n\nAssert the important thing.\n")
         result = run_retrieve(retrieve_script, evolve_dir=d)
         assert "when writing tests" in result.stdout
+
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_skips_symlinked_markdown_entities(self, temp_project_dir, retrieve_script, expected_header, platform_name):
+        d = temp_project_dir / ".evolve"
+        gdir = d / "entities" / "subscribed" / "alice" / "guideline"
+        gdir.mkdir(parents=True)
+        real_file = gdir / "real.md"
+        real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
+        (gdir / "link.md").symlink_to(real_file)
+
+        result = run_retrieve(retrieve_script, evolve_dir=d)
+
+        assert result.returncode == 0
+        assert "Real content." in result.stdout
+        assert "link.md" not in result.stdout
