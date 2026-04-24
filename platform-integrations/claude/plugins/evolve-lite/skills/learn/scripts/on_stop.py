@@ -14,12 +14,16 @@ def main():
     if input_data.get("stop_hook_active") is True:
         return
 
-    print(json.dumps({
-        "decision": "block",
-        "reason": "Run the /evolve-lite:learn skill to extract guidelines from this conversation.",
-        "suppressOutput": True,
-        "statusMessage": "Running the evolve-lite learn skill...",
-    }))
+    print(
+        json.dumps(
+            {
+                "decision": "block",
+                "reason": "Run the /evolve-lite:learn skill to extract guidelines from this conversation.",
+                "suppressOutput": True,
+                "statusMessage": "Running the evolve-lite learn skill...",
+            }
+        )
+    )
 
 
 if __name__ == "__main__":
