@@ -20,7 +20,7 @@ def main():
                 "decision": "block",
                 "reason": "Run the /evolve-lite:learn skill to extract guidelines from this conversation.",
                 "suppressOutput": True,
-                "statusMessage": "Running the evolve-lite learn skill...",
+                "systemMessage": "Running the evolve-lite learn skill...",
             }
         )
     )
