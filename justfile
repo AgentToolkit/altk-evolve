@@ -91,7 +91,7 @@ claude-test:
 
 # Run an interactive Codex shell in the sandbox
 codex-run:
-    docker run --rm -it --env-file {{env_file}} -v "$(pwd)":/workspace -w /workspace/{{workspace}} {{codex_image}}
+    docker run --rm -it --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace {{codex_image}}
 
 # Smoke-test that Codex is installed and working
 codex-test:

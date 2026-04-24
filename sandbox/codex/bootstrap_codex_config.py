@@ -4,8 +4,26 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
+
+
+def _matches_assignment(line: str, key: str) -> bool:
+    return re.match(rf"^\s*{re.escape(key)}\s*=", line) is not None
+
+
+def _matches_table(line: str, table_name: str) -> bool:
+    return re.match(rf"^\s*\[{re.escape(table_name)}\]\s*(?:#.*)?$", line) is not None
+
+
+def _is_table_header(line: str) -> bool:
+    return re.match(r"^\s*\[", line) is not None
+
+
+def _ensure_trailing_newline(lines: list[str], index: int) -> None:
+    if 0 <= index < len(lines) and not lines[index].endswith("\n"):
+        lines[index] += "\n"
 
 
 def resolve_config_path(argv: list[str]) -> Path:
@@ -19,26 +37,26 @@ def resolve_config_path(argv: list[str]) -> Path:
 
 
 def ensure_top_level_setting(lines: list[str], key: str, value: str) -> bool:
-    prefix = f"{key} ="
     rendered = f'{key} = "{value}"\n'
     for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("["):
+        if _is_table_header(line):
             break
-        if stripped.startswith(prefix):
-            if stripped == rendered.strip():
+        if _matches_assignment(line, key):
+            if line.strip() == rendered.strip():
                 return False
             lines[index] = rendered
             return True
 
     insert_at = 0
     for index, line in enumerate(lines):
-        if line.strip().startswith("["):
+        if _is_table_header(line):
             insert_at = index
             break
     else:
         insert_at = len(lines)
 
+    if insert_at == len(lines):
+        _ensure_trailing_newline(lines, insert_at - 1)
     lines.insert(insert_at, rendered)
     return True
 
@@ -48,11 +66,10 @@ def find_table(lines: list[str], table_name: str) -> tuple[int | None, int | Non
     end = None
 
     for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped == f"[{table_name}]":
+        if _matches_table(line, table_name):
             start = index
             continue
-        if start is not None and stripped.startswith("[") and stripped.endswith("]"):
+        if start is not None and _is_table_header(line):
             end = index
             break
 
@@ -74,12 +91,13 @@ def ensure_feature_setting(lines: list[str], key: str, value: str) -> bool:
 
     assert end is not None
     for index in range(start + 1, end):
-        if lines[index].strip().startswith(f"{key} ="):
+        if _matches_assignment(lines[index], key):
             if lines[index].strip() == rendered.strip():
                 return False
             lines[index] = rendered
             return True
 
+    _ensure_trailing_newline(lines, end - 1)
     lines.insert(end, rendered)
     return True
 
