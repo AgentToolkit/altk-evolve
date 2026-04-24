@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/on_stop.sh"
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/on_stop.py"
           }
         ]
       }
