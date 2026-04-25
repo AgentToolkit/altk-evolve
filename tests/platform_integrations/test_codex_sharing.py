@@ -264,7 +264,7 @@ class TestCodexSharingScripts:
         assert not (evolve_dir / "subscribed" / "alice").exists()
 
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
-        synced = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
+        synced = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
         assert synced.exists()
         assert "Always write tests." in synced.read_text()
 
@@ -453,7 +453,7 @@ class TestCodexSharingScripts:
         )
 
         assert result.returncode == 0
-        mirrored = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
+        mirrored = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
         assert mirrored.exists()
         audit_log = evolve_dir / ".evolve" / "audit.log"
         assert audit_log.exists()
@@ -492,10 +492,10 @@ class TestCodexSharingScripts:
             evolve_dir=evolve_dir,
         )
         git_env = local_repo["env"]
-        new_entity = local_repo["work"] / "guideline" / "tip-two.md"
+        new_entity = local_repo["work"] / "guideline" / "guideline-two.md"
         new_entity.write_text("---\ntype: guideline\n---\n\nDelete dead code promptly.\n")
         subprocess.run(["git", "-C", str(local_repo["work"]), "add", "."], check=True, env=git_env)
-        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add tip-two"], check=True, env=git_env)
+        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add guideline-two"], check=True, env=git_env)
         subprocess.run(["git", "-C", str(local_repo["work"]), "push", "origin", "main"], check=True, env=git_env)
         (temp_project_dir / "evolve.config.yaml").write_text(
             f'subscriptions:\n  - name: "alice"\n    remote: "{local_repo["bare"]}"\n    branch: "main"\nsync:\n  on_session_start: false\n'
@@ -510,7 +510,7 @@ class TestCodexSharingScripts:
         )
 
         assert result.returncode == 0
-        synced = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-two.md"
+        synced = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-two.md"
         assert not synced.exists()
 
     def test_sync_writes_audit_log(self, temp_project_dir, local_repo):
@@ -538,14 +538,14 @@ class TestCodexSharingScripts:
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
 
         git_env = local_repo["env"]
-        new_entity = local_repo["work"] / "guideline" / "tip-two.md"
+        new_entity = local_repo["work"] / "guideline" / "guideline-two.md"
         new_entity.write_text("---\ntype: guideline\n---\n\nDelete dead code promptly.\n")
         subprocess.run(["git", "-C", str(local_repo["work"]), "add", "."], check=True, env=git_env)
-        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add tip-two"], check=True, env=git_env)
+        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add guideline-two"], check=True, env=git_env)
         subprocess.run(["git", "-C", str(local_repo["work"]), "push", "origin", "main"], check=True, env=git_env)
 
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
-        mirrored = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-two.md"
+        mirrored = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-two.md"
         assert mirrored.exists()
         assert "Delete dead code promptly." in mirrored.read_text()
 
@@ -559,7 +559,7 @@ class TestCodexSharingScripts:
         )
 
         git_env = local_repo["env"]
-        target = local_repo["work"] / "guideline" / "tip-one.md"
+        target = local_repo["work"] / "guideline" / "guideline-one.md"
         symlink = local_repo["work"] / "guideline" / "tip-link.md"
         symlink.symlink_to(target.name)
         subprocess.run(["git", "-C", str(local_repo["work"]), "add", "."], check=True, env=git_env)
@@ -569,7 +569,7 @@ class TestCodexSharingScripts:
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
 
         subscribed_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
-        assert (subscribed_dir / "tip-one.md").exists()
+        assert (subscribed_dir / "guideline-one.md").exists()
         assert (subscribed_dir / "tip-link.md").exists()
 
         result = run_script(
@@ -593,16 +593,16 @@ class TestCodexSharingScripts:
         )
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
 
-        tip_one = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
-        assert tip_one.exists()
+        guideline_one = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
+        assert guideline_one.exists()
 
         git_env = local_repo["env"]
-        subprocess.run(["git", "-C", str(local_repo["work"]), "rm", "guideline/tip-one.md"], check=True, env=git_env)
-        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "remove tip-one"], check=True, env=git_env)
+        subprocess.run(["git", "-C", str(local_repo["work"]), "rm", "guideline/guideline-one.md"], check=True, env=git_env)
+        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "remove guideline-one"], check=True, env=git_env)
         subprocess.run(["git", "-C", str(local_repo["work"]), "push", "origin", "main"], check=True, env=git_env)
 
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
-        assert not tip_one.exists()
+        assert not guideline_one.exists()
 
     def test_sync_migrates_legacy_subscribed_repo(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -628,4 +628,4 @@ class TestCodexSharingScripts:
         migrated_repo = evolve_dir / "entities" / "subscribed" / "alice"
         assert migrated_repo.is_dir()
         assert not (evolve_dir / "subscribed" / "alice").exists()
-        assert (migrated_repo / "guideline" / "tip-one.md").exists()
+        assert (migrated_repo / "guideline" / "guideline-one.md").exists()
