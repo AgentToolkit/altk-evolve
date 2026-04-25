@@ -43,19 +43,19 @@ class TestSlugify:
 
 class TestUniqueFilename:
     def test_returns_slug_md_when_no_collision(self, temp_project_dir):
-        path = entity_io.unique_filename(temp_project_dir, "my-tip")
-        assert path == temp_project_dir / "my-tip.md"
+        path = entity_io.unique_filename(temp_project_dir, "my-guideline")
+        assert path == temp_project_dir / "my-guideline.md"
 
-    def test_increments_suffix_on_collision(self, temp_project_dir):
-        (temp_project_dir / "my-tip.md").touch()
-        path = entity_io.unique_filename(temp_project_dir, "my-tip")
-        assert path == temp_project_dir / "my-tip-2.md"
+    def test_increments_suffix_on_collision(self, temp_project_dir, file_assertions):
+        file_assertions.write_text(temp_project_dir / "my-guideline.md", "")
+        path = entity_io.unique_filename(temp_project_dir, "my-guideline")
+        assert path == temp_project_dir / "my-guideline-2.md"
 
-    def test_keeps_incrementing(self, temp_project_dir):
-        (temp_project_dir / "my-tip.md").touch()
-        (temp_project_dir / "my-tip-2.md").touch()
-        path = entity_io.unique_filename(temp_project_dir, "my-tip")
-        assert path == temp_project_dir / "my-tip-3.md"
+    def test_keeps_incrementing(self, temp_project_dir, file_assertions):
+        file_assertions.write_text(temp_project_dir / "my-guideline.md", "")
+        file_assertions.write_text(temp_project_dir / "my-guideline-2.md", "")
+        path = entity_io.unique_filename(temp_project_dir, "my-guideline")
+        assert path == temp_project_dir / "my-guideline-3.md"
 
 
 class TestEntityMarkdownRoundtrip:
@@ -143,7 +143,7 @@ class TestWriteEntityFile:
 class TestLoadAllEntities:
     def test_loads_from_nested_type_dirs(self, temp_project_dir):
         (temp_project_dir / "guideline").mkdir()
-        (temp_project_dir / "guideline" / "tip.md").write_text("---\ntype: guideline\n---\n\nKeep it simple.\n")
+        (temp_project_dir / "guideline" / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep it simple.\n")
         (temp_project_dir / "preference").mkdir()
         (temp_project_dir / "preference" / "pref.md").write_text("---\ntype: preference\n---\n\nUse snake_case.\n")
         entities = entity_io.load_all_entities(temp_project_dir)

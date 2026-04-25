@@ -1,4 +1,4 @@
-"""Unit tests for tip clustering logic."""
+"""Unit tests for guideline clustering logic."""
 
 from datetime import datetime
 from unittest.mock import MagicMock, patch
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from altk_evolve.llm.tips.clustering import _union_find, cluster_entities
+from altk_evolve.llm.guidelines.clustering import _union_find, cluster_entities
 from altk_evolve.schema.core import RecordedEntity
 
 
@@ -17,7 +17,7 @@ def _make_entity(entity_id: str, task_description: str | None = None) -> Recorde
         metadata["task_description"] = task_description
     return RecordedEntity(
         id=entity_id,
-        content=f"Tip for {entity_id}",
+        content=f"Guideline for {entity_id}",
         type="guideline",
         metadata=metadata,
         created_at=datetime(2025, 1, 1),
@@ -79,7 +79,7 @@ def _mock_encode(descriptions, normalize_embeddings=True):
 
 
 @pytest.mark.unit
-@patch("altk_evolve.llm.tips.clustering._get_sentence_transformer")
+@patch("altk_evolve.llm.guidelines.clustering._get_sentence_transformer")
 class TestClusterEntities:
     def test_groups_similar_tasks(self, mock_st_cls):
         mock_model = MagicMock()

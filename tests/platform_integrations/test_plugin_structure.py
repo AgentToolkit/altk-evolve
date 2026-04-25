@@ -50,10 +50,10 @@ class TestHooksManifest:
                     if hook.get("type") == "command":
                         cmd = hook["command"]
                         resolved = cmd.replace("${CLAUDE_PLUGIN_ROOT}", str(_PLUGIN_ROOT))
-                        # Find the .py token — commands may have trailing flags
-                        py_tokens = [t for t in resolved.split() if t.endswith(".py")]
-                        assert py_tokens, f"No .py script found in hook command: {cmd}"
-                        script_path = Path(py_tokens[0])
+                        # Find the script token — commands may have trailing flags
+                        script_tokens = [t for t in resolved.split() if t.endswith((".py", ".sh"))]
+                        assert script_tokens, f"No script found in hook command: {cmd}"
+                        script_path = Path(script_tokens[0])
                         assert script_path.exists(), f"Hook script missing: {script_path} (event: {event})"
 
 

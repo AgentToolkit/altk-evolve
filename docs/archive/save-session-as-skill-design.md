@@ -143,7 +143,7 @@ description: {one-line description of what this skill does}
 
 ## Notes
 
-{Any additional context or tips}
+{Any additional context or guidelines}
 ```
 
 ### Step 5: Prompt User for Skill Name

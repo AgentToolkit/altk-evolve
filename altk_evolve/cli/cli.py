@@ -351,13 +351,17 @@ def consolidate_entities(
     console.print()
 
     try:
-        clusters = client.cluster_tips(namespace, threshold=effective_threshold)
+        clusters = client.cluster_guidelines(namespace, threshold=effective_threshold)
     except NamespaceNotFoundException:
         console.print(f"[red]Namespace '{namespace}' not found.[/red]")
         raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]Clustering unavailable:[/red] {e}")
+        console.print("[yellow]Configure the embedding model/backend before clustering guidelines.[/yellow]")
+        raise typer.Exit(1)
 
     if not clusters:
-        console.print("[yellow]No clusters found. Tips have dissimilar task descriptions.[/yellow]")
+        console.print("[yellow]No clusters found. Guidelines have dissimilar task descriptions.[/yellow]")
         return
 
     console.print(f"[green]Found {len(clusters)} cluster(s)[/green]\n")
@@ -389,13 +393,17 @@ def consolidate_entities(
 
     console.print("\n[bold]Consolidating clusters...[/bold]")
     try:
-        result = client.consolidate_tips(namespace, threshold=effective_threshold)
+        result = client.consolidate_guidelines(namespace, threshold=effective_threshold)
         console.print("[green]Consolidation complete:[/green]")
         console.print(f"  Clusters combined: {result.clusters_found}")
-        console.print(f"  Tips before: {result.tips_before}")
-        console.print(f"  Tips after: {result.tips_after}")
+        console.print(f"  Guidelines before: {result.guidelines_before}")
+        console.print(f"  Guidelines after: {result.guidelines_after}")
     except EvolveException as e:
         console.print(f"[red]Consolidation failed: {e}[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]Consolidation unavailable:[/red] {e}")
+        console.print("[yellow]Configure the embedding model/backend before consolidating guidelines.[/yellow]")
         raise typer.Exit(1)
 
 
@@ -412,7 +420,7 @@ def sync_phoenix(
     limit: Annotated[int, typer.Option(help="Maximum number of spans to fetch")] = 100,
     include_errors: Annotated[bool, typer.Option("--include-errors", help="Include failed/error spans")] = False,
 ):
-    """Sync trajectories from Arize Phoenix and generate tips."""
+    """Sync trajectories from Arize Phoenix and generate guidelines."""
     from altk_evolve.sync.phoenix_sync import PhoenixSync
 
     syncer = PhoenixSync(
@@ -437,7 +445,7 @@ def sync_phoenix(
 
         table.add_row("Trajectories processed", str(result.processed))
         table.add_row("Trajectories skipped (already synced)", str(result.skipped))
-        table.add_row("Tips generated", str(result.tips_generated))
+        table.add_row("Guidelines generated", str(result.guidelines_generated))
         table.add_row("Errors", str(len(result.errors)))
 
         console.print(table)

@@ -645,7 +645,7 @@ def local_repo(tmp_path, git_env):
     # Seed one entity
     guideline = init / "guideline"
     guideline.mkdir()
-    (guideline / "tip-one.md").write_text("---\ntype: guideline\n---\n\nAlways write tests.\n")
+    (guideline / "guideline-one.md").write_text("---\ntype: guideline\n---\n\nAlways write tests.\n")
     subprocess.run(["git", "-C", str(init), "add", "."], check=True, capture_output=True, env=git_env)
     subprocess.run(
         ["git", "-C", str(init), "commit", "-m", "init"],
