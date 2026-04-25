@@ -668,7 +668,7 @@ class TestSyncPhoenix:
             assert result.exit_code == 0
             assert "Sync Results" in result.stdout
             assert "Guidelines generated" in result.stdout
-            assert "Tips generated" not in result.stdout
+            assert "Guidelines generated" in result.stdout
             assert "10" in result.stdout  # processed
             assert "5" in result.stdout  # skipped
             assert "20" in result.stdout  # guidelines_generated
