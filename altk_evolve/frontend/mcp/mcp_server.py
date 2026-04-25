@@ -19,7 +19,7 @@ from starlette.exceptions import HTTPException
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.frontend.api.routes import router as api_router
-from altk_evolve.llm.tips.tips import generate_tips
+from altk_evolve.llm.guidelines.guidelines import generate_guidelines
 from altk_evolve.schema.core import Entity, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
 
@@ -167,7 +167,7 @@ def get_guidelines(task: str) -> str:
 @mcp.tool()
 def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[RecordedEntity]:
     """
-    Save the full agent trajectory to the Entity DB and generate tips
+    Save the full agent trajectory to the Entity DB and generate guidelines
 
     Args:
         trajectory_data: A JSON formatted OpenAI conversation.
@@ -193,26 +193,26 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None) -> list[Re
         entities=entities,
         enable_conflict_resolution=False,
     )
-    result = generate_tips(messages)
+    result = generate_guidelines(messages)
 
-    if result.tips:
+    if result.guidelines:
         get_client().update_entities(
             namespace_id=evolve_config.namespace_id,
             entities=[
                 Entity(
                     type="guideline",
-                    content=tip.content,
+                    content=guideline.content,
                     metadata={
-                        "category": tip.category,
-                        "rationale": tip.rationale,
-                        "trigger": tip.trigger,
-                        "implementation_steps": tip.implementation_steps,
+                        "category": guideline.category,
+                        "rationale": guideline.rationale,
+                        "trigger": guideline.trigger,
+                        "implementation_steps": guideline.implementation_steps,
                         "task_description": result.task_description,
                         "source_task_id": task_id,
                         "creation_mode": "auto-mcp",
                     },
                 )
-                for tip in result.tips
+                for guideline in result.guidelines
             ],
             enable_conflict_resolution=True,
         )

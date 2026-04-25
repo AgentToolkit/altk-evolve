@@ -29,7 +29,7 @@ async def multiply(a: int, b: int) -> int:
 
 async def main():
     # Create agent with local tools
-    model_name = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or llm_settings.tips_model
+    model_name = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or llm_settings.guidelines_model
     custom_provider = llm_settings.custom_llm_provider
 
     # Use the Agent SDK's LitellmModel adapter

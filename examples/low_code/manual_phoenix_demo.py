@@ -39,7 +39,7 @@ def main():
     client = OpenAI()
 
     # Manually check for Evolve model config
-    model = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or os.environ.get("EVOLVE_TIPS_MODEL", "gpt-4o-mini")
+    model = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or os.environ.get("EVOLVE_GUIDELINES_MODEL", "gpt-4o-mini")
     print(f"Running Manually Instrumented Agent (Model: {model})...")
 
     tools = [

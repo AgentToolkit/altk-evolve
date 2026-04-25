@@ -74,8 +74,8 @@ class TestSaveEntities:
         run_save(
             temp_project_dir,
             [
-                {"type": "guideline", "content": "First tip."},
-                {"type": "guideline", "content": "Second tip."},
+                {"type": "guideline", "content": "First guideline."},
+                {"type": "guideline", "content": "Second guideline."},
             ],
             evolve_dir=evolve_dir,
         )
@@ -99,8 +99,8 @@ class TestSaveEntities:
         result = run_save(
             temp_project_dir,
             [
-                {"type": "guideline", "content": "Tip A."},
-                {"type": "guideline", "content": "Tip B."},
+                {"type": "guideline", "content": "Guideline A."},
+                {"type": "guideline", "content": "Guideline B."},
             ],
             evolve_dir=evolve_dir,
         )

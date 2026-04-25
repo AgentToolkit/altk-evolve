@@ -1,4 +1,4 @@
-Extract actionable, relevant tips from this trajectory that would help an AI agent perform similar tasks better in the future.
+Extract actionable, relevant guidelines from this trajectory that would help an AI agent perform similar tasks better in the future.
 
 # Task Information
 **Task:** {{task_instruction}}
@@ -9,19 +9,19 @@ Extract actionable, relevant tips from this trajectory that would help an AI age
 {{trajectory_summary}}
 
 **IMPORTANT TO REMEMBER:**
-1. Only generate tips if they are truly relevant and actionable
-2. Tips should be specific to patterns observed in this trajectory
+1. Only generate guidelines if they are truly relevant and actionable
+2. Guidelines should be specific to patterns observed in this trajectory
 3. Include both positive patterns (what worked) and negative patterns (what to avoid)
-4. Each tip should have:
+4. Each guideline should have:
    - A clear, concise description (content)
    - The purpose/benefit of following it
    - The category: "strategy", "recovery", or "optimization"
-   - Specific steps to implement the tip
-   - A trigger condition (when to apply this tip)
+   - Specific steps to implement the guideline
+   - A trigger condition (when to apply this guideline)
 
 5. If the task seems to have succeeded, focus on the successful strategies used
 6. If the task seems to have failed, focus on what went wrong and how to prevent/recover from it
-7. Do not generate generic tips - be specific to this task execution
+7. Do not generate generic guidelines - be specific to this task execution
 8. Look for patterns in how the agent:
    - Discovered and used APIs
    - Handled authentication and credentials
@@ -33,19 +33,19 @@ Extract actionable, relevant tips from this trajectory that would help an AI age
 **Output Format (JSON):**
 ```json
 {
-    "tips": [
+    "guidelines": [
         {
-            "content": "Clear, actionable tip",
-            "rationale": "Why this tip helps",
+            "content": "Clear, actionable guideline",
+            "rationale": "Why this guideline helps",
             "category": "strategy|recovery|optimization",
-            "trigger": "When to apply this tip",
+            "trigger": "When to apply this guideline",
             "implementation_steps": ["step 1", "step 2"]
         }
     ]
 }
 ```
 
-Generate tips now. Return ONLY the JSON, no other text.
+Generate guidelines now. Return ONLY the JSON, no other text.
 {% endif %}
 
 

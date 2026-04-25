@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from altk_evolve.config.llm import llm_settings
 from altk_evolve.schema.exceptions import EvolveException
-from altk_evolve.schema.tips import DEFAULT_TASK_DESCRIPTION, TipGenerationResponse, TipGenerationResult
+from altk_evolve.schema.guidelines import DEFAULT_TASK_DESCRIPTION, GuidelineGenerationResponse, GuidelineGenerationResult
 from altk_evolve.utils.utils import clean_llm_response
 
 logger = logging.getLogger(__name__)
@@ -103,15 +103,15 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
     }
 
 
-def generate_tips(messages: list[dict]) -> TipGenerationResult:
-    prompt_file = Path(__file__).parent / "prompts/generate_tips.jinja2"
+def generate_guidelines(messages: list[dict]) -> GuidelineGenerationResult:
+    prompt_file = Path(__file__).parent / "prompts/generate_guidelines.jinja2"
     supported_params = get_supported_openai_params(
-        model=llm_settings.tips_model,
+        model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
     supports_response_format = supported_params and "response_format" in supported_params
     response_schema_enabled = supports_response_schema(
-        model=llm_settings.tips_model,
+        model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
     constrained_decoding_supported = supports_response_format and response_schema_enabled
@@ -128,9 +128,9 @@ def generate_tips(messages: list[dict]) -> TipGenerationResult:
         litellm.enable_json_schema_validation = True
         clean_response = (
             completion(
-                model=llm_settings.tips_model,
+                model=llm_settings.guidelines_model,
                 messages=[{"role": "user", "content": prompt}],
-                response_format=TipGenerationResponse,
+                response_format=GuidelineGenerationResponse,
                 custom_llm_provider=llm_settings.custom_llm_provider,
             )
             .choices[0]
@@ -140,7 +140,7 @@ def generate_tips(messages: list[dict]) -> TipGenerationResult:
         litellm.enable_json_schema_validation = False
         response = (
             completion(
-                model=llm_settings.tips_model,
+                model=llm_settings.guidelines_model,
                 messages=[{"role": "user", "content": prompt}],
                 custom_llm_provider=llm_settings.custom_llm_provider,
             )
@@ -149,14 +149,14 @@ def generate_tips(messages: list[dict]) -> TipGenerationResult:
         )
         clean_response = clean_llm_response(response)
     if not clean_response:
-        logger.warning(f"LLM returned empty response for tip generation. Model: {llm_settings.tips_model}")
-        return TipGenerationResult(tips=[], task_description=task_description)
+        logger.warning(f"LLM returned empty response for guideline generation. Model: {llm_settings.guidelines_model}")
+        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
     try:
-        tips = TipGenerationResponse.model_validate(json.loads(clean_response)).tips
-        return TipGenerationResult(tips=tips, task_description=task_description)
+        guidelines = GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
+        return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
     except JSONDecodeError as e:
-        logger.warning(f"Failed to parse LLM tip generation response: {e}. Response: {repr(clean_response[:500])}")
-        return TipGenerationResult(tips=[], task_description=task_description)
+        logger.warning(f"Failed to parse LLM guideline generation response: {e}. Response: {repr(clean_response[:500])}")
+        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
     except ValidationError as e:
-        logger.warning(f"Failed to validate LLM tip generation response: {e}. Response: {repr(clean_response[:500])}")
-        return TipGenerationResult(tips=[], task_description=task_description)
+        logger.warning(f"Failed to validate LLM guideline generation response: {e}. Response: {repr(clean_response[:500])}")
+        return GuidelineGenerationResult(guidelines=[], task_description=task_description)

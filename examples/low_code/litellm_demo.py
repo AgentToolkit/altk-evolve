@@ -10,10 +10,11 @@ from litellm import completion
 
 
 def main():
-    print(f"Sending request via LiteLLM (Model: {llm_settings.tips_model})...")
+    model = os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or llm_settings.guidelines_model
+    print(f"Sending request via LiteLLM (Model: {model})...")
     try:
         response = completion(
-            model=os.environ.get("EVOLVE_EXAMPLE_AGENT_MODEL") or llm_settings.tips_model,
+            model=model,
             custom_llm_provider=llm_settings.custom_llm_provider,
             messages=[{"role": "user", "content": "What is the capital of France?"}],
             max_tokens=10,

@@ -1,6 +1,6 @@
 # Phoenix Sync
 
-Sync agent trajectories from Arize Phoenix to Evolve and automatically generate tips/guidelines.
+Sync agent trajectories from Arize Phoenix to Evolve and automatically generate guidelines.
 
 ## Overview
 
@@ -8,8 +8,8 @@ The Phoenix sync module:
 1. Fetches agent trajectories from Phoenix's REST API
 2. Deduplicates already-processed trajectories (by `span_id`)
 3. Converts messages to OpenAI format
-4. Generates tips/guidelines using LLM
-5. Stores both trajectories and tips in Evolve
+4. Generates guidelines using LLM
+5. Stores both trajectories and guidelines in Evolve
 
 ## Installation
 
@@ -80,7 +80,7 @@ result = syncer.sync(limit=100, include_errors=False)
 
 print(f"Processed: {result.processed}")
 print(f"Skipped: {result.skipped}")
-print(f"Tips generated: {result.tips_generated}")
+print(f"Guidelines generated: {result.guidelines_generated}")
 print(f"Errors: {result.errors}")
 ```
 
@@ -106,15 +106,15 @@ Anthropic/Claude message format is converted to OpenAI format:
 - Tool results → separate `tool` role messages
 - Thinking blocks → preserved in `thinking` field
 
-### 4. Tip Generation
+### 4. Guideline Generation
 
-The `generate_tips()` function analyzes the trajectory and produces actionable guidelines using an LLM.
+The `generate_guidelines()` function analyzes the trajectory and produces actionable guidelines using an LLM.
 
 ### 5. Storage
 
 Two entity types are stored:
 - `trajectory` - Individual messages with metadata (trace_id, span_id, model, role)
-- `guideline` - Generated tips with conflict resolution enabled
+- `guideline` - Generated guidelines with conflict resolution enabled
 
 ## Data Flow
 
@@ -127,16 +127,16 @@ Two entity types are stored:
                     ┌─────────────────────┼─────────────────────┐
                     │                     │                     │
                     ▼                     ▼                     ▼
-            ┌───────────────┐    ┌───────────────┐    ┌───────────────┐
-            │  Deduplicate  │    │   Convert to  │    │   Generate    │
-            │  (by span_id) │    │ OpenAI format │    │     Tips      │
-            └───────────────┘    └───────────────┘    └───────┬───────┘
-                                                              │
-                                                              ▼
-                                                    ┌───────────────┐
-                                                    │    Evolve     │
-                                                    │   Backend     │
-                                                    └───────────────┘
+            ┌────────────────┐    ┌────────────────┐    ┌────────────────┐
+            │  Deduplicate   │    │   Convert to   │    │   Generate     │
+            │  (by span_id)  │    │ OpenAI format  │    │   Guidelines   │
+            └────────────────┘    └────────────────┘    └────────┬───────┘
+                                                                  │
+                                                                  ▼
+                                                        ┌───────────────┐
+                                                        │    Evolve     │
+                                                        │   Backend     │
+                                                        └───────────────┘
 ```
 
 ## Running on a Schedule
@@ -191,7 +191,7 @@ curl http://localhost:6006/v1/projects/default/spans?limit=1
 - Verify spans contain `gen_ai.prompt.*` attributes
 - Use `--include-errors` to include failed spans
 
-### Tips not generating
+### Guidelines not generating
 
 Ensure LLM API key is configured:
 ```bash

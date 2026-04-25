@@ -83,10 +83,10 @@ class TestCodexSaveAndRetrieve:
         evolve_dir = temp_project_dir / ".evolve"
         own_dir = evolve_dir / "entities" / "guideline"
         own_dir.mkdir(parents=True)
-        (own_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
+        (own_dir / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
         sub_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
         sub_dir.mkdir(parents=True)
-        (sub_dir / "alice-tip.md").write_text("---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n")
+        (sub_dir / "alice-guideline.md").write_text("---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n")
 
         result = run_script(
             RETRIEVE_SCRIPT,
@@ -104,10 +104,10 @@ class TestCodexSaveAndRetrieve:
         evolve_dir = temp_project_dir / ".evolve"
         own_dir = evolve_dir / "entities" / "guideline"
         own_dir.mkdir(parents=True)
-        (own_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
+        (own_dir / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
         public_dir = evolve_dir / "public" / "guideline"
         public_dir.mkdir(parents=True)
-        (public_dir / "published-tip.md").write_text(
+        (public_dir / "published-guideline.md").write_text(
             "---\ntype: guideline\nvisibility: public\nsource: alice/evolve-guidelines\n---\n\nDocument edge cases.\n"
         )
 
@@ -128,17 +128,17 @@ class TestCodexSharingScripts:
     def test_publish_moves_entity_to_public_dir_and_audits(self, temp_project_dir):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
-        source = guideline_dir / "my-tip.md"
+        source = guideline_dir / "my-guideline.md"
         source.write_text("---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n")
 
         run_script(
             PUBLISH_SCRIPT,
             project_dir=temp_project_dir,
-            args=["--entity", "my-tip.md", "--user", "alice"],
+            args=["--entity", "my-guideline.md", "--user", "alice"],
             evolve_dir=temp_project_dir / ".evolve",
         )
 
-        published = temp_project_dir / ".evolve" / "public" / "guideline" / "my-tip.md"
+        published = temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md"
         assert published.exists()
         assert not source.exists()
         content = published.read_text()
@@ -153,7 +153,7 @@ class TestCodexSharingScripts:
     def test_publish_stamps_source_from_public_repo_remote(self, temp_project_dir):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
-        (guideline_dir / "my-tip.md").write_text("---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n")
+        (guideline_dir / "my-guideline.md").write_text("---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n")
         (temp_project_dir / "evolve.config.yaml").write_text(
             'public_repo:\n  remote: "git@github.com:alice/evolve-guidelines.git"\n  branch: "main"\n'
         )
@@ -161,27 +161,27 @@ class TestCodexSharingScripts:
         run_script(
             PUBLISH_SCRIPT,
             project_dir=temp_project_dir,
-            args=["--entity", "my-tip.md"],
+            args=["--entity", "my-guideline.md"],
             evolve_dir=temp_project_dir / ".evolve",
         )
 
-        content = (temp_project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").read_text()
+        content = (temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md").read_text()
         assert "source: alice/evolve-guidelines" in content
 
     def test_publish_uses_identity_user_as_owner_source_and_audit_fallback(self, temp_project_dir):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
-        (guideline_dir / "my-tip.md").write_text("---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n")
+        (guideline_dir / "my-guideline.md").write_text("---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n")
         (temp_project_dir / "evolve.config.yaml").write_text('identity:\n  user: "alice"\n')
 
         run_script(
             PUBLISH_SCRIPT,
             project_dir=temp_project_dir,
-            args=["--entity", "my-tip.md"],
+            args=["--entity", "my-guideline.md"],
             evolve_dir=temp_project_dir / ".evolve",
         )
 
-        content = (temp_project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").read_text()
+        content = (temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md").read_text()
         assert "owner: alice" in content
         assert "source: alice" in content
         entry = json.loads((temp_project_dir / ".evolve" / "audit.log").read_text().strip())
@@ -201,24 +201,24 @@ class TestCodexSharingScripts:
     def test_publish_succeeds_without_user_flag(self, temp_project_dir):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
-        (guideline_dir / "my-tip.md").write_text("---\ntype: guideline\n---\n\nPrefer composition.\n")
+        (guideline_dir / "my-guideline.md").write_text("---\ntype: guideline\n---\n\nPrefer composition.\n")
 
         run_script(
             PUBLISH_SCRIPT,
             project_dir=temp_project_dir,
-            args=["--entity", "my-tip.md"],
+            args=["--entity", "my-guideline.md"],
             evolve_dir=temp_project_dir / ".evolve",
         )
-        content = (temp_project_dir / ".evolve" / "public" / "guideline" / "my-tip.md").read_text()
+        content = (temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md").read_text()
         assert "visibility: public" in content
 
     def test_publish_fails_when_public_entity_already_exists(self, temp_project_dir):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
-        source = guideline_dir / "my-tip.md"
+        source = guideline_dir / "my-guideline.md"
         source.write_text("---\ntype: guideline\n---\n\nPrefer composition.\n")
 
-        public_path = temp_project_dir / ".evolve" / "public" / "guideline" / "my-tip.md"
+        public_path = temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md"
         public_path.parent.mkdir(parents=True)
         existing_content = "---\ntype: guideline\nvisibility: public\n---\n\nExisting public content.\n"
         public_path.write_text(existing_content)
@@ -226,7 +226,7 @@ class TestCodexSharingScripts:
         result = run_script(
             PUBLISH_SCRIPT,
             project_dir=temp_project_dir,
-            args=["--entity", "my-tip.md"],
+            args=["--entity", "my-guideline.md"],
             evolve_dir=temp_project_dir / ".evolve",
             expect_success=False,
         )
@@ -236,11 +236,11 @@ class TestCodexSharingScripts:
         assert public_path.read_text() == existing_content
         assert source.exists()
 
-    @pytest.mark.parametrize("entity_name", ["../../etc/passwd", "subdir/tip.md", ".", ".."])
+    @pytest.mark.parametrize("entity_name", ["../../etc/passwd", "subdir/guideline.md", ".", ".."])
     def test_publish_rejects_invalid_entity_name(self, temp_project_dir, entity_name):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
-        (guideline_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nA tip.\n")
+        (guideline_dir / "guideline.md").write_text("---\ntype: guideline\n---\n\nA guideline.\n")
         result = run_script(
             PUBLISH_SCRIPT,
             project_dir=temp_project_dir,
@@ -264,7 +264,7 @@ class TestCodexSharingScripts:
         assert not (evolve_dir / "subscribed" / "alice").exists()
 
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
-        synced = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
+        synced = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
         assert synced.exists()
         assert "Always write tests." in synced.read_text()
 
@@ -453,7 +453,7 @@ class TestCodexSharingScripts:
         )
 
         assert result.returncode == 0
-        mirrored = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
+        mirrored = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
         assert mirrored.exists()
         audit_log = evolve_dir / ".evolve" / "audit.log"
         assert audit_log.exists()
@@ -492,10 +492,10 @@ class TestCodexSharingScripts:
             evolve_dir=evolve_dir,
         )
         git_env = local_repo["env"]
-        new_entity = local_repo["work"] / "guideline" / "tip-two.md"
+        new_entity = local_repo["work"] / "guideline" / "guideline-two.md"
         new_entity.write_text("---\ntype: guideline\n---\n\nDelete dead code promptly.\n")
         subprocess.run(["git", "-C", str(local_repo["work"]), "add", "."], check=True, env=git_env)
-        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add tip-two"], check=True, env=git_env)
+        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add guideline-two"], check=True, env=git_env)
         subprocess.run(["git", "-C", str(local_repo["work"]), "push", "origin", "main"], check=True, env=git_env)
         (temp_project_dir / "evolve.config.yaml").write_text(
             f'subscriptions:\n  - name: "alice"\n    remote: "{local_repo["bare"]}"\n    branch: "main"\nsync:\n  on_session_start: false\n'
@@ -510,7 +510,7 @@ class TestCodexSharingScripts:
         )
 
         assert result.returncode == 0
-        synced = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-two.md"
+        synced = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-two.md"
         assert not synced.exists()
 
     def test_sync_writes_audit_log(self, temp_project_dir, local_repo):
@@ -538,14 +538,14 @@ class TestCodexSharingScripts:
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
 
         git_env = local_repo["env"]
-        new_entity = local_repo["work"] / "guideline" / "tip-two.md"
+        new_entity = local_repo["work"] / "guideline" / "guideline-two.md"
         new_entity.write_text("---\ntype: guideline\n---\n\nDelete dead code promptly.\n")
         subprocess.run(["git", "-C", str(local_repo["work"]), "add", "."], check=True, env=git_env)
-        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add tip-two"], check=True, env=git_env)
+        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add guideline-two"], check=True, env=git_env)
         subprocess.run(["git", "-C", str(local_repo["work"]), "push", "origin", "main"], check=True, env=git_env)
 
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
-        mirrored = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-two.md"
+        mirrored = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-two.md"
         assert mirrored.exists()
         assert "Delete dead code promptly." in mirrored.read_text()
 
@@ -559,18 +559,18 @@ class TestCodexSharingScripts:
         )
 
         git_env = local_repo["env"]
-        target = local_repo["work"] / "guideline" / "tip-one.md"
-        symlink = local_repo["work"] / "guideline" / "tip-link.md"
+        target = local_repo["work"] / "guideline" / "guideline-one.md"
+        symlink = local_repo["work"] / "guideline" / "guideline-link.md"
         symlink.symlink_to(target.name)
         subprocess.run(["git", "-C", str(local_repo["work"]), "add", "."], check=True, env=git_env)
-        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add tip symlink"], check=True, env=git_env)
+        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add guideline symlink"], check=True, env=git_env)
         subprocess.run(["git", "-C", str(local_repo["work"]), "push", "origin", "main"], check=True, env=git_env)
 
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
 
         subscribed_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
-        assert (subscribed_dir / "tip-one.md").exists()
-        assert (subscribed_dir / "tip-link.md").exists()
+        assert (subscribed_dir / "guideline-one.md").exists()
+        assert (subscribed_dir / "guideline-link.md").exists()
 
         result = run_script(
             RETRIEVE_SCRIPT,
@@ -581,7 +581,7 @@ class TestCodexSharingScripts:
         )
         assert result.returncode == 0
         assert "Always write tests." in result.stdout
-        assert "tip-link" not in result.stdout
+        assert "guideline-link" not in result.stdout
 
     def test_sync_removed_entity_disappears_after_sync(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -593,16 +593,16 @@ class TestCodexSharingScripts:
         )
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
 
-        tip_one = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
-        assert tip_one.exists()
+        guideline_one = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
+        assert guideline_one.exists()
 
         git_env = local_repo["env"]
-        subprocess.run(["git", "-C", str(local_repo["work"]), "rm", "guideline/tip-one.md"], check=True, env=git_env)
-        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "remove tip-one"], check=True, env=git_env)
+        subprocess.run(["git", "-C", str(local_repo["work"]), "rm", "guideline/guideline-one.md"], check=True, env=git_env)
+        subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "remove guideline-one"], check=True, env=git_env)
         subprocess.run(["git", "-C", str(local_repo["work"]), "push", "origin", "main"], check=True, env=git_env)
 
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
-        assert not tip_one.exists()
+        assert not guideline_one.exists()
 
     def test_sync_migrates_legacy_subscribed_repo(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -628,4 +628,4 @@ class TestCodexSharingScripts:
         migrated_repo = evolve_dir / "entities" / "subscribed" / "alice"
         assert migrated_repo.is_dir()
         assert not (evolve_dir / "subscribed" / "alice").exists()
-        assert (migrated_repo / "guideline" / "tip-one.md").exists()
+        assert (migrated_repo / "guideline" / "guideline-one.md").exists()
