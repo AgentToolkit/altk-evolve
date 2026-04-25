@@ -99,9 +99,7 @@ class TestRetrieve:
         assert expected_header in result.stdout
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_public_entities_included_in_recall(
-        self, temp_project_dir, retrieve_script, expected_header, platform_name, file_assertions
-    ):
+    def test_public_entities_included_in_recall(self, temp_project_dir, retrieve_script, expected_header, platform_name, file_assertions):
         d = temp_project_dir / ".evolve"
         file_assertions.write_text(
             d / "public" / "guideline" / "pub.md",
