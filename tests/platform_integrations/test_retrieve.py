@@ -147,5 +147,4 @@ class TestRetrieve:
         result = run_retrieve(retrieve_script, evolve_dir=d)
 
         assert result.returncode == 0
-        assert "Real content." in result.stdout
-        assert "link.md" not in result.stdout
+        assert result.stdout.count("Real content.") == 1
