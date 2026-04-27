@@ -6,9 +6,8 @@ from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.llm.fact_extraction.fact_extraction import ExtractedFact, extract_facts_from_messages
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
-from altk_evolve.schema.exceptions import EvolveException, NamespaceAlreadyExistsException, NamespaceNotFoundException
+from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
 from altk_evolve.schema.guidelines import ConsolidationResult
-from altk_evolve.utils.utils import serialize_content
 
 logger = logging.getLogger(__name__)
 
