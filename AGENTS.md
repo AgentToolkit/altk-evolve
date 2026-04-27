@@ -47,7 +47,7 @@ cp .env.example .env  # Configure any environment variables, defined in `./altk_
 pre-commit install
 ```
 
-## Development Tips
+## Development Guidelines
 - This project is managed by `uv`, not `python` or `pip`, so any python commands need to go through `uv`. All dependencies are defined in `pyproject.toml`.
 
 ## Testing Instructions

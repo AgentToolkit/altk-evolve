@@ -1,8 +1,8 @@
-"""Tests for tip generation utilities."""
+"""Tests for guideline generation utilities."""
 
 import pytest
 
-from altk_evolve.llm.tips.tips import parse_openai_agents_trajectory
+from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 
 
 @pytest.mark.unit

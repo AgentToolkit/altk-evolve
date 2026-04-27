@@ -7,7 +7,7 @@ from altk_evolve.llm.fact_extraction.fact_extraction import ExtractedFact, extra
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
-from altk_evolve.schema.tips import ConsolidationResult
+from altk_evolve.schema.guidelines import ConsolidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class EvolveClient:
         """Delete a specific entity by its ID."""
         self.backend.delete_entity_by_id(namespace_id, entity_id)
 
-    def cluster_tips(self, namespace_id: str, threshold: float | None = None, limit: int = 10000) -> list[list[RecordedEntity]]:
+    def cluster_guidelines(self, namespace_id: str, threshold: float | None = None, limit: int = 10000) -> list[list[RecordedEntity]]:
         """Cluster guideline entities by task description similarity.
 
         Args:
@@ -97,7 +97,7 @@ class EvolveClient:
         Returns:
             List of clusters, each containing related RecordedEntity objects.
         """
-        from altk_evolve.llm.tips.clustering import cluster_entities
+        from altk_evolve.llm.guidelines.clustering import cluster_entities
 
         if threshold is None:
             threshold = self.config.clustering_threshold
@@ -111,46 +111,46 @@ class EvolveClient:
             )
         return cluster_entities(entities, threshold=threshold)
 
-    def consolidate_tips(self, namespace_id: str, threshold: float | None = None) -> ConsolidationResult:
-        """Cluster similar tips and combine each cluster into consolidated guidelines.
+    def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None) -> ConsolidationResult:
+        """Cluster similar guidelines and combine each cluster into consolidated guidelines.
 
         Args:
             namespace_id: Namespace to consolidate entities in.
             threshold: Cosine similarity threshold (0-1). Defaults to config value.
 
         Returns:
-            ConsolidationResult with counts of clusters, tips before, and tips after.
+            ConsolidationResult with counts of clusters, guidelines before, and guidelines after.
         """
-        from altk_evolve.llm.tips.clustering import combine_cluster
+        from altk_evolve.llm.guidelines.clustering import combine_cluster
 
-        clusters = self.cluster_tips(namespace_id, threshold=threshold)
+        clusters = self.cluster_guidelines(namespace_id, threshold=threshold)
         clusters_found = 0
-        tips_before = 0
-        tips_after = 0
+        guidelines_before = 0
+        guidelines_after = 0
 
         for cluster in clusters:
             # Phase 1: combine + insert (skip cluster on failure)
             try:
-                consolidated_tips = combine_cluster(cluster)
+                consolidated_guidelines = combine_cluster(cluster)
 
                 task_description = (cluster[0].metadata or {}).get("task_description", "")
                 new_entities = [
                     Entity(
-                        content=tip.content,
+                        content=guideline.content,
                         type="guideline",
                         metadata={
                             "task_description": task_description,
-                            "rationale": tip.rationale,
-                            "category": tip.category,
-                            "trigger": tip.trigger,
-                            "implementation_steps": tip.implementation_steps,
+                            "rationale": guideline.rationale,
+                            "category": guideline.category,
+                            "trigger": guideline.trigger,
+                            "implementation_steps": guideline.implementation_steps,
                         },
                     )
-                    for tip in consolidated_tips
+                    for guideline in consolidated_guidelines
                 ]
                 if not new_entities:
                     logger.warning(
-                        "LLM returned no consolidated tips for cluster (IDs: %s); skipping deletion.",
+                        "LLM returned no consolidated guidelines for cluster (IDs: %s); skipping deletion.",
                         [e.id for e in cluster],
                     )
                     continue
@@ -165,8 +165,8 @@ class EvolveClient:
                 continue
 
             clusters_found += 1
-            tips_before += len(cluster)
-            tips_after += len(consolidated_tips)
+            guidelines_before += len(cluster)
+            guidelines_after += len(consolidated_guidelines)
 
             # Phase 2: delete originals (log errors but don't roll back insert)
             for entity in cluster:
@@ -181,8 +181,8 @@ class EvolveClient:
 
         return ConsolidationResult(
             clusters_found=clusters_found,
-            tips_before=tips_before,
-            tips_after=tips_after,
+            guidelines_before=guidelines_before,
+            guidelines_after=guidelines_after,
         )
 
     # Convenience methods for common patterns

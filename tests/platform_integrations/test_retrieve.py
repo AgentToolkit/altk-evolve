@@ -37,19 +37,21 @@ def run_retrieve(script_path, evolve_dir=None, stdin_data=None):
 
 
 @pytest.fixture
-def evolve_dir(temp_project_dir):
+def evolve_dir(temp_project_dir, file_assertions):
     """An .evolve dir with one owned entity and one subscribed entity."""
     d = temp_project_dir / ".evolve"
 
     # Owned entity
-    own_dir = d / "entities" / "guideline"
-    own_dir.mkdir(parents=True)
-    (own_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
+    file_assertions.write_text(
+        d / "entities" / "guideline" / "guideline.md",
+        "---\ntype: guideline\n---\n\nKeep functions small.\n",
+    )
 
     # Subscribed entity (lives under entities/subscribed/{name}/)
-    sub_dir = d / "entities" / "subscribed" / "alice" / "guideline"
-    sub_dir.mkdir(parents=True)
-    (sub_dir / "alice-tip.md").write_text("---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n")
+    file_assertions.write_text(
+        d / "entities" / "subscribed" / "alice" / "guideline" / "alice-guideline.md",
+        "---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n",
+    )
 
     return d
 
@@ -97,22 +99,24 @@ class TestRetrieve:
         assert expected_header in result.stdout
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_public_entities_included_in_recall(self, temp_project_dir, retrieve_script, expected_header, platform_name):
+    def test_public_entities_included_in_recall(self, temp_project_dir, retrieve_script, expected_header, platform_name, file_assertions):
         d = temp_project_dir / ".evolve"
-        (d / "public" / "guideline").mkdir(parents=True)
-        (d / "public" / "guideline" / "pub.md").write_text(
-            "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n"
+        file_assertions.write_text(
+            d / "public" / "guideline" / "pub.md",
+            "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n",
         )
         result = run_retrieve(retrieve_script, evolve_dir=d)
         assert result.returncode == 0
         assert "Prefer immutable data structures." in result.stdout
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_public_entities_not_annotated_with_from(self, temp_project_dir, retrieve_script, expected_header, platform_name):
+    def test_public_entities_not_annotated_with_from(
+        self, temp_project_dir, retrieve_script, expected_header, platform_name, file_assertions
+    ):
         d = temp_project_dir / ".evolve"
-        (d / "public" / "guideline").mkdir(parents=True)
-        (d / "public" / "guideline" / "pub.md").write_text(
-            "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n"
+        file_assertions.write_text(
+            d / "public" / "guideline" / "pub.md",
+            "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n",
         )
         result = run_retrieve(retrieve_script, evolve_dir=d)
         pub_lines = [line for line in result.stdout.splitlines() if "Prefer immutable data structures." in line]
@@ -120,10 +124,13 @@ class TestRetrieve:
         assert not any("[from:" in line for line in pub_lines)
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_entities_with_trigger_include_when_line(self, temp_project_dir, retrieve_script, expected_header, platform_name):
+    def test_entities_with_trigger_include_when_line(
+        self, temp_project_dir, retrieve_script, expected_header, platform_name, file_assertions
+    ):
         d = temp_project_dir / ".evolve"
-        gdir = d / "entities" / "guideline"
-        gdir.mkdir(parents=True)
-        (gdir / "tip.md").write_text("---\ntype: guideline\ntrigger: when writing tests\n---\n\nAssert the important thing.\n")
+        file_assertions.write_text(
+            d / "entities" / "guideline" / "guideline.md",
+            "---\ntype: guideline\ntrigger: when writing tests\n---\n\nAssert the important thing.\n",
+        )
         result = run_retrieve(retrieve_script, evolve_dir=d)
         assert "when writing tests" in result.stdout

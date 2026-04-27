@@ -27,12 +27,12 @@ class TestAuditAppend:
         assert (nested / ".evolve" / "audit.log").exists()
 
     def test_entry_is_valid_json(self, temp_project_dir):
-        audit.append(project_root=str(temp_project_dir), action="publish", actor="alice", entity="tip.md")
+        audit.append(project_root=str(temp_project_dir), action="publish", actor="alice", entity="guideline.md")
         line = (temp_project_dir / ".evolve" / "audit.log").read_text().strip()
         entry = json.loads(line)
         assert entry["action"] == "publish"
         assert entry["actor"] == "alice"
-        assert entry["entity"] == "tip.md"
+        assert entry["entity"] == "guideline.md"
 
     def test_timestamp_field_present_and_utc(self, temp_project_dir):
         audit.append(project_root=str(temp_project_dir), action="sync")

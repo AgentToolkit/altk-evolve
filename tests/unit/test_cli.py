@@ -4,9 +4,10 @@ import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from click.exceptions import Exit
 from typer.testing import CliRunner
 
-from altk_evolve.cli.cli import app
+from altk_evolve.cli.cli import app, consolidate_entities
 from altk_evolve.schema.core import Namespace, RecordedEntity
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.exceptions import (
@@ -569,7 +570,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=5, skipped=2, tips_generated=10, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=5, skipped=2, guidelines_generated=10, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix"])
@@ -584,7 +585,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://custom:8080"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--url", "http://custom:8080"])
@@ -599,7 +600,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "my_namespace"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--namespace", "my_namespace"])
@@ -614,7 +615,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "my_project"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--project", "my_project"])
@@ -629,7 +630,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--limit", "50"])
@@ -644,7 +645,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix", "--include-errors"])
@@ -659,17 +660,45 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://localhost:6006"
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
-            mock_syncer.sync.return_value = MagicMock(processed=10, skipped=5, tips_generated=20, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=10, skipped=5, guidelines_generated=20, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix"])
 
             assert result.exit_code == 0
             assert "Sync Results" in result.stdout
+            assert "Guidelines generated" in result.stdout
+            assert "Guidelines generated" in result.stdout
             assert "10" in result.stdout  # processed
             assert "5" in result.stdout  # skipped
-            assert "20" in result.stdout  # tips_generated
+            assert "20" in result.stdout  # guidelines_generated
 
+
+@pytest.mark.unit
+class TestEntitiesConsolidate:
+    def test_consolidate_entities_handles_value_error_from_clustering(self, mock_client):
+        mock_client.cluster_guidelines.side_effect = ValueError("embedding model is not configured")
+
+        result = runner.invoke(app, ["entities", "consolidate", "test-ns"])
+
+        assert result.exit_code == 1
+        assert "Clustering unavailable" in result.stdout
+        assert "embedding model is not configured" in result.stdout
+
+    def test_consolidate_entities_handles_value_error_from_consolidation(self, mock_client):
+        entity = MagicMock()
+        entity.id = "entity-1"
+        entity.metadata = {"task_description": "test task"}
+        entity.content = "test content"
+        mock_client.cluster_guidelines.return_value = [[entity]]
+        mock_client.consolidate_guidelines.side_effect = ValueError("embedding model is not configured")
+
+        with pytest.raises(Exit):
+            consolidate_entities("test-ns", dry_run=False)
+
+
+@pytest.mark.unit
+class TestSyncPhoenixMore:
     def test_sync_phoenix_displays_errors(self):
         """Test sync phoenix displays errors if any."""
         with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
@@ -678,7 +707,7 @@ class TestSyncPhoenix:
             mock_syncer.project = "default"
             mock_syncer.namespace_id = "test_ns"
             mock_syncer.sync.return_value = MagicMock(
-                processed=1, skipped=0, tips_generated=0, errors=["Error processing span abc: Connection failed"]
+                processed=1, skipped=0, guidelines_generated=0, errors=["Error processing span abc: Connection failed"]
             )
             MockSync.return_value = mock_syncer
 
@@ -711,7 +740,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://test:6006"
             mock_syncer.project = "test_project"
             mock_syncer.namespace_id = "test_namespace"
-            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, tips_generated=0, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=0, skipped=0, guidelines_generated=0, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(app, ["sync", "phoenix"])
@@ -728,7 +757,7 @@ class TestSyncPhoenix:
             mock_syncer.phoenix_url = "http://custom:9000"
             mock_syncer.project = "prod"
             mock_syncer.namespace_id = "production"
-            mock_syncer.sync.return_value = MagicMock(processed=100, skipped=50, tips_generated=200, errors=[])
+            mock_syncer.sync.return_value = MagicMock(processed=100, skipped=50, guidelines_generated=200, errors=[])
             MockSync.return_value = mock_syncer
 
             result = runner.invoke(

@@ -154,7 +154,7 @@ class TestSubscribe:
             ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
         )
-        cloned = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
+        cloned = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
         assert cloned.exists()
         assert "Always write tests." in cloned.read_text()
 

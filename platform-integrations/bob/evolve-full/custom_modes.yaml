@@ -61,7 +61,7 @@ customModes:
 
       → ALWAYS call save_trajectory() after task completion
 
-      → This saves the conversation and generates new tips
+      → This saves the conversation and generates new guidelines
 
       → Format: [{"role": "user/assistant", "content": "..."}]
 
