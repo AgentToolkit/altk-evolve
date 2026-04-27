@@ -16,10 +16,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Add lib to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from config import load_config
-from audit import append as audit_append
+# Smart import: walk up to find evolve-lib
+current = Path(__file__).resolve()
+for parent in current.parents:
+    lib_path = parent / "evolve-lib"
+    if lib_path.exists():
+        sys.path.insert(0, str(lib_path))
+        break
+
+from config import load_config  # noqa: E402
+from audit import append as audit_append  # noqa: E402
 
 
 _GIT_TIMEOUT = 30  # seconds
@@ -32,10 +38,9 @@ def git_sync(repo_path, branch):
     files, discards any local modifications. Subscribed repos are read-only mirrors
     so there is nothing worth preserving locally.
     """
-    git_base = ["git", "-c", f"safe.directory={repo_path}", "-C", str(repo_path)]
     try:
         fetch = subprocess.run(
-            [*git_base, "fetch", "origin", branch],
+            ["git", "-C", str(repo_path), "fetch", "origin", branch],
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT,
@@ -43,7 +48,7 @@ def git_sync(repo_path, branch):
         if fetch.returncode != 0:
             return fetch
         return subprocess.run(
-            [*git_base, "reset", "--hard", f"origin/{branch}"],
+            ["git", "-C", str(repo_path), "reset", "--hard", f"origin/{branch}"],
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT,
@@ -53,29 +58,22 @@ def git_sync(repo_path, branch):
         return None
 
 
-def _head_hash(repo_path):
-    result = subprocess.run(
-        ["git", "-c", f"safe.directory={repo_path}", "-C", str(repo_path), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        timeout=_GIT_TIMEOUT,
-    )
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
-
-
 def count_delta(repo_path):
     """Count added/modified/deleted .md files since last pull.
 
     Returns dict: {added: int, updated: int, removed: int}
     """
-    result = subprocess.run(
-        ["git", "-c", f"safe.directory={repo_path}", "-C", str(repo_path), "diff", "--name-status", "HEAD@{1}", "HEAD"],
-        capture_output=True,
-        text=True,
-        timeout=_GIT_TIMEOUT,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "diff", "--name-status", "HEAD@{1}", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"Warning: git diff timed out for {repo_path} after {_GIT_TIMEOUT} seconds", file=sys.stderr)
+        return {"added": 0, "updated": 0, "removed": 0}
+
     if result.returncode != 0:
         # HEAD@{1} doesn't exist (initial sync) — count all .md files as added
         added = len(list(repo_path.glob("**/*.md")))
@@ -110,19 +108,18 @@ def main():
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
-    project_root = str(evolve_dir.parent) if "EVOLVE_DIR" in os.environ else "."
 
-    # Determine config path
+    # Determine project_root from config path or EVOLVE_DIR
     if args.config:
-        cfg = load_config(filepath=args.config)
+        # Derive project_root from the directory containing the config file
+        config_path = Path(args.config).resolve()
+        project_root = str(config_path.parent)
+    elif "EVOLVE_DIR" in os.environ:
+        project_root = str(evolve_dir.parent)
     else:
-        cfg = load_config(project_root)
+        project_root = "."
 
-    # Check sync.on_session_start — only short-circuits automatic hook runs
-    # (which pass --quiet). Manual invocations always execute.
-    sync_cfg = cfg.get("sync", {})
-    if args.quiet and isinstance(sync_cfg, dict) and sync_cfg.get("on_session_start") is False:
-        sys.exit(0)
+    cfg = load_config(project_root)
 
     subscriptions = cfg.get("subscriptions", [])
     if not isinstance(subscriptions, list):
@@ -141,48 +138,30 @@ def main():
     any_changes = False
 
     _SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+    subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
 
     for sub in subscriptions:
         if not isinstance(sub, dict):
             continue
-        name = sub.get("name")
+        name = sub.get("name", "unknown")
         branch = sub.get("branch", "main")
 
-        if not isinstance(name, str) or not name.strip():
-            summaries.append(f"{sub!r} (skipped — missing or non-string name)")
-            continue
-        name = name.strip()
-
-        if not isinstance(branch, str) or not branch.strip():
-            summaries.append(f"{name!r} (skipped — missing or non-string branch)")
-            continue
-        branch = branch.strip()
-
-        if not _SAFE_NAME.match(name):
+        # Reject path traversal attempts and non-string names
+        if not isinstance(name, str) or name in {".", ".."} or not _SAFE_NAME.match(name):
             summaries.append(f"{name!r} (skipped — invalid subscription name)")
             continue
 
         repo_path = evolve_dir / "entities" / "subscribed" / name
 
-        head_before = None
+        # Defense-in-depth: verify resolved path is within subscribed directory
+        repo_path_resolved = repo_path.resolve()
+        if not repo_path_resolved.is_relative_to(subscribed_base) or repo_path_resolved == subscribed_base:
+            summaries.append(f"{name!r} (skipped — path traversal detected)")
+            continue
+
         if not repo_path.is_dir():
-            remote = sub.get("remote")
-            if not remote:
-                summaries.append(f"{name} (not cloned — no remote in config, run /evolve-lite:subscribe first)")
-                continue
-            repo_path.parent.mkdir(parents=True, exist_ok=True)
-            clone_result = subprocess.run(
-                ["git", "clone", remote, str(repo_path), "--branch", branch, "--depth", "1"],
-                capture_output=True,
-                text=True,
-                timeout=_GIT_TIMEOUT,
-            )
-            if clone_result.returncode != 0:
-                summaries.append(f"{name} (re-clone failed: {clone_result.stderr.strip()})")
-                total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
-                continue
-        else:
-            head_before = _head_hash(repo_path)
+            summaries.append(f"{name} (not cloned — run evolve-lite:subscribe first)")
+            continue
 
         pull_result = git_sync(repo_path, branch)
         if pull_result is None or pull_result.returncode != 0:
@@ -190,11 +169,7 @@ def main():
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             continue
 
-        head_after = _head_hash(repo_path)
-        if head_before is not None and head_before == head_after:
-            delta = {"added": 0, "updated": 0, "removed": 0}
-        else:
-            delta = count_delta(repo_path)
+        delta = count_delta(repo_path)
         total_delta[name] = delta
 
         has_changes = any(v > 0 for v in delta.values())
@@ -222,3 +197,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Made with Bob

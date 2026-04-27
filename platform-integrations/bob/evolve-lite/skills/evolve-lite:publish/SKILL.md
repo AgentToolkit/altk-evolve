@@ -18,7 +18,6 @@ Check whether `evolve.config.yaml` exists in the project root.
 **If it does not exist**, ask the user:
 
 > "No `evolve.config.yaml` found. What username would you like to use? (e.g. `vatche`)"
-
 > "What is the remote URL for your public guidelines repo? (e.g. `git@github.com:vatche/evolve-guidelines.git`)"
 
 Create `evolve.config.yaml`:
@@ -31,7 +30,7 @@ public_repo:
   branch: main
 subscriptions: []
 sync:
-  on_session_start: true
+  on_session_start: false
 ```
 
 **If it exists** but `identity.user` is missing, ask for it and add it to the config.
@@ -52,12 +51,15 @@ Ensure `.evolve/` is gitignored at the project root:
 grep -qxF '.evolve/' .gitignore 2>/dev/null || echo '.evolve/' >> .gitignore
 ```
 
-If `.evolve/public/` does not already contain a `.git` directory, initialise it and add the remote:
+If `.evolve/public/` does not already contain a `.git` directory, initialise it, create the branch, and add the remote:
 
 ```bash
 git init .evolve/public
+git -C .evolve/public checkout -b "{public_repo.branch}"
 git -C .evolve/public remote add origin {public_repo.remote}
 ```
+
+Where `{public_repo.branch}` defaults to `main` if not set in config. Creating the branch explicitly ensures the subsequent push will succeed regardless of the system's `init.defaultBranch` setting.
 
 ### Step 3: List and select entities
 
@@ -72,7 +74,7 @@ Wait for the user's selection.
 For each selected entity file, run:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish/scripts/publish.py \
+python3 scripts/publish.py \
   --entity "{filename}" \
   --user "{identity.user}"
 ```
@@ -81,8 +83,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish/scripts/publish.py \
 
 ```bash
 git -C .evolve/public add .
-git -C .evolve/public commit -m "[evolve] publish: {filename}"
-git -C .evolve/public push origin {public_repo.branch}
+git -C .evolve/public commit -m "[evolve] publish: {name}"
+git -C .evolve/public push origin "{public_repo.branch}"
 ```
 
 Where `{public_repo.branch}` defaults to `main` if not set in config.
@@ -91,4 +93,10 @@ Where `{public_repo.branch}` defaults to `main` if not set in config.
 
 Tell the user:
 
-> "Published {filename} to {public_repo.remote}."
+> "Published {name} to {public_repo.remote}."
+
+## Notes
+
+- Published entities are **moved** from `.evolve/entities/guideline/` to `.evolve/public/guideline/` with `visibility: public`, `owner: {user}`, and `source` stamped in frontmatter
+- The original private entity is deleted after successful publication
+- All publish actions are logged to `.evolve/audit.log`

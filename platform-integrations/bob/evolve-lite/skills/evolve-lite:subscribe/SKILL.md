@@ -26,7 +26,7 @@ identity:
   user: {username}
 subscriptions: []
 sync:
-  on_session_start: true
+  on_session_start: false
 ```
 
 Also ensure `.evolve/` is gitignored:
@@ -56,9 +56,9 @@ Then stop.
 ### Step 4: Run subscribe script
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/subscribe/scripts/subscribe.py \
-  --name {name} \
-  --remote {remote} \
+python3 scripts/subscribe.py \
+  --name "{name}" \
+  --remote "{remote}" \
   --branch main
 ```
 
@@ -66,4 +66,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/subscribe/scripts/subscribe.py \
 
 Tell the user:
 
-> "Subscribed to {name}. Run /sync to pull their guidelines."
+> "Subscribed to {name}. Run evolve-lite:sync to pull their guidelines."
+
+## Notes
+
+- Subscribed repos are cloned to `.evolve/subscribed/{name}/`
+- After subscribing, run `evolve-lite:sync` to mirror entities to `.evolve/entities/subscribed/{name}/`
+- Subscribed entities will appear in recall with `[from: {name}]` annotations

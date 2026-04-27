@@ -286,7 +286,7 @@ class TestCodexSharingScripts:
             evolve_dir=evolve_dir,
         )
         config_text = (temp_project_dir / "evolve.config.yaml").read_text()
-        assert 'name: "alice"' in config_text
+        assert "name: alice" in config_text
 
         result = run_script(
             SUBSCRIBE_SCRIPT,
@@ -298,11 +298,43 @@ class TestCodexSharingScripts:
         assert result.returncode != 0
         assert "already exists" in result.stderr
 
+    def test_subscribe_rolls_back_clone_when_config_save_fails(self, temp_project_dir, local_repo):
+        evolve_dir = temp_project_dir / ".evolve"
+        (temp_project_dir / "evolve.config.yaml").mkdir()
+
+        result = run_script(
+            SUBSCRIBE_SCRIPT,
+            project_dir=temp_project_dir,
+            args=["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            evolve_dir=evolve_dir,
+            expect_success=False,
+        )
+
+        assert result.returncode != 0
+        assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
+
+    def test_subscribe_warns_when_audit_write_fails(self, temp_project_dir, local_repo):
+        evolve_dir = temp_project_dir / ".evolve"
+        (evolve_dir / "audit.log").mkdir(parents=True)
+
+        result = run_script(
+            SUBSCRIBE_SCRIPT,
+            project_dir=temp_project_dir,
+            args=["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            evolve_dir=evolve_dir,
+        )
+
+        assert result.returncode == 0
+        assert "Warning: failed to append audit entry for subscribe" in result.stderr
+        assert (evolve_dir / "entities" / "subscribed" / "alice").is_dir()
+        config_text = (temp_project_dir / "evolve.config.yaml").read_text()
+        assert "name: alice" in config_text
+
     def test_subscribe_rejects_path_traversal_in_name(self, temp_project_dir, local_repo):
         result = run_script(
             SUBSCRIBE_SCRIPT,
             project_dir=temp_project_dir,
-            args=["--name", "../../evil", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            args=["--name", "../../outside", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=temp_project_dir / ".evolve",
             expect_success=False,
         )
@@ -378,7 +410,7 @@ class TestCodexSharingScripts:
         result = run_script(
             UNSUBSCRIBE_SCRIPT,
             project_dir=temp_project_dir,
-            args=["--name", "../../evil"],
+            args=["--name", "../../outside"],
             evolve_dir=evolve_dir,
             expect_success=False,
         )

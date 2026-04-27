@@ -16,7 +16,7 @@ This skill removes a subscription and deletes the locally cloned guidelines for 
 Run the following and display the output as a numbered list:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --list
+python3 scripts/unsubscribe.py --list
 ```
 
 ### Step 2: Pick one
@@ -36,7 +36,7 @@ If the user answers anything other than `y` or `yes`, stop and tell them the ope
 ### Step 4: Run unsubscribe script
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --name {name}
+python3 scripts/unsubscribe.py --name {name}
 ```
 
 ### Step 5: Confirm
@@ -44,3 +44,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --name {
 Tell the user:
 
 > "Unsubscribed from {name}."
+
+## Notes
+
+- This removes the subscription from `evolve.config.yaml`
+- Deletes `.evolve/subscribed/{name}/` (the cloned repo)
+- Deletes `.evolve/entities/subscribed/{name}/` (mirrored entities)
+- The entities will no longer appear in recall

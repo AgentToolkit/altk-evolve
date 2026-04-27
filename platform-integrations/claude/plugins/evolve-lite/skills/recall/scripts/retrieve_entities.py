@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Add lib to path so we can import entity_io
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from entity_io import find_entities_dir, get_evolve_dir, markdown_to_entity, log as _log
+from entity_io import find_recall_entity_dirs, markdown_to_entity, log as _log
 
 
 def log(message):
@@ -80,15 +80,18 @@ def load_entities_with_source(entities_dir):
             continue
         try:
             entity = markdown_to_entity(md)
-            entity.pop("_source", None)
             if not entity.get("content"):
                 continue
+            # Detect subscribed entities by path: .../entities/subscribed/{name}/...
+            parts = md.parts
             try:
-                rel_parts = md.relative_to(entities_dir).parts
-            except ValueError:
-                rel_parts = md.parts
-            if rel_parts[0] == "subscribed" and len(rel_parts) > 1:
-                entity["_source"] = rel_parts[1]
+                entities_index = parts.index("entities")
+                # Verify the structure is .../entities/subscribed/{name}/...
+                if entities_index + 2 < len(parts) and parts[entities_index + 1] == "subscribed":
+                    entity["_source"] = parts[entities_index + 2]
+            except (ValueError, IndexError):
+                # "entities" not found or invalid structure - not a subscribed entity
+                pass
             entities.append(entity)
         except (OSError, UnicodeError):
             pass
@@ -107,18 +110,15 @@ def main():
         log(f"Failed to parse JSON input: {e}")
         return
 
-    entities_dir = find_entities_dir()
-    log(f"Entities dir: {entities_dir}")
+    recall_dirs = find_recall_entity_dirs()
+    log(f"Recall dirs: {recall_dirs}")
+    if not recall_dirs:
+        log("No entities directory found")
+        return
 
     entities = []
-    if entities_dir:
-        entities = load_entities_with_source(entities_dir)
-
-    public_dir = get_evolve_dir() / "public"
-    if public_dir.is_dir():
-        log(f"Loading public entities from: {public_dir}")
-        entities += load_entities_with_source(public_dir)
-
+    for entities_dir in recall_dirs:
+        entities.extend(load_entities_with_source(entities_dir))
     if not entities:
         log("No entities found")
         return

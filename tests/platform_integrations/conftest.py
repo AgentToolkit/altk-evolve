@@ -18,7 +18,6 @@ def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "platform_integrations: tests for platform-integrations/install.sh")
     config.addinivalue_line("markers", "integration: tests that require git and perform subprocess I/O")
-    config.addinivalue_line("markers", "e2e: end-to-end tests that exercise real filesystem and subprocesses")
 
 
 @pytest.fixture
