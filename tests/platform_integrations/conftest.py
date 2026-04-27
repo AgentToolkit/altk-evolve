@@ -152,6 +152,22 @@ class FileAssertions:
         assert not path.exists(), f"Directory should not exist: {path}. {message}"
 
     @staticmethod
+    def assert_file_contains(path: Path, text: str, message: str = ""):
+        """Assert that a file contains the specified text."""
+        assert path.is_file(), f"File does not exist: {path}. {message}"
+        content = path.read_text()
+        assert text in content, f"Text not found in {path}. {message}\nLooking for: {text}\nFile content:\n{content}"
+
+    @staticmethod
+    def assert_dir_empty(path: Path, message: str = ""):
+        """Assert that a directory is empty or doesn't exist."""
+        if not path.exists():
+            return  # Directory doesn't exist, so it's "empty"
+        assert path.is_dir(), f"Path exists but is not a directory: {path}. {message}"
+        contents = list(path.iterdir())
+        assert len(contents) == 0, f"Directory is not empty: {path}. Contains: {[str(p) for p in contents]}. {message}"
+
+    @staticmethod
     def assert_file_unchanged(path: Path, original_content: str):
         """Assert that a file's content has not changed."""
         assert path.is_file(), f"File does not exist: {path}"

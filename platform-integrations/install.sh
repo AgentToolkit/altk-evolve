@@ -869,6 +869,11 @@ class CodexInstaller:
             self._remove_recall_from_group(g) if isinstance(g, dict) and self._group_has_recall(g) else g
             for g in groups
         ]
+        # Prune empty groups (groups with no hooks left)
+        hooks["UserPromptSubmit"] = [
+            group for group in hooks["UserPromptSubmit"]
+            if not isinstance(group, dict) or len(self._iter_group_hooks(group)) > 0
+        ]
         if not hooks["UserPromptSubmit"]:
             hooks.pop("UserPromptSubmit", None)
         self.ops.atomic_write_json(path, data)
@@ -911,7 +916,7 @@ class CodexInstaller:
         ]
         hooks["SessionStart"] = [
             group for group in hooks["SessionStart"]
-            if not isinstance(group, dict) or self._iter_group_hooks(group)
+            if not isinstance(group, dict) or len(self._iter_group_hooks(group)) > 0
         ]
         if not hooks["SessionStart"]:
             hooks.pop("SessionStart", None)
