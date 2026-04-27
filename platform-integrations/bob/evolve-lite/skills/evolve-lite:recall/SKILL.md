@@ -11,20 +11,24 @@ This skill retrieves relevant entities from a stored knowledge base based on the
 
 Entities can come from multiple sources:
 - **Private entities**: Your own local entities (not shared)
-- **Public entities**: Your own entities marked for sharing
-- **Subscribed entities**: Entities from other users you've subscribed to
+- **Subscribed entities**: Entities cloned from any configured repo —
+  read-scope subscriptions and write-scope publish targets both live
+  under `.evolve/entities/subscribed/{name}/`
 
 ## How It Works
 
-1. List all `.md` files under `.evolve/entities/`, `.evolve/public/`, and their subdirectories
-2. Read each file — the YAML frontmatter contains `type` and `trigger`, the body contains the entity content and rationale
+1. List all `.md` files under `.evolve/entities/` and its subdirectories
+2. Read each file — the YAML frontmatter contains `type` and `trigger`,
+   the body contains the entity content and rationale
 3. Review each entity for relevance to the current task
 4. Apply relevant entities as additional context for your work
 
 **Directory structure**:
 - `.evolve/entities/guideline/` - Your private entities
-- `.evolve/entities/subscribed/{name}/` - Mirrored entities from subscriptions
-- `.evolve/public/guideline/` - Your published entities
+- `.evolve/entities/subscribed/{name}/` - Cloned repos (read- or write-scope)
+
+Write-scope clones are also where `evolve-lite:publish` lands new
+guidelines, so your published entities show up here too.
 
 ## Usage
 
@@ -32,26 +36,25 @@ Entities can come from multiple sources:
 python3 scripts/retrieve_entities.py
 ```
 
-This retrieves all entities from all sources (private, public, and subscribed).
+This retrieves all entities from all sources (private, plus everything
+under `.evolve/entities/subscribed/`).
 
 ## Entities Storage
 
-Entities are stored as individual markdown files in `.evolve/entities/`, organized by source:
+Entities are stored as individual markdown files in `.evolve/entities/`,
+organized by source:
 
 ```text
 .evolve/entities/
-  guideline/                    # Private entities
+  guideline/                            # Private entities
     use-context-managers.md
-  public/                       # Your published entities
-    guideline/
-      cache-api-responses.md
-  subscribed/                   # Entities from others
-    alice/
+  subscribed/
+    memory/                             # write-scope clone (publishes land here)
+      guideline/
+        my-published-guideline.md
+    alice/                              # read-scope clone
       guideline/
         error-handling.md
-    bob-team/
-      policy/
-        code-review.md
 ```
 
 Each file uses markdown with YAML frontmatter:

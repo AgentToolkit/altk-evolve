@@ -1,15 +1,19 @@
 ---
 name: sync
-description: Pull the latest guidelines from all subscribed repos.
+description: Pull the latest guidelines from every configured repo (read- and write-scope).
 ---
 
-# Sync Subscriptions
+# Sync Repos
 
 ## Overview
 
-This skill pulls the latest guidelines from all repos you have subscribed to, keeping your local copies up to date.
+Pull the latest guidelines from every repo in `evolve.config.yaml`
+`repos:` list — both `scope: read` (subscribe-only) and `scope: write`
+(publish targets). Write-scope repos use a rebase strategy so any
+unpushed local publish commits are preserved.
 
-**Note**: Unlike Claude Code, Bob does not auto-sync on session start. You must manually invoke this skill when you want to update subscribed guidelines.
+**Note**: Unlike Claude Code, Bob does not auto-sync on session start.
+You must invoke this skill manually when you want to update guidelines.
 
 ## Workflow
 
@@ -21,18 +25,14 @@ python3 scripts/sync.py
 
 ### Step 2: Display summary
 
-Display the summary output from the script to the user. For example:
-
-> "Synced 2 repo(s): alice (+2 added, 0 updated, 0 removed), bob (+0 added, 1 updated, 0 removed)"
-
-If there is nothing to report (no subscriptions or no changes), confirm:
-
-> "All subscriptions are up to date."
+Show the script output to the user. If there are no repos configured,
+tell them they can add one with `evolve-lite:subscribe`. If there are
+no changes, explain that everything is already up to date.
 
 ## Notes
 
-- This skill must be invoked manually (no auto-sync on session start)
-- Pulls latest changes from all subscribed repos
-- Mirrors entities to `.evolve/entities/subscribed/{name}/` for recall
-- Updates are logged to `.evolve/audit.log`
+- Read-scope repos are mirrored exactly via `git fetch` + `git reset --hard`
+- Write-scope repos use `git fetch` + `git rebase` so unpushed local
+  publish commits are preserved
+- Sync results are logged to `.evolve/audit.log`
 - Run this periodically to stay up to date with shared guidelines

@@ -12,7 +12,7 @@ for parent in current.parents:
         sys.path.insert(0, str(lib_path))
         break
 
-from entity_io import find_entities_dir, get_evolve_dir, markdown_to_entity, log as _log  # noqa: E402
+from entity_io import find_entities_dir, markdown_to_entity, log as _log  # noqa: E402
 
 
 def log(message):
@@ -53,29 +53,32 @@ def load_entities_with_source(entities_dir):
     """Glob all .md files under entities_dir and parse each.
 
     Entities stored under entities/subscribed/{name}/ have ``_source`` set to
-    the subscription name so format_entities can annotate them. The owner field
-    written by publish.py is preserved; _source is just a routing key used
-    internally and is never written to disk.
+    the repo name so format_entities can annotate them. Both read-scope and
+    write-scope clones live under entities/subscribed/{name}/, so write-scope
+    publishes land in this same path and are picked up automatically.
+
+    Symlinks and any files inside a ``.git`` directory are skipped so we
+    don't surface git's own bookkeeping or sneak past path validation.
     """
     entities_dir = Path(entities_dir)
     entities = []
-    for md in sorted(entities_dir.glob("**/*.md")):
+    for md in sorted(p for p in entities_dir.glob("**/*.md") if ".git" not in p.parts):
         if md.is_symlink():
             continue
         try:
             entity = markdown_to_entity(md)
-            entity.pop("_source", None)
-            if not entity.get("content"):
-                continue
-            try:
-                rel_parts = md.relative_to(entities_dir).parts
-            except ValueError:
-                rel_parts = md.parts
-            if rel_parts[0] == "subscribed" and len(rel_parts) > 1:
-                entity["_source"] = rel_parts[1]
-            entities.append(entity)
         except (OSError, UnicodeDecodeError):
-            pass
+            continue
+        entity.pop("_source", None)
+        if not entity.get("content"):
+            continue
+        try:
+            rel_parts = md.relative_to(entities_dir).parts
+        except ValueError:
+            rel_parts = md.parts
+        if rel_parts and rel_parts[0] == "subscribed" and len(rel_parts) > 1:
+            entity["_source"] = rel_parts[1]
+        entities.append(entity)
     return entities
 
 
@@ -88,11 +91,6 @@ def main():
     entities = []
     if entities_dir:
         entities = load_entities_with_source(entities_dir)
-
-    public_dir = get_evolve_dir() / "public"
-    if public_dir.is_dir():
-        log(f"Loading public entities from: {public_dir}")
-        entities += load_entities_with_source(public_dir)
 
     if not entities:
         log("No entities found")

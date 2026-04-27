@@ -1,5 +1,5 @@
 ---
 name: evolve-lite:sync
-description: Pull the latest guidelines from all subscribed repos
+description: Pull the latest guidelines from every configured repo (read- and write-scope)
 ---
-Use the sync skill to update your subscribed guidelines. Follow the skill's instructions exactly.
+Use the sync skill to update your configured guidelines repos. Follow the skill's instructions exactly.

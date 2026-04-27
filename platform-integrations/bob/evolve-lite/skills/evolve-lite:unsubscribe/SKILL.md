@@ -1,53 +1,49 @@
 ---
 name: unsubscribe
-description: Remove a subscription and delete the locally synced guidelines.
+description: Remove a repo from the unified repos list and delete its local clone.
 ---
 
-# Unsubscribe from Guidelines
+# Remove a Repo
 
 ## Overview
 
-This skill removes a subscription and deletes the locally cloned guidelines for that subscription.
+Remove a configured repo (any scope) from `evolve.config.yaml` and delete
+its local clone at `.evolve/entities/subscribed/{name}/`. Warn the user
+before removing a write-scope repo since any unpushed local publish
+commits will be lost.
 
 ## Workflow
 
-### Step 1: List subscriptions
+### Step 1: List repos
 
-Run the following and display the output as a numbered list:
+Run:
 
 ```bash
 python3 scripts/unsubscribe.py --list
 ```
 
-### Step 2: Pick one
+Show the repos to the user (including `scope` and `notes`) and ask which
+one to remove.
 
-Ask the user:
+### Step 2: Confirm
 
-> "Which subscription would you like to remove? Enter the number."
+Confirm deletion of `.evolve/entities/subscribed/{name}/`. If the repo
+has `scope: write`, add a warning that unpushed local publishes will be
+lost.
 
-### Step 3: Confirm
-
-Ask the user:
-
-> "This will remove '{name}' and delete `.evolve/subscribed/{name}/`. Continue? (y/n)"
-
-If the user answers anything other than `y` or `yes`, stop and tell them the operation was cancelled.
-
-### Step 4: Run unsubscribe script
+### Step 3: Run unsubscribe script
 
 ```bash
-python3 scripts/unsubscribe.py --name {name}
+python3 scripts/unsubscribe.py --name "{name}"
 ```
 
-### Step 5: Confirm
+### Step 4: Confirm
 
-Tell the user:
-
-> "Unsubscribed from {name}."
+Tell the user the repo was removed.
 
 ## Notes
 
-- This removes the subscription from `evolve.config.yaml`
-- Deletes `.evolve/subscribed/{name}/` (the cloned repo)
-- Deletes `.evolve/entities/subscribed/{name}/` (mirrored entities)
+- This removes the entry from `evolve.config.yaml` `repos:` list
+- Deletes `.evolve/entities/subscribed/{name}/` (the local clone, also
+  the recall mirror)
 - The entities will no longer appear in recall
