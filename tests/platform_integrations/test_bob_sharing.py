@@ -99,9 +99,13 @@ class TestBobSubscribe:
         )
         log_path = temp_project_dir / ".evolve" / "audit.log"
         assert log_path.exists()
-        entry = json.loads(log_path.read_text().strip())
-        assert entry["action"] == "subscribe"
-        assert entry["name"] == "alice"
+        # Parse JSONL format (one JSON object per line)
+        entries = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
+        actions = [e["action"] for e in entries]
+        assert "subscribe" in actions
+        # Find the subscribe entry and verify its details
+        subscribe_entry = next(e for e in entries if e["action"] == "subscribe")
+        assert subscribe_entry["name"] == "alice"
 
     def test_fails_on_duplicate_name(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
