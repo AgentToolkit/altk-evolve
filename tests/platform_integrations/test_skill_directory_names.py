@@ -59,6 +59,26 @@ class TestSkillDirectoryNames:
                 f"This will cause installation failures because install.sh expects the 'evolve-lite:' prefix."
             )
 
+    def test_bob_lite_command_files_exist(self, platform_integrations_dir):
+        """Verify that command files exist for all Bob lite skills."""
+        bob_lite_commands = platform_integrations_dir / "bob" / "evolve-lite" / "commands"
+        bob_lite_skills = platform_integrations_dir / "bob" / "evolve-lite" / "skills"
+
+        # Get all skill names
+        if not bob_lite_skills.exists():
+            pytest.skip("Bob lite skills directory doesn't exist")
+
+        skill_names = [d.name for d in bob_lite_skills.iterdir() if d.is_dir() and d.name.startswith("evolve-lite:")]
+
+        # Verify each skill has a corresponding command file
+        for skill_name in skill_names:
+            command_file = bob_lite_commands / f"{skill_name}.md"
+            assert command_file.is_file(), (
+                f"Command file not found: {command_file}\n"
+                f"Skill '{skill_name}' exists but has no corresponding command file.\n"
+                f"Every skill should have a command file in the commands/ directory."
+            )
+
     def test_bob_lite_install_script_uses_dynamic_copying(self, install_script):
         """Verify that install.sh uses dynamic skill copying (not hardcoded skill names)."""
         install_content = install_script.read_text()
