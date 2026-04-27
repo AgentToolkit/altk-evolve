@@ -85,16 +85,21 @@ def main():
         check=True,
     )
 
-    # Update config and audit — roll back clone on any failure
+    # Update config — roll back clone only if save_config fails
+    subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
+    cfg["subscriptions"] = subscriptions
     try:
-        subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
-        cfg["subscriptions"] = subscriptions
         save_config(cfg, project_root)
+    except Exception as exc:
+        subscriptions.pop()
+        shutil.rmtree(dest, ignore_errors=True)
+        print(f"Error: failed to record subscription — clone removed: {exc}", file=sys.stderr)
+        sys.exit(1)
 
-        # Read identity.user for audit
-        identity = cfg.get("identity", {})
-        actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
-
+    # Audit — non-fatal; never deletes the clone or exits on failure
+    identity = cfg.get("identity", {})
+    actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
+    try:
         audit_append(
             project_root=project_root,
             action="subscribe",
@@ -103,9 +108,7 @@ def main():
             remote=args.remote,
         )
     except Exception as exc:
-        shutil.rmtree(dest, ignore_errors=True)
-        print(f"Error: failed to record subscription — clone removed: {exc}", file=sys.stderr)
-        sys.exit(1)
+        print(f"Warning: audit log could not be updated: {exc}", file=sys.stderr)
 
     print(f"Subscribed to '{args.name}' from {args.remote}")
 

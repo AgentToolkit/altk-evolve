@@ -176,6 +176,9 @@ def _cast(value):
         # Quoted empty string should return empty string, not None
         if stripped == "":
             return ""
+        # Un-double single quotes escaped by _scalar (e.g. "a''b" → "a'b")
+        if value.startswith("'"):
+            stripped = stripped.replace("''", "'")
         value = stripped
 
     if value in ("true", "True", "yes"):
