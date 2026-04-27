@@ -160,7 +160,7 @@ class TestBobSubscribe:
             ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
         )
-        cloned = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
+        cloned = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
         assert cloned.exists()
         assert "Always write tests." in cloned.read_text()
 
@@ -274,9 +274,9 @@ class TestBobSync:
     def test_mirrors_initial_entity_content(self, subscribed_project):
         p = subscribed_project
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
-        tip = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
-        assert tip.exists()
-        assert "Always write tests." in tip.read_text()
+        guideline = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
+        assert guideline.exists()
+        assert "Always write tests." in guideline.read_text()
 
     def test_picks_up_new_entity_after_push(self, subscribed_project):
         """After a new entity is pushed to the remote, a second sync picks it up."""
@@ -409,17 +409,17 @@ class TestBobSync:
 
         # First sync
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
-        tip_one = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
-        assert tip_one.exists()
+        guideline_one = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
+        assert guideline_one.exists()
 
-        # Delete tip-one from remote
+        # Delete guideline-one from remote
         subprocess.run(
-            ["git", "-C", str(lr["work"]), "rm", "guideline/tip-one.md"],
+            ["git", "-C", str(lr["work"]), "rm", "guideline/guideline-one.md"],
             check=True,
             env=git_env,
         )
         subprocess.run(
-            ["git", "-C", str(lr["work"]), "commit", "-m", "remove tip-one"],
+            ["git", "-C", str(lr["work"]), "commit", "-m", "remove guideline-one"],
             check=True,
             env=git_env,
         )
@@ -429,9 +429,9 @@ class TestBobSync:
             env=git_env,
         )
 
-        # Second sync — mirror is cleared and re-copied without tip-one
+        # Second sync — mirror is cleared and re-copied without guideline-one
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
-        assert not tip_one.exists()
+        assert not guideline_one.exists()
 
 
 # ============================================================================
