@@ -81,26 +81,24 @@ class TestParseYaml:
         assert result["sync"]["on_session_start"] is True
 
     def test_list_of_dicts(self):
-        text = "subscriptions:\n  - name: bob\n    remote: git@github.com:bob/evolve.git\n    branch: main\n"
+        text = "repos:\n  - name: bob\n    scope: read\n    remote: git@github.com:bob/evolve.git\n    branch: main\n"
         result = cfg_module._parse_yaml(text)
-        subs = result["subscriptions"]
-        assert isinstance(subs, list)
-        assert len(subs) == 1
-        assert subs[0]["name"] == "bob"
-        assert subs[0]["branch"] == "main"
+        repos = result["repos"]
+        assert isinstance(repos, list)
+        assert len(repos) == 1
+        assert repos[0]["name"] == "bob"
+        assert repos[0]["branch"] == "main"
 
-    def test_multiple_subscriptions(self):
+    def test_multiple_repos(self):
         text = (
-            "subscriptions:\n"
-            "  - name: alice\n"
-            "    remote: git@github.com:alice/evolve.git\n"
-            "    branch: main\n"
-            "  - name: bob\n"
-            "    remote: git@github.com:bob/evolve.git\n"
-            "    branch: main\n"
+            "repos:\n"
+            "  - name: alice\n    scope: read\n"
+            "    remote: git@github.com:alice/evolve.git\n    branch: main\n"
+            "  - name: bob\n    scope: read\n"
+            "    remote: git@github.com:bob/evolve.git\n    branch: main\n"
         )
         result = cfg_module._parse_yaml(text)
-        assert len(result["subscriptions"]) == 2
+        assert len(result["repos"]) == 2
 
     def test_empty_input(self):
         assert cfg_module._parse_yaml("") == {}
@@ -135,19 +133,175 @@ class TestRoundtrip:
     def test_full_config_roundtrip(self, tmp_path):
         original = {
             "identity": {"user": "alice"},
-            "public_repo": {"remote": "git@github.com:alice/evolve.git", "branch": "main"},
-            "subscriptions": [{"name": "bob", "remote": "git@github.com:bob/evolve.git", "branch": "main"}],
+            "repos": [
+                {
+                    "name": "memory",
+                    "scope": "write",
+                    "remote": "git@github.com:alice/evolve.git",
+                    "branch": "main",
+                    "notes": "public memory",
+                },
+                {
+                    "name": "bob",
+                    "scope": "read",
+                    "remote": "git@github.com:bob/evolve.git",
+                    "branch": "main",
+                    "notes": "",
+                },
+            ],
             "sync": {"on_session_start": True},
         }
         cfg_module.save_config(original, str(tmp_path))
         loaded = cfg_module.load_config(str(tmp_path))
 
         assert loaded["identity"]["user"] == "alice"
-        assert loaded["public_repo"]["branch"] == "main"
         assert loaded["sync"]["on_session_start"] is True
-        assert loaded["subscriptions"][0]["name"] == "bob"
+        repos = loaded["repos"]
+        assert repos[0]["scope"] == "write"
+        assert repos[0]["notes"] == "public memory"
+        assert repos[1]["name"] == "bob"
 
-    def test_empty_subscriptions_roundtrip(self, tmp_path):
-        cfg_module.save_config({"subscriptions": []}, str(tmp_path))
-        loaded = cfg_module.load_config(str(tmp_path))
-        assert loaded["subscriptions"] == []
+    def test_empty_repos_roundtrip(self, temp_project_dir):
+        cfg_module.save_config({"repos": []}, str(temp_project_dir))
+        loaded = cfg_module.load_config(str(temp_project_dir))
+        assert loaded["repos"] == []
+
+
+class TestNormalizeRepos:
+    def test_modern_config_pass_through(self):
+        cfg = {
+            "repos": [
+                {
+                    "name": "memory",
+                    "scope": "write",
+                    "remote": "git@github.com:alice/evolve.git",
+                    "branch": "main",
+                    "notes": "shared",
+                },
+            ]
+        }
+        repos = cfg_module.normalize_repos(cfg)
+        assert len(repos) == 1
+        assert repos[0]["scope"] == "write"
+        assert repos[0]["notes"] == "shared"
+
+    def test_invalid_scope_entries_dropped(self, capsys):
+        cfg = {
+            "repos": [
+                {"name": "x", "scope": "weird", "remote": "git@x:y/z.git"},
+                {"name": "y", "scope": "write", "remote": "git@x:y/y.git"},
+            ]
+        }
+        repos = cfg_module.normalize_repos(cfg)
+        assert [r["name"] for r in repos] == ["y"]
+        assert "unknown scope" in capsys.readouterr().err
+
+    def test_scope_whitespace_tolerated(self):
+        cfg = {"repos": [{"name": "x", "scope": " write ", "remote": "git@x:y/z.git"}]}
+        repos = cfg_module.normalize_repos(cfg)
+        assert len(repos) == 1
+        assert repos[0]["scope"] == "write"
+
+    def test_missing_scope_defaults_to_read(self):
+        cfg = {"repos": [{"name": "x", "remote": "git@x:y/z.git"}]}
+        repos = cfg_module.normalize_repos(cfg)
+        assert len(repos) == 1
+        assert repos[0]["scope"] == "read"
+        assert repos[0]["name"] == "x"
+        assert repos[0]["remote"] == "git@x:y/z.git"
+
+    def test_returns_empty_for_missing_or_non_list_repos(self):
+        assert cfg_module.normalize_repos({}) == []
+        assert cfg_module.normalize_repos({"repos": "not a list"}) == []
+        assert cfg_module.normalize_repos(None) == []
+
+    def test_entries_missing_required_fields_dropped(self):
+        cfg = {
+            "repos": [
+                {"name": "ok", "remote": "git@x:y/z.git"},
+                {"name": "", "remote": "git@x:y/z.git"},
+                {"name": "no-remote"},
+                "garbage",
+            ]
+        }
+        repos = cfg_module.normalize_repos(cfg)
+        assert [r["name"] for r in repos] == ["ok"]
+
+    def test_duplicate_names_deduplicated(self):
+        cfg = {
+            "repos": [
+                {"name": "same", "remote": "git@x:y/a.git"},
+                {"name": "same", "remote": "git@x:y/b.git"},
+            ]
+        }
+        repos = cfg_module.normalize_repos(cfg)
+        assert len(repos) == 1
+        assert repos[0]["remote"] == "git@x:y/a.git"
+
+
+class TestSetRepos:
+    def test_replaces_repos_list(self):
+        cfg = {"repos": [{"name": "old", "scope": "read", "remote": "git@x:y/o.git"}]}
+        cfg_module.set_repos(cfg, [{"name": "new", "scope": "write", "remote": "git@x:y/n.git"}])
+        assert [r["name"] for r in cfg["repos"]] == ["new"]
+
+    def test_sanitizes_and_dedupes(self):
+        cfg = {}
+        cfg_module.set_repos(
+            cfg,
+            [
+                {"name": "bad"},  # missing remote → dropped
+                {"name": "ok", "remote": "git@x:y/a.git"},
+                {"name": "ok", "remote": "git@x:y/b.git"},  # duplicate → dropped
+            ],
+        )
+        assert len(cfg["repos"]) == 1
+        assert cfg["repos"][0]["name"] == "ok"
+
+
+class TestWriteAndReadRepos:
+    def test_write_and_read_split(self):
+        cfg = {
+            "repos": [
+                {"name": "a", "scope": "write", "remote": "git@x:y/a.git"},
+                {"name": "b", "scope": "read", "remote": "git@x:y/b.git"},
+                {"name": "c", "scope": "write", "remote": "git@x:y/c.git"},
+            ]
+        }
+        assert [r["name"] for r in cfg_module.write_repos(cfg)] == ["a", "c"]
+        assert [r["name"] for r in cfg_module.read_repos(cfg)] == ["b"]
+
+
+class TestGetRepo:
+    def test_returns_repo_by_name(self):
+        cfg = {"repos": [{"name": "bob", "scope": "read", "remote": "git@x:y/z.git"}]}
+        repo = cfg_module.get_repo(cfg, "bob")
+        assert repo is not None
+        assert repo["name"] == "bob"
+
+    def test_returns_none_when_missing(self):
+        assert cfg_module.get_repo({"repos": []}, "missing") is None
+        assert cfg_module.get_repo({}, "missing") is None
+
+
+class TestIsValidRepoName:
+    def test_accepts_safe_names(self):
+        for name in ["alice", "alice-bob", "alice_bob", "alice.bob", "a1", "AB_C"]:
+            assert cfg_module.is_valid_repo_name(name)
+
+    def test_rejects_unsafe_names(self):
+        for name in [
+            "",
+            ".",
+            "..",
+            "alice/bob",
+            "alice bob",
+            "alice:bob",
+            "../evil",
+            "-rf",
+            "alice\\bob",
+            None,
+            0,
+            [],
+        ]:
+            assert not cfg_module.is_valid_repo_name(name)

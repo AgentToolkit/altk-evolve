@@ -105,9 +105,10 @@ class TestCodexSaveAndRetrieve:
         own_dir = evolve_dir / "entities" / "guideline"
         own_dir.mkdir(parents=True)
         (own_dir / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
-        public_dir = evolve_dir / "public" / "guideline"
-        public_dir.mkdir(parents=True)
-        (public_dir / "published-guideline.md").write_text(
+        # Published entities live inside the write-scope repo's local clone.
+        published_dir = evolve_dir / "entities" / "subscribed" / "my-memory" / "guideline"
+        published_dir.mkdir(parents=True)
+        (published_dir / "published-guideline.md").write_text(
             "---\ntype: guideline\nvisibility: public\nsource: alice/evolve-guidelines\n---\n\nDocument edge cases.\n"
         )
 
@@ -121,15 +122,47 @@ class TestCodexSaveAndRetrieve:
         assert result.returncode == 0
         assert "Keep functions small." in result.stdout
         assert "Document edge cases." in result.stdout
-        assert "[from: alice/evolve-guidelines]" not in result.stdout
+
+
+_WRITE_REPO_CONFIG = (
+    "repos:\n"
+    '  - name: "evolve-guidelines"\n'
+    '    scope: "write"\n'
+    '    remote: "git@github.com:alice/evolve-guidelines.git"\n'
+    '    branch: "main"\n'
+)
+
+
+def _published_path(project_dir, filename, repo="evolve-guidelines"):
+    return project_dir / ".evolve" / "entities" / "subscribed" / repo / "guideline" / filename
+
+
+def _clone_write_target(project_dir, local_repo, repo="evolve-guidelines"):
+    """Pre-create the local clone publish.py expects under entities/subscribed/<repo>/.
+
+    publish.py refuses to run unless the write-scope repo has already been cloned;
+    that's normally subscribe/sync's job. In tests we stand it up directly from
+    the local_repo bare so the precondition is met.
+    """
+    clone_dir = project_dir / ".evolve" / "entities" / "subscribed" / repo
+    clone_dir.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "clone", "--branch", "main", str(local_repo["bare"]), str(clone_dir)],
+        check=True,
+        capture_output=True,
+        env=local_repo["env"],
+    )
+    return clone_dir
 
 
 class TestCodexSharingScripts:
-    def test_publish_moves_entity_to_public_dir_and_audits(self, temp_project_dir):
+    def test_publish_moves_entity_to_target_repo_clone_and_audits(self, temp_project_dir, local_repo):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
         source = guideline_dir / "my-guideline.md"
         source.write_text("---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n")
+        (temp_project_dir / "evolve.config.yaml").write_text(_WRITE_REPO_CONFIG)
+        _clone_write_target(temp_project_dir, local_repo)
 
         run_script(
             PUBLISH_SCRIPT,
@@ -138,7 +171,7 @@ class TestCodexSharingScripts:
             evolve_dir=temp_project_dir / ".evolve",
         )
 
-        published = temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md"
+        published = _published_path(temp_project_dir, "my-guideline.md")
         assert published.exists()
         assert not source.exists()
         content = published.read_text()
@@ -149,14 +182,14 @@ class TestCodexSharingScripts:
         entry = json.loads((temp_project_dir / ".evolve" / "audit.log").read_text().strip())
         assert entry["action"] == "publish"
         assert entry["actor"] == "alice"
+        assert entry["repo"] == "evolve-guidelines"
 
-    def test_publish_stamps_source_from_public_repo_remote(self, temp_project_dir):
+    def test_publish_stamps_source_from_repo_remote(self, temp_project_dir, local_repo):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
         (guideline_dir / "my-guideline.md").write_text("---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n")
-        (temp_project_dir / "evolve.config.yaml").write_text(
-            'public_repo:\n  remote: "git@github.com:alice/evolve-guidelines.git"\n  branch: "main"\n'
-        )
+        (temp_project_dir / "evolve.config.yaml").write_text(_WRITE_REPO_CONFIG)
+        _clone_write_target(temp_project_dir, local_repo)
 
         run_script(
             PUBLISH_SCRIPT,
@@ -165,14 +198,16 @@ class TestCodexSharingScripts:
             evolve_dir=temp_project_dir / ".evolve",
         )
 
-        content = (temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md").read_text()
+        content = _published_path(temp_project_dir, "my-guideline.md").read_text()
         assert "source: alice/evolve-guidelines" in content
 
-    def test_publish_uses_identity_user_as_owner_source_and_audit_fallback(self, temp_project_dir):
+    def test_publish_uses_identity_user_as_owner_and_audit_fallback(self, temp_project_dir, local_repo):
+        """Without --user, publish falls back to identity.user for owner/actor."""
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
         (guideline_dir / "my-guideline.md").write_text("---\ntype: guideline\n---\n\nPrefer composition over inheritance.\n")
-        (temp_project_dir / "evolve.config.yaml").write_text('identity:\n  user: "alice"\n')
+        (temp_project_dir / "evolve.config.yaml").write_text('identity:\n  user: "alice"\n' + _WRITE_REPO_CONFIG)
+        _clone_write_target(temp_project_dir, local_repo)
 
         run_script(
             PUBLISH_SCRIPT,
@@ -181,13 +216,15 @@ class TestCodexSharingScripts:
             evolve_dir=temp_project_dir / ".evolve",
         )
 
-        content = (temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md").read_text()
+        content = _published_path(temp_project_dir, "my-guideline.md").read_text()
         assert "owner: alice" in content
-        assert "source: alice" in content
+        # source is derived from the remote when available (not identity.user).
+        assert "source: alice/evolve-guidelines" in content
         entry = json.loads((temp_project_dir / ".evolve" / "audit.log").read_text().strip())
         assert entry["actor"] == "alice"
 
     def test_publish_fails_when_entity_not_found(self, temp_project_dir):
+        # No config needed — the entity-not-found check runs before repo selection.
         result = run_script(
             PUBLISH_SCRIPT,
             project_dir=temp_project_dir,
@@ -198,10 +235,12 @@ class TestCodexSharingScripts:
         assert result.returncode != 0
         assert "not found" in result.stderr
 
-    def test_publish_succeeds_without_user_flag(self, temp_project_dir):
+    def test_publish_succeeds_without_user_flag(self, temp_project_dir, local_repo):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
         (guideline_dir / "my-guideline.md").write_text("---\ntype: guideline\n---\n\nPrefer composition.\n")
+        (temp_project_dir / "evolve.config.yaml").write_text(_WRITE_REPO_CONFIG)
+        _clone_write_target(temp_project_dir, local_repo)
 
         run_script(
             PUBLISH_SCRIPT,
@@ -209,19 +248,21 @@ class TestCodexSharingScripts:
             args=["--entity", "my-guideline.md"],
             evolve_dir=temp_project_dir / ".evolve",
         )
-        content = (temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md").read_text()
+        content = _published_path(temp_project_dir, "my-guideline.md").read_text()
         assert "visibility: public" in content
 
-    def test_publish_fails_when_public_entity_already_exists(self, temp_project_dir):
+    def test_publish_fails_when_entity_already_published(self, temp_project_dir, local_repo):
         guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
         guideline_dir.mkdir(parents=True)
         source = guideline_dir / "my-guideline.md"
         source.write_text("---\ntype: guideline\n---\n\nPrefer composition.\n")
+        (temp_project_dir / "evolve.config.yaml").write_text(_WRITE_REPO_CONFIG)
+        _clone_write_target(temp_project_dir, local_repo)
 
-        public_path = temp_project_dir / ".evolve" / "public" / "guideline" / "my-guideline.md"
-        public_path.parent.mkdir(parents=True)
+        dest_path = _published_path(temp_project_dir, "my-guideline.md")
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
         existing_content = "---\ntype: guideline\nvisibility: public\n---\n\nExisting public content.\n"
-        public_path.write_text(existing_content)
+        dest_path.write_text(existing_content)
 
         result = run_script(
             PUBLISH_SCRIPT,
@@ -233,8 +274,23 @@ class TestCodexSharingScripts:
 
         assert result.returncode != 0
         assert "already published" in result.stderr
-        assert public_path.read_text() == existing_content
+        assert dest_path.read_text() == existing_content
         assert source.exists()
+
+    def test_publish_errors_without_write_scope_repo(self, temp_project_dir):
+        guideline_dir = temp_project_dir / ".evolve" / "entities" / "guideline"
+        guideline_dir.mkdir(parents=True)
+        (guideline_dir / "my-guideline.md").write_text("---\ntype: guideline\n---\n\nContent.\n")
+
+        result = run_script(
+            PUBLISH_SCRIPT,
+            project_dir=temp_project_dir,
+            args=["--entity", "my-guideline.md"],
+            evolve_dir=temp_project_dir / ".evolve",
+            expect_success=False,
+        )
+        assert result.returncode != 0
+        assert "no write-scope repo" in result.stderr
 
     @pytest.mark.parametrize("entity_name", ["../../etc/passwd", "subdir/guideline.md", ".", ".."])
     def test_publish_rejects_invalid_entity_name(self, temp_project_dir, entity_name):
@@ -261,7 +317,6 @@ class TestCodexSharingScripts:
             evolve_dir=evolve_dir,
         )
         assert (evolve_dir / "entities" / "subscribed" / "alice").is_dir()
-        assert not (evolve_dir / "subscribed" / "alice").exists()
 
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
         synced = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
@@ -274,7 +329,6 @@ class TestCodexSharingScripts:
             args=["--name", "alice"],
             evolve_dir=evolve_dir,
         )
-        assert not (evolve_dir / "subscribed" / "alice").exists()
         assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
 
     def test_subscribe_updates_config_and_rejects_duplicate(self, temp_project_dir, local_repo):
@@ -450,7 +504,7 @@ class TestCodexSharingScripts:
     def test_sync_skips_invalid_subscription_name(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         (temp_project_dir / "evolve.config.yaml").write_text(
-            'subscriptions:\n  - name: "."\n    remote: "https://example.com/repo.git"\n    branch: "main"\n'
+            'repos:\n  - name: "."\n    scope: "read"\n    remote: "https://example.com/repo.git"\n    branch: "main"\n'
         )
 
         result = run_script(
@@ -474,7 +528,9 @@ class TestCodexSharingScripts:
             env=local_repo["env"],
         )
         (temp_project_dir / "evolve.config.yaml").write_text(
-            f'identity:\n  user: "alice"\nsubscriptions:\n  - name: "alice"\n    remote: "{local_repo["bare"]}"\n    branch: "main"\n'
+            f'identity:\n  user: "alice"\n'
+            f'repos:\n  - name: "alice"\n    scope: "read"\n'
+            f'    remote: "{local_repo["bare"]}"\n    branch: "main"\n'
         )
 
         result = run_script(
@@ -502,7 +558,9 @@ class TestCodexSharingScripts:
             evolve_dir=evolve_dir,
         )
         (temp_project_dir / "evolve.config.yaml").write_text(
-            f'subscriptions:\n  - name: "alice"\n    remote: "{local_repo["bare"]}"\n    branch: "main"\nsync:\n  on_session_start: false\n'
+            f'repos:\n  - name: "alice"\n    scope: "read"\n'
+            f'    remote: "{local_repo["bare"]}"\n    branch: "main"\n'
+            f"sync:\n  on_session_start: false\n"
         )
 
         result = run_script(
@@ -530,7 +588,9 @@ class TestCodexSharingScripts:
         subprocess.run(["git", "-C", str(local_repo["work"]), "commit", "-m", "add guideline-two"], check=True, env=git_env)
         subprocess.run(["git", "-C", str(local_repo["work"]), "push", "origin", "main"], check=True, env=git_env)
         (temp_project_dir / "evolve.config.yaml").write_text(
-            f'subscriptions:\n  - name: "alice"\n    remote: "{local_repo["bare"]}"\n    branch: "main"\nsync:\n  on_session_start: false\n'
+            f'repos:\n  - name: "alice"\n    scope: "read"\n'
+            f'    remote: "{local_repo["bare"]}"\n    branch: "main"\n'
+            f"sync:\n  on_session_start: false\n"
         )
 
         result = run_script(
@@ -635,29 +695,3 @@ class TestCodexSharingScripts:
 
         run_script(SYNC_SCRIPT, project_dir=temp_project_dir, evolve_dir=evolve_dir)
         assert not guideline_one.exists()
-
-    def test_sync_migrates_legacy_subscribed_repo(self, temp_project_dir, local_repo):
-        evolve_dir = temp_project_dir / ".evolve"
-        legacy_dir = evolve_dir / "subscribed"
-        legacy_dir.mkdir(parents=True)
-        subprocess.run(
-            ["git", "clone", "--branch", "main", "--depth", "1", str(local_repo["bare"]), str(legacy_dir / "alice")],
-            check=True,
-            env=local_repo["env"],
-        )
-        (temp_project_dir / "evolve.config.yaml").write_text(
-            f'subscriptions:\n  - name: "alice"\n    remote: "{local_repo["bare"]}"\n    branch: "main"\n'
-        )
-
-        result = run_script(
-            SYNC_SCRIPT,
-            project_dir=temp_project_dir,
-            evolve_dir=evolve_dir,
-            expect_success=False,
-        )
-
-        assert result.returncode == 0
-        migrated_repo = evolve_dir / "entities" / "subscribed" / "alice"
-        assert migrated_repo.is_dir()
-        assert not (evolve_dir / "subscribed" / "alice").exists()
-        assert (migrated_repo / "guideline" / "guideline-one.md").exists()

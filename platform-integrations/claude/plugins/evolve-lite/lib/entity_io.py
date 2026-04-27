@@ -78,12 +78,12 @@ def find_entities_dir():
 def find_recall_entity_dirs():
     """Locate all directories that should be searched during recall.
 
-    Returns the existing recall roots in priority order:
-    ``entities/`` first, then ``public/`` under the configured Evolve dir.
-    Missing directories are skipped.
+    Returns the existing recall roots. Only ``entities/`` is canonical —
+    private entities live in ``entities/guideline/`` and shared entities
+    live in ``entities/subscribed/{repo}/guideline/``.
     """
     evolve_dir = get_evolve_dir()
-    candidates = [evolve_dir / "entities", evolve_dir / "public"]
+    candidates = [evolve_dir / "entities"]
     return [path for path in candidates if path.is_dir()]
 
 

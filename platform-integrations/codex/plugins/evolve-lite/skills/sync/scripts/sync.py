@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Pull the latest guidelines from all subscribed repos."""
+"""Pull the latest guidelines from every configured repo (Codex)."""
 
 import argparse
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -25,36 +24,47 @@ if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
 from audit import append as audit_append  # noqa: E402
-from config import _parse_yaml, load_config  # noqa: E402
+from config import is_valid_repo_name, load_config, normalize_repos  # noqa: E402
 
 
 _GIT_TIMEOUT = 30  # seconds
 
 
-def git_pull(repo_path, branch):
-    """Pull latest from origin. Returns CompletedProcess, or None on timeout."""
+def _git(repo_path, *args, timeout=_GIT_TIMEOUT):
     try:
         return subprocess.run(
-            ["git", "-C", str(repo_path), "pull", "origin", branch, "--ff-only"],
+            ["git", "-C", str(repo_path), *args],
             capture_output=True,
             text=True,
-            timeout=_GIT_TIMEOUT,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        print(f"Warning: git pull timed out for {repo_path} (branch: {branch})", file=sys.stderr)
         return None
 
 
+def sync_read_only(repo_path, branch):
+    """Fetch and hard-reset to origin/{branch} (read-only mirror)."""
+    fetch = _git(repo_path, "fetch", "origin", branch)
+    if fetch is None or fetch.returncode != 0:
+        return fetch
+    return _git(repo_path, "reset", "--hard", f"origin/{branch}")
+
+
+def sync_writable(repo_path, branch):
+    """Fetch and rebase local commits onto origin/{branch} (preserves publishes)."""
+    fetch = _git(repo_path, "fetch", "origin", branch)
+    if fetch is None or fetch.returncode != 0:
+        return fetch
+    rebase = _git(repo_path, "rebase", f"origin/{branch}")
+    if rebase is None or rebase.returncode != 0:
+        _git(repo_path, "rebase", "--abort")
+        return rebase
+    return rebase
+
+
 def count_delta(repo_path):
-    """Count added/modified/deleted .md files since last pull."""
-    result = subprocess.run(
-        ["git", "-C", str(repo_path), "diff", "--name-status", "HEAD@{1}", "HEAD"],
-        capture_output=True,
-        text=True,
-        timeout=_GIT_TIMEOUT,
-    )
-    if result.returncode != 0:
-        # HEAD@{1} doesn't exist (initial sync) — count all .md files as added.
+    result = _git(repo_path, "diff", "--name-status", "HEAD@{1}", "HEAD")
+    if result is None or result.returncode != 0:
         added = len(list(repo_path.glob("**/*.md")))
         return {"added": added, "updated": 0, "removed": 0}
     added = updated = removed = 0
@@ -93,8 +103,7 @@ def main():
     audit_root = resolved_evolve_dir if resolved_evolve_dir.name == ".evolve" else resolved_evolve_dir / ".evolve"
 
     if args.config:
-        cfg_path = Path(args.config)
-        cfg = _parse_yaml(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
+        cfg = load_config(filepath=args.config)
     else:
         cfg = load_config(project_root)
 
@@ -102,11 +111,9 @@ def main():
     if args.session_start and isinstance(sync_cfg, dict) and sync_cfg.get("on_session_start") is False:
         sys.exit(0)
 
-    subscriptions = cfg.get("subscriptions", [])
-    if not isinstance(subscriptions, list):
-        subscriptions = []
+    repos = normalize_repos(cfg)
 
-    if not subscriptions:
+    if not repos:
         if not args.quiet:
             print("No subscriptions configured. Add one with the evolve-lite:subscribe skill to start syncing shared guidelines.")
         sys.exit(0)
@@ -117,71 +124,81 @@ def main():
     summaries = []
     total_delta = {}
     any_changes = False
-    safe_name = re.compile(r"^[A-Za-z0-9._-]+$")
 
-    for sub in subscriptions:
-        if not isinstance(sub, dict):
+    for repo in repos:
+        raw_name = repo.get("name", "unknown")
+        scope = repo.get("scope", "read")
+        branch = repo.get("branch", "main")
+        remote = repo.get("remote")
+
+        if not is_valid_repo_name(raw_name):
+            summaries.append(f"{raw_name!r} (skipped - invalid subscription name)")
             continue
-        raw_name = sub.get("name", "unknown")
-        raw_branch = sub.get("branch", "main")
-
-        if not isinstance(raw_name, str) or not isinstance(raw_branch, str):
-            summaries.append(f"{raw_name!r} (skipped - invalid subscription config)")
-            continue
-
         name = raw_name.strip()
-        branch = raw_branch.strip()
 
-        if not name or not branch:
+        if not isinstance(branch, str) or not branch.strip():
             summaries.append(f"{raw_name!r} (skipped - invalid subscription config)")
             continue
-
-        if not safe_name.match(name):
-            summaries.append(f"{name!r} (skipped - invalid subscription name)")
-            continue
+        branch = branch.strip()
 
         subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
         repo_path = (evolve_dir / "entities" / "subscribed" / name).resolve()
-        legacy_base = (evolve_dir / "subscribed").resolve()
-        legacy_repo_path = (evolve_dir / "subscribed" / name).resolve()
 
         if repo_path == subscribed_base or not repo_path.is_relative_to(subscribed_base):
             summaries.append(f"{name!r} (skipped - invalid subscription name)")
             continue
 
-        if legacy_repo_path != legacy_base and legacy_repo_path.is_relative_to(legacy_base):
-            if legacy_repo_path.exists() and not repo_path.exists():
-                repo_path.parent.mkdir(parents=True, exist_ok=True)
-                legacy_repo_path.rename(repo_path)
-            elif legacy_repo_path.exists() and repo_path.exists():
-                summaries.append(f"{name} (duplicate subscription folders — remove .evolve/subscribed/{name})")
+        if not repo_path.is_dir():
+            if not remote:
+                summaries.append(f"{name} (not cloned)")
+                continue
+            repo_path.parent.mkdir(parents=True, exist_ok=True)
+            clone_cmd = ["git", "clone", "--branch", branch]
+            if scope == "read":
+                clone_cmd += ["--depth", "1"]
+            clone_cmd += ["--", remote, str(repo_path)]
+            try:
+                clone_result = subprocess.run(
+                    clone_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=_GIT_TIMEOUT,
+                )
+            except subprocess.TimeoutExpired:
+                summaries.append(f"{name} (re-clone failed - timeout)")
+                total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
+                any_changes = True
+                continue
+            if clone_result.returncode != 0:
+                summaries.append(f"{name} (re-clone failed: {clone_result.stderr.strip()})")
+                total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
+                any_changes = True
                 continue
 
-        if not repo_path.is_dir():
-            summaries.append(f"{name} (not cloned)")
-            continue
+        if scope == "write":
+            pull_result = sync_writable(repo_path, branch)
+        else:
+            pull_result = sync_read_only(repo_path, branch)
 
-        pull_result = git_pull(repo_path, branch)
-        if pull_result is None or pull_result.returncode != 0:
-            if pull_result is None:
-                short_error = "timeout"
-            else:
-                error_lines = (pull_result.stderr or pull_result.stdout or "").strip().splitlines()
-                short_error = error_lines[-1] if error_lines else f"git exited with {pull_result.returncode}"
-            summaries.append(f"{name} (git pull failed: {short_error})")
+        if pull_result is None:
+            summaries.append(f"{name} (sync failed - timeout)")
+            total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
+            any_changes = True
+            continue
+        if pull_result.returncode != 0:
+            error_lines = (pull_result.stderr or pull_result.stdout or "").strip().splitlines()
+            short_error = error_lines[-1] if error_lines else f"git exited with {pull_result.returncode}"
+            summaries.append(f"{name} (sync failed: {short_error})")
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             any_changes = True
             continue
 
-        if "Already up to date" in (pull_result.stdout or ""):
-            delta = {"added": 0, "updated": 0, "removed": 0}
-        else:
-            delta = count_delta(repo_path)
+        delta = count_delta(repo_path)
         total_delta[name] = delta
         if any(value > 0 for value in delta.values()):
             any_changes = True
 
-        summaries.append(f"{name} (+{delta['added']} added, {delta['updated']} updated, {delta['removed']} removed)")
+        summaries.append(f"{name} [{scope}] (+{delta['added']} added, {delta['updated']} updated, {delta['removed']} removed)")
 
     audit_append(project_root=str(audit_root.parent), action="sync", actor=actor, delta=total_delta)
 

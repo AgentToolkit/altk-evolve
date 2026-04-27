@@ -85,11 +85,37 @@ class TestSubscribe:
             evolve_dir=evolve_dir,
         )
         cfg = cfg_module.load_config(str(temp_project_dir))
-        subs = cfg.get("subscriptions", [])
-        assert len(subs) == 1
-        assert subs[0]["name"] == "alice"
-        assert subs[0]["branch"] == "main"
-        assert str(local_repo["bare"]) in subs[0]["remote"]
+        repos = cfg_module.normalize_repos(cfg)
+        assert len(repos) == 1
+        assert repos[0]["name"] == "alice"
+        assert repos[0]["branch"] == "main"
+        assert repos[0]["scope"] == "read"
+        assert str(local_repo["bare"]) in repos[0]["remote"]
+
+    def test_write_scope_recorded_in_repos_list(self, temp_project_dir, local_repo):
+        evolve_dir = temp_project_dir / ".evolve"
+        run_script(
+            SUBSCRIBE_SCRIPT,
+            temp_project_dir,
+            [
+                "--name",
+                "memory",
+                "--remote",
+                str(local_repo["bare"]),
+                "--branch",
+                "main",
+                "--scope",
+                "write",
+                "--notes",
+                "shared project memory",
+            ],
+            evolve_dir=evolve_dir,
+        )
+        cfg = cfg_module.load_config(str(temp_project_dir))
+        write = cfg_module.write_repos(cfg)
+        assert len(write) == 1
+        assert write[0]["name"] == "memory"
+        assert write[0]["notes"] == "shared project memory"
 
     def test_writes_audit_log(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -101,13 +127,10 @@ class TestSubscribe:
         )
         log_path = temp_project_dir / ".evolve" / "audit.log"
         assert log_path.exists()
-        # Parse JSONL format (one JSON object per line)
         entries = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
-        actions = [e["action"] for e in entries]
-        assert "subscribe" in actions
-        # Find the subscribe entry and verify its details
         subscribe_entry = next(e for e in entries if e["action"] == "subscribe")
         assert subscribe_entry["name"] == "alice"
+        assert subscribe_entry["scope"] == "read"
 
     def test_fails_on_duplicate_name(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -143,7 +166,7 @@ class TestSubscribe:
         assert result.returncode != 0
         assert "already exists" in result.stderr
         cfg = cfg_module.load_config(str(temp_project_dir))
-        assert cfg.get("subscriptions", []) == []
+        assert cfg_module.normalize_repos(cfg) == []
 
     def test_rejects_empty_or_dot_name(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -238,7 +261,7 @@ class TestUnsubscribe:
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
         run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--name", "alice"], evolve_dir=evolve_dir)
         cfg = cfg_module.load_config(str(temp_project_dir))
-        assert cfg.get("subscriptions", []) == []
+        assert cfg_module.normalize_repos(cfg) == []
 
     def test_list_flag_prints_subscriptions_as_json(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)

@@ -1,19 +1,22 @@
 ---
 name: unsubscribe
-description: Remove a subscription and delete the locally synced guidelines.
+description: Remove a repo from the unified repos list and delete its local clone.
 ---
 
-# Unsubscribe from Guidelines
+# Remove a Repo
 
 ## Overview
 
-This skill removes a subscription and deletes the locally cloned guidelines for that subscription.
+Remove a configured repo (any scope) from `evolve.config.yaml` and delete
+its local clone. Warn the user before removing a **write-scope** repo since
+any locally published entities that haven't been pushed will be lost.
 
 ## Workflow
 
-### Step 1: List subscriptions
+### Step 1: List repos
 
-Run the following and display the output as a numbered list:
+Run the following and display the output as a numbered list. Include each
+entry's `scope` and `notes`:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --list
@@ -23,15 +26,20 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --list
 
 Ask the user:
 
-> "Which subscription would you like to remove? Enter the number."
+> "Which repo would you like to remove? Enter the number."
 
-### Step 3: Confirm
+### Step 3: Confirm (extra warning if write-scope)
 
-Ask the user:
+If the chosen entry has `scope: write`, warn:
 
-> "This will remove '{name}' and delete `.evolve/subscribed/{name}/`. Continue? (y/n)"
+> "'{name}' is a write-scope repo. Removing it will delete the local clone AND any locally published entities that have not yet been pushed. Continue? (y/n)"
 
-If the user answers anything other than `y` or `yes`, stop and tell them the operation was cancelled.
+Otherwise:
+
+> "This will remove '{name}' and delete `.evolve/entities/subscribed/{name}/`. Continue? (y/n)"
+
+If the user answers anything other than `y` or `yes`, stop and tell them
+the operation was cancelled.
 
 ### Step 4: Run unsubscribe script
 
@@ -43,4 +51,4 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --name {
 
 Tell the user:
 
-> "Unsubscribed from {name}."
+> "Removed '{name}'."

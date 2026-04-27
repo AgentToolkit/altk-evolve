@@ -57,86 +57,108 @@ You can also manually invoke `/evolve-lite:learn` at any time.
 
 ## Sharing Guidelines
 
-Evolve Lite supports sharing guidelines between users via public Git repositories. You can publish your own guidelines so others can subscribe to them, and subscribe to guidelines published by others.
+Evolve Lite treats shared guidelines as multi-reader / multi-writer git
+databases. A single unified `repos:` list in `evolve.config.yaml` describes
+every external guideline repo you read from or publish to; each entry has a
+`scope` of `read` (subscribe only) or `write` (publish target, also synced).
 
 ### Setup
 
-Sharing requires an `evolve.config.yaml` at the project root. If it doesn't exist, the subscribe or publish skills will prompt you to create one. Minimal structure:
+Sharing requires an `evolve.config.yaml` at the project root. The subscribe
+and publish skills will help you create one if it is missing. Structure:
 
 ```yaml
 identity:
   user: yourname          # used to stamp ownership on published guidelines
-public_repo:
-  remote: git@github.com:yourname/evolve-guidelines.git
-  branch: main
-subscriptions: []
+repos:
+  - name: memory
+    scope: write
+    remote: git@github.com:yourname/evolve-memory.git
+    branch: main
+    notes: public memory for my open-source projects
+  - name: org-memory
+    scope: read
+    remote: git@github.com:acme/org-memory.git
+    branch: main
+    notes: private memory shared only within my org
 sync:
   on_session_start: true  # auto-sync on each session start
 ```
 
-The `.evolve/` directory is kept out of version control — the skills automatically add it to `.gitignore`.
+- `scope: read` — pulled on sync. Cannot be published to.
+- `scope: write` — publish target **and** pulled on sync (so you see
+  everything pushed to it, including by other writers).
 
-### Publishing Guidelines
+The `.evolve/` directory is kept out of version control — the skills
+automatically add it to `.gitignore`.
 
-Use `/evolve-lite:publish` to share one or more of your local guidelines with others:
+### Subscribing to a Repo
 
-1. The skill lists files in `.evolve/entities/guideline/`
-2. You pick which ones to publish
-3. Each selected file is moved into `.evolve/public/guideline/`, stamped with `visibility: public`, `published_at`, and your username as the owner, committed, and pushed to your `public_repo.remote`
-
-Others can then subscribe using that remote URL.
-
-### Subscribing to Guidelines
-
-Use `/evolve-lite:subscribe` to pull in guidelines from another user's public repo:
+Use `/evolve-lite:subscribe` to add either a read-only subscription or a
+write-scope publish target:
 
 ```text
 /evolve-lite:subscribe
 > Remote URL: git@github.com:alice/evolve-guidelines.git
 > Short name: alice
+> Scope: read
 ```
 
-The repo is cloned to `.evolve/subscribed/alice/` and mirrored into `.evolve/entities/subscribed/alice/` so recall picks them up immediately.
-The repo is cloned directly into `.evolve/entities/subscribed/alice/` so recall can pick it up immediately. Subscription names must use only letters, numbers, `.`, `_`, and `-`.
+The repo is cloned into `.evolve/entities/subscribed/alice/` so recall can
+pick it up immediately. Repo names must use only letters, numbers, `.`,
+`_`, and `-`.
 
-### Syncing Subscriptions
+### Publishing Guidelines
 
-Use `/evolve-lite:sync` to pull the latest changes from all subscribed repos:
+Use `/evolve-lite:publish` to share one or more of your local guidelines
+via a **write-scope** repo:
+
+1. The skill selects (or asks about) the write-scope target repo
+2. It lists files in `.evolve/entities/guideline/`
+3. You pick which ones to publish
+4. Each selected file is moved into `.evolve/entities/subscribed/{repo}/guideline/`,
+   stamped with `visibility: public`, `owner`, `published_at`, and
+   `source`, committed, and pushed to the remote
+
+Because the publish target is also a subscribed repo, your next sync will
+pull in anything other writers have pushed to the same repo.
+
+### Syncing Repos
+
+Use `/evolve-lite:sync` to pull the latest changes from every configured
+repo (both scopes):
 
 ```text
 /evolve-lite:sync
-> Synced 2 repo(s): alice (+2 added, 0 updated, 0 removed), bob (+0 added, 1 updated, 0 removed)
+> Synced 2 repo(s): memory [write] (+2 added, 0 updated, 0 removed), bob [read] (+0 added, 1 updated, 0 removed)
 ```
 
-If `sync.on_session_start: true` is set in config, this runs automatically at the start of each session.
+If `sync.on_session_start: true` is set in config, this runs automatically
+at the start of each session.
 
-> **Note:** Sync uses `git fetch` + `git reset --hard` on each cloned subscription repo, so local state always matches the remote exactly. Accidentally deleted or modified files are automatically restored on the next sync.
+> **Note:** Read-scope repos use `git fetch` + `git reset --hard`, so the
+> local clone always matches the remote exactly (deleted or modified files
+> are restored). Write-scope repos use `git fetch` + `git rebase` so any
+> unpushed local publish commits are preserved.
 
-### Unsubscribing
+### Removing a Repo
 
-Use `/evolve-lite:unsubscribe` to remove a subscription and delete its locally cloned files:
-
-```text
-/evolve-lite:unsubscribe
-> Which subscription would you like to remove?
-> 1. alice
-> 2. bob
-```
-
-The skill confirms before deleting `.evolve/entities/subscribed/{name}/`.
+Use `/evolve-lite:unsubscribe` to remove any repo and delete its local
+clone. The skill shows scope and notes for each configured repo and warns
+before removing a write-scope repo (unpushed publishes would be lost).
 
 ### Sharing Storage Layout
 
 ```text
 .evolve/
-  public/
-    guideline/
-      guideline-name.md       # owner-stamped published guideline
   entities/
     guideline/
       private-guideline.md
     subscribed/
-      alice/                  # git clone used directly by recall
+      memory/                 # write-scope clone — publishes land here
+        guideline/
+          my-published-guideline.md
+      alice/                  # read-scope clone
         guideline/
           her-guideline.md
 ```
@@ -232,6 +254,22 @@ evolve/
 │   │   ├── SKILL.md
 │   │   └── scripts/
 │   │       └── retrieve_entities.py
+│   ├── subscribe/
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── subscribe.py
+│   ├── publish/
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── publish.py
+│   ├── sync/
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── sync.py
+│   ├── unsubscribe/
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── unsubscribe.py
 │   ├── save/
 │   │   └── SKILL.md
 │   └── save-trajectory/

@@ -99,31 +99,6 @@ class TestRetrieve:
         assert expected_header in result.stdout
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_public_entities_included_in_recall(self, temp_project_dir, retrieve_script, expected_header, platform_name, file_assertions):
-        d = temp_project_dir / ".evolve"
-        file_assertions.write_text(
-            d / "public" / "guideline" / "pub.md",
-            "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n",
-        )
-        result = run_retrieve(retrieve_script, evolve_dir=d)
-        assert result.returncode == 0
-        assert "Prefer immutable data structures." in result.stdout
-
-    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_public_entities_not_annotated_with_from(
-        self, temp_project_dir, retrieve_script, expected_header, platform_name, file_assertions
-    ):
-        d = temp_project_dir / ".evolve"
-        file_assertions.write_text(
-            d / "public" / "guideline" / "pub.md",
-            "---\ntype: guideline\nvisibility: public\n---\n\nPrefer immutable data structures.\n",
-        )
-        result = run_retrieve(retrieve_script, evolve_dir=d)
-        pub_lines = [line for line in result.stdout.splitlines() if "Prefer immutable data structures." in line]
-        assert pub_lines
-        assert not any("[from:" in line for line in pub_lines)
-
-    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
     def test_entities_with_trigger_include_when_line(
         self, temp_project_dir, retrieve_script, expected_header, platform_name, file_assertions
     ):
