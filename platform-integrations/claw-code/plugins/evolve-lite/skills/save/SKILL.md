@@ -185,7 +185,7 @@ python3 ~/.claw/skills/{skill-name}/scripts/parse_data.py input.json
 
 ## Notes
 
-{Additional tips or context}
+{Additional guidelines or context}
 ```
 
 ### Step 6: Generate Helper Scripts
@@ -460,7 +460,7 @@ User: "Save this"
 - **Skill Composition**: Generated skills can reference other skills, creating powerful workflow chains.
 - **Version Control**: Consider adding your `~/.claw/skills/` directory to version control to track skill evolution.
 
-## Tips for Better Skills
+## Guidelines for Better Skills
 
 1. **Complete the task first**: Make sure your workflow is successful before saving it as a skill
 2. **Clear session**: The clearer your session workflow, the better the generated skill and scripts

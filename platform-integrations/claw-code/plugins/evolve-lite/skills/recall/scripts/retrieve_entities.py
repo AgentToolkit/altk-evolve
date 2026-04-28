@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Retrieve and output entities for Claude to filter.
+"""Retrieve and output entities for the agent to filter.
 
-In claw-code this script is invoked by the PreToolUse hook (hooks/pre_tool.sh).
-The hook pipes HOOK_TOOL_INPUT (the about-to-run tool's JSON input) via stdin,
-and claw-code also exposes the following env vars:
+In claw-code this script is invoked by the PreToolUse hook
+(hooks/retrieve_entities.sh). The hook pipes HOOK_TOOL_INPUT (the about-to-run
+tool's JSON input) via stdin, and claw-code also exposes the following env
+vars:
 
   HOOK_EVENT       - "PreToolUse"
   HOOK_TOOL_NAME   - name of the tool about to execute
@@ -16,7 +17,11 @@ is path-based and independent of which tool is running.
 import json
 import os
 import sys
-from entity_io import find_entities_dir, load_all_entities, log as _log
+from pathlib import Path
+
+# Add lib to path so we can import entity_io
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
+from entity_io import find_recall_entity_dirs, markdown_to_entity, log as _log
 
 
 def log(message):
@@ -39,7 +44,12 @@ log(f"  sys.argv: {sys.argv}")
 
 
 def format_entities(entities):
-    """Format all entities for Claude to review."""
+    """Format all entities for the agent to review.
+
+    Entities that came from a subscribed source have their path recorded in
+    the private ``_source`` key (set by load_entities_with_source). These are
+    annotated with ``[from: {name}]`` so the agent knows their provenance.
+    """
     header = """## Entities for this task
 
 Review these entities and apply any relevant ones:
@@ -50,6 +60,9 @@ Review these entities and apply any relevant ones:
         content = e.get("content")
         if not content:
             continue
+        source = e.get("_source")
+        if source:
+            content = f"[from: {source}] {content}"
         item = f"- **[{e.get('type', 'general')}]** {content}"
         if e.get("rationale"):
             item += f"\n  - _Rationale: {e['rationale']}_"
@@ -60,10 +73,43 @@ Review these entities and apply any relevant ones:
     return header + "\n".join(items)
 
 
+def load_entities_with_source(entities_dir):
+    """Glob all .md files under entities_dir and parse each.
+
+    Entities stored under entities/subscribed/{name}/ have ``_source`` set to
+    the subscription name so format_entities can annotate them. The owner field
+    written by publish.py is preserved; _source is just a routing key used
+    internally and is never written to disk.
+    """
+    entities_dir = Path(entities_dir)
+    entities = []
+    for md in sorted(p for p in entities_dir.glob("**/*.md") if ".git" not in p.parts):
+        if md.is_symlink():
+            continue
+        try:
+            entity = markdown_to_entity(md)
+            if not entity.get("content"):
+                continue
+            # Detect subscribed entities by path: .../entities/subscribed/{name}/...
+            parts = md.parts
+            try:
+                entities_index = parts.index("entities")
+                # Verify the structure is .../entities/subscribed/{name}/...
+                if entities_index + 2 < len(parts) and parts[entities_index + 1] == "subscribed":
+                    entity["_source"] = parts[entities_index + 2]
+            except (ValueError, IndexError):
+                # "entities" not found or invalid structure - not a subscribed entity
+                pass
+            entities.append(entity)
+        except (OSError, UnicodeError):
+            pass
+    return entities
+
+
 def main():
-    # Read hook context from stdin (pre_tool.sh pipes HOOK_TOOL_INPUT here).
-    # This is best-effort: if stdin is empty or not valid JSON we carry on,
-    # because entity loading doesn't depend on it.
+    # Read hook context from stdin (retrieve_entities.sh pipes HOOK_TOOL_INPUT
+    # here). This is best-effort: if stdin is empty or not valid JSON we carry
+    # on, because entity loading doesn't depend on it.
     input_data = {}
     try:
         raw = sys.stdin.read()
@@ -75,22 +121,21 @@ def main():
     except json.JSONDecodeError as e:
         log(f"stdin was not valid JSON ({e}), continuing without it")
 
-    # Load all entities from directory
-    entities_dir = find_entities_dir()
-    log(f"Entities dir: {entities_dir}")
-
-    if not entities_dir:
+    recall_dirs = find_recall_entity_dirs()
+    log(f"Recall dirs: {recall_dirs}")
+    if not recall_dirs:
         log("No entities directory found")
         return
 
-    entities = load_all_entities(entities_dir)
+    entities = []
+    for entities_dir in recall_dirs:
+        entities.extend(load_entities_with_source(entities_dir))
+
     if not entities:
         log("No entities found")
         return
 
     log(f"Loaded {len(entities)} entities")
-
-    # Output all entities - Claude will filter for relevance
     output = format_entities(entities)
     print(output)
     log(f"Output {len(output)} chars to stdout")
