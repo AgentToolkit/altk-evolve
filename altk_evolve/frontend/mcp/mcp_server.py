@@ -21,7 +21,7 @@ from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.frontend.api.routes import router as api_router
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines
 from altk_evolve.schema.core import Entity, RecordedEntity
-from altk_evolve.schema.exceptions import EvolveException
+from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-mcp")
@@ -134,6 +134,19 @@ def _resolve_namespace(namespace_id: str | None) -> str:
     return resolved
 
 
+def _evict_namespace(namespace_id: str) -> None:
+    """Evict a namespace from the initialization cache.
+
+    Call this when a downstream operation raises NamespaceNotFoundException
+    for a namespace that was previously cached — the namespace was likely
+    deleted externally.  The next call to _resolve_namespace will
+    re-run ensure_namespace to recreate it.
+    """
+    if namespace_id in _initialized_namespaces:
+        _initialized_namespaces.discard(namespace_id)
+        logger.info(f"Evicted namespace '{namespace_id}' from cache")
+
+
 def get_entities_logic(
     task: str,
     entity_type: str = "guideline",
@@ -157,12 +170,22 @@ def get_entities_logic(
     logger.debug(f"get_entities_logic identifiers: user_id={user_id}, session_id={session_id}")
     client = get_client()
 
-    private_results = client.search_entities(
-        namespace_id=resolved_ns,
-        query=task,
-        filters={"type": entity_type},
-        limit=limit,
-    )
+    try:
+        private_results = client.search_entities(
+            namespace_id=resolved_ns,
+            query=task,
+            filters={"type": entity_type},
+            limit=limit,
+        )
+    except NamespaceNotFoundException:
+        _evict_namespace(resolved_ns)
+        resolved_ns = _resolve_namespace(namespace_id)
+        private_results = client.search_entities(
+            namespace_id=resolved_ns,
+            query=task,
+            filters={"type": entity_type},
+            limit=limit,
+        )
 
     header = f"# {entity_type.capitalize()}s for: {task}"
     response_lines = [f"{header}\n"]
@@ -288,11 +311,20 @@ def save_trajectory(
             )
         )
 
-    get_client().update_entities(
-        namespace_id=resolved_ns,
-        entities=entities,
-        enable_conflict_resolution=False,
-    )
+    try:
+        get_client().update_entities(
+            namespace_id=resolved_ns,
+            entities=entities,
+            enable_conflict_resolution=False,
+        )
+    except NamespaceNotFoundException:
+        _evict_namespace(resolved_ns)
+        resolved_ns = _resolve_namespace(namespace_id)
+        get_client().update_entities(
+            namespace_id=resolved_ns,
+            entities=entities,
+            enable_conflict_resolution=False,
+        )
     results = generate_guidelines(messages)
 
     guideline_metadata_base: dict = {
@@ -403,9 +435,16 @@ def create_entity(
 
         entity = Entity(type=entity_type, content=content, metadata=metadata_dict)
 
-        updates = get_client().update_entities(
-            namespace_id=resolved_ns, entities=[entity], enable_conflict_resolution=enable_conflict_resolution
-        )
+        try:
+            updates = get_client().update_entities(
+                namespace_id=resolved_ns, entities=[entity], enable_conflict_resolution=enable_conflict_resolution
+            )
+        except NamespaceNotFoundException:
+            _evict_namespace(resolved_ns)
+            resolved_ns = _resolve_namespace(namespace_id)
+            updates = get_client().update_entities(
+                namespace_id=resolved_ns, entities=[entity], enable_conflict_resolution=enable_conflict_resolution
+            )
 
         if updates:
             update = updates[0]
@@ -461,6 +500,9 @@ def publish_entity(entity_id: str, user_id: str | None = None, namespace_id: str
             metadata_updates=metadata_updates,
         )
         return json.dumps({"id": updated.id, "type": updated.type, "content": updated.content, "metadata": updated.metadata})
+    except NamespaceNotFoundException:
+        _evict_namespace(resolved_ns)
+        return json.dumps({"error": f"Namespace '{resolved_ns}' not found"})
     except EvolveException as e:
         return json.dumps({"error": str(e)})
 
@@ -495,6 +537,9 @@ def unpublish_entity(entity_id: str, user_id: str | None = None, namespace_id: s
             metadata_updates={"visibility": "private", "published_at": None},
         )
         return json.dumps({"id": updated.id, "type": updated.type, "content": updated.content, "metadata": updated.metadata})
+    except NamespaceNotFoundException:
+        _evict_namespace(resolved_ns)
+        return json.dumps({"error": f"Namespace '{resolved_ns}' not found"})
     except EvolveException as e:
         return json.dumps({"error": str(e)})
 
@@ -527,6 +572,9 @@ def delete_entity(entity_id: str, user_id: str | None = None, namespace_id: str 
 
         get_client().delete_entity_by_id(namespace_id=resolved_ns, entity_id=entity_id)
         return json.dumps({"success": True, "message": f"Entity {entity_id} deleted successfully"})
+    except NamespaceNotFoundException:
+        _evict_namespace(resolved_ns)
+        return json.dumps({"success": False, "error": f"Namespace '{resolved_ns}' not found"})
     except EvolveException as e:
         logger.exception(f"Error deleting entity {entity_id}: {str(e)}")
         return json.dumps({"success": False, "error": str(e)})
