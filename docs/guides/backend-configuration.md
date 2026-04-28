@@ -132,6 +132,43 @@ You can switch backends at any time by changing the `EVOLVE_BACKEND` environment
 - **Quick Start**: Use `filesystem` (default) - no setup required, but limited to text matching
 - **Semantic Search Required**: Use `postgres` or `milvus` for vector-based similarity search
 
+## Identity & Isolation Model
+
+Evolve uses a layered identity model. Understanding how each layer maps to physical storage is important when designing multi-tenant or multi-user deployments.
+
+### Isolation Layers
+
+| Layer | Purpose | Scope |
+|---|---|---|
+| **Namespace** (`namespace_id`) | Org / tenant boundary | First-class — physically separates data |
+| **User** (`user_id`) | Individual user within a namespace | Metadata-only — stored in the entity `metadata` dict |
+| **Session** (`session_id`) | Single agent session / conversation | Metadata-only — stored in the entity `metadata` dict |
+
+### How Each Backend Stores These Layers
+
+| Aspect | Filesystem | PostgreSQL (pgvector) | Milvus |
+|---|---|---|---|
+| **Namespace isolation** | One JSON file per namespace (`{id}.json`) | One table per namespace (`ns_{id}`) | One collection per namespace |
+| **`user_id` storage** | `metadata.user_id` in JSON entity dict | `metadata` JSONB column (`metadata->>'user_id'`) | `metadata` JSON field (`metadata["user_id"]`) |
+| **`session_id` storage** | `metadata.session_id` in JSON entity dict | `metadata` JSONB column (`metadata->>'session_id'`) | `metadata` JSON field (`metadata["session_id"]`) |
+| **`user_id` index** | None (in-memory scan) | None (JSONB GIN possible but not created) | None (scan within collection) |
+| **`session_id` index** | None (in-memory scan) | None (JSONB GIN possible but not created) | None (scan within collection) |
+| **Filter mechanism** | Python dict match in `_entity_matches_filter` | `metadata @> '{"user_id": "..."}'::jsonb` | `metadata["user_id"] == "..."` expression |
+| **Cross-namespace query** | Loop over namespace files | Loop over `ns_*` tables | Loop over collections |
+
+### Key Implications
+
+1. **Namespace is the only hard boundary.** Data in different namespaces is physically separated across all backends. There is no way to accidentally query across namespaces without explicitly iterating over them.
+
+2. **`user_id` and `session_id` are soft filters.** They rely on query-time filtering against the `metadata` dict. There are no dedicated columns, foreign keys, or indexes — a missing filter silently returns all entities in the namespace regardless of owner.
+
+3. **No indexes on identity metadata.** For small-to-medium namespaces this is fine. For large namespaces with frequent per-user queries, consider adding:
+   - **PostgreSQL:** A GIN index on the `metadata` JSONB column, or a partial index on `(metadata->>'user_id')`.
+   - **Milvus:** A scalar index on `metadata["user_id"]` (supported in Milvus 2.3+).
+   - **Filesystem:** Not applicable — the backend scans in memory regardless.
+
+4. **Public entity queries iterate namespaces.** `get_public_entities` loops over all namespaces and filters for `metadata.visibility = "public"`. This is O(N) in the number of namespaces and is not a concern at small scale but should be revisited for deployments with many tenants.
+
 ## Troubleshooting
 
 ### PostgreSQL Connection Issues
