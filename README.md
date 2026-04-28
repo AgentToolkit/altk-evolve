@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/agenttoolkit-altk-evolve-badge.png)](https://mseep.ai/app/agenttoolkit-altk-evolve)
+
 <div align="center">
 
 # Evolve: On‑the‑job learning for AI agents
