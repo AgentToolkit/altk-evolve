@@ -194,7 +194,7 @@ def test_save_trajectory_with_user_and_session_metadata(mock_get_client):
         mock_guideline.implementation_steps = "steps"
         mock_result.guidelines = [mock_guideline]
         mock_result.task_description = "desc"
-        mock_gen.return_value = mock_result
+        mock_gen.return_value = [mock_result]
 
         trajectory_data = json.dumps([{"role": "user", "content": "hello"}])
         save_trajectory(

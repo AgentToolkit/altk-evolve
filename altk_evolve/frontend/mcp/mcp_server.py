@@ -120,11 +120,12 @@ def get_client() -> EvolveClient:
 
 def _resolve_namespace(namespace_id: str | None) -> str:
     """Resolve the effective namespace, ensuring it exists before use."""
+    client = get_client()
     resolved = namespace_id or evolve_config.namespace_id
     if resolved not in _initialized_namespaces:
         logger.info(f"Ensuring namespace '{resolved}' exists (first use)...")
         try:
-            get_client().ensure_namespace(resolved)
+            client.ensure_namespace(resolved)
             _initialized_namespaces.add(resolved)
             logger.info(f"Namespace '{resolved}' is ready")
         except Exception as e:
@@ -151,8 +152,9 @@ def get_entities_logic(
     resolved_ns = _resolve_namespace(namespace_id)
     logger.info(
         f"Getting entities of type '{entity_type}' for task: {task} "
-        f"(namespace={resolved_ns}, user_id={user_id}, session_id={session_id}, include_public={include_public})"
+        f"(namespace={resolved_ns}, user_present={user_id is not None}, session_present={session_id is not None}, include_public={include_public})"
     )
+    logger.debug(f"get_entities_logic identifiers: user_id={user_id}, session_id={session_id}")
     client = get_client()
 
     private_results = client.search_entities(
@@ -261,7 +263,8 @@ def save_trajectory(
     effective_user_id = user_id or owner_id
     task_id = task_id or str(uuid.uuid4())
 
-    logger.info(f"Saving trajectory: namespace={resolved_ns}, user_id={effective_user_id}, session_id={session_id}, task_id={task_id}")
+    logger.info(f"Saving trajectory: namespace={resolved_ns}, user_present={effective_user_id is not None}, session_present={session_id is not None}, task_id={task_id}")
+    logger.debug(f"save_trajectory identifiers: user_id={effective_user_id}, session_id={session_id}")
 
     entities = []
     messages = json.loads(trajectory_data)
@@ -489,12 +492,13 @@ def unpublish_entity(entity_id: str, user_id: str | None = None, namespace_id: s
 
 
 @mcp.tool()
-def delete_entity(entity_id: str, namespace_id: str | None = None) -> str:
+def delete_entity(entity_id: str, user_id: str | None = None, namespace_id: str | None = None) -> str:
     """
     Delete a specific entity by its ID.
 
     Args:
         entity_id: The unique identifier of the entity to delete
+        user_id: Caller identity; must match the entity's owner_id if one is set
         namespace_id: Optional namespace override. Falls back to the configured default.
 
     Returns:
@@ -504,6 +508,15 @@ def delete_entity(entity_id: str, namespace_id: str | None = None) -> str:
     logger.info(f"Deleting entity: {entity_id} from namespace: {resolved_ns}")
 
     try:
+        entity = get_client().get_entity_by_id(namespace_id=resolved_ns, entity_id=entity_id)
+        if entity is None:
+            return json.dumps({"success": False, "error": f"Entity {entity_id} not found"})
+
+        existing_owner = (entity.metadata or {}).get("owner_id")
+        if existing_owner is not None and user_id != existing_owner:
+            logger.info(f"Delete denied for entity={entity_id} namespace={resolved_ns}: caller is not owner")
+            return json.dumps({"error": "Permission denied: caller is not the owner of this entity"})
+
         get_client().delete_entity_by_id(namespace_id=resolved_ns, entity_id=entity_id)
         return json.dumps({"success": True, "message": f"Entity {entity_id} deleted successfully"})
     except EvolveException as e:
