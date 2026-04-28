@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from altk_evolve.llm.tips.segmentation import segment_trajectory
+from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
 pytestmark = pytest.mark.e2e
 

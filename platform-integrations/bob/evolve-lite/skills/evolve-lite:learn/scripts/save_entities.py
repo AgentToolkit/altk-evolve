@@ -5,21 +5,18 @@ Reads entities from stdin JSON and writes each as a markdown file
 in the entities directory, organized by type.
 """
 
+import argparse
 import json
 import sys
 from pathlib import Path
 
-# Walk up from script to find evolve-lib
-_script = Path(__file__).resolve()
-_lib = None
-for _ancestor in _script.parents:
-    _candidate = _ancestor / "evolve-lib"
-    if _candidate.is_dir():
-        _lib = _candidate
+# Smart import: walk up to find evolve-lib
+current = Path(__file__).resolve()
+for parent in current.parents:
+    lib_path = parent / "evolve-lib"
+    if lib_path.exists():
+        sys.path.insert(0, str(lib_path))
         break
-if _lib is None:
-    raise ImportError(f"Cannot find evolve-lib directory above {_script}")
-sys.path.insert(0, str(_lib))
 from entity_io import (  # noqa: E402
     find_entities_dir,
     get_default_entities_dir,
@@ -42,6 +39,10 @@ def normalize(text):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--user", default=None, help="Stamp owner on every entity written")
+    args = parser.parse_args()
+
     # Read entities from stdin
     try:
         input_data = json.load(sys.stdin)
@@ -85,6 +86,11 @@ def main():
         if normalize(content) in existing_contents:
             log(f"Skipping duplicate: {content[:60]}")
             continue
+
+        # Always stamp owner and visibility from script, not from stdin
+        if args.user:
+            entity["owner"] = args.user
+        entity["visibility"] = "private"
 
         path = write_entity_file(entities_dir, entity)
         existing_contents.add(normalize(content))

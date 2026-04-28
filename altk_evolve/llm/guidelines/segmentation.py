@@ -9,7 +9,7 @@ from litellm import completion, get_supported_openai_params, supports_response_s
 from pydantic import ValidationError
 
 from altk_evolve.config.llm import llm_settings
-from altk_evolve.schema.tips import SegmentationResponse, SubtaskSegment
+from altk_evolve.schema.guidelines import SegmentationResponse, SubtaskSegment
 from altk_evolve.utils.utils import clean_llm_response
 
 logger = logging.getLogger(__name__)
@@ -20,20 +20,20 @@ _SEGMENT_TEMPLATE = Template((Path(__file__).parent / "prompts/segment_trajector
 def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
     """Segment a trajectory into logical subtasks with generalized descriptions.
 
-    Returns an empty list on failure — callers fall back to full-trajectory tip generation.
+    Returns an empty list on failure — callers fall back to full-trajectory guideline generation.
     """
-    # Import here to avoid circular import (tips.py imports this module)
-    from altk_evolve.llm.tips.tips import parse_openai_agents_trajectory
+    # Import here to avoid circular import (guidelines.py imports this module)
+    from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 
     trajectory_data = parse_openai_agents_trajectory(messages)
 
     supported_params = get_supported_openai_params(
-        model=llm_settings.tips_model,
+        model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
     supports_response_format = supported_params and "response_format" in supported_params
     response_schema_enabled = supports_response_schema(
-        model=llm_settings.tips_model,
+        model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
     constrained_decoding_supported = bool(supports_response_format and response_schema_enabled)
@@ -52,7 +52,7 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
             if constrained_decoding_supported:
                 clean_response = (
                     completion(
-                        model=llm_settings.tips_model,
+                        model=llm_settings.guidelines_model,
                         messages=[{"role": "user", "content": prompt}],
                         response_format=SegmentationResponse,
                         custom_llm_provider=llm_settings.custom_llm_provider,
@@ -63,7 +63,7 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
             else:
                 raw = (
                     completion(
-                        model=llm_settings.tips_model,
+                        model=llm_settings.guidelines_model,
                         messages=[{"role": "user", "content": prompt}],
                         custom_llm_provider=llm_settings.custom_llm_provider,
                     )

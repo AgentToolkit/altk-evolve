@@ -5,16 +5,16 @@ from typing import Literal
 DEFAULT_TASK_DESCRIPTION = "Task description unknown"
 
 
-class Tip(BaseModel):
-    content: str = Field(description="Clear, actionable tip")
-    rationale: str = Field(description="Why this tip helps")
+class Guideline(BaseModel):
+    content: str = Field(description="Clear, actionable guideline")
+    rationale: str = Field(description="Why this guideline helps")
     category: Literal["strategy", "recovery", "optimization"]
-    trigger: str = Field(description="When to apply this tip")
-    implementation_steps: list[str] = Field(default_factory=list, description="Specific steps to implement this tip")
+    trigger: str = Field(description="When to apply this guideline")
+    implementation_steps: list[str] = Field(default_factory=list, description="Specific steps to implement this guideline")
 
 
-class TipGenerationResponse(BaseModel):
-    tips: list[Tip]
+class GuidelineGenerationResponse(BaseModel):
+    guidelines: list[Guideline]
 
 
 class SubtaskSegment(BaseModel):
@@ -37,17 +37,17 @@ class SegmentationResponse(BaseModel):
 
 
 @dataclass(frozen=True)
-class TipGenerationResult:
-    """Internal result from generate_tips(), pairing tips with the source task description."""
+class GuidelineGenerationResult:
+    """Internal result from generate_guidelines(), pairing guidelines with the source task description."""
 
-    tips: list[Tip]
+    guidelines: list[Guideline]
     task_description: str
 
 
 @dataclass(frozen=True)
 class ConsolidationResult:
-    """Summary of a tip consolidation run."""
+    """Summary of a guideline consolidation run."""
 
     clusters_found: int
-    tips_before: int
-    tips_after: int
+    guidelines_before: int
+    guidelines_after: int

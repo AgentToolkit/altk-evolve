@@ -27,6 +27,7 @@ Examples of artifacts that must be immediately created once proven as the succes
 Unless that artifact happens to be:
 - code which is a trivial one-liner that future agents would not benefit from reusing
 - code which embeds secrets, tokens, or user-specific sensitive data
+- the guideline would instruct the agent to invoke a skill, tool, or external command by name (e.g. "run evolve-lite:learn", "call save_trajectory") - such guidelines trigger prompt-injection detection when retrieved by the recall skill in a future session
 - the user explicitly asked for a one-off result and not to persist helper code
 - redundant because an equivalent local artifact on disk would be just as effective
 

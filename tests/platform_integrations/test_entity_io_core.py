@@ -15,7 +15,7 @@ sys.path.insert(
 )
 import entity_io
 
-pytestmark = pytest.mark.platform_integrations
+pytestmark = [pytest.mark.platform_integrations, pytest.mark.unit]
 
 
 class TestSlugify:
@@ -43,30 +43,30 @@ class TestSlugify:
 
 class TestUniqueFilename:
     def test_returns_slug_md_when_no_collision(self, temp_project_dir):
-        path = entity_io.unique_filename(temp_project_dir, "my-tip")
-        assert path == temp_project_dir / "my-tip.md"
+        path = entity_io.unique_filename(temp_project_dir, "my-guideline")
+        assert path == temp_project_dir / "my-guideline.md"
 
-    def test_increments_suffix_on_collision(self, temp_project_dir):
-        (temp_project_dir / "my-tip.md").touch()
-        path = entity_io.unique_filename(temp_project_dir, "my-tip")
-        assert path == temp_project_dir / "my-tip-2.md"
+    def test_increments_suffix_on_collision(self, temp_project_dir, file_assertions):
+        file_assertions.write_text(temp_project_dir / "my-guideline.md", "")
+        path = entity_io.unique_filename(temp_project_dir, "my-guideline")
+        assert path == temp_project_dir / "my-guideline-2.md"
 
-    def test_keeps_incrementing(self, temp_project_dir):
-        (temp_project_dir / "my-tip.md").touch()
-        (temp_project_dir / "my-tip-2.md").touch()
-        path = entity_io.unique_filename(temp_project_dir, "my-tip")
-        assert path == temp_project_dir / "my-tip-3.md"
+    def test_keeps_incrementing(self, temp_project_dir, file_assertions):
+        file_assertions.write_text(temp_project_dir / "my-guideline.md", "")
+        file_assertions.write_text(temp_project_dir / "my-guideline-2.md", "")
+        path = entity_io.unique_filename(temp_project_dir, "my-guideline")
+        assert path == temp_project_dir / "my-guideline-3.md"
 
 
 class TestEntityMarkdownRoundtrip:
-    def test_basic_roundtrip(self, temp_project_dir):
+    def test_basic_roundtrip(self, tmp_path):
         entity = {
             "type": "guideline",
             "trigger": "when writing tests",
             "content": "Prefer real databases over mocks.",
             "rationale": "Mocks hide real integration bugs.",
         }
-        path = temp_project_dir / "test.md"
+        path = tmp_path / "test.md"
         path.write_text(entity_io.entity_to_markdown(entity))
         result = entity_io.markdown_to_entity(path)
 
@@ -75,16 +75,16 @@ class TestEntityMarkdownRoundtrip:
         assert result["trigger"] == "when writing tests"
         assert result["rationale"] == "Mocks hide real integration bugs."
 
-    def test_entity_without_optional_fields(self, temp_project_dir):
+    def test_entity_without_optional_fields(self, tmp_path):
         entity = {"type": "guideline", "content": "Keep functions small."}
-        path = temp_project_dir / "test.md"
+        path = tmp_path / "test.md"
         path.write_text(entity_io.entity_to_markdown(entity))
         result = entity_io.markdown_to_entity(path)
 
         assert result["content"] == "Keep functions small."
         assert "rationale" not in result
 
-    def test_visibility_owner_published_at_preserved(self, temp_project_dir):
+    def test_visibility_owner_published_at_preserved(self, tmp_path):
         entity = {
             "type": "guideline",
             "content": "Document public APIs.",
@@ -92,7 +92,7 @@ class TestEntityMarkdownRoundtrip:
             "owner": "alice",
             "published_at": "2026-01-01T00:00:00Z",
         }
-        path = temp_project_dir / "test.md"
+        path = tmp_path / "test.md"
         path.write_text(entity_io.entity_to_markdown(entity))
         result = entity_io.markdown_to_entity(path)
 
@@ -100,41 +100,41 @@ class TestEntityMarkdownRoundtrip:
         assert result["owner"] == "alice"
         assert result["published_at"] == "2026-01-01T00:00:00Z"
 
-    def test_file_without_frontmatter(self, temp_project_dir):
-        path = temp_project_dir / "test.md"
+    def test_file_without_frontmatter(self, tmp_path):
+        path = tmp_path / "test.md"
         path.write_text("Some content here.")
         result = entity_io.markdown_to_entity(path)
         assert result["content"] == "Some content here."
 
 
 class TestWriteEntityFile:
-    def test_writes_file_in_type_subdirectory(self, temp_project_dir):
+    def test_writes_file_in_type_subdirectory(self, tmp_path):
         entity = {"type": "guideline", "content": "Use semantic versioning."}
-        path = entity_io.write_entity_file(temp_project_dir, entity)
-        assert path.parent == temp_project_dir / "guideline"
+        path = entity_io.write_entity_file(tmp_path, entity)
+        assert path.parent == tmp_path / "guideline"
         assert path.suffix == ".md"
         assert path.exists()
 
-    def test_preference_type_goes_in_preference_dir(self, temp_project_dir):
+    def test_preference_type_goes_in_preference_dir(self, tmp_path):
         entity = {"type": "preference", "content": "Prefer tabs over spaces."}
-        path = entity_io.write_entity_file(temp_project_dir, entity)
-        assert path.parent == temp_project_dir / "preference"
+        path = entity_io.write_entity_file(tmp_path, entity)
+        assert path.parent == tmp_path / "preference"
 
-    def test_invalid_type_defaults_to_guideline(self, temp_project_dir):
+    def test_invalid_type_defaults_to_guideline(self, tmp_path):
         entity = {"type": "badtype", "content": "Some content."}
-        path = entity_io.write_entity_file(temp_project_dir, entity)
-        assert path.parent == temp_project_dir / "guideline"
+        path = entity_io.write_entity_file(tmp_path, entity)
+        assert path.parent == tmp_path / "guideline"
 
-    def test_written_file_is_readable(self, temp_project_dir):
+    def test_written_file_is_readable(self, tmp_path):
         entity = {"type": "guideline", "content": "Write clear commit messages."}
-        path = entity_io.write_entity_file(temp_project_dir, entity)
+        path = entity_io.write_entity_file(tmp_path, entity)
         result = entity_io.markdown_to_entity(path)
         assert result["content"] == "Write clear commit messages."
 
-    def test_no_collision_on_duplicate_slug(self, temp_project_dir):
+    def test_no_collision_on_duplicate_slug(self, tmp_path):
         entity = {"type": "guideline", "content": "No magic numbers."}
-        path1 = entity_io.write_entity_file(temp_project_dir, entity)
-        path2 = entity_io.write_entity_file(temp_project_dir, entity)
+        path1 = entity_io.write_entity_file(tmp_path, entity)
+        path2 = entity_io.write_entity_file(tmp_path, entity)
         assert path1 != path2
         assert path1.exists()
         assert path2.exists()
@@ -143,7 +143,7 @@ class TestWriteEntityFile:
 class TestLoadAllEntities:
     def test_loads_from_nested_type_dirs(self, temp_project_dir):
         (temp_project_dir / "guideline").mkdir()
-        (temp_project_dir / "guideline" / "tip.md").write_text("---\ntype: guideline\n---\n\nKeep it simple.\n")
+        (temp_project_dir / "guideline" / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep it simple.\n")
         (temp_project_dir / "preference").mkdir()
         (temp_project_dir / "preference" / "pref.md").write_text("---\ntype: preference\n---\n\nUse snake_case.\n")
         entities = entity_io.load_all_entities(temp_project_dir)
@@ -151,10 +151,10 @@ class TestLoadAllEntities:
         assert "Keep it simple." in contents
         assert "Use snake_case." in contents
 
-    def test_skips_files_without_content(self, temp_project_dir):
-        (temp_project_dir / "guideline").mkdir()
-        (temp_project_dir / "guideline" / "empty.md").write_text("---\ntype: guideline\n---\n\n")
-        assert entity_io.load_all_entities(temp_project_dir) == []
+    def test_skips_files_without_content(self, tmp_path):
+        (tmp_path / "guideline").mkdir()
+        (tmp_path / "guideline" / "empty.md").write_text("---\ntype: guideline\n---\n\n")
+        assert entity_io.load_all_entities(tmp_path) == []
 
-    def test_empty_directory_returns_empty_list(self, temp_project_dir):
-        assert entity_io.load_all_entities(temp_project_dir) == []
+    def test_empty_directory_returns_empty_list(self, tmp_path):
+        assert entity_io.load_all_entities(tmp_path) == []

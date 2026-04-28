@@ -18,7 +18,6 @@ def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "platform_integrations: tests for platform-integrations/install.sh")
     config.addinivalue_line("markers", "integration: tests that require git and perform subprocess I/O")
-    config.addinivalue_line("markers", "e2e: end-to-end tests that exercise real filesystem and subprocesses")
 
 
 @pytest.fixture
@@ -150,6 +149,22 @@ class FileAssertions:
     def assert_dir_not_exists(path: Path, message: str = ""):
         """Assert that a directory does not exist."""
         assert not path.exists(), f"Directory should not exist: {path}. {message}"
+
+    @staticmethod
+    def assert_file_contains(path: Path, text: str, message: str = ""):
+        """Assert that a file contains the specified text."""
+        assert path.is_file(), f"File does not exist: {path}. {message}"
+        content = path.read_text()
+        assert text in content, f"Text not found in {path}. {message}\nLooking for: {text}\nFile content:\n{content}"
+
+    @staticmethod
+    def assert_dir_empty(path: Path, message: str = ""):
+        """Assert that a directory is empty or doesn't exist."""
+        if not path.exists():
+            return  # Directory doesn't exist, so it's "empty"
+        assert path.is_dir(), f"Path exists but is not a directory: {path}. {message}"
+        contents = list(path.iterdir())
+        assert len(contents) == 0, f"Directory is not empty: {path}. Contains: {[str(p) for p in contents]}. {message}"
 
     @staticmethod
     def assert_file_unchanged(path: Path, original_content: str):
@@ -629,7 +644,7 @@ def local_repo(tmp_path, git_env):
     # Seed one entity
     guideline = init / "guideline"
     guideline.mkdir()
-    (guideline / "tip-one.md").write_text("---\ntype: guideline\n---\n\nAlways write tests.\n")
+    (guideline / "guideline-one.md").write_text("---\ntype: guideline\n---\n\nAlways write tests.\n")
     subprocess.run(["git", "-C", str(init), "add", "."], check=True, capture_output=True, env=git_env)
     subprocess.run(
         ["git", "-C", str(init), "commit", "-m", "init"],

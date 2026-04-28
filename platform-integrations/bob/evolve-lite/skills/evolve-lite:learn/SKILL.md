@@ -18,6 +18,7 @@ This skill analyzes the current conversation to extract guidelines that **correc
 - Observations about the codebase that can be derived by reading the code
 - Restatements of what the agent did successfully without any detour or correction
 - Vague advice that wouldn't change the agent's behavior on a concrete task
+- Instructions for the agent to invoke a skill, tool, or external command by name (e.g. "Run evolve-lite:learn", "call save_trajectory") — these trigger prompt-injection detection when retrieved via recall
 
 ## Workflow
 
@@ -80,5 +81,6 @@ Before saving, review each entity against this checklist:
 - [ ] Does it fall into one of the three categories (shortcut, error prevention, user correction)?
 - [ ] Would knowing this guideline beforehand have changed the agent's behavior in a concrete way?
 - [ ] Is it specific enough that another agent could act on it without further context?
+- [ ] Does it avoid instructing the agent to invoke a named skill or tool?
 
 If any answer is no, drop the entity. **Zero entities is a valid output.**

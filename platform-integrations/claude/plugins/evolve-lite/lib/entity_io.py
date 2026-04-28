@@ -75,6 +75,18 @@ def find_entities_dir():
     return c if c.is_dir() else None
 
 
+def find_recall_entity_dirs():
+    """Locate all directories that should be searched during recall.
+
+    Returns the existing recall roots in priority order:
+    ``entities/`` first, then ``public/`` under the configured Evolve dir.
+    Missing directories are skipped.
+    """
+    evolve_dir = get_evolve_dir()
+    candidates = [evolve_dir / "entities", evolve_dir / "public"]
+    return [path for path in candidates if path.is_dir()]
+
+
 def get_default_entities_dir():
     """Return (and create) the default entities directory.
 
@@ -126,7 +138,7 @@ def unique_filename(directory, slug):
 # Markdown <-> dict conversion
 # ---------------------------------------------------------------------------
 
-_FRONTMATTER_KEYS = ("type", "trigger", "trajectory", "owner", "visibility", "published_at", "source")
+_FRONTMATTER_KEYS = ("type", "trigger", "trajectory", "owner", "source", "visibility", "published_at")
 
 
 def entity_to_markdown(entity):

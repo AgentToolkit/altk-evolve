@@ -63,6 +63,26 @@ def test_find_entities_dir_env_missing_subdir_returns_none(monkeypatch, tmp_path
     assert entity_io.find_entities_dir() is None
 
 
+@pytest.mark.unit
+def test_find_recall_entity_dirs_includes_entities_and_public(monkeypatch, temp_project_dir):
+    custom = temp_project_dir / "custom-evolve"
+    entities = custom / "entities"
+    public = custom / "public"
+    entities.mkdir(parents=True)
+    public.mkdir(parents=True)
+    monkeypatch.setenv("EVOLVE_DIR", str(custom))
+    assert entity_io.find_recall_entity_dirs() == [entities, public]
+
+
+@pytest.mark.unit
+def test_find_recall_entity_dirs_skips_missing_locations(monkeypatch, temp_project_dir):
+    custom = temp_project_dir / "custom-evolve"
+    public = custom / "public"
+    public.mkdir(parents=True)
+    monkeypatch.setenv("EVOLVE_DIR", str(custom))
+    assert entity_io.find_recall_entity_dirs() == [public]
+
+
 # ---------------------------------------------------------------------------
 # get_default_entities_dir
 # ---------------------------------------------------------------------------

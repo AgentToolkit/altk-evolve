@@ -29,11 +29,11 @@ Entities are loaded from two locations:
   subscribed/
     alice/
       guideline/
-        alice-tip.md                              ← annotated [from: alice]
+        alice-guideline.md                              ← annotated [from: alice]
 
 .evolve/public/
   guideline/
-    published-tip.md                              ← your own public, no annotation
+    published-guideline.md                              ← your own public, no annotation
 ```
 
 Each file uses markdown with YAML frontmatter:

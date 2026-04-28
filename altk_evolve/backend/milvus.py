@@ -290,6 +290,29 @@ class MilvusEntityBackend(BaseEntityBackend):
     def _delete_entity(self, namespace_id: str, entity_id: str) -> None:
         self.delete_entity_by_id(namespace_id=namespace_id, entity_id=entity_id)
 
+    def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+        try:
+            entity_id_int = int(entity_id)
+        except ValueError:
+            raise EvolveException(f"Invalid entity ID '{entity_id}': must be numeric.")
+        self._validate_namespace(namespace_id)
+        results = self.milvus.query(
+            collection_name=namespace_id,
+            filter=f"id == {entity_id_int}",
+            output_fields=["id", "type", "content", "created_at", "metadata"],
+            limit=1,
+        )
+        if not results:
+            raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
+        entity = parse_milvus_entity(results[0])
+        merged = {**(entity.metadata or {}), **metadata_patch}
+        timestamp = int(entity.created_at.timestamp())
+        from altk_evolve.utils.utils import serialize_content
+
+        self._update_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged)
+        self._post_update(namespace_id)
+        return RecordedEntity(**{**entity.model_dump(), "metadata": merged})
+
     def _post_update(self, namespace_id: str) -> None:
         self.milvus.flush(namespace_id)
         self.milvus.load_collection(namespace_id)

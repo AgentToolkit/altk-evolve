@@ -1,5 +1,6 @@
 """Tests for subscribe.py and unsubscribe.py."""
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -8,17 +9,30 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(
-    0,
-    str(Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib"),
-)
-import config as cfg_module
+_IS_WINDOWS = sys.platform == "win32"
 
-pytestmark = pytest.mark.platform_integrations
 
-_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
-SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
-UNSUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/unsubscribe/scripts/unsubscribe.py"
+def _load_claude_config_module():
+    path = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/config.py"
+    spec = importlib.util.spec_from_file_location("claude_evolve_lite_config_subscribe", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+cfg_module = _load_claude_config_module()
+
+pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
+
+_REPO_ROOT = Path(__file__).parent.parent.parent
+CLAUDE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
+CODEX_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite"
+SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
+UNSUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/unsubscribe/scripts/unsubscribe.py"
+SUBSCRIBE_SCRIPT_VARIANTS = [
+    ("claude", CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"),
+    ("codex", CODEX_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"),
+]
 
 
 def run_script(script, project_dir, args, evolve_dir=None, expect_success=True):
@@ -33,6 +47,21 @@ def run_script(script, project_dir, args, evolve_dir=None, expect_success=True):
         env=env,
         check=expect_success,
     )
+
+
+@pytest.mark.parametrize(("platform_name", "subscribe_script"), SUBSCRIBE_SCRIPT_VARIANTS)
+@pytest.mark.parametrize("bad_name", ["foo/bar", "../etc", "alice:bob", "alice bob"])
+def test_subscribe_rejects_invalid_name_characters(temp_project_dir, local_repo, subscribe_script, platform_name, bad_name):
+    evolve_dir = temp_project_dir / ".evolve"
+    result = run_script(
+        subscribe_script,
+        temp_project_dir,
+        ["--name", bad_name, "--remote", str(local_repo["bare"]), "--branch", "main"],
+        evolve_dir=evolve_dir,
+        expect_success=False,
+    )
+    assert result.returncode != 0
+    assert "invalid subscription name" in result.stderr
 
 
 class TestSubscribe:
@@ -72,9 +101,13 @@ class TestSubscribe:
         )
         log_path = temp_project_dir / ".evolve" / "audit.log"
         assert log_path.exists()
-        entry = json.loads(log_path.read_text().strip())
-        assert entry["action"] == "subscribe"
-        assert entry["name"] == "alice"
+        # Parse JSONL format (one JSON object per line)
+        entries = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
+        actions = [e["action"] for e in entries]
+        assert "subscribe" in actions
+        # Find the subscribe entry and verify its details
+        subscribe_entry = next(e for e in entries if e["action"] == "subscribe")
+        assert subscribe_entry["name"] == "alice"
 
     def test_fails_on_duplicate_name(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -89,7 +122,7 @@ class TestSubscribe:
         result = run_script(
             SUBSCRIBE_SCRIPT,
             temp_project_dir,
-            ["--name", "../../evil", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            ["--name", "../../outside", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
             expect_success=False,
         )
@@ -133,9 +166,56 @@ class TestSubscribe:
             ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
         )
-        cloned = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "tip-one.md"
+        cloned = evolve_dir / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
         assert cloned.exists()
         assert "Always write tests." in cloned.read_text()
+
+    @pytest.mark.skipif(_IS_WINDOWS, reason="chmod not supported on Windows")
+    def test_rolls_back_clone_if_config_write_fails(self, temp_project_dir, local_repo):
+        """If save_config raises after a successful clone, the clone directory is removed."""
+        evolve_dir = temp_project_dir / ".evolve"
+        # Make the config file read-only so save_config raises PermissionError
+        cfg_path = temp_project_dir / "evolve.config.yaml"
+        cfg_path.write_text("subscriptions: []\n")
+        cfg_path.chmod(0o444)
+        try:
+            result = run_script(
+                SUBSCRIBE_SCRIPT,
+                temp_project_dir,
+                ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
+                evolve_dir=evolve_dir,
+                expect_success=False,
+            )
+        finally:
+            cfg_path.chmod(0o644)
+        assert result.returncode != 0
+        assert "failed to record subscription" in result.stderr
+        dest = evolve_dir / "entities" / "subscribed" / "alice"
+        assert not dest.exists(), "Clone should be rolled back when config write fails"
+
+    @pytest.mark.skipif(_IS_WINDOWS, reason="chmod not supported on Windows")
+    def test_rolls_back_clone_if_audit_write_fails(self, temp_project_dir, local_repo):
+        """If audit_append raises after a successful clone + config write, the clone is removed."""
+        evolve_dir = temp_project_dir / ".evolve"
+        evolve_dir.mkdir(parents=True)
+        # Pre-create a read-only audit.log so audit_append raises PermissionError
+        audit_log = evolve_dir / "audit.log"
+        audit_log.write_text("")
+        audit_log.chmod(0o444)
+        try:
+            result = run_script(
+                SUBSCRIBE_SCRIPT,
+                temp_project_dir,
+                ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
+                evolve_dir=evolve_dir,
+                expect_success=False,
+            )
+        finally:
+            audit_log.chmod(0o644)
+        assert result.returncode != 0
+        assert "failed to record subscription" in result.stderr
+        dest = evolve_dir / "entities" / "subscribed" / "alice"
+        assert not dest.exists(), "Clone should be rolled back when audit write fails"
 
 
 class TestUnsubscribe:
@@ -198,7 +278,7 @@ class TestUnsubscribe:
         result = run_script(
             UNSUBSCRIBE_SCRIPT,
             temp_project_dir,
-            ["--name", "../../evil"],
+            ["--name", "../../outside"],
             evolve_dir=evolve_dir,
             expect_success=False,
         )

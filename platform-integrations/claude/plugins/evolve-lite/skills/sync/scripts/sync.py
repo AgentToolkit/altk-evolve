@@ -53,6 +53,18 @@ def git_sync(repo_path, branch):
         return None
 
 
+def _head_hash(repo_path):
+    result = subprocess.run(
+        ["git", "-c", f"safe.directory={repo_path}", "-C", str(repo_path), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=_GIT_TIMEOUT,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
 def count_delta(repo_path):
     """Count added/modified/deleted .md files since last pull.
 
@@ -133,8 +145,18 @@ def main():
     for sub in subscriptions:
         if not isinstance(sub, dict):
             continue
-        name = sub.get("name", "unknown")
+        name = sub.get("name")
         branch = sub.get("branch", "main")
+
+        if not isinstance(name, str) or not name.strip():
+            summaries.append(f"{sub!r} (skipped — missing or non-string name)")
+            continue
+        name = name.strip()
+
+        if not isinstance(branch, str) or not branch.strip():
+            summaries.append(f"{name!r} (skipped — missing or non-string branch)")
+            continue
+        branch = branch.strip()
 
         if not _SAFE_NAME.match(name):
             summaries.append(f"{name!r} (skipped — invalid subscription name)")
@@ -142,6 +164,7 @@ def main():
 
         repo_path = evolve_dir / "entities" / "subscribed" / name
 
+        head_before = None
         if not repo_path.is_dir():
             remote = sub.get("remote")
             if not remote:
@@ -158,6 +181,8 @@ def main():
                 summaries.append(f"{name} (re-clone failed: {clone_result.stderr.strip()})")
                 total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
                 continue
+        else:
+            head_before = _head_hash(repo_path)
 
         pull_result = git_sync(repo_path, branch)
         if pull_result is None or pull_result.returncode != 0:
@@ -165,7 +190,11 @@ def main():
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             continue
 
-        delta = count_delta(repo_path)
+        head_after = _head_hash(repo_path)
+        if head_before is not None and head_before == head_after:
+            delta = {"added": 0, "updated": 0, "removed": 0}
+        else:
+            delta = count_delta(repo_path)
         total_delta[name] = delta
 
         has_changes = any(v > 0 for v in delta.values())

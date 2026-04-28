@@ -17,8 +17,9 @@ Check whether `evolve.config.yaml` exists in the project root.
 
 **If it does not exist**, ask the user:
 
-> "No `evolve.config.yaml` found. What username would you like to use? (e.g. `alice`)"
-> "What is the remote URL for your public guidelines repo? (e.g. `git@github.com:alice/evolve-guidelines.git`)"
+> "No `evolve.config.yaml` found. What username would you like to use? (e.g. `vatche`)"
+
+> "What is the remote URL for your public guidelines repo? (e.g. `git@github.com:vatche/evolve-guidelines.git`)"
 
 Create `evolve.config.yaml`:
 
@@ -37,7 +38,7 @@ sync:
 
 **If it exists** but `public_repo.remote` is missing, ask:
 
-> "What is the remote URL for your public guidelines repo? (e.g. `git@github.com:alice/evolve-guidelines.git`)"
+> "What is the remote URL for your public guidelines repo? (e.g. `git@github.com:vatche/evolve-guidelines.git`)"
 
 Add it to the config.
 
@@ -78,12 +79,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish/scripts/publish.py \
 
 ### Step 5: Commit and push
 
-Build `{filenames_list}` as a comma-joined list of all selected filenames (e.g. `foo.md, bar.md`).
-
 ```bash
 git -C .evolve/public add .
-git -C .evolve/public commit -m "[evolve] publish: {filenames_list}"
-git -C .evolve/public push origin "{public_repo.branch}"
+git -C .evolve/public commit -m "[evolve] publish: {filename}"
+git -C .evolve/public push origin {public_repo.branch}
 ```
 
 Where `{public_repo.branch}` defaults to `main` if not set in config.
@@ -92,4 +91,4 @@ Where `{public_repo.branch}` defaults to `main` if not set in config.
 
 Tell the user:
 
-> "Published {filenames_list} to {public_repo.remote}."
+> "Published {filename} to {public_repo.remote}."

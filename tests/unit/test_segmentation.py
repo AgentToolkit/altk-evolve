@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from altk_evolve.schema.tips import SubtaskSegment
+from altk_evolve.schema.guidelines import SubtaskSegment
 
 pytestmark = pytest.mark.unit
 
@@ -25,13 +25,13 @@ def _mock_completion(content: str) -> MagicMock:
     return resp
 
 
-@patch("altk_evolve.llm.tips.segmentation.completion")
-@patch("altk_evolve.llm.tips.segmentation.get_supported_openai_params", return_value=[])
-@patch("altk_evolve.llm.tips.segmentation.supports_response_schema", return_value=False)
+@patch("altk_evolve.llm.guidelines.segmentation.completion")
+@patch("altk_evolve.llm.guidelines.segmentation.get_supported_openai_params", return_value=[])
+@patch("altk_evolve.llm.guidelines.segmentation.supports_response_schema", return_value=False)
 def test_segment_trajectory_returns_subtasks(mock_schema, mock_params, mock_completion):
     mock_completion.return_value = _mock_completion(VALID_SEGMENTATION_JSON)
 
-    from altk_evolve.llm.tips.segmentation import segment_trajectory
+    from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
     result = segment_trajectory(MESSAGES)
 
@@ -43,27 +43,27 @@ def test_segment_trajectory_returns_subtasks(mock_schema, mock_params, mock_comp
     assert result[1].generalized_description == "Retrieve data"
 
 
-@patch("altk_evolve.llm.tips.segmentation.completion")
-@patch("altk_evolve.llm.tips.segmentation.get_supported_openai_params", return_value=[])
-@patch("altk_evolve.llm.tips.segmentation.supports_response_schema", return_value=False)
+@patch("altk_evolve.llm.guidelines.segmentation.completion")
+@patch("altk_evolve.llm.guidelines.segmentation.get_supported_openai_params", return_value=[])
+@patch("altk_evolve.llm.guidelines.segmentation.supports_response_schema", return_value=False)
 def test_segment_trajectory_propagates_non_parse_errors(mock_schema, mock_params, mock_completion):
     mock_completion.side_effect = Exception("LLM unavailable")
 
-    from altk_evolve.llm.tips.segmentation import segment_trajectory
+    from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
     with pytest.raises(Exception, match="LLM unavailable"):
         segment_trajectory(MESSAGES)
 
 
-@patch("altk_evolve.llm.tips.segmentation.completion")
-@patch("altk_evolve.llm.tips.segmentation.get_supported_openai_params", return_value=[])
-@patch("altk_evolve.llm.tips.segmentation.supports_response_schema", return_value=False)
+@patch("altk_evolve.llm.guidelines.segmentation.completion")
+@patch("altk_evolve.llm.guidelines.segmentation.get_supported_openai_params", return_value=[])
+@patch("altk_evolve.llm.guidelines.segmentation.supports_response_schema", return_value=False)
 def test_segment_trajectory_retries_on_parse_failure(mock_schema, mock_params, mock_completion):
     bad = _mock_completion("not valid json at all")
     good = _mock_completion(VALID_SEGMENTATION_JSON)
     mock_completion.side_effect = [bad, bad, good]
 
-    from altk_evolve.llm.tips.segmentation import segment_trajectory
+    from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
     result = segment_trajectory(MESSAGES)
 
@@ -71,13 +71,13 @@ def test_segment_trajectory_retries_on_parse_failure(mock_schema, mock_params, m
     assert mock_completion.call_count == 3
 
 
-@patch("altk_evolve.llm.tips.segmentation.completion")
-@patch("altk_evolve.llm.tips.segmentation.get_supported_openai_params", return_value=[])
-@patch("altk_evolve.llm.tips.segmentation.supports_response_schema", return_value=False)
+@patch("altk_evolve.llm.guidelines.segmentation.completion")
+@patch("altk_evolve.llm.guidelines.segmentation.get_supported_openai_params", return_value=[])
+@patch("altk_evolve.llm.guidelines.segmentation.supports_response_schema", return_value=False)
 def test_segment_trajectory_returns_empty_after_max_retries(mock_schema, mock_params, mock_completion):
     mock_completion.return_value = _mock_completion("not valid json at all")
 
-    from altk_evolve.llm.tips.segmentation import segment_trajectory
+    from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
     result = segment_trajectory(MESSAGES)
 
@@ -88,7 +88,7 @@ def test_segment_trajectory_returns_empty_after_max_retries(mock_schema, mock_pa
 def test_subtask_segment_rejects_inverted_range():
     from pydantic import ValidationError as PydanticValidationError
 
-    from altk_evolve.schema.tips import SubtaskSegment
+    from altk_evolve.schema.guidelines import SubtaskSegment
 
     with pytest.raises(PydanticValidationError, match="end_step must be >= start_step"):
         SubtaskSegment(
@@ -100,7 +100,7 @@ def test_subtask_segment_rejects_inverted_range():
 
 
 def test_subtask_segment_accepts_valid_range():
-    from altk_evolve.schema.tips import SubtaskSegment
+    from altk_evolve.schema.guidelines import SubtaskSegment
 
     seg = SubtaskSegment(
         generalized_description="Good range",

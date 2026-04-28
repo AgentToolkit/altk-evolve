@@ -99,7 +99,7 @@ def test_e2e_pipeline_agent(agent_config, phoenix_server):
     Runs the full E2E pipeline for a specific agent configuration:
     1. Executing the agent script
     2. Verifying traces in Phoenix associated with a unique project name
-    3. Running Evolve Sync to verify tip generation
+    3. Running Evolve Sync to verify guideline generation
     """
     agent_name = agent_config["name"]
     script_path = agent_config["script"]
@@ -182,7 +182,7 @@ except Exception as e:
         print(f"Debug Output: {output}")
         pytest.fail(f"No traces found in Phoenix project {project_name}. Debug: {output}")
 
-    # --- Step 3: Sync & Generate Tips ---
+    # --- Step 3: Sync & Generate Guidelines ---
     print("\n--- Step 3: Running Evolve Sync & Monitoring ---")
     sync_command = [
         "uv",
@@ -207,7 +207,7 @@ except Exception as e:
         universal_newlines=True,
     )
 
-    tips_found = False
+    guidelines_found = False
     sync_start = time.time()
     timeout = 120  # 2 minute timeout for sync
     output_lines = []
@@ -215,7 +215,7 @@ except Exception as e:
     try:
         while True:
             if time.time() - sync_start > timeout:
-                print(f"❌ Timeout waiting for tips generation ({timeout}s)")
+                print(f"❌ Timeout waiting for guidelines generation ({timeout}s)")
                 break
 
             line = process.stdout.readline()
@@ -230,12 +230,13 @@ except Exception as e:
             # print(f"[Sync] {line_stripped}") # Optional: verbose logging
 
             # Check target log pattern
-            match = re.search(r"generated (\d+) tips", line_stripped)
+            match = re.search(r"generated (\d+) guidelines", line_stripped)
             if match:
-                count = match.group(1)
-                print(f"\n✅ SUCCESS: Generated {count} tips!")
-                tips_found = True
-                break
+                count = int(match.group(1))
+                if count > 0:
+                    print(f"\n✅ SUCCESS: Generated {count} guidelines!")
+                    guidelines_found = True
+                    break
     finally:
         if process.poll() is None:
             print("Stopping sync process...")
@@ -245,7 +246,7 @@ except Exception as e:
             except subprocess.TimeoutExpired:
                 process.kill()
 
-    if not tips_found:
+    if not guidelines_found:
         full_output = "".join(output_lines)
         print(f"Final Sync Output:\n{full_output}")
-        pytest.fail(f"Failed to detect tip generation for {agent_name} within {timeout}s.")
+        pytest.fail(f"Failed to detect guideline generation for {agent_name} within {timeout}s.")

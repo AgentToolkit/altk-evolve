@@ -11,12 +11,12 @@ from pydantic import ValidationError
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.config.llm import llm_settings
 from altk_evolve.schema.exceptions import EvolveException
-from altk_evolve.schema.tips import DEFAULT_TASK_DESCRIPTION, TipGenerationResponse, TipGenerationResult
+from altk_evolve.schema.guidelines import DEFAULT_TASK_DESCRIPTION, GuidelineGenerationResponse, GuidelineGenerationResult
 from altk_evolve.utils.utils import clean_llm_response
 
 logger = logging.getLogger(__name__)
 
-_GENERATE_TIPS_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_tips.jinja2").read_text())
+_GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_guidelines.jinja2").read_text())
 
 
 def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
@@ -106,14 +106,14 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
     }
 
 
-def _generate_tips_for_segment(
+def _generate_guidelines_for_segment(
     task_description: str,
     trajectory_slice: str,
     num_steps: int,
     constrained_decoding_supported: bool,
-) -> TipGenerationResult:
-    """Generate tips for a single trajectory slice (full or subtask)."""
-    prompt = _GENERATE_TIPS_TEMPLATE.render(
+) -> GuidelineGenerationResult:
+    """Generate guidelines for a single trajectory slice (full or subtask)."""
+    prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         num_steps=num_steps,
         trajectory_summary=trajectory_slice,
@@ -124,9 +124,9 @@ def _generate_tips_for_segment(
         litellm.enable_json_schema_validation = True
         clean_response = (
             completion(
-                model=llm_settings.tips_model,
+                model=llm_settings.guidelines_model,
                 messages=[{"role": "user", "content": prompt}],
-                response_format=TipGenerationResponse,
+                response_format=GuidelineGenerationResponse,
                 custom_llm_provider=llm_settings.custom_llm_provider,
             )
             .choices[0]
@@ -136,7 +136,7 @@ def _generate_tips_for_segment(
         litellm.enable_json_schema_validation = False
         raw = (
             completion(
-                model=llm_settings.tips_model,
+                model=llm_settings.guidelines_model,
                 messages=[{"role": "user", "content": prompt}],
                 custom_llm_provider=llm_settings.custom_llm_provider,
             )
@@ -146,38 +146,38 @@ def _generate_tips_for_segment(
         clean_response = clean_llm_response(raw)
 
     if not clean_response:
-        logger.warning(f"LLM returned empty response for tip generation. Model: {llm_settings.tips_model}")
-        return TipGenerationResult(tips=[], task_description=task_description)
+        logger.warning(f"LLM returned empty response for guideline generation. Model: {llm_settings.guidelines_model}")
+        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
     try:
-        tips = TipGenerationResponse.model_validate(json.loads(clean_response)).tips
-        return TipGenerationResult(tips=tips, task_description=task_description)
+        guidelines = GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
+        return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
     except JSONDecodeError as e:
-        logger.warning(f"Failed to parse LLM tip generation response: {e}. Response: {repr(clean_response[:500])}")
-        return TipGenerationResult(tips=[], task_description=task_description)
+        logger.warning(f"Failed to parse LLM guideline generation response: {e}. Response: {repr(clean_response[:500])}")
+        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
     except ValidationError as e:
-        logger.warning(f"Failed to validate LLM tip generation response: {e}. Response: {repr(clean_response[:500])}")
-        return TipGenerationResult(tips=[], task_description=task_description)
+        logger.warning(f"Failed to validate LLM guideline generation response: {e}. Response: {repr(clean_response[:500])}")
+        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
 
-def generate_tips(messages: list[dict]) -> list[TipGenerationResult]:
-    """Generate tips from a trajectory, optionally segmented into subtasks.
+def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]:
+    """Generate guidelines from a trajectory, optionally segmented into subtasks.
 
     When segmentation is enabled (EVOLVE_SEGMENTATION_ENABLED=true, the default),
-    the trajectory is first segmented into logical subtasks. Tips are then generated
+    the trajectory is first segmented into logical subtasks. Guidelines are then generated
     per subtask and each result carries the subtask's generalized description as
     task_description — giving downstream clustering much more precise signal than
     the raw first user message.
 
-    Returns a list with one TipGenerationResult per subtask (or one for the full
+    Returns a list with one GuidelineGenerationResult per subtask (or one for the full
     trajectory when segmentation is disabled or produces fewer than 2 subtasks).
     """
     supported_params = get_supported_openai_params(
-        model=llm_settings.tips_model,
+        model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
     supports_response_format = supported_params and "response_format" in supported_params
     response_schema_enabled = supports_response_schema(
-        model=llm_settings.tips_model,
+        model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
     constrained_decoding_supported = bool(supports_response_format and response_schema_enabled)
@@ -189,7 +189,7 @@ def generate_tips(messages: list[dict]) -> list[TipGenerationResult]:
 
     subtasks = []
     if evolve_config.segmentation_enabled:
-        from altk_evolve.llm.tips.segmentation import segment_trajectory  # avoid circular import
+        from altk_evolve.llm.guidelines.segmentation import segment_trajectory  # avoid circular import
 
         try:
             subtasks = segment_trajectory(messages)
@@ -206,7 +206,7 @@ def generate_tips(messages: list[dict]) -> list[TipGenerationResult]:
                 logger.debug(f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
                 continue
             slice_steps = steps_list[start:end]
-            result = _generate_tips_for_segment(
+            result = _generate_guidelines_for_segment(
                 task_description=subtask.generalized_description,
                 trajectory_slice="\n\n".join(slice_steps),
                 num_steps=len(slice_steps),
@@ -220,7 +220,7 @@ def generate_tips(messages: list[dict]) -> list[TipGenerationResult]:
     # Fallback: full trajectory (use segmented description if exactly 1 subtask was found)
     desc = subtasks[0].generalized_description if len(subtasks) == 1 else task_instruction
     return [
-        _generate_tips_for_segment(
+        _generate_guidelines_for_segment(
             task_description=desc,
             trajectory_slice=trajectory_data["trajectory_summary"],
             num_steps=trajectory_data["num_steps"],
