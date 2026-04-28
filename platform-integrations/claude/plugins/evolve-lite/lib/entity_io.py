@@ -83,7 +83,7 @@ def find_recall_entity_dirs():
     live in ``entities/subscribed/{repo}/guideline/``.
     """
     evolve_dir = get_evolve_dir()
-    candidates = [evolve_dir / "entities"]
+    candidates = [evolve_dir / "entities", evolve_dir / "public"]
     return [path for path in candidates if path.is_dir()]
 
 
