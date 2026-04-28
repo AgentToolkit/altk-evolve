@@ -103,7 +103,14 @@ def main():
     audit_root = resolved_evolve_dir if resolved_evolve_dir.name == ".evolve" else resolved_evolve_dir / ".evolve"
 
     if args.config:
-        cfg = load_config(filepath=args.config)
+        config_path = Path(args.config).resolve()
+        if config_path.name != "evolve.config.yaml":
+            print(
+                f"Error: --config must point to an evolve.config.yaml file, got: {config_path}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        cfg = load_config(project_root=str(config_path.parent))
     else:
         cfg = load_config(project_root)
 

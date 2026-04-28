@@ -39,6 +39,11 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--list", action="store_true", help="Print repos as JSON array")
     group.add_argument("--name", help="Name of repo to remove")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Required to remove a write-scope repo (its clone may hold unpushed publishes)",
+    )
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
@@ -59,10 +64,20 @@ def main():
         print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
         sys.exit(1)
 
-    new_repos = [r for r in repos if r.get("name") != name]
-    if len(new_repos) == len(repos):
+    matched = next((r for r in repos if r.get("name") == name), None)
+    if matched is None:
         print(f"Error: subscription '{name}' not found.", file=sys.stderr)
         sys.exit(1)
+
+    if matched.get("scope") == "write" and not args.force:
+        print(
+            f"Error: '{name}' is a write-scope repo. Removing it would delete the local clone, "
+            "including any unpushed publish commits. Re-run with --force to confirm.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    new_repos = [r for r in repos if r.get("name") != name]
 
     if dest.exists():
         shutil.rmtree(dest)

@@ -42,13 +42,8 @@ def _git(repo_path, *args, timeout=_GIT_TIMEOUT):
 
 
 def _head_hash(repo_path):
-    result = subprocess.run(
-        ["git", "-c", f"safe.directory={repo_path}", "-C", str(repo_path), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        timeout=_GIT_TIMEOUT,
-    )
-    if result.returncode != 0:
+    result = _git(repo_path, "rev-parse", "HEAD")
+    if result is None or result.returncode != 0:
         return None
     return result.stdout.strip()
 
@@ -138,7 +133,14 @@ def main():
     project_root = str(evolve_dir.parent) if "EVOLVE_DIR" in os.environ else "."
 
     if args.config:
-        cfg = load_config(filepath=args.config)
+        config_path = Path(args.config).resolve()
+        if config_path.name != "evolve.config.yaml":
+            print(
+                f"Error: --config must point to an evolve.config.yaml file, got: {config_path}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        cfg = load_config(project_root=str(config_path.parent))
     else:
         cfg = load_config(project_root)
 

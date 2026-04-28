@@ -43,8 +43,18 @@ the operation was cancelled.
 
 ### Step 4: Run unsubscribe script
 
+For a **read-scope** repo, run:
+
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --name {name}
+```
+
+For a **write-scope** repo (only after the user confirms in Step 3), add
+`--force`. The script refuses to remove a write-scope repo without it,
+since the local clone may hold unpushed publishes:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --name {name} --force
 ```
 
 ### Step 5: Confirm

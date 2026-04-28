@@ -25,7 +25,7 @@ sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).
 Display the script's stdout verbatim to the user. Example outputs:
 
 > "Synced 2 repo(s): memory [write] (+2 added, 0 updated, 0 removed), bob [read] (+0 added, 1 updated, 0 removed)"
-
+>
 > "No subscriptions configured. Add one with /evolve-lite:subscribe to start syncing shared guidelines."
 
 Under `--quiet`, the script exits silently when there's nothing to report.

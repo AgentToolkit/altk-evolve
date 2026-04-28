@@ -43,8 +43,18 @@ the operation was cancelled.
 
 ### Step 4: Run unsubscribe script
 
+For a **read-scope** repo, run:
+
 ```bash
 sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; python3 "$script" --name {name}'
+```
+
+For a **write-scope** repo (only after the user confirms in Step 3), add
+`--force`. The script refuses to remove a write-scope repo without it,
+since the local clone may hold unpushed publishes:
+
+```bash
+sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; python3 "$script" --name {name} --force'
 ```
 
 ### Step 5: Confirm

@@ -175,17 +175,17 @@ def _parse_yaml(text):
 
 
 def _cast(value):
-    """Cast a YAML scalar string to an appropriate Python type."""
-    # Strip surrounding quotes first to handle quoted empty strings correctly
+    """Cast a YAML scalar string to an appropriate Python type.
+
+    Quoted scalars stay strings — that's the whole point of YAML quoting.
+    Only unquoted scalars get coerced to bool / null / int / float / list.
+    """
+    # Quoted: return the string verbatim (with single-quote unescaping).
     if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         stripped = value[1:-1]
-        # Quoted empty string should return empty string, not None
-        if stripped == "":
-            return ""
-        # Un-double single quotes escaped by _scalar (e.g. "a''b" → "a'b")
         if value.startswith("'"):
             stripped = stripped.replace("''", "'")
-        value = stripped
+        return stripped
 
     if value in ("true", "True", "yes"):
         return True
@@ -334,6 +334,12 @@ def _coerce_repo(entry):
     name = entry.get("name")
     remote = entry.get("remote")
     if not isinstance(name, str) or not name.strip():
+        return None
+    if not is_valid_repo_name(name.strip()):
+        print(
+            f"evolve-lite: ignoring repo entry {name!r} — invalid name (only A-Z, a-z, 0-9, '.', '_', '-' allowed)",
+            file=sys.stderr,
+        )
         return None
     if not isinstance(remote, str) or not remote.strip():
         return None

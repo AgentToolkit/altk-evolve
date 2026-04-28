@@ -122,7 +122,10 @@ def main():
         raw = sys.stdin.read()
         if raw.strip():
             input_data = json.loads(raw)
-            log(f"Parsed stdin — keys: {list(input_data.keys())}")
+            if isinstance(input_data, dict):
+                log(f"Parsed stdin — keys: {list(input_data.keys())}")
+            else:
+                log(f"Parsed stdin — type: {type(input_data).__name__}")
         else:
             log("stdin was empty")
     except json.JSONDecodeError as e:
