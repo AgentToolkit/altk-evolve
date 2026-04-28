@@ -653,3 +653,69 @@ def test_delete_entity_invalid_id(postgres_backend: PostgresEntityBackend, monke
     """Test deleting an entity with a non-numeric ID."""
     with pytest.raises(EvolveException, match="Invalid entity ID"):
         postgres_backend.delete_entity_by_id(namespace_id="test_namespace", entity_id="not_a_number")
+
+
+# ── update_entity_metadata ────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_update_entity_metadata_merges_and_returns(postgres_backend: PostgresEntityBackend, monkeypatch):
+    """Native metadata merge issues UPDATE ... metadata || jsonb and returns the updated entity."""
+    now_dt = datetime.datetime.now(datetime.UTC)
+    updated_row = RecordedEntity(
+        id="42",
+        type="guideline",
+        content="be concise",
+        created_at=now_dt,
+        metadata={"creation_mode": "manual", "visibility": "public", "owner_id": "alice"},
+    )
+
+    monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))
+
+    mock_cursor = MagicMock()
+    mock_cursor.fetchall.return_value = [updated_row]
+    mock_cursor_ctx = MagicMock()
+    mock_cursor_ctx.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_ctx.__exit__ = Mock(return_value=False)
+
+    with patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_ctx):
+        result = postgres_backend.update_entity_metadata("test_namespace", "42", {"visibility": "public", "owner_id": "alice"})
+
+    # Verify the SQL used the jsonb merge operator and RETURNING clause
+    executed_sql = str(mock_cursor.execute.call_args[0][0])
+    assert "metadata || %s" in executed_sql
+    assert "RETURNING" in executed_sql
+
+    # Verify the patch dict and numeric entity ID were passed as params
+    call_params = mock_cursor.execute.call_args[0][1]
+    assert call_params[1] == 42  # entity_id cast to int
+    import json
+
+    patch_dict = json.loads(call_params[0])
+    assert patch_dict == {"visibility": "public", "owner_id": "alice"}
+
+    assert result.metadata["visibility"] == "public"
+    assert result.metadata["owner_id"] == "alice"
+
+
+@pytest.mark.unit
+def test_update_entity_metadata_raises_for_missing_entity(postgres_backend: PostgresEntityBackend, monkeypatch):
+    """Raises EvolveException when RETURNING yields no rows (entity not found)."""
+    monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))
+
+    mock_cursor = MagicMock()
+    mock_cursor.fetchall.return_value = []
+    mock_cursor_ctx = MagicMock()
+    mock_cursor_ctx.__enter__ = Mock(return_value=mock_cursor)
+    mock_cursor_ctx.__exit__ = Mock(return_value=False)
+
+    with patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_ctx):
+        with pytest.raises(EvolveException, match="not found"):
+            postgres_backend.update_entity_metadata("test_namespace", "99", {"visibility": "public"})
+
+
+@pytest.mark.unit
+def test_update_entity_metadata_rejects_non_numeric_id(postgres_backend: PostgresEntityBackend):
+    """Raises EvolveException immediately for non-numeric entity IDs."""
+    with pytest.raises(EvolveException, match="must be numeric"):
+        postgres_backend.update_entity_metadata("test_namespace", "not-an-id", {"visibility": "public"})

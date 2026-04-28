@@ -409,6 +409,70 @@ def test_delete_entity_nonexistent_namespace(milvus_backend: MilvusEntityBackend
         milvus_backend.delete_entity_by_id(namespace_id="nonexistent_namespace", entity_id="12345")
 
 
+# ── update_entity_metadata ────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_update_entity_metadata_merges_and_returns(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """Fetches via milvus.query, merges patch, upserts with partial_update, returns updated entity."""
+    now_ts = int(datetime.datetime.now(datetime.UTC).timestamp())
+    raw_entity = {
+        "id": 42,
+        "type": "guideline",
+        "content": "be concise",
+        "created_at": now_ts,
+        "metadata": {"creation_mode": "manual"},
+    }
+
+    query = Mock(return_value=[raw_entity])
+    upsert = Mock(return_value={"ids": [42]})
+    flush = Mock()
+    load = Mock()
+
+    monkeypatch.setattr(milvus_backend.milvus, "has_collection", always_has_collection)
+    monkeypatch.setattr(milvus_backend.milvus, "query", query)
+    monkeypatch.setattr(milvus_backend.milvus, "upsert", upsert)
+    monkeypatch.setattr(milvus_backend.milvus, "flush", flush)
+    monkeypatch.setattr(milvus_backend.milvus, "load_collection", load)
+    monkeypatch.setattr(milvus_backend.embedding_model, "encode", arbitrary_embedding)
+
+    result = milvus_backend.update_entity_metadata("test_namespace", "42", {"visibility": "public", "owner_id": "alice"})
+
+    # query must use direct id filter, not search_entities fan-out
+    query.assert_called_once_with(
+        collection_name="test_namespace",
+        filter="id == 42",
+        output_fields=["id", "type", "content", "created_at", "metadata"],
+        limit=1,
+    )
+
+    # upsert must carry merged metadata
+    upserted_data = upsert.call_args[1]["data"]
+    assert upserted_data["metadata"]["creation_mode"] == "manual"
+    assert upserted_data["metadata"]["visibility"] == "public"
+    assert upserted_data["metadata"]["owner_id"] == "alice"
+
+    assert result.metadata["visibility"] == "public"
+    assert result.metadata["creation_mode"] == "manual"
+
+
+@pytest.mark.unit
+def test_update_entity_metadata_raises_for_missing_entity(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """Raises EvolveException when milvus.query returns no results."""
+    monkeypatch.setattr(milvus_backend.milvus, "has_collection", always_has_collection)
+    monkeypatch.setattr(milvus_backend.milvus, "query", Mock(return_value=[]))
+
+    with pytest.raises(EvolveException, match="not found"):
+        milvus_backend.update_entity_metadata("test_namespace", "99", {"visibility": "public"})
+
+
+@pytest.mark.unit
+def test_update_entity_metadata_rejects_non_numeric_id(milvus_backend: MilvusEntityBackend):
+    """Raises EvolveException immediately for non-numeric entity IDs."""
+    with pytest.raises(EvolveException, match="must be numeric"):
+        milvus_backend.update_entity_metadata("test_namespace", "not-an-id", {"visibility": "public"})
+
+
 @pytest.mark.unit
 def test_parse_milvus_entity_accepts_epoch_zero_created_at():
     parsed = parse_milvus_entity(

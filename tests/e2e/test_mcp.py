@@ -1,113 +1,11 @@
-import os
 import pytest
 import json
 from fastmcp.client import Client
 from pathlib import Path
 from dotenv import load_dotenv
 
-import uuid
-from altk_evolve.config.milvus import milvus_client_settings
-
 __data__ = Path(__file__).parent.parent / "data"
 load_dotenv()
-
-
-@pytest.fixture(params=["filesystem"])
-def mcp(request, tmp_path):
-    backend_type = request.param
-    os.environ["EVOLVE_NAMESPACE_ID"] = "test"
-    os.environ["EVOLVE_BACKEND"] = backend_type
-
-    # Common SQLite setup
-    os.environ["EVOLVE_SQLITE_PATH"] = str(tmp_path / f"test_{backend_type}.sqlite.db")
-
-    # Backend-specific setup
-    milvus_db_file = None
-    original_milvus_uri = None
-
-    if backend_type == "milvus":
-        original_milvus_uri = milvus_client_settings.uri
-        _env_uri = os.getenv("EVOLVE_URI", "")
-        if _env_uri.startswith("http"):
-            # Running against a real Milvus server (e.g. in CI via Docker sidecar).
-            # Use the server URI directly; skip milvus-lite local file creation.
-            milvus_db_file = None
-            milvus_client_settings.uri = _env_uri
-        else:
-            # Local dev: use a unique milvus-lite DB file per test run.
-            milvus_db_file = str(tmp_path / f"test_{uuid.uuid4().hex[:8]}.db")
-            milvus_client_settings.uri = milvus_db_file
-            # Note: currently milvus-lite creates a file, not a dir for the uri
-    elif backend_type == "filesystem":
-        os.environ["EVOLVE_DATA_DIR"] = str(tmp_path)
-
-    from altk_evolve.frontend.client.evolve_client import EvolveClient
-    from altk_evolve.config.evolve import evolve_config
-
-    # Reset loaded settings to pick up new env vars
-    evolve_config.__init__()
-
-    # Reset the MCP server client
-    import altk_evolve.frontend.mcp.mcp_server as mcp_server_module
-
-    mcp_server_module._client = None
-    mcp_server_module._namespace_initialized = False
-
-    evolve_client = EvolveClient()
-    # Create the test namespace
-    try:
-        evolve_client.create_namespace("test")
-    except Exception:
-        pass
-
-    yield mcp_server_module.mcp
-
-    # Cleanup
-    try:
-        evolve_client.backend.close()
-    except Exception:
-        pass
-
-    if backend_type == "milvus":
-        # Disconnect all pymilvus connections
-        try:
-            from pymilvus import connections
-
-            for alias, _ in connections.list_connections():
-                try:
-                    connections.disconnect(alias)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # Release all Milvus Lite servers
-        try:
-            from milvus_lite.server_manager import server_manager_instance
-
-            server_manager_instance.release_all()
-        except Exception:
-            pass
-
-        # Restore original URI
-        if original_milvus_uri:
-            milvus_client_settings.uri = original_milvus_uri
-
-        # Clean up temp DB files
-        if milvus_db_file and os.path.exists(milvus_db_file):
-            try:
-                os.remove(milvus_db_file)
-            except Exception:
-                pass
-        if milvus_db_file and os.path.exists(f"{milvus_db_file}.lock"):
-            try:
-                os.remove(f"{milvus_db_file}.lock")
-            except Exception:
-                pass
-
-    # Reset the MCP server client
-    mcp_server_module._client = None
-    mcp_server_module._namespace_initialized = False
 
 
 @pytest.mark.e2e

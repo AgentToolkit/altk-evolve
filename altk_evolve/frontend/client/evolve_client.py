@@ -86,6 +86,48 @@ class EvolveClient:
         """Delete a specific entity by its ID."""
         self.backend.delete_entity_by_id(namespace_id, entity_id)
 
+    def get_entity_by_id(self, namespace_id: str, entity_id: str) -> RecordedEntity | None:
+        """Fetch a single entity by its ID. Returns None if not found."""
+        results = self.search_entities(namespace_id, filters={"id": entity_id}, limit=1)
+        return results[0] if results else None
+
+    def patch_entity_metadata(self, namespace_id: str, entity_id: str, metadata_updates: dict) -> RecordedEntity:
+        """Merge metadata_updates into an entity without touching content or ID."""
+        return self.backend.update_entity_metadata(namespace_id, entity_id, metadata_updates)
+
+    def get_public_entities(
+        self,
+        query: str | None = None,
+        entity_type: str | None = None,
+        limit: int = 100,
+        exclude_namespace_ids: list[str] | None = None,
+    ) -> list[RecordedEntity]:
+        """Search for public entities across all namespaces.
+
+        Args:
+            query: Optional semantic search query.
+            entity_type: Optional type filter (e.g. 'guideline').
+            limit: Maximum total results to return.
+            exclude_namespace_ids: Namespace IDs to skip (e.g. the caller's own
+                namespace whose entities are already returned via a private search).
+        """
+        if limit <= 0:
+            return []
+
+        excluded = set(exclude_namespace_ids or [])
+        all_results: list[RecordedEntity] = []
+        for ns in self.search_namespaces(limit=1000):
+            if ns.id in excluded:
+                continue
+            remaining = limit - len(all_results)
+            if remaining <= 0:
+                break
+            filters: dict = {"metadata.visibility": "public"}
+            if entity_type:
+                filters["type"] = entity_type
+            all_results.extend(self.search_entities(ns.id, query=query, filters=filters, limit=remaining))
+        return all_results
+
     def cluster_guidelines(self, namespace_id: str, threshold: float | None = None, limit: int = 10000) -> list[list[RecordedEntity]]:
         """Cluster guideline entities by task description similarity.
 

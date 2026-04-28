@@ -17,7 +17,13 @@ class Namespace(BaseModel):
 
 
 class Entity(BaseModel):
-    """Basic data stored in the DB"""
+    """Basic data stored in the DB.
+
+    Sharing metadata conventions (all optional; existing entities without them are unaffected):
+      - owner_id (str | None): User ID who created or last published the entity.
+      - visibility ("private" | "public"): Controls cross-namespace access. Defaults to "private".
+      - published_at (ISO-8601 str | None): Timestamp of the most recent publish_entity call.
+    """
 
     content: str | list | dict = Field(description="Searchable text or structured data.")
     type: str = Field(description="The type of the entity.")
