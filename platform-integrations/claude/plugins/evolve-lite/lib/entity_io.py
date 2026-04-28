@@ -248,11 +248,16 @@ def _parse_frontmatter_only(path):
                 return {}
 
             frontmatter_lines = []
+            found_closing = False
             for line in handle:
                 if line.strip() == "---":
+                    found_closing = True
                     break
                 frontmatter_lines.append(line)
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        return {}
+
+    if not found_closing:
         return {}
 
     return _parse_frontmatter_lines(frontmatter_lines)

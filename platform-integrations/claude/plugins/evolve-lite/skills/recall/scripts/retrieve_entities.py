@@ -41,11 +41,15 @@ These stored entities are available for this repo. Read only the files whose tri
 def main():
     try:
         input_data = json.load(sys.stdin)
-        log(f"Input keys: {list(input_data.keys())}")
     except json.JSONDecodeError as e:
         log(f"Failed to parse JSON input: {e}")
         return
 
+    if not isinstance(input_data, dict):
+        log(f"Expected JSON object, got {type(input_data).__name__}")
+        return
+
+    log(f"Input keys: {list(input_data.keys())}")
     prompt = input_data.get("prompt", "")
     if prompt:
         log(f"Prompt preview: {prompt[:120]}")
