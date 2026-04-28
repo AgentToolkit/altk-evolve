@@ -156,22 +156,6 @@ Evolve uses a layered identity model. Understanding how each layer maps to physi
 | **Filter mechanism** | Python dict match in `_entity_matches_filter` | `metadata @> '{"user_id": "..."}'::jsonb` | `metadata["user_id"] == "..."` expression |
 | **Cross-namespace query** | Loop over namespace files | Loop over `ns_*` tables | Loop over collections |
 
-### Full Backend Comparison
-
-| Dimension | Filesystem | PostgreSQL (pgvector) | Milvus |
-|---|---|---|---|
-| **Namespace (org)** | One JSON file per namespace: `{data_dir}/{namespace_id}.json` | One table per namespace: `ns_{namespace_id}` + SQLite namespace registry | One Milvus collection per namespace: `{namespace_id}` + SQLite namespace registry |
-| **Namespace isolation** | Physical — separate files | Physical — separate tables | Physical — separate collections |
-| **Entity columns** | `id`, `type`, `content`, `created_at`, `metadata` (JSON blob) | `id` (BIGSERIAL), `type` (VARCHAR), `content` (TEXT), `created_at` (BIGINT), `embedding` (vector), `metadata` (JSONB) | `id` (INT64), `type` (VARCHAR), `content` (VARCHAR), `created_at` (INT64), `embedding` (FLOAT_VECTOR), `metadata` (JSON) |
-| **user_id** | Metadata only — `metadata["user_id"]` | Metadata only — `metadata->>'user_id'` (in JSONB) | Metadata only — `metadata["user_id"]` |
-| **session_id** | Metadata only — `metadata["session_id"]` | Metadata only — `metadata->>'session_id'` (in JSONB) | Metadata only — `metadata["session_id"]` |
-| **owner_id** | Metadata only — `metadata["owner_id"]` | Metadata only — `metadata->>'owner_id'` (in JSONB) | Metadata only — `metadata["owner_id"]` |
-| **user_id filtering** | In-memory loop: `metadata.get("user_id") == value` | JSONB containment: `metadata @> '{"user_id": "..."}'::jsonb` | Expression filter: `metadata["user_id"] == "..."` |
-| **session_id filtering** | Same in-memory loop | Same JSONB containment | Same expression filter |
-| **Indexing on user_id** | None (full scan) | None (JSONB GIN index possible but not created) | None (no dedicated index) |
-| **Indexing on session_id** | None (full scan) | None | None |
-| **Search (semantic)** | Case-insensitive substring match (no embeddings) | pgvector cosine similarity on `embedding` column | Milvus ANN search on `embedding` field |
-
 ### Key Implications
 
 1. **Namespace is the only hard boundary.** Data in different namespaces is physically separated across all backends. There is no way to accidentally query across namespaces without explicitly iterating over them.
