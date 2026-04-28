@@ -41,20 +41,21 @@ def run_script(script, project_dir, args=None, evolve_dir=None, stdin_data=None,
 @pytest.mark.parametrize(
     "config_text",
     [
-        "subscriptions:\n  - name: 123\n    remote: git@github.com:x/y.git\n    branch: main\n",
-        "subscriptions:\n  - name: alice\n    remote: git@github.com:x/y.git\n    branch: 123\n",
-        'subscriptions:\n  - name: "   "\n    remote: git@github.com:x/y.git\n    branch: main\n',
-        'subscriptions:\n  - name: alice\n    remote: git@github.com:x/y.git\n    branch: "   "\n',
+        "repos:\n  - name: 123\n    scope: read\n    remote: git@github.com:x/y.git\n    branch: main\n",
+        'repos:\n  - name: "   "\n    scope: read\n    remote: git@github.com:x/y.git\n    branch: main\n',
+        "repos:\n  - name: alice\n    scope: read\n    branch: main\n",  # missing remote
     ],
 )
-def test_sync_skips_malformed_subscription_entries(temp_project_dir, sync_script, platform_name, config_text):
+def test_sync_handles_malformed_repo_entries(temp_project_dir, sync_script, platform_name, config_text):
+    """The sync script must never crash on a malformed config entry; invalid
+    entries are silently dropped by ``normalize_repos`` so sync falls through
+    to the "no repos configured" branch."""
     evolve_dir = temp_project_dir / ".evolve"
     cfg_path = temp_project_dir / "evolve.config.yaml"
     cfg_path.write_text(config_text)
 
     result = run_script(sync_script, temp_project_dir, evolve_dir=evolve_dir)
     assert result.returncode == 0
-    assert "skipped" in result.stdout
     assert "Traceback" not in result.stderr
     assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
 
@@ -141,9 +142,11 @@ class TestSync:
         assert "sync" in actions
 
     def test_sync_preserves_symlinks_in_clone(self, subscribed_project):
+        """Sync just keeps the clone in sync with the remote — symlinks land on
+        disk as-is. Filtering symlinked entities is the recall script's job
+        (see retrieve_entities.py) and is covered by the recall tests."""
         p = subscribed_project
         lr = p["local_repo"]
-        # Create a real file and a symlink pointing at it in the subscribed clone
         real_file = lr["work"] / "guideline" / "real.md"
         real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
         symlink_file = lr["work"] / "guideline" / "link.md"
@@ -162,7 +165,8 @@ class TestSync:
         )
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
         mirrored = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline"
-        assert (mirrored / "link.md").exists()
+        assert (mirrored / "real.md").exists()
+        assert (mirrored / "link.md").is_symlink()
 
         env = {**os.environ, "EVOLVE_DIR": str(p["evolve_dir"])}
         result = subprocess.run(
@@ -183,16 +187,16 @@ class TestSync:
         evolve_dir = temp_project_dir / ".evolve"
         # Write config manually with an unsafe name
         cfg_path = temp_project_dir / "evolve.config.yaml"
-        cfg_path.write_text("subscriptions:\n  - name: ../outside\n    remote: git@github.com:x/y.git\n    branch: main\n")
+        cfg_path.write_text("repos:\n  - name: ../evil\n    scope: read\n    remote: git@github.com:x/y.git\n    branch: main\n")
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
         assert "invalid subscription name" in result.stdout
-        assert not (evolve_dir / "entities" / "outside").exists()
+        assert not (evolve_dir / "entities" / "evil").exists()
 
     def test_manual_run_ignores_on_session_start_false(self, subscribed_project):
         p = subscribed_project
         cfg_path = p["project_dir"] / "evolve.config.yaml"
-        cfg_path.write_text("sync:\n  on_session_start: false\nsubscriptions:\n  - name: alice\n    remote: x\n    branch: main\n")
+        cfg_path.write_text("sync:\n  on_session_start: false\nrepos:\n  - name: alice\n    scope: read\n    remote: x\n    branch: main\n")
         # Manual run (no --quiet) must still execute even with on_session_start: false
         result = run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
         assert result.returncode == 0

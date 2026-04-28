@@ -8,7 +8,7 @@ A Bob integration that helps you learn from conversations by automatically extra
 
 - **Manual Learning**: Use `evolve-lite:learn` to extract and save guidelines from conversations
 - **Manual Retrieval**: Use `evolve-lite:recall` to retrieve and apply stored guidelines
-- **Guideline Sharing**: Publish your guidelines and subscribe to others' via Git repositories
+- **Guideline Sharing**: Subscribe to read-scope repos and publish to write-scope repos via Git
 
 ## Installation
 
@@ -27,17 +27,21 @@ This installs:
 
 ### Guideline Storage
 
-Guidelines are stored as individual markdown files in `.evolve/entities/`, organized by source:
+Guidelines are stored as individual markdown files in `.evolve/entities/`,
+organized by source. Both read-scope subscriptions and write-scope publish
+targets live under `entities/subscribed/{name}/`:
 
 ```text
 .evolve/entities/
-  guideline/                    # Private guidelines
+  guideline/                            # Private guidelines
     use-context-managers.md
-  public/                       # Your published guidelines
-    best-practice.md
   subscribed/
-    alice/                      # Guidelines from alice
-      her-guideline.md
+    memory/                             # write-scope clone (publishes land here)
+      guideline/
+        my-published-guideline.md
+    alice/                              # read-scope clone
+      guideline/
+        her-guideline.md
 ```
 
 Each file uses markdown with YAML frontmatter:
@@ -58,79 +62,111 @@ Context managers ensure proper resource cleanup
 
 ## Sharing Guidelines
 
-Evolve Lite supports sharing guidelines between users via public Git repositories. You can publish your own guidelines so others can subscribe to them, and subscribe to guidelines published by others.
+Evolve Lite treats shared guidelines as multi-reader / multi-writer git
+databases. A single unified `repos:` list in `evolve.config.yaml`
+describes every external guideline repo; each entry has a `scope` of
+`read` (subscribe only) or `write` (publish target that is also pulled
+on sync).
 
 ### Setup
 
-Sharing requires an `evolve.config.yaml` at the project root. If it doesn't exist, the subscribe or publish skills will prompt you to create one. Minimal structure:
+Sharing requires `evolve.config.yaml` at the project root. If it doesn't
+exist, the subscribe or publish skills will prompt you to create one.
+Minimal structure:
 
 ```yaml
 identity:
   user: yourname          # used to stamp ownership on published guidelines
-public_repo:
-  remote: git@github.com:yourname/evolve-guidelines.git
-  branch: main
-subscriptions: []
+
+repos:
+  - name: memory
+    scope: write
+    remote: git@github.com:yourname/evolve-memory.git
+    branch: main
+    notes: public memory for my open-source projects
+  - name: team
+    scope: read
+    remote: git@github.com:myorg/evolve-guidelines.git
+    branch: main
+
+sync:
+  on_session_start: false
 ```
 
-The `.evolve/` directory is kept out of version control — the skills automatically add it to `.gitignore`.
+The `.evolve/` directory is kept out of version control — the skills
+automatically add it to `.gitignore`.
 
-### Publishing Guidelines
+### Subscribing to a Repo
 
-Use `evolve-lite:publish` to share one or more of your local guidelines with others:
-
-1. The skill lists files in `.evolve/entities/guideline/`
-2. You pick which ones to publish
-3. Each selected file is moved to `.evolve/public/guideline/`, stamped with your username as the owner, committed, and pushed to your `public_repo.remote`
-
-Others can then subscribe using that remote URL.
-
-### Subscribing to Guidelines
-
-Use `evolve-lite:subscribe` to pull in guidelines from another user's public repo:
+Use `evolve-lite:subscribe` to add either a read-scope subscription or a
+write-scope publish target:
 
 ```text
 evolve-lite:subscribe
 > Remote URL: git@github.com:alice/evolve-guidelines.git
 > Short name: alice
+> Scope: read
 ```
 
-The repo is cloned directly into `.evolve/entities/subscribed/alice/` (this directory serves as both the git clone and the recall mirror).
+The repo is cloned directly into `.evolve/entities/subscribed/{name}/`
+(this directory serves as both the git clone and the recall mirror).
 
-### Syncing Subscriptions
+### Publishing Guidelines
 
-Use `evolve-lite:sync` to pull the latest changes from all subscribed repos:
+Use `evolve-lite:publish` to share local guidelines via a **write-scope** repo:
+
+1. The skill picks (or asks about) the write-scope target repo
+2. Lists files in `.evolve/entities/guideline/`
+3. You pick which ones to publish
+4. Each selected file is moved into the write-scope clone at
+   `.evolve/entities/subscribed/{repo}/guideline/`, stamped with your
+   username, committed, and pushed to the remote
+
+Because the publish target is also a subscribed repo, your next sync
+pulls in anything other writers have pushed to the same remote.
+
+### Syncing Repos
+
+Use `evolve-lite:sync` to pull the latest changes from every configured
+repo:
 
 ```text
 evolve-lite:sync
-> Synced 2 repo(s): alice (+2 added, 0 updated, 0 removed), bob (+0 added, 1 updated, 0 removed)
+> Synced 2 repo(s): memory [write] (+0 added, 1 updated, 0 removed), alice [read] (+2 added, 0 updated, 0 removed)
 ```
+
+Read-scope repos use `git fetch` + `git reset --hard`. Write-scope repos
+use `git fetch` + `git rebase` so any unpushed local publish commits are
+preserved.
 
 ### Unsubscribing
 
-Use `evolve-lite:unsubscribe` to remove a subscription and delete its locally cloned files:
+Use `evolve-lite:unsubscribe` to remove a configured repo and delete
+its locally cloned files:
 
 ```text
 evolve-lite:unsubscribe
-> Which subscription would you like to remove?
-> 1. alice
-> 2. bob
+> Which repo would you like to remove?
+> 1. memory [write]
+> 2. alice [read]
 ```
 
 The skill confirms before deleting `.evolve/entities/subscribed/{name}/`.
+Removing a write-scope repo will also discard any unpushed local
+publish commits, so the skill warns first.
 
 ### Sharing Storage Layout
 
 ```text
 .evolve/
-  public/                     # git repo pushed to your public remote
-    guideline/
-      guideline-name.md       # owner-stamped guideline
   entities/
-    guideline/                # your private guidelines
+    guideline/                      # your private guidelines
       my-guideline.md
     subscribed/
-      alice/                  # git clone (also serves as recall mirror)
+      memory/                       # write-scope clone (publishes land here)
+        guideline/
+          my-published-guideline.md
+      alice/                        # read-scope clone (also serves as recall mirror)
         guideline/
           her-guideline.md
 ```
@@ -147,38 +183,38 @@ Manually invoke to extract guidelines from the current conversation:
 ### `evolve-lite:recall`
 
 Manually invoke to retrieve and display stored guidelines:
-- Loads guidelines from private, public, and subscribed sources
+- Loads guidelines from private and subscribed sources
 - Formats and displays them for your review
 - Annotates subscribed guidelines with their source
 
 ### `evolve-lite:publish`
 
-Publish private guidelines to your public repository:
+Publish private guidelines to a write-scope repo:
 - Lists available private guidelines
-- Moves selected guidelines to `.evolve/public/`
-- Stamps with owner and published_at metadata
-- Commits and pushes to your public remote
+- Moves selected guidelines into the write-scope clone at
+  `.evolve/entities/subscribed/{repo}/guideline/`
+- Stamps with `owner`, `published_at`, and `source` metadata
+- Commits and pushes to the configured remote
 
 ### `evolve-lite:subscribe`
 
-Subscribe to another user's public guidelines:
-- Clones their public repository
-- Mirrors guidelines to `.evolve/entities/subscribed/`
-- Adds subscription to config
+Add a configured repo to the unified `repos:` list:
+- Clones the remote into `.evolve/entities/subscribed/{name}/`
+- Adds an entry with `scope: read` or `scope: write` to config
 
 ### `evolve-lite:sync`
 
-Sync all subscribed repositories:
-- Pulls latest changes from each subscription
-- Updates mirrored guidelines
+Sync every configured repo:
+- Read-scope: fetch + reset --hard (clobbers any local edits)
+- Write-scope: fetch + rebase (preserves unpushed local publishes)
 - Reports changes (added, updated, removed)
 
 ### `evolve-lite:unsubscribe`
 
-Remove a subscription:
-- Lists current subscriptions
-- Deletes selected subscription's local files
-- Removes from config
+Remove a configured repo:
+- Lists current repos with their scope and notes
+- Deletes the local clone at `.evolve/entities/subscribed/{name}/`
+- Removes the entry from config
 
 ## Environment Variables
 

@@ -1,76 +1,76 @@
 #!/usr/bin/env python3
-"""Remove a subscription and delete the locally cloned directory.
+"""Remove a repo from the unified ``repos`` list and delete its local clone.
+
+Works for both read-scope (subscribed) and write-scope (publish target) repos.
 
 Usage:
-  --list          Print subscriptions as a JSON array and exit.
-  --name {name}   Remove named subscription from config and delete local dir.
+  --list          Print configured repos as a JSON array and exit.
+  --name {name}   Remove the named repo from config and delete its local dir.
 """
 
 import argparse
 import json
 import os
-import re
 import shutil
 import sys
 from pathlib import Path
 
 # Add lib to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from config import load_config, save_config
-from audit import append as audit_append
-
-_SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+from config import (  # noqa: E402
+    is_valid_repo_name,
+    load_config,
+    normalize_repos,
+    save_config,
+    set_repos,
+)
+from audit import append as audit_append  # noqa: E402
 
 
 def main():
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--list", action="store_true", help="Print subscriptions as JSON array")
-    group.add_argument("--name", help="Name of subscription to remove")
+    group.add_argument("--list", action="store_true", help="Print repos as JSON array")
+    group.add_argument("--name", help="Name of repo to remove")
     args = parser.parse_args()
 
     project_root = "."
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
 
     cfg = load_config(project_root)
-    subscriptions = cfg.get("subscriptions", [])
-    if not isinstance(subscriptions, list):
-        subscriptions = []
+    repos = normalize_repos(cfg)
 
     if args.list:
-        print(json.dumps(subscriptions, indent=2))
+        print(json.dumps(repos, indent=2))
         return
 
-    # --name: remove the named subscription
     name = args.name
-    if not _SAFE_NAME.match(name):
+
+    if not is_valid_repo_name(name):
         print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
         sys.exit(1)
-    new_subs = [s for s in subscriptions if not (isinstance(s, dict) and s.get("name") == name)]
 
-    if len(new_subs) == len(subscriptions):
+    subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
+    dest = (evolve_dir / "entities" / "subscribed" / name).resolve()
+    if not dest.is_relative_to(subscribed_base) or dest == subscribed_base:
+        print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
+        sys.exit(1)
+
+    new_repos = [r for r in repos if r.get("name") != name]
+
+    if len(new_repos) == len(repos):
         print(f"Error: subscription '{name}' not found.", file=sys.stderr)
         sys.exit(1)
 
-    # Delete local clone
-    dest = evolve_dir / "entities" / "subscribed" / name
     if dest.exists():
         shutil.rmtree(dest)
         print(f"Deleted {dest}")
     else:
         print(f"Warning: {dest} did not exist.", file=sys.stderr)
 
-    # Delete mirrored entities so they stop appearing in recall
-    entities_dest = evolve_dir / "entities" / "subscribed" / name
-    if entities_dest.exists():
-        shutil.rmtree(entities_dest)
-        print(f"Deleted {entities_dest}")
-
-    # Update config
-    cfg["subscriptions"] = new_subs
+    set_repos(cfg, new_repos)
     save_config(cfg, project_root)
 
-    # Audit
     identity = cfg.get("identity", {})
     actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
     audit_append(

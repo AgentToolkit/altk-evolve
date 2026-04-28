@@ -119,6 +119,7 @@ def main():
     entities = []
     for entities_dir in recall_dirs:
         entities.extend(load_entities_with_source(entities_dir))
+
     if not entities:
         log("No entities found")
         return

@@ -1,17 +1,20 @@
 ---
 name: unsubscribe
-description: Remove a subscription and delete the locally synced guidelines.
+description: Remove a repo from the unified repos list and delete its local clone.
 ---
 
-# Unsubscribe from Guidelines
+# Remove a Repo
 
 ## Overview
 
-This skill removes a subscription and deletes both the local clone and mirrored recall entities for that subscription.
+Remove a configured repo (any scope) from `evolve.config.yaml` and delete
+its local clone at `.evolve/entities/subscribed/{name}/`. Warn the user
+before removing a write-scope repo since any unpushed local publish
+commits will be lost.
 
 ## Workflow
 
-### Step 1: List subscriptions
+### Step 1: List repos
 
 Run:
 
@@ -19,14 +22,13 @@ Run:
 python3 plugins/evolve-lite/skills/unsubscribe/scripts/unsubscribe.py --list
 ```
 
-Show the subscriptions to the user and ask which one to remove.
+Show the repos to the user (including `scope` and `notes`) and ask which
+one to remove.
 
 ### Step 2: Confirm
 
-Confirm that removing the subscription will delete:
-
-- `.evolve/subscribed/{name}/`
-- `.evolve/entities/subscribed/{name}/`
+Confirm deletion of `.evolve/entities/subscribed/{name}/`. If the repo has
+`scope: write`, add a warning that unpushed local publishes will be lost.
 
 ### Step 3: Run unsubscribe script
 
@@ -36,4 +38,4 @@ python3 plugins/evolve-lite/skills/unsubscribe/scripts/unsubscribe.py --name "{n
 
 ### Step 4: Confirm
 
-Tell the user the subscription was removed.
+Tell the user the repo was removed.

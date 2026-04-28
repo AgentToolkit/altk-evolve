@@ -1,30 +1,44 @@
 ---
 name: subscribe
-description: Subscribe to another user's public guidelines repo.
+description: Add a shared guidelines repo (read-scope subscription or write-scope publish target) to the unified repos list.
 ---
 
-# Subscribe to Guidelines
+# Subscribe to a Shared Repo
 
 ## Overview
 
-This skill subscribes to another user's public guidelines repository. Their guidelines will be cloned locally and made available in your recall context.
+Configured guidelines repos are multi-reader / multi-writer git databases,
+described in a single unified list in `evolve.config.yaml`:
+
+```yaml
+repos:
+  - name: memory
+    scope: write
+    remote: git@github.com:alice/evolve.git
+    branch: main
+    notes: public memory for foobar project
+  - name: org-memory
+    scope: read
+    remote: git@github.com:acme/org-memory.git
+    branch: main
+    notes: private memory shared only within my org
+```
+
+- `scope: read` — download-only. Synced on every run.
+- `scope: write` — publish target. Synced on every run too, so you see
+  what you have already published and anything others have pushed.
 
 ## Workflow
 
 ### Step 1: Bootstrap config if missing
 
-Check whether `evolve.config.yaml` exists in the project root.
-
-If it does **not** exist, ask the user:
-
-> "No `evolve.config.yaml` found. What username would you like to use? (e.g. `vatche`)"
-
-Then create `evolve.config.yaml` with this minimal content:
+If `evolve.config.yaml` does not exist, ask the user for a username and
+create:
 
 ```yaml
 identity:
   user: {username}
-subscriptions: []
+repos: []
 sync:
   on_session_start: false
 ```
@@ -37,39 +51,34 @@ grep -qxF '.evolve/' .gitignore 2>/dev/null || echo '.evolve/' >> .gitignore
 
 ### Step 2: Gather details
 
-Ask the user:
+Ask the user for:
 
-> "What is the remote URL for the guidelines repo? (e.g. `git@github.com:alice/evolve-guidelines.git`)"
+- the remote URL for the guidelines repo
+- a short local name such as `alice`
+- the scope: `read` (default, subscribe-only) or `write` (also a publish target)
+- an optional note
 
-Then ask:
-
-> "What short name would you like for this subscription? (e.g. `alice`)"
-
-### Step 3: Check for duplicates
-
-Read `evolve.config.yaml` from the project root. If the name already exists in the `subscriptions` list, tell the user:
-
-> "A subscription named '{name}' already exists. Please unsubscribe first or choose a different name."
-
-Then stop.
-
-### Step 4: Run subscribe script
+### Step 3: Run subscribe script
 
 ```bash
 python3 scripts/subscribe.py \
   --name "{name}" \
   --remote "{remote}" \
-  --branch main
+  --branch main \
+  --scope "{scope}" \
+  --notes "{notes}"
 ```
 
-### Step 5: Confirm
+### Step 4: Confirm
 
-Tell the user:
-
-> "Subscribed to {name}. Run evolve-lite:sync to pull their guidelines."
+Tell the user the repo was added and they can run `evolve-lite:sync`
+immediately if they want to pull updates now.
 
 ## Notes
 
-- Subscribed repos are cloned to `.evolve/subscribed/{name}/`
-- After subscribing, run `evolve-lite:sync` to mirror entities to `.evolve/entities/subscribed/{name}/`
-- Subscribed entities will appear in recall with `[from: {name}]` annotations
+- The repo is cloned directly into `.evolve/entities/subscribed/{name}/`,
+  which doubles as the recall mirror
+- Subscribed entities will appear in recall with `[from: {name}]`
+  annotations
+- Read-scope repos use a shallow clone; write-scope repos use a full
+  clone so publish commits can be rebased and pushed cleanly

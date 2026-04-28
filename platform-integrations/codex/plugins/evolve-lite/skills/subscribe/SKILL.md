@@ -1,26 +1,44 @@
 ---
 name: subscribe
-description: Subscribe to another user's public guidelines repo.
+description: Add a shared guidelines repo (read-scope subscription or write-scope publish target) to the unified repos list.
 ---
 
-# Subscribe to Guidelines
+# Subscribe to a Shared Repo
 
 ## Overview
 
-This skill subscribes to another user's public guidelines repository. Their guidelines are cloned locally and become available in recall after sync.
+Configured guidelines repos are multi-reader / multi-writer git databases,
+described in a single unified list in `evolve.config.yaml`:
+
+```yaml
+repos:
+  - name: memory
+    scope: write
+    remote: git@github.com:alice/evolve.git
+    branch: main
+    notes: public memory for foobar project
+  - name: org-memory
+    scope: read
+    remote: git@github.com:acme/org-memory.git
+    branch: main
+    notes: private memory shared only within my org
+```
+
+- `scope: read` — download-only. Synced on every run.
+- `scope: write` — publish target. Synced on every run too, so you see
+  what you have already published and anything others have pushed.
 
 ## Workflow
 
 ### Step 1: Bootstrap config if missing
 
-Check whether `evolve.config.yaml` exists in the project root.
-
-If it does not exist, ask the user for a username and create:
+If `evolve.config.yaml` does not exist, ask the user for a username and
+create:
 
 ```yaml
 identity:
   user: {username}
-subscriptions: []
+repos: []
 sync:
   on_session_start: true
 ```
@@ -37,6 +55,8 @@ Ask the user for:
 
 - the remote URL for the guidelines repo
 - a short local name such as `alice`
+- the scope: `read` (default, subscribe-only) or `write` (also a publish target)
+- an optional note
 
 ### Step 3: Run subscribe script
 
@@ -44,9 +64,12 @@ Ask the user for:
 python3 plugins/evolve-lite/skills/subscribe/scripts/subscribe.py \
   --name "{name}" \
   --remote "{remote}" \
-  --branch main
+  --branch main \
+  --scope "{scope}" \
+  --notes "{notes}"
 ```
 
 ### Step 4: Confirm
 
-Tell the user the subscription was added and they can run `evolve-lite:sync` immediately if they want to pull updates now.
+Tell the user the repo was added and they can run `evolve-lite:sync`
+immediately if they want to pull updates now.

@@ -27,7 +27,7 @@ Before any non-trivial local work, you must complete the recall workflow below. 
 
 Do not proceed to other analysis or tool use until all steps below are complete.
 
-1. Inspect `.evolve/entities/` and `.evolve/public/` for guidance relevant to the current task.
+1. Inspect `.evolve/entities/` for guidance relevant to the current task.
 2. Read each matching entity file that appears relevant.
 3. Summarize the applicable guidance in your own words before proceeding.
 4. If no relevant entities exist, state that explicitly before proceeding.
@@ -36,12 +36,12 @@ Do not proceed to other analysis or tool use until all steps below are complete.
 
 Before moving on, produce an explicit completion note in your reasoning or user update using one of these forms:
 
-- `Recall complete: searched .evolve/entities/ and .evolve/public/, read <files>, applicable guidance: <summary>`
-- `Recall complete: searched .evolve/entities/ and .evolve/public/, no relevant entities found`
+- `Recall complete: searched .evolve/entities/, read <files>, applicable guidance: <summary>`
+- `Recall complete: searched .evolve/entities/, no relevant entities found`
 
 ### Minimum Acceptable Procedure
 
-1. List or search files under `.evolve/entities/` and `.evolve/public/`.
+1. List or search files under `.evolve/entities/`.
 2. Identify candidate entities relevant to the task.
 3. Open and read those entity files.
 4. Summarize what applies, or state that nothing applies.
@@ -51,7 +51,7 @@ Before moving on, produce an explicit completion note in your reasoning or user 
 The skill is not complete if any of the following are true:
 
 - You only read this `SKILL.md`
-- You did not inspect `.evolve/entities/` and `.evolve/public/`
+- You did not inspect `.evolve/entities/`
 - You did not read the relevant entity files
 - You proceeded without stating whether guidance was found
 
@@ -59,26 +59,25 @@ The skill is not complete if any of the following are true:
 
 1. If Codex hooks are enabled in `~/.codex/config.toml` with `[features] codex_hooks = true`, the Codex `UserPromptSubmit` hook runs before the prompt is sent.
 2. The helper script reads the prompt JSON from stdin.
-3. It loads stored entities from `.evolve/entities/` and `.evolve/public/`.
+3. It loads stored entities from `.evolve/entities/` (covers private,
+   read-scope subscriptions, and write-scope publish targets which all
+   live under `entities/subscribed/{repo}/`).
 4. It prints formatted guidance to stdout.
 5. Codex adds that text as extra developer context for the turn.
 
 ## Entities Storage
-
-Entities are loaded from two locations:
 
 ```text
 .evolve/entities/
   guideline/
     use-context-managers-for-file-operations.md   <- private
   subscribed/
-    alice/
+    memory/                                       <- write-scope clone (publishes land here)
+      guideline/
+        my-published-guideline.md
+    alice/                                        <- read-scope clone
       guideline/
         alice-guideline.md                        <- annotated [from: alice]
-
-.evolve/public/
-  guideline/
-    published-guideline.md                        <- your own public, no annotation
 ```
 
 Each file uses markdown with YAML frontmatter:

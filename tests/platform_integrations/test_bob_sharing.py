@@ -1,5 +1,6 @@
 """Tests for Bob's entity sharing functionality (subscribe, unsubscribe, sync, publish)."""
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -7,8 +8,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
-import importlib.util
 
 
 def _load_claude_config_module():
@@ -40,7 +39,6 @@ def run_script(script, project_dir, args=None, evolve_dir=None, stdin_data=None,
     shared modules (config, audit, entity_io) without requiring a symlink in the repo.
     """
     env = {**os.environ}
-    # Inject Claude's lib into PYTHONPATH for imports
     env["PYTHONPATH"] = str(_CLAUDE_LIB) + os.pathsep + env.get("PYTHONPATH", "")
     if evolve_dir:
         env["EVOLVE_DIR"] = str(evolve_dir)
@@ -74,7 +72,7 @@ class TestBobSubscribe:
         assert (evolve_dir / "entities" / "subscribed" / "alice").is_dir()
         assert (evolve_dir / "entities" / "subscribed" / "alice" / ".git").exists()
 
-    def test_updates_config_with_subscription(self, temp_project_dir, local_repo):
+    def test_updates_config_with_repo_entry(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
         run_script(
             SUBSCRIBE_SCRIPT,
@@ -83,11 +81,24 @@ class TestBobSubscribe:
             evolve_dir=evolve_dir,
         )
         cfg = cfg_module.load_config(str(temp_project_dir))
-        subs = cfg.get("subscriptions", [])
-        assert len(subs) == 1
-        assert subs[0]["name"] == "alice"
-        assert subs[0]["branch"] == "main"
-        assert str(local_repo["bare"]) in subs[0]["remote"]
+        repos = cfg_module.normalize_repos(cfg)
+        assert len(repos) == 1
+        assert repos[0]["name"] == "alice"
+        assert repos[0]["scope"] == "read"
+        assert repos[0]["branch"] == "main"
+        assert str(local_repo["bare"]) in repos[0]["remote"]
+
+    def test_write_scope_recorded_in_config(self, temp_project_dir, local_repo):
+        evolve_dir = temp_project_dir / ".evolve"
+        run_script(
+            SUBSCRIBE_SCRIPT,
+            temp_project_dir,
+            ["--name", "team", "--remote", str(local_repo["bare"]), "--branch", "main", "--scope", "write"],
+            evolve_dir=evolve_dir,
+        )
+        cfg = cfg_module.load_config(str(temp_project_dir))
+        repos = cfg_module.normalize_repos(cfg)
+        assert repos[0]["scope"] == "write"
 
     def test_writes_audit_log(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -99,13 +110,12 @@ class TestBobSubscribe:
         )
         log_path = temp_project_dir / ".evolve" / "audit.log"
         assert log_path.exists()
-        # Parse JSONL format (one JSON object per line)
         entries = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
         actions = [e["action"] for e in entries]
         assert "subscribe" in actions
-        # Find the subscribe entry and verify its details
         subscribe_entry = next(e for e in entries if e["action"] == "subscribe")
         assert subscribe_entry["name"] == "alice"
+        assert subscribe_entry["scope"] == "read"
 
     def test_fails_on_duplicate_name(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -141,7 +151,7 @@ class TestBobSubscribe:
         assert result.returncode != 0
         assert "already exists" in result.stderr
         cfg = cfg_module.load_config(str(temp_project_dir))
-        assert cfg.get("subscriptions", []) == []
+        assert cfg_module.normalize_repos(cfg) == []
 
     def test_rejects_empty_or_dot_name(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
@@ -177,12 +187,12 @@ class TestBobSubscribe:
 class TestBobUnsubscribe:
     """Tests for Bob's unsubscribe.py script."""
 
-    def _subscribe(self, temp_project_dir, local_repo, name="alice"):
+    def _subscribe(self, temp_project_dir, local_repo, name="alice", scope="read"):
         evolve_dir = temp_project_dir / ".evolve"
         run_script(
             SUBSCRIBE_SCRIPT,
             temp_project_dir,
-            ["--name", name, "--remote", str(local_repo["bare"]), "--branch", "main"],
+            ["--name", name, "--remote", str(local_repo["bare"]), "--branch", "main", "--scope", scope],
             evolve_dir=evolve_dir,
         )
         return evolve_dir
@@ -192,18 +202,19 @@ class TestBobUnsubscribe:
         run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--name", "alice"], evolve_dir=evolve_dir)
         assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
 
-    def test_removes_subscription_from_config(self, temp_project_dir, local_repo):
+    def test_removes_repo_from_config(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
         run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--name", "alice"], evolve_dir=evolve_dir)
         cfg = cfg_module.load_config(str(temp_project_dir))
-        assert cfg.get("subscriptions", []) == []
+        assert cfg_module.normalize_repos(cfg) == []
 
-    def test_list_flag_prints_subscriptions_as_json(self, temp_project_dir, local_repo):
+    def test_list_flag_prints_repos_as_json(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
         result = run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--list"], evolve_dir=evolve_dir)
         data = json.loads(result.stdout)
         assert isinstance(data, list)
         assert data[0]["name"] == "alice"
+        assert data[0]["scope"] == "read"
 
     def test_fails_when_name_not_found(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
@@ -219,8 +230,6 @@ class TestBobUnsubscribe:
 
     def test_removes_mirrored_entities(self, temp_project_dir, local_repo):
         evolve_dir = self._subscribe(temp_project_dir, local_repo)
-        # Simulate mirrored entities (sync would create these)
-        # The subscription already created the directory, so just add a file to it
         mirrored = evolve_dir / "entities" / "subscribed" / "alice"
         assert mirrored.exists(), "Subscription should have created this directory"
         (mirrored / "tip.md").write_text("---\ntype: guideline\n---\n\nA tip.\n")
@@ -228,7 +237,7 @@ class TestBobUnsubscribe:
         run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--name", "alice"], evolve_dir=evolve_dir)
         assert not mirrored.exists()
 
-    def test_list_empty_when_no_subscriptions(self, temp_project_dir):
+    def test_list_empty_when_no_repos(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         result = run_script(UNSUBSCRIBE_SCRIPT, temp_project_dir, ["--list"], evolve_dir=evolve_dir)
         data = json.loads(result.stdout)
@@ -254,7 +263,7 @@ class TestBobUnsubscribe:
 
 @pytest.fixture
 def subscribed_project(temp_project_dir, local_repo):
-    """A project already subscribed to local_repo."""
+    """A project already subscribed to local_repo (read-scope)."""
     evolve_dir = temp_project_dir / ".evolve"
     run_script(
         SUBSCRIBE_SCRIPT,
@@ -283,15 +292,12 @@ class TestBobSync:
         assert "Always write tests." in guideline.read_text()
 
     def test_picks_up_new_entity_after_push(self, subscribed_project):
-        """After a new entity is pushed to the remote, a second sync picks it up."""
         p = subscribed_project
         lr = p["local_repo"]
         git_env = lr["env"]
 
-        # First sync — brings down the initial entity
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
 
-        # Push a new entity to the remote via the working clone
         new_entity = lr["work"] / "guideline" / "tip-two.md"
         new_entity.write_text("---\ntype: guideline\n---\n\nDelete dead code promptly.\n")
         subprocess.run(["git", "-C", str(lr["work"]), "add", "."], check=True, env=git_env)
@@ -306,7 +312,6 @@ class TestBobSync:
             env=git_env,
         )
 
-        # Second sync — should pick up tip-two
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
 
         mirrored = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "tip-two.md"
@@ -315,13 +320,11 @@ class TestBobSync:
 
     def test_quiet_flag_suppresses_output_when_no_changes(self, subscribed_project):
         p = subscribed_project
-        # First sync to reach a clean state
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
-        # Second sync with --quiet: nothing changed, no output expected
         result = run_script(SYNC_SCRIPT, p["project_dir"], ["--quiet"], evolve_dir=p["evolve_dir"])
         assert result.stdout.strip() == ""
 
-    def test_no_subscriptions_exits_cleanly(self, temp_project_dir):
+    def test_no_repos_exits_cleanly(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
@@ -340,10 +343,8 @@ class TestBobSync:
         lr = p["local_repo"]
         git_env = lr["env"]
 
-        # First sync to create the subscribed clone
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
 
-        # Create a real file and a symlink in the working repo and push them
         real_file = lr["work"] / "guideline" / "real.md"
         real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
         symlink_file = lr["work"] / "guideline" / "link.md"
@@ -361,62 +362,47 @@ class TestBobSync:
             env=git_env,
         )
 
-        # Second sync should pull the changes but skip the symlink
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
 
         mirrored = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline"
         assert (mirrored / "real.md").exists(), "Real file should be present"
         assert (mirrored / "link.md").exists(), "Symlink should be present in git clone"
-        # Note: symlinks are filtered out by the retrieve script, not by sync
+        # Symlinks are filtered out by the retrieve script, not by sync.
 
     def test_skips_invalid_subscription_name(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
-        # Write config manually with an unsafe name
         cfg_path = temp_project_dir / "evolve.config.yaml"
-        cfg_path.write_text("subscriptions:\n  - name: ../outside\n    remote: git@github.com:x/y.git\n    branch: main\n")
+        cfg_path.write_text('repos:\n  - name: "../outside"\n    scope: "read"\n    remote: "git@github.com:x/y.git"\n    branch: "main"\n')
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
         assert "invalid subscription name" in result.stdout
         assert not (evolve_dir / "entities" / "subscribed" / "outside").exists()
 
     def test_rejects_dot_and_double_dot_names(self, temp_project_dir):
-        """Sync must reject '.' and '..' subscription names to prevent path traversal."""
+        """Sync must reject '.' and '..' repo names to prevent path traversal."""
         evolve_dir = temp_project_dir / ".evolve"
         cfg_path = temp_project_dir / "evolve.config.yaml"
 
-        # Test single dot
-        cfg_path.write_text("subscriptions:\n  - name: .\n    remote: git@github.com:x/y.git\n    branch: main\n")
+        cfg_path.write_text('repos:\n  - name: "."\n    scope: "read"\n    remote: "git@github.com:x/y.git"\n    branch: "main"\n')
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
-        assert "invalid subscription name" in result.stdout or "path traversal detected" in result.stdout
+        assert "invalid subscription name" in result.stdout
 
-        # Test double dot
-        cfg_path.write_text("subscriptions:\n  - name: ..\n    remote: git@github.com:x/y.git\n    branch: main\n")
+        cfg_path.write_text('repos:\n  - name: ".."\n    scope: "read"\n    remote: "git@github.com:x/y.git"\n    branch: "main"\n')
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
-        assert "invalid subscription name" in result.stdout or "path traversal detected" in result.stdout
-
-    def test_manual_run_ignores_on_session_start_false(self, subscribed_project):
-        p = subscribed_project
-        cfg_path = p["project_dir"] / "evolve.config.yaml"
-        cfg_path.write_text("sync:\n  on_session_start: false\nsubscriptions:\n  - name: alice\n    remote: x\n    branch: main\n")
-        # Manual run (no --quiet) must still execute even with on_session_start: false
-        result = run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
-        assert result.returncode == 0
-        assert "Synced" in result.stdout
+        assert "invalid subscription name" in result.stdout
 
     def test_removed_entity_disappears_after_sync(self, subscribed_project):
-        """Entities deleted from the remote are removed from the mirror on next sync."""
+        """Entities deleted from a read-scope remote are removed from the mirror on next sync."""
         p = subscribed_project
         lr = p["local_repo"]
         git_env = lr["env"]
 
-        # First sync
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
         guideline_one = p["evolve_dir"] / "entities" / "subscribed" / "alice" / "guideline" / "guideline-one.md"
         assert guideline_one.exists()
 
-        # Delete guideline-one from remote
         subprocess.run(
             ["git", "-C", str(lr["work"]), "rm", "guideline/guideline-one.md"],
             check=True,
@@ -433,7 +419,6 @@ class TestBobSync:
             env=git_env,
         )
 
-        # Second sync — mirror is cleared and re-copied without guideline-one
         run_script(SYNC_SCRIPT, p["project_dir"], evolve_dir=p["evolve_dir"])
         assert not guideline_one.exists()
 
@@ -443,57 +428,135 @@ class TestBobSync:
 # ============================================================================
 
 
+_WRITE_REPO_CONFIG = (
+    "repos:\n"
+    '  - name: "evolve-guidelines"\n'
+    '    scope: "write"\n'
+    '    remote: "git@github.com:alice/evolve-guidelines.git"\n'
+    '    branch: "main"\n'
+)
+
+
+def _published_path(project_dir, filename, repo="evolve-guidelines"):
+    return project_dir / ".evolve" / "entities" / "subscribed" / repo / "guideline" / filename
+
+
+def _clone_write_target(project_dir, local_repo, repo="evolve-guidelines"):
+    """Pre-create the local clone publish.py expects under entities/subscribed/<repo>/."""
+    clone_dir = project_dir / ".evolve" / "entities" / "subscribed" / repo
+    clone_dir.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "clone", "--branch", "main", str(local_repo["bare"]), str(clone_dir)],
+        check=True,
+        capture_output=True,
+        env=local_repo["env"],
+    )
+    return clone_dir
+
+
 class TestBobPublish:
     """Tests for Bob's publish.py script."""
 
-    def test_moves_entity_to_public_dir(self, temp_project_dir):
+    def test_moves_entity_to_write_repo_clone(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
         entities_dir = evolve_dir / "entities" / "guideline"
         entities_dir.mkdir(parents=True)
         entity = entities_dir / "tip.md"
         entity.write_text("---\ntype: guideline\nvisibility: private\n---\n\nAlways test.\n")
+        (temp_project_dir / "evolve.config.yaml").write_text(_WRITE_REPO_CONFIG)
+        _clone_write_target(temp_project_dir, local_repo)
 
-        run_script(PUBLISH_SCRIPT, temp_project_dir, ["--entity", "tip.md"], evolve_dir=evolve_dir)
+        run_script(
+            PUBLISH_SCRIPT,
+            temp_project_dir,
+            ["--entity", "tip.md", "--user", "alice"],
+            evolve_dir=evolve_dir,
+        )
 
-        public_entity = evolve_dir / "public" / "guideline" / "tip.md"
-        assert public_entity.exists()
+        published = _published_path(temp_project_dir, "tip.md")
+        assert published.exists()
         assert not entity.exists()
-        assert "visibility: public" in public_entity.read_text()
+        content = published.read_text()
+        assert "visibility: public" in content
+        assert "owner: alice" in content
+        assert "published_at:" in content
 
-    def test_publishes_when_public_git_repo_exists(self, temp_project_dir):
-        """Verifies publish succeeds when a git repo is already present in the public directory."""
+    def test_publish_writes_audit_with_repo_field(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
         entities_dir = evolve_dir / "entities" / "guideline"
         entities_dir.mkdir(parents=True)
-        entity = entities_dir / "tip.md"
-        entity.write_text("---\ntype: guideline\n---\n\nTest.\n")
+        (entities_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nTest.\n")
+        (temp_project_dir / "evolve.config.yaml").write_text(_WRITE_REPO_CONFIG)
+        _clone_write_target(temp_project_dir, local_repo)
 
-        # Initialize git repo manually (Bob expects this to be done via publish SKILL.md instructions)
-        public_dir = evolve_dir / "public"
-        public_dir.mkdir(parents=True)
-        subprocess.run(["git", "init"], cwd=str(public_dir), check=True, capture_output=True)
-        subprocess.run(["git", "checkout", "-b", "main"], cwd=str(public_dir), check=True, capture_output=True)
+        run_script(
+            PUBLISH_SCRIPT,
+            temp_project_dir,
+            ["--entity", "tip.md", "--user", "alice"],
+            evolve_dir=evolve_dir,
+        )
+        entries = [json.loads(line) for line in (evolve_dir / "audit.log").read_text().splitlines() if line.strip()]
+        publish_entry = next(e for e in entries if e["action"] == "publish")
+        assert publish_entry["actor"] == "alice"
+        assert publish_entry["repo"] == "evolve-guidelines"
 
-        run_script(PUBLISH_SCRIPT, temp_project_dir, ["--entity", "tip.md"], evolve_dir=evolve_dir)
-
-        assert (evolve_dir / "public" / ".git").exists()
-        assert (evolve_dir / "public" / "guideline" / "tip.md").exists()
-
-    def test_fails_if_entity_already_published(self, temp_project_dir):
+    def test_fails_if_entity_already_published(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
-        public_dir = evolve_dir / "public" / "guideline"
-        public_dir.mkdir(parents=True)
-        existing = public_dir / "tip.md"
-        existing.write_text("---\ntype: guideline\nvisibility: public\n---\n\nExisting.\n")
-
         entities_dir = evolve_dir / "entities" / "guideline"
         entities_dir.mkdir(parents=True)
-        entity = entities_dir / "tip.md"
-        entity.write_text("---\ntype: guideline\n---\n\nNew version.\n")
+        source = entities_dir / "tip.md"
+        source.write_text("---\ntype: guideline\n---\n\nNew version.\n")
+        (temp_project_dir / "evolve.config.yaml").write_text(_WRITE_REPO_CONFIG)
+        _clone_write_target(temp_project_dir, local_repo)
 
-        result = run_script(PUBLISH_SCRIPT, temp_project_dir, ["--entity", "tip.md"], evolve_dir=evolve_dir, expect_success=False)
+        dest = _published_path(temp_project_dir, "tip.md")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text("---\ntype: guideline\nvisibility: public\n---\n\nExisting.\n")
+
+        result = run_script(
+            PUBLISH_SCRIPT,
+            temp_project_dir,
+            ["--entity", "tip.md"],
+            evolve_dir=evolve_dir,
+            expect_success=False,
+        )
         assert result.returncode != 0
         assert "already published" in result.stderr
+        assert source.exists()
+
+    def test_publish_errors_without_write_scope_repo(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        entities_dir = evolve_dir / "entities" / "guideline"
+        entities_dir.mkdir(parents=True)
+        (entities_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nContent.\n")
+
+        result = run_script(
+            PUBLISH_SCRIPT,
+            temp_project_dir,
+            ["--entity", "tip.md"],
+            evolve_dir=evolve_dir,
+            expect_success=False,
+        )
+        assert result.returncode != 0
+        assert "no write-scope repo" in result.stderr
+
+    def test_publish_errors_when_target_clone_missing(self, temp_project_dir):
+        """Publish refuses to run unless the write-scope clone has been created."""
+        evolve_dir = temp_project_dir / ".evolve"
+        entities_dir = evolve_dir / "entities" / "guideline"
+        entities_dir.mkdir(parents=True)
+        (entities_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nContent.\n")
+        (temp_project_dir / "evolve.config.yaml").write_text(_WRITE_REPO_CONFIG)
+
+        result = run_script(
+            PUBLISH_SCRIPT,
+            temp_project_dir,
+            ["--entity", "tip.md"],
+            evolve_dir=evolve_dir,
+            expect_success=False,
+        )
+        assert result.returncode != 0
+        assert "target repo clone not found" in result.stderr
 
 
 # ============================================================================
@@ -620,18 +683,19 @@ class TestBobRetrieveEntities:
         (entities_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nPrivate tip.\n")
 
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        # Bob outputs markdown, not JSON
         assert "Private tip" in result.stdout
         assert "## Entities for this task" in result.stdout
 
-    def test_returns_entities_from_public_dir(self, temp_project_dir):
+    def test_returns_published_entities_from_write_clone(self, temp_project_dir):
+        """Published guidelines live in entities/subscribed/{repo}/guideline/."""
         evolve_dir = temp_project_dir / ".evolve"
-        public_dir = evolve_dir / "public" / "guideline"
-        public_dir.mkdir(parents=True)
-        (public_dir / "tip.md").write_text("---\ntype: guideline\nvisibility: public\n---\n\nPublic tip.\n")
+        published_dir = evolve_dir / "entities" / "subscribed" / "my-memory" / "guideline"
+        published_dir.mkdir(parents=True)
+        (published_dir / "tip.md").write_text("---\ntype: guideline\nvisibility: public\n---\n\nPublished tip.\n")
 
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        assert "Public tip" in result.stdout
+        assert "Published tip" in result.stdout
+        assert "[from: my-memory]" in result.stdout
 
     def test_returns_entities_from_subscribed_dir(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"

@@ -22,7 +22,7 @@ for _ancestor in _script.parents:
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
-from entity_io import find_entities_dir, get_evolve_dir, markdown_to_entity, log as _log  # noqa: E402
+from entity_io import find_entities_dir, markdown_to_entity, log as _log  # noqa: E402
 
 
 def log(message):
@@ -107,11 +107,6 @@ def main():
     entities = []
     if entities_dir:
         entities = load_entities_with_source(entities_dir)
-
-    public_dir = get_evolve_dir() / "public"
-    if public_dir.is_dir():
-        log(f"Loading public entities from: {public_dir}")
-        entities += load_entities_with_source(public_dir)
 
     if not entities:
         log("No entities found")

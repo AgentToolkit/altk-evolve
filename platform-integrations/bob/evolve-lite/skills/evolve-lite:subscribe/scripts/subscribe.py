@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""Subscribe to another user's public guidelines repo.
-
-- Adds entry to subscriptions list in evolve.config.yaml
-- Clones the remote into .evolve/entities/subscribed/{name}
-- Appends to audit.log
-"""
+"""Add a repo to the unified ``repos`` list and clone it locally (Bob)."""
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,109 +16,97 @@ for parent in current.parents:
         sys.path.insert(0, str(lib_path))
         break
 
-from config import load_config, save_config  # noqa: E402
 from audit import append as audit_append  # noqa: E402
-
-_GIT_TIMEOUT = 30  # seconds
+from config import (  # noqa: E402
+    VALID_SCOPES,
+    is_valid_repo_name,
+    load_config,
+    normalize_repos,
+    save_config,
+    set_repos,
+)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name", required=True, help="Short subscription name (e.g. alice)")
+    parser.add_argument("--name", required=True, help="Short repo name")
     parser.add_argument("--remote", required=True, help="Git remote URL")
-    parser.add_argument("--branch", default="main", help="Branch to track (default: main)")
+    parser.add_argument("--branch", default="main", help="Branch to track")
+    parser.add_argument("--scope", default="read", choices=VALID_SCOPES)
+    parser.add_argument("--notes", default="")
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
-    project_root = str(evolve_dir.resolve().parent)
-
-    # Validate name: resolve and confirm it stays within the subscribed directory
+    project_root = str(evolve_dir.resolve()) if evolve_dir.name != ".evolve" else str(evolve_dir.resolve().parent)
     subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
     dest = (evolve_dir / "entities" / "subscribed" / args.name).resolve()
-    if not dest.is_relative_to(subscribed_base) or dest == subscribed_base:
+
+    if not is_valid_repo_name(args.name) or dest == subscribed_base or not dest.is_relative_to(subscribed_base):
         print(f"Error: invalid subscription name: {args.name!r}", file=sys.stderr)
         sys.exit(1)
 
     cfg = load_config(project_root)
+    repos = normalize_repos(cfg)
 
-    # Ensure subscriptions list exists
-    subscriptions = cfg.get("subscriptions", [])
-    if not isinstance(subscriptions, list):
-        subscriptions = []
-
-    # Check for duplicate
-    for sub in subscriptions:
-        if isinstance(sub, dict) and sub.get("name") == args.name:
-            print(
-                f"Error: subscription '{args.name}' already exists in config.",
-                file=sys.stderr,
-            )
+    for repo in repos:
+        if repo.get("name") == args.name:
+            print(f"Error: subscription '{args.name}' already exists in config.", file=sys.stderr)
             sys.exit(1)
 
-    # Clone the repo
-    cloned_now = False
     if dest.exists():
-        print(
-            f"Error: directory already exists: {dest}\nRun evolve-lite:unsubscribe to remove it before re-subscribing.",
-            file=sys.stderr,
-        )
+        print(f"Error: destination already exists: {dest}", file=sys.stderr)
         sys.exit(1)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                args.remote,
-                str(dest),
-                "--branch",
-                args.branch,
-                "--depth",
-                "1",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT,
-        )
-        cloned_now = True
-    except subprocess.TimeoutExpired:
-        print(f"Error: git clone timed out after {_GIT_TIMEOUT} seconds", file=sys.stderr)
-        sys.exit(1)
-    except subprocess.CalledProcessError as e:
-        print(f"Error: git clone failed: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
+    # Write-scope repos need full history so the user can safely rebase and
+    # push publish commits. Read-scope repos only mirror, so shallow is enough.
+    clone_cmd = ["git", "clone", args.remote, str(dest), "--branch", args.branch]
+    if args.scope == "read":
+        clone_cmd += ["--depth", "1"]
+    subprocess.run(clone_cmd, check=True)
 
-    # Update config and audit - rollback clone on failure
+    repos.append(
+        {
+            "name": args.name,
+            "scope": args.scope,
+            "remote": args.remote,
+            "branch": args.branch,
+            "notes": args.notes,
+        }
+    )
+    set_repos(cfg, repos)
     try:
-        subscriptions.append({"name": args.name, "remote": args.remote, "branch": args.branch})
-        cfg["subscriptions"] = subscriptions
         save_config(cfg, project_root)
-
-        # Read identity.user for audit
-        identity = cfg.get("identity", {})
-        actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
-
-        try:
-            audit_append(
-                project_root=project_root,
-                action="subscribe",
-                actor=actor,
-                name=args.name,
-                remote=args.remote,
-            )
-        except Exception as e:
-            print(f"Warning: audit log failed: {e}", file=sys.stderr)
     except Exception:
-        # Rollback: remove cloned directory if config save failed
-        if cloned_now and dest.exists():
-            import shutil
-
+        repos.pop()
+        if dest.exists():
             shutil.rmtree(dest)
         raise
 
-    print(f"Subscribed to '{args.name}' from {args.remote}")
+    identity = cfg.get("identity", {})
+    actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
+    try:
+        audit_append(
+            project_root=project_root,
+            action="subscribe",
+            actor=actor,
+            name=args.name,
+            scope=args.scope,
+            remote=args.remote,
+        )
+    except Exception as exc:
+        repos.pop()
+        set_repos(cfg, repos)
+        try:
+            save_config(cfg, project_root)
+        except Exception:
+            pass
+        if dest.exists():
+            shutil.rmtree(dest)
+        print(f"Error: failed to record subscription — clone removed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Subscribed to '{args.name}' (scope={args.scope}) from {args.remote}")
 
 
 if __name__ == "__main__":

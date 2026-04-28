@@ -21,35 +21,34 @@ Entities and sharing data are stored in the active workspace under:
 .evolve/
   entities/
     guideline/
-      use-context-managers-for-file-operations.md
+      use-context-managers-for-file-operations.md     # private
     subscribed/
-      alice/
+      memory/                                          # write-scope clone (publish target)
+        guideline/
+          my-published-guideline.md
+      alice/                                           # read-scope clone
         guideline/
           prefer-small-functions.md
-  public/
-    guideline/
-      no-eval.md
-  subscribed/
-    alice/
-      guideline/
-        prefer-small-functions.md
   audit.log
 ```
 
 Each entity is a markdown file with lightweight YAML frontmatter.
 
-Sharing configuration lives in `evolve.config.yaml` at the repo root:
+Sharing configuration lives in `evolve.config.yaml` at the repo root, as a
+single unified list of repos (both read- and write-scope):
 
 ```yaml
 identity:
   user: alice
 
-public_repo:
-  remote: git@github.com:alice/evolve-guidelines.git
-  branch: main
-
-subscriptions:
+repos:
+  - name: memory
+    scope: write
+    remote: git@github.com:alice/evolve-memory.git
+    branch: main
+    notes: public memory for foobar project
   - name: team
+    scope: read
     remote: git@github.com:myorg/evolve-guidelines.git
     branch: main
 
@@ -99,11 +98,14 @@ If you do not want to enable Codex hooks, you can still invoke the installed `ev
 
 The installed Codex hook does not require `git`. It walks upward from the current working directory until it finds the repo-local `plugins/evolve-lite/.../retrieve_entities.py` script.
 
-The installer always registers a `SessionStart` hook with matcher `startup|resume`; it runs on every Codex session start or resume and exits quickly unless `sync.on_session_start` is enabled and subscriptions are configured in `evolve.config.yaml`.
+The installer always registers a `SessionStart` hook with matcher `startup|resume`; it runs on every Codex session start or resume and exits quickly unless `sync.on_session_start` is enabled and at least one repo is configured in `evolve.config.yaml`.
 
 ## Sharing Guidelines
 
-Evolve Lite supports sharing guidelines between users via public Git repositories. You can publish your own guidelines so others can subscribe to them, and subscribe to guidelines published by others.
+Evolve Lite treats shared guidelines as multi-reader / multi-writer git
+databases. A single unified `repos:` list in `evolve.config.yaml` describes
+every external guideline repo; each entry has a `scope` of `read` (subscribe
+only) or `write` (publish target that is also pulled on sync).
 
 ### Setup
 
@@ -113,11 +115,12 @@ Sharing uses `evolve.config.yaml` at the project root. Minimal structure:
 identity:
   user: yourname
 
-public_repo:
-  remote: git@github.com:yourname/evolve-guidelines.git
-  branch: main
-
-subscriptions: []
+repos:
+  - name: memory
+    scope: write
+    remote: git@github.com:yourname/evolve-memory.git
+    branch: main
+    notes: public memory for my open-source projects
 
 sync:
   on_session_start: true
@@ -125,49 +128,58 @@ sync:
 
 The `.evolve/` directory is kept out of version control.
 
+### Subscribing to a Repo
+
+Use `evolve-lite:subscribe` to add either a read-only subscription or a
+write-scope publish target. The repo is cloned directly into
+`.evolve/entities/subscribed/{name}/` so recall picks it up immediately.
+Names must use only letters, numbers, `.`, `_`, and `-`.
+
 ### Publishing Guidelines
 
-Use `evolve-lite:publish` to share one or more of your local guidelines with others:
+Use `evolve-lite:publish` to share local guidelines via a **write-scope**
+repo:
 
-1. Pick a file from `.evolve/entities/guideline/`
-2. Publish it into `.evolve/public/guideline/`
-3. The published file is stamped with `visibility: public`, `published_at`, and a `source` label derived from config when available
-4. The original private guideline is removed from `.evolve/entities/guideline/`
+1. The skill selects (or asks about) the write-scope target repo
+2. Pick a file from `.evolve/entities/guideline/`
+3. Publish moves it into `.evolve/entities/subscribed/{repo}/guideline/`,
+   stamps it with `visibility: public`, `published_at`, `owner`, and a
+   `source` label derived from the repo's remote
+4. The original private guideline is removed from
+   `.evolve/entities/guideline/`
 
-Others can then subscribe using that public remote URL.
+Because the publish target is also a subscribed repo, your next sync pulls
+in anything other writers have pushed to the same remote.
 
-### Subscribing to Guidelines
+### Syncing Repos
 
-Use `evolve-lite:subscribe` to pull in guidelines from another user's public repo.
+Use `evolve-lite:sync` to pull the latest changes from every configured
+repo (both scopes). Read-scope repos use `git fetch` + `git reset --hard`;
+write-scope repos use `git fetch` + `git rebase` so unpushed local publish
+commits are preserved.
 
-The repo is cloned directly into `.evolve/entities/subscribed/{name}/` so recall can pick it up immediately. Subscription names must use only letters, numbers, `.`, `_`, and `-`.
+If `sync.on_session_start: true` is set in config, this runs automatically
+whenever a Codex session starts or resumes.
 
-### Syncing Subscriptions
+### Removing a Repo
 
-Use `evolve-lite:sync` to pull the latest changes from all subscribed repos already cloned under `.evolve/entities/subscribed/`.
-
-If `sync.on_session_start: true` is set in config, this runs automatically whenever a Codex session starts or resumes.
-
-### Unsubscribing
-
-Use `evolve-lite:unsubscribe` to remove a subscription and delete its locally cloned files.
-
-This removes `.evolve/entities/subscribed/{name}/`. If an older workspace still has `.evolve/subscribed/{name}/`, unsubscribe cleans that up too.
+Use `evolve-lite:unsubscribe` to remove any configured repo and delete its
+local clone at `.evolve/entities/subscribed/{name}/`.
 
 ### Sharing Storage Layout
 
 ```text
 .evolve/
-  public/
-    guideline/
-      guideline-name.md         # published guideline, included in recall
   entities/
     guideline/
       private-guideline.md      # private local guideline
     subscribed/
-      alice/
+      memory/                   # write-scope clone — publishes land here
         guideline/
-          her-guideline.md      # git clone used directly by recall, annotated [from: alice]
+          my-published-guideline.md
+      alice/                    # read-scope clone
+        guideline/
+          her-guideline.md      # recall annotates as [from: alice]
 ```
 
 ## Example Walkthrough
@@ -182,23 +194,30 @@ Analyze the current session and save proactive Evolve entities as markdown files
 
 ### `evolve-lite:recall`
 
-Show the entities already stored for the current workspace, including published guidelines under `.evolve/public/`.
+Show the entities already stored for the current workspace, including
+guidelines pulled from any write- or read-scope repo under
+`.evolve/entities/subscribed/`.
 
 ### `evolve-lite:publish`
 
-Move selected private guidelines into `.evolve/public/`, stamp them as public, and push them to your configured sharing repo.
+Move a selected private guideline into a configured write-scope repo's
+local clone at `.evolve/entities/subscribed/{repo}/guideline/`, stamp it
+as public, commit it, and push it.
 
 ### `evolve-lite:subscribe`
 
-Clone another user's public guideline repo into `.evolve/entities/subscribed/` and register it in `evolve.config.yaml`.
+Add an entry to the unified `repos:` list (read- or write-scope) and clone
+the remote into `.evolve/entities/subscribed/{name}/`.
 
 ### `evolve-lite:unsubscribe`
 
-Remove a configured subscription and delete its local cloned subscription data.
+Remove a configured repo from `repos:` and delete its local clone.
 
 ### `evolve-lite:sync`
 
-Pull every configured subscription under `.evolve/entities/subscribed/` so recall sees the latest shared guidelines automatically.
+Pull the latest from every configured repo (both scopes). Write-scope
+repos use rebase to preserve unpushed local publish commits; read-scope
+repos use hard reset to mirror the remote exactly.
 
 ## Environment Variables
 
