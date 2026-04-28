@@ -673,52 +673,53 @@ class TestBobSaveEntities:
 class TestBobRetrieveEntities:
     """Tests for Bob's retrieve_entities.py script.
 
-    Note: Bob's retrieve script outputs markdown for Bob's UI, not JSON.
+    Bob outputs human-readable manifest markdown (not JSON like Claude/Codex).
     """
 
     def test_returns_entities_from_private_dir(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         entities_dir = evolve_dir / "entities" / "guideline"
         entities_dir.mkdir(parents=True)
-        (entities_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nPrivate tip.\n")
+        (entities_dir / "tip.md").write_text("---\ntype: guideline\ntrigger: when writing private code\n---\n\nPrivate tip.\n")
 
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        assert "Private tip" in result.stdout
-        assert "## Entities for this task" in result.stdout
+        assert "Evolve entity manifest for this task" in result.stdout
+        assert "[guideline]" in result.stdout
+        assert "when writing private code" in result.stdout
+        assert "Private tip." not in result.stdout
 
     def test_returns_published_entities_from_write_clone(self, temp_project_dir):
         """Published guidelines live in entities/subscribed/{repo}/guideline/."""
         evolve_dir = temp_project_dir / ".evolve"
-        published_dir = evolve_dir / "entities" / "subscribed" / "my-memory" / "guideline"
-        published_dir.mkdir(parents=True)
-        (published_dir / "tip.md").write_text("---\ntype: guideline\nvisibility: public\n---\n\nPublished tip.\n")
+        public_dir = evolve_dir / "public" / "guideline"
+        public_dir.mkdir(parents=True)
+        (public_dir / "tip.md").write_text("---\ntype: guideline\ntrigger: when sharing guidelines\nvisibility: public\n---\n\nPublic tip.\n")
 
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        assert "Published tip" in result.stdout
-        assert "[from: my-memory]" in result.stdout
+        assert "when sharing guidelines" in result.stdout
+        assert "Public tip." not in result.stdout
 
     def test_returns_entities_from_subscribed_dir(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         subscribed_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
         subscribed_dir.mkdir(parents=True)
-        (subscribed_dir / "tip.md").write_text("---\ntype: guideline\n---\n\nSubscribed tip.\n")
+        (subscribed_dir / "tip.md").write_text("---\ntype: guideline\ntrigger: when adding coverage\n---\n\nSubscribed tip.\n")
 
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        assert "Subscribed tip" in result.stdout
-        assert "[from: alice]" in result.stdout
+        assert "when adding coverage" in result.stdout
+        assert ".evolve/entities/subscribed/alice/guideline/tip.md" in result.stdout
+        assert "Subscribed tip." not in result.stdout
 
     def test_retrieve_filters_symlinked_entities(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         subscribed_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
         subscribed_dir.mkdir(parents=True)
         real_file = subscribed_dir / "real.md"
-        real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
+        real_file.write_text("---\ntype: guideline\ntrigger: when testing\n---\n\nReal content.\n")
         link_file = subscribed_dir / "link.md"
         link_file.symlink_to(real_file)
 
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        assert "Real content" in result.stdout
-        assert result.stdout.count("Real content") == 1, "Symlinked duplicate should be filtered out"
-
-
-# Made with Bob
+        assert "when testing" in result.stdout
+        assert result.stdout.count("when testing") == 1, "Symlinked duplicate should be filtered out"
+        assert "Real content." not in result.stdout

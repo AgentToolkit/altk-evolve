@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retrieve and output entities for Bob to filter."""
+"""Retrieve and output an entity manifest for Bob to expand on demand."""
 
 import sys
 from pathlib import Path
@@ -12,7 +12,7 @@ for parent in current.parents:
         sys.path.insert(0, str(lib_path))
         break
 
-from entity_io import find_entities_dir, markdown_to_entity, log as _log  # noqa: E402
+from entity_io import dedupe_manifest_entries, find_recall_entity_dirs, load_manifest, log as _log  # noqa: E402
 
 
 def log(message):
@@ -20,83 +20,35 @@ def log(message):
 
 
 def format_entities(entities):
-    """Format all entities for Bob to review.
+    """Format a manifest of entities as human-readable markdown for Bob."""
+    header = """## Evolve entity manifest for this task
 
-    Entities that came from a subscribed source have their path recorded in
-    the private ``_source`` key (set by load_entities_with_source). These are
-    annotated with ``[from: {name}]`` so Bob knows their provenance.
-    """
-    header = """## Entities for this task
-
-Review these entities and apply any relevant ones:
+These stored entities are available for this repo. Read only the files whose trigger looks relevant to the user's request:
 
 """
-    items = []
+    lines = []
     for e in entities:
-        content = e.get("content")
-        if not content:
-            continue
-        source = e.get("_source")
-        if source:
-            content = f"[from: {source}] {content}"
-        item = f"- **[{e.get('type', 'general')}]** {content}"
-        if e.get("rationale"):
-            item += f"\n  - _Rationale: {e['rationale']}_"
-        if e.get("trigger"):
-            item += f"\n  - _When: {e['trigger']}_"
-        items.append(item)
-
-    return header + "\n".join(items)
-
-
-def load_entities_with_source(entities_dir):
-    """Glob all .md files under entities_dir and parse each.
-
-    Entities stored under entities/subscribed/{name}/ have ``_source`` set to
-    the repo name so format_entities can annotate them. Both read-scope and
-    write-scope clones live under entities/subscribed/{name}/, so write-scope
-    publishes land in this same path and are picked up automatically.
-
-    Symlinks and any files inside a ``.git`` directory are skipped so we
-    don't surface git's own bookkeeping or sneak past path validation.
-    """
-    entities_dir = Path(entities_dir)
-    entities = []
-    for md in sorted(p for p in entities_dir.glob("**/*.md") if ".git" not in p.parts):
-        if md.is_symlink():
-            continue
-        try:
-            entity = markdown_to_entity(md)
-        except (OSError, UnicodeDecodeError):
-            continue
-        entity.pop("_source", None)
-        if not entity.get("content"):
-            continue
-        try:
-            rel_parts = md.relative_to(entities_dir).parts
-        except ValueError:
-            rel_parts = md.parts
-        if rel_parts and rel_parts[0] == "subscribed" and len(rel_parts) > 1:
-            entity["_source"] = rel_parts[1]
-        entities.append(entity)
-    return entities
+        lines.append(f"- `{e['path']}` [{e['type']}] \u2014 {e['trigger']}")
+    return header + "\n".join(lines)
 
 
 def main():
     log("Script started")
 
-    entities_dir = find_entities_dir()
-    log(f"Entities dir: {entities_dir}")
-
     entities = []
-    if entities_dir:
-        entities = load_entities_with_source(entities_dir)
+    recall_dirs = find_recall_entity_dirs()
+    log(f"Recall dirs: {recall_dirs}")
+    for root_dir in recall_dirs:
+        entities.extend(load_manifest(root_dir))
+
+    entities = dedupe_manifest_entries(entities)
 
     if not entities:
         log("No entities found")
         return
 
     log(f"Loaded {len(entities)} entities")
+
     output = format_entities(entities)
     print(output)
     log(f"Output {len(output)} chars to stdout")
@@ -104,5 +56,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Made with Bob
