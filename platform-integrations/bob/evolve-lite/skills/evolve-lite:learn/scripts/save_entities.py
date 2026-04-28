@@ -53,6 +53,10 @@ def main():
         sys.exit(1)
 
     new_entities = input_data.get("entities", [])
+    if not isinstance(new_entities, list):
+        log(f"Invalid entities payload type: {type(new_entities).__name__}")
+        print("Error: `entities` must be a list.", file=sys.stderr)
+        sys.exit(1)
     if not new_entities:
         log("No entities in input")
         print("No entities provided in input.", file=sys.stderr)

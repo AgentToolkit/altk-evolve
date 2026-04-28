@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# PreToolUse hook: retrieve relevant entities before each tool execution.
+# Optional PreToolUse hook: retrieve relevant entities before tool execution.
 #
-# In claw-code, PreToolUse is the closest equivalent to Claude Code's
-# UserPromptSubmit hook. It fires before every tool call, injecting stored
-# guidelines and preferences from the evolve-lite entity store into context.
+# If this script is registered by a Claw hook configuration, it can inject
+# stored guidelines and preferences from the evolve-lite entity store into
+# context before tool calls. The packaged plugin does not currently enable
+# this hook automatically — invoke `evolve-lite:recall` manually, or wire the
+# hook in your own Claw configuration to opt in.
 #
-# Claw-code hook environment variables available:
+# When invoked as a PreToolUse hook, the following env vars are available:
 #   HOOK_EVENT        - "PreToolUse"
 #   HOOK_TOOL_NAME    - name of the tool about to run
 #   HOOK_TOOL_INPUT   - JSON-encoded input for that tool

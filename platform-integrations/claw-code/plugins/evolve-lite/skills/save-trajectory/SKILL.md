@@ -115,19 +115,6 @@ Write the trajectory JSON to a temporary file using the **Write** tool, then pas
 2. Run the helper script with the file path as an argument:
 
 ```bash
-tmp=.evolve/tmp/trajectory_input.json; mkdir -p .evolve/tmp; trap 'rm -f "$tmp"' EXIT; script=".claw/skills/evolve-lite:save-trajectory/scripts/save_trajectory.py"; [ -f "$script" ] || script="$HOME/.claw/skills/evolve-lite:save-trajectory/scripts/save_trajectory.py"; python3 "$script" "$tmp"
-```
-
-**Important**: Do NOT use inline Python scripts, heredocs, or stdin piping to pass the trajectory JSON. Always use the Write tool to create a temp file first. This avoids escaping issues with backslashes, quotes, and newlines in conversation content.
-
-### Step 5: Save via Helper Script
-
-Write the trajectory JSON to a temporary file using the **Write** tool, then pass the file path to the helper script:
-
-1. Write the JSON to `.evolve/tmp/trajectory_input.json` using the Write tool (create the directory if needed)
-2. Run the helper script with the file path as an argument:
-
-```bash
 tmp=.evolve/tmp/trajectory_input.json; mkdir -p .evolve/tmp; trap 'rm -f "$tmp"' EXIT; real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:save-trajectory/scripts/save_trajectory.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:save-trajectory/scripts/save_trajectory.py"; python3 "$script" "$tmp"
 ```
 

@@ -269,6 +269,7 @@ def write_entity_file(directory, entity):
 
     # Write to a unique temp file first (avoids predictable .tmp collisions)
     fd, tmp_path = tempfile.mkstemp(dir=type_dir, suffix=".tmp", prefix=slug)
+    target = None
     try:
         os.write(fd, content.encode("utf-8"))
         os.close(fd)

@@ -30,11 +30,18 @@ def log(message):
 
 log("Script started")
 
-# Log claw-code hook env vars (and any CLAWD_* vars)
+# Log claw-code hook env vars (and any CLAWD_* vars).
+# HOOK_TOOL_INPUT and similar values can contain prompts, tool args, paths,
+# code, or secrets, so log only the names of those keys and a redacted
+# placeholder. HOOK_EVENT and HOOK_TOOL_NAME are safe to log verbatim.
+_LOGGABLE_HOOK_KEYS = {"HOOK_EVENT", "HOOK_TOOL_NAME"}
 log("=== Hook Context ===")
 hook_keys = [k for k in os.environ if k.startswith(("HOOK_", "CLAWD_"))]
 for key in sorted(hook_keys):
-    log(f"  {key}={os.environ[key]}")
+    if key in _LOGGABLE_HOOK_KEYS:
+        log(f"  {key}={os.environ[key]}")
+    else:
+        log(f"  {key}=<redacted>")
 if not hook_keys:
     log("  (no HOOK_* or CLAWD_* env vars found — may be running outside a hook)")
 log("=== End Hook Context ===")

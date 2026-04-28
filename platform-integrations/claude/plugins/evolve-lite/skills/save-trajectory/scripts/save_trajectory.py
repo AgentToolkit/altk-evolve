@@ -44,31 +44,45 @@ def log(message):
 
 
 def get_trajectories_dir():
-    """Get the trajectories output directory, creating it if needed."""
-    project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
-    if project_root:
-        base = Path(project_root) / ".evolve" / "trajectories"
+    """Get the trajectories output directory, creating it if needed.
+
+    Resolution order:
+      1. ``EVOLVE_DIR`` env var (matches the documented contract)
+      2. ``CLAUDE_PROJECT_ROOT`` env var (the agent's project root)
+      3. ``.evolve/`` in the current working directory
+    """
+    evolve_dir = os.environ.get("EVOLVE_DIR")
+    if evolve_dir:
+        base = Path(evolve_dir) / "trajectories"
     else:
-        base = Path(".evolve") / "trajectories"
+        project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
+        if project_root:
+            base = Path(project_root) / ".evolve" / "trajectories"
+        else:
+            base = Path(".evolve") / "trajectories"
 
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     return base.resolve()
 
 
-def generate_filename(trajectories_dir):
-    """Generate a timestamped filename, adding a suffix on collision."""
+def open_trajectory_file(trajectories_dir):
+    """Atomically claim a timestamped trajectory file.
+
+    Returns a ``(Path, fd)`` tuple. Uses ``O_CREAT | O_EXCL`` so two saves
+    racing within the same second pick distinct filenames instead of one
+    overwriting the other.
+    """
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     base_name = f"trajectory_{now}"
 
-    candidate = trajectories_dir / f"{base_name}.json"
-    if not candidate.exists():
-        return candidate
-
-    # Handle collisions with _1, _2, etc.
-    for suffix in range(1, 1000):
-        candidate = trajectories_dir / f"{base_name}_{suffix}.json"
-        if not candidate.exists():
-            return candidate
+    for suffix in range(0, 1000):
+        name = f"{base_name}.json" if suffix == 0 else f"{base_name}_{suffix}.json"
+        candidate = trajectories_dir / name
+        try:
+            fd = os.open(str(candidate), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            return candidate, fd
+        except FileExistsError:
+            continue
 
     raise RuntimeError(f"Too many trajectory files for timestamp {now}")
 
@@ -99,21 +113,20 @@ def main():
         sys.exit(1)
 
     log(f"Received trajectory with keys: {list(trajectory.keys())}")
-    messages = trajectory.get("messages", [])
-    if not messages:
-        log("No messages in trajectory")
-        print("No messages in trajectory.", file=sys.stderr)
+    messages = trajectory.get("messages")
+    if not isinstance(messages, list) or not messages:
+        log(f"Invalid messages in trajectory: {type(messages).__name__}")
+        print("Error: `messages` must be a non-empty list.", file=sys.stderr)
         sys.exit(1)
 
     log(f"Trajectory has {len(messages)} messages")
 
-    # Determine output path
+    # Atomically claim a unique output path (handles same-second races)
     trajectories_dir = get_trajectories_dir()
-    output_path = generate_filename(trajectories_dir)
+    output_path, fd = open_trajectory_file(trajectories_dir)
 
-    # Write formatted JSON with owner-only permissions
+    # Write formatted JSON via the already-opened owner-only fd
     try:
-        fd = os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(trajectory, f, indent=2, default=str)
             f.write("\n")
