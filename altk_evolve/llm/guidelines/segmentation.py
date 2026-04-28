@@ -50,7 +50,7 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
     for attempt in range(3):
         try:
             if constrained_decoding_supported:
-                clean_response = (
+                raw = (
                     completion(
                         model=llm_settings.guidelines_model,
                         messages=[{"role": "user", "content": prompt}],
@@ -70,7 +70,7 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
                     .choices[0]
                     .message.content
                 )
-                clean_response = clean_llm_response(raw)
+            clean_response = clean_llm_response(raw)
 
             if not clean_response:
                 logger.debug(f"Segmentation attempt {attempt + 1}: empty response")

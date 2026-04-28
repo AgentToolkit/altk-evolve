@@ -122,7 +122,7 @@ def _generate_guidelines_for_segment(
 
     if constrained_decoding_supported:
         litellm.enable_json_schema_validation = True
-        clean_response = (
+        raw = (
             completion(
                 model=llm_settings.guidelines_model,
                 messages=[{"role": "user", "content": prompt}],
@@ -143,7 +143,7 @@ def _generate_guidelines_for_segment(
             .choices[0]
             .message.content
         )
-        clean_response = clean_llm_response(raw)
+    clean_response = clean_llm_response(raw)
 
     if not clean_response:
         logger.warning(f"LLM returned empty response for guideline generation. Model: {llm_settings.guidelines_model}")
@@ -198,23 +198,25 @@ def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]
             subtasks = []
 
     if len(subtasks) >= 2:
-        results = []
+        valid_slices: list[tuple] = []
         for subtask in subtasks:
             start = min(max(0, subtask.start_step - 1), n_steps)
             end = min(max(0, subtask.end_step), n_steps)
             if start >= end:
                 logger.debug(f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
                 continue
-            slice_steps = steps_list[start:end]
-            result = _generate_guidelines_for_segment(
-                task_description=subtask.generalized_description,
-                trajectory_slice="\n\n".join(slice_steps),
-                num_steps=len(slice_steps),
-                constrained_decoding_supported=constrained_decoding_supported,
-            )
-            results.append(result)
-        if len(results) >= 2:
-            return results
+            valid_slices.append((subtask, steps_list[start:end]))
+
+        if len(valid_slices) >= 2:
+            return [
+                _generate_guidelines_for_segment(
+                    task_description=subtask.generalized_description,
+                    trajectory_slice="\n\n".join(slice_steps),
+                    num_steps=len(slice_steps),
+                    constrained_decoding_supported=constrained_decoding_supported,
+                )
+                for subtask, slice_steps in valid_slices
+            ]
         # Fewer than 2 valid subtask slices — fall through to full-trajectory fallback.
 
     # Fallback: full trajectory (use segmented description if exactly 1 subtask was found)
