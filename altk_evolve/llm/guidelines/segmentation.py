@@ -20,6 +20,11 @@ _SEGMENT_TEMPLATE = Template((Path(__file__).parent / "prompts/segment_trajector
 def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
     """Segment a trajectory into logical subtasks with generalized descriptions.
 
+    The returned start_step/end_step are 1-based indices into the filtered
+    reasoning+action steps_list from parse_openai_agents_trajectory(messages),
+    NOT into raw messages. Callers must slice that same steps_list — slicing
+    raw messages with these indices will misalign content.
+
     Returns an empty list on failure — callers fall back to full-trajectory guideline generation.
     """
     # Import here to avoid circular import (guidelines.py imports this module)

@@ -21,8 +21,20 @@ class SubtaskSegment(BaseModel):
     generalized_description: str = Field(
         description="Value-agnostic description of the subtask, applicable to any agent performing a similar operation"
     )
-    start_step: int = Field(ge=1, description="Inclusive 1-based start step index in the trajectory")
-    end_step: int = Field(ge=1, description="Inclusive 1-based end step index in the trajectory")
+    start_step: int = Field(
+        ge=1,
+        description=(
+            "Inclusive 1-based start index into the filtered reasoning+action steps_list "
+            "returned by parse_openai_agents_trajectory — NOT an index into raw messages."
+        ),
+    )
+    end_step: int = Field(
+        ge=1,
+        description=(
+            "Inclusive 1-based end index into the filtered reasoning+action steps_list "
+            "returned by parse_openai_agents_trajectory — NOT an index into raw messages."
+        ),
+    )
     purpose: str = Field(description="What this subtask achieves (phase/output-oriented)")
 
     @model_validator(mode="after")
