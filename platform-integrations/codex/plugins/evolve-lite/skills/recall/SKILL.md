@@ -59,11 +59,9 @@ The skill is not complete if any of the following are true:
 
 1. If Codex hooks are enabled in `~/.codex/config.toml` with `[features] codex_hooks = true`, the Codex `UserPromptSubmit` hook runs before the prompt is sent.
 2. The helper script reads the prompt JSON from stdin.
-3. It loads stored entities from `.evolve/entities/` (covers private,
-   read-scope subscriptions, and write-scope publish targets which all
-   live under `entities/subscribed/{repo}/`).
-4. It prints formatted guidance to stdout.
-5. Codex adds that text as extra developer context for the turn.
+3. It emits a minimal manifest from `.evolve/entities/` and `.evolve/public/` containing only `path`, `type`, and `trigger`.
+4. Codex uses that manifest to decide which full entity files to read on demand.
+5. If hooks are disabled, this skill remains the full manual fallback: inspect the entity files directly, read the relevant ones, and summarize what applies.
 
 ## Entities Storage
 
@@ -80,7 +78,13 @@ The skill is not complete if any of the following are true:
         alice-guideline.md                        <- annotated [from: alice]
 ```
 
-Each file uses markdown with YAML frontmatter:
+Automatic hook output is manifest-first. Each manifest entry contains only:
+
+```json
+{"path": ".evolve/entities/guideline/use-context-managers-for-file-operations.md", "type": "guideline", "trigger": "When processing files or managing resources"}
+```
+
+Each file still uses markdown with YAML frontmatter:
 
 ```markdown
 ---
