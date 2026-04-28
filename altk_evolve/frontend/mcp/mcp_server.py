@@ -328,9 +328,15 @@ def save_trajectory(
             enable_conflict_resolution=True,
         )
 
+    readback_filters: dict = {"type": "trajectory", "metadata.task_id": task_id}
+    if effective_user_id:
+        readback_filters["metadata.user_id"] = effective_user_id
+    if session_id:
+        readback_filters["metadata.session_id"] = session_id
+
     return get_client().search_entities(
         namespace_id=resolved_ns,
-        filters={"type": "trajectory", "metadata.task_id": task_id},
+        filters=readback_filters,
         limit=1000,
     )
 
