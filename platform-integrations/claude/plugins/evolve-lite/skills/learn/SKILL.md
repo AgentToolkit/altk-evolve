@@ -25,9 +25,21 @@ This skill analyzes the current conversation to extract guidelines that **correc
 
 ## Workflow
 
+### Step 0: Load the Conversation
+
+This skill runs in a forked context with no access to the parent conversation. The stop hook message includes the path to the session transcript file (JSONL format). **You must read this file to analyze the conversation.**
+
+```bash
+cat <transcript_path>
+```
+
+Each line is a JSON object. Focus on lines where `"type": "assistant"` or `"type": "human"` to reconstruct the conversation flow. Look for tool calls, errors in tool results, and user corrections.
+
+If no transcript path was provided, check for the most recent file in `.evolve/trajectories/`. If no transcript is available at all, output zero entities.
+
 ### Step 1: Analyze the Conversation
 
-Review the conversation and identify:
+Review the conversation (loaded from the transcript) and identify:
 
 - **Wasted steps**: Where did the agent go down a path that turned out to be unnecessary? What would have been the direct route?
 - **Errors hit**: What errors occurred? What knowledge would have prevented them?
