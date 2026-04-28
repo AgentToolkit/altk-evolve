@@ -19,7 +19,7 @@ Run the following and display the output as a numbered list. Include each
 entry's `scope` and `notes`:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --list
+sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; python3 "$script" --list'
 ```
 
 ### Step 2: Pick one
@@ -46,7 +46,7 @@ the operation was cancelled.
 For a **read-scope** repo, run:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --name {name}
+sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; python3 "$script" --name {name}'
 ```
 
 For a **write-scope** repo (only after the user confirms in Step 3), add
@@ -54,7 +54,7 @@ For a **write-scope** repo (only after the user confirms in Step 3), add
 since the local clone may hold unpushed publishes:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/unsubscribe/scripts/unsubscribe.py --name {name} --force
+sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"; python3 "$script" --name {name} --force'
 ```
 
 ### Step 5: Confirm

@@ -17,7 +17,7 @@ strategy so any unpushed local publish commits are preserved.
 ### Step 1: Run sync script
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/sync/scripts/sync.py
+sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:sync/scripts/sync.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:sync/scripts/sync.py"; python3 "$script"'
 ```
 
 ### Step 2: Display summary

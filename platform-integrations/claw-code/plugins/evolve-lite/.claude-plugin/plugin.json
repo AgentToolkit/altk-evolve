@@ -1,0 +1,6 @@
+{
+  "name": "evolve-lite",
+  "version": "1.0.0",
+  "description": "Learn from conversations with auto-generated entities",
+  "defaultEnabled": true
+}

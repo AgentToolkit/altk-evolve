@@ -71,7 +71,17 @@ def main():
     clone_cmd = ["git", "clone", args.remote, str(dest), "--branch", args.branch]
     if args.scope == "read":
         clone_cmd += ["--depth", "1"]
-    subprocess.run(clone_cmd, check=True)
+    try:
+        subprocess.run(clone_cmd, check=True, timeout=60, capture_output=True, text=True)
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(dest, ignore_errors=True)
+        print("Error: git clone timed out", file=sys.stderr)
+        sys.exit(1)
+    except subprocess.CalledProcessError as exc:
+        shutil.rmtree(dest, ignore_errors=True)
+        detail = (exc.stderr or exc.stdout or "").strip() or f"exit {exc.returncode}"
+        print(f"Error: git clone failed: {detail}", file=sys.stderr)
+        sys.exit(1)
 
     repos.append(
         {
