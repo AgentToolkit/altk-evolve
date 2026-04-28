@@ -38,9 +38,7 @@ def evolve_dir(temp_project_dir):
 
     own_dir = d / "entities" / "guideline"
     own_dir.mkdir(parents=True)
-    (own_dir / "guideline.md").write_text(
-        "---\ntype: guideline\ntrigger: when refactoring functions\n---\n\nKeep functions small.\n"
-    )
+    (own_dir / "guideline.md").write_text("---\ntype: guideline\ntrigger: when refactoring functions\n---\n\nKeep functions small.\n")
 
     sub_dir = d / "entities" / "subscribed" / "alice" / "guideline"
     sub_dir.mkdir(parents=True)

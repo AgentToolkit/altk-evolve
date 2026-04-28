@@ -130,8 +130,7 @@ class TestCodexSaveAndRetrieve:
         assert result.returncode == 0
         own_line = '{"path": ".evolve/entities/guideline/guideline.md", "type": "guideline", "trigger": "when refactoring"}'
         public_line = (
-            '{"path": ".evolve/public/guideline/published-guideline.md", '
-            '"type": "guideline", "trigger": "when documenting edge cases"}'
+            '{"path": ".evolve/public/guideline/published-guideline.md", "type": "guideline", "trigger": "when documenting edge cases"}'
         )
         assert own_line in result.stdout
         assert public_line in result.stdout

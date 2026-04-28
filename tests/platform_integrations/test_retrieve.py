@@ -88,7 +88,9 @@ class TestRetrieve:
         assert sub_entry in entries
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_manifest_entries_contain_only_path_type_trigger(self, evolve_dir, temp_project_dir, retrieve_script, expected_header, platform_name):
+    def test_manifest_entries_contain_only_path_type_trigger(
+        self, evolve_dir, temp_project_dir, retrieve_script, expected_header, platform_name
+    ):
         result = run_retrieve(retrieve_script, temp_project_dir, evolve_dir=evolve_dir)
         for entry in parse_manifest_lines(result.stdout):
             assert set(entry.keys()) == {"path", "type", "trigger"}

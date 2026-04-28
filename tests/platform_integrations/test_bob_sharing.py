@@ -693,7 +693,9 @@ class TestBobRetrieveEntities:
         evolve_dir = temp_project_dir / ".evolve"
         public_dir = evolve_dir / "public" / "guideline"
         public_dir.mkdir(parents=True)
-        (public_dir / "tip.md").write_text("---\ntype: guideline\ntrigger: when sharing guidelines\nvisibility: public\n---\n\nPublic tip.\n")
+        (public_dir / "tip.md").write_text(
+            "---\ntype: guideline\ntrigger: when sharing guidelines\nvisibility: public\n---\n\nPublic tip.\n"
+        )
 
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert "when sharing guidelines" in result.stdout
