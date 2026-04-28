@@ -38,7 +38,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     openssh-client \
     ripgrep \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && JLESS_URL=$(curl -fsSL https://api.github.com/repos/PaulJuliusMartinez/jless/releases/latest \
+       | grep -o '"browser_download_url": *"[^"]*x86_64-unknown-linux-gnu.zip"' \
+       | cut -d'"' -f4) \
+    && curl -fsSL "$JLESS_URL" -o /tmp/jless.zip \
+    && unzip -o /tmp/jless.zip -d /usr/local/bin \
+    && chmod +x /usr/local/bin/jless \
+    && rm /tmp/jless.zip
 
 RUN groupadd sandbox && useradd -m -g sandbox sandbox \
     && mkdir -p /workspace && chown sandbox:sandbox /workspace
