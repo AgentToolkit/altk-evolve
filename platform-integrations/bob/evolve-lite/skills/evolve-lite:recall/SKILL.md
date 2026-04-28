@@ -17,11 +17,10 @@ Entities can come from multiple sources:
 
 ## How It Works
 
-1. List all `.md` files under `.evolve/entities/` and its subdirectories
-2. Read each file — the YAML frontmatter contains `type` and `trigger`,
-   the body contains the entity content and rationale
-3. Review each entity for relevance to the current task
-4. Apply relevant entities as additional context for your work
+1. The script scans `.evolve/entities/` and `.evolve/public/` and emits a compact manifest containing only `path`, `type`, and `trigger` for each entity
+2. Review the manifest and identify entities whose trigger looks relevant to the current task
+3. Use `read_file` to read the full content of relevant entity files on demand
+4. Apply the retrieved guidance as additional context for your work
 
 **Directory structure**:
 - `.evolve/entities/guideline/` - Your private entities
@@ -57,7 +56,14 @@ organized by source:
         error-handling.md
 ```
 
-Each file uses markdown with YAML frontmatter:
+The manifest output is human-readable:
+
+```
+- `.evolve/entities/guideline/use-context-managers.md` [guideline] — When processing files or managing resources
+- `.evolve/entities/subscribed/alice/guideline/error-handling.md` [guideline] — When writing error handlers
+```
+
+Each file still uses markdown with YAML frontmatter:
 
 ```markdown
 ---
@@ -74,11 +80,6 @@ Use context managers for file operations
 Ensures proper resource cleanup
 ```
 
-## Entity Annotations
+## On-Demand Expansion
 
-Subscribed entities are annotated with their source:
-```
-- **[guideline]** [from: alice] Use context managers for file operations
-  - _Rationale: Ensures proper resource cleanup_
-  - _When: When processing files or managing resources_
-```
+When a manifest entry's trigger matches the current task, use `read_file` to load the full entity. The file body contains the guideline content and an optional `## Rationale` section.
