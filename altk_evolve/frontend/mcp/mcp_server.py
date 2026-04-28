@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-mcp")
 
 _client = None
-_namespace_initialized = False
+_initialized_namespaces: set[str] = set()
 _client_init_lock = threading.Lock()
 
 # Need to configure FastAPI separately and mount FastMCP on it
@@ -93,10 +93,10 @@ _setup_ui_routes()
 def get_client() -> EvolveClient:
     """Get the EvolveClient singleton with lazy initialization.
 
-    Initializes the client and ensures namespace exists on first access.
+    Initializes the client and ensures the default namespace exists on first access.
     This avoids the FastMCP SSE lifespan initialization race condition.
     """
-    global _client, _namespace_initialized
+    global _client
 
     with _client_init_lock:
         if _client is None:
@@ -104,27 +104,59 @@ def get_client() -> EvolveClient:
             _client = EvolveClient()
             logger.info("Evolve client initialized")
 
-        if not _namespace_initialized:
-            logger.info("Ensuring namespace exists...")
+        default_ns = evolve_config.namespace_id
+        if default_ns not in _initialized_namespaces:
+            logger.info(f"Ensuring default namespace '{default_ns}' exists...")
             try:
-                _client.ensure_namespace(evolve_config.namespace_id)
-                logger.info(f"Namespace '{evolve_config.namespace_id}' is ready")
+                _client.ensure_namespace(default_ns)
+                _initialized_namespaces.add(default_ns)
+                logger.info(f"Namespace '{default_ns}' is ready")
             except Exception as e:
-                logger.error(f"Failed to ensure namespace '{evolve_config.namespace_id}': {e}")
+                logger.error(f"Failed to ensure namespace '{default_ns}': {e}")
                 raise
-            _namespace_initialized = True
-            logger.info("Namespace initialization complete")
 
         return _client
 
 
-def get_entities_logic(task: str, entity_type: str = "guideline", include_public: bool = False, limit: int = 10) -> str:
-    """Implementation logic for get_entities tool."""
-    logger.info(f"Getting entities of type '{entity_type}' for task: {task} (include_public={include_public})")
+def _resolve_namespace(namespace_id: str | None) -> str:
+    """Resolve the effective namespace, ensuring it exists before use."""
+    resolved = namespace_id or evolve_config.namespace_id
+    if resolved not in _initialized_namespaces:
+        logger.info(f"Ensuring namespace '{resolved}' exists (first use)...")
+        try:
+            get_client().ensure_namespace(resolved)
+            _initialized_namespaces.add(resolved)
+            logger.info(f"Namespace '{resolved}' is ready")
+        except Exception as e:
+            logger.error(f"Failed to ensure namespace '{resolved}': {e}")
+            raise
+    return resolved
+
+
+def get_entities_logic(
+    task: str,
+    entity_type: str = "guideline",
+    include_public: bool = False,
+    limit: int = 10,
+    user_id: str | None = None,
+    namespace_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
+    """Implementation logic for get_entities tool.
+
+    Retrieval is intentionally broad: user_id and session_id are NOT used as
+    hard filters so that shared/older guidelines remain visible.  They are
+    accepted here for future opt-in narrowing but currently only logged.
+    """
+    resolved_ns = _resolve_namespace(namespace_id)
+    logger.info(
+        f"Getting entities of type '{entity_type}' for task: {task} "
+        f"(namespace={resolved_ns}, user_id={user_id}, session_id={session_id}, include_public={include_public})"
+    )
     client = get_client()
 
     private_results = client.search_entities(
-        namespace_id=evolve_config.namespace_id,
+        namespace_id=resolved_ns,
         query=task,
         filters={"type": entity_type},
         limit=limit,
@@ -137,13 +169,10 @@ def get_entities_logic(task: str, entity_type: str = "guideline", include_public
         response_lines.append(f"{i}. {entity.content}")
 
     if include_public:
-        # Exclude the caller's own namespace: those entities are already in private_results,
-        # and using a bare entity ID for cross-namespace dedup risks false-positives when
-        # different namespaces share the same auto-assigned numeric IDs.
         public_results = client.get_public_entities(
             query=task,
             entity_type=entity_type,
-            exclude_namespace_ids=[evolve_config.namespace_id],
+            exclude_namespace_ids=[resolved_ns],
             limit=limit,
         )
         private_ids: set[str] = {e.id for e in private_results}
@@ -161,7 +190,15 @@ def get_entities_logic(task: str, entity_type: str = "guideline", include_public
 
 
 @mcp.tool()
-def get_entities(task: str, entity_type: str = "guideline", include_public: bool = False, limit: int = 10) -> str:
+def get_entities(
+    task: str,
+    entity_type: str = "guideline",
+    include_public: bool = False,
+    limit: int = 10,
+    user_id: str | None = None,
+    namespace_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
     """
     Get relevant entities for a given task, filtered by type.
     Provide a task description and receive applicable best practices, guidelines, or policies.
@@ -171,12 +208,20 @@ def get_entities(task: str, entity_type: str = "guideline", include_public: bool
         entity_type: The type of entities to retrieve (e.g., 'guideline', 'policy'). Defaults to 'guideline'.
         include_public: If True, also include public entities from all namespaces. Defaults to False.
         limit: Maximum number of results to return from each source (private and public). Defaults to 10.
+        user_id: Optional caller user ID. Logged for attribution; does not filter results.
+        namespace_id: Optional namespace override. Falls back to the configured default.
+        session_id: Optional session/thread ID. Logged for attribution; does not filter results.
     """
-    return get_entities_logic(task, entity_type, include_public, limit)
+    return get_entities_logic(task, entity_type, include_public, limit, user_id, namespace_id, session_id)
 
 
 @mcp.tool()
-def get_guidelines(task: str) -> str:
+def get_guidelines(
+    task: str,
+    user_id: str | None = None,
+    namespace_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
     """
     Get relevant guidelines for a given task.
     Provide a task description and receive applicable best practices and guidelines.
@@ -184,12 +229,22 @@ def get_guidelines(task: str) -> str:
 
     Args:
         task: A description of the task you want guidelines for
+        user_id: Optional caller user ID. Logged for attribution; does not filter results.
+        namespace_id: Optional namespace override. Falls back to the configured default.
+        session_id: Optional session/thread ID. Logged for attribution; does not filter results.
     """
-    return get_entities_logic(task, "guideline")
+    return get_entities_logic(task, "guideline", user_id=user_id, namespace_id=namespace_id, session_id=session_id)
 
 
 @mcp.tool()
-def save_trajectory(trajectory_data: str, task_id: str | None = None, owner_id: str | None = None) -> list[RecordedEntity]:
+def save_trajectory(
+    trajectory_data: str,
+    task_id: str | None = None,
+    owner_id: str | None = None,
+    user_id: str | None = None,
+    namespace_id: str | None = None,
+    session_id: str | None = None,
+) -> list[RecordedEntity]:
     """
     Save the full agent trajectory to the Entity DB and generate guidelines
 
@@ -197,38 +252,61 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None, owner_id: 
         trajectory_data: A JSON formatted OpenAI conversation.
         task_id: Optional identifier for the task.
         owner_id: Optional user ID to record as the owner of generated guidelines.
+        user_id: Optional caller user ID. Attached as metadata to trajectory and guideline entities.
+        namespace_id: Optional namespace override. Falls back to the configured default.
+        session_id: Optional session/thread ID. Attached as metadata to trajectory and guideline entities.
     """
+    resolved_ns = _resolve_namespace(namespace_id)
+    # Prefer explicit user_id; fall back to owner_id for backward compatibility
+    effective_user_id = user_id or owner_id
     task_id = task_id or str(uuid.uuid4())
+
+    logger.info(f"Saving trajectory: namespace={resolved_ns}, user_id={effective_user_id}, session_id={session_id}, task_id={task_id}")
+
     entities = []
     messages = json.loads(trajectory_data)
+    trajectory_metadata_base: dict = {"task_id": task_id}
+    if effective_user_id:
+        trajectory_metadata_base["user_id"] = effective_user_id
+    if session_id:
+        trajectory_metadata_base["session_id"] = session_id
+
     for message in messages:
         entities.append(
             Entity(
                 type="trajectory",
                 content=message["content"] if isinstance(message["content"], str) else str(message["content"]),
                 metadata={
-                    "task_id": task_id,
+                    **trajectory_metadata_base,
                     "message": message,
                 },
             )
         )
 
     get_client().update_entities(
-        namespace_id=evolve_config.namespace_id,
+        namespace_id=resolved_ns,
         entities=entities,
         enable_conflict_resolution=False,
     )
     results = generate_guidelines(messages)
+
+    guideline_metadata_base: dict = {
+        "source_task_id": task_id,
+        "creation_mode": "auto-mcp",
+    }
+    if effective_user_id:
+        guideline_metadata_base["owner_id"] = effective_user_id
+        guideline_metadata_base["user_id"] = effective_user_id
+    if session_id:
+        guideline_metadata_base["session_id"] = session_id
 
     guideline_entities = [
         Entity(
             type="guideline",
             content=guideline.content,
             metadata={
+                **guideline_metadata_base,
                 "task_description": result.task_description,
-                "source_task_id": task_id,
-                "creation_mode": "auto-mcp",
-                **({"owner_id": owner_id} if owner_id else {}),
                 "category": guideline.category,
                 "rationale": guideline.rationale,
                 "trigger": guideline.trigger,
@@ -240,13 +318,13 @@ def save_trajectory(trajectory_data: str, task_id: str | None = None, owner_id: 
     ]
     if guideline_entities:
         get_client().update_entities(
-            namespace_id=evolve_config.namespace_id,
+            namespace_id=resolved_ns,
             entities=guideline_entities,
             enable_conflict_resolution=True,
         )
 
     return get_client().search_entities(
-        namespace_id=evolve_config.namespace_id,
+        namespace_id=resolved_ns,
         filters={"type": "trajectory", "metadata.task_id": task_id},
         limit=1000,
     )
@@ -260,6 +338,7 @@ def create_entity(
     enable_conflict_resolution: bool = False,
     owner_id: str | None = None,
     visibility: str = "private",
+    namespace_id: str | None = None,
 ) -> str:
     """
     Create a single entity in the namespace.
@@ -271,11 +350,13 @@ def create_entity(
         enable_conflict_resolution: If True, uses LLM to check for conflicts with existing entities
         owner_id: Optional user ID to record as the owner of this entity
         visibility: Visibility of the entity — 'private' (default) or 'public'
+        namespace_id: Optional namespace override. Falls back to the configured default.
 
     Returns:
         JSON string with the entity update details (ADD/UPDATE/DELETE/NONE) and entity ID
     """
-    logger.info(f"Creating entity of type: {entity_type}")
+    resolved_ns = _resolve_namespace(namespace_id)
+    logger.info(f"Creating entity of type: {entity_type} in namespace: {resolved_ns}")
     try:
         if visibility not in ("private", "public"):
             return json.dumps({"error": f"Invalid visibility '{visibility}': must be 'private' or 'public'"})
@@ -312,7 +393,7 @@ def create_entity(
         entity = Entity(type=entity_type, content=content, metadata=metadata_dict)
 
         updates = get_client().update_entities(
-            namespace_id=evolve_config.namespace_id, entities=[entity], enable_conflict_resolution=enable_conflict_resolution
+            namespace_id=resolved_ns, entities=[entity], enable_conflict_resolution=enable_conflict_resolution
         )
 
         if updates:
@@ -332,22 +413,24 @@ def create_entity(
 
 
 @mcp.tool()
-def publish_entity(entity_id: str, user_id: str | None = None) -> str:
+def publish_entity(entity_id: str, user_id: str | None = None, namespace_id: str | None = None) -> str:
     """
     Make an entity publicly visible to all users.
 
     Args:
         entity_id: The ID of the entity to publish
         user_id: Caller identity; must match the entity's owner_id if one is set
+        namespace_id: Optional namespace override. Falls back to the configured default.
 
     Returns:
         JSON string with the updated entity, or an error message
     """
-    logger.info(f"publish entity={entity_id} owner_present={user_id is not None} namespace={evolve_config.namespace_id}")
+    resolved_ns = _resolve_namespace(namespace_id)
+    logger.info(f"publish entity={entity_id} owner_present={user_id is not None} namespace={resolved_ns}")
     try:
         from datetime import datetime, UTC
 
-        entity = get_client().get_entity_by_id(namespace_id=evolve_config.namespace_id, entity_id=entity_id)
+        entity = get_client().get_entity_by_id(namespace_id=resolved_ns, entity_id=entity_id)
         if entity is None:
             return json.dumps({"error": f"Entity {entity_id} not found"})
 
@@ -362,7 +445,7 @@ def publish_entity(entity_id: str, user_id: str | None = None) -> str:
         if user_id is not None:
             metadata_updates["owner_id"] = user_id
         updated = get_client().patch_entity_metadata(
-            namespace_id=evolve_config.namespace_id,
+            namespace_id=resolved_ns,
             entity_id=entity_id,
             metadata_updates=metadata_updates,
         )
@@ -372,20 +455,22 @@ def publish_entity(entity_id: str, user_id: str | None = None) -> str:
 
 
 @mcp.tool()
-def unpublish_entity(entity_id: str, user_id: str | None = None) -> str:
+def unpublish_entity(entity_id: str, user_id: str | None = None, namespace_id: str | None = None) -> str:
     """
     Revert an entity to private visibility.
 
     Args:
         entity_id: The ID of the entity to unpublish
         user_id: Caller identity; must match the entity's owner_id if one is set
+        namespace_id: Optional namespace override. Falls back to the configured default.
 
     Returns:
         JSON string with the updated entity, or an error message
     """
-    logger.info(f"unpublish entity={entity_id} namespace={evolve_config.namespace_id}")
+    resolved_ns = _resolve_namespace(namespace_id)
+    logger.info(f"unpublish entity={entity_id} namespace={resolved_ns}")
     try:
-        entity = get_client().get_entity_by_id(namespace_id=evolve_config.namespace_id, entity_id=entity_id)
+        entity = get_client().get_entity_by_id(namespace_id=resolved_ns, entity_id=entity_id)
         if entity is None:
             return json.dumps({"error": f"Entity {entity_id} not found"})
 
@@ -394,7 +479,7 @@ def unpublish_entity(entity_id: str, user_id: str | None = None) -> str:
             return json.dumps({"error": "Permission denied: caller is not the owner of this entity"})
 
         updated = get_client().patch_entity_metadata(
-            namespace_id=evolve_config.namespace_id,
+            namespace_id=resolved_ns,
             entity_id=entity_id,
             metadata_updates={"visibility": "private", "published_at": None},
         )
@@ -404,21 +489,22 @@ def unpublish_entity(entity_id: str, user_id: str | None = None) -> str:
 
 
 @mcp.tool()
-def delete_entity(entity_id: str) -> str:
+def delete_entity(entity_id: str, namespace_id: str | None = None) -> str:
     """
     Delete a specific entity by its ID.
 
     Args:
         entity_id: The unique identifier of the entity to delete
+        namespace_id: Optional namespace override. Falls back to the configured default.
 
     Returns:
         JSON string confirming deletion or error message
     """
-    logger.info(f"Deleting entity: {entity_id}")
+    resolved_ns = _resolve_namespace(namespace_id)
+    logger.info(f"Deleting entity: {entity_id} from namespace: {resolved_ns}")
 
     try:
-        # Use EvolveClient.delete_entity_by_id() to delete the entity
-        get_client().delete_entity_by_id(namespace_id=evolve_config.namespace_id, entity_id=entity_id)
+        get_client().delete_entity_by_id(namespace_id=resolved_ns, entity_id=entity_id)
         return json.dumps({"success": True, "message": f"Entity {entity_id} deleted successfully"})
     except EvolveException as e:
         logger.exception(f"Error deleting entity {entity_id}: {str(e)}")
