@@ -263,7 +263,9 @@ def save_trajectory(
     effective_user_id = user_id or owner_id
     task_id = task_id or str(uuid.uuid4())
 
-    logger.info(f"Saving trajectory: namespace={resolved_ns}, user_present={effective_user_id is not None}, session_present={session_id is not None}, task_id={task_id}")
+    logger.info(
+        f"Saving trajectory: namespace={resolved_ns}, user_present={effective_user_id is not None}, session_present={session_id is not None}, task_id={task_id}"
+    )
     logger.debug(f"save_trajectory identifiers: user_id={effective_user_id}, session_id={session_id}")
 
     entities = []
