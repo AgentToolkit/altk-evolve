@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Pull the latest guidelines from every configured repo (Codex)."""
+"""Pull the latest guidelines from every configured repo.
+
+Every repo in ``evolve.config.yaml`` (both read- and write-scope) is cloned
+into ``.evolve/entities/subscribed/{name}/`` so recall sees everything through
+a single root. Publish commits stay local until pushed, so write-scope repos
+use ``git fetch`` + ``git rebase`` (preserves unpushed commits) while
+read-scope repos use ``git fetch`` + ``git reset --hard`` (exact mirror).
+
+Usage:
+  --quiet            Suppress output if no changes.
+  --config PATH      Path to config file (default: evolve.config.yaml at project root).
+  --session-start    Apply the ``sync.on_session_start`` gate (automatic hook runs).
+"""
 
 import argparse
 import os
@@ -8,11 +20,15 @@ import sys
 from pathlib import Path
 
 # Walk up from the script location to find the installed plugin lib directory.
+# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
+# monorepo-dev fallback resolves to claude's lib when running codex's script
+# straight out of platform-integrations/.
 _script = Path(__file__).resolve()
 _lib = None
 for _ancestor in _script.parents:
     for _candidate in (
         _ancestor / "lib",
+        _ancestor / "evolve-lib",
         _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
     ):
         if (_candidate / "entity_io.py").is_file():

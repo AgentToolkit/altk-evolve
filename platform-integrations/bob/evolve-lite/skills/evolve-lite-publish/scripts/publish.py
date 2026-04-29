@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish a private guideline entity to a write-scope repo (Bob)."""
+"""Publish a private guideline entity to a write-scope repo."""
 
 import argparse
 import datetime
@@ -9,17 +9,29 @@ import sys
 import tempfile
 from pathlib import Path, PurePath
 
-# Smart import: walk up to find evolve-lib
-current = Path(__file__).resolve()
-for parent in current.parents:
-    lib_path = parent / "evolve-lib"
-    if lib_path.exists():
-        sys.path.insert(0, str(lib_path))
+# Walk up from the script location to find the installed plugin lib directory.
+# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
+# monorepo-dev fallback resolves to claude's lib when running codex's script
+# straight out of platform-integrations/.
+_script = Path(__file__).resolve()
+_lib = None
+for _ancestor in _script.parents:
+    for _candidate in (
+        _ancestor / "lib",
+        _ancestor / "evolve-lib",
+        _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
+    ):
+        if (_candidate / "entity_io.py").is_file():
+            _lib = _candidate
+            break
+    if _lib is not None:
         break
-
+if _lib is None:
+    raise ImportError(f"Cannot find plugin lib directory above {_script}")
+sys.path.insert(0, str(_lib))
 from audit import append as audit_append  # noqa: E402
-from config import get_repo, load_config, normalize_repos, write_repos  # noqa: E402
 from entity_io import entity_to_markdown, markdown_to_entity  # noqa: E402
+from config import get_repo, load_config, normalize_repos, write_repos  # noqa: E402
 
 
 def _resolve_source(repo, effective_user):
@@ -152,5 +164,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Made with Bob

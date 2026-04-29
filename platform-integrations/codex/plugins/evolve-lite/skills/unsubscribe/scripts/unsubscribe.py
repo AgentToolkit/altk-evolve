@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove a repo from the unified ``repos`` list and delete its local clone (Codex)."""
+"""Remove a repo from the unified ``repos`` list and delete its local clone."""
 
 import argparse
 import json
@@ -9,11 +9,15 @@ import sys
 from pathlib import Path
 
 # Walk up from the script location to find the installed plugin lib directory.
+# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
+# monorepo-dev fallback resolves to claude's lib when running codex's script
+# straight out of platform-integrations/.
 _script = Path(__file__).resolve()
 _lib = None
 for _ancestor in _script.parents:
     for _candidate in (
         _ancestor / "lib",
+        _ancestor / "evolve-lib",
         _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
     ):
         if (_candidate / "entity_io.py").is_file():

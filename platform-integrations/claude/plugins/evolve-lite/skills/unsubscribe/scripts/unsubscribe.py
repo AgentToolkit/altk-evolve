@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Remove a repo from the unified ``repos`` list and delete its local clone.
-
-Works for both read-scope (subscribed) and write-scope (publish target) repos.
-
-Usage:
-  --list          Print configured repos as a JSON array and exit.
-  --name {name}   Remove the named repo from config and delete its local dir.
-"""
+"""Remove a repo from the unified ``repos`` list and delete its local clone."""
 
 import argparse
 import json
@@ -15,8 +8,27 @@ import shutil
 import sys
 from pathlib import Path
 
-# Add lib to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
+# Walk up from the script location to find the installed plugin lib directory.
+# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
+# monorepo-dev fallback resolves to claude's lib when running codex's script
+# straight out of platform-integrations/.
+_script = Path(__file__).resolve()
+_lib = None
+for _ancestor in _script.parents:
+    for _candidate in (
+        _ancestor / "lib",
+        _ancestor / "evolve-lib",
+        _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
+    ):
+        if (_candidate / "entity_io.py").is_file():
+            _lib = _candidate
+            break
+    if _lib is not None:
+        break
+if _lib is None:
+    raise ImportError(f"Cannot find plugin lib directory above {_script}")
+sys.path.insert(0, str(_lib))
+from audit import append as audit_append  # noqa: E402
 from config import (  # noqa: E402
     is_valid_repo_name,
     load_config,
@@ -24,7 +36,6 @@ from config import (  # noqa: E402
     save_config,
     set_repos,
 )
-from audit import append as audit_append  # noqa: E402
 
 
 def main():
@@ -39,8 +50,8 @@ def main():
     )
     args = parser.parse_args()
 
-    project_root = "."
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
+    project_root = str(evolve_dir.resolve()) if evolve_dir.name != ".evolve" else str(evolve_dir.resolve().parent)
 
     cfg = load_config(project_root)
     repos = normalize_repos(cfg)
@@ -50,14 +61,10 @@ def main():
         return
 
     name = args.name
-
-    if not is_valid_repo_name(name):
-        print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
-        sys.exit(1)
-
     subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
     dest = (evolve_dir / "entities" / "subscribed" / name).resolve()
-    if not dest.is_relative_to(subscribed_base) or dest == subscribed_base:
+
+    if not is_valid_repo_name(name) or dest == subscribed_base or not dest.is_relative_to(subscribed_base):
         print(f"Error: invalid subscription name: {name!r}", file=sys.stderr)
         sys.exit(1)
 
@@ -87,12 +94,7 @@ def main():
 
     identity = cfg.get("identity", {})
     actor = identity.get("user", "unknown") if isinstance(identity, dict) else "unknown"
-    audit_append(
-        project_root=project_root,
-        action="unsubscribe",
-        actor=actor,
-        name=name,
-    )
+    audit_append(project_root=project_root, action="unsubscribe", actor=actor, name=name)
 
     print(f"Removed subscription '{name}' from config.")
 

@@ -4,8 +4,8 @@
 Every repo in ``evolve.config.yaml`` (both read- and write-scope) is cloned
 into ``.evolve/entities/subscribed/{name}/`` so recall sees everything through
 a single root. Publish commits stay local until pushed, so write-scope repos
-use ``git pull --rebase`` (preserves unpushed commits) while read-scope repos
-use ``git fetch`` + ``git reset --hard`` (exact mirror).
+use ``git fetch`` + ``git rebase`` (preserves unpushed commits) while
+read-scope repos use ``git fetch`` + ``git reset --hard`` (exact mirror).
 
 Usage:
   --quiet            Suppress output if no changes.
@@ -19,20 +19,37 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Add lib to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from config import classify_repo_entry, load_config  # noqa: E402
+# Walk up from the script location to find the installed plugin lib directory.
+# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
+# monorepo-dev fallback resolves to claude's lib when running codex's script
+# straight out of platform-integrations/.
+_script = Path(__file__).resolve()
+_lib = None
+for _ancestor in _script.parents:
+    for _candidate in (
+        _ancestor / "lib",
+        _ancestor / "evolve-lib",
+        _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
+    ):
+        if (_candidate / "entity_io.py").is_file():
+            _lib = _candidate
+            break
+    if _lib is not None:
+        break
+if _lib is None:
+    raise ImportError(f"Cannot find plugin lib directory above {_script}")
+sys.path.insert(0, str(_lib))
 from audit import append as audit_append  # noqa: E402
+from config import classify_repo_entry, load_config  # noqa: E402
 
 
 _GIT_TIMEOUT = 30  # seconds
 
 
 def _git(repo_path, *args, timeout=_GIT_TIMEOUT):
-    """Run a git command inside ``repo_path`` with a timeout. Returns CompletedProcess or None."""
     try:
         return subprocess.run(
-            ["git", "-c", f"safe.directory={repo_path}", "-C", str(repo_path), *args],
+            ["git", "-C", str(repo_path), *args],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -41,20 +58,8 @@ def _git(repo_path, *args, timeout=_GIT_TIMEOUT):
         return None
 
 
-def _head_hash(repo_path):
-    result = _git(repo_path, "rev-parse", "HEAD")
-    if result is None or result.returncode != 0:
-        return None
-    return result.stdout.strip()
-
-
 def sync_read_only(repo_path, branch):
-    """Fetch and hard-reset to ``origin/{branch}``. Returns CompletedProcess or None on timeout.
-
-    Hard reset ensures the local clone always matches the remote exactly —
-    restores deleted files and discards any local modifications. Read-only
-    mirrors have no local commits worth preserving.
-    """
+    """Fetch and hard-reset to origin/{branch} (read-only mirror)."""
     fetch = _git(repo_path, "fetch", "origin", branch)
     if fetch is None or fetch.returncode != 0:
         return fetch
@@ -62,37 +67,20 @@ def sync_read_only(repo_path, branch):
 
 
 def sync_writable(repo_path, branch):
-    """Fetch and rebase local commits onto ``origin/{branch}``.
-
-    Write-scope repos may have local commits from publishing that have not
-    yet been pushed. Rebase preserves them (no-op when the working tree is
-    clean) so the user never loses unpushed publish commits.
-    """
+    """Fetch and rebase local commits onto origin/{branch} (preserves publishes)."""
     fetch = _git(repo_path, "fetch", "origin", branch)
     if fetch is None or fetch.returncode != 0:
         return fetch
     rebase = _git(repo_path, "rebase", f"origin/{branch}")
     if rebase is None or rebase.returncode != 0:
-        # Abort a failed rebase so we don't leave the repo in a conflict state.
         _git(repo_path, "rebase", "--abort")
         return rebase
     return rebase
 
 
 def count_delta(repo_path):
-    """Count added/modified/deleted .md files since last sync.
-
-    Returns dict: ``{added: int, updated: int, removed: int}``.
-    """
-    result = _git(
-        repo_path,
-        "diff",
-        "--name-status",
-        "HEAD@{1}",
-        "HEAD",
-    )
+    result = _git(repo_path, "diff", "--name-status", "HEAD@{1}", "HEAD")
     if result is None or result.returncode != 0:
-        # HEAD@{1} doesn't exist (initial sync) — count all .md files as added.
         added = len(list(repo_path.glob("**/*.md")))
         return {"added": added, "updated": 0, "removed": 0}
     added = updated = removed = 0
@@ -117,11 +105,7 @@ def count_delta(repo_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--quiet", action="store_true", help="Suppress output if no changes")
-    parser.add_argument(
-        "--config",
-        default=None,
-        help="Path to config file (default: evolve.config.yaml in project root)",
-    )
+    parser.add_argument("--config", default=None, help="Explicit config path")
     parser.add_argument(
         "--session-start",
         action="store_true",
@@ -130,7 +114,9 @@ def main():
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
-    project_root = str(evolve_dir.parent) if "EVOLVE_DIR" in os.environ else "."
+    resolved_evolve_dir = evolve_dir.resolve()
+    project_root = str(resolved_evolve_dir.parent)
+    audit_root = resolved_evolve_dir if resolved_evolve_dir.name == ".evolve" else resolved_evolve_dir / ".evolve"
 
     if args.config:
         config_path = Path(args.config).resolve()
@@ -144,7 +130,6 @@ def main():
     else:
         cfg = load_config(project_root)
 
-    # Check sync.on_session_start — only short-circuits automatic hook runs.
     sync_cfg = cfg.get("sync", {})
     if args.session_start and isinstance(sync_cfg, dict) and sync_cfg.get("on_session_start") is False:
         sys.exit(0)
@@ -168,7 +153,7 @@ def main():
 
     if not repos and not rejections:
         if not args.quiet:
-            print("No subscriptions configured. Add one with /evolve-lite:subscribe to start syncing shared guidelines.")
+            print("No subscriptions configured. Add one with the evolve-lite:subscribe skill to start syncing shared guidelines.")
         sys.exit(0)
 
     identity = cfg.get("identity", {})
@@ -182,20 +167,24 @@ def main():
         raw_name = rejection["raw_name"]
         reason = rejection["reason"]
         label = repr(raw_name) if raw_name else "<unnamed entry>"
-        summaries.append(f"{label} (skipped — {reason})")
+        summaries.append(f"{label} (skipped - {reason})")
 
     for repo in repos:
-        name = repo.get("name")
+        name = repo["name"]
         scope = repo.get("scope", "read")
         branch = repo.get("branch", "main")
         remote = repo.get("remote")
 
-        repo_path = evolve_dir / "entities" / "subscribed" / name
+        subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
+        repo_path = (evolve_dir / "entities" / "subscribed" / name).resolve()
 
-        head_before = None
+        if repo_path == subscribed_base or not repo_path.is_relative_to(subscribed_base):
+            summaries.append(f"{name!r} (skipped - invalid subscription name)")
+            continue
+
         if not repo_path.is_dir():
             if not remote:
-                summaries.append(f"{name} (not cloned — no remote in config, run /evolve-lite:subscribe first)")
+                summaries.append(f"{name} (not cloned)")
                 continue
             repo_path.parent.mkdir(parents=True, exist_ok=True)
             clone_cmd = ["git", "clone", "--branch", branch]
@@ -210,7 +199,7 @@ def main():
                     timeout=_GIT_TIMEOUT,
                 )
             except subprocess.TimeoutExpired:
-                summaries.append(f"{name} (re-clone failed — timeout)")
+                summaries.append(f"{name} (re-clone failed - timeout)")
                 total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
                 any_changes = True
                 continue
@@ -219,8 +208,6 @@ def main():
                 total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
                 any_changes = True
                 continue
-        else:
-            head_before = _head_hash(repo_path)
 
         if scope == "write":
             pull_result = sync_writable(repo_path, branch)
@@ -228,46 +215,31 @@ def main():
             pull_result = sync_read_only(repo_path, branch)
 
         if pull_result is None:
-            summaries.append(f"{name} (sync failed — timeout)")
+            summaries.append(f"{name} (sync failed - timeout)")
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             any_changes = True
             continue
         if pull_result.returncode != 0:
-            err = (pull_result.stderr or pull_result.stdout or "").strip().splitlines()
-            short_error = err[-1] if err else f"git exited with {pull_result.returncode}"
+            error_lines = (pull_result.stderr or pull_result.stdout or "").strip().splitlines()
+            short_error = error_lines[-1] if error_lines else f"git exited with {pull_result.returncode}"
             summaries.append(f"{name} (sync failed: {short_error})")
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             any_changes = True
             continue
 
-        head_after = _head_hash(repo_path)
-        if head_before is not None and head_before == head_after:
-            delta = {"added": 0, "updated": 0, "removed": 0}
-        else:
-            delta = count_delta(repo_path)
+        delta = count_delta(repo_path)
         total_delta[name] = delta
-
-        has_changes = any(v > 0 for v in delta.values())
-        if has_changes:
+        if any(value > 0 for value in delta.values()):
             any_changes = True
 
-        delta_str = f"+{delta['added']} added, {delta['updated']} updated, {delta['removed']} removed"
-        summaries.append(f"{name} [{scope}] ({delta_str})")
+        summaries.append(f"{name} [{scope}] (+{delta['added']} added, {delta['updated']} updated, {delta['removed']} removed)")
 
-    # Audit
-    audit_append(
-        project_root=project_root,
-        action="sync",
-        actor=actor,
-        delta=total_delta,
-    )
+    audit_append(project_root=str(audit_root.parent), action="sync", actor=actor, delta=total_delta)
 
     if args.quiet and not any_changes:
         sys.exit(0)
 
-    n = len(summaries)
-    summary_line = f"Synced {n} repo(s): " + ", ".join(summaries)
-    print(summary_line)
+    print(f"Synced {len(summaries)} repo(s): " + ", ".join(summaries))
 
 
 if __name__ == "__main__":

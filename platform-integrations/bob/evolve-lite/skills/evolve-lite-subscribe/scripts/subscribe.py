@@ -1,5 +1,25 @@
 #!/usr/bin/env python3
-"""Add a repo to the unified ``repos`` list and clone it locally (Bob)."""
+"""Add a repo to the unified ``repos`` list and clone it locally.
+
+Shared (multi-reader, multi-writer) repos are described in
+``evolve.config.yaml``:
+
+    repos:
+      - name: memory
+        scope: write
+        remote: git@github.com:alice/evolve.git
+        branch: main
+        notes: public memory for foobar project
+      - name: org-memory
+        scope: read
+        remote: git@github.com:acme/org-memory.git
+        branch: main
+        notes: private memory shared only within my org
+
+``scope: read``  — download-only (pulled by sync).
+``scope: write`` — publish target; also pulled by sync so you see what
+                   others push and what you have already published.
+"""
 
 import argparse
 import os
@@ -8,14 +28,26 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Smart import: walk up to find evolve-lib
-current = Path(__file__).resolve()
-for parent in current.parents:
-    lib_path = parent / "evolve-lib"
-    if lib_path.exists():
-        sys.path.insert(0, str(lib_path))
+# Walk up from the script location to find the installed plugin lib directory.
+# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
+# monorepo-dev fallback resolves to claude's lib when running codex's script
+# straight out of platform-integrations/.
+_script = Path(__file__).resolve()
+_lib = None
+for _ancestor in _script.parents:
+    for _candidate in (
+        _ancestor / "lib",
+        _ancestor / "evolve-lib",
+        _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
+    ):
+        if (_candidate / "entity_io.py").is_file():
+            _lib = _candidate
+            break
+    if _lib is not None:
         break
-
+if _lib is None:
+    raise ImportError(f"Cannot find plugin lib directory above {_script}")
+sys.path.insert(0, str(_lib))
 from audit import append as audit_append  # noqa: E402
 from config import (  # noqa: E402
     VALID_SCOPES,
@@ -121,5 +153,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Made with Bob

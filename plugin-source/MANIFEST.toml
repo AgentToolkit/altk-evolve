@@ -73,22 +73,42 @@ platforms = ["bob"]
 [[files]]
 source = "skills/publish/scripts/publish.py"
 target = "skills/publish/scripts/publish.py"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/publish/scripts/publish.py"
+target = "skills/evolve-lite-publish/scripts/publish.py"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/subscribe/scripts/subscribe.py"
 target = "skills/subscribe/scripts/subscribe.py"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/subscribe/scripts/subscribe.py"
+target = "skills/evolve-lite-subscribe/scripts/subscribe.py"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/unsubscribe/scripts/unsubscribe.py"
 target = "skills/unsubscribe/scripts/unsubscribe.py"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/unsubscribe/scripts/unsubscribe.py"
+target = "skills/evolve-lite-unsubscribe/scripts/unsubscribe.py"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/sync/scripts/sync.py"
 target = "skills/sync/scripts/sync.py"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/sync/scripts/sync.py"
+target = "skills/evolve-lite-sync/scripts/sync.py"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/recall/scripts/retrieve_entities.py"
@@ -104,6 +124,11 @@ platforms = ["bob"]
 source = "skills/save-trajectory/scripts/save_trajectory.py"
 target = "skills/save-trajectory/scripts/save_trajectory.py"
 platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/save-trajectory/scripts/save_trajectory.py"
+target = "skills/evolve-lite-save-trajectory/scripts/save_trajectory.py"
+platforms = ["bob"]
 
 # Templated SKILL.md files. Each .j2 is the unified prose for all four
 # platforms — codex's structure / wording is the base, with Jinja2 branches

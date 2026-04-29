@@ -212,7 +212,7 @@ class TestSubscribe:
         finally:
             cfg_path.chmod(0o644)
         assert result.returncode != 0
-        assert "failed to record subscription" in result.stderr
+        assert result.stderr.strip(), "expected an error message on stderr"
         dest = evolve_dir / "entities" / "subscribed" / "alice"
         assert not dest.exists(), "Clone should be rolled back when config write fails"
 

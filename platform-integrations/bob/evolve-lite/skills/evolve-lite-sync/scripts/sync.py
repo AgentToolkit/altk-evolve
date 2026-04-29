@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Pull the latest guidelines from every configured repo (Bob).
+"""Pull the latest guidelines from every configured repo.
 
-Read-scope repos are mirrored exactly via fetch + reset --hard; write-scope
-repos use fetch + rebase so any unpushed local publish commits are preserved.
+Every repo in ``evolve.config.yaml`` (both read- and write-scope) is cloned
+into ``.evolve/entities/subscribed/{name}/`` so recall sees everything through
+a single root. Publish commits stay local until pushed, so write-scope repos
+use ``git fetch`` + ``git rebase`` (preserves unpushed commits) while
+read-scope repos use ``git fetch`` + ``git reset --hard`` (exact mirror).
 
 Usage:
-  --quiet        Suppress output if no changes.
-  --config PATH  Path to config file (default: evolve.config.yaml at project root).
+  --quiet            Suppress output if no changes.
+  --config PATH      Path to config file (default: evolve.config.yaml at project root).
+  --session-start    Apply the ``sync.on_session_start`` gate (automatic hook runs).
 """
 
 import argparse
@@ -15,14 +19,26 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Smart import: walk up to find evolve-lib
-current = Path(__file__).resolve()
-for parent in current.parents:
-    lib_path = parent / "evolve-lib"
-    if lib_path.exists():
-        sys.path.insert(0, str(lib_path))
+# Walk up from the script location to find the installed plugin lib directory.
+# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
+# monorepo-dev fallback resolves to claude's lib when running codex's script
+# straight out of platform-integrations/.
+_script = Path(__file__).resolve()
+_lib = None
+for _ancestor in _script.parents:
+    for _candidate in (
+        _ancestor / "lib",
+        _ancestor / "evolve-lib",
+        _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
+    ):
+        if (_candidate / "entity_io.py").is_file():
+            _lib = _candidate
+            break
+    if _lib is not None:
         break
-
+if _lib is None:
+    raise ImportError(f"Cannot find plugin lib directory above {_script}")
+sys.path.insert(0, str(_lib))
 from audit import append as audit_append  # noqa: E402
 from config import classify_repo_entry, load_config  # noqa: E402
 
@@ -89,24 +105,34 @@ def count_delta(repo_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--quiet", action="store_true", help="Suppress output if no changes")
+    parser.add_argument("--config", default=None, help="Explicit config path")
     parser.add_argument(
-        "--config",
-        default=None,
-        help="Path to config file (default: evolve.config.yaml in project root)",
+        "--session-start",
+        action="store_true",
+        help="Apply session-start gating for automatic hook execution",
     )
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
+    resolved_evolve_dir = evolve_dir.resolve()
+    project_root = str(resolved_evolve_dir.parent)
+    audit_root = resolved_evolve_dir if resolved_evolve_dir.name == ".evolve" else resolved_evolve_dir / ".evolve"
 
     if args.config:
         config_path = Path(args.config).resolve()
-        project_root = str(config_path.parent)
-    elif "EVOLVE_DIR" in os.environ:
-        project_root = str(evolve_dir.resolve().parent)
+        if config_path.name != "evolve.config.yaml":
+            print(
+                f"Error: --config must point to an evolve.config.yaml file, got: {config_path}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        cfg = load_config(project_root=str(config_path.parent))
     else:
-        project_root = "."
+        cfg = load_config(project_root)
 
-    cfg = load_config(project_root)
+    sync_cfg = cfg.get("sync", {})
+    if args.session_start and isinstance(sync_cfg, dict) and sync_cfg.get("on_session_start") is False:
+        sys.exit(0)
 
     raw_entries = cfg.get("repos") if isinstance(cfg, dict) else None
     if not isinstance(raw_entries, list):
@@ -127,7 +153,7 @@ def main():
 
     if not repos and not rejections:
         if not args.quiet:
-            print("No subscriptions configured. Add one with the evolve-lite-subscribe skill to start syncing shared guidelines.")
+            print("No subscriptions configured. Add one with the evolve-lite:subscribe skill to start syncing shared guidelines.")
         sys.exit(0)
 
     identity = cfg.get("identity", {})
@@ -141,7 +167,7 @@ def main():
         raw_name = rejection["raw_name"]
         reason = rejection["reason"]
         label = repr(raw_name) if raw_name else "<unnamed entry>"
-        summaries.append(f"{label} (skipped — {reason})")
+        summaries.append(f"{label} (skipped - {reason})")
 
     for repo in repos:
         name = repo["name"]
@@ -153,7 +179,7 @@ def main():
         repo_path = (evolve_dir / "entities" / "subscribed" / name).resolve()
 
         if repo_path == subscribed_base or not repo_path.is_relative_to(subscribed_base):
-            summaries.append(f"{name!r} (skipped — invalid subscription name)")
+            summaries.append(f"{name!r} (skipped - invalid subscription name)")
             continue
 
         if not repo_path.is_dir():
@@ -173,7 +199,7 @@ def main():
                     timeout=_GIT_TIMEOUT,
                 )
             except subprocess.TimeoutExpired:
-                summaries.append(f"{name} (re-clone failed — timeout)")
+                summaries.append(f"{name} (re-clone failed - timeout)")
                 total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
                 any_changes = True
                 continue
@@ -189,7 +215,7 @@ def main():
             pull_result = sync_read_only(repo_path, branch)
 
         if pull_result is None:
-            summaries.append(f"{name} (sync failed — timeout)")
+            summaries.append(f"{name} (sync failed - timeout)")
             total_delta[name] = {"added": 0, "updated": 0, "removed": 0}
             any_changes = True
             continue
@@ -208,7 +234,7 @@ def main():
 
         summaries.append(f"{name} [{scope}] (+{delta['added']} added, {delta['updated']} updated, {delta['removed']} removed)")
 
-    audit_append(project_root=project_root, action="sync", actor=actor, delta=total_delta)
+    audit_append(project_root=str(audit_root.parent), action="sync", actor=actor, delta=total_delta)
 
     if args.quiet and not any_changes:
         sys.exit(0)
@@ -218,5 +244,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Made with Bob
