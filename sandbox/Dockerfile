@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && JLESS_URL=$(curl -fsSL https://api.github.com/repos/PaulJuliusMartinez/jless/releases/latest \
        | grep -o '"browser_download_url": *"[^"]*x86_64-unknown-linux-gnu.zip"' \
        | cut -d'"' -f4) \
+    && if [ -z "$JLESS_URL" ]; then echo "ERROR: failed to resolve jless download URL from GitHub API" >&2; exit 1; fi \
     && curl -fsSL "$JLESS_URL" -o /tmp/jless.zip \
     && unzip -o /tmp/jless.zip -d /usr/local/bin \
     && chmod +x /usr/local/bin/jless \
