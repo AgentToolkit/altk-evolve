@@ -18,6 +18,7 @@ set in the environment (forwarded into the container).
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -163,8 +164,6 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
     # bash invocations, not string mentions — so a command like
     # `python3 -c "import PIL"` would fail this check, while the guideline's
     # prose mentioning PIL as unavailable does not.
-    assert "exiftool " not in joined and "exiftool$" not in joined, "session 2 invoked exiftool despite recall guideline:\n" + "\n".join(
-        commands
-    )
+    assert not re.search(r"\bexiftool\b", joined), "session 2 invoked exiftool despite recall guideline:\n" + "\n".join(commands)
     for banned in ("from pil", "import pil", "import piexif", "import exifread"):
         assert banned not in joined, f"session 2 tried {banned!r} despite recall guideline:\n" + "\n".join(commands)
