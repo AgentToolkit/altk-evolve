@@ -64,7 +64,7 @@ model):
 
 ```bash
 # Direct Anthropic API
-ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY=sk-ant-xxxx
 
 # Or, via a proxy / gateway
 ANTHROPIC_AUTH_TOKEN=your-token
