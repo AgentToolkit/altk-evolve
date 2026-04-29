@@ -8,7 +8,8 @@ from pathlib import Path
 
 # Add lib to path so we can import entity_io
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from entity_io import find_recall_entity_dirs, markdown_to_entity, log as _log
+from entity_io import find_recall_entity_dirs, get_evolve_dir, markdown_to_entity, log as _log
+import audit
 
 
 def log(message):
@@ -82,6 +83,9 @@ def load_entities_with_source(entities_dir):
             entity = markdown_to_entity(md)
             if not entity.get("content"):
                 continue
+            # Record the on-disk slug (filename stem) so downstream can
+            # reference the entity without re-derivation.
+            entity["_slug"] = md.stem
             # Detect subscribed entities by path: .../entities/subscribed/{name}/...
             parts = md.parts
             try:
@@ -128,6 +132,24 @@ def main():
     output = format_entities(entities)
     print(output)
     log(f"Output {len(output)} chars to stdout")
+
+    # Audit: record which entities were served to which session. Must not
+    # fail the hook if logging errors — recall is the user-visible path.
+    try:
+        transcript_path = input_data.get("transcript_path", "")
+        session_id = Path(transcript_path).stem if transcript_path else None
+        slugs = sorted({e["_slug"] for e in entities if e.get("_slug")})
+        if session_id and slugs:
+            project_root = get_evolve_dir().resolve().parent
+            audit.append(
+                project_root=str(project_root),
+                event="recall",
+                session_id=session_id,
+                entities=slugs,
+            )
+            log(f"Audit: recall session_id={session_id} entities={len(slugs)}")
+    except Exception as exc:
+        log(f"Audit append failed (non-fatal): {exc}")
 
 
 if __name__ == "__main__":

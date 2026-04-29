@@ -116,6 +116,36 @@ The script will:
 - Deduplicate against existing entities
 - Display confirmation with the total count
 
+### Step 4: Assess Influence of Recalled Entities
+
+Regardless of whether Step 3 produced new entities, judge whether the guidelines the recall hook served to *this* session were actually followed, contradicted, or simply irrelevant. This closes the provenance loop: the recall hook records *what* was served; this step records *what effect* it had.
+
+1. Derive this session's `session_id` — it's `Path(transcript_path).stem` (same `transcript_path` extracted in Step 0).
+
+2. Read `.evolve/audit.log` (JSONL, one object per line). Find every line where `event == "recall"` and `session_id` matches. Take the union of their `entities` arrays — that is the set of guideline slugs served to this session. If that set is empty, skip this step.
+
+3. For each slug, open `.evolve/entities/guideline/<slug>.md` and read its content + trigger. That is the guideline's intent.
+
+4. Compare against the transcript loaded in Step 0. For each slug, pick one verdict:
+   - `followed` — the agent's actual actions are consistent with the guideline's recommendation.
+   - `contradicted` — the guideline's trigger matched the task but the agent did the opposite, or hit the dead end the guideline would have prevented.
+   - `not_applicable` — the guideline's trigger didn't match what this session was about.
+
+   Keep `evidence` to one short sentence citing a specific action or tool call from the transcript.
+
+5. Emit one JSON payload and pipe it to the helper:
+
+```bash
+echo '{
+  "session_id": "<session-id>",
+  "assessments": [
+    {"entity": "<slug>", "verdict": "followed", "evidence": "Agent imported struct and parsed APP1 directly"}
+  ]
+}' | python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/log_influence.py
+```
+
+Emit zero assessments (empty `assessments` list) when no recall events exist for this session.
+
 ## Quality Gate
 
 Before saving, review each entity against this checklist:
