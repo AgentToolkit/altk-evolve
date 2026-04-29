@@ -10,13 +10,26 @@ import json
 import sys
 from pathlib import Path
 
-# Smart import: walk up to find evolve-lib
-current = Path(__file__).resolve()
-for parent in current.parents:
-    lib_path = parent / "evolve-lib"
-    if lib_path.exists():
-        sys.path.insert(0, str(lib_path))
+# Walk up from the script location to find the installed plugin lib directory.
+# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
+# monorepo-dev fallback resolves to claude's lib when running codex's script
+# straight out of platform-integrations/.
+_script = Path(__file__).resolve()
+_lib = None
+for _ancestor in _script.parents:
+    for _candidate in (
+        _ancestor / "lib",
+        _ancestor / "evolve-lib",
+        _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
+    ):
+        if (_candidate / "entity_io.py").is_file():
+            _lib = _candidate
+            break
+    if _lib is not None:
         break
+if _lib is None:
+    raise ImportError(f"Cannot find plugin lib directory above {_script}")
+sys.path.insert(0, str(_lib))
 from entity_io import (  # noqa: E402
     find_entities_dir,
     get_default_entities_dir,
@@ -43,7 +56,6 @@ def main():
     parser.add_argument("--user", default=None, help="Stamp owner on every entity written")
     args = parser.parse_args()
 
-    # Read entities from stdin
     try:
         input_data = json.load(sys.stdin)
         log(f"Received input with keys: {list(input_data.keys())}")
@@ -64,7 +76,6 @@ def main():
 
     log(f"Received {len(new_entities)} new entities")
 
-    # Find or create entities directory
     entities_dir = find_entities_dir()
     if entities_dir:
         entities_dir = entities_dir.resolve()
@@ -75,12 +86,10 @@ def main():
         log(f"Created new dir: {entities_dir}")
         print(f"Created new entities dir: {entities_dir}")
 
-    # Load existing entities for dedup
     existing_entities = load_all_entities(entities_dir)
     existing_contents = {normalize(e["content"]) for e in existing_entities if e.get("content")}
     log(f"Existing entities: {len(existing_entities)}")
 
-    # Write new entities as markdown files
     added_count = 0
     for entity in new_entities:
         content = entity.get("content")
@@ -91,9 +100,10 @@ def main():
             log(f"Skipping duplicate: {content[:60]}")
             continue
 
-        # Always stamp owner and visibility from script, not from stdin
-        if args.user:
-            entity["owner"] = args.user
+        # Stamp owner and visibility from the script, never from stdin.
+        # Untrusted upstream input (a prompt-injected agent) must not be
+        # able to spoof either field, so unconditionally overwrite.
+        entity["owner"] = args.user or "unknown"
         entity["visibility"] = "private"
 
         path = write_entity_file(entities_dir, entity)

@@ -63,7 +63,12 @@ platforms = ["claude", "claw-code"]
 [[files]]
 source = "skills/learn/scripts/save_entities.py"
 target = "skills/learn/scripts/save_entities.py"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/learn/scripts/save_entities.py"
+target = "skills/evolve-lite-learn/scripts/save_entities.py"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/publish/scripts/publish.py"
