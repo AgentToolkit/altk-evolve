@@ -82,6 +82,7 @@ def test_run_sse_server_uses_resilient_http_transport(monkeypatch) -> None:
     assert captured[0]["port"] == 8201
     assert captured[0]["lifespan"] == "on"
     assert captured[0]["timeout_graceful_shutdown"] == 3
+    assert captured[0]["ws"] == "websockets-sansio"
     assert warmup_calls == [True]
 
 

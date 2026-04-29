@@ -222,7 +222,7 @@ def _parse_metadata(metadata: str | None) -> dict[str, Any]:
     try:
         parsed = json.loads(metadata)
     except json.JSONDecodeError as e:
-        logger.exception(f"Invalid JSON in metadata parameter: {str(e)}")
+        logger.warning("Invalid JSON in metadata parameter: %s", e)
         raise ValueError(f"Failed to parse metadata: {str(e)}") from e
 
     if not isinstance(parsed, dict):
@@ -498,7 +498,7 @@ def create_entity(
             try:
                 metadata_dict = json.loads(metadata)
             except json.JSONDecodeError as e:
-                logger.exception(f"Invalid JSON in metadata parameter: {str(e)}")
+                logger.warning("Invalid JSON in metadata parameter: %s", e)
                 return json.dumps({"error": "Invalid JSON", "message": f"Failed to parse metadata: {str(e)}", "invalid_metadata": metadata})
             if not isinstance(metadata_dict, dict):
                 return json.dumps(
