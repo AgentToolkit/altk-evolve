@@ -1,14 +1,16 @@
 ---
 name: save-trajectory
 description: Save the current conversation as a trajectory JSON file in OpenAI chat completion format for analysis and fine-tuning
+{% if platform == "claude" -%}
 context: fork
+{% endif -%}
 ---
 
 # Save Trajectory
 
 ## Overview
 
-This skill saves the current Claude Code session's conversation history as a JSON file in OpenAI chat completion format. The trajectory is saved to `.evolve/trajectories/` in the project root. This enables trajectory analysis, fine-tuning data collection, and session review.
+This skill saves the current session's conversation history as a JSON file in OpenAI chat completion format. The trajectory is saved to `.evolve/trajectories/` in the project root. This enables trajectory analysis, fine-tuning data collection, and session review.
 
 ## Workflow
 
@@ -119,6 +121,8 @@ Write the trajectory JSON to a temporary file using the **Write** tool, then pas
 tmp=.evolve/tmp/trajectory_input.json; mkdir -p .evolve/tmp; trap 'rm -f "$tmp"' EXIT; python3 "${CLAUDE_PLUGIN_ROOT}/skills/save-trajectory/scripts/save_trajectory.py" "$tmp"
 {%- elif platform == "claw-code" -%}
 tmp=.evolve/tmp/trajectory_input.json; mkdir -p .evolve/tmp; trap 'rm -f "$tmp"' EXIT; real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:save-trajectory/scripts/save_trajectory.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:save-trajectory/scripts/save_trajectory.py"; python3 "$script" "$tmp"
+{%- elif platform == "bob" -%}
+tmp=.evolve/tmp/trajectory_input.json; mkdir -p .evolve/tmp; trap 'rm -f "$tmp"' EXIT; python3 .bob/skills/evolve-lite-save-trajectory/scripts/save_trajectory.py "$tmp"
 {%- endif %}
 ```
 

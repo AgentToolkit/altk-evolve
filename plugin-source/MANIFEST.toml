@@ -29,9 +29,11 @@ save_example_script_root = "~/.claw/skills"
 
 [platforms.codex]
 plugin_root = "platform-integrations/codex/plugins/evolve-lite"
+forked_context = false
 
 [platforms.bob]
 plugin_root = "platform-integrations/bob/evolve-lite"
+forked_context = false
 
 # Verbatim copies — file content is identical across every listed platform.
 [[files]]
@@ -88,44 +90,83 @@ source = "skills/save-trajectory/scripts/save_trajectory.py"
 target = "skills/save-trajectory/scripts/save_trajectory.py"
 platforms = ["claude", "claw-code"]
 
-# Templated SKILL.md files. Each .j2 imports plugin-source/_macros.j2 (where
-# applicable) and branches on per-platform context vars (forked_context,
-# user_skills_dir, save_example_script_root) plus the implicit `platform` name.
+# Templated SKILL.md files. Each .j2 is the unified prose for all four
+# platforms — codex's structure / wording is the base, with Jinja2 branches
+# for forked-context behavior, hook-vs-manual descriptions, and per-platform
+# script invocations (resolved through the `invoke` macro in _macros.j2).
+#
+# Bob's installed skill folder takes the `evolve-lite-` prefix (commit
+# 07a171c) so a second [[files]] entry per skill points at that target.
 
 [[files]]
 source = "skills/learn/SKILL.md.j2"
 target = "skills/learn/SKILL.md"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/learn/SKILL.md.j2"
+target = "skills/evolve-lite-learn/SKILL.md"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/recall/SKILL.md.j2"
 target = "skills/recall/SKILL.md"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/recall/SKILL.md.j2"
+target = "skills/evolve-lite-recall/SKILL.md"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/publish/SKILL.md.j2"
 target = "skills/publish/SKILL.md"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/publish/SKILL.md.j2"
+target = "skills/evolve-lite-publish/SKILL.md"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/subscribe/SKILL.md.j2"
 target = "skills/subscribe/SKILL.md"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/subscribe/SKILL.md.j2"
+target = "skills/evolve-lite-subscribe/SKILL.md"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/unsubscribe/SKILL.md.j2"
 target = "skills/unsubscribe/SKILL.md"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/unsubscribe/SKILL.md.j2"
+target = "skills/evolve-lite-unsubscribe/SKILL.md"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/sync/SKILL.md.j2"
 target = "skills/sync/SKILL.md"
-platforms = ["claude", "claw-code"]
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/sync/SKILL.md.j2"
+target = "skills/evolve-lite-sync/SKILL.md"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/save-trajectory/SKILL.md.j2"
 target = "skills/save-trajectory/SKILL.md"
 platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/save-trajectory/SKILL.md.j2"
+target = "skills/evolve-lite-save-trajectory/SKILL.md"
+platforms = ["bob"]
 
 [[files]]
 source = "skills/save/SKILL.md.j2"

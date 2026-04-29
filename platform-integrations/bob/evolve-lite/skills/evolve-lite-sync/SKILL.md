@@ -12,22 +12,19 @@ Pull the latest guidelines from every repo in `evolve.config.yaml`
 (publish targets). Write-scope repos use a rebase strategy so any
 unpushed local publish commits are preserved.
 
-**Note**: Unlike Claude Code, Bob does not auto-sync on session start.
-You must invoke this skill manually when you want to update guidelines.
-
 ## Workflow
 
 ### Step 1: Run sync script
 
 ```bash
-python3 scripts/sync.py
+python3 .bob/skills/evolve-lite-sync/scripts/sync.py
 ```
 
 ### Step 2: Display summary
 
 Show the script output to the user. If there are no repos configured,
-tell them they can add one with `evolve-lite-subscribe`. If there are
-no changes, explain that everything is already up to date.
+tell them they can add one with `evolve-lite-subscribe`. If there
+are no changes, explain that everything is already up to date.
 
 ## Notes
 
@@ -35,4 +32,3 @@ no changes, explain that everything is already up to date.
 - Write-scope repos use `git fetch` + `git rebase` so unpushed local
   publish commits are preserved
 - Sync results are logged to `.evolve/audit.log`
-- Run this periodically to stay up to date with shared guidelines

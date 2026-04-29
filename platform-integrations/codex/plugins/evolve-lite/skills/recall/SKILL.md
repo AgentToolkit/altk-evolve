@@ -65,6 +65,8 @@ The skill is not complete if any of the following are true:
 4. It prints formatted guidance to stdout.
 5. Codex adds that text as extra developer context for the turn.
 
+If hooks are not enabled, complete the **Required Action** workflow above manually.
+
 ## Entities Storage
 
 ```text

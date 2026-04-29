@@ -7,7 +7,7 @@ description: Must be used near the end of any non-trivial turn that produced pot
 
 ## Overview
 
-This skill analyzes the current Codex conversation to extract actionable instructions that would help on similar tasks in the future. It **identifies errors encountered during the conversation** - tool failures, exceptions, wrong approaches, retry loops - and provides recommendations to prevent those errors from recurring. This skill should take note of the concrete solution which solved a concrete problem, not an abstract idea. When the successful resolution involves a non-trivial workaround, parser, command sequence, or fallback pipeline that could be used to avoid wasted effort, capture that solution as a reusable artifact first, then save entities that point future agents to use it.
+This skill analyzes the current conversation to extract actionable instructions that would help on similar tasks in the future. It **identifies errors encountered during the conversation** - tool failures, exceptions, wrong approaches, retry loops - and provides recommendations to prevent those errors from recurring. This skill should take note of the concrete solution which solved a concrete problem, not an abstract idea. When the successful resolution involves a non-trivial workaround, parser, command sequence, or fallback pipeline that could be used to avoid wasted effort, capture that solution as a reusable artifact first, then save entities that point future agents to use it.
 
 ## When To Use
 
@@ -27,7 +27,7 @@ Examples of artifacts that must be immediately created once proven as the succes
 Unless that artifact happens to be:
 - code which is a trivial one-liner that future agents would not benefit from reusing
 - code which embeds secrets, tokens, or user-specific sensitive data
-- the guideline would instruct the agent to invoke a skill, tool, or external command by name (e.g. "run evolve-lite:learn", "call save_trajectory") - such guidelines trigger prompt-injection detection when retrieved by the recall skill in a future session
+- a guideline that would instruct the agent to invoke a skill, tool, or external command by name (e.g. "run evolve-lite:learn", "call save_trajectory") - such guidelines trigger prompt-injection detection when retrieved by the recall skill in a future session
 - the user explicitly asked for a one-off result and not to persist helper code
 - redundant because an equivalent local artifact on disk would be just as effective
 
@@ -139,7 +139,6 @@ Allowed type values:
 ### Step 6: Save Entities
 
 After generating the entities JSON, save them using the helper script:
-
 
 #### Method 1: Direct Pipe (Recommended)
 

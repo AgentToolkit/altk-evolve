@@ -54,10 +54,7 @@ List files in `.evolve/entities/guideline/` and ask the user which to publish.
 For each selected file, run:
 
 ```bash
-python3 scripts/publish.py \
-  --entity "{filename}" \
-  --repo "{repo}" \
-  --user "{identity.user}"
+python3 .bob/skills/evolve-lite-publish/scripts/publish.py --entity "{filename}" --repo "{repo}" --user "{identity.user}"
 ```
 
 ### Step 6: Commit and push

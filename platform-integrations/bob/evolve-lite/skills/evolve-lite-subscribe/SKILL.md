@@ -40,7 +40,7 @@ identity:
   user: {username}
 repos: []
 sync:
-  on_session_start: false
+  on_session_start: true
 ```
 
 Also ensure `.evolve/` is gitignored:
@@ -61,12 +61,7 @@ Ask the user for:
 ### Step 3: Run subscribe script
 
 ```bash
-python3 scripts/subscribe.py \
-  --name "{name}" \
-  --remote "{remote}" \
-  --branch main \
-  --scope "{scope}" \
-  --notes "{notes}"
+python3 .bob/skills/evolve-lite-subscribe/scripts/subscribe.py --name "{name}" --remote "{remote}" --branch main --scope "{scope}" --notes "{notes}"
 ```
 
 ### Step 4: Confirm

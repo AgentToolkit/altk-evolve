@@ -17,11 +17,18 @@ unpushed local publish commits are preserved.
 ### Step 1: Run sync script
 
 ```bash
-python3 plugins/evolve-lite/skills/sync/scripts/sync.py
+python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/sync/scripts/sync.py"
 ```
 
 ### Step 2: Display summary
 
 Show the script output to the user. If there are no repos configured,
-tell them they can add one with `evolve-lite:subscribe`. If there are no
-changes, explain that everything is already up to date.
+tell them they can add one with `evolve-lite:subscribe`. If there
+are no changes, explain that everything is already up to date.
+
+## Notes
+
+- Read-scope repos are mirrored exactly via `git fetch` + `git reset --hard`
+- Write-scope repos use `git fetch` + `git rebase` so unpushed local
+  publish commits are preserved
+- Sync results are logged to `.evolve/audit.log`

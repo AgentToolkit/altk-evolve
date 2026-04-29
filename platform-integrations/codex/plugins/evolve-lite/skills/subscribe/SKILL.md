@@ -61,15 +61,19 @@ Ask the user for:
 ### Step 3: Run subscribe script
 
 ```bash
-python3 plugins/evolve-lite/skills/subscribe/scripts/subscribe.py \
-  --name "{name}" \
-  --remote "{remote}" \
-  --branch main \
-  --scope "{scope}" \
-  --notes "{notes}"
+python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/subscribe/scripts/subscribe.py" --name "{name}" --remote "{remote}" --branch main --scope "{scope}" --notes "{notes}"
 ```
 
 ### Step 4: Confirm
 
 Tell the user the repo was added and they can run `evolve-lite:sync`
 immediately if they want to pull updates now.
+
+## Notes
+
+- The repo is cloned directly into `.evolve/entities/subscribed/{name}/`,
+  which doubles as the recall mirror
+- Subscribed entities will appear in recall with `[from: {name}]`
+  annotations
+- Read-scope repos use a shallow clone; write-scope repos use a full
+  clone so publish commits can be rebased and pushed cleanly

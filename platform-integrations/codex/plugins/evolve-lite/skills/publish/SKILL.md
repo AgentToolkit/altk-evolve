@@ -12,7 +12,7 @@ into a configured **write-scope** repo. The entity is stamped with
 `visibility: public`, `owner`, `published_at`, and `source`, moved into
 the local clone of the write repo, and committed / pushed to the remote.
 
-The same local clone is also what `/evolve-lite:sync` pulls from — so you
+The same local clone is also what `evolve-lite:sync` pulls from — so you
 and anyone else publishing to the same repo stay in sync.
 
 ## Workflow
@@ -54,10 +54,7 @@ List files in `.evolve/entities/guideline/` and ask the user which to publish.
 For each selected file, run:
 
 ```bash
-python3 plugins/evolve-lite/skills/publish/scripts/publish.py \
-  --entity "{filename}" \
-  --repo "{repo}" \
-  --user "{identity.user}"
+python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/publish/scripts/publish.py" --entity "{filename}" --repo "{repo}" --user "{identity.user}"
 ```
 
 ### Step 6: Commit and push
@@ -134,3 +131,12 @@ ref), surface git's error and stop — rebase will not help.
 ### Step 7: Confirm
 
 Tell the user what was published and to which repo.
+
+## Notes
+
+- Published entities are **moved** from `.evolve/entities/guideline/` into
+  the write-scope clone at `.evolve/entities/subscribed/{repo}/guideline/`,
+  with `visibility: public`, `owner: {user}`, `published_at`, and `source`
+  stamped in frontmatter
+- The original private entity is deleted after successful publication
+- All publish actions are logged to `.evolve/audit.log`

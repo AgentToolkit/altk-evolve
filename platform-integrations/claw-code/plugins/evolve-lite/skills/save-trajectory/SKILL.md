@@ -1,14 +1,13 @@
 ---
 name: save-trajectory
 description: Save the current conversation as a trajectory JSON file in OpenAI chat completion format for analysis and fine-tuning
-context: fork
 ---
 
 # Save Trajectory
 
 ## Overview
 
-This skill saves the current Claude Code session's conversation history as a JSON file in OpenAI chat completion format. The trajectory is saved to `.evolve/trajectories/` in the project root. This enables trajectory analysis, fine-tuning data collection, and session review.
+This skill saves the current session's conversation history as a JSON file in OpenAI chat completion format. The trajectory is saved to `.evolve/trajectories/` in the project root. This enables trajectory analysis, fine-tuning data collection, and session review.
 
 ## Workflow
 

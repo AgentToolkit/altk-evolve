@@ -9,57 +9,49 @@ description: Remove a repo from the unified repos list and delete its local clon
 ## Overview
 
 Remove a configured repo (any scope) from `evolve.config.yaml` and delete
-its local clone. Warn the user before removing a **write-scope** repo since
-any locally published entities that haven't been pushed will be lost.
+its local clone at `.evolve/entities/subscribed/{name}/`. Warn the user
+before removing a write-scope repo since any unpushed local publish
+commits will be lost.
 
 ## Workflow
 
 ### Step 1: List repos
 
-Run the following and display the output as a numbered list. Include each
-entry's `scope` and `notes`:
+Run:
 
 ```bash
 {{ invoke("unsubscribe", "unsubscribe.py", "--list") }}
 ```
 
-### Step 2: Pick one
+Show the repos to the user (including `scope` and `notes`) and ask which
+one to remove.
 
-Ask the user:
+### Step 2: Confirm
 
-> "Which repo would you like to remove? Enter the number."
+Confirm deletion of `.evolve/entities/subscribed/{name}/`. If the repo has
+`scope: write`, add a warning that unpushed local publish commits will be
+lost.
 
-### Step 3: Confirm (extra warning if write-scope)
-
-If the chosen entry has `scope: write`, warn:
-
-> "'{name}' is a write-scope repo. Removing it will delete the local clone AND any locally published entities that have not yet been pushed. Continue? (y/n)"
-
-Otherwise:
-
-> "This will remove '{name}' and delete `.evolve/entities/subscribed/{name}/`. Continue? (y/n)"
-
-If the user answers anything other than `y` or `yes`, stop and tell them
-the operation was cancelled.
-
-### Step 4: Run unsubscribe script
-
-For a **read-scope** repo, run:
+### Step 3: Run unsubscribe script
 
 ```bash
 {{ invoke("unsubscribe", "unsubscribe.py", "--name {name}") }}
 ```
-
-For a **write-scope** repo (only after the user confirms in Step 3), add
-`--force`. The script refuses to remove a write-scope repo without it,
-since the local clone may hold unpushed publishes:
+{% if platform in ["claude", "claw-code"] %}
+For a write-scope repo, the script refuses to remove the local clone
+without `--force` so unpushed publishes can't disappear by accident:
 
 ```bash
 {{ invoke("unsubscribe", "unsubscribe.py", "--name {name} --force") }}
 ```
+{% endif %}
+### Step 4: Confirm
 
-### Step 5: Confirm
+Tell the user the repo was removed.
 
-Tell the user:
+## Notes
 
-> "Removed '{name}'."
+- This removes the entry from `evolve.config.yaml` `repos:` list
+- Deletes `.evolve/entities/subscribed/{name}/` (the local clone, also
+  the recall mirror)
+- The entities will no longer appear in recall

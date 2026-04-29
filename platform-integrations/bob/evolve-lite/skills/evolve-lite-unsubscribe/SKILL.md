@@ -19,7 +19,7 @@ commits will be lost.
 Run:
 
 ```bash
-python3 scripts/unsubscribe.py --list
+python3 .bob/skills/evolve-lite-unsubscribe/scripts/unsubscribe.py --list
 ```
 
 Show the repos to the user (including `scope` and `notes`) and ask which
@@ -27,14 +27,14 @@ one to remove.
 
 ### Step 2: Confirm
 
-Confirm deletion of `.evolve/entities/subscribed/{name}/`. If the repo
-has `scope: write`, add a warning that unpushed local publishes will be
+Confirm deletion of `.evolve/entities/subscribed/{name}/`. If the repo has
+`scope: write`, add a warning that unpushed local publish commits will be
 lost.
 
 ### Step 3: Run unsubscribe script
 
 ```bash
-python3 scripts/unsubscribe.py --name "{name}"
+python3 .bob/skills/evolve-lite-unsubscribe/scripts/unsubscribe.py --name {name}
 ```
 
 ### Step 4: Confirm

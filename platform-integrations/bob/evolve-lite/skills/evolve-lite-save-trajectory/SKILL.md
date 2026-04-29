@@ -91,30 +91,47 @@ Convert each message to the appropriate format:
 
 Strip `<system-reminder>...</system-reminder>` tags and their contents from all message content. Use a non-greedy multiline match (e.g., `re.sub(r'<system-reminder>[\s\S]*?</system-reminder>', '', text).strip()`). If after stripping, a message has empty content and no tool calls, omit it.
 
-### Step 4: Save via Script
+### Step 4: Build Envelope
 
-Wrap the messages array in the trajectory envelope and pipe it to the save script using a heredoc. The script handles directory creation, timestamped filename, and file writing.
+Wrap the messages array in a trajectory envelope:
 
-```bash
-python3 .bob/skills/evolve-lite-save-trajectory/scripts/save_trajectory.py << 'TRAJECTORY_END'
+```json
 {
   "model": "<model-id-from-session>",
   "timestamp": "2025-01-15T10:30:00Z",
   "messages": [...]
 }
-TRAJECTORY_END
 ```
 
-- **model**: Use the exact model ID from the current session's environment context (e.g., the value after "You are powered by the model named ..."). Do not hardcode a default — always read it from the session.
+- **model**: Use the exact model ID from the current session's environment context (e.g., the value after "You are powered by the model named …"). Do not hardcode a default — always read it from the session.
 - **timestamp**: Current ISO 8601 timestamp
-- Use a single-quoted heredoc delimiter (`<< 'TRAJECTORY_END'`) so the content is passed literally with no shell interpolation — safe for any quotes, backslashes, or newlines in conversation content.
 
-The script will print the saved file path — note it for use in the learn skill.
+### Step 5: Save via Helper Script
+
+Write the trajectory JSON to a temporary file using the **Write** tool, then pass the file path to the helper script:
+
+1. Write the JSON to `.evolve/tmp/trajectory_input.json` using the Write tool (create the directory if needed)
+2. Run the helper script with the file path as an argument:
+
+```bash
+tmp=.evolve/tmp/trajectory_input.json; mkdir -p .evolve/tmp; trap 'rm -f "$tmp"' EXIT; python3 .bob/skills/evolve-lite-save-trajectory/scripts/save_trajectory.py "$tmp"
+```
+
+**Important**: Do NOT use inline Python scripts, heredocs, or stdin piping to pass the trajectory JSON. Always use the Write tool to create a temp file first. This avoids escaping issues with backslashes, quotes, and newlines in conversation content.
+
+The script will:
+- Read the trajectory JSON from the provided file path
+- Create the `.evolve/trajectories/` directory if needed
+- Generate a timestamped filename (`trajectory_YYYY-MM-DDTHH-MM-SS.json`)
+- Write the formatted JSON
+- Print confirmation with file path and message count
 
 ## Example Output
 
+After saving, you should see output like:
+
 ```text
-Trajectory saved: .evolve/trajectories/trajectory_2025-01-15T10-30-00.json
+Trajectory saved: /path/to/project/.evolve/trajectories/trajectory_2025-01-15T10-30-00.json
 Messages: 12
 ```
 

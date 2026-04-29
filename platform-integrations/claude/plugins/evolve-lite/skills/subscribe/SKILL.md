@@ -26,22 +26,14 @@ repos:
 
 - `scope: read` — download-only. Synced on every run.
 - `scope: write` — publish target. Synced on every run too, so you see
-  what you have already published (and anything others have pushed to the
-  same repo).
-
-This skill adds one entry to `repos:` and clones it locally.
+  what you have already published and anything others have pushed.
 
 ## Workflow
 
 ### Step 1: Bootstrap config if missing
 
-Check whether `evolve.config.yaml` exists in the project root.
-
-If it does **not** exist, ask the user:
-
-> "No `evolve.config.yaml` found. What username would you like to use? (e.g. `vatche`)"
-
-Then create `evolve.config.yaml` with this minimal content:
+If `evolve.config.yaml` does not exist, ask the user for a username and
+create:
 
 ```yaml
 identity:
@@ -59,23 +51,14 @@ grep -qxF '.evolve/' .gitignore 2>/dev/null || echo '.evolve/' >> .gitignore
 
 ### Step 2: Gather details
 
-Ask the user in this order:
+Ask the user for:
 
-> "What is the remote URL for the guidelines repo? (e.g. `git@github.com:alice/evolve-guidelines.git`)"
-> "What short name would you like for this repo? (e.g. `alice`)"
-> "Scope? `read` (download-only subscription) or `write` (you can also publish to it)."
-> "Optional note describing this repo (press Enter to skip)."
+- the remote URL for the guidelines repo
+- a short local name such as `alice`
+- the scope: `read` (default, subscribe-only) or `write` (also a publish target)
+- an optional note
 
-### Step 3: Check for duplicates
-
-Read `evolve.config.yaml` from the project root. If the name already exists
-in `repos:`, tell the user:
-
-> "A repo named '{name}' is already configured. Unsubscribe it first or choose a different name."
-
-Then stop.
-
-### Step 4: Run subscribe script
+### Step 3: Run subscribe script
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/subscribe/scripts/subscribe.py \
@@ -86,8 +69,16 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/subscribe/scripts/subscribe.py \
   --notes "{notes}"
 ```
 
-### Step 5: Confirm
+### Step 4: Confirm
 
-Tell the user:
+Tell the user the repo was added and they can run `/evolve-lite:sync`
+immediately if they want to pull updates now.
 
-> "Added '{name}' (scope={scope}). Run /evolve-lite:sync to pull the latest guidelines."
+## Notes
+
+- The repo is cloned directly into `.evolve/entities/subscribed/{name}/`,
+  which doubles as the recall mirror
+- Subscribed entities will appear in recall with `[from: {name}]`
+  annotations
+- Read-scope repos use a shallow clone; write-scope repos use a full
+  clone so publish commits can be rebased and pushed cleanly
