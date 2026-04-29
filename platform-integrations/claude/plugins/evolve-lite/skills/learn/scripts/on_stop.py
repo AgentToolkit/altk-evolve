@@ -14,11 +14,16 @@ def main():
     if input_data.get("stop_hook_active") is True:
         return
 
+    transcript_path = input_data.get("transcript_path", "")
+    reason = "Run the /evolve-lite:learn skill."
+    if transcript_path:
+        reason += f" The session transcript is at: {transcript_path}"
+
     print(
         json.dumps(
             {
                 "decision": "block",
-                "reason": "Run the /evolve-lite:learn skill to extract guidelines from this conversation.",
+                "reason": reason,
                 "suppressOutput": True,
                 "systemMessage": "Running the evolve-lite learn skill...",
             }
