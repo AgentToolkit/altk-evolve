@@ -131,3 +131,21 @@ platforms = ["claude", "claw-code"]
 source = "skills/save/SKILL.md.j2"
 target = "skills/save/SKILL.md"
 platforms = ["claude", "claw-code"]
+
+# Claude-only stop hooks. The forked-context learn skill needs an on_stop
+# entrypoint that the Claude harness invokes; non-claude platforms have no
+# equivalent hook contract.
+[[files]]
+source = "skills/learn/scripts/on_stop.py"
+target = "skills/learn/scripts/on_stop.py"
+platforms = ["claude"]
+
+[[files]]
+source = "skills/learn/scripts/on_stop.sh"
+target = "skills/learn/scripts/on_stop.sh"
+platforms = ["claude"]
+
+[[files]]
+source = "skills/save-trajectory/scripts/on_stop.py"
+target = "skills/save-trajectory/scripts/on_stop.py"
+platforms = ["claude"]

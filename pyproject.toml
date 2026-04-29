@@ -160,6 +160,7 @@ disallow_untyped_defs = false
 explicit_package_bases = true
 exclude = [
     "platform-integrations/",
+    "plugin-source/",
     "examples/",
 ]
 
