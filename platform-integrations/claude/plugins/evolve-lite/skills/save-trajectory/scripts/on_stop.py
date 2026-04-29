@@ -39,11 +39,15 @@ def log(message):
 
 
 def get_trajectories_dir():
-    project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
-    if project_root:
-        base = Path(project_root) / ".evolve" / "trajectories"
+    evolve_dir = os.environ.get("EVOLVE_DIR")
+    if evolve_dir:
+        base = Path(evolve_dir) / "trajectories"
     else:
-        base = Path(".evolve") / "trajectories"
+        project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
+        if project_root:
+            base = Path(project_root) / ".evolve" / "trajectories"
+        else:
+            base = Path(".evolve") / "trajectories"
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     return base.resolve()
 
