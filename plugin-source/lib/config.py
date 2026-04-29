@@ -7,7 +7,6 @@ used by evolve-lite config files (scalars and lists of scalar-valued dicts).
 
 import pathlib
 import re
-import sys
 
 
 VALID_SCOPES = ("read", "write")
@@ -328,7 +327,12 @@ def save_config(cfg, project_root="."):
 
 
 def _coerce_repo(entry):
-    """Normalize a single repo dict. Returns None if required fields are missing."""
+    """Normalize a single repo dict. Returns None if required fields are missing.
+
+    Rejection is silent — callers that want to surface why a particular entry
+    was dropped should use ``classify_repo_entry`` to get the rejection reason
+    and report it however they choose.
+    """
     if not isinstance(entry, dict):
         return None
     name = entry.get("name")
@@ -336,10 +340,6 @@ def _coerce_repo(entry):
     if not isinstance(name, str) or not name.strip():
         return None
     if not is_valid_repo_name(name.strip()):
-        print(
-            f"evolve-lite: ignoring repo entry {name!r} — invalid name (only A-Z, a-z, 0-9, '.', '_', '-' allowed)",
-            file=sys.stderr,
-        )
         return None
     if not isinstance(remote, str) or not remote.strip():
         return None
@@ -347,10 +347,6 @@ def _coerce_repo(entry):
     if isinstance(scope, str):
         scope = scope.strip()
     if scope not in VALID_SCOPES:
-        print(
-            f"evolve-lite: ignoring repo entry {name!r} — unknown scope {entry.get('scope')!r} (expected one of {', '.join(VALID_SCOPES)})",
-            file=sys.stderr,
-        )
         return None
     branch = entry.get("branch", "main")
     if not isinstance(branch, str) or not branch.strip():
@@ -387,6 +383,51 @@ def normalize_repos(cfg):
         seen.add(repo["name"])
         result.append(repo)
     return result
+
+
+def classify_repo_entry(entry):
+    """Return ``(repo, rejection)`` for one raw ``repos:`` list entry.
+
+    Exactly one of ``repo`` or ``rejection`` is non-None:
+      - ``repo`` is the normalized dict (same shape as ``normalize_repos``
+        items) when the entry is valid.
+      - ``rejection`` is a dict ``{"raw_name": str_or_None, "reason": str}``
+        describing why the entry was dropped. ``reason`` is one of
+        "invalid subscription name", "missing remote", "unknown scope", or
+        "malformed entry".
+
+    Used by sync.py (and similar) to surface skipped entries in user-facing
+    output without re-implementing validation.
+    """
+    if not isinstance(entry, dict):
+        return None, {"raw_name": None, "reason": "malformed entry"}
+    raw_name = entry.get("name")
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        return None, {"raw_name": raw_name, "reason": "invalid subscription name"}
+    name = raw_name.strip()
+    if not is_valid_repo_name(name):
+        return None, {"raw_name": raw_name, "reason": "invalid subscription name"}
+    remote = entry.get("remote")
+    if not isinstance(remote, str) or not remote.strip():
+        return None, {"raw_name": raw_name, "reason": "missing remote"}
+    scope = entry.get("scope", "read")
+    if isinstance(scope, str):
+        scope = scope.strip()
+    if scope not in VALID_SCOPES:
+        return None, {"raw_name": raw_name, "reason": "unknown scope"}
+    branch = entry.get("branch", "main")
+    if not isinstance(branch, str) or not branch.strip():
+        branch = "main"
+    notes = entry.get("notes", "")
+    if not isinstance(notes, str):
+        notes = ""
+    return {
+        "name": name,
+        "scope": scope,
+        "remote": remote.strip(),
+        "branch": branch.strip(),
+        "notes": notes,
+    }, None
 
 
 def get_repo(cfg, name):

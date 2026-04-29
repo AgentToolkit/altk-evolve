@@ -185,7 +185,7 @@ class TestNormalizeRepos:
         assert repos[0]["scope"] == "write"
         assert repos[0]["notes"] == "shared"
 
-    def test_invalid_scope_entries_dropped(self, capsys):
+    def test_invalid_scope_entries_dropped(self):
         cfg = {
             "repos": [
                 {"name": "x", "scope": "weird", "remote": "git@x:y/z.git"},
@@ -194,7 +194,11 @@ class TestNormalizeRepos:
         }
         repos = cfg_module.normalize_repos(cfg)
         assert [r["name"] for r in repos] == ["y"]
-        assert "unknown scope" in capsys.readouterr().err
+        # classify_repo_entry surfaces the rejection reason for callers that
+        # want to report it; normalize_repos drops it silently.
+        repo, rejection = cfg_module.classify_repo_entry(cfg["repos"][0])
+        assert repo is None
+        assert rejection["reason"] == "unknown scope"
 
     def test_scope_whitespace_tolerated(self):
         cfg = {"repos": [{"name": "x", "scope": " write ", "remote": "git@x:y/z.git"}]}

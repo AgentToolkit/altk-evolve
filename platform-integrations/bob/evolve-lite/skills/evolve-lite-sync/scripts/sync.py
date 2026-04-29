@@ -24,7 +24,7 @@ for parent in current.parents:
         break
 
 from audit import append as audit_append  # noqa: E402
-from config import is_valid_repo_name, load_config, normalize_repos  # noqa: E402
+from config import classify_repo_entry, load_config  # noqa: E402
 
 
 _GIT_TIMEOUT = 30  # seconds
@@ -107,11 +107,27 @@ def main():
         project_root = "."
 
     cfg = load_config(project_root)
-    repos = normalize_repos(cfg)
 
-    if not repos:
+    raw_entries = cfg.get("repos") if isinstance(cfg, dict) else None
+    if not isinstance(raw_entries, list):
+        raw_entries = []
+
+    repos = []
+    rejections = []
+    seen = set()
+    for entry in raw_entries:
+        repo, rejection = classify_repo_entry(entry)
+        if rejection is not None:
+            rejections.append(rejection)
+            continue
+        if repo["name"] in seen:
+            continue
+        seen.add(repo["name"])
+        repos.append(repo)
+
+    if not repos and not rejections:
         if not args.quiet:
-            print("No subscriptions configured. Add one with the evolve-lite:subscribe skill to start syncing shared guidelines.")
+            print("No subscriptions configured. Add one with the evolve-lite-subscribe skill to start syncing shared guidelines.")
         sys.exit(0)
 
     identity = cfg.get("identity", {})
@@ -121,21 +137,17 @@ def main():
     total_delta = {}
     any_changes = False
 
+    for rejection in rejections:
+        raw_name = rejection["raw_name"]
+        reason = rejection["reason"]
+        label = repr(raw_name) if raw_name else "<unnamed entry>"
+        summaries.append(f"{label} (skipped — {reason})")
+
     for repo in repos:
-        raw_name = repo.get("name", "unknown")
+        name = repo["name"]
         scope = repo.get("scope", "read")
         branch = repo.get("branch", "main")
         remote = repo.get("remote")
-
-        if not is_valid_repo_name(raw_name):
-            summaries.append(f"{raw_name!r} (skipped — invalid subscription name)")
-            continue
-        name = raw_name.strip()
-
-        if not isinstance(branch, str) or not branch.strip():
-            summaries.append(f"{raw_name!r} (skipped — invalid subscription config)")
-            continue
-        branch = branch.strip()
 
         subscribed_base = (evolve_dir / "entities" / "subscribed").resolve()
         repo_path = (evolve_dir / "entities" / "subscribed" / name).resolve()
