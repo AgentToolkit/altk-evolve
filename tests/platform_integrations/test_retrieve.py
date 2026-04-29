@@ -14,7 +14,7 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 CLAUDE_RETRIEVE_SCRIPT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
 CODEX_RETRIEVE_SCRIPT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
 SCRIPT_VARIANTS = [
-    ("claude", CLAUDE_RETRIEVE_SCRIPT, "Entities for this task"),
+    ("claude", CLAUDE_RETRIEVE_SCRIPT, "Evolve entities for this task"),
     ("codex", CODEX_RETRIEVE_SCRIPT, "Evolve entities for this task"),
 ]
 

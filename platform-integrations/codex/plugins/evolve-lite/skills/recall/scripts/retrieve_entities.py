@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retrieve and output entities for Codex to use as extra developer context."""
+"""Retrieve and output entities for the agent to use as extra context."""
 
 import json
 import os
@@ -7,11 +7,15 @@ import sys
 from pathlib import Path
 
 # Walk up from the script location to find the installed plugin lib directory.
+# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
+# monorepo-dev fallback resolves to claude's lib when running codex's script
+# straight out of platform-integrations/.
 _script = Path(__file__).resolve()
 _lib = None
 for _ancestor in _script.parents:
     for _candidate in (
         _ancestor / "lib",
+        _ancestor / "evolve-lib",
         _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
     ):
         if (_candidate / "entity_io.py").is_file():
@@ -33,7 +37,12 @@ log("Script started")
 
 
 def format_entities(entities):
-    """Format all entities for Codex to review."""
+    """Format all entities for the agent to review.
+
+    Entities that came from a subscribed source have their path recorded in
+    the private ``_source`` key (set by load_entities_with_source). These are
+    annotated with ``[from: {name}]`` so the agent knows their provenance.
+    """
     header = """## Evolve entities for this task
 
 Review these stored entities and apply any that are relevant to the user's request:
@@ -58,10 +67,15 @@ Review these stored entities and apply any that are relevant to the user's reque
 
 
 def load_entities_with_source(entities_dir):
-    """Load markdown entities from one recall root and annotate subscribed content."""
+    """Load markdown entities from one recall root and annotate subscribed content.
+
+    Symlinks and any files inside a ``.git`` directory are skipped so we don't
+    surface git's own bookkeeping or sneak past path validation when a write
+    -scope clone lives under entities/subscribed/{name}/.
+    """
     entities_dir = Path(entities_dir)
     entities = []
-    for md in sorted(entities_dir.glob("**/*.md")):
+    for md in sorted(p for p in entities_dir.glob("**/*.md") if ".git" not in p.parts):
         if md.is_symlink():
             continue
         try:
@@ -82,16 +96,28 @@ def load_entities_with_source(entities_dir):
 
 
 def main():
+    # Hook context arrives via stdin as JSON when invoked from a hook
+    # (claude/claw-code/codex). Handle empty/absent stdin gracefully so the
+    # script also works when invoked manually (no hook upstream).
+    input_data = {}
     try:
-        input_data = json.load(sys.stdin)
-        log(f"Input keys: {list(input_data.keys())}")
+        raw = sys.stdin.read()
+        if raw.strip():
+            input_data = json.loads(raw)
+            if isinstance(input_data, dict):
+                log(f"Input keys: {list(input_data.keys())}")
+            else:
+                log(f"Input type: {type(input_data).__name__}")
+        else:
+            log("stdin was empty")
     except json.JSONDecodeError as e:
-        log(f"Failed to parse JSON input: {e}")
+        log(f"stdin was not valid JSON ({e})")
         return
 
-    prompt = input_data.get("prompt", "")
-    if prompt:
-        log(f"Prompt preview: {prompt[:120]}")
+    if isinstance(input_data, dict):
+        prompt = input_data.get("prompt", "")
+        if prompt:
+            log(f"Prompt preview: {prompt[:120]}")
 
     log("=== Environment Variables ===")
     for key, value in sorted(os.environ.items()):

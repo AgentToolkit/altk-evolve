@@ -91,6 +91,16 @@ target = "skills/sync/scripts/sync.py"
 platforms = ["claude", "claw-code"]
 
 [[files]]
+source = "skills/recall/scripts/retrieve_entities.py"
+target = "skills/recall/scripts/retrieve_entities.py"
+platforms = ["claude", "claw-code", "codex"]
+
+[[files]]
+source = "skills/recall/scripts/retrieve_entities.py"
+target = "skills/evolve-lite-recall/scripts/retrieve_entities.py"
+platforms = ["bob"]
+
+[[files]]
 source = "skills/save-trajectory/scripts/save_trajectory.py"
 target = "skills/save-trajectory/scripts/save_trajectory.py"
 platforms = ["claude", "claw-code"]

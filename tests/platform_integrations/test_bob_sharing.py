@@ -684,7 +684,7 @@ class TestBobRetrieveEntities:
 
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert "Private tip" in result.stdout
-        assert "## Entities for this task" in result.stdout
+        assert "## Evolve entities for this task" in result.stdout
 
     def test_returns_published_entities_from_write_clone(self, temp_project_dir):
         """Published guidelines live in entities/subscribed/{repo}/guideline/."""
