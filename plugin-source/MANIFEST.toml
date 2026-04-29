@@ -6,6 +6,11 @@
 # when rendering .j2 source files. The Jinja2 environment also receives
 # `platform = "<name>"` so templates can branch on the active platform.
 #
+# Optional [[platforms.<name>.target_rewrites]] entries apply regex
+# (pattern → replacement) substitutions to each entry's target path under that
+# platform. Used today to route bob's skill folders through the
+# `evolve-lite-` prefix it requires.
+#
 # Each [[files]] entry names a path under plugin-source/ and the list of
 # platforms that receive it. `target` is optional; when omitted it defaults to
 # `source` with a trailing `.j2` stripped. Sources ending in `.j2` are rendered
@@ -31,6 +36,11 @@ plugin_root = "platform-integrations/codex/plugins/evolve-lite"
 
 [platforms.bob]
 plugin_root = "platform-integrations/bob/evolve-lite"
+# Bob installs each skill under `evolve-lite-<name>/` rather than `<name>/`
+# (commit 07a171c, Windows-compat — colon path components are rejected).
+[[platforms.bob.target_rewrites]]
+pattern = "^skills/([^/]+)/"
+replacement = "skills/evolve-lite-\\1/"
 
 # Verbatim copies — file content is identical across every listed platform.
 [[files]]
@@ -49,143 +59,69 @@ platforms = ["claude", "claw-code"]
 source = "lib/entity_io.py"
 platforms = ["claude", "claw-code"]
 
-# Skill scripts that are byte-identical across claude and claw-code today.
-# (codex and bob have their own variants of these scripts due to runtime
-# differences; those collapse into this manifest as Jinja2 templating lands.)
+# Skill scripts. claude/claw-code/codex use the source path as-is; bob's
+# target_rewrite prefixes the skill folder with `evolve-lite-`.
 
 [[files]]
 source = "skills/learn/scripts/save_entities.py"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/learn/scripts/save_entities.py"
-target = "skills/evolve-lite-learn/scripts/save_entities.py"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/publish/scripts/publish.py"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/publish/scripts/publish.py"
-target = "skills/evolve-lite-publish/scripts/publish.py"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/subscribe/scripts/subscribe.py"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/subscribe/scripts/subscribe.py"
-target = "skills/evolve-lite-subscribe/scripts/subscribe.py"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/unsubscribe/scripts/unsubscribe.py"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/unsubscribe/scripts/unsubscribe.py"
-target = "skills/evolve-lite-unsubscribe/scripts/unsubscribe.py"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/sync/scripts/sync.py"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/sync/scripts/sync.py"
-target = "skills/evolve-lite-sync/scripts/sync.py"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/recall/scripts/retrieve_entities.py"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/recall/scripts/retrieve_entities.py"
-target = "skills/evolve-lite-recall/scripts/retrieve_entities.py"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/save-trajectory/scripts/save_trajectory.py"
-platforms = ["claude", "claw-code"]
-
-[[files]]
-source = "skills/save-trajectory/scripts/save_trajectory.py"
-target = "skills/evolve-lite-save-trajectory/scripts/save_trajectory.py"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "bob"]
 
 # Templated SKILL.md files. Each .j2 is the unified prose for all four
 # platforms — codex's structure / wording is the base, with Jinja2 branches
 # for forked-context behavior, hook-vs-manual descriptions, and per-platform
 # script invocations (resolved through the `invoke` macro in _macros.j2).
-#
-# Bob's installed skill folder takes the `evolve-lite-` prefix (commit
-# 07a171c) so a second [[files]] entry per skill points at that target.
 
 [[files]]
 source = "skills/learn/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/learn/SKILL.md.j2"
-target = "skills/evolve-lite-learn/SKILL.md"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/recall/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/recall/SKILL.md.j2"
-target = "skills/evolve-lite-recall/SKILL.md"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/publish/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/publish/SKILL.md.j2"
-target = "skills/evolve-lite-publish/SKILL.md"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/subscribe/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/subscribe/SKILL.md.j2"
-target = "skills/evolve-lite-subscribe/SKILL.md"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/unsubscribe/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/unsubscribe/SKILL.md.j2"
-target = "skills/evolve-lite-unsubscribe/SKILL.md"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/sync/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex"]
-
-[[files]]
-source = "skills/sync/SKILL.md.j2"
-target = "skills/evolve-lite-sync/SKILL.md"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/save-trajectory/SKILL.md.j2"
-platforms = ["claude", "claw-code"]
-
-[[files]]
-source = "skills/save-trajectory/SKILL.md.j2"
-target = "skills/evolve-lite-save-trajectory/SKILL.md"
-platforms = ["bob"]
+platforms = ["claude", "claw-code", "bob"]
 
 [[files]]
 source = "skills/save/SKILL.md.j2"

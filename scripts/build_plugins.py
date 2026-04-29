@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import re
 import shutil
 import sys
 import tomllib
@@ -34,13 +35,26 @@ PLUGIN_SOURCE_DIR = REPO_ROOT / "plugin-source"
 MANIFEST_PATH = PLUGIN_SOURCE_DIR / "MANIFEST.toml"
 
 # Reserved manifest keys under [platforms.<name>]; everything else becomes Jinja2 context.
-_RESERVED_PLATFORM_KEYS = frozenset({"plugin_root"})
+_RESERVED_PLATFORM_KEYS = frozenset({"plugin_root", "target_rewrites"})
+
+
+@dataclass(frozen=True)
+class TargetRewrite:
+    pattern: re.Pattern[str]
+    replacement: str
 
 
 @dataclass(frozen=True)
 class PlatformConfig:
     plugin_root: Path
     context: dict[str, Any]
+    target_rewrites: tuple[TargetRewrite, ...] = ()
+
+    def rewrite_target(self, target_rel: Path) -> Path:
+        result = target_rel.as_posix()
+        for rewrite in self.target_rewrites:
+            result = rewrite.pattern.sub(rewrite.replacement, result)
+        return Path(result)
 
 
 @dataclass(frozen=True)
@@ -75,7 +89,10 @@ def load_manifest() -> Manifest:
     for name, cfg in raw["platforms"].items():
         plugin_root = REPO_ROOT / cfg["plugin_root"]
         context = {key: val for key, val in cfg.items() if key not in _RESERVED_PLATFORM_KEYS}
-        platforms[name] = PlatformConfig(plugin_root=plugin_root, context=context)
+        rewrites = tuple(
+            TargetRewrite(pattern=re.compile(rw["pattern"]), replacement=rw["replacement"]) for rw in cfg.get("target_rewrites", [])
+        )
+        platforms[name] = PlatformConfig(plugin_root=plugin_root, context=context, target_rewrites=rewrites)
     files = tuple(
         FileEntry(
             source=PLUGIN_SOURCE_DIR / entry["source"],
@@ -128,14 +145,15 @@ def render_to(out_root: Path) -> list[Path]:
         for platform in entry.platforms:
             cfg = manifest.platforms[platform]
             plugin_root_rel = cfg.plugin_root.relative_to(REPO_ROOT)
-            target = out_root / plugin_root_rel / entry.target_rel
+            target_rel = cfg.rewrite_target(entry.target_rel)
+            target = out_root / plugin_root_rel / target_rel
             target.parent.mkdir(parents=True, exist_ok=True)
             if _is_template(entry.source):
                 ctx = {"platform": platform, **cfg.context}
                 target.write_bytes(_render_template(env, entry.source, ctx))
             else:
                 shutil.copy2(entry.source, target)
-            written.append(plugin_root_rel / entry.target_rel)
+            written.append(plugin_root_rel / target_rel)
     return written
 
 
@@ -151,7 +169,7 @@ def check_drift() -> int:
     for entry in manifest.files:
         for platform in entry.platforms:
             cfg = manifest.platforms[platform]
-            committed = cfg.plugin_root / entry.target_rel
+            committed = cfg.plugin_root / cfg.rewrite_target(entry.target_rel)
             if not committed.is_file():
                 missing.append(committed)
                 continue

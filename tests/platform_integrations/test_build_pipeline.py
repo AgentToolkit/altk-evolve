@@ -68,7 +68,7 @@ class TestRender:
             for platform in entry.platforms:
                 cfg = manifest.platforms[platform]
                 plugin_root_rel = cfg.plugin_root.relative_to(REPO_ROOT)
-                rendered = tmp_path / plugin_root_rel / entry.target_rel
+                rendered = tmp_path / plugin_root_rel / cfg.rewrite_target(entry.target_rel)
                 assert rendered.is_file(), f"render did not emit {rendered}"
 
     def test_verbatim_files_match_source_byte_for_byte(self, tmp_path, build_module):
@@ -81,7 +81,7 @@ class TestRender:
             for platform in entry.platforms:
                 cfg = manifest.platforms[platform]
                 plugin_root_rel = cfg.plugin_root.relative_to(REPO_ROOT)
-                rendered = tmp_path / plugin_root_rel / entry.target_rel
+                rendered = tmp_path / plugin_root_rel / cfg.rewrite_target(entry.target_rel)
                 assert filecmp.cmp(entry.source, rendered, shallow=False), f"verbatim file {rendered} differs from source {entry.source}"
 
 
@@ -115,7 +115,7 @@ class TestCheckDrift:
         fake_plugin_source = fake_root / "plugin-source"
         shutil.copytree(REPO_ROOT / "plugin-source", fake_plugin_source)
 
-        committed = fake_root / plugin_root_rel / verbatim_entry.target_rel
+        committed = fake_root / plugin_root_rel / manifest.platforms[first_platform].rewrite_target(verbatim_entry.target_rel)
         committed.parent.mkdir(parents=True, exist_ok=True)
         committed.write_bytes(verbatim_entry.source.read_bytes() + b"\n# perturbation\n")
 
@@ -144,7 +144,7 @@ class TestJinjaTemplating:
         for platform in template_entry.platforms:
             cfg = manifest.platforms[platform]
             plugin_root_rel = cfg.plugin_root.relative_to(REPO_ROOT)
-            rendered = tmp_path / plugin_root_rel / template_entry.target_rel
+            rendered = tmp_path / plugin_root_rel / cfg.rewrite_target(template_entry.target_rel)
             outputs.append(rendered.read_bytes())
 
         assert any(a != b for a, b in zip(outputs, outputs[1:])), (
