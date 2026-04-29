@@ -66,7 +66,7 @@ class TestBobIdempotency:
         # Manually delete one skill
         import shutil
 
-        shutil.rmtree(bob_dir / "skills" / "evolve-lite:learn")
+        shutil.rmtree(bob_dir / "skills" / "evolve-lite-learn")
 
         # Reinstall
         install_runner.run("install", platform="bob")
@@ -143,13 +143,13 @@ class TestUninstallInstallCycle:
         install_runner.run("install", platform="bob")
 
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite-learn")
 
         # Uninstall
         install_runner.run("uninstall", platform="bob")
 
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite:learn")
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite:recall")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-learn")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-recall")
 
         # Reinstall
         install_runner.run("install", platform="bob")

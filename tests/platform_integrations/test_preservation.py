@@ -276,5 +276,5 @@ class TestMultiPlatformPreservation:
         )
 
         # Assert: Evolve content is added everywhere
-        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-lite:learn")
+        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-lite-learn")
         file_assertions.assert_dir_exists(temp_project_dir / "plugins" / "evolve-lite")

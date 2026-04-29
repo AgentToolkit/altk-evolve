@@ -71,7 +71,7 @@ python3 scripts/subscribe.py \
 
 ### Step 4: Confirm
 
-Tell the user the repo was added and they can run `evolve-lite:sync`
+Tell the user the repo was added and they can run `evolve-lite-sync`
 immediately if they want to pull updates now.
 
 ## Notes

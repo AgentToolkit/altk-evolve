@@ -27,7 +27,7 @@ Entities can come from multiple sources:
 - `.evolve/entities/guideline/` - Your private entities
 - `.evolve/entities/subscribed/{name}/` - Cloned repos (read- or write-scope)
 
-Write-scope clones are also where `evolve-lite:publish` lands new
+Write-scope clones are also where `evolve-lite-publish` lands new
 guidelines, so your published entities show up here too.
 
 ## Usage

@@ -254,7 +254,7 @@ class FileAssertions:
         """Assert every evolve-lite command in the source tree is installed."""
         repo_root = Path(__file__).parent.parent.parent
         commands_src = repo_root / "platform-integrations" / "bob" / "evolve-lite" / "commands"
-        for cmd_file in sorted(commands_src.glob("evolve-lite:*.md")):
+        for cmd_file in sorted(commands_src.glob("evolve-lite-*.md")):
             FileAssertions.assert_file_exists(bob_dir / "commands" / cmd_file.name)
 
     @staticmethod

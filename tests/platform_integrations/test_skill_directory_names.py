@@ -18,12 +18,12 @@ class TestSkillDirectoryNames:
 
         # These are the skills that install.sh tries to copy
         expected_skills = [
-            "evolve-lite:learn",
-            "evolve-lite:recall",
-            "evolve-lite:publish",
-            "evolve-lite:subscribe",
-            "evolve-lite:unsubscribe",
-            "evolve-lite:sync",
+            "evolve-lite-learn",
+            "evolve-lite-recall",
+            "evolve-lite-publish",
+            "evolve-lite-subscribe",
+            "evolve-lite-unsubscribe",
+            "evolve-lite-sync",
         ]
 
         for skill_name in expected_skills:
@@ -39,7 +39,7 @@ class TestSkillDirectoryNames:
             assert skill_md.is_file(), f"SKILL.md not found in {skill_dir}\nEvery skill must have a SKILL.md file."
 
     def test_bob_lite_skills_follow_naming_convention(self, platform_integrations_dir):
-        """Verify that Bob lite skills follow the 'evolve-lite:*' naming convention."""
+        """Verify that Bob lite skills follow the 'evolve-lite-*' naming convention."""
         bob_lite_skills = platform_integrations_dir / "bob" / "evolve-lite" / "skills"
 
         if not bob_lite_skills.exists():
@@ -51,12 +51,12 @@ class TestSkillDirectoryNames:
 
             skill_name = skill_dir.name
 
-            # All evolve skills should start with "evolve-lite:"
-            assert skill_name.startswith("evolve-lite:"), (
+            # All evolve skills should start with "evolve-lite-"
+            assert skill_name.startswith("evolve-lite-"), (
                 f"Skill directory '{skill_name}' doesn't follow naming convention.\n"
-                f"Expected: 'evolve-lite:<skill-name>'\n"
+                f"Expected: 'evolve-lite-<skill-name>'\n"
                 f"Got: '{skill_name}'\n"
-                f"This will cause installation failures because install.sh expects the 'evolve-lite:' prefix."
+                f"This will cause installation failures because install.sh expects the 'evolve-lite-' prefix."
             )
 
     def test_bob_lite_command_files_exist(self, platform_integrations_dir):
@@ -68,7 +68,7 @@ class TestSkillDirectoryNames:
         if not bob_lite_skills.exists():
             pytest.skip("Bob lite skills directory doesn't exist")
 
-        skill_names = [d.name for d in bob_lite_skills.iterdir() if d.is_dir() and d.name.startswith("evolve-lite:")]
+        skill_names = [d.name for d in bob_lite_skills.iterdir() if d.is_dir() and d.name.startswith("evolve-lite-")]
 
         # Verify each skill has a corresponding command file
         for skill_name in skill_names:
@@ -99,12 +99,12 @@ class TestSkillDirectoryNames:
         # Verify all expected skills were installed
         bob_dir = temp_project_dir / ".bob"
         expected_skills = [
-            "evolve-lite:learn",
-            "evolve-lite:recall",
-            "evolve-lite:publish",
-            "evolve-lite:subscribe",
-            "evolve-lite:unsubscribe",
-            "evolve-lite:sync",
+            "evolve-lite-learn",
+            "evolve-lite-recall",
+            "evolve-lite-publish",
+            "evolve-lite-subscribe",
+            "evolve-lite-unsubscribe",
+            "evolve-lite-sync",
         ]
 
         for skill_name in expected_skills:

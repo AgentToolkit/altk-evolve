@@ -24,12 +24,12 @@ pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
 _BOB_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/bob/evolve-lite"
 _CLAUDE_LIB = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib"
-SUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:subscribe/scripts/subscribe.py"
-UNSUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"
-SYNC_SCRIPT = _BOB_ROOT / "skills/evolve-lite:sync/scripts/sync.py"
-PUBLISH_SCRIPT = _BOB_ROOT / "skills/evolve-lite:publish/scripts/publish.py"
-SAVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:learn/scripts/save_entities.py"
-RETRIEVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:recall/scripts/retrieve_entities.py"
+SUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-subscribe/scripts/subscribe.py"
+UNSUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-unsubscribe/scripts/unsubscribe.py"
+SYNC_SCRIPT = _BOB_ROOT / "skills/evolve-lite-sync/scripts/sync.py"
+PUBLISH_SCRIPT = _BOB_ROOT / "skills/evolve-lite-publish/scripts/publish.py"
+SAVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-learn/scripts/save_entities.py"
+RETRIEVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-recall/scripts/retrieve_entities.py"
 
 
 def run_script(script, project_dir, args=None, evolve_dir=None, stdin_data=None, expect_success=True):

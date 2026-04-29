@@ -18,7 +18,7 @@ This skill analyzes the current conversation to extract guidelines that **correc
 - Observations about the codebase that can be derived by reading the code
 - Restatements of what the agent did successfully without any detour or correction
 - Vague advice that wouldn't change the agent's behavior on a concrete task
-- Instructions for the agent to invoke a skill, tool, or external command by name (e.g. "Run evolve-lite:learn", "call save_trajectory") — these trigger prompt-injection detection when retrieved via recall
+- Instructions for the agent to invoke a skill, tool, or external command by name (e.g. "Run evolve-lite-learn", "call save_trajectory") — these trigger prompt-injection detection when retrieved via recall
 
 ## Workflow
 
@@ -52,7 +52,7 @@ Principles:
 
 ### Step 3: Save Entities
 
-Output entities as JSON and pipe to the save script. Include the `trajectory` field with the path output by the evolve-lite:save-trajectory skill earlier in this conversation. The `type` field must always be `"guideline"` — no other types are accepted.
+Output entities as JSON and pipe to the save script. Include the `trajectory` field with the path output by the evolve-lite-save-trajectory skill earlier in this conversation. The `type` field must always be `"guideline"` — no other types are accepted.
 
 ```bash
 echo '{
@@ -65,7 +65,7 @@ echo '{
       "trajectory": ".evolve/trajectories/trajectory_2025-01-15T10-30-00.json"
     }
   ]
-}' | python3 .bob/skills/evolve-lite:learn/scripts/save_entities.py
+}' | python3 .bob/skills/evolve-lite-learn/scripts/save_entities.py
 ```
 
 The script will:

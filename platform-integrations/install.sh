@@ -545,11 +545,11 @@ class BobInstaller:
         self.ops.remove_dir(bob_target / "evolve-lib")
         skills_dir = bob_target / "skills"
         if skills_dir.is_dir():
-            for skill_dir in sorted(skills_dir.glob("evolve-lite:*")):
+            for skill_dir in sorted(skills_dir.glob("evolve-lite-*")):
                 self.ops.remove_dir(skill_dir)
         commands_dir = bob_target / "commands"
         if commands_dir.is_dir():
-            for cmd_file in sorted(commands_dir.glob("evolve-lite:*.md")):
+            for cmd_file in sorted(commands_dir.glob("evolve-lite-*.md")):
                 self.ops.remove_file(cmd_file)
         self.ops.remove_yaml_custom_mode(bob_target / "custom_modes.yaml", BOB_SLUG)
         self.ops.remove_yaml_custom_mode(bob_target / "custom_modes.yaml", "Evolve")
@@ -562,14 +562,14 @@ class BobInstaller:
         print(f"  Bob (.bob/):")
         print(f"    evolve-lib/entity_io      : {'✓' if (bob_target / 'evolve-lib' / 'entity_io.py').is_file() else '✗'}")
         skills_dir = bob_target / "skills"
-        installed_skills = sorted(skills_dir.glob("evolve-lite:*")) if skills_dir.is_dir() else []
+        installed_skills = sorted(skills_dir.glob("evolve-lite-*")) if skills_dir.is_dir() else []
         if installed_skills:
             for s in installed_skills:
                 print(f"    skills/{s.name} : ✓")
         else:
-            print(f"    skills/evolve-lite:*      : ✗")
+            print(f"    skills/evolve-lite-*      : ✗")
         commands_dir = bob_target / "commands"
-        installed_cmds = sorted(commands_dir.glob("evolve-lite:*.md")) if commands_dir.is_dir() else []
+        installed_cmds = sorted(commands_dir.glob("evolve-lite-*.md")) if commands_dir.is_dir() else []
         print(f"    commands/ ({len(installed_cmds)} evolve commands) : {'✓' if installed_cmds else '✗'}")
         print(f"    custom_modes.yaml         : {'✓' if (bob_target / 'custom_modes.yaml').is_file() else '✗'}")
         has_mcp = "evolve" in read_json(bob_target / "mcp.json").get("mcpServers", {}) if (bob_target / "mcp.json").is_file() else False

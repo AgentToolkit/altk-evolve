@@ -26,7 +26,7 @@ python3 scripts/sync.py
 ### Step 2: Display summary
 
 Show the script output to the user. If there are no repos configured,
-tell them they can add one with `evolve-lite:subscribe`. If there are
+tell them they can add one with `evolve-lite-subscribe`. If there are
 no changes, explain that everything is already up to date.
 
 ## Notes
