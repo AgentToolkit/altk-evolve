@@ -6,8 +6,8 @@ issue #219. It walks plugin-source/MANIFEST.toml, resolves each file entry
 to its per-platform target path, and emits the rendered tree under
 platform-integrations/.
 
-The current implementation handles verbatim file copies. Jinja2 templating
-and per-platform overlay logic land in subsequent commits.
+Source files ending in `.j2` are rendered through Jinja2 with a per-platform
+context (see PlatformConfig.context). Other files are copied verbatim.
 
 Subcommands:
     render  — rewrite the managed files under platform-integrations/.
@@ -25,10 +25,22 @@ import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_SOURCE_DIR = REPO_ROOT / "plugin-source"
 MANIFEST_PATH = PLUGIN_SOURCE_DIR / "MANIFEST.toml"
+
+# Reserved manifest keys under [platforms.<name>]; everything else becomes Jinja2 context.
+_RESERVED_PLATFORM_KEYS = frozenset({"plugin_root"})
+
+
+@dataclass(frozen=True)
+class PlatformConfig:
+    plugin_root: Path
+    context: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -40,13 +52,17 @@ class FileEntry:
 
 @dataclass(frozen=True)
 class Manifest:
-    platform_roots: dict[str, Path]
+    platforms: dict[str, PlatformConfig]
     files: tuple[FileEntry, ...]
 
 
 def load_manifest() -> Manifest:
     raw = tomllib.loads(MANIFEST_PATH.read_text())
-    platform_roots = {name: REPO_ROOT / cfg["plugin_root"] for name, cfg in raw["platforms"].items()}
+    platforms: dict[str, PlatformConfig] = {}
+    for name, cfg in raw["platforms"].items():
+        plugin_root = REPO_ROOT / cfg["plugin_root"]
+        context = {key: val for key, val in cfg.items() if key not in _RESERVED_PLATFORM_KEYS}
+        platforms[name] = PlatformConfig(plugin_root=plugin_root, context=context)
     files = tuple(
         FileEntry(
             source=PLUGIN_SOURCE_DIR / entry["source"],
@@ -59,9 +75,29 @@ def load_manifest() -> Manifest:
         if not entry.source.is_file():
             raise FileNotFoundError(f"manifest references missing source: {entry.source}")
         for platform in entry.platforms:
-            if platform not in platform_roots:
+            if platform not in platforms:
                 raise ValueError(f"manifest entry {entry.source} targets unknown platform '{platform}'")
-    return Manifest(platform_roots=platform_roots, files=files)
+    return Manifest(platforms=platforms, files=files)
+
+
+def _jinja_env() -> Environment:
+    return Environment(
+        loader=FileSystemLoader(str(PLUGIN_SOURCE_DIR)),
+        keep_trailing_newline=True,
+        undefined=StrictUndefined,
+        autoescape=False,
+    )
+
+
+def _render_template(env: Environment, source: Path, context: dict[str, Any]) -> bytes:
+    rel = source.relative_to(PLUGIN_SOURCE_DIR).as_posix()
+    template = env.get_template(rel)
+    rendered = template.render(**context)
+    return rendered.encode("utf-8")
+
+
+def _is_template(path: Path) -> bool:
+    return path.suffix == ".j2"
 
 
 def render_to(out_root: Path) -> list[Path]:
@@ -73,14 +109,19 @@ def render_to(out_root: Path) -> list[Path]:
     Returns the list of paths written, relative to out_root.
     """
     manifest = load_manifest()
+    env = _jinja_env()
     written: list[Path] = []
     for entry in manifest.files:
         for platform in entry.platforms:
-            plugin_root_abs = manifest.platform_roots[platform]
-            plugin_root_rel = plugin_root_abs.relative_to(REPO_ROOT)
+            cfg = manifest.platforms[platform]
+            plugin_root_rel = cfg.plugin_root.relative_to(REPO_ROOT)
             target = out_root / plugin_root_rel / entry.target_rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(entry.source, target)
+            if _is_template(entry.source):
+                ctx = {"platform": platform, **cfg.context}
+                target.write_bytes(_render_template(env, entry.source, ctx))
+            else:
+                shutil.copy2(entry.source, target)
             written.append(plugin_root_rel / entry.target_rel)
     return written
 
@@ -91,17 +132,24 @@ def check_drift() -> int:
     Returns 0 if every managed file matches its source, 1 otherwise.
     """
     manifest = load_manifest()
+    env = _jinja_env()
     drifts: list[tuple[Path, Path]] = []
     missing: list[Path] = []
     for entry in manifest.files:
         for platform in entry.platforms:
-            plugin_root = manifest.platform_roots[platform]
-            committed = plugin_root / entry.target_rel
+            cfg = manifest.platforms[platform]
+            committed = cfg.plugin_root / entry.target_rel
             if not committed.is_file():
                 missing.append(committed)
                 continue
-            if not filecmp.cmp(entry.source, committed, shallow=False):
-                drifts.append((entry.source, committed))
+            if _is_template(entry.source):
+                ctx = {"platform": platform, **cfg.context}
+                rendered = _render_template(env, entry.source, ctx)
+                if committed.read_bytes() != rendered:
+                    drifts.append((entry.source, committed))
+            else:
+                if not filecmp.cmp(entry.source, committed, shallow=False):
+                    drifts.append((entry.source, committed))
     if missing or drifts:
         for path in missing:
             print(f"missing managed file: {path.relative_to(REPO_ROOT)}", file=sys.stderr)
