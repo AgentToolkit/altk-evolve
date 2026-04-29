@@ -28,6 +28,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/skills/save-trajectory/scripts/on_stop.py"
+          },
+          {
+            "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/on_stop.py"
           }
         ]
