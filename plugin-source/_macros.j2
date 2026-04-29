@@ -1,0 +1,32 @@
+{# Shared Jinja2 macros for plugin-source/. Imported by SKILL.md.j2 templates. #}
+
+{# `invoke` renders the platform-appropriate shell invocation of a skill script.
+
+   skill   — the skill folder name (e.g. "learn", "publish")
+   script  — the script filename (e.g. "save_entities.py")
+   args    — argument string OR list of args. None for no args. When a list is
+             passed, claude renders each arg on its own line with backslash
+             continuation (matches existing claude SKILL.md formatting);
+             claw-code stays single-line because the whole command is wrapped
+             in `sh -lc '...'`.
+
+   Claude expands ${CLAUDE_PLUGIN_ROOT} via its plugin runtime; Claw-code has
+   no such env var so it walks up from .claw/skills/ to a config-home fallback.
+#}
+{%- macro invoke(skill, script, args=None) -%}
+{%- if platform == "claude" -%}
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/{{ skill }}/scripts/{{ script }}
+{%- if args is none %}{# no args; nothing appended #}
+{%- elif args is string %} {{ args }}
+{%- else %} \
+  {{ args | join(" \\\n  ") }}
+{%- endif -%}
+{%- elif platform == "claw-code" -%}
+sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:{{ skill }}/scripts/{{ script }}"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:{{ skill }}/scripts/{{ script }}"; python3 "$script"
+{%- if args is none -%}{# no args; nothing appended -#}
+{%- elif args is string %} {{ args }}
+{%- else %} {{ args | join(" ") }}
+{%- endif -%}
+'
+{%- endif -%}
+{%- endmacro -%}

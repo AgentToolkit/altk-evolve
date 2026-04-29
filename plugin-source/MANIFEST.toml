@@ -18,12 +18,14 @@
 [platforms.claude]
 plugin_root = "platform-integrations/claude/plugins/evolve-lite"
 forked_context = true
-save_entities_invocation = "python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py"
+user_skills_dir = "~/.claude/skills"
+save_example_script_root = "${CLAUDE_PLUGIN_ROOT}/skills"
 
 [platforms.claw-code]
 plugin_root = "platform-integrations/claw-code/plugins/evolve-lite"
 forked_context = false
-save_entities_invocation = "sh -lc 'real_home=\"$(python3 -c \"import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)\")\"; config_home=\"${CLAW_CONFIG_HOME:-$real_home/.claw}\"; script=\".claw/skills/evolve-lite:learn/scripts/save_entities.py\"; [ -f \"$script\" ] || script=\"$config_home/skills/evolve-lite:learn/scripts/save_entities.py\"; python3 \"$script\"'"
+user_skills_dir = "~/.claw/skills"
+save_example_script_root = "~/.claw/skills"
 
 [platforms.codex]
 plugin_root = "platform-integrations/codex/plugins/evolve-lite"
@@ -86,10 +88,46 @@ source = "skills/save-trajectory/scripts/save_trajectory.py"
 target = "skills/save-trajectory/scripts/save_trajectory.py"
 platforms = ["claude", "claw-code"]
 
-# Templated SKILL.md prose. Branches on `forked_context` (claude has Step 0 to
-# load a forked-context transcript; claw-code does not) and substitutes
-# `save_entities_invocation` (different shell wrappers per platform).
+# Templated SKILL.md files. Each .j2 imports plugin-source/_macros.j2 (where
+# applicable) and branches on per-platform context vars (forked_context,
+# user_skills_dir, save_example_script_root) plus the implicit `platform` name.
+
 [[files]]
 source = "skills/learn/SKILL.md.j2"
 target = "skills/learn/SKILL.md"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/recall/SKILL.md.j2"
+target = "skills/recall/SKILL.md"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/publish/SKILL.md.j2"
+target = "skills/publish/SKILL.md"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/subscribe/SKILL.md.j2"
+target = "skills/subscribe/SKILL.md"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/unsubscribe/SKILL.md.j2"
+target = "skills/unsubscribe/SKILL.md"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/sync/SKILL.md.j2"
+target = "skills/sync/SKILL.md"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/save-trajectory/SKILL.md.j2"
+target = "skills/save-trajectory/SKILL.md"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/save/SKILL.md.j2"
+target = "skills/save/SKILL.md"
 platforms = ["claude", "claw-code"]

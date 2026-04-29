@@ -1,3 +1,4 @@
+{%- from "_macros.j2" import invoke with context -%}
 ---
 name: learn
 description: Analyze the current conversation to extract guidelines that correct reasoning chains — reducing wasted steps, preventing errors, and capturing user preferences.
@@ -90,19 +91,19 @@ echo '{
       "trigger": "Situational context when this applies"
     }
   ]
-}' | {{ save_entities_invocation }}
+}' | {{ invoke("learn", "save_entities.py") }}
 ```
 
 #### Method 2: From File
 
 ```bash
-cat entities.json | {{ save_entities_invocation }}
+cat entities.json | {{ invoke("learn", "save_entities.py") }}
 ```
 
 #### Method 3: Interactive
 
 ```bash
-{{ save_entities_invocation }}
+{{ invoke("learn", "save_entities.py") }}
 # Then paste your JSON and press Ctrl+D
 ```
 

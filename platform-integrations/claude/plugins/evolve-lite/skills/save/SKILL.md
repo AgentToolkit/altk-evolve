@@ -217,9 +217,9 @@ def main():
     parser = argparse.ArgumentParser(description="{Script description}")
     parser.add_argument("{arg1}", help="{description}")
     parser.add_argument("{arg2}", help="{description}", nargs="?")
-    
+
     args = parser.parse_args()
-    
+
     # Implementation based on workflow pattern
     try:
         # Core logic here
