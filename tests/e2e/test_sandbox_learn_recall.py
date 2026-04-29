@@ -152,7 +152,7 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
 
     session2_transcripts = [p for p in trajectories_dir.glob("*.jsonl") if p not in transcripts]
     assert session2_transcripts, "no new transcript saved for session 2"
-    session2_transcript = session2_transcripts[0]
+    session2_transcript = max(session2_transcripts, key=lambda p: p.stat().st_mtime)
 
     commands = _bash_commands(session2_transcript)
     log.info(f"session 2: checking {len(commands)} bash commands for forbidden tools")
