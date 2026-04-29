@@ -41,3 +41,37 @@ platforms = ["claude", "claw-code"]
 source = "lib/entity_io.py"
 target = "lib/entity_io.py"
 platforms = ["claude", "claw-code"]
+
+# Skill scripts that are byte-identical across claude and claw-code today.
+# (codex and bob have their own variants of these scripts due to runtime
+# differences; those collapse into this manifest as Jinja2 templating lands.)
+
+[[files]]
+source = "skills/learn/scripts/save_entities.py"
+target = "skills/learn/scripts/save_entities.py"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/publish/scripts/publish.py"
+target = "skills/publish/scripts/publish.py"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/subscribe/scripts/subscribe.py"
+target = "skills/subscribe/scripts/subscribe.py"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/unsubscribe/scripts/unsubscribe.py"
+target = "skills/unsubscribe/scripts/unsubscribe.py"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/sync/scripts/sync.py"
+target = "skills/sync/scripts/sync.py"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "skills/save-trajectory/scripts/save_trajectory.py"
+target = "skills/save-trajectory/scripts/save_trajectory.py"
+platforms = ["claude", "claw-code"]
