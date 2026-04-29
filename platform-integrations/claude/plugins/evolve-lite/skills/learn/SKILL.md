@@ -27,7 +27,12 @@ This skill analyzes the current conversation to extract guidelines that **correc
 
 ### Step 0: Load the Conversation
 
-This skill runs in a forked context with no access to the parent conversation. The stop hook message (produced by `on_stop.py`) contains the literal marker `The session transcript is at: <path>` — find that exact phrase, take everything after the colon, strip surrounding whitespace and quotes, and use the result as `transcript_path`. Then read it:
+This skill runs in a forked context with no access to the parent conversation. The stop hook message (produced by `on_stop.py`) contains two literal markers:
+
+- `The session transcript is at: <path>` — the live session transcript. Take everything between that marker and the next marker (or end of message), strip whitespace and quotes, and use the result as `transcript_path`.
+- `The saved trajectory path is: <path>` — the relative path of the saved trajectory copy under `.evolve/trajectories/`. Extract this the same way and remember it as `saved_trajectory_path` — you will attach it to each entity in Step 3.
+
+Then read the session transcript:
 
 ```bash
 cat <transcript_path>
@@ -74,7 +79,7 @@ Principles:
 
 ### Step 3: Save Entities
 
-Output entities as JSON and pipe to the save script. The `type` field must always be `"guideline"` — no other types are accepted.
+Output entities as JSON and pipe to the save script. The `type` field must always be `"guideline"` — no other types are accepted. Include a `trajectory` field on every entity, set to the `saved_trajectory_path` extracted in Step 0 — this records which session produced the guideline.
 
 #### Method 1: Direct Pipe (Recommended)
 
@@ -85,7 +90,8 @@ echo '{
       "content": "Proactive entity stating what TO DO",
       "rationale": "Why this approach works better",
       "type": "guideline",
-      "trigger": "Situational context when this applies"
+      "trigger": "Situational context when this applies",
+      "trajectory": ".evolve/trajectories/claude-transcript_<session-id>.jsonl"
     }
   ]
 }' | python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/save_entities.py
