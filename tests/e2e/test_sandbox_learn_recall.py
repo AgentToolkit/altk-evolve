@@ -80,11 +80,15 @@ def _run_sandbox_prompt(workspace: Path, prompt: str) -> subprocess.CompletedPro
         if os.environ.get(var):
             cmd += ["-e", var]
     cmd += [
-        "-e", "EVOLVE_DEBUG=1",
-        "-v", f"{workspace}:/workspace",
-        "-v", f"{plugins}:/plugins",
+        "-e",
+        "EVOLVE_DEBUG=1",
+        "-v",
+        f"{workspace}:/workspace",
+        "-v",
+        f"{plugins}:/plugins",
         SANDBOX_IMAGE,
-        "bash", "-c",
+        "bash",
+        "-c",
         f'claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions -p "{prompt}"',
     ]
     return subprocess.run(cmd, capture_output=True, text=True, timeout=SESSION_TIMEOUT_SECONDS)
@@ -123,17 +127,12 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
         "where was the photo @sample.jpg taken. use exif metadata",
     )
     log.info(f"session 1: exited {result1.returncode} after {time.time() - t0:.0f}s")
-    assert result1.returncode == 0, (
-        f"session 1 exited {result1.returncode}\nstderr:\n{result1.stderr[-2000:]}"
-    )
+    assert result1.returncode == 0, f"session 1 exited {result1.returncode}\nstderr:\n{result1.stderr[-2000:]}"
 
     entities_dir = sandbox_workspace / ".evolve" / "entities"
     trajectories_dir = sandbox_workspace / ".evolve" / "trajectories"
 
-    assert entities_dir.is_dir(), (
-        f"{entities_dir} was not created — learn did not save guidelines.\n"
-        f"stdout:\n{result1.stdout[-2000:]}"
-    )
+    assert entities_dir.is_dir(), f"{entities_dir} was not created — learn did not save guidelines.\nstdout:\n{result1.stdout[-2000:]}"
     entity_files = list(entities_dir.rglob("*.md"))
     assert entity_files, f"no guideline files found in {entities_dir}"
     log.info(f"session 1: learn saved {len(entity_files)} guideline(s): {[p.name for p in entity_files]}")
@@ -149,14 +148,9 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
         "what focal length was used to take the photo @sample.jpg. use exif metadata",
     )
     log.info(f"session 2: exited {result2.returncode} after {time.time() - t1:.0f}s")
-    assert result2.returncode == 0, (
-        f"session 2 exited {result2.returncode}\nstderr:\n{result2.stderr[-2000:]}"
-    )
+    assert result2.returncode == 0, f"session 2 exited {result2.returncode}\nstderr:\n{result2.stderr[-2000:]}"
 
-    session2_transcripts = [
-        p for p in trajectories_dir.glob("*.jsonl")
-        if p not in transcripts
-    ]
+    session2_transcripts = [p for p in trajectories_dir.glob("*.jsonl") if p not in transcripts]
     assert session2_transcripts, "no new transcript saved for session 2"
     session2_transcript = session2_transcripts[0]
 
@@ -169,12 +163,8 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
     # bash invocations, not string mentions — so a command like
     # `python3 -c "import PIL"` would fail this check, while the guideline's
     # prose mentioning PIL as unavailable does not.
-    assert "exiftool " not in joined and "exiftool$" not in joined, (
-        f"session 2 invoked exiftool despite recall guideline:\n"
-        + "\n".join(commands)
+    assert "exiftool " not in joined and "exiftool$" not in joined, "session 2 invoked exiftool despite recall guideline:\n" + "\n".join(
+        commands
     )
     for banned in ("from pil", "import pil", "import piexif", "import exifread"):
-        assert banned not in joined, (
-            f"session 2 tried {banned!r} despite recall guideline:\n"
-            + "\n".join(commands)
-        )
+        assert banned not in joined, f"session 2 tried {banned!r} despite recall guideline:\n" + "\n".join(commands)
