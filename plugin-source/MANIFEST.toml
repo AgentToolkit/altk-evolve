@@ -11,10 +11,11 @@
 # platform. Used today to route bob's skill folders through the
 # `evolve-lite-` prefix it requires.
 #
-# Each [[files]] entry names a path under plugin-source/ and the list of
-# platforms that receive it. `target` is optional; when omitted it defaults to
-# `source` with a trailing `.j2` stripped. Sources ending in `.j2` are rendered
-# through Jinja2; everything else is copied verbatim.
+# Each [[files]] entry names a path under plugin-source/. `target` is
+# optional; when omitted it defaults to `source` with a trailing `.j2`
+# stripped. `platforms` is optional; when omitted it defaults to every
+# declared platform. Sources ending in `.j2` are rendered through Jinja2;
+# everything else is copied verbatim.
 #
 # This file is hand-edited; everything under platform-integrations/ that
 # corresponds to a manifest entry is generated and should not be hand-edited.
@@ -64,27 +65,21 @@ platforms = ["claude", "claw-code"]
 
 [[files]]
 source = "skills/learn/scripts/save_entities.py"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/publish/scripts/publish.py"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/subscribe/scripts/subscribe.py"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/unsubscribe/scripts/unsubscribe.py"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/sync/scripts/sync.py"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/recall/scripts/retrieve_entities.py"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/save-trajectory/scripts/save_trajectory.py"
@@ -97,27 +92,21 @@ platforms = ["claude", "claw-code", "bob"]
 
 [[files]]
 source = "skills/learn/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/recall/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/publish/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/subscribe/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/unsubscribe/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/sync/SKILL.md.j2"
-platforms = ["claude", "claw-code", "codex", "bob"]
 
 [[files]]
 source = "skills/save-trajectory/SKILL.md.j2"

@@ -93,11 +93,12 @@ def load_manifest() -> Manifest:
             TargetRewrite(pattern=re.compile(rw["pattern"]), replacement=rw["replacement"]) for rw in cfg.get("target_rewrites", [])
         )
         platforms[name] = PlatformConfig(plugin_root=plugin_root, context=context, target_rewrites=rewrites)
+    all_platforms = tuple(platforms.keys())
     files = tuple(
         FileEntry(
             source=PLUGIN_SOURCE_DIR / entry["source"],
             target_rel=Path(_default_target(entry)),
-            platforms=tuple(entry["platforms"]),
+            platforms=tuple(entry.get("platforms", all_platforms)),
         )
         for entry in raw.get("files", [])
     )
