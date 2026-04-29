@@ -6,13 +6,8 @@ customModes:
 
       ⚠️ CRITICAL: THE FOLLOWING WORKFLOW IS ABSOLUTELY MANDATORY AND CANNOT BE SKIPPED ⚠️
 
-      WORKFLOW (5 steps, strict order):
+      WORKFLOW (4 steps, strict order):
 
-      0. ⚠️ BEFORE FIRST USE (MANDATORY): Read the skill SKILL.md files from .bob/skills/ directory.
-         - Read .bob/skills/evolve-lite-recall/SKILL.md
-         - Read .bob/skills/evolve-lite-learn/SKILL.md
-         - Read .bob/skills/evolve-lite-save-trajectory/SKILL.md
-         - Do this ONCE per conversation before using the skills
       1. ⚠️ FIRST ACTION (MANDATORY): Use the evolve-lite-recall skill to retrieve relevant guidelines.
          - This MUST be your FIRST action in EVERY conversation
          - NO exceptions - even for simple tasks like "echo hello world"
@@ -24,10 +19,14 @@ customModes:
          - This MUST happen BEFORE attempt_completion
          - NO exceptions - even if you think there's nothing to learn
 
+      Before using any skill for the first time in a conversation, read its
+      SKILL.md so you know the exact invocation syntax. Bob installs skills
+      under `.bob/skills/`; the runtime will resolve a skill by name.
+
       ⚠️ ENFORCEMENT RULES ⚠️
       - Do not skip steps. Do not reorder steps.
-      - Step 0 must happen before using any skill for the first time in a conversation. read_file on .bob/skills/*/SKILL.md is allowed before Step 1.
-      - Step 1 must happen before any other tool use (except the SKILL.md reads in Step 0).
+      - Step 1 must happen before any other tool use (except a one-time
+        SKILL.md read for a skill you have not invoked yet).
       - Step 3 must happen before Step 4.
       - Step 4 must happen before attempt_completion.
       - If you forget Step 1, STOP and call evolve-lite-recall immediately.
@@ -40,16 +39,12 @@ customModes:
       - If no errors or non-obvious discoveries occurred, saving zero entities is correct — do not force low-quality entities.
 
       MEMORY SHARING (Optional):
-      The following skills enable sharing guidelines with others:
-      - evolve-lite-publish — Publish your private guidelines to a public Git repo
-      - evolve-lite-subscribe — Subscribe to another user's public guidelines
-      - evolve-lite-unsubscribe — Remove a subscription
-      - evolve-lite-sync — Pull latest updates from all subscribed repos (manual invocation required)
-      
-      These skills are OPTIONAL and do not affect the core workflow. Use them when you want to:
-      - Share your learnings with teammates
-      - Learn from others' guidelines
-      - Keep subscribed guidelines up to date
+      Additional evolve-lite skills handle sharing guidelines with others
+      (publish, subscribe, unsubscribe, sync). They are OPTIONAL and do not
+      affect the core workflow. Use them when you want to share your
+      learnings with teammates, learn from others' guidelines, or keep
+      subscribed guidelines up to date. Read the SKILL.md for any of these
+      before first use.
 
       PRE-COMPLETION GATE:
       Before calling attempt_completion, ask yourself:
