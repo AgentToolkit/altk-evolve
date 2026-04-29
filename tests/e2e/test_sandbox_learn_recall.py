@@ -159,11 +159,8 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
     log.info(f"session 2: checking {len(commands)} bash commands for forbidden tools")
     joined = "\n".join(commands).lower()
 
-    # Recall should steer Claude away from the tools that failed in session 1.
-    # The guideline text itself may name these tools, but we're checking actual
-    # bash invocations, not string mentions — so a command like
-    # `python3 -c "import PIL"` would fail this check, while the guideline's
-    # prose mentioning PIL as unavailable does not.
+    # Recall should steer Claude away from tools guaranteed-unavailable in the
+    # sandbox. Only `exiftool` is definitively absent (not installed, can't be
+    # pip-installed). Other libraries (PIL, piexif, exifread) may appear in a
+    # valid guideline as "install via pip and use", so we don't ban them.
     assert not re.search(r"\bexiftool\b", joined), "session 2 invoked exiftool despite recall guideline:\n" + "\n".join(commands)
-    for banned in ("from pil", "import pil", "import piexif", "import exifread"):
-        assert banned not in joined, f"session 2 tried {banned!r} despite recall guideline:\n" + "\n".join(commands)
