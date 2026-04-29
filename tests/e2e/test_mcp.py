@@ -219,3 +219,34 @@ async def test_create_entity_with_invalid_json_metadata(mcp):
         assert result["error"] == "Invalid JSON"
         assert "message" in result
         assert "invalid_metadata" in result
+
+
+@pytest.mark.e2e
+async def test_store_and_retrieve_user_facts(mcp):
+    async with Client(transport=mcp) as evolve_mcp:
+        store_response = await evolve_mcp.call_tool_mcp(
+            "store_user_facts",
+            {
+                "user_id": "user-123",
+                "message": "I prefer concise answers with bullet points.",
+                "metadata": json.dumps({"source": "cuga-lite"}),
+                "enable_conflict_resolution": False,
+            },
+        )
+        stored = json.loads(store_response.content[0].text)
+        assert stored["user_id"] == "user-123"
+        assert stored["stored_count"] >= 1
+
+        retrieve_response = await evolve_mcp.call_tool_mcp(
+            "retrieve_user_facts",
+            {
+                "user_id": "user-123",
+                "query": "How should I format the answer?",
+                "limit": 5,
+            },
+        )
+        retrieved = json.loads(retrieve_response.content[0].text)
+
+        assert retrieved["user_id"] == "user-123"
+        assert "categories" in retrieved
+        assert retrieved["matched_count"] >= 0

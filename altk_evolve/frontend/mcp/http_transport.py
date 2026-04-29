@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -10,7 +11,6 @@ import fastmcp
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
-from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Mount, Route
 
@@ -27,6 +27,13 @@ logger = logging.getLogger("evolve-mcp")
 def _is_benign_disconnect_exception(exc: BaseException) -> bool:
     """Return True when an exception only represents a dropped SSE client."""
     if isinstance(exc, (anyio.ClosedResourceError, anyio.BrokenResourceError)):
+        return True
+    if isinstance(exc, asyncio.CancelledError):
+        # Uvicorn cancels outstanding request tasks during Ctrl+C shutdown.
+        return True
+    if isinstance(exc, AssertionError) and str(exc) == "Request already responded to":
+        # MCP low-level request responder can assert during SSE teardown races
+        # when cancellation/close wins over the normal response path.
         return True
 
     if isinstance(exc, BaseExceptionGroup):
@@ -59,6 +66,23 @@ async def _run_sse_session(
     return True
 
 
+async def _handle_sse(
+    server: FastMCP[LifespanResultT],
+    sse: SseServerTransport,
+    scope,
+    receive,
+    send,
+) -> None:
+    """
+    Serve SSE directly as ASGI and avoid sending any follow-up HTTP response.
+
+    `connect_sse(...)(scope, receive, send)` owns the HTTP response lifecycle.
+    Returning an additional Response after it exits can race with teardown and
+    trigger duplicate MCP request completion assertions.
+    """
+    await _run_sse_session(server, sse, scope, receive, send)
+
+
 def create_resilient_sse_app(
     server: FastMCP[LifespanResultT],
     message_path: str | None = None,
@@ -78,9 +102,27 @@ def create_resilient_sse_app(
 
     sse = SseServerTransport(message_path)
 
-    async def handle_sse(scope, receive, send) -> Response:
-        await _run_sse_session(server, sse, scope, receive, send)
-        return Response(status_code=204)
+    async def handle_sse(scope, receive, send) -> None:
+        await _handle_sse(server, sse, scope, receive, send)
+
+    class SseEndpoint:
+        """ASGI app wrapping handle_sse that tracks whether a response was started."""
+
+        async def __call__(self, scope, receive, send) -> None:
+            response_started = False
+
+            async def tracked_send(message) -> None:
+                nonlocal response_started
+                if message.get("type") == "http.response.start":
+                    response_started = True
+                await send(message)
+
+            await handle_sse(scope, receive, tracked_send)
+            if not response_started:
+                response = Response(status_code=204)
+                await response(scope, receive, send)
+
+    sse_endpoint = SseEndpoint()
 
     if auth:
         auth_middleware = auth.get_middleware()
@@ -95,7 +137,7 @@ def create_resilient_sse_app(
             Route(
                 sse_path,
                 endpoint=RequireAuthMiddleware(
-                    handle_sse,
+                    sse_endpoint,
                     auth.required_scopes,
                     resource_metadata_url,
                 ),
@@ -113,10 +155,6 @@ def create_resilient_sse_app(
             )
         )
     else:
-
-        async def sse_endpoint(request: Request) -> Response:
-            return await handle_sse(request.scope, request.receive, request._send)
-
         server_routes.append(Route(sse_path, endpoint=sse_endpoint, methods=["GET"]))
         server_routes.append(Mount(message_path, app=sse.handle_post_message))
 

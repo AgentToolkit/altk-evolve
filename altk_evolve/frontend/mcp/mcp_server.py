@@ -9,6 +9,7 @@ import logging
 import threading
 import uuid
 import os
+from typing import Any
 
 from fastmcp import FastMCP
 from fastapi import FastAPI
@@ -214,6 +215,22 @@ def get_entities_logic(
     return "\n".join(response_lines)
 
 
+def _parse_metadata(metadata: str | None) -> dict[str, Any]:
+    if not metadata:
+        return {}
+
+    try:
+        parsed = json.loads(metadata)
+    except json.JSONDecodeError as e:
+        logger.exception(f"Invalid JSON in metadata parameter: {str(e)}")
+        raise ValueError(f"Failed to parse metadata: {str(e)}") from e
+
+    if not isinstance(parsed, dict):
+        raise ValueError("Metadata must decode to a JSON object")
+
+    return parsed
+
+
 @mcp.tool()
 def get_entities(
     task: str,
@@ -259,6 +276,74 @@ def get_guidelines(
         session_id: Optional session/thread ID. Logged for attribution; does not filter results.
     """
     return get_entities_logic(task, "guideline", user_id=user_id, namespace_id=namespace_id, session_id=session_id)
+
+
+@mcp.tool()
+def store_user_facts(
+    user_id: str,
+    message: str,
+    metadata: str | None = None,
+    enable_conflict_resolution: bool = False,
+) -> str:
+    """Extract and store user facts/preferences for a durable user identity."""
+    try:
+        metadata_dict = _parse_metadata(metadata)
+    except ValueError as e:
+        return json.dumps(
+            {
+                "error": "Invalid JSON",
+                "message": str(e),
+                "invalid_metadata": metadata,
+            }
+        )
+
+    updates = get_client().store_user_facts(
+        namespace_id=evolve_config.namespace_id,
+        message=message,
+        user_id=user_id,
+        metadata=metadata_dict,
+        enable_conflict_resolution=enable_conflict_resolution,
+    )
+
+    serialized_updates = [
+        {
+            "event": update.event,
+            "id": update.id,
+            "type": update.type,
+            "content": update.content,
+            "metadata": update.metadata,
+        }
+        for update in updates
+    ]
+
+    return json.dumps(
+        {
+            "user_id": user_id,
+            "stored_count": len(serialized_updates),
+            "updates": serialized_updates,
+        }
+    )
+
+
+@mcp.tool()
+def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5) -> str:
+    """Retrieve categorized user facts/preferences for a durable user identity."""
+    categories = get_client().retrieve_user_facts(
+        namespace_id=evolve_config.namespace_id,
+        user_id=user_id,
+        query=query,
+        limit=limit,
+    )
+    matched_count = sum(len(items) for items in categories.values())
+
+    return json.dumps(
+        {
+            "user_id": user_id,
+            "query": query,
+            "matched_count": matched_count,
+            "categories": categories,
+        }
+    )
 
 
 @mcp.tool()
