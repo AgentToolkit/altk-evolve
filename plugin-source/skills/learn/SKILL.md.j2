@@ -37,7 +37,7 @@ Unless that artifact happens to be:
 
 ## Workflow
 
-{% if forked_context -%}
+{% if forked_context | default(false) -%}
 ### Step 0: Load the Conversation
 
 This skill runs in a forked context with no access to the parent conversation. The stop hook message (produced by `on_stop.py`) contains the literal marker `The session transcript is at: <path>` — find that exact phrase, take everything after the colon, strip surrounding whitespace and quotes, and use the result as `transcript_path`. Then read it:
@@ -60,7 +60,7 @@ If no transcript is available at all, output zero entities.
 {% endif -%}
 ### Step 1: Analyze the Conversation
 
-Identify from your current conversation{% if forked_context %} (loaded from the transcript){% endif %}:
+Identify from your current conversation{% if forked_context | default(false) %} (loaded from the transcript){% endif %}:
 
 - **Task/Request**: What was the user asking for?
 - **Steps Taken**: What reasoning, actions, and observations occurred?

@@ -23,17 +23,14 @@ save_example_script_root = "${CLAUDE_PLUGIN_ROOT}/skills"
 
 [platforms.claw-code]
 plugin_root = "platform-integrations/claw-code/plugins/evolve-lite"
-forked_context = false
 user_skills_dir = "~/.claw/skills"
 save_example_script_root = "~/.claw/skills"
 
 [platforms.codex]
 plugin_root = "platform-integrations/codex/plugins/evolve-lite"
-forked_context = false
 
 [platforms.bob]
 plugin_root = "platform-integrations/bob/evolve-lite"
-forked_context = false
 
 # Verbatim copies — file content is identical across every listed platform.
 [[files]]
