@@ -27,11 +27,13 @@ This skill analyzes the current conversation to extract guidelines that **correc
 
 ### Step 0: Load the Conversation
 
-This skill runs in a forked context with no access to the parent conversation. The stop hook message includes the path to the session transcript file (JSONL format). **You must read this file to analyze the conversation.**
+This skill runs in a forked context with no access to the parent conversation. The stop hook message (produced by `on_stop.py`) contains the literal marker `The session transcript is at: <path>` — find that exact phrase, take everything after the colon, strip surrounding whitespace and quotes, and use the result as `transcript_path`. Then read it:
 
 ```bash
 cat <transcript_path>
 ```
+
+**You must read this file to analyze the conversation** — the forked context has no other access to it.
 
 The transcript is JSONL: each line is a separate JSON object. Focus on lines where `"type": "assistant"` or `"type": "human"` to reconstruct the conversation flow. Look for tool calls, errors in tool results, and user corrections.
 
