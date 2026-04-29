@@ -25,9 +25,28 @@ This skill analyzes the current conversation to extract guidelines that **correc
 
 ## Workflow
 
+### Step 0: Load the Conversation
+
+This skill runs in a forked context with no access to the parent conversation. The stop hook message (produced by `on_stop.py`) contains the literal marker `The session transcript is at: <path>` — find that exact phrase, take everything after the colon, strip surrounding whitespace and quotes, and use the result as `transcript_path`. Then read it:
+
+```bash
+cat <transcript_path>
+```
+
+**You must read this file to analyze the conversation** — the forked context has no other access to it.
+
+The transcript is JSONL: each line is a separate JSON object. Focus on lines where `"type": "assistant"` or `"type": "human"` to reconstruct the conversation flow. Look for tool calls, errors in tool results, and user corrections.
+
+If no transcript path was provided, fall back to `.evolve/trajectories/`, which may contain either format:
+
+- **`trajectory_*.json`** — a single JSON object with `messages: [{role, content}, …]`. Prefer the most recent one; parse with `json.load`.
+- **`claude-transcript_*.jsonl`** — raw Claude JSONL (same format as the primary `transcript_path`). Parse line-by-line.
+
+If no transcript is available at all, output zero entities.
+
 ### Step 1: Analyze the Conversation
 
-Review the conversation and identify:
+Review the conversation (loaded from the transcript) and identify:
 
 - **Wasted steps**: Where did the agent go down a path that turned out to be unnecessary? What would have been the direct route?
 - **Errors hit**: What errors occurred? What knowledge would have prevented them?
