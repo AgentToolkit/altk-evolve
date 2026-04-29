@@ -1,0 +1,43 @@
+# Plugin source manifest — canonical source-of-truth for platform-integrations/.
+#
+# Each platform declares its plugin_root under platform-integrations/. Each file
+# entry names a path under plugin-source/, the per-platform target path, and the
+# list of platforms that receive it. The build script (scripts/build_plugins.py)
+# walks this manifest and emits the platform-integrations/ tree.
+#
+# This file is hand-edited; everything under platform-integrations/ that
+# corresponds to a manifest entry is generated and should not be hand-edited.
+# The CI gate (`just check-plugins-rendered`) enforces this invariant.
+
+[platforms.claude]
+plugin_root = "platform-integrations/claude/plugins/evolve-lite"
+
+[platforms.claw-code]
+plugin_root = "platform-integrations/claw-code/plugins/evolve-lite"
+
+[platforms.codex]
+plugin_root = "platform-integrations/codex/plugins/evolve-lite"
+
+[platforms.bob]
+plugin_root = "platform-integrations/bob/evolve-lite"
+
+# Verbatim copies — file content is identical across every listed platform.
+[[files]]
+source = "lib/__init__.py"
+target = "lib/__init__.py"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "lib/audit.py"
+target = "lib/audit.py"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "lib/config.py"
+target = "lib/config.py"
+platforms = ["claude", "claw-code"]
+
+[[files]]
+source = "lib/entity_io.py"
+target = "lib/entity_io.py"
+platforms = ["claude", "claw-code"]

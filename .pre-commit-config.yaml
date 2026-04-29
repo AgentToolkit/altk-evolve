@@ -50,3 +50,15 @@ repos:
         name: detect secrets
         args: ['--baseline', '.secrets.baseline']
         exclude: package.lock.json
+
+  # Plugin render-equality gate — fails if platform-integrations/ has drifted
+  # from plugin-source/. Runs whenever plugin-source/, scripts/build_plugins.py,
+  # or the rendered tree under platform-integrations/ has changed.
+  - repo: local
+    hooks:
+      - id: plugins-rendered
+        name: plugins-rendered
+        entry: uv run python scripts/build_plugins.py check
+        language: system
+        pass_filenames: false
+        files: ^(plugin-source/|platform-integrations/|scripts/build_plugins\.py)

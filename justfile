@@ -96,3 +96,12 @@ codex-run:
 # Smoke-test that Codex is installed and working
 codex-test:
     docker run --rm --env-file {{env_file}} {{codex_image}} codex exec --skip-git-repo-check "who are you"
+
+# Render plugin-source/ into platform-integrations/. Edit plugin-source/, then run this.
+compile-plugins:
+    uv run python scripts/build_plugins.py render
+
+# Verify committed platform-integrations/ matches a fresh render of plugin-source/.
+# CI and the pre-commit hook run this; nonzero exit means the source and output have drifted.
+check-plugins-rendered:
+    uv run python scripts/build_plugins.py check
