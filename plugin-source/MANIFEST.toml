@@ -6,10 +6,10 @@
 # when rendering .j2 source files. The Jinja2 environment also receives
 # `platform = "<name>"` so templates can branch on the active platform.
 #
-# Each [[files]] entry names a path under plugin-source/, the per-platform
-# target path under plugin_root, and the list of platforms that receive it.
-# Sources ending in `.j2` are rendered through Jinja2; everything else is
-# copied verbatim.
+# Each [[files]] entry names a path under plugin-source/ and the list of
+# platforms that receive it. `target` is optional; when omitted it defaults to
+# `source` with a trailing `.j2` stripped. Sources ending in `.j2` are rendered
+# through Jinja2; everything else is copied verbatim.
 #
 # This file is hand-edited; everything under platform-integrations/ that
 # corresponds to a manifest entry is generated and should not be hand-edited.
@@ -38,22 +38,18 @@ forked_context = false
 # Verbatim copies — file content is identical across every listed platform.
 [[files]]
 source = "lib/__init__.py"
-target = "lib/__init__.py"
 platforms = ["claude", "claw-code"]
 
 [[files]]
 source = "lib/audit.py"
-target = "lib/audit.py"
 platforms = ["claude", "claw-code"]
 
 [[files]]
 source = "lib/config.py"
-target = "lib/config.py"
 platforms = ["claude", "claw-code"]
 
 [[files]]
 source = "lib/entity_io.py"
-target = "lib/entity_io.py"
 platforms = ["claude", "claw-code"]
 
 # Skill scripts that are byte-identical across claude and claw-code today.
@@ -62,7 +58,6 @@ platforms = ["claude", "claw-code"]
 
 [[files]]
 source = "skills/learn/scripts/save_entities.py"
-target = "skills/learn/scripts/save_entities.py"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -72,7 +67,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/publish/scripts/publish.py"
-target = "skills/publish/scripts/publish.py"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -82,7 +76,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/subscribe/scripts/subscribe.py"
-target = "skills/subscribe/scripts/subscribe.py"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -92,7 +85,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/unsubscribe/scripts/unsubscribe.py"
-target = "skills/unsubscribe/scripts/unsubscribe.py"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -102,7 +94,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/sync/scripts/sync.py"
-target = "skills/sync/scripts/sync.py"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -112,7 +103,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/recall/scripts/retrieve_entities.py"
-target = "skills/recall/scripts/retrieve_entities.py"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -122,7 +112,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/save-trajectory/scripts/save_trajectory.py"
-target = "skills/save-trajectory/scripts/save_trajectory.py"
 platforms = ["claude", "claw-code"]
 
 [[files]]
@@ -140,7 +129,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/learn/SKILL.md.j2"
-target = "skills/learn/SKILL.md"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -150,7 +138,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/recall/SKILL.md.j2"
-target = "skills/recall/SKILL.md"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -160,7 +147,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/publish/SKILL.md.j2"
-target = "skills/publish/SKILL.md"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -170,7 +156,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/subscribe/SKILL.md.j2"
-target = "skills/subscribe/SKILL.md"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -180,7 +165,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/unsubscribe/SKILL.md.j2"
-target = "skills/unsubscribe/SKILL.md"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -190,7 +174,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/sync/SKILL.md.j2"
-target = "skills/sync/SKILL.md"
 platforms = ["claude", "claw-code", "codex"]
 
 [[files]]
@@ -200,7 +183,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/save-trajectory/SKILL.md.j2"
-target = "skills/save-trajectory/SKILL.md"
 platforms = ["claude", "claw-code"]
 
 [[files]]
@@ -210,7 +192,6 @@ platforms = ["bob"]
 
 [[files]]
 source = "skills/save/SKILL.md.j2"
-target = "skills/save/SKILL.md"
 platforms = ["claude", "claw-code"]
 
 # Claude-only stop hooks. The forked-context learn skill needs an on_stop
@@ -218,15 +199,12 @@ platforms = ["claude", "claw-code"]
 # equivalent hook contract.
 [[files]]
 source = "skills/learn/scripts/on_stop.py"
-target = "skills/learn/scripts/on_stop.py"
 platforms = ["claude"]
 
 [[files]]
 source = "skills/learn/scripts/on_stop.sh"
-target = "skills/learn/scripts/on_stop.sh"
 platforms = ["claude"]
 
 [[files]]
 source = "skills/save-trajectory/scripts/on_stop.py"
-target = "skills/save-trajectory/scripts/on_stop.py"
 platforms = ["claude"]

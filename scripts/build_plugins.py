@@ -56,6 +56,19 @@ class Manifest:
     files: tuple[FileEntry, ...]
 
 
+def _default_target(entry: dict[str, Any]) -> str:
+    """Resolve the target path for a manifest entry, defaulting from source.
+
+    When `target` is omitted, fall back to `source` with a trailing `.j2`
+    stripped (templates render to the same path minus the suffix).
+    """
+    target = entry.get("target")
+    if isinstance(target, str):
+        return target
+    source: str = entry["source"]
+    return source[:-3] if source.endswith(".j2") else source
+
+
 def load_manifest() -> Manifest:
     raw = tomllib.loads(MANIFEST_PATH.read_text())
     platforms: dict[str, PlatformConfig] = {}
@@ -66,7 +79,7 @@ def load_manifest() -> Manifest:
     files = tuple(
         FileEntry(
             source=PLUGIN_SOURCE_DIR / entry["source"],
-            target_rel=Path(entry["target"]),
+            target_rel=Path(_default_target(entry)),
             platforms=tuple(entry["platforms"]),
         )
         for entry in raw.get("files", [])
