@@ -105,7 +105,7 @@ class TestCodexIdempotency:
             group
             for group in prompt_hooks
             if any(
-                "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+                "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in hook.get("command", "")
                 for hook in group.get("hooks", [])
             )
         ]
@@ -120,12 +120,12 @@ class TestCodexIdempotency:
 
         import shutil
 
-        shutil.rmtree(plugin_dir / "skills" / "learn")
+        shutil.rmtree(plugin_dir / "skills" / "evolve-lite" / "learn")
 
         install_runner.run("install", platform="codex")
 
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "learn")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "learn" / "SKILL.md")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "learn")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "learn" / "SKILL.md")
         file_assertions.assert_file_exists(plugin_dir / "lib" / "entity_io.py")
 
 
@@ -189,7 +189,7 @@ class TestUninstallInstallCycle:
             hook
             for group in prompt_hooks
             for hook in group.get("hooks", [])
-            if "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+            if "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in hook.get("command", "")
         ]
         assert not evolve_hooks, "Evolve hook still present after uninstall"
 
@@ -209,7 +209,7 @@ class TestUninstallInstallCycle:
             for hook in group.get("hooks", [])
         )
         assert any(
-            "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+            "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in hook.get("command", "")
             for group in reinstalled_hooks["hooks"]["UserPromptSubmit"]
             for hook in group.get("hooks", [])
         )

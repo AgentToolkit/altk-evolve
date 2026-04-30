@@ -10,7 +10,7 @@
   "repository": "https://github.com/AgentToolkit/altk-evolve",
   "license": "MIT",
   "keywords": ["evolve", "codex", "entities", "memory"],
-  "skills": "./skills/",
+  "skills": "./skills/evolve-lite/",
   "interface": {
     "displayName": "Evolve Lite",
     "shortDescription": "Recall, save, and share reusable Evolve entities.",

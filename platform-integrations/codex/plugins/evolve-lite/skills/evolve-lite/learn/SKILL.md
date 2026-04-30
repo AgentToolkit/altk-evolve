@@ -143,19 +143,19 @@ After generating the entities JSON, save them using the helper script:
 #### Method 1: Direct Pipe (Recommended)
 
 ```bash
-echo '<your-json-output>' | python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/learn/scripts/save_entities.py"
+echo '<your-json-output>' | python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/learn/scripts/save_entities.py"
 ```
 
 #### Method 2: From File
 
 ```bash
-cat entities.json | python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/learn/scripts/save_entities.py"
+cat entities.json | python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/learn/scripts/save_entities.py"
 ```
 
 #### Method 3: Interactive
 
 ```bash
-python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/learn/scripts/save_entities.py"
+python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/learn/scripts/save_entities.py"
 ```
 
 The script will:

@@ -27,11 +27,11 @@ pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 _REPO_ROOT = Path(__file__).parent.parent.parent
 CLAUDE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
 CODEX_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite"
-SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
-UNSUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/unsubscribe/scripts/unsubscribe.py"
+SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"
+UNSUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/unsubscribe/scripts/unsubscribe.py"
 SUBSCRIBE_SCRIPT_VARIANTS = [
-    ("claude", CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"),
-    ("codex", CODEX_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"),
+    ("claude", CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"),
+    ("codex", CODEX_PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"),
 ]
 
 

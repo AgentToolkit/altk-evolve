@@ -61,7 +61,7 @@ Ask the user for:
 ### Step 3: Run subscribe script
 
 ```bash
-python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/subscribe/scripts/subscribe.py" --name "{name}" --remote "{remote}" --branch main --scope "{scope}" --notes "{notes}"
+python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/subscribe/scripts/subscribe.py" --name "{name}" --remote "{remote}" --branch main --scope "{scope}" --notes "{notes}"
 ```
 
 ### Step 4: Confirm

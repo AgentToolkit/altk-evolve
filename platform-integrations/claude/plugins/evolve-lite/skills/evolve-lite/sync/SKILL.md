@@ -17,7 +17,7 @@ unpushed local publish commits are preserved.
 ### Step 1: Run sync script
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/sync/scripts/sync.py
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/sync/scripts/sync.py
 ```
 
 ### Step 2: Display summary

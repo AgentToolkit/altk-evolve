@@ -19,7 +19,7 @@ commits will be lost.
 Run:
 
 ```bash
-python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/unsubscribe/scripts/unsubscribe.py" --list
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/unsubscribe/scripts/unsubscribe.py --list
 ```
 
 Show the repos to the user (including `scope` and `notes`) and ask which
@@ -34,7 +34,14 @@ lost.
 ### Step 3: Run unsubscribe script
 
 ```bash
-python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/unsubscribe/scripts/unsubscribe.py" --name {name}
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/unsubscribe/scripts/unsubscribe.py --name {name}
+```
+
+For a write-scope repo, the script refuses to remove the local clone
+without `--force` so unpushed publishes can't disappear by accident:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/unsubscribe/scripts/unsubscribe.py --name {name} --force
 ```
 
 ### Step 4: Confirm

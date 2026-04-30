@@ -54,7 +54,7 @@ List files in `.evolve/entities/guideline/` and ask the user which to publish.
 For each selected file, run:
 
 ```bash
-python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/publish/scripts/publish.py" --entity "{filename}" --repo "{repo}" --user "{identity.user}"
+python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/publish/scripts/publish.py" --entity "{filename}" --repo "{repo}" --user "{identity.user}"
 ```
 
 ### Step 6: Commit and push

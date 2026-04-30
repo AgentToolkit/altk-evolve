@@ -491,7 +491,7 @@ class CodexFixtures:
                                             "sh -lc '"
                                             'd="$PWD"; '
                                             "while :; do "
-                                            'candidate="$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"; '
+                                            'candidate="$d/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"; '
                                             'if [ -f "$candidate" ]; then exec python3 "$candidate"; fi; '
                                             '[ "$d" = "/" ] && break; '
                                             'd="$(dirname "$d")"; '
@@ -536,7 +536,7 @@ class CodexFixtures:
                                             "sh -lc '"
                                             'd="$PWD"; '
                                             "while :; do "
-                                            'candidate="$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"; '
+                                            'candidate="$d/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"; '
                                             'if [ -f "$candidate" ]; then exec python3 "$candidate"; fi; '
                                             '[ "$d" = "/" ] && break; '
                                             'd="$(dirname "$d")"; '

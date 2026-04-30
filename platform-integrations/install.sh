@@ -728,7 +728,7 @@ class CodexInstaller:
             "sh -lc '"
             'd=\"$PWD\"; '
             "while :; do "
-            'candidate=\"$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py\"; '
+            'candidate=\"$d/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py\"; '
             'if [ -f \"$candidate\" ]; then EVOLVE_DIR=\"$d/.evolve\" exec python3 \"$candidate\"; fi; '
             '[ \"$d\" = \"/\" ] && break; '
             'd=\"$(dirname \"$d\")\"; '
@@ -738,7 +738,7 @@ class CodexInstaller:
 
     @staticmethod
     def _is_recall_command(command):
-        return isinstance(command, str) and "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in command
+        return isinstance(command, str) and "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in command
 
     @staticmethod
     def _recall_hook():
@@ -758,7 +758,7 @@ class CodexInstaller:
             "sh -lc '"
             'd=\"$PWD\"; '
             "while :; do "
-            'candidate=\"$d/plugins/evolve-lite/skills/sync/scripts/sync.py\"; '
+            'candidate=\"$d/plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py\"; '
             'if [ -f \"$candidate\" ]; then EVOLVE_DIR=\"$d/.evolve\" exec python3 \"$candidate\" --quiet --session-start; fi; '
             '[ \"$d\" = \"/\" ] && break; '
             'd=\"$(dirname \"$d\")\"; '
@@ -768,7 +768,7 @@ class CodexInstaller:
 
     @staticmethod
     def _is_sync_command(command):
-        return isinstance(command, str) and "plugins/evolve-lite/skills/sync/scripts/sync.py" in command
+        return isinstance(command, str) and "plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py" in command
 
     @staticmethod
     def _sync_hook():
@@ -1043,8 +1043,8 @@ class CodexInstaller:
         print("  Codex:")
         print(f"    plugins/evolve-lite       : {'✓' if plugin_dir.is_dir() else '✗'}")
         print(f"    lib/entity_io.py          : {'✓' if (plugin_dir / 'lib' / 'entity_io.py').is_file() else '✗'}")
-        print(f"    skills/learn              : {'✓' if (plugin_dir / 'skills' / 'learn').is_dir() else '✗'}")
-        print(f"    skills/recall             : {'✓' if (plugin_dir / 'skills' / 'recall').is_dir() else '✗'}")
+        print(f"    skills/evolve-lite/learn  : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'learn').is_dir() else '✗'}")
+        print(f"    skills/evolve-lite/recall : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'recall').is_dir() else '✗'}")
 
         marketplace_path = Path(target_dir) / ".agents" / "plugins" / "marketplace.json"
         marketplace_present = (

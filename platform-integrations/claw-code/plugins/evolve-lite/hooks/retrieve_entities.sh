@@ -20,4 +20,4 @@ PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
 # Feed the tool context into the entity retrieval script via stdin.
 # The script reads it for logging; entity loading is path-based.
 printf '%s' "${HOOK_TOOL_INPUT:-{}}" \
-  | python3 "$PLUGIN_ROOT/skills/recall/scripts/retrieve_entities.py"
+  | python3 "$PLUGIN_ROOT/skills/evolve-lite/recall/scripts/retrieve_entities.py"

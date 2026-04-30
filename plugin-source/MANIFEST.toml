@@ -41,10 +41,11 @@ save_example_script_root = "plugins/evolve-lite/skills"
 plugin_root = "platform-integrations/bob/evolve-lite"
 user_skills_dir = ".bob/skills"
 save_example_script_root = ".bob/skills"
-# Bob installs each skill under `evolve-lite-<name>/` rather than `<name>/`
-# (commit 07a171c, Windows-compat — colon path components are rejected).
+# Bob has no plugin-namespace concept; skill folders are flat under
+# `.bob/skills/`. Collapse the source `skills/evolve-lite/<name>/` layout
+# to `skills/evolve-lite-<name>/` for bob's render output.
 [[platforms.bob.target_rewrites]]
-pattern = "^skills/([^/]+)/"
+pattern = "^skills/evolve-lite/([^/]+)/"
 replacement = "skills/evolve-lite-\\1/"
 
 # Shared library — shipped to every platform. Codex and bob previously
@@ -66,25 +67,25 @@ source = "lib/entity_io.py"
 # target_rewrite prefixes the skill folder with `evolve-lite-`.
 
 [[files]]
-source = "skills/learn/scripts/save_entities.py"
+source = "skills/evolve-lite/learn/scripts/save_entities.py"
 
 [[files]]
-source = "skills/publish/scripts/publish.py"
+source = "skills/evolve-lite/publish/scripts/publish.py"
 
 [[files]]
-source = "skills/subscribe/scripts/subscribe.py"
+source = "skills/evolve-lite/subscribe/scripts/subscribe.py"
 
 [[files]]
-source = "skills/unsubscribe/scripts/unsubscribe.py"
+source = "skills/evolve-lite/unsubscribe/scripts/unsubscribe.py"
 
 [[files]]
-source = "skills/sync/scripts/sync.py"
+source = "skills/evolve-lite/sync/scripts/sync.py"
 
 [[files]]
-source = "skills/recall/scripts/retrieve_entities.py"
+source = "skills/evolve-lite/recall/scripts/retrieve_entities.py"
 
 [[files]]
-source = "skills/save-trajectory/scripts/save_trajectory.py"
+source = "skills/evolve-lite/save-trajectory/scripts/save_trajectory.py"
 
 # Templated SKILL.md files. Each .j2 is the unified prose for all four
 # platforms — codex's structure / wording is the base, with Jinja2 branches
@@ -92,37 +93,37 @@ source = "skills/save-trajectory/scripts/save_trajectory.py"
 # script invocations (resolved through the `invoke` macro in _macros.j2).
 
 [[files]]
-source = "skills/learn/SKILL.md.j2"
+source = "skills/evolve-lite/learn/SKILL.md.j2"
 
 [[files]]
-source = "skills/recall/SKILL.md.j2"
+source = "skills/evolve-lite/recall/SKILL.md.j2"
 
 [[files]]
-source = "skills/publish/SKILL.md.j2"
+source = "skills/evolve-lite/publish/SKILL.md.j2"
 
 [[files]]
-source = "skills/subscribe/SKILL.md.j2"
+source = "skills/evolve-lite/subscribe/SKILL.md.j2"
 
 [[files]]
-source = "skills/unsubscribe/SKILL.md.j2"
+source = "skills/evolve-lite/unsubscribe/SKILL.md.j2"
 
 [[files]]
-source = "skills/sync/SKILL.md.j2"
+source = "skills/evolve-lite/sync/SKILL.md.j2"
 
 [[files]]
-source = "skills/save-trajectory/SKILL.md.j2"
+source = "skills/evolve-lite/save-trajectory/SKILL.md.j2"
 
 [[files]]
-source = "skills/save/SKILL.md.j2"
+source = "skills/evolve-lite/save/SKILL.md.j2"
 
 # Stop hooks. Only claude has an on_stop hook contract today; the files
 # ship to every platform as inert artifacts (no harm if never invoked).
 # Per-platform behavior tightening is tracked as follow-up issues.
 [[files]]
-source = "skills/learn/scripts/on_stop.py"
+source = "skills/evolve-lite/learn/scripts/on_stop.py"
 
 [[files]]
-source = "skills/learn/scripts/on_stop.sh"
+source = "skills/evolve-lite/learn/scripts/on_stop.sh"
 
 [[files]]
-source = "skills/save-trajectory/scripts/on_stop.py"
+source = "skills/evolve-lite/save-trajectory/scripts/on_stop.py"

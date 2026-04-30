@@ -19,7 +19,7 @@
 #}
 {%- macro invoke(skill, script, args=None) -%}
 {%- if platform == "claude" -%}
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/{{ skill }}/scripts/{{ script }}
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/{{ skill }}/scripts/{{ script }}
 {%- if args is none %}{# no args; nothing appended #}
 {%- elif args is string %} {{ args }}
 {%- else %} \
@@ -33,7 +33,7 @@ sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).
 {%- endif -%}
 '
 {%- elif platform == "codex" -%}
-python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/{{ skill }}/scripts/{{ script }}"
+python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/{{ skill }}/scripts/{{ script }}"
 {%- if args is none %}{# no args; nothing appended #}
 {%- elif args is string %} {{ args }}
 {%- else %} {{ args | join(" ") }}

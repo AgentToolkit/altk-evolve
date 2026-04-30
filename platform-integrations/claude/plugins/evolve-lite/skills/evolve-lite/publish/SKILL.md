@@ -54,7 +54,7 @@ List files in `.evolve/entities/guideline/` and ask the user which to publish.
 For each selected file, run:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish/scripts/publish.py \
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/publish/scripts/publish.py \
   --entity "{filename}" \
   --repo "{repo}" \
   --user "{identity.user}"

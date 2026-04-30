@@ -17,7 +17,7 @@ unpushed local publish commits are preserved.
 ### Step 1: Run sync script
 
 ```bash
-python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/sync/scripts/sync.py"
+python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py"
 ```
 
 ### Step 2: Display summary

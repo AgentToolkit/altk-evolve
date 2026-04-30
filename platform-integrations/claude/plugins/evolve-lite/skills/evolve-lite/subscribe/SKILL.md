@@ -61,7 +61,7 @@ Ask the user for:
 ### Step 3: Run subscribe script
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/subscribe/scripts/subscribe.py \
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/subscribe/scripts/subscribe.py \
   --name "{name}" \
   --remote "{remote}" \
   --branch main \

@@ -207,7 +207,7 @@ class TestCodexPreservation:
             for group in session_start_hooks
         ), "User's SessionStart hook was removed!"
         assert any(
-            any("plugins/evolve-lite/skills/sync/scripts/sync.py" in hook.get("command", "") for hook in group.get("hooks", []))
+            any("plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py" in hook.get("command", "") for hook in group.get("hooks", []))
             for group in session_start_hooks
         ), "Evolve SessionStart hook was not added!"
 
@@ -224,7 +224,7 @@ class TestCodexPreservation:
             group
             for group in prompt_hooks
             if any(
-                "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+                "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in hook.get("command", "")
                 for hook in group.get("hooks", [])
             )
         ]

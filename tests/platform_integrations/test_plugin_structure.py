@@ -63,12 +63,12 @@ class TestSkillScripts:
     @pytest.mark.parametrize(
         "script_rel",
         [
-            "skills/publish/scripts/publish.py",
-            "skills/subscribe/scripts/subscribe.py",
-            "skills/unsubscribe/scripts/unsubscribe.py",
-            "skills/sync/scripts/sync.py",
-            "skills/recall/scripts/retrieve_entities.py",
-            "skills/learn/scripts/save_entities.py",
+            "skills/evolve-lite/publish/scripts/publish.py",
+            "skills/evolve-lite/subscribe/scripts/subscribe.py",
+            "skills/evolve-lite/unsubscribe/scripts/unsubscribe.py",
+            "skills/evolve-lite/sync/scripts/sync.py",
+            "skills/evolve-lite/recall/scripts/retrieve_entities.py",
+            "skills/evolve-lite/learn/scripts/save_entities.py",
         ],
     )
     def test_script_exists(self, script_rel):
