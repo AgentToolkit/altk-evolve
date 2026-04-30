@@ -36,6 +36,11 @@ def main():
         print(f"Error: invalid JSON input - {exc}", file=sys.stderr)
         sys.exit(1)
 
+    if not isinstance(payload, dict):
+        log(f"Bad payload type: {type(payload).__name__}")
+        print("Error: payload must be a JSON object.", file=sys.stderr)
+        sys.exit(1)
+
     session_id = payload.get("session_id")
     assessments = payload.get("assessments", [])
     if not session_id or not isinstance(assessments, list):
@@ -47,6 +52,9 @@ def main():
 
     written = 0
     for a in assessments:
+        if not isinstance(a, dict):
+            log(f"Skipping non-dict assessment item: {a!r}")
+            continue
         entity = a.get("entity")
         verdict = a.get("verdict")
         evidence = a.get("evidence", "")
