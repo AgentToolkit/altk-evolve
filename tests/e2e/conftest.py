@@ -1,3 +1,6 @@
+# E2e tests require a working LLM for fact-extraction and guideline-generation.
+# See docs/guides/configuration.md for the required EVOLVE_* env vars.
+
 import os
 import uuid
 import pytest
