@@ -99,9 +99,9 @@ codex-test:
 
 # Render plugin-source/ into platform-integrations/. Edit plugin-source/, then run this.
 compile-plugins:
-    uv run python scripts/build_plugins.py render
+    uv run python plugin-source/build_plugins.py render
 
 # Verify committed platform-integrations/ matches a fresh render of plugin-source/.
 # CI and the pre-commit hook run this; nonzero exit means the source and output have drifted.
 check-plugins-rendered:
-    uv run python scripts/build_plugins.py check
+    uv run python plugin-source/build_plugins.py check

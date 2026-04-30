@@ -1,4 +1,4 @@
-"""Tests for scripts/build_plugins.py — the plugin source compilation pipeline.
+"""Tests for plugin-source/build_plugins.py — the plugin source compilation pipeline.
 
 These tests exercise the build pipeline end-to-end: render plugin-source/ into a
 temp tree, verify each manifested file lands at its declared per-platform path,
@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-BUILD_SCRIPT = REPO_ROOT / "scripts" / "build_plugins.py"
+BUILD_SCRIPT = REPO_ROOT / "plugin-source" / "build_plugins.py"
 
 
 def _import_build_module():

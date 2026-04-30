@@ -101,7 +101,7 @@ jobs:
         enable-cache: true
         python-version: ${{ matrix.python-version }}
     - name: Verify platform-integrations matches a fresh render of plugin-source
-      run: uv run python scripts/build_plugins.py check
+      run: uv run python plugin-source/build_plugins.py check
 
   ui-tests:
     runs-on: ubuntu-latest

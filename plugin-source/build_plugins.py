@@ -8,10 +8,11 @@ platform — and emits the rendered tree under platform-integrations/.
 Per-platform configuration (plugin_root, Jinja context, optional path
 rewrites) is encoded in the PLATFORMS dict below. There is no separate
 manifest file; the file tree under plugin-source/ IS the manifest, with
-two reserved entries:
+three reserved entries that live in plugin-source/ but are never shipped:
 
-  _macros.j2   — imported by SKILL.md.j2 templates; not rendered standalone.
-  README.md    — describes the source tree; not shipped.
+  _macros.j2        — imported by SKILL.md.j2 templates; not rendered standalone.
+  README.md         — describes the source tree.
+  build_plugins.py  — this script.
 
 Source files ending in `.j2` are rendered through Jinja2 with a per-platform
 context (see PlatformConfig.context). Other files are copied verbatim.
@@ -36,11 +37,11 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-PLUGIN_SOURCE_DIR = REPO_ROOT / "plugin-source"
+PLUGIN_SOURCE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = PLUGIN_SOURCE_DIR.parent
 
 # Files at plugin-source/ that are NOT shipped to any platform.
-RESERVED_SOURCES = frozenset({"_macros.j2", "README.md"})
+RESERVED_SOURCES = frozenset({"_macros.j2", "README.md", "build_plugins.py"})
 
 # Per-platform config. Each entry declares where rendered output lands
 # (plugin_root, relative to REPO_ROOT), the Jinja2 context exposed to
@@ -133,13 +134,17 @@ def _platforms() -> dict[str, PlatformConfig]:
 def _walk_sources() -> list[Path]:
     """Every file under plugin-source/ that should be rendered or copied.
 
-    Excludes files in RESERVED_SOURCES at the source root.
+    Excludes files in RESERVED_SOURCES at the source root, and any path
+    that traverses a __pycache__ directory (build_plugins.py running from
+    plugin-source/ writes a sibling __pycache__/ that must not ship).
     """
     sources: list[Path] = []
     for path in sorted(PLUGIN_SOURCE_DIR.rglob("*")):
         if not path.is_file():
             continue
         rel = path.relative_to(PLUGIN_SOURCE_DIR)
+        if "__pycache__" in rel.parts:
+            continue
         if len(rel.parts) == 1 and rel.parts[0] in RESERVED_SOURCES:
             continue
         sources.append(path)
