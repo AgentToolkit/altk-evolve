@@ -179,33 +179,20 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
     session2_id = session2_transcript.stem.removeprefix("claude-transcript_")
     session1_slugs = {p.stem for p in entity_files}
 
-    recall_events = [
-        e for e in events
-        if e.get("event") == "recall" and e.get("session_id") == session2_id
-    ]
-    assert recall_events, (
-        f"no recall audit event for session 2 ({session2_id}). "
-        f"all events: {events}"
-    )
+    recall_events = [e for e in events if e.get("event") == "recall" and e.get("session_id") == session2_id]
+    assert recall_events, f"no recall audit event for session 2 ({session2_id}). all events: {events}"
     recalled_slugs = {slug for e in recall_events for slug in e.get("entities", [])}
     assert recalled_slugs & session1_slugs, (
-        f"recall event entities {recalled_slugs} did not include any slug "
-        f"from session 1 ({session1_slugs})"
+        f"recall event entities {recalled_slugs} did not include any slug from session 1 ({session1_slugs})"
     )
     log.info(f"session 2: audit recorded recall of {recalled_slugs}")
 
-    influence_events = [
-        e for e in events
-        if e.get("event") == "influence" and e.get("session_id") == session2_id
-    ]
+    influence_events = [e for e in events if e.get("event") == "influence" and e.get("session_id") == session2_id]
     assert influence_events, (
-        f"no influence audit event for session 2 ({session2_id}). "
-        f"recall events exist but learn did not emit assessments."
+        f"no influence audit event for session 2 ({session2_id}). recall events exist but learn did not emit assessments."
     )
     for ie in influence_events:
-        assert ie.get("verdict") in {"followed", "contradicted", "not_applicable"}, (
-            f"influence event has invalid verdict: {ie}"
-        )
+        assert ie.get("verdict") in {"followed", "contradicted", "not_applicable"}, f"influence event has invalid verdict: {ie}"
     log.info(
         f"session 2: audit recorded {len(influence_events)} influence assessment(s): "
         f"{[(e['entity'], e['verdict']) for e in influence_events]}"
