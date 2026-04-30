@@ -288,6 +288,11 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "save_example_script_root": "${CLAUDE_PLUGIN_ROOT}/skills",
         },
         "target_rewrites": [],
+        # commands/ is a bob-only concept — bob's runtime registers slash
+        # commands by walking .bob/commands/. Other platforms have their
+        # own command surface (claude's plugin.json, codex's $-registry)
+        # and don't ship a commands/ directory.
+        "target_excludes": [r"^commands/"],
         "metadata_target": ".claude-plugin/plugin.json",
         "metadata_emit": _claude_plugin_json,
     },
@@ -298,6 +303,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "save_example_script_root": "~/.claw/skills",
         },
         "target_rewrites": [],
+        "target_excludes": [r"^commands/"],
         # claw-code is a claude-code fork that reuses the .claude-plugin/ convention.
         "metadata_target": ".claude-plugin/plugin.json",
         "metadata_emit": _claw_code_plugin_json,
@@ -309,6 +315,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "save_example_script_root": "plugins/evolve-lite/skills",
         },
         "target_rewrites": [],
+        "target_excludes": [r"^commands/"],
         "metadata_target": ".codex-plugin/plugin.json",
         "metadata_emit": _codex_plugin_json,
     },
@@ -322,6 +329,10 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         # under .bob/skills/. Collapse the source skills/evolve-lite/<name>/
         # layout to skills/evolve-lite-<name>/ for bob's render output.
         "target_rewrites": [(r"^skills/evolve-lite/([^/]+)/", r"skills/evolve-lite-\1/")],
+        # Bob is the only platform with a slash-command surface that needs
+        # a commands/ directory shipped, so it's the only one without an
+        # exclude pattern for it.
+        "target_excludes": [],
         # Bob has no plugin system, so no plugin.json is emitted.
         "metadata_target": None,
         "metadata_emit": None,
@@ -340,6 +351,7 @@ class PlatformConfig:
     plugin_root: Path
     context: dict[str, Any]
     target_rewrites: tuple[TargetRewrite, ...] = ()
+    target_excludes: tuple[re.Pattern[str], ...] = ()
     metadata_target: Path | None = None
     metadata_emit: MetadataEmit | None = None
 
@@ -348,6 +360,16 @@ class PlatformConfig:
         for rewrite in self.target_rewrites:
             result = rewrite.pattern.sub(rewrite.replacement, result)
         return Path(result)
+
+    def excludes(self, target_rel: Path) -> bool:
+        """True if this platform should skip rendering `target_rel`.
+
+        Patterns match the source-side target path (before any rewrite),
+        so callers can write excludes against the plugin-source/ layout
+        without needing to know each platform's rewrite rules.
+        """
+        s = target_rel.as_posix()
+        return any(p.search(s) for p in self.target_excludes)
 
 
 @dataclass(frozen=True)
@@ -367,11 +389,13 @@ def _platforms() -> dict[str, PlatformConfig]:
     out: dict[str, PlatformConfig] = {}
     for name, cfg in PLATFORMS.items():
         rewrites = tuple(TargetRewrite(pattern=re.compile(pat), replacement=repl) for pat, repl in cfg.get("target_rewrites", []))
+        excludes = tuple(re.compile(pat) for pat in cfg.get("target_excludes", []))
         metadata_target = cfg.get("metadata_target")
         out[name] = PlatformConfig(
             plugin_root=REPO_ROOT / cfg["plugin_root"],
             context=dict(cfg.get("context", {})),
             target_rewrites=rewrites,
+            target_excludes=excludes,
             metadata_target=Path(metadata_target) if metadata_target else None,
             metadata_emit=cfg.get("metadata_emit"),
         )
@@ -462,6 +486,8 @@ def render_to(out_root: Path) -> list[Path]:
     for entry in manifest.files:
         for platform in entry.platforms:
             cfg = manifest.platforms[platform]
+            if cfg.excludes(entry.target_rel):
+                continue
             plugin_root_rel = cfg.plugin_root.relative_to(REPO_ROOT)
             target_rel = cfg.rewrite_target(entry.target_rel)
             target = out_root / plugin_root_rel / target_rel
@@ -497,6 +523,8 @@ def check_drift() -> int:
     for entry in manifest.files:
         for platform in entry.platforms:
             cfg = manifest.platforms[platform]
+            if cfg.excludes(entry.target_rel):
+                continue
             committed = cfg.plugin_root / cfg.rewrite_target(entry.target_rel)
             if not committed.is_file():
                 missing.append(committed)
