@@ -124,7 +124,7 @@ Regardless of whether Step 3 produced new entities, judge whether the guidelines
 
 2. Read `.evolve/audit.log` (JSONL, one object per line). Find every line where `event == "recall"` and `session_id` matches. Take the union of their `entities` arrays — that is the set of guideline slugs served to this session. If that set is empty, skip this step.
 
-3. For each slug, open `.evolve/entities/guideline/<slug>.md` and read its content + trigger. That is the guideline's intent.
+3. For each slug, locate its markdown file by searching under `.evolve/entities/` — the file may live at `.evolve/entities/guideline/<slug>.md` (local entities) or at `.evolve/entities/subscribed/<source>/guideline/<slug>.md` (entities recalled from a subscribed repository). Use a recursive search such as `find .evolve/entities -type f -name "<slug>.md"` and open the first match. Read its content + trigger — that is the guideline's intent. Skip the slug (log it as an assessment-less entry) if no file is found.
 
 4. Compare against the transcript loaded in Step 0. For each slug, pick one verdict:
    - `followed` — the agent's actual actions are consistent with the guideline's recommendation.
