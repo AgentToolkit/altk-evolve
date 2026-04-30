@@ -57,7 +57,7 @@ async def _run_sse_session(
                 streams[1],
                 server._mcp_server.create_initialization_options(),
             )
-    except Exception as exc:
+    except BaseException as exc:
         if _is_benign_disconnect_exception(exc):
             logger.debug("Suppressing benign SSE disconnect during response flush")
             return False
