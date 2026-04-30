@@ -2,9 +2,16 @@
 """Render plugin-source/ into platform-integrations/.
 
 This script is the build pipeline for the unified plugin code tracked in
-issue #219. It walks plugin-source/MANIFEST.toml, resolves each file entry
-to its per-platform target path, and emits the rendered tree under
-platform-integrations/.
+issue #219. It walks plugin-source/ — every file is fanned out to every
+platform — and emits the rendered tree under platform-integrations/.
+
+Per-platform configuration (plugin_root, Jinja context, optional path
+rewrites) is encoded in the PLATFORMS dict below. There is no separate
+manifest file; the file tree under plugin-source/ IS the manifest, with
+two reserved entries:
+
+  _macros.j2   — imported by SKILL.md.j2 templates; not rendered standalone.
+  README.md    — describes the source tree; not shipped.
 
 Source files ending in `.j2` are rendered through Jinja2 with a per-platform
 context (see PlatformConfig.context). Other files are copied verbatim.
@@ -23,7 +30,6 @@ import filecmp
 import re
 import shutil
 import sys
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,10 +38,52 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_SOURCE_DIR = REPO_ROOT / "plugin-source"
-MANIFEST_PATH = PLUGIN_SOURCE_DIR / "MANIFEST.toml"
 
-# Reserved manifest keys under [platforms.<name>]; everything else becomes Jinja2 context.
-_RESERVED_PLATFORM_KEYS = frozenset({"plugin_root", "target_rewrites"})
+# Files at plugin-source/ that are NOT shipped to any platform.
+RESERVED_SOURCES = frozenset({"_macros.j2", "README.md"})
+
+# Per-platform config. Each entry declares where rendered output lands
+# (plugin_root, relative to REPO_ROOT), the Jinja2 context exposed to
+# .j2 templates, and any (regex, replacement) rewrites applied to a
+# file's target path under that platform.
+PLATFORMS: dict[str, dict[str, Any]] = {
+    "claude": {
+        "plugin_root": "platform-integrations/claude/plugins/evolve-lite",
+        "context": {
+            "forked_context": True,
+            "user_skills_dir": "~/.claude/skills",
+            "save_example_script_root": "${CLAUDE_PLUGIN_ROOT}/skills",
+        },
+        "target_rewrites": [],
+    },
+    "claw-code": {
+        "plugin_root": "platform-integrations/claw-code/plugins/evolve-lite",
+        "context": {
+            "user_skills_dir": "~/.claw/skills",
+            "save_example_script_root": "~/.claw/skills",
+        },
+        "target_rewrites": [],
+    },
+    "codex": {
+        "plugin_root": "platform-integrations/codex/plugins/evolve-lite",
+        "context": {
+            "user_skills_dir": "plugins/evolve-lite/skills",
+            "save_example_script_root": "plugins/evolve-lite/skills",
+        },
+        "target_rewrites": [],
+    },
+    "bob": {
+        "plugin_root": "platform-integrations/bob/evolve-lite",
+        "context": {
+            "user_skills_dir": ".bob/skills",
+            "save_example_script_root": ".bob/skills",
+        },
+        # Bob has no plugin-namespace concept; skill folders are flat
+        # under .bob/skills/. Collapse the source skills/evolve-lite/<name>/
+        # layout to skills/evolve-lite-<name>/ for bob's render output.
+        "target_rewrites": [(r"^skills/evolve-lite/([^/]+)/", r"skills/evolve-lite-\1/")],
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -70,44 +118,46 @@ class Manifest:
     files: tuple[FileEntry, ...]
 
 
-def _default_target(entry: dict[str, Any]) -> str:
-    """Resolve the target path for a manifest entry, defaulting from source.
+def _platforms() -> dict[str, PlatformConfig]:
+    out: dict[str, PlatformConfig] = {}
+    for name, cfg in PLATFORMS.items():
+        rewrites = tuple(TargetRewrite(pattern=re.compile(pat), replacement=repl) for pat, repl in cfg.get("target_rewrites", []))
+        out[name] = PlatformConfig(
+            plugin_root=REPO_ROOT / cfg["plugin_root"],
+            context=dict(cfg.get("context", {})),
+            target_rewrites=rewrites,
+        )
+    return out
 
-    When `target` is omitted, fall back to `source` with a trailing `.j2`
-    stripped (templates render to the same path minus the suffix).
+
+def _walk_sources() -> list[Path]:
+    """Every file under plugin-source/ that should be rendered or copied.
+
+    Excludes files in RESERVED_SOURCES at the source root.
     """
-    target = entry.get("target")
-    if isinstance(target, str):
-        return target
-    source: str = entry["source"]
-    return source[:-3] if source.endswith(".j2") else source
+    sources: list[Path] = []
+    for path in sorted(PLUGIN_SOURCE_DIR.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(PLUGIN_SOURCE_DIR)
+        if len(rel.parts) == 1 and rel.parts[0] in RESERVED_SOURCES:
+            continue
+        sources.append(path)
+    return sources
+
+
+def _target_for(source: Path) -> Path:
+    """Per-platform target_rel before any rewrite — source path with .j2 stripped."""
+    rel = source.relative_to(PLUGIN_SOURCE_DIR)
+    if rel.suffix == ".j2":
+        rel = rel.with_suffix("")
+    return rel
 
 
 def load_manifest() -> Manifest:
-    raw = tomllib.loads(MANIFEST_PATH.read_text())
-    platforms: dict[str, PlatformConfig] = {}
-    for name, cfg in raw["platforms"].items():
-        plugin_root = REPO_ROOT / cfg["plugin_root"]
-        context = {key: val for key, val in cfg.items() if key not in _RESERVED_PLATFORM_KEYS}
-        rewrites = tuple(
-            TargetRewrite(pattern=re.compile(rw["pattern"]), replacement=rw["replacement"]) for rw in cfg.get("target_rewrites", [])
-        )
-        platforms[name] = PlatformConfig(plugin_root=plugin_root, context=context, target_rewrites=rewrites)
+    platforms = _platforms()
     all_platforms = tuple(platforms.keys())
-    files = tuple(
-        FileEntry(
-            source=PLUGIN_SOURCE_DIR / entry["source"],
-            target_rel=Path(_default_target(entry)),
-            platforms=tuple(entry.get("platforms", all_platforms)),
-        )
-        for entry in raw.get("files", [])
-    )
-    for entry in files:
-        if not entry.source.is_file():
-            raise FileNotFoundError(f"manifest references missing source: {entry.source}")
-        for platform in entry.platforms:
-            if platform not in platforms:
-                raise ValueError(f"manifest entry {entry.source} targets unknown platform '{platform}'")
+    files = tuple(FileEntry(source=src, target_rel=_target_for(src), platforms=all_platforms) for src in _walk_sources())
     return Manifest(platforms=platforms, files=files)
 
 
@@ -134,7 +184,7 @@ def _is_template(path: Path) -> bool:
 def render_to(out_root: Path) -> list[Path]:
     """Render every managed file into out_root/<plugin_root>/<target>.
 
-    out_root is the prefix; the per-platform plugin_root from the manifest is
+    out_root is the prefix; the per-platform plugin_root from PLATFORMS is
     appended. For an in-place build, pass REPO_ROOT.
 
     Returns the list of paths written, relative to out_root.

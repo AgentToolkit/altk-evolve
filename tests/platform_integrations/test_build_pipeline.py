@@ -121,7 +121,6 @@ class TestCheckDrift:
 
         monkeypatch.setattr(build_module, "REPO_ROOT", fake_root)
         monkeypatch.setattr(build_module, "PLUGIN_SOURCE_DIR", fake_plugin_source)
-        monkeypatch.setattr(build_module, "MANIFEST_PATH", fake_plugin_source / "MANIFEST.toml")
 
         rc = build_module.check_drift()
         captured = capsys.readouterr()
