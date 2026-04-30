@@ -29,7 +29,7 @@ This skill analyzes the current conversation to extract guidelines that **correc
 
 This skill runs in a forked context with no access to the parent conversation. The stop-hook message (produced by `on_stop.py`) contains one literal marker:
 
-- `The saved trajectory path is: <path>` — a copy of the session transcript saved inside the project tree at `.evolve/trajectories/claude-transcript_<session-id>.jsonl`. Take everything after the colon, strip surrounding whitespace and quotes, and use the result as `saved_trajectory_path`. You will also attach this exact path to each entity's `trajectory` field in Step 3.
+- `The saved trajectory path is: <path>` — a copy of the session transcript saved inside the project tree at `.evolve/trajectories/claude-transcript_<session-id>.jsonl`. Take everything after the colon, strip surrounding whitespace and quotes, and use the result as `saved_trajectory_path`. You will also attach this exact path to each entity's `trajectory` field in Step 4.
 
 **Read this file with the `Read` tool — do NOT shell out.** `Read` pages large files natively (use its `offset` / `limit` parameters if needed). Do not use `cat`, `head`, `wc`, `find`, or `python3 -c` loops on the transcript — those trigger a permission prompt for every invocation and are unnecessary.
 
@@ -47,7 +47,19 @@ Review the conversation (loaded from the transcript) and identify:
 
 If none of these occurred, **output zero entities**. Not every conversation produces guidelines.
 
-### Step 2: Extract Entities
+### Step 2: Review Existing Guidelines
+
+Before extracting, look at what has already been saved for this project. Earlier Stop hooks in the same session (or prior sessions) may have recorded guidelines that cover the same ground — re-extracting them is wasteful and pollutes the library.
+
+Use the **Glob tool** to enumerate existing guideline files: `.evolve/entities/**/*.md`. Then use the **Read tool** to open each match and skim the content + trigger.
+
+**Do NOT use `cat`, `head`, `find`, a `for` loop, or an inline `python3 -c` script for this.** Each shell invocation triggers a permission prompt, and Glob + Read cover the same need without any prompting.
+
+If there are no existing guidelines, skip this step.
+
+With the existing-guideline set in mind, when you proceed to Step 3 you should pick only *complementary* findings — new angles, new failure modes, or finer-grained detail — and drop candidates that restate or near-duplicate anything already saved. (`save_entities.py` will also drop exact-match duplicates at write time, but it cannot catch re-wordings.)
+
+### Step 3: Extract Entities
 
 For each identified shortcut, error, or user correction, create one entity — up to 5 entities; output 0 when none qualify. If more candidates exist, keep only the highest-impact ones.
 
@@ -65,7 +77,7 @@ Principles:
 
 4. **For user corrections, use the user's own words** — preserve the specific preference rather than generalizing it
 
-### Step 3: Save Entities
+### Step 4: Save Entities
 
 Output entities as JSON and pipe to the save script. The `type` field must always be `"guideline"` — no other types are accepted. Include a `trajectory` field on every entity, set to the `saved_trajectory_path` extracted in Step 0 — this records which session produced the guideline.
 
