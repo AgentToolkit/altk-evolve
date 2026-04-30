@@ -1,23 +1,29 @@
 {
   "name": "evolve-lite",
   "version": "1.1.0",
-  "description": "Recall, save, and share Evolve entities in Codex without MCP.",
+  "description": "Recall, save, and share reusable Evolve entities.",
   "author": {
-    "name": "Vinod Muthusamy",
-    "url": "https://github.com/AgentToolkit/altk-evolve"
+    "name": "AgentToolkit"
   },
   "homepage": "https://github.com/AgentToolkit/altk-evolve",
   "repository": "https://github.com/AgentToolkit/altk-evolve",
   "license": "MIT",
-  "keywords": ["evolve", "codex", "entities", "memory"],
+  "keywords": [
+    "evolve",
+    "memory",
+    "entities"
+  ],
   "skills": "./skills/evolve-lite/",
   "interface": {
     "displayName": "Evolve Lite",
     "shortDescription": "Recall, save, and share reusable Evolve entities.",
-    "longDescription": "A lightweight Codex plugin that helps you save reusable entities, publish selected guidance, subscribe to shared repos, and recall relevant memory automatically on new prompts.",
+    "longDescription": "A lightweight plugin that helps you save reusable entities, publish selected guidance, subscribe to shared repos, and recall relevant memory automatically on new prompts.",
     "developerName": "AgentToolkit",
     "category": "Productivity",
-    "capabilities": ["Interactive", "Write"],
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
     "websiteURL": "https://github.com/AgentToolkit/altk-evolve",
     "defaultPrompt": [
       "Recall Evolve entities for this task.",

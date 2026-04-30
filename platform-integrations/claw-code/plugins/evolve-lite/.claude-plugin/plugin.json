@@ -1,7 +1,10 @@
 {
   "name": "evolve-lite",
-  "version": "1.0.0",
-  "description": "Learn from conversations with auto-generated entities",
+  "version": "1.1.0",
+  "description": "Recall, save, and share reusable Evolve entities.",
+  "author": {
+    "name": "AgentToolkit"
+  },
   "defaultEnabled": true,
   "skills": "./skills/evolve-lite/"
 }

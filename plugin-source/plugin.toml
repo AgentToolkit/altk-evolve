@@ -1,0 +1,57 @@
+# Canonical plugin metadata for the evolve-lite plugin.
+#
+# Per-platform plugin.json files under platform-integrations/ are rendered
+# from this file by build_plugins.py. The [plugin] table holds host-agnostic
+# metadata; per-platform tables hold genuinely platform-specific fields only.
+# snake_case keys for declared fields are emitted as camelCase in the
+# generated JSON.
+#
+# Only `name` and `version` are required. Every other field is optional and
+# omitted from the rendered plugin.json when absent.
+#
+# Undeclared keys flow through too — write extras with the JSON spelling you
+# want (e.g. `mcpServers = "./mcp.json"`, not `mcp_servers`):
+#   * extras under [plugin] flow to every host's plugin.json top-level
+#   * extras under [claude] / [claw-code] flow only to that host's top-level
+#   * extras under [codex] flow into codex's `interface` block
+# See https://code.claude.com/docs/en/plugins-reference for the full Claude
+# Code plugin.json schema (commands, agents, hooks, mcpServers, lspServers,
+# monitors, userConfig, channels, dependencies, $schema, ...).
+
+[plugin]
+name = "evolve-lite"
+version = "1.1.0"
+description = "Recall, save, and share reusable Evolve entities."
+long_description = "A lightweight plugin that helps you save reusable entities, publish selected guidance, subscribe to shared repos, and recall relevant memory automatically on new prompts."
+display_name = "Evolve Lite"
+license = "MIT"
+keywords = ["evolve", "memory", "entities"]
+# Host plugin.json schemas accept a single author. Single-author hosts
+# (claude, claw-code) take authors[0] — put your org/team first when you
+# want the host to display the collective name.
+authors = [
+    { name = "AgentToolkit" },
+    { name = "Vinod Muthusamy" },
+]
+
+[plugin.urls]
+Homepage = "https://github.com/AgentToolkit/altk-evolve"
+Repository = "https://github.com/AgentToolkit/altk-evolve"
+
+# [claude] is implicitly empty — claude-code's plugin.json has no fields
+# beyond what [plugin] covers today.
+
+[claw-code]
+default_enabled = true
+
+[codex]
+category = "Productivity"
+capabilities = ["Interactive", "Write"]
+brand_color = "#2563EB"
+default_prompt = [
+    "Recall Evolve entities for this task.",
+    "Save new Evolve learnings from this session.",
+    "Show me the entities stored for this repo.",
+    "Publish one of my Evolve guidelines.",
+    "Subscribe to a teammate's Evolve guidelines repo.",
+]
