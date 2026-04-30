@@ -1,9 +1,6 @@
 ---
 name: save
 description: Captures the current session's successful workflow and saves it as a reusable skill with SKILL.md and helper scripts
-{% if platform == "claude" -%}
-context: fork
-{% endif -%}
 ---
 
 # Save Session as Skill
@@ -160,7 +157,7 @@ description: {one-line description of what this skill does}
 
 **Usage**:
 ```bash
-python3 {{ save_example_script_root }}/{skill-name}/scripts/{script_name}.py [arguments]
+python3 .bob/skills/{skill-name}/scripts/{script_name}.py [arguments]
 ```
 
 **Parameters**:
@@ -168,7 +165,7 @@ python3 {{ save_example_script_root }}/{skill-name}/scripts/{script_name}.py [ar
 
 **Example**:
 ```bash
-python3 {{ save_example_script_root }}/{skill-name}/scripts/parse_data.py input.json
+python3 .bob/skills/{skill-name}/scripts/parse_data.py input.json
 ```
 
 ## Error Handling
@@ -268,7 +265,7 @@ Ask the user: **"What would you like to name this skill?"**
 
 Before saving, check if a skill with this name already exists:
 
-**Action**: Check if `{{ user_skills_dir }}/{skill-name}/SKILL.md` exists
+**Action**: Check if `.bob/skills/{skill-name}/SKILL.md` exists
 
 **If exists**:
 - Inform the user
@@ -281,24 +278,24 @@ Before saving, check if a skill with this name already exists:
 
 **Action**: Create the skill directory structure and save all files
 
-1. Create directory: `{{ user_skills_dir }}/{skill-name}/`
-2. Write SKILL.md to: `{{ user_skills_dir }}/{skill-name}/SKILL.md`
+1. Create directory: `.bob/skills/{skill-name}/`
+2. Write SKILL.md to: `.bob/skills/{skill-name}/SKILL.md`
 3. If scripts were generated:
-   - Create directory: `{{ user_skills_dir }}/{skill-name}/scripts/`
-   - Write each script to: `{{ user_skills_dir }}/{skill-name}/scripts/{script_name}.py`
-   - Make scripts executable: `chmod +x {{ user_skills_dir }}/{skill-name}/scripts/*.py`
+   - Create directory: `.bob/skills/{skill-name}/scripts/`
+   - Write each script to: `.bob/skills/{skill-name}/scripts/{script_name}.py`
+   - Make scripts executable: `chmod +x .bob/skills/{skill-name}/scripts/*.py`
 4. Ensure proper permissions (readable by user)
 
 **Directory Structure**:
 ```
-{{ user_skills_dir }}/{skill-name}/
+.bob/skills/{skill-name}/
 ├── SKILL.md
 └── scripts/           (if applicable)
     ├── script1.py
     └── script2.py
 ```
 
-**Note**: The skill is saved to the user's home directory (`{{ user_skills_dir }}/`) making it available across all projects.
+**Note**: The skill is saved to the user's home directory (`.bob/skills/`) making it available across all projects.
 
 ### Step 10: Provide Summary
 
@@ -308,7 +305,7 @@ Present a clear summary to the user:
 ✅ Skill saved successfully!
 
 **Skill Name**: {skill-name}
-**Location**: {{ user_skills_dir }}/{skill-name}/
+**Location**: .bob/skills/{skill-name}/
 
 **Files Created**:
 - SKILL.md (workflow documentation)
@@ -389,7 +386,7 @@ User: "Great! Save this as a skill"
 
 **Files Created**:
 ```
-{{ user_skills_dir }}/read-and-parse-file/
+.bob/skills/read-and-parse-file/
 ├── SKILL.md
 └── scripts/
     └── parse_file.py
@@ -423,7 +420,7 @@ User: "Perfect! Save this workflow"
 
 **Files Created**:
 ```
-{{ user_skills_dir }}/deploy-to-staging/
+.bob/skills/deploy-to-staging/
 ├── SKILL.md
 └── scripts/
     ├── run_tests.py
@@ -449,18 +446,18 @@ User: "Save this"
 
 **Files Created**:
 ```
-{{ user_skills_dir }}/list-python-files/
+.bob/skills/list-python-files/
 └── SKILL.md
 ```
 
 ## Notes
 
 - **Conservative Parameterization**: Only obvious session-specific values are parameterized. You can manually edit the generated skill later for more customization.
-- **Cross-Project Availability**: Skills are saved to `{{ user_skills_dir }}/` making them available in all your projects.
+- **Cross-Project Availability**: Skills are saved to `.bob/skills/` making them available in all your projects.
 - **Manual Editing**: After generation, you can manually edit the SKILL.md file and scripts to refine the workflow, add more examples, or adjust parameters.
 - **Script Reusability**: Generated scripts can be used standalone or called from other scripts.
 - **Skill Composition**: Generated skills can reference other skills, creating powerful workflow chains.
-- **Version Control**: Consider adding your `{{ user_skills_dir }}/` directory to version control to track skill evolution.
+- **Version Control**: Consider adding your `.bob/skills/` directory to version control to track skill evolution.
 
 ## Guidelines for Better Skills
 

@@ -34,9 +34,13 @@ save_example_script_root = "~/.claw/skills"
 
 [platforms.codex]
 plugin_root = "platform-integrations/codex/plugins/evolve-lite"
+user_skills_dir = "plugins/evolve-lite/skills"
+save_example_script_root = "plugins/evolve-lite/skills"
 
 [platforms.bob]
 plugin_root = "platform-integrations/bob/evolve-lite"
+user_skills_dir = ".bob/skills"
+save_example_script_root = ".bob/skills"
 # Bob installs each skill under `evolve-lite-<name>/` rather than `<name>/`
 # (commit 07a171c, Windows-compat — colon path components are rejected).
 [[platforms.bob.target_rewrites]]
@@ -81,7 +85,6 @@ source = "skills/recall/scripts/retrieve_entities.py"
 
 [[files]]
 source = "skills/save-trajectory/scripts/save_trajectory.py"
-platforms = ["claude", "claw-code", "bob"]
 
 # Templated SKILL.md files. Each .j2 is the unified prose for all four
 # platforms — codex's structure / wording is the base, with Jinja2 branches
@@ -108,23 +111,18 @@ source = "skills/sync/SKILL.md.j2"
 
 [[files]]
 source = "skills/save-trajectory/SKILL.md.j2"
-platforms = ["claude", "claw-code", "bob"]
 
 [[files]]
 source = "skills/save/SKILL.md.j2"
-platforms = ["claude", "claw-code"]
 
-# Claude-only stop hooks. The forked-context learn skill needs an on_stop
-# entrypoint that the Claude harness invokes; non-claude platforms have no
-# equivalent hook contract.
+# Stop hooks. Only claude has an on_stop hook contract today; the files
+# ship to every platform as inert artifacts (no harm if never invoked).
+# Per-platform behavior tightening is tracked as follow-up issues.
 [[files]]
 source = "skills/learn/scripts/on_stop.py"
-platforms = ["claude"]
 
 [[files]]
 source = "skills/learn/scripts/on_stop.sh"
-platforms = ["claude"]
 
 [[files]]
 source = "skills/save-trajectory/scripts/on_stop.py"
-platforms = ["claude"]
