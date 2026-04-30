@@ -20,17 +20,12 @@ import sys
 from pathlib import Path
 
 # Walk up from the script location to find the installed plugin lib directory.
-# claude/claw-code/codex ship `lib/`; bob ships `evolve-lib/`. The
-# monorepo-dev fallback resolves to claude's lib when running codex's script
-# straight out of platform-integrations/.
+# claude/claw-code/codex/bob all ship a sibling lib/ next to skills/; bob's
+# installer copies it to .bob/evolve-lib/, hence both names are checked.
 _script = Path(__file__).resolve()
 _lib = None
 for _ancestor in _script.parents:
-    for _candidate in (
-        _ancestor / "lib",
-        _ancestor / "evolve-lib",
-        _ancestor / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib",
-    ):
+    for _candidate in (_ancestor / "lib", _ancestor / "evolve-lib"):
         if (_candidate / "entity_io.py").is_file():
             _lib = _candidate
             break

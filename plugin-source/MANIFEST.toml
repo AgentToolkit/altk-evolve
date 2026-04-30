@@ -43,22 +43,20 @@ plugin_root = "platform-integrations/bob/evolve-lite"
 pattern = "^skills/([^/]+)/"
 replacement = "skills/evolve-lite-\\1/"
 
-# Verbatim copies — file content is identical across every listed platform.
+# Shared library — shipped to every platform. Codex and bob previously
+# walked up from their plugin trees to find claude's lib/ copy in
+# monorepo-dev; now each platform has its own.
 [[files]]
 source = "lib/__init__.py"
-platforms = ["claude", "claw-code"]
 
 [[files]]
 source = "lib/audit.py"
-platforms = ["claude", "claw-code"]
 
 [[files]]
 source = "lib/config.py"
-platforms = ["claude", "claw-code"]
 
 [[files]]
 source = "lib/entity_io.py"
-platforms = ["claude", "claw-code"]
 
 # Skill scripts. claude/claw-code/codex use the source path as-is; bob's
 # target_rewrite prefixes the skill folder with `evolve-lite-`.

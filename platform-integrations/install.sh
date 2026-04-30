@@ -490,9 +490,9 @@ class BobInstaller:
         info(f"Installing Bob ({mode} mode) → {bob_target}")
 
         if mode == "lite":
-            shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
+            shared_lib = bob_source_lite / "lib"
             if not self.ops.is_dry_run and not shared_lib.is_dir():
-                raise RuntimeError(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
+                raise RuntimeError(f"Shared lib not found: {shared_lib}")
             self.ops.copy_tree(shared_lib, bob_target / "evolve-lib")
             success("Copied Bob lib")
 
@@ -1000,12 +1000,6 @@ class CodexInstaller:
 
         self.ops.copy_tree(plugin_source, plugin_target)
         success("Copied Codex plugin")
-
-        shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
-        if not self.ops.is_dry_run and not shared_lib.is_dir():
-            raise RuntimeError(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
-        self.ops.copy_tree(shared_lib, plugin_target / "lib")
-        success("Copied Codex lib")
 
         marketplace_target = Path(target_dir) / ".agents" / "plugins" / "marketplace.json"
         self._upsert_marketplace_entry(
