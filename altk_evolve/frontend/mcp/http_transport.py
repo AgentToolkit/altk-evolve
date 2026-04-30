@@ -72,15 +72,17 @@ async def _handle_sse(
     scope,
     receive,
     send,
-) -> None:
+) -> bool:
     """
     Serve SSE directly as ASGI and avoid sending any follow-up HTTP response.
 
     `connect_sse(...)(scope, receive, send)` owns the HTTP response lifecycle.
     Returning an additional Response after it exits can race with teardown and
     trigger duplicate MCP request completion assertions.
+
+    Returns False when the session ended due to a benign client disconnect.
     """
-    await _run_sse_session(server, sse, scope, receive, send)
+    return await _run_sse_session(server, sse, scope, receive, send)
 
 
 def create_resilient_sse_app(
@@ -102,8 +104,8 @@ def create_resilient_sse_app(
 
     sse = SseServerTransport(message_path)
 
-    async def handle_sse(scope, receive, send) -> None:
-        await _handle_sse(server, sse, scope, receive, send)
+    async def handle_sse(scope, receive, send) -> bool:
+        return await _handle_sse(server, sse, scope, receive, send)
 
     class SseEndpoint:
         """ASGI app wrapping handle_sse that tracks whether a response was started."""
@@ -117,8 +119,8 @@ def create_resilient_sse_app(
                     response_started = True
                 await send(message)
 
-            await handle_sse(scope, receive, tracked_send)
-            if not response_started:
+            completed = await handle_sse(scope, receive, tracked_send)
+            if completed and not response_started:
                 response = Response(status_code=204)
                 await response(scope, receive, send)
 
