@@ -27,27 +27,15 @@ This skill analyzes the current conversation to extract guidelines that **correc
 
 ### Step 0: Load the Conversation
 
-This skill runs in a forked context with no access to the parent conversation. The stop hook message (produced by `on_stop.py`) contains two literal markers:
+This skill runs in a forked context with no access to the parent conversation. The stop-hook message (produced by `on_stop.py`) contains one literal marker:
 
-- `The session transcript is at: <path>` — the live session transcript. Take everything between that marker and the next marker (or end of message), strip whitespace and quotes, and use the result as `transcript_path`.
-- `The saved trajectory path is: <path>` — the relative path of the saved trajectory copy under `.evolve/trajectories/`. Extract this the same way and remember it as `saved_trajectory_path` — you will attach it to each entity in Step 3.
+- `The saved trajectory path is: <path>` — a copy of the session transcript saved inside the project tree at `.evolve/trajectories/claude-transcript_<session-id>.jsonl`. Take everything after the colon, strip surrounding whitespace and quotes, and use the result as `saved_trajectory_path`. You will also attach this exact path to each entity's `trajectory` field in Step 3.
 
-Then read the session transcript:
+**Read this file with the `Read` tool — do NOT shell out.** `Read` pages large files natively (use its `offset` / `limit` parameters if needed). Do not use `cat`, `head`, `wc`, `find`, or `python3 -c` loops on the transcript — those trigger a permission prompt for every invocation and are unnecessary.
 
-```bash
-cat <transcript_path>
-```
-
-**You must read this file to analyze the conversation** — the forked context has no other access to it.
+If the saved trajectory file does not exist (e.g., the save-trajectory hook did not run, or no marker was provided), output zero entities and exit. Do NOT fall back to reading the live session transcript under `~/.claude/projects/` — that path is outside the project tree, triggers permission prompts, and may be larger than the fork can consume.
 
 The transcript is JSONL: each line is a separate JSON object. Focus on lines where `"type": "assistant"` or `"type": "human"` to reconstruct the conversation flow. Look for tool calls, errors in tool results, and user corrections.
-
-If no transcript path was provided, fall back to `.evolve/trajectories/`, which may contain either format:
-
-- **`trajectory_*.json`** — a single JSON object with `messages: [{role, content}, …]`. Prefer the most recent one; parse with `json.load`.
-- **`claude-transcript_*.jsonl`** — raw Claude JSONL (same format as the primary `transcript_path`). Parse line-by-line.
-
-If no transcript is available at all, output zero entities.
 
 ### Step 1: Analyze the Conversation
 
