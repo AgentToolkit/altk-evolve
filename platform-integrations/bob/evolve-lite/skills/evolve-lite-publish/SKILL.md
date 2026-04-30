@@ -1,5 +1,5 @@
 ---
-name: publish
+name: evolve-lite:publish
 description: Publish a private guideline to a configured write-scope repo.
 ---
 
@@ -12,7 +12,7 @@ into a configured **write-scope** repo. The entity is stamped with
 `visibility: public`, `owner`, `published_at`, and `source`, moved into
 the local clone of the write repo, and committed / pushed to the remote.
 
-The same local clone is also what `evolve-lite-sync` pulls from — so you
+The same local clone is also what `evolve-lite:sync` pulls from — so you
 and anyone else publishing to the same repo stay in sync.
 
 ## Workflow
@@ -21,7 +21,7 @@ and anyone else publishing to the same repo stay in sync.
 
 Read `evolve.config.yaml`. If no entry has `scope: write`, tell the user:
 
-> "You need at least one write-scope repo to publish to. Run evolve-lite-subscribe with --scope write to set one up, then come back."
+> "You need at least one write-scope repo to publish to. Run evolve-lite:subscribe with --scope write to set one up, then come back."
 
 Then stop.
 
@@ -122,7 +122,7 @@ git -C ".evolve/entities/subscribed/{repo}" rebase "origin/{branch}"
      the user to either (a) resolve manually in that directory
      (`git fetch origin {branch} && git rebase origin/{branch}`, fix
      conflicts, `git add` + `git rebase --continue`, `git push origin
-     {branch}`) or (b) re-run `evolve-lite-publish` with a different
+     {branch}`) or (b) re-run `evolve-lite:publish` with a different
      filename if the conflict is a shared name.
 
 If the push fails for any other reason (auth, network, missing remote

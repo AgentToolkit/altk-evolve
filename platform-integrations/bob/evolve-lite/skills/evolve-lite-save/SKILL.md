@@ -1,5 +1,5 @@
 ---
-name: save
+name: evolve-lite:save
 description: Captures the current session's successful workflow and saves it as a reusable skill with SKILL.md and helper scripts
 ---
 

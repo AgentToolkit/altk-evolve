@@ -1,6 +1,6 @@
 {%- from "_macros.j2" import invoke, skill_ref with context -%}
 ---
-name: publish
+name: {% if platform == "bob" %}evolve-lite:{% endif %}publish
 description: Publish a private guideline to a configured write-scope repo.
 ---
 

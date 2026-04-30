@@ -1,5 +1,5 @@
 ---
-name: unsubscribe
+name: evolve-lite:unsubscribe
 description: Remove a repo from the unified repos list and delete its local clone.
 ---
 

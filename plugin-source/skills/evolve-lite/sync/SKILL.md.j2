@@ -1,6 +1,6 @@
 {%- from "_macros.j2" import invoke, skill_ref with context -%}
 ---
-name: sync
+name: {% if platform == "bob" %}evolve-lite:{% endif %}sync
 description: Pull the latest guidelines from every configured repo (read- and write-scope).
 ---
 

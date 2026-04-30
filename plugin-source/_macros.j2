@@ -48,11 +48,14 @@ python3 .bob/skills/evolve-lite-{{ skill }}/scripts/{{ script }}
 {%- endmacro -%}
 
 {# `skill_ref` renders the platform-appropriate way to refer to a sibling skill
-   in prose (e.g. "see /evolve-lite:sync" on claude, "evolve-lite-sync" on bob).
+   in prose (e.g. "see /evolve-lite:sync" on claude, "evolve-lite:sync" on bob).
+   Bob uses the colon form to match its SKILL.md frontmatter `name` field
+   (e.g. `name: evolve-lite:sync`); the skill folder on disk stays
+   colon-free (`.bob/skills/evolve-lite-sync/`) for Windows compatibility.
 #}
 {%- macro skill_ref(name) -%}
 {%- if platform in ["claude", "claw-code"] -%}/evolve-lite:{{ name }}
 {%- elif platform == "codex" -%}evolve-lite:{{ name }}
-{%- elif platform == "bob" -%}evolve-lite-{{ name }}
+{%- elif platform == "bob" -%}evolve-lite:{{ name }}
 {%- endif -%}
 {%- endmacro -%}

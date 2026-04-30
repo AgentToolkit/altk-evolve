@@ -1,5 +1,5 @@
 ---
-name: save-trajectory
+name: {% if platform == "bob" %}evolve-lite:{% endif %}save-trajectory
 description: Save the current conversation as a trajectory JSON file in OpenAI chat completion format for analysis and fine-tuning
 {% if platform == "claude" -%}
 context: fork

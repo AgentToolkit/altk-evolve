@@ -1,5 +1,5 @@
 ---
-name: save-trajectory
+name: evolve-lite:save-trajectory
 description: Save the current conversation as a trajectory JSON file in OpenAI chat completion format for analysis and fine-tuning
 ---
 

@@ -36,22 +36,23 @@ Unless that artifact happens to be:
 
 ### Step 0: Load the Conversation
 
-This skill runs in a forked context with no access to the parent conversation. The stop hook message (produced by `on_stop.py`) contains the literal marker `The session transcript is at: <path>` — find that exact phrase, take everything after the colon, strip surrounding whitespace and quotes, and use the result as `transcript_path`. Then read it:
+This skill runs in a forked context. **You cannot see the parent conversation directly** — the only way to access it is by reading the trajectory file the save-trajectory stop hook just wrote to disk. Do not infer from your own (empty) conversation that there's nothing to learn; the parent's real work is in that file.
+
+Locate and read the most recent trajectory:
 
 ```bash
-cat <transcript_path>
+TRAJECTORY_DIR="${EVOLVE_DIR:-.evolve}/trajectories"
+LATEST=$(ls -t "$TRAJECTORY_DIR"/*.jsonl "$TRAJECTORY_DIR"/*.json 2>/dev/null | head -n 1)
+[ -n "$LATEST" ] || { echo "no trajectory in $TRAJECTORY_DIR; output zero entities" >&2; exit 0; }
+cat "$LATEST"
 ```
 
-**You must read this file to analyze the conversation** — the forked context has no other access to it.
+The save-trajectory stop hook always runs before this skill, so a fresh transcript is on disk when you get here. Two formats you may see:
 
-The transcript is JSONL: each line is a separate JSON object. Focus on lines where `"type": "assistant"` or `"type": "human"` to reconstruct the conversation flow. Look for tool calls, errors in tool results, and user corrections.
+- **`claude-transcript_*.jsonl`** — JSONL, one JSON object per line. Filter for `"type": "assistant"` and `"type": "human"` lines, then reconstruct the flow from `message.content`. Look for tool calls, errors in tool results, and user corrections.
+- **`trajectory_*.json`** — a single JSON object with `messages: [{role, content}, …]`. Parse with `json.load`.
 
-If no transcript path was provided, fall back to `.evolve/trajectories/`, which may contain either format:
-
-- **`trajectory_*.json`** — a single JSON object with `messages: [{role, content}, …]`. Prefer the most recent one; parse with `json.load`.
-- **`claude-transcript_*.jsonl`** — raw Claude JSONL (same format as the primary `transcript_path`). Parse line-by-line.
-
-If no transcript is available at all, output zero entities.
+Read the file in full before any analysis. Only output zero entities after you have read the trajectory and confirmed it contains no errors, corrections, retries, or reusable artifacts worth saving.
 
 ### Step 1: Analyze the Conversation
 

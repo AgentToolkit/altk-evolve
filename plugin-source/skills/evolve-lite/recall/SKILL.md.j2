@@ -1,5 +1,5 @@
 ---
-name: recall
+name: {% if platform == "bob" %}evolve-lite:{% endif %}recall
 description: Must be used at the start of any non-trivial task involving code changes, debugging, repo exploration, file inspection, or environment/tooling investigation to surface stored guidance before analysis or tool use.
 {% if platform == "claude" -%}
 context: fork
@@ -30,40 +30,58 @@ Before any non-trivial local work, you must complete the recall workflow below. 
 
 Do not proceed to other analysis or tool use until all steps below are complete.
 
-1. Inspect `.evolve/entities/` for guidance relevant to the current task.
+1. Inspect `${EVOLVE_DIR:-.evolve}/entities/` for guidance relevant to the current task.
 2. Read each matching entity file that appears relevant.
+{% if forked_context | default(false) -%}
+3. **Quote each matching entity verbatim in your final response** — include the full file contents (frontmatter, body, rationale, trigger). The parent agent does not see your intermediate Read tool results, so anything you do not quote in your final response is lost.
+4. If no relevant entities exist, state that explicitly in your final response.
+{%- else -%}
 3. Summarize the applicable guidance in your own words before proceeding.
 4. If no relevant entities exist, state that explicitly before proceeding.
+{%- endif %}
 
 ### Required Visible Completion Note
 
 Before moving on, produce an explicit completion note in your reasoning or user update using one of these forms:
 
-- `Recall complete: searched .evolve/entities/, read <files>, applicable guidance: <summary>`
-- `Recall complete: searched .evolve/entities/, no relevant entities found`
+{% if forked_context | default(false) -%}
+- `Recall complete: searched ${EVOLVE_DIR:-.evolve}/entities/, quoted <files> verbatim below`
+- `Recall complete: searched ${EVOLVE_DIR:-.evolve}/entities/, no relevant entities found`
+{%- else -%}
+- `Recall complete: searched ${EVOLVE_DIR:-.evolve}/entities/, read <files>, applicable guidance: <summary>`
+- `Recall complete: searched ${EVOLVE_DIR:-.evolve}/entities/, no relevant entities found`
+{%- endif %}
 
 ### Minimum Acceptable Procedure
 
-1. List or search files under `.evolve/entities/`.
+1. List or search files under `${EVOLVE_DIR:-.evolve}/entities/`.
 2. Identify candidate entities relevant to the task.
 3. Open and read those entity files.
+{% if forked_context | default(false) -%}
+4. Quote each applicable entity's full file contents in your final response, or state that nothing applies.
+{%- else -%}
 4. Summarize what applies, or state that nothing applies.
+{%- endif %}
 
 ### Failure Conditions
 
 The skill is not complete if any of the following are true:
 
 - You only read this `SKILL.md`
-- You did not inspect `.evolve/entities/`
+- You did not inspect `${EVOLVE_DIR:-.evolve}/entities/`
 - You did not read the relevant entity files
+{% if forked_context | default(false) -%}
+- You produced a final response without quoting any matched entity verbatim (or stating none applied)
+{%- else -%}
 - You proceeded without stating whether guidance was found
+{%- endif %}
 
 ## How It Works
 
 {% if platform == "claude" -%}
 1. The Claude `UserPromptSubmit` hook fires before each user prompt is sent.
 2. The helper script reads the prompt JSON from stdin.
-3. It loads stored entities from `.evolve/entities/` (covers private,
+3. It loads stored entities from `${EVOLVE_DIR:-.evolve}/entities/` (covers private,
    read-scope subscriptions, and write-scope publish targets which all
    live under `entities/subscribed/{repo}/`).
 4. It prints formatted guidance to stdout.
@@ -71,7 +89,7 @@ The skill is not complete if any of the following are true:
 {%- elif platform == "claw-code" -%}
 1. The Claw-code `PreToolUse` hook fires before each tool call.
 2. The helper script reads tool input from stdin (best-effort, ignored beyond logging).
-3. It loads stored entities from `.evolve/entities/` (covers private,
+3. It loads stored entities from `${EVOLVE_DIR:-.evolve}/entities/` (covers private,
    read-scope subscriptions, and write-scope publish targets which all
    live under `entities/subscribed/{repo}/`).
 4. It prints formatted guidance to stdout.
@@ -79,7 +97,7 @@ The skill is not complete if any of the following are true:
 {%- elif platform == "codex" -%}
 1. If Codex hooks are enabled in `~/.codex/config.toml` with `[features] codex_hooks = true`, the Codex `UserPromptSubmit` hook runs before the prompt is sent.
 2. The helper script reads the prompt JSON from stdin.
-3. It loads stored entities from `.evolve/entities/` (covers private,
+3. It loads stored entities from `${EVOLVE_DIR:-.evolve}/entities/` (covers private,
    read-scope subscriptions, and write-scope publish targets which all
    live under `entities/subscribed/{repo}/`).
 4. It prints formatted guidance to stdout.
@@ -93,7 +111,7 @@ Entities can come from multiple sources:
 - **Private entities**: Your own local entities (not shared)
 - **Subscribed entities**: Entities cloned from any configured repo —
   read-scope subscriptions and write-scope publish targets both live
-  under `.evolve/entities/subscribed/{name}/`
+  under `${EVOLVE_DIR:-.evolve}/entities/subscribed/{name}/`
 {%- endif %}
 
 ## Entities Storage

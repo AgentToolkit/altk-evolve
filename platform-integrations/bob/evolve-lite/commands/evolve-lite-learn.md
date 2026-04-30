@@ -1,5 +1,5 @@
 ---
-name: evolve-lite-learn
-description: Run the learn skill on the current conversation
+name: evolve-lite:learn
+description: Run the evolve-lite:learn skill on the current conversation
 ---
-Use the learn skill on the current conversation. Follow the skill's instructions exactly.
+Use the evolve-lite:learn skill on the current conversation. Follow the skill's instructions exactly.

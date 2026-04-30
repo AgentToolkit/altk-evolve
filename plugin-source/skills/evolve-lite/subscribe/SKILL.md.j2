@@ -1,6 +1,6 @@
 {%- from "_macros.j2" import invoke, skill_ref with context -%}
 ---
-name: subscribe
+name: {% if platform == "bob" %}evolve-lite:{% endif %}subscribe
 description: Add a shared guidelines repo (read-scope subscription or write-scope publish target) to the unified repos list.
 ---
 

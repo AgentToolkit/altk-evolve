@@ -1,5 +1,5 @@
 ---
-name: subscribe
+name: evolve-lite:subscribe
 description: Add a shared guidelines repo (read-scope subscription or write-scope publish target) to the unified repos list.
 ---
 
@@ -66,7 +66,7 @@ python3 .bob/skills/evolve-lite-subscribe/scripts/subscribe.py --name "{name}" -
 
 ### Step 4: Confirm
 
-Tell the user the repo was added and they can run `evolve-lite-sync`
+Tell the user the repo was added and they can run `evolve-lite:sync`
 immediately if they want to pull updates now.
 
 ## Notes

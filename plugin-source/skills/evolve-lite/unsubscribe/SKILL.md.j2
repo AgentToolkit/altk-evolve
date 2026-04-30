@@ -1,6 +1,6 @@
 {%- from "_macros.j2" import invoke with context -%}
 ---
-name: unsubscribe
+name: {% if platform == "bob" %}evolve-lite:{% endif %}unsubscribe
 description: Remove a repo from the unified repos list and delete its local clone.
 ---
 

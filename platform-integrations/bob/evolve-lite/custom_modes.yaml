@@ -8,14 +8,14 @@ customModes:
 
       WORKFLOW (4 steps, strict order):
 
-      1. ⚠️ FIRST ACTION (MANDATORY): Use the evolve-lite-recall skill to retrieve relevant guidelines.
+      1. ⚠️ FIRST ACTION (MANDATORY): Use the evolve-lite:recall skill to retrieve relevant guidelines.
          - This MUST be your FIRST action in EVERY conversation
          - NO exceptions - even for simple tasks like "echo hello world"
       2. WORK: Complete the user's request. When a retrieved guideline applies, cite it in your reasoning.
-      3. ⚠️ SECOND-TO-LAST ACTION (MANDATORY): Use the evolve-lite-save-trajectory skill to save the conversation.
-         - This MUST happen BEFORE evolve-lite-learn
+      3. ⚠️ SECOND-TO-LAST ACTION (MANDATORY): Use the evolve-lite:save-trajectory skill to save the conversation.
+         - This MUST happen BEFORE evolve-lite:learn
          - Note the trajectory file path from its output — you will need it in Step 4
-      4. ⚠️ LAST ACTION (MANDATORY): Use the evolve-lite-learn skill to extract and save learnings.
+      4. ⚠️ LAST ACTION (MANDATORY): Use the evolve-lite:learn skill to extract and save learnings.
          - This MUST happen BEFORE attempt_completion
          - NO exceptions - even if you think there's nothing to learn
 
@@ -29,13 +29,13 @@ customModes:
         SKILL.md read for a skill you have not invoked yet).
       - Step 3 must happen before Step 4.
       - Step 4 must happen before attempt_completion.
-      - If you forget Step 1, STOP and call evolve-lite-recall immediately.
+      - If you forget Step 1, STOP and call evolve-lite:recall immediately.
       - If you reach attempt_completion without Steps 3 and 4, STOP and complete them first.
     customInstructions: |-
       - ALWAYS read a skill's SKILL.md before using it for the first time in a conversation
-      - If evolve-lite-recall returns no guidelines, that is normal — proceed with the task.
-      - If evolve-lite-learn reports no new entities, that counts as successful completion — do not retry.
-      - The trajectory path from evolve-lite-save-trajectory is available in conversation context — do not re-run it.
+      - If evolve-lite:recall returns no guidelines, that is normal — proceed with the task.
+      - If evolve-lite:learn reports no new entities, that counts as successful completion — do not retry.
+      - The trajectory path from evolve-lite:save-trajectory is available in conversation context — do not re-run it.
       - If no errors or non-obvious discoveries occurred, saving zero entities is correct — do not force low-quality entities.
 
       MEMORY SHARING (Optional):
@@ -49,9 +49,9 @@ customModes:
       PRE-COMPLETION GATE:
       Before calling attempt_completion, ask yourself:
       ┌─────────────────────────────────────────────────────────────────┐
-      │ Did I run the evolve-lite-recall skill at the start?            │
-      │ Did I run the evolve-lite-save-trajectory skill and note the path?│
-      │ Did I run the evolve-lite-learn skill and see its output?       │
+      │ Did I run the evolve-lite:recall skill at the start?            │
+      │ Did I run the evolve-lite:save-trajectory skill and note the path?│
+      │ Did I run the evolve-lite:learn skill and see its output?       │
       │                                                                 │
       │ ❌ NO  → STOP. Go back and complete the step.                   │
       │ ✅ YES → Proceed with attempt_completion.                       │
@@ -60,9 +60,9 @@ customModes:
       Rules:
 
       - Before using a skill for the first time, read its SKILL.md file to understand the correct usage syntax.
-      - ALWAYS call the evolve-lite-learn skill before attempt_completion, even if the task seems simple or you think there's nothing to learn.
-      - The workflow is non-negotiable: recall → work → evolve-lite-save-trajectory → learn → complete.
-      - Skipping evolve-lite-learn violates the core purpose of this mode.
+      - ALWAYS call the evolve-lite:learn skill before attempt_completion, even if the task seems simple or you think there's nothing to learn.
+      - The workflow is non-negotiable: recall → work → evolve-lite:save-trajectory → learn → complete.
+      - Skipping evolve-lite:learn violates the core purpose of this mode.
 
     groups:
       - read
