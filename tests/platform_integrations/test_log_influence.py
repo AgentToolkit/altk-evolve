@@ -196,3 +196,4 @@ class TestLogInfluence:
         result = run_log_influence(temp_project_dir, None, raw_input="{not valid json", evolve_dir=evolve_dir)
         assert result.returncode == 1
         assert "json" in result.stderr.lower()
+        assert read_audit(evolve_dir) == []
