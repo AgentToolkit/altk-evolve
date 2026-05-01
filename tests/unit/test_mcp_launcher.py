@@ -62,15 +62,54 @@ def test_sse_launcher_skips_ui_thread(monkeypatch) -> None:
 
 def test_run_sse_server_uses_resilient_http_transport(monkeypatch) -> None:
     resilient_app = object()
-    captured: list[tuple[object, str, int, str]] = []
+    captured: list[dict] = []
+    warmup_calls: list[bool] = []
 
     monkeypatch.setattr(launcher, "create_resilient_sse_app", lambda server: resilient_app)
+    monkeypatch.setattr(launcher, "warmup_mcp_runtime", lambda: warmup_calls.append(True))
+    monkeypatch.setenv("EVOLVE_MCP_WARMUP", "true")
     monkeypatch.setattr(
         launcher.uvicorn,
         "run",
-        lambda app, host, port, log_level: captured.append((app, host, port, log_level)),
+        lambda app, **kwargs: captured.append({"app": app, **kwargs}),
     )
 
     launcher.run_sse_server(host="127.0.0.1", port=8201)
 
-    assert captured == [(resilient_app, "127.0.0.1", 8201, "warning")]
+    assert len(captured) == 1
+    assert captured[0]["app"] is resilient_app
+    assert captured[0]["host"] == "127.0.0.1"
+    assert captured[0]["port"] == 8201
+    assert captured[0]["lifespan"] == "on"
+    assert captured[0]["timeout_graceful_shutdown"] == 3
+    assert captured[0]["ws"] == "websockets-sansio"
+    assert warmup_calls == [True]
+
+
+def test_run_sse_server_skips_warmup_when_disabled(monkeypatch) -> None:
+    warmup_calls: list[bool] = []
+
+    monkeypatch.setattr(launcher, "create_resilient_sse_app", lambda server: object())
+    monkeypatch.setattr(launcher, "warmup_mcp_runtime", lambda: warmup_calls.append(True))
+    monkeypatch.setenv("EVOLVE_MCP_WARMUP", "false")
+    monkeypatch.setattr(launcher.uvicorn, "run", lambda app, **kwargs: None)
+
+    launcher.run_sse_server(host="127.0.0.1", port=8201)
+
+    assert warmup_calls == []
+
+
+def test_run_sse_server_boots_despite_warmup_failure(monkeypatch) -> None:
+    uvicorn_calls: list[bool] = []
+
+    def failing_warmup() -> None:
+        raise RuntimeError("warmup exploded")
+
+    monkeypatch.setattr(launcher, "create_resilient_sse_app", lambda server: object())
+    monkeypatch.setattr(launcher, "warmup_mcp_runtime", failing_warmup)
+    monkeypatch.setenv("EVOLVE_MCP_WARMUP", "true")
+    monkeypatch.setattr(launcher.uvicorn, "run", lambda app, **kwargs: uvicorn_calls.append(True))
+
+    launcher.run_sse_server(host="127.0.0.1", port=8201)
+
+    assert uvicorn_calls == [True]
