@@ -1,3 +1,6 @@
+import asyncio
+import uuid
+
 import pytest
 import json
 from fastmcp.client import Client
@@ -219,3 +222,39 @@ async def test_create_entity_with_invalid_json_metadata(mcp):
         assert result["error"] == "Invalid JSON"
         assert "message" in result
         assert "invalid_metadata" in result
+
+
+@pytest.mark.e2e
+async def test_store_and_retrieve_user_facts(mcp):
+    async with Client(transport=mcp) as evolve_mcp:
+        user_id = f"user-{uuid.uuid4()}"
+        store_response = await evolve_mcp.call_tool_mcp(
+            "store_user_facts",
+            {
+                "user_id": user_id,
+                "message": "I prefer concise answers with bullet points.",
+                "metadata": json.dumps({"source": "cuga-lite"}),
+                "enable_conflict_resolution": False,
+            },
+        )
+        stored = json.loads(store_response.content[0].text)
+        assert stored["user_id"] == user_id
+        assert stored["stored_count"] >= 1
+
+        for _ in range(10):
+            retrieve_response = await evolve_mcp.call_tool_mcp(
+                "retrieve_user_facts",
+                {
+                    "user_id": user_id,
+                    "query": "How should I format the answer?",
+                    "limit": 5,
+                },
+            )
+            retrieved = json.loads(retrieve_response.content[0].text)
+            if retrieved["matched_count"] > 0:
+                break
+            await asyncio.sleep(0.25)
+
+        assert retrieved["user_id"] == user_id
+        assert "categories" in retrieved
+        assert retrieved["matched_count"] > 0

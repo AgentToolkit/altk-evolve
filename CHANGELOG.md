@@ -4,6 +4,268 @@
 
 <!-- version list -->
 
+## v1.1.0 (2026-05-01)
+
+### Bug Fixes
+
+- Always overwrite owner and visibility in save_entities.py
+  ([#199](https://github.com/AgentToolkit/altk-evolve/pull/199),
+  [`7af1eb1`](https://github.com/AgentToolkit/altk-evolve/commit/7af1eb1e461077e89da977cfcbc84fc30fba3be7))
+
+- Improve publish, recall, subscribe, and sync handling
+  ([#199](https://github.com/AgentToolkit/altk-evolve/pull/199),
+  [`7af1eb1`](https://github.com/AgentToolkit/altk-evolve/commit/7af1eb1e461077e89da977cfcbc84fc30fba3be7))
+
+- Install Claude plugin via marketplace and harden installer
+  ([`436cbdd`](https://github.com/AgentToolkit/altk-evolve/commit/436cbddc8c714a56174b7c2a7af784a4c538bd45))
+
+- **bob**: Add security validations for entity names and encoding
+  ([#199](https://github.com/AgentToolkit/altk-evolve/pull/199),
+  [`7af1eb1`](https://github.com/AgentToolkit/altk-evolve/commit/7af1eb1e461077e89da977cfcbc84fc30fba3be7))
+
+- **claude-plugin**: Accept .sh scripts in hook command test
+  ([#213](https://github.com/AgentToolkit/altk-evolve/pull/213),
+  [`bcf21c2`](https://github.com/AgentToolkit/altk-evolve/commit/bcf21c290da100ce8707bb4affc6b6bb6d5d6d90))
+
+- **claude-plugin**: Replace agent-type stop hook with command-type block decision
+  ([#213](https://github.com/AgentToolkit/altk-evolve/pull/213),
+  [`bcf21c2`](https://github.com/AgentToolkit/altk-evolve/commit/bcf21c290da100ce8707bb4affc6b6bb6d5d6d90))
+
+- **claude-plugin**: Rewrite stop hook in Python and fix statusMessage key
+  ([#213](https://github.com/AgentToolkit/altk-evolve/pull/213),
+  [`bcf21c2`](https://github.com/AgentToolkit/altk-evolve/commit/bcf21c290da100ce8707bb4affc6b6bb6d5d6d90))
+
+- **claude-plugin**: Use systemMessage field in hook output JSON
+  ([#213](https://github.com/AgentToolkit/altk-evolve/pull/213),
+  [`bcf21c2`](https://github.com/AgentToolkit/altk-evolve/commit/bcf21c290da100ce8707bb4affc6b6bb6d5d6d90))
+
+- **claude-plugin**: Use valid systemMessage field in stop hook block decision
+  ([#213](https://github.com/AgentToolkit/altk-evolve/pull/213),
+  [`bcf21c2`](https://github.com/AgentToolkit/altk-evolve/commit/bcf21c290da100ce8707bb4affc6b6bb6d5d6d90))
+
+- **codex**: Rebase sharing changes onto claude branch
+  ([#196](https://github.com/AgentToolkit/altk-evolve/pull/196),
+  [`cd4204c`](https://github.com/AgentToolkit/altk-evolve/commit/cd4204c132b8e0f5ad615703a065627fbb2915fe))
+
+- **config**: Honor dotenv backend selection at runtime
+  ([#210](https://github.com/AgentToolkit/altk-evolve/pull/210),
+  [`23e0541`](https://github.com/AgentToolkit/altk-evolve/commit/23e05419667dac620bede5610df9d47c5c0c8742))
+
+- **docs**: Fix broken link in viz guide
+  ([#187](https://github.com/AgentToolkit/altk-evolve/pull/187),
+  [`0be3381`](https://github.com/AgentToolkit/altk-evolve/commit/0be3381ad1b06c271fc6052c63a44a3f1203d5bc))
+
+- **evolve-lite**: Address PR #208 round-2 review feedback
+  ([#208](https://github.com/AgentToolkit/altk-evolve/pull/208),
+  [`e9ba82a`](https://github.com/AgentToolkit/altk-evolve/commit/e9ba82a663678295af4bc69c2f809443e7742853))
+
+- **evolve-lite**: Address PR review feedback (CodeRabbit on #208)
+  ([#208](https://github.com/AgentToolkit/altk-evolve/pull/208),
+  [`e9ba82a`](https://github.com/AgentToolkit/altk-evolve/commit/e9ba82a663678295af4bc69c2f809443e7742853))
+
+- **evolve-lite**: Replace agent-type stop hook with command-type block decision
+  ([#213](https://github.com/AgentToolkit/altk-evolve/pull/213),
+  [`bcf21c2`](https://github.com/AgentToolkit/altk-evolve/commit/bcf21c290da100ce8707bb4affc6b6bb6d5d6d90))
+
+- **install**: Verify save-trajectory command file in status check
+  ([#203](https://github.com/AgentToolkit/altk-evolve/pull/203),
+  [`ec2d7d4`](https://github.com/AgentToolkit/altk-evolve/commit/ec2d7d49f0d5df38c9254d060e79388cdffa639c))
+
+- **learn**: Avoid duplicate claude-transcript_ prefix in saved path
+  ([#236](https://github.com/AgentToolkit/altk-evolve/pull/236),
+  [`6166cf0`](https://github.com/AgentToolkit/altk-evolve/commit/6166cf073924b1ac8496bf61d8cff468f94b9b8d))
+
+- **learn**: Disambiguate fallback file format in SKILL.md
+  ([#230](https://github.com/AgentToolkit/altk-evolve/pull/230),
+  [`2774633`](https://github.com/AgentToolkit/altk-evolve/commit/2774633d7ba1c656fc7fa6dff6f8ee4577025fab))
+
+- **learn**: Document how to extract transcript_path from stop hook message
+  ([#230](https://github.com/AgentToolkit/altk-evolve/pull/230),
+  [`2774633`](https://github.com/AgentToolkit/altk-evolve/commit/2774633d7ba1c656fc7fa6dff6f8ee4577025fab))
+
+- **learn**: Instruct skill to use Glob + Read when reviewing existing guidelines
+  ([#243](https://github.com/AgentToolkit/altk-evolve/pull/243),
+  [`0134371`](https://github.com/AgentToolkit/altk-evolve/commit/0134371a5183174a4072a95232db4347f11e1ae9))
+
+- **learn**: Read saved trajectory with Read tool, drop live-transcript fallback
+  ([#243](https://github.com/AgentToolkit/altk-evolve/pull/243),
+  [`0134371`](https://github.com/AgentToolkit/altk-evolve/commit/0134371a5183174a4072a95232db4347f11e1ae9))
+
+- **learn**: Read session transcript in forked execution context
+  ([#230](https://github.com/AgentToolkit/altk-evolve/pull/230),
+  [`2774633`](https://github.com/AgentToolkit/altk-evolve/commit/2774633d7ba1c656fc7fa6dff6f8ee4577025fab))
+
+- **learn**: Stop the learn-skill permission-prompt storm at Stop
+  ([#243](https://github.com/AgentToolkit/altk-evolve/pull/243),
+  [`0134371`](https://github.com/AgentToolkit/altk-evolve/commit/0134371a5183174a4072a95232db4347f11e1ae9))
+
+- **sandbox**: Allowlist README placeholder in .secrets.baseline
+  ([#233](https://github.com/AgentToolkit/altk-evolve/pull/233),
+  [`ea24a31`](https://github.com/AgentToolkit/altk-evolve/commit/ea24a31cd9cf8851ec80f1a323112257502166a7))
+
+- **sandbox**: Audit README placeholder as non-secret
+  ([#233](https://github.com/AgentToolkit/altk-evolve/pull/233),
+  [`ea24a31`](https://github.com/AgentToolkit/altk-evolve/commit/ea24a31cd9cf8851ec80f1a323112257502166a7))
+
+- **sandbox**: Fail build with clear error if jless URL resolution fails
+  ([#232](https://github.com/AgentToolkit/altk-evolve/pull/232),
+  [`e51a7f2`](https://github.com/AgentToolkit/altk-evolve/commit/e51a7f299ef59adf25be0c2f6201731b96788527))
+
+- **save-trajectory**: Add explicit 0o600 mode to os.open for secure file creation
+  ([#203](https://github.com/AgentToolkit/altk-evolve/pull/203),
+  [`ec2d7d4`](https://github.com/AgentToolkit/altk-evolve/commit/ec2d7d49f0d5df38c9254d060e79388cdffa639c))
+
+- **save-trajectory**: Honor EVOLVE_DIR in trajectory path resolution
+  ([#229](https://github.com/AgentToolkit/altk-evolve/pull/229),
+  [`afe8459`](https://github.com/AgentToolkit/altk-evolve/commit/afe8459cb3c96d90f31d2396abb7dc0351990dba))
+
+- **save-trajectory**: Remove non-standard thinking field from examples
+  ([#203](https://github.com/AgentToolkit/altk-evolve/pull/203),
+  [`ec2d7d4`](https://github.com/AgentToolkit/altk-evolve/commit/ec2d7d49f0d5df38c9254d060e79388cdffa639c))
+
+- **save-trajectory**: Use atomic create and fix path relativization
+  ([#203](https://github.com/AgentToolkit/altk-evolve/pull/203),
+  [`ec2d7d4`](https://github.com/AgentToolkit/altk-evolve/commit/ec2d7d49f0d5df38c9254d060e79388cdffa639c))
+
+- **tests**: Narrow recall assertion to exiftool only
+  ([#233](https://github.com/AgentToolkit/altk-evolve/pull/233),
+  [`ea24a31`](https://github.com/AgentToolkit/altk-evolve/commit/ea24a31cd9cf8851ec80f1a323112257502166a7))
+
+- **tests**: Resolve 2 failing platform integration tests
+  ([#201](https://github.com/AgentToolkit/altk-evolve/pull/201),
+  [`42316f3`](https://github.com/AgentToolkit/altk-evolve/commit/42316f361612867b6bb3d06623ed1cfd2fc9ba29))
+
+- **tests**: Resolve 2 failing platform integration tests
+  ([#220](https://github.com/AgentToolkit/altk-evolve/pull/220),
+  [`690c3f3`](https://github.com/AgentToolkit/altk-evolve/commit/690c3f3e3310b01dda941bccddb726a3a2b2a570))
+
+- **tests**: Ruff format and remove extraneous f-string prefix
+  ([#233](https://github.com/AgentToolkit/altk-evolve/pull/233),
+  [`ea24a31`](https://github.com/AgentToolkit/altk-evolve/commit/ea24a31cd9cf8851ec80f1a323112257502166a7))
+
+- **tests**: Select newest session-2 transcript deterministically
+  ([#233](https://github.com/AgentToolkit/altk-evolve/pull/233),
+  [`ea24a31`](https://github.com/AgentToolkit/altk-evolve/commit/ea24a31cd9cf8851ec80f1a323112257502166a7))
+
+- **tests**: Use regex word boundary for banned tool detection
+  ([#233](https://github.com/AgentToolkit/altk-evolve/pull/233),
+  [`ea24a31`](https://github.com/AgentToolkit/altk-evolve/commit/ea24a31cd9cf8851ec80f1a323112257502166a7))
+
+- **tips**: Address CodeRabbit review issues on trajectory segmentation
+  ([#198](https://github.com/AgentToolkit/altk-evolve/pull/198),
+  [`7364300`](https://github.com/AgentToolkit/altk-evolve/commit/7364300a14f8cc64284372a5fd2a40b7ebf4fad6))
+
+- **tips**: Skip subtasks with empty step ranges instead of calling LLM
+  ([#198](https://github.com/AgentToolkit/altk-evolve/pull/198),
+  [`7364300`](https://github.com/AgentToolkit/altk-evolve/commit/7364300a14f8cc64284372a5fd2a40b7ebf4fad6))
+
+- **viz**: Fix typing error and ruff formatting in viz package
+  ([#187](https://github.com/AgentToolkit/altk-evolve/pull/187),
+  [`0be3381`](https://github.com/AgentToolkit/altk-evolve/commit/0be3381ad1b06c271fc6052c63a44a3f1203d5bc))
+
+- **viz**: Make slug lookup deterministic by collecting all rglob matches
+  ([#187](https://github.com/AgentToolkit/altk-evolve/pull/187),
+  [`0be3381`](https://github.com/AgentToolkit/altk-evolve/commit/0be3381ad1b06c271fc6052c63a44a3f1203d5bc))
+
+- **viz**: Slice content at ## Rationale heading, not first heading
+  ([#187](https://github.com/AgentToolkit/altk-evolve/pull/187),
+  [`0be3381`](https://github.com/AgentToolkit/altk-evolve/commit/0be3381ad1b06c271fc6052c63a44a3f1203d5bc))
+
+- **viz**: Validate filename and slug to prevent path traversal
+  ([#187](https://github.com/AgentToolkit/altk-evolve/pull/187),
+  [`0be3381`](https://github.com/AgentToolkit/altk-evolve/commit/0be3381ad1b06c271fc6052c63a44a3f1203d5bc))
+
+### Features
+
+- **altk_evolve**: Entity sharing — public/private visibility
+  ([#201](https://github.com/AgentToolkit/altk-evolve/pull/201),
+  [`42316f3`](https://github.com/AgentToolkit/altk-evolve/commit/42316f361612867b6bb3d06623ed1cfd2fc9ba29))
+
+- **bob**: Add memory sharing with improvements
+  ([#199](https://github.com/AgentToolkit/altk-evolve/pull/199),
+  [`7af1eb1`](https://github.com/AgentToolkit/altk-evolve/commit/7af1eb1e461077e89da977cfcbc84fc30fba3be7))
+
+- **bob**: Add missing command files for publish, subscribe, sync, unsubscribe skills
+  ([#199](https://github.com/AgentToolkit/altk-evolve/pull/199),
+  [`7af1eb1`](https://github.com/AgentToolkit/altk-evolve/commit/7af1eb1e461077e89da977cfcbc84fc30fba3be7))
+
+- **bob**: Add save-trajectory skill for entity provenance
+  ([#203](https://github.com/AgentToolkit/altk-evolve/pull/203),
+  [`ec2d7d4`](https://github.com/AgentToolkit/altk-evolve/commit/ec2d7d49f0d5df38c9254d060e79388cdffa639c))
+
+- **bob**: Re-add save-trajectory skill to Bob evolve-lite
+  ([#203](https://github.com/AgentToolkit/altk-evolve/pull/203),
+  [`ec2d7d4`](https://github.com/AgentToolkit/altk-evolve/commit/ec2d7d49f0d5df38c9254d060e79388cdffa639c))
+
+- **claude-plugin**: Add stop hook to save session transcript
+  ([#229](https://github.com/AgentToolkit/altk-evolve/pull/229),
+  [`afe8459`](https://github.com/AgentToolkit/altk-evolve/commit/afe8459cb3c96d90f31d2396abb7dc0351990dba))
+
+- **claude-plugin**: Stamp source trajectory path on extracted guidelines
+  ([#236](https://github.com/AgentToolkit/altk-evolve/pull/236),
+  [`6166cf0`](https://github.com/AgentToolkit/altk-evolve/commit/6166cf073924b1ac8496bf61d8cff468f94b9b8d))
+
+- **claw-code**: Add Claw Code platform support to installer
+  ([#208](https://github.com/AgentToolkit/altk-evolve/pull/208),
+  [`e9ba82a`](https://github.com/AgentToolkit/altk-evolve/commit/e9ba82a663678295af4bc69c2f809443e7742853))
+
+- **claw-code**: Sync evolve-lite skills with claude (sharing + updates)
+  ([#208](https://github.com/AgentToolkit/altk-evolve/pull/208),
+  [`e9ba82a`](https://github.com/AgentToolkit/altk-evolve/commit/e9ba82a663678295af4bc69c2f809443e7742853))
+
+- **codex**: Add lite sharing skills and session-start sync
+  ([#196](https://github.com/AgentToolkit/altk-evolve/pull/196),
+  [`cd4204c`](https://github.com/AgentToolkit/altk-evolve/commit/cd4204c132b8e0f5ad615703a065627fbb2915fe))
+
+- **evolve-lite**: Add entity sharing skills and CI tests
+  ([#199](https://github.com/AgentToolkit/altk-evolve/pull/199),
+  [`7af1eb1`](https://github.com/AgentToolkit/altk-evolve/commit/7af1eb1e461077e89da977cfcbc84fc30fba3be7))
+
+- **evolve-lite**: Add entity sharing skills and CI tests
+  ([#188](https://github.com/AgentToolkit/altk-evolve/pull/188),
+  [`6f79732`](https://github.com/AgentToolkit/altk-evolve/commit/6f79732ed1aad03c4b069a7d555187d707108e39))
+
+- **evolve-lite**: Unify sharing into scoped repos list
+  ([#218](https://github.com/AgentToolkit/altk-evolve/pull/218),
+  [`9885f3f`](https://github.com/AgentToolkit/altk-evolve/commit/9885f3fef9d66a665a87cc89edaf59d1993d9e88))
+
+- **evolve-lite**: Unify sharing into scoped repos list (#217)
+  ([#218](https://github.com/AgentToolkit/altk-evolve/pull/218),
+  [`9885f3f`](https://github.com/AgentToolkit/altk-evolve/commit/9885f3fef9d66a665a87cc89edaf59d1993d9e88))
+
+- **learn**: Stamp source trajectory path on extracted guidelines
+  ([#236](https://github.com/AgentToolkit/altk-evolve/pull/236),
+  [`6166cf0`](https://github.com/AgentToolkit/altk-evolve/commit/6166cf073924b1ac8496bf61d8cff468f94b9b8d))
+
+- **mcp**: Add multi-user, multi-namespace, and session support to MCP tools
+  ([#227](https://github.com/AgentToolkit/altk-evolve/pull/227),
+  [`6cb2b45`](https://github.com/AgentToolkit/altk-evolve/commit/6cb2b459da7a534ad712d98a881e5c7eaaf2889d))
+
+- **mcp**: Add user facts tools, SSE transport hardening, and warmup
+  ([#238](https://github.com/AgentToolkit/altk-evolve/pull/238),
+  [`e83668c`](https://github.com/AgentToolkit/altk-evolve/commit/e83668c0a7a5a297a02ba04637de76eb7d00ecf1))
+
+- **mcp**: User facts tools, SSE transport hardening, and warmup
+  ([#238](https://github.com/AgentToolkit/altk-evolve/pull/238),
+  [`e83668c`](https://github.com/AgentToolkit/altk-evolve/commit/e83668c0a7a5a297a02ba04637de76eb7d00ecf1))
+
+- **sandbox**: Unified dockerfile for claude and codex
+  ([#207](https://github.com/AgentToolkit/altk-evolve/pull/207),
+  [`a857775`](https://github.com/AgentToolkit/altk-evolve/commit/a8577756724b6d7344437890af4ed8ffe1c32e0a))
+
+- **subtasks**: Segment trajectories into subtasks before tip generation
+  ([#198](https://github.com/AgentToolkit/altk-evolve/pull/198),
+  [`7364300`](https://github.com/AgentToolkit/altk-evolve/commit/7364300a14f8cc64284372a5fd2a40b7ebf4fad6))
+
+- **tips**: Segment trajectories into subtasks before tip generation
+  ([#198](https://github.com/AgentToolkit/altk-evolve/pull/198),
+  [`7364300`](https://github.com/AgentToolkit/altk-evolve/commit/7364300a14f8cc64284372a5fd2a40b7ebf4fad6))
+
+- **viz**: Add evolve viz serve — browse entities and trajectories locally
+  ([#187](https://github.com/AgentToolkit/altk-evolve/pull/187),
+  [`0be3381`](https://github.com/AgentToolkit/altk-evolve/commit/0be3381ad1b06c271fc6052c63a44a3f1203d5bc))
+
+
 ## v1.0.10 (2026-04-20)
 
 ### Bug Fixes

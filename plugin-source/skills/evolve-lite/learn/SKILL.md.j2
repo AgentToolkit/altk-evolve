@@ -42,21 +42,13 @@ Unless that artifact happens to be:
 
 This skill runs in a forked context. **You cannot see the parent conversation directly** — the only way to access it is by reading the trajectory file the save-trajectory stop hook just wrote to disk. Do not infer from your own (empty) conversation that there's nothing to learn; the parent's real work is in that file.
 
-Locate and read the most recent trajectory:
+The stop-hook message (produced by `on_stop.py`) contains the literal marker `The saved trajectory path is: <path>` — a copy of the session transcript saved inside the project tree at `.evolve/trajectories/claude-transcript_<session-id>.jsonl`. Take everything after the colon, strip surrounding whitespace and quotes, and use the result as `saved_trajectory_path`. You will also attach this exact path to each entity's `trajectory` field in Step 6.
 
-```bash
-TRAJECTORY_DIR="${EVOLVE_DIR:-.evolve}/trajectories"
-LATEST=$(ls -t "$TRAJECTORY_DIR"/*.jsonl "$TRAJECTORY_DIR"/*.json 2>/dev/null | head -n 1)
-[ -n "$LATEST" ] || { echo "no trajectory in $TRAJECTORY_DIR; output zero entities" >&2; exit 0; }
-cat "$LATEST"
-```
+**Read this file with the `Read` tool — do NOT shell out.** `Read` pages large files natively (use its `offset` / `limit` parameters if needed). Do not use `cat`, `head`, `wc`, `find`, or `python3 -c` loops on the transcript — those trigger a permission prompt for every invocation and are unnecessary.
 
-The save-trajectory stop hook always runs before this skill, so a fresh transcript is on disk when you get here. Two formats you may see:
+If the saved trajectory file does not exist (e.g., the save-trajectory hook did not run, or no marker was provided), output zero entities and exit. Do NOT fall back to reading the live session transcript under `~/.claude/projects/` — that path is outside the project tree, triggers permission prompts, and may be larger than the fork can consume.
 
-- **`claude-transcript_*.jsonl`** — JSONL, one JSON object per line. Filter for `"type": "assistant"` and `"type": "human"` lines, then reconstruct the flow from `message.content`. Look for tool calls, errors in tool results, and user corrections.
-- **`trajectory_*.json`** — a single JSON object with `messages: [{role, content}, …]`. Parse with `json.load`.
-
-Read the file in full before any analysis. Only output zero entities after you have read the trajectory and confirmed it contains no errors, corrections, retries, or reusable artifacts worth saving.
+The transcript is JSONL: each line is a separate JSON object. Filter for `"type": "assistant"` and `"type": "human"` lines, then reconstruct the flow from `message.content`. Look for tool calls, errors in tool results, and user corrections.
 
 {% endif -%}
 ### Step 1: Analyze the Conversation
@@ -107,7 +99,19 @@ If you create an artifact, record:
 - what it does
 - when future agents should use it first
 
-### Step 4: Extract Entities
+### Step 4: Review Existing Guidelines
+
+Before extracting, look at what has already been saved for this project. Earlier Stop hooks in the same session (or prior sessions) may have recorded guidelines that cover the same ground — re-extracting them is wasteful and pollutes the library.
+
+Use the **Glob tool** to enumerate existing guideline files: `.evolve/entities/**/*.md`. Then use the **Read tool** to open each match and skim the content + trigger.
+
+**Do NOT use `cat`, `head`, `find`, a `for` loop, or an inline `python3 -c` script for this.** Each shell invocation triggers a permission prompt, and Glob + Read cover the same need without any prompting.
+
+If there are no existing guidelines, skip this step.
+
+With the existing-guideline set in mind, when you proceed to Step 5 you should pick only *complementary* findings — new angles, new failure modes, or finer-grained detail — and drop candidates that restate or near-duplicate anything already saved. (`save_entities.py` will also drop exact-match duplicates at write time, but it cannot catch re-wordings.)
+
+### Step 5: Extract Entities
 
 If Step 3 produced an artifact, at least one entity must explicitly point to that artifact, which is likely the only entity that needs to be produced.
 Otherwise, extract 3-5 proactive entities. Prioritize entities derived from errors identified in Step 2.
@@ -139,9 +143,9 @@ Follow these principles:
 5. **Prefer entities that save future time**
     - A pointer to a saved working script is more valuable than a generic reminder if both are available
 
-### Step 5: Output Entities JSON
+### Step 6: Output Entities JSON
 
-Output entities in this JSON format:
+Output entities in this JSON format. Include a `trajectory` field on every entity, set to the `saved_trajectory_path` extracted in Step 0 — this records which session produced the guideline.
 
 ```json
 {
@@ -150,7 +154,8 @@ Output entities in this JSON format:
       "content": "Proactive entity stating what TO DO",
       "rationale": "Why this approach works better",
       "type": "guideline",
-      "trigger": "Situational context when this applies"
+      "trigger": "Situational context when this applies",
+      "trajectory": ".evolve/trajectories/claude-transcript_<session-id>.jsonl"
     }
   ]
 }
@@ -162,7 +167,7 @@ Allowed type values:
 - script
 - command-template
 
-### Step 6: Save Entities
+### Step 7: Save Entities
 
 After generating the entities JSON, save them using the helper script:
 

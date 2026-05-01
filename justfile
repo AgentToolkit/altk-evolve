@@ -13,8 +13,6 @@ codex_image := "evolve-codex-sandbox"
 env_file := "sandbox/myenv"
 sandbox_dir := "sandbox"
 workspace := "demo/workspace"
-trace := "false"
-learn := "false"
 
 # Build sandbox Docker image(s). Use target=claude or target=codex to build only one.
 sandbox-build target="all":
@@ -58,31 +56,15 @@ sandbox-clean target="all":
 claude-run:
     docker run --rm -it --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/platform-integrations/claude/plugins":/plugins {{claude_image}}
 
-# Run a one-shot prompt in the sandbox (trace=true to summarize session, learn=true to run /evolve-lite:learn)
+# Run a one-shot prompt in the sandbox
 claude-prompt prompt:
     #!/usr/bin/env sh
     export SANDBOX_PROMPT="$(cat <<'PROMPT_EOF'
     {{prompt}}
     PROMPT_EOF
     )"
-    TRACE_CMD=""
-    LEARN_CMD=""
-    if [ "{{trace}}" = "true" ]; then
-        TRACE_CMD="
-            echo; echo; echo Summarizing the session...; echo
-            claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions --no-session-persistence -p 'tell me what happened in the newest json file in /home/sandbox/.claude/projects/-workspace/'
-        "
-    fi
-    if [ "{{learn}}" = "true" ]; then
-        LEARN_CMD="
-            echo; echo; echo Learning...; echo
-            claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions --continue -p '/evolve-lite:learn'
-        "
-    fi
     docker run --rm -it --env SANDBOX_PROMPT --env-file {{env_file}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/platform-integrations/claude/plugins":/plugins {{claude_image}} sh -c "
         claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions -p \"\$SANDBOX_PROMPT\"
-        $TRACE_CMD
-        $LEARN_CMD
     "
 
 # Smoke-test that Claude Code is installed and working

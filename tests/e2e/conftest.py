@@ -1,7 +1,21 @@
 import os
 import uuid
+import warnings
 import pytest
 from altk_evolve.config.milvus import milvus_client_settings
+
+
+def pytest_configure(config):
+    """Warn early when LLM env vars needed by e2e tests are missing."""
+    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+    has_evolve_model = bool(os.environ.get("EVOLVE_MODEL_NAME"))
+    if not has_openai and not has_evolve_model:
+        warnings.warn(
+            "No OPENAI_API_KEY or EVOLVE_MODEL_NAME set — e2e tests that depend on "
+            "LLM fact-extraction will fail. See docs/guides/configuration.md.",
+            stacklevel=1,
+        )
+
 
 _EVOLVE_ENV_KEYS = ("EVOLVE_NAMESPACE_ID", "EVOLVE_BACKEND", "EVOLVE_SQLITE_PATH", "EVOLVE_DATA_DIR")
 

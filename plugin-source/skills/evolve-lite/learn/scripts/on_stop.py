@@ -3,6 +3,7 @@
 
 import json
 import sys
+from pathlib import Path
 
 
 def main():
@@ -17,7 +18,10 @@ def main():
     transcript_path = input_data.get("transcript_path", "")
     reason = "Run the /evolve-lite:learn skill."
     if transcript_path:
-        reason += f" The session transcript is at: {transcript_path}"
+        session_id = Path(transcript_path).stem.removeprefix("claude-transcript_")
+        if session_id:
+            saved_trajectory = f".evolve/trajectories/claude-transcript_{session_id}.jsonl"
+            reason += f" The saved trajectory path is: {saved_trajectory}"
 
     print(
         json.dumps(

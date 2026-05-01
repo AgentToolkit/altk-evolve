@@ -81,7 +81,19 @@ If you create an artifact, record:
 - what it does
 - when future agents should use it first
 
-### Step 4: Extract Entities
+### Step 4: Review Existing Guidelines
+
+Before extracting, look at what has already been saved for this project. Earlier Stop hooks in the same session (or prior sessions) may have recorded guidelines that cover the same ground — re-extracting them is wasteful and pollutes the library.
+
+Use the **Glob tool** to enumerate existing guideline files: `.evolve/entities/**/*.md`. Then use the **Read tool** to open each match and skim the content + trigger.
+
+**Do NOT use `cat`, `head`, `find`, a `for` loop, or an inline `python3 -c` script for this.** Each shell invocation triggers a permission prompt, and Glob + Read cover the same need without any prompting.
+
+If there are no existing guidelines, skip this step.
+
+With the existing-guideline set in mind, when you proceed to Step 5 you should pick only *complementary* findings — new angles, new failure modes, or finer-grained detail — and drop candidates that restate or near-duplicate anything already saved. (`save_entities.py` will also drop exact-match duplicates at write time, but it cannot catch re-wordings.)
+
+### Step 5: Extract Entities
 
 If Step 3 produced an artifact, at least one entity must explicitly point to that artifact, which is likely the only entity that needs to be produced.
 Otherwise, extract 3-5 proactive entities. Prioritize entities derived from errors identified in Step 2.
@@ -113,9 +125,9 @@ Follow these principles:
 5. **Prefer entities that save future time**
     - A pointer to a saved working script is more valuable than a generic reminder if both are available
 
-### Step 5: Output Entities JSON
+### Step 6: Output Entities JSON
 
-Output entities in this JSON format:
+Output entities in this JSON format. Include a `trajectory` field on every entity, set to the `saved_trajectory_path` extracted in Step 0 — this records which session produced the guideline.
 
 ```json
 {
@@ -124,7 +136,8 @@ Output entities in this JSON format:
       "content": "Proactive entity stating what TO DO",
       "rationale": "Why this approach works better",
       "type": "guideline",
-      "trigger": "Situational context when this applies"
+      "trigger": "Situational context when this applies",
+      "trajectory": ".evolve/trajectories/claude-transcript_<session-id>.jsonl"
     }
   ]
 }
@@ -136,7 +149,7 @@ Allowed type values:
 - script
 - command-template
 
-### Step 6: Save Entities
+### Step 7: Save Entities
 
 After generating the entities JSON, save them using the helper script:
 

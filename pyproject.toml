@@ -1,6 +1,6 @@
 [project]
 name = "altk-evolve"
-version = "1.0.10"
+version = "1.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -159,6 +159,7 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 explicit_package_bases = true
 exclude = [
+    "build/",
     "platform-integrations/",
     "plugin-source/",
     "examples/",
