@@ -29,14 +29,12 @@ Assumptions (per the task brief):
         context on codex (build_plugins.py only sets `forked_context`
         for claude), so it sees the live conversation directly without
         needing a saved trajectory.
-      * bob — skill execution is currently DISABLED. Bob's slash-command
-        parser ignores slash commands embedded in mid-response assistant
-        text, so a single seed-and-learn prompt can't drive the chain;
-        and `bob --resume latest`, which would let us send slash commands
-        as fresh user messages, is broken upstream. Until --resume is
-        fixed we verify bob's install presence only and skip learn,
-        recall, and publish. The bob row in the summary will read
-        "install-only" and PASS so long as the SKILL.md files landed
+      * bob — skill execution is currently DISABLED. Bob has no way to
+        run slash commands non-interactively (one-shot prompts can't
+        drive a `/skill` invocation reliably), so the seed → learn →
+        recall → publish chain can't be exercised headlessly. We verify
+        bob's install presence only — the bob section reads
+        "install-only" and PASSes so long as the SKILL.md files landed
         in the workspace.
 
 Side-effects to be aware of:
@@ -109,7 +107,7 @@ logger = logging.getLogger("smoke")
 
 
 class LiveGroupedHandler(logging.Handler):
-    """Redraws all log records grouped per-thread on every new record.
+    """Redraws log records grouped per-platform on every new record.
 
     Each thread (= platform) gets a section under a `── claude ──` header
     with its lines in arrival order. On `emit`, the entire managed region
@@ -117,21 +115,21 @@ class LiveGroupedHandler(logging.Handler):
     top of new ones. Calls are serialized through a lock so concurrent
     threads can't race on cursor positioning.
 
-    Records logged before any worker thread starts (i.e. from MainThread)
-    appear under their own group at the top — useful for the `tempdir: ...`
-    line and any cleanup messages.
+    Records emitted from the orchestrator (MainThread) are dropped in
+    live mode — the orchestrator's tempdir/targets/cleanup messages
+    re-rendered the entire region every line and were the source of the
+    visible flicker (stacked `── MainThread ──` headers). Lines wider
+    than the terminal are truncated so they don't wrap onto a second
+    physical row, which would leave the cursor-up wipe (\\033[nF) short
+    of where it needs to be and let stale text accumulate on each redraw.
 
     Once `finalize()` is called, the handler stops redrawing; further
-    records print as plain prefixed lines below the final region. This
-    lets the summary print cleanly underneath at the end of a run.
+    records print as plain prefixed lines below the final region.
     """
 
     # Defensive cap: if a single platform produces more than this many
     # lines, drop the oldest (with a `…(N earlier lines elided)` notice).
-    # Smoke output is small enough that this rarely trips, but it keeps
-    # the redraw region under typical terminal heights and avoids the
-    # "cursor up N lines went past the scrollback start" corruption.
-    MAX_LINES_PER_GROUP = 12
+    MAX_LINES_PER_GROUP = 16
 
     def __init__(self, group_order: tuple[str, ...]) -> None:
         super().__init__()
@@ -141,15 +139,21 @@ class LiveGroupedHandler(logging.Handler):
         self._lock = threading.Lock()
         self._last_lines = 0
         self._finalized = False
+        self._term_width = max(40, shutil.get_terminal_size((100, 24)).columns)
 
     def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover (TTY)
         try:
-            line = self.format(record)
             group = record.threadName or "main"
+            # Drop orchestrator messages in live mode — see class docstring.
+            # Non-live (line-prefix) mode still prints them via the stdlib
+            # StreamHandler.
+            if group == "MainThread":
+                return
+            line = self.format(record).replace("\n", " | ")
+            if len(line) > self._term_width:
+                line = line[: self._term_width - 1] + "…"
             with self._lock:
                 if self._finalized:
-                    # Post-finalize records: plain append with prefix below
-                    # the region we used to manage.
                     sys.stdout.write(f"[{group}] {line}\n")
                     sys.stdout.flush()
                     return
@@ -218,12 +222,6 @@ def setup_logging(verbose: bool, live: bool, group_order: tuple[str, ...]) -> lo
     return handler
 
 
-def section(msg: str) -> None:
-    """Banner line. Goes through logging so it lands in the right group."""
-    bar = "─" * max(0, 78 - len(msg) - 4)
-    logger.info(f"── {msg} {bar}")
-
-
 # ─── per-platform result record ───────────────────────────────────────────────
 
 
@@ -247,6 +245,27 @@ class PlatformResult:
         if self.skipped_reason or self.setup_error:
             return False
         return all(s.ok for s in self.skills)
+
+
+def log_status(mark: str, name: str, detail: str) -> None:
+    """Emit a summary-style status line into the current platform's section.
+
+    Format mirrors the old post-run summary so the live view IS the summary.
+    `name:8s` matches the original summary's column width — long names
+    ("install-only", "cache-integrity") overflow it, same as before.
+    """
+    logger.info(f"{mark} {name:8s} {detail}")
+
+
+def record_skill(result: PlatformResult, name: str, ok: bool, detail: str) -> None:
+    """Append a SkillResult and log it as a `✓/✗ name detail` line.
+
+    Doing both in one call keeps the live section line-for-line consistent
+    with `result.skills` — every appended SkillResult shows up in the
+    section as it lands.
+    """
+    result.skills.append(SkillResult(name=name, ok=ok, detail=detail))
+    log_status("✓" if ok else "✗", name, detail)
 
 
 # ─── shared tempdir + cleanup ─────────────────────────────────────────────────
@@ -425,7 +444,7 @@ def install_one(platform: str, workspace: Path, log_file: Path) -> None:
     if platform == "claude":
         return
     extra = _INSTALL_EXTRA_ARGS[platform]
-    logger.info(f"running install.sh install --platform {platform} --dir {workspace}")
+    logger.debug(f"running install.sh install --platform {platform} --dir {workspace}")
     _run_install_sh(
         ["install", "--platform", platform, *extra, "--dir", str(workspace)],
         log_file=log_file,
@@ -1066,7 +1085,7 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
 
     if not cli_present(plan.cli):
         result.skipped_reason = f"`{plan.cli}` not found on PATH"
-        logger.warning(result.skipped_reason)
+        log_status("-", "skipped", result.skipped_reason)
         return result
 
     # Per-platform tempdir: <root>/<platform>/{workspace, remote.git, smoke.log}
@@ -1095,37 +1114,32 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
             register_codex_plugin(workspace)
     except Exception as exc:
         result.setup_error = f"install failed: {exc!r}"
-        logger.warning(result.setup_error)
+        log_status("✗", "install", result.setup_error)
         return result
 
     ok, detail = verify_install(platform, workspace)
     if ok:
-        logger.info(f"install ✓ {detail}")
+        log_status("✓", "install", detail)
     else:
         result.setup_error = f"install verify failed: {detail}"
-        logger.warning(result.setup_error)
+        log_status("✗", "install", result.setup_error)
         return result
 
     # ── bob: skill execution disabled.
-    # The end-to-end skill flow (seed → save-trajectory → learn → recall →
-    # publish) requires multi-message session continuation so each slash
-    # command lands at the head of a fresh user message — bob's parser
-    # ignores slash commands embedded in mid-response assistant text.
-    # `bob --resume latest` is the documented way to drive that flow but is
-    # currently broken upstream, leaving us no way to exercise the skills
-    # against bob without flaky one-shot prompt heuristics. Until --resume
-    # is fixed we report bob as "install verified only" and skip the skill
-    # invocations entirely; the install path is the only thing this smoke
-    # can honestly verify on bob right now.
+    # Bob has no way to run a slash command non-interactively from a
+    # one-shot prompt — the end-to-end skill flow (seed → save-trajectory
+    # → learn → recall → publish) needs each `/skill` invocation to land
+    # as a real user message, and bob's headless `bob "<prompt>"` form
+    # doesn't expose that path. We report bob as "install verified only"
+    # and skip skill invocations; the install path is the only thing
+    # this smoke can honestly verify on bob right now.
     if platform == "bob":
-        msg = (
-            "bob skill execution disabled: bob --resume is broken upstream "
-            "and slash commands embedded in mid-response text aren't parsed, "
-            "so the seed → save-trajectory → learn chain can't be driven "
-            "reliably. Smoke verifies install only for this platform."
+        record_skill(
+            result,
+            "install-only",
+            True,
+            "skill execution skipped (no way to run slash commands non-interactively on bob)",
         )
-        logger.warning(msg)
-        result.skills.append(SkillResult(name="install-only", ok=True, detail=msg))
         return result
 
     # Use the canonical `.evolve/` name so the codex skill's SKILL.md
@@ -1138,9 +1152,9 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
     # own workspace subdir, so the unsuffixed name doesn't collide.
     evolve_dir = workspace / ".evolve"
     evolve_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"workspace: {workspace}")
-    logger.info(f"evolve_dir: {evolve_dir}")
-    logger.info(f"log: {log_file}")
+    logger.debug(f"workspace: {workspace}")
+    logger.debug(f"evolve_dir: {evolve_dir}")
+    logger.debug(f"log: {log_file}")
 
     plugin_root = plugin_root_for(platform, workspace)
 
@@ -1156,7 +1170,7 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
         logger.debug(f"baseline commit count on {remote_path.name}: {baseline_commits}")
     except Exception as exc:
         result.setup_error = f"setup failed: {exc!r}"
-        logger.warning(result.setup_error)
+        log_status("✗", "setup", result.setup_error)
         return result
 
     # ── invocation helper bound to this platform's runner
@@ -1181,21 +1195,18 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
     #     directly, no trajectory file needed).
     baseline_entities = entity_count(evolve_dir)
     if platform == "claude":
-        logger.info("→ seed (real trajectory for learn)")
         t0 = time.time()
         seed_rc = run_claude_seed(workspace, evolve_dir, log_file)
         dt_seed = time.time() - t0
         post_seed = entity_count(evolve_dir)
         logger.debug(f"seed: exit={seed_rc} in {dt_seed:.1f}s; entities {baseline_entities}→{post_seed}")
         if seed_rc != 0:
-            logger.warning(f"seed exited {seed_rc}; learn may have nothing to extract")
+            logger.debug(f"seed exited {seed_rc}; learn may have nothing to extract")
 
-        logger.info("→ learn")
         t0 = time.time()
         rc, _ = invoke(plan.learn_cmd, "learn")
         dt = time.time() - t0
     else:
-        logger.info("→ seed-and-learn")
         seed_and_learn_prompt = (
             f"{SEED_PROMPT}\n\n"
             f"After completing (or attempting) the task above, your final "
@@ -1212,19 +1223,18 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
         detail = f"exit=0 in {dt:.1f}s but entities still {post_learn} (baseline {baseline_entities}); learn extracted nothing"
     else:
         detail = f"exit={rc} in {dt:.1f}s; entities {baseline_entities}→{post_learn}"
-    result.skills.append(SkillResult(name="learn", ok=ok, detail=detail))
+    record_skill(result, "learn", ok, detail)
 
     # ── recall (seed entity, prompt agent to echo it)
-    logger.info("→ recall")
     marker = f"MARKER_{uuid.uuid4().hex[:12]}"
     seed_recall_entity(evolve_dir, marker)
     t0 = time.time()
     rc, output = invoke(plan.recall_prompt, "recall")
     dt = time.time() - t0
     if rc != 0:
-        result.skills.append(SkillResult(name="recall", ok=False, detail=f"exit={rc} in {dt:.1f}s"))
+        record_skill(result, "recall", False, f"exit={rc} in {dt:.1f}s")
     elif marker in output:
-        result.skills.append(SkillResult(name="recall", ok=True, detail=f"marker echoed in {dt:.1f}s"))
+        record_skill(result, "recall", True, f"marker echoed in {dt:.1f}s")
     else:
         # Stdout fallback for claude: the on_stop learn hook fires after
         # every `claude -p` invocation and its post-learn response
@@ -1236,24 +1246,21 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
         if platform == "claude":
             in_traj, traj = find_marker_in_trajectory(evolve_dir, marker)
         if in_traj and traj is not None:
-            result.skills.append(
-                SkillResult(
-                    name="recall",
-                    ok=True,
-                    detail=f"marker found in trajectory ({traj.name}) in {dt:.1f}s (stdout clobbered by on_stop)",
-                )
+            record_skill(
+                result,
+                "recall",
+                True,
+                f"marker found in trajectory ({traj.name}) in {dt:.1f}s (stdout clobbered by on_stop)",
             )
         else:
-            result.skills.append(
-                SkillResult(
-                    name="recall",
-                    ok=False,
-                    detail=f"exit=0 in {dt:.1f}s but marker {marker!r} absent from output and trajectory (see log)",
-                )
+            record_skill(
+                result,
+                "recall",
+                False,
+                f"exit=0 in {dt:.1f}s but marker {marker!r} absent from output and trajectory (see log)",
             )
 
     # ── publish (seed guideline, drive the slash command, verify bare remote)
-    logger.info("→ publish")
     publish_filename = f"smoke-publish-{uuid.uuid4().hex[:8]}.md"
     seed_publish_entity(evolve_dir, publish_filename)
     publish_prompt = (
@@ -1271,25 +1278,20 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
     dt = time.time() - t0
     after_commits = remote_commit_count(remote_path)
     if rc != 0:
-        result.skills.append(SkillResult(name="publish", ok=False, detail=f"exit={rc} in {dt:.1f}s"))
+        record_skill(result, "publish", False, f"exit={rc} in {dt:.1f}s")
     elif after_commits > baseline_commits:
-        result.skills.append(
-            SkillResult(
-                name="publish",
-                ok=True,
-                detail=f"bare remote went {baseline_commits}→{after_commits} commits in {dt:.1f}s",
-            )
+        record_skill(
+            result,
+            "publish",
+            True,
+            f"bare remote went {baseline_commits}→{after_commits} commits in {dt:.1f}s",
         )
     else:
-        result.skills.append(
-            SkillResult(
-                name="publish",
-                ok=False,
-                detail=(
-                    f"exit=0 in {dt:.1f}s but no new commit on bare remote "
-                    f"(still {after_commits} commits). Last log:\n{remote_log(remote_path)}"
-                ),
-            )
+        record_skill(
+            result,
+            "publish",
+            False,
+            (f"exit=0 in {dt:.1f}s but no new commit on bare remote (still {after_commits} commits). Last log:\n{remote_log(remote_path)}"),
         )
 
     # ── cache integrity (codex only): codex's plugin cache must mirror
@@ -1297,7 +1299,7 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
     # wrong source and any pass results above are suspect.
     if platform == "codex":
         ok, detail = verify_codex_cache_matches_workspace(workspace)
-        result.skills.append(SkillResult(name="cache-integrity", ok=ok, detail=detail))
+        record_skill(result, "cache-integrity", ok, detail)
 
     return result
 
@@ -1341,7 +1343,7 @@ def main(argv: list[str]) -> int:
     log_handler = setup_logging(
         args.verbose,
         live=live_view,
-        group_order=("MainThread", *targets),
+        group_order=tuple(targets),
     )
 
     logger.info(f"targets: {', '.join(targets)}")
@@ -1389,11 +1391,11 @@ def main(argv: list[str]) -> int:
     finally:
         cleanup()
         if isinstance(log_handler, LiveGroupedHandler):
-            # End the redraw region so the summary prints below the final
-            # state of the live view instead of getting overwritten.
             log_handler.finalize()
+        if args.keep:
+            print(f"tempdir kept at: {tempdir}")
 
-    return _print_summary(results)
+    return 1 if any(not r.overall_ok for r in results) else 0
 
 
 def _run_platform_safely(platform: str, tempdir: Path) -> PlatformResult:
@@ -1405,31 +1407,6 @@ def _run_platform_safely(platform: str, tempdir: Path) -> PlatformResult:
     except Exception as exc:
         logger.warning(f"unhandled exception in {platform}: {exc!r}")
         return PlatformResult(platform=platform, setup_error=f"unhandled: {exc!r}")
-
-
-def _print_summary(results: list[PlatformResult]) -> int:
-    section("summary")
-    any_failed = False
-    for r in results:
-        if r.skipped_reason:
-            print(f"  {r.platform:7s}  SKIPPED   {r.skipped_reason}")
-            any_failed = True
-            continue
-        if r.setup_error:
-            print(f"  {r.platform:7s}  SETUP ✗   {r.setup_error}  (log: {r.log_path})")
-            any_failed = True
-            continue
-        verdict = "PASS" if r.overall_ok else "FAIL"
-        print(f"  {r.platform:7s}  {verdict}")
-        for s in r.skills:
-            mark = "✓" if s.ok else "✗"
-            print(f"             {mark} {s.name:8s}  {s.detail}")
-        if not r.overall_ok:
-            any_failed = True
-            if r.log_path:
-                print(f"             log: {r.log_path}")
-    print()
-    return 1 if any_failed else 0
 
 
 if __name__ == "__main__":
