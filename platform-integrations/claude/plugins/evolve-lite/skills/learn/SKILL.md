@@ -116,11 +116,11 @@ The script will:
 - Deduplicate against existing entities
 - Display confirmation with the total count
 
-### Step 4: Assess Influence of Recalled Entities
+### Step 5: Assess Influence of Recalled Entities
 
-Regardless of whether Step 3 produced new entities, judge whether the guidelines the recall hook served to *this* session were actually followed, contradicted, or simply irrelevant. This closes the provenance loop: the recall hook records *what* was served; this step records *what effect* it had.
+Regardless of whether Step 4 saved new entities, judge whether the guidelines the recall hook served to *this* session were actually followed, contradicted, or simply irrelevant. This closes the provenance loop: the recall hook records *what* was served; this step records *what effect* it had.
 
-1. Derive this session's `session_id` — it's `Path(transcript_path).stem` (same `transcript_path` extracted in Step 0).
+1. Derive this session's `session_id` from the `saved_trajectory_path` extracted in Step 0: strip the directory prefix and the `claude-transcript_` / `.jsonl` affixes. For `.evolve/trajectories/claude-transcript_abc-123.jsonl` the `session_id` is `abc-123`.
 
 2. Read `.evolve/audit.log` (JSONL, one object per line). Find every line where `event == "recall"` and `session_id` matches. Take the union of their `entities` arrays — that is the set of guideline identifiers served to this session. Each identifier is a relative path from `.evolve/entities/` without the `.md` suffix (e.g. `guideline/foo` for a local entity, or `subscribed/alice/guideline/foo` for a subscribed one), so it unambiguously names one file. If the set is empty, skip this step.
 
