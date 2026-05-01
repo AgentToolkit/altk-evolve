@@ -117,11 +117,13 @@ class LiveGroupedHandler(logging.Handler):
 
     Records emitted from the orchestrator (MainThread) are dropped in
     live mode — the orchestrator's tempdir/targets/cleanup messages
-    re-rendered the entire region every line and were the source of the
-    visible flicker (stacked `── MainThread ──` headers). Lines wider
-    than the terminal are truncated so they don't wrap onto a second
-    physical row, which would leave the cursor-up wipe (\\033[nF) short
-    of where it needs to be and let stale text accumulate on each redraw.
+    re-rendered the entire region on every line and were the source of
+    the visible flicker (stacked `── MainThread ──` headers).
+
+    Long lines are allowed to wrap. The cursor-up wipe (`\\033[nF`) is
+    sized in *physical* terminal rows, not logical lines, so the wipe
+    still lands on the start of the live region even when individual
+    lines wrap onto multiple rows.
 
     Once `finalize()` is called, the handler stops redrawing; further
     records print as plain prefixed lines below the final region.
@@ -139,7 +141,16 @@ class LiveGroupedHandler(logging.Handler):
         self._lock = threading.Lock()
         self._last_lines = 0
         self._finalized = False
-        self._term_width = max(40, shutil.get_terminal_size((100, 24)).columns)
+
+    def _physical_rows(self, line: str) -> int:
+        """How many terminal rows `line` will occupy after wrapping.
+
+        Read width on every call so window resizes between renders are
+        picked up — caching at __init__ time would silently desync the
+        wipe math from the actual screen.
+        """
+        width = max(1, shutil.get_terminal_size((100, 24)).columns)
+        return max(1, (len(line) + width - 1) // width)
 
     def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover (TTY)
         try:
@@ -150,8 +161,6 @@ class LiveGroupedHandler(logging.Handler):
             if group == "MainThread":
                 return
             line = self.format(record).replace("\n", " | ")
-            if len(line) > self._term_width:
-                line = line[: self._term_width - 1] + "…"
             with self._lock:
                 if self._finalized:
                     sys.stdout.write(f"[{group}] {line}\n")
@@ -174,26 +183,30 @@ class LiveGroupedHandler(logging.Handler):
     def _render(self) -> None:
         out: list[str] = []
         if self._last_lines:
-            # Move cursor to column 1 of the line `_last_lines` lines up,
-            # then erase from cursor to end of screen — wipes the previously
-            # drawn region so we redraw cleanly.
+            # Move cursor to column 1 of the row `_last_lines` rows up,
+            # then erase from cursor to end of screen. `_last_lines` is a
+            # *physical-row* count (wrap-aware), so the wipe lands on the
+            # start of the previously drawn region even when content
+            # lines wrapped onto multiple rows.
             out.append(f"\033[{self._last_lines}F\033[0J")
-        new_lines = 0
+        new_rows = 0
         for group in self._order:
             lines = self._groups.get(group)
             if not lines:
                 continue
-            out.append(f"── {group} ──\n")
-            new_lines += 1
+            header = f"── {group} ──"
+            out.append(header + "\n")
+            new_rows += self._physical_rows(header)
             if self._dropped.get(group):
-                out.append(f"  …({self._dropped[group]} earlier lines elided)\n")
-                new_lines += 1
+                elided = f"  …({self._dropped[group]} earlier lines elided)"
+                out.append(elided + "\n")
+                new_rows += self._physical_rows(elided)
             for line in lines:
                 out.append(line + "\n")
-                new_lines += 1
+                new_rows += self._physical_rows(line)
         sys.stdout.write("".join(out))
         sys.stdout.flush()
-        self._last_lines = new_lines
+        self._last_lines = new_rows
 
     def finalize(self) -> None:
         """Stop redrawing; future records print as plain prefixed lines."""
