@@ -39,10 +39,10 @@ def read_audit(evolve_dir):
 
 
 class TestLogInfluence:
-    def test_writes_single_assessment(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
+    def test_writes_single_assessment(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
-            tmp_path,
+            temp_project_dir,
             {
                 "session_id": "abc-123",
                 "assessments": [
@@ -63,10 +63,10 @@ class TestLogInfluence:
             "ts": events[0]["ts"],
         }
 
-    def test_writes_multiple_assessments(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
+    def test_writes_multiple_assessments(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
-            tmp_path,
+            temp_project_dir,
             {
                 "session_id": "sess-1",
                 "assessments": [
@@ -83,10 +83,10 @@ class TestLogInfluence:
         verdicts = {e["entity"]: e["verdict"] for e in events}
         assert verdicts == {"slug-a": "followed", "slug-b": "not_applicable", "slug-c": "contradicted"}
 
-    def test_skips_assessments_with_invalid_verdict(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
+    def test_skips_assessments_with_invalid_verdict(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
-            tmp_path,
+            temp_project_dir,
             {
                 "session_id": "sess-1",
                 "assessments": [
@@ -101,10 +101,10 @@ class TestLogInfluence:
         assert len(events) == 1
         assert events[0]["entity"] == "slug-b"
 
-    def test_skips_assessments_missing_entity(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
+    def test_skips_assessments_missing_entity(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
-            tmp_path,
+            temp_project_dir,
             {
                 "session_id": "sess-1",
                 "assessments": [
@@ -119,11 +119,11 @@ class TestLogInfluence:
         assert len(events) == 1
         assert events[0]["entity"] == "slug-b"
 
-    def test_skips_non_dict_assessment_items(self, tmp_path):
+    def test_skips_non_dict_assessment_items(self, temp_project_dir):
         """Non-dict items in the assessments list must not raise AttributeError."""
-        evolve_dir = tmp_path / ".evolve"
+        evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
-            tmp_path,
+            temp_project_dir,
             {
                 "session_id": "sess-1",
                 "assessments": [
@@ -140,20 +140,20 @@ class TestLogInfluence:
         assert len(events) == 1
         assert events[0]["entity"] == "slug-ok"
 
-    def test_empty_assessments_list_is_ok(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
+    def test_empty_assessments_list_is_ok(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
-            tmp_path,
+            temp_project_dir,
             {"session_id": "sess-1", "assessments": []},
             evolve_dir=evolve_dir,
         )
         assert result.returncode == 0, result.stderr
         assert read_audit(evolve_dir) == []
 
-    def test_evidence_defaults_to_empty_string(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
+    def test_evidence_defaults_to_empty_string(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
-            tmp_path,
+            temp_project_dir,
             {
                 "session_id": "sess-1",
                 "assessments": [{"entity": "slug-a", "verdict": "followed"}],
@@ -164,35 +164,35 @@ class TestLogInfluence:
         events = read_audit(evolve_dir)
         assert events[0]["evidence"] == ""
 
-    def test_rejects_non_dict_payload(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
-        result = run_log_influence(tmp_path, ["not", "a", "dict"], evolve_dir=evolve_dir)
+    def test_rejects_non_dict_payload(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        result = run_log_influence(temp_project_dir, ["not", "a", "dict"], evolve_dir=evolve_dir)
         assert result.returncode == 1
         assert "payload" in result.stderr.lower()
         assert read_audit(evolve_dir) == []
 
-    def test_rejects_missing_session_id(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
+    def test_rejects_missing_session_id(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
-            tmp_path,
+            temp_project_dir,
             {"assessments": [{"entity": "a", "verdict": "followed"}]},
             evolve_dir=evolve_dir,
         )
         assert result.returncode == 1
         assert read_audit(evolve_dir) == []
 
-    def test_rejects_non_list_assessments(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
+    def test_rejects_non_list_assessments(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
-            tmp_path,
+            temp_project_dir,
             {"session_id": "sess-1", "assessments": "oops"},
             evolve_dir=evolve_dir,
         )
         assert result.returncode == 1
         assert read_audit(evolve_dir) == []
 
-    def test_rejects_invalid_json(self, tmp_path):
-        evolve_dir = tmp_path / ".evolve"
-        result = run_log_influence(tmp_path, None, raw_input="{not valid json", evolve_dir=evolve_dir)
+    def test_rejects_invalid_json(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        result = run_log_influence(temp_project_dir, None, raw_input="{not valid json", evolve_dir=evolve_dir)
         assert result.returncode == 1
         assert "json" in result.stderr.lower()
