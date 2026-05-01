@@ -113,16 +113,7 @@ def main():
             remote=args.remote,
         )
     except Exception as exc:
-        repos.pop()
-        set_repos(cfg, repos)
-        try:
-            save_config(cfg, project_root)
-        except Exception:
-            pass
-        if dest.exists():
-            shutil.rmtree(dest)
-        print(f"Error: failed to record subscription — clone removed: {exc}", file=sys.stderr)
-        sys.exit(1)
+        print(f"Warning: failed to append audit entry for subscribe: {exc}", file=sys.stderr)
 
     print(f"Subscribed to '{args.name}' (scope={args.scope}) from {args.remote}")
 

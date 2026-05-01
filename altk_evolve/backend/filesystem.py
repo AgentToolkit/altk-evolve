@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import os
 import uuid
 from pathlib import Path
 from threading import Lock
@@ -51,12 +52,27 @@ class FilesystemEntityBackend(BaseEntityBackend):
         file_path = self._namespace_file(namespace_id)
         if not file_path.exists():
             raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
-        return FilesystemNamespace.model_validate(json.loads(file_path.read_text()))
+        raw = file_path.read_text()
+        if not raw.strip():
+            logger.warning("Namespace file %s is empty (likely an interrupted write); treating as missing.", file_path)
+            raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
+        try:
+            return FilesystemNamespace.model_validate(json.loads(raw))
+        except json.JSONDecodeError as e:
+            logger.warning("Namespace file %s is corrupt (%s); treating as missing.", file_path, e)
+            raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found") from e
 
     def _save_namespace_data(self, namespace_id: str, data: FilesystemNamespace):
-        """Save namespace data to JSON file."""
+        """Save namespace data to JSON file atomically.
+
+        Why: Path.write_text truncates the file immediately and leaves it 0 bytes if the
+        process is interrupted mid-write (SIGTERM, kill, crash). Write to a sibling tmp
+        file and os.replace() so readers always see either the old or new complete file.
+        """
         file_path = self._namespace_file(namespace_id)
-        file_path.write_text(data.model_dump_json(indent=2))
+        tmp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        tmp_path.write_text(data.model_dump_json(indent=2))
+        os.replace(tmp_path, file_path)
 
     def ready(self) -> bool:
         """Check if the backend is healthy."""
