@@ -1,13 +1,28 @@
 import argparse
 import logging
+import os
 import sys
 import threading
 import uvicorn
 
-from altk_evolve.frontend.mcp.mcp_server import mcp, app
+from altk_evolve.frontend.mcp.mcp_server import app, get_client, mcp
 from altk_evolve.frontend.mcp.http_transport import create_resilient_sse_app
 
 logger = logging.getLogger("evolve-mcp")
+
+
+def _is_truthy_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def warmup_mcp_runtime() -> None:
+    """Pre-initialize MCP backend state to reduce first-tool-call latency."""
+    logger.info("Warming up MCP runtime...")
+    get_client()
+    logger.info("MCP runtime warmup complete")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -42,9 +57,22 @@ def run_api_server():
 
 
 def run_sse_server(host: str, port: int) -> None:
-    """Run the MCP server over SSE with disconnect-safe transport handling."""
-    sse_app = create_resilient_sse_app(mcp)
-    uvicorn.run(sse_app, host=host, port=port, log_level="warning")
+    """Run the MCP server over SSE with disconnect-tolerant teardown."""
+    if _is_truthy_env("EVOLVE_MCP_WARMUP", True):
+        try:
+            warmup_mcp_runtime()
+        except Exception as exc:
+            # Keep startup resilient: failed warmup should not block server boot.
+            logger.warning("MCP warmup failed; continuing without warmup: %s", exc)
+
+    uvicorn.run(
+        create_resilient_sse_app(mcp),
+        host=host,
+        port=port,
+        lifespan="on",
+        timeout_graceful_shutdown=3,
+        ws="websockets-sansio",
+    )
 
 
 def main():
@@ -61,7 +89,7 @@ def main():
             # Start FastMCP using stdio (which blocks)
             mcp.run()
         else:
-            run_sse_server(host=args.host, port=args.port)
+            run_sse_server(args.host, args.port)
     except KeyboardInterrupt:
         logger.info("MCP server stopped by user (KeyboardInterrupt)")
         sys.exit(0)

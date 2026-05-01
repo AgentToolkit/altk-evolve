@@ -5,7 +5,12 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 import altk_evolve.frontend.mcp.mcp_server as mcp_server_module
-from altk_evolve.frontend.mcp.mcp_server import save_trajectory, create_entity
+from altk_evolve.frontend.mcp.mcp_server import (
+    save_trajectory,
+    create_entity,
+    store_user_facts,
+    retrieve_user_facts,
+)
 from altk_evolve.schema.core import Namespace
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 
@@ -134,7 +139,7 @@ def test_get_client_uses_idempotent_namespace_bootstrap(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_namespace_falls_back_to_default():
+def test_resolve_namespace_falls_back_to_default(mock_get_client):
     """When namespace_id is None, _resolve_namespace returns the configured default."""
     original_namespaces = mcp_server_module._initialized_namespaces.copy()
     try:
@@ -264,3 +269,70 @@ def test_save_trajectory_backward_compat_no_extra_params(mock_get_client):
         # user_id and session_id should NOT be in metadata when not provided
         assert "user_id" not in traj_entity.metadata
         assert "session_id" not in traj_entity.metadata
+
+
+# ---------------------------------------------------------------------------
+# User facts tests
+# ---------------------------------------------------------------------------
+
+
+def test_store_user_facts_returns_structured_payload(mock_get_client):
+    mock_update = EntityUpdate(id="fact-1", type="fact", content="Prefers concise answers", event="ADD", metadata={"category": "style"})
+    mock_get_client.store_user_facts.return_value = [mock_update]
+
+    result = json.loads(
+        store_user_facts(
+            user_id="user-123",
+            message="I prefer concise answers.",
+            metadata=json.dumps({"source": "cuga-lite"}),
+        )
+    )
+
+    assert result["user_id"] == "user-123"
+    assert result["stored_count"] == 1
+    assert result["updates"][0]["id"] == "fact-1"
+    assert result["updates"][0]["metadata"]["category"] == "style"
+
+
+def test_store_user_facts_invalid_metadata_json(mock_get_client):
+    result = json.loads(
+        store_user_facts(
+            user_id="user-123",
+            message="I prefer concise answers.",
+            metadata="{bad json",
+        )
+    )
+
+    assert result["error"] == "Invalid JSON"
+    assert "invalid_metadata" in result
+    mock_get_client.store_user_facts.assert_not_called()
+
+
+def test_store_user_facts_empty_message_returns_zero_updates(mock_get_client):
+    mock_get_client.store_user_facts.return_value = []
+
+    result = json.loads(store_user_facts(user_id="user-123", message=""))
+
+    assert result["user_id"] == "user-123"
+    assert result["stored_count"] == 0
+    assert result["updates"] == []
+
+
+def test_retrieve_user_facts_returns_structured_payload(mock_get_client):
+    mock_get_client.retrieve_user_facts.return_value = {
+        "style": [
+            {
+                "id": "fact-1",
+                "content": "Prefers concise answers",
+                "key": "response_style",
+                "value": "concise",
+            }
+        ]
+    }
+
+    result = json.loads(retrieve_user_facts(user_id="user-123", query="How should I answer?", limit=5))
+
+    assert result["user_id"] == "user-123"
+    assert result["query"] == "How should I answer?"
+    assert result["matched_count"] == 1
+    assert result["categories"]["style"][0]["value"] == "concise"
