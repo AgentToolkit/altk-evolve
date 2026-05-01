@@ -1,5 +1,4 @@
 ---
-name: evolve-lite:save
-description: Capture the current session's successful workflow as a reusable skill
+description: Captures the current session's successful workflow and saves it as a reusable skill with SKILL.md and helper scripts
 ---
-Use the evolve-lite:save skill to capture the current session's workflow as a reusable skill in your skills directory. Follow the skill's instructions exactly.
+Use the `evolve-lite-save` skill on the current conversation. Follow the skill's instructions exactly.

@@ -1,5 +1,4 @@
 ---
-name: evolve-lite:subscribe
-description: Add a shared guidelines repo (read- or write-scope) to the unified repos list
+description: Add a shared guidelines repo (read-scope subscription or write-scope publish target) to the unified repos list.
 ---
-Use the evolve-lite:subscribe skill to add a shared guidelines repo — either a read-scope subscription or a write-scope publish target. Follow the skill's instructions exactly.
+Use the `evolve-lite-subscribe` skill on the current conversation. Follow the skill's instructions exactly.

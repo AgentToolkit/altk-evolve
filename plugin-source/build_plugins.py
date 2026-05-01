@@ -2,8 +2,8 @@
 """Render plugin-source/ into platform-integrations/.
 
 This script is the build pipeline for the unified plugin code tracked in
-issue #219. It walks plugin-source/ — every file is fanned out to every
-platform — and emits the rendered tree under platform-integrations/.
+issue #219. It walks plugin-source/ — files fan out to every platform by
+default — and emits the rendered tree under platform-integrations/.
 
 Per-platform configuration (plugin_root, Jinja context, optional path
 rewrites, optional plugin.json metadata target) is encoded in the
@@ -16,6 +16,12 @@ live in plugin-source/ but are never shipped:
   build_plugins.py  — this script.
   plugin.toml       — canonical plugin metadata; projected to per-platform
                       plugin.json by metadata_emit functions, never copied.
+
+Per-platform routing: any file living under `plugin-source/_<platform>/...`
+ships to that platform only, and the `_<platform>/` prefix is stripped from
+its output target. This is how single-platform artifacts (claude's
+`hooks/hooks.json`, bob's `custom_modes.yaml`, the per-platform READMEs)
+live alongside the universal sources without leaking to other hosts.
 
 Source files ending in `.j2` are rendered through Jinja2 with a per-platform
 context (see PlatformConfig.context). Other files are copied verbatim.
@@ -288,11 +294,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "save_example_script_root": "${CLAUDE_PLUGIN_ROOT}/skills",
         },
         "target_rewrites": [],
-        # commands/ is a bob-only concept — bob's runtime registers slash
-        # commands by walking .bob/commands/. Other platforms have their
-        # own command surface (claude's plugin.json, codex's $-registry)
-        # and don't ship a commands/ directory.
-        "target_excludes": [r"^commands/"],
+        "target_excludes": [],
         "metadata_target": ".claude-plugin/plugin.json",
         "metadata_emit": _claude_plugin_json,
     },
@@ -303,7 +305,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "save_example_script_root": "~/.claw/skills",
         },
         "target_rewrites": [],
-        "target_excludes": [r"^commands/"],
+        "target_excludes": [],
         # claw-code is a claude-code fork that reuses the .claude-plugin/ convention.
         "metadata_target": ".claude-plugin/plugin.json",
         "metadata_emit": _claw_code_plugin_json,
@@ -315,7 +317,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "save_example_script_root": "plugins/evolve-lite/skills",
         },
         "target_rewrites": [],
-        "target_excludes": [r"^commands/"],
+        "target_excludes": [],
         "metadata_target": ".codex-plugin/plugin.json",
         "metadata_emit": _codex_plugin_json,
     },
@@ -329,15 +331,63 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         # under .bob/skills/. Collapse the source skills/evolve-lite/<name>/
         # layout to skills/evolve-lite-<name>/ for bob's render output.
         "target_rewrites": [(r"^skills/evolve-lite/([^/]+)/", r"skills/evolve-lite-\1/")],
-        # Bob is the only platform with a slash-command surface that needs
-        # a commands/ directory shipped, so it's the only one without an
-        # exclude pattern for it.
         "target_excludes": [],
-        # Bob has no plugin system, so no plugin.json is emitted.
+        # Bob has no plugin system, so no plugin.json is emitted. Bob's
+        # commands/ directory is generated 1:1 from the skills walk by
+        # _bob_command_targets(); no static command files exist in
+        # plugin-source/.
         "metadata_target": None,
         "metadata_emit": None,
     },
 }
+
+
+# Bob's slash-command surface: one .md file per skill, generated from the
+# skill folder name and its SKILL.md.j2 frontmatter `description`. Bob
+# command frontmatter only honors `description` (and `argument-hints`,
+# which our commands don't need); the slash-command identifier comes from
+# the file name. The body references the skill by its on-disk folder name
+# (`evolve-lite-<skill>`, dash form) — bob resolves skills by folder name,
+# and folders stay colon-free for Windows compatibility.
+_BOB_COMMAND_TEMPLATE = (
+    "---\n"
+    "description: {description}\n"
+    "---\n"
+    "Use the `evolve-lite-{skill}` skill on the current conversation. Follow the skill's instructions exactly.\n"
+)
+
+
+def _discover_skills() -> list[Path]:
+    """Skill folders under plugin-source/skills/evolve-lite/ that ship a SKILL.md.j2."""
+    skills_root = PLUGIN_SOURCE_DIR / "skills" / "evolve-lite"
+    return sorted(p for p in skills_root.iterdir() if p.is_dir() and (p / "SKILL.md.j2").is_file())
+
+
+def _read_skill_description(skill_dir: Path) -> str:
+    """Pull the single-line `description:` value from a skill's SKILL.md.j2 frontmatter."""
+    text = (skill_dir / "SKILL.md.j2").read_text(encoding="utf-8")
+    match = re.search(r"^description:\s*(.+)$", text, re.MULTILINE)
+    if not match:
+        raise ValueError(f"missing `description` in {skill_dir.name}/SKILL.md.j2")
+    return match.group(1).strip()
+
+
+def _bob_command_bytes(skill_dir: Path) -> bytes:
+    return _BOB_COMMAND_TEMPLATE.format(
+        skill=skill_dir.name,
+        description=_read_skill_description(skill_dir),
+    ).encode("utf-8")
+
+
+def _bob_command_targets() -> list[tuple[Path, Path, bytes]]:
+    """Triples of (skill_source_for_drift_label, target_rel_to_repo_root, content)
+    for every bob command — one per skill — derived from the skills walk."""
+    bob_root_rel = Path(PLATFORMS["bob"]["plugin_root"])
+    out: list[tuple[Path, Path, bytes]] = []
+    for skill_dir in _discover_skills():
+        target_rel = bob_root_rel / "commands" / f"evolve-lite-{skill_dir.name}.md"
+        out.append((skill_dir / "SKILL.md.j2", target_rel, _bob_command_bytes(skill_dir)))
+    return out
 
 
 @dataclass(frozen=True)
@@ -417,14 +467,19 @@ def _render_plugin_json(cfg: PlatformConfig, metadata: PluginMetadata) -> bytes:
     return (model.model_dump_json(by_alias=True, exclude_none=True, indent=2) + "\n").encode("utf-8")
 
 
-def _walk_sources() -> list[Path]:
-    """Every file under plugin-source/ that should be rendered or copied.
+def _walk_sources() -> list[tuple[Path, tuple[str, ...]]]:
+    """Every source file paired with the platforms it ships to.
+
+    Files under `plugin-source/_<platform>/...` ship to that single platform
+    only; everything else fans out to every platform.
 
     Excludes files in RESERVED_SOURCES at the source root, and any path
     that traverses a __pycache__ directory (build_plugins.py running from
     plugin-source/ writes a sibling __pycache__/ that must not ship).
     """
-    sources: list[Path] = []
+    all_platforms = tuple(PLATFORMS.keys())
+    platform_dirs = {f"_{name}": (name,) for name in PLATFORMS}
+    sources: list[tuple[Path, tuple[str, ...]]] = []
     for path in sorted(PLUGIN_SOURCE_DIR.rglob("*")):
         if not path.is_file():
             continue
@@ -433,13 +488,17 @@ def _walk_sources() -> list[Path]:
             continue
         if len(rel.parts) == 1 and rel.parts[0] in RESERVED_SOURCES:
             continue
-        sources.append(path)
+        platforms = platform_dirs.get(rel.parts[0], all_platforms)
+        sources.append((path, platforms))
     return sources
 
 
 def _target_for(source: Path) -> Path:
-    """Per-platform target_rel before any rewrite — source path with .j2 stripped."""
+    """Per-platform target_rel before any rewrite — source path with the
+    leading `_<platform>/` prefix and any `.j2` suffix stripped."""
     rel = source.relative_to(PLUGIN_SOURCE_DIR)
+    if rel.parts and rel.parts[0].startswith("_") and rel.parts[0][1:] in PLATFORMS:
+        rel = Path(*rel.parts[1:])
     if rel.suffix == ".j2":
         rel = rel.with_suffix("")
     return rel
@@ -447,8 +506,7 @@ def _target_for(source: Path) -> Path:
 
 def load_manifest() -> Manifest:
     platforms = _platforms()
-    all_platforms = tuple(platforms.keys())
-    files = tuple(FileEntry(source=src, target_rel=_target_for(src), platforms=all_platforms) for src in _walk_sources())
+    files = tuple(FileEntry(source=src, target_rel=_target_for(src), platforms=plats) for src, plats in _walk_sources())
     return Manifest(platforms=platforms, files=files)
 
 
@@ -478,9 +536,18 @@ def render_to(out_root: Path) -> list[Path]:
     out_root is the prefix; the per-platform plugin_root from PLATFORMS is
     appended. For an in-place build, pass REPO_ROOT.
 
+    Each platform's plugin_root under out_root is wiped before writing, so
+    files removed from plugin-source/ (renamed skills, deleted scripts,
+    obsolete commands) cannot linger as orphans in the rendered tree.
+
     Returns the list of paths written, relative to out_root.
     """
     manifest = load_manifest()
+    for cfg in manifest.platforms.values():
+        plugin_root_rel = cfg.plugin_root.relative_to(REPO_ROOT)
+        target_root = out_root / plugin_root_rel
+        if target_root.exists():
+            shutil.rmtree(target_root)
     env = _jinja_env()
     written: list[Path] = []
     for entry in manifest.files:
@@ -508,6 +575,12 @@ def render_to(out_root: Path) -> list[Path]:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(_render_plugin_json(cfg, metadata))
         written.append(plugin_root_rel / cfg.metadata_target)
+
+    for _, target_rel, content in _bob_command_targets():
+        target = out_root / target_rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        written.append(target_rel)
     return written
 
 
@@ -550,6 +623,14 @@ def check_drift() -> int:
         rendered = _render_plugin_json(cfg, metadata)
         if committed.read_bytes() != rendered:
             drifts.append((plugin_toml, committed))
+
+    for skill_src, target_rel, content in _bob_command_targets():
+        committed = REPO_ROOT / target_rel
+        if not committed.is_file():
+            missing.append(committed)
+            continue
+        if committed.read_bytes() != content:
+            drifts.append((skill_src, committed))
 
     if missing or drifts:
         for path in missing:
