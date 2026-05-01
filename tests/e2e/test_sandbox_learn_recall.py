@@ -177,15 +177,15 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
         events.append(json.loads(line))
 
     session2_id = session2_transcript.stem.removeprefix("claude-transcript_")
-    session1_slugs = {p.stem for p in entity_files}
+    # Recall audit records qualified ids — path relative to .evolve/entities/
+    # without the .md suffix — so we match session 1's entities the same way.
+    session1_ids = {str(p.relative_to(entities_dir).with_suffix("")) for p in entity_files}
 
     recall_events = [e for e in events if e.get("event") == "recall" and e.get("session_id") == session2_id]
     assert recall_events, f"no recall audit event for session 2 ({session2_id}). all events: {events}"
-    recalled_slugs = {slug for e in recall_events for slug in e.get("entities", [])}
-    assert recalled_slugs & session1_slugs, (
-        f"recall event entities {recalled_slugs} did not include any slug from session 1 ({session1_slugs})"
-    )
-    log.info(f"session 2: audit recorded recall of {recalled_slugs}")
+    recalled_ids = {eid for e in recall_events for eid in e.get("entities", [])}
+    assert recalled_ids & session1_ids, f"recall event entities {recalled_ids} did not include any id from session 1 ({session1_ids})"
+    log.info(f"session 2: audit recorded recall of {recalled_ids}")
 
     influence_events = [e for e in events if e.get("event") == "influence" and e.get("session_id") == session2_id]
     assert influence_events, (

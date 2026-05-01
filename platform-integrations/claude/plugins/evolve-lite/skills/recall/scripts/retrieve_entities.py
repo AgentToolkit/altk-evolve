@@ -83,9 +83,13 @@ def load_entities_with_source(entities_dir):
             entity = markdown_to_entity(md)
             if not entity.get("content"):
                 continue
-            # Record the on-disk slug (filename stem) so downstream can
-            # reference the entity without re-derivation.
-            entity["_slug"] = md.stem
+            # Record the on-disk path relative to entities_dir (without the
+            # .md suffix) as a qualified identifier. This distinguishes
+            # same-named entities in different trees — e.g.
+            # "guideline/foo" (local) vs "subscribed/alice/guideline/foo"
+            # (from a subscribed repo) — so downstream auditing doesn't
+            # collapse them into one.
+            entity["_id"] = str(md.relative_to(entities_dir).with_suffix(""))
             # Detect subscribed entities by path: .../entities/subscribed/{name}/...
             parts = md.parts
             try:
@@ -138,16 +142,16 @@ def main():
     try:
         transcript_path = input_data.get("transcript_path", "")
         session_id = Path(transcript_path).stem if transcript_path else None
-        slugs = sorted({e["_slug"] for e in entities if e.get("_slug")})
-        if session_id and slugs:
+        entity_ids = sorted({e["_id"] for e in entities if e.get("_id")})
+        if session_id and entity_ids:
             project_root = get_evolve_dir().resolve().parent
             audit.append(
                 project_root=str(project_root),
                 event="recall",
                 session_id=session_id,
-                entities=slugs,
+                entities=entity_ids,
             )
-            log(f"Audit: recall session_id={session_id} entities={len(slugs)}")
+            log(f"Audit: recall session_id={session_id} entities={len(entity_ids)}")
     except Exception as exc:
         log(f"Audit append failed (non-fatal): {exc}")
 

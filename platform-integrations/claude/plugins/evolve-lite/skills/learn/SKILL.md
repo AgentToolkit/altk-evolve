@@ -122,11 +122,11 @@ Regardless of whether Step 3 produced new entities, judge whether the guidelines
 
 1. Derive this session's `session_id` — it's `Path(transcript_path).stem` (same `transcript_path` extracted in Step 0).
 
-2. Read `.evolve/audit.log` (JSONL, one object per line). Find every line where `event == "recall"` and `session_id` matches. Take the union of their `entities` arrays — that is the set of guideline slugs served to this session. If that set is empty, skip this step.
+2. Read `.evolve/audit.log` (JSONL, one object per line). Find every line where `event == "recall"` and `session_id` matches. Take the union of their `entities` arrays — that is the set of guideline identifiers served to this session. Each identifier is a relative path from `.evolve/entities/` without the `.md` suffix (e.g. `guideline/foo` for a local entity, or `subscribed/alice/guideline/foo` for a subscribed one), so it unambiguously names one file. If the set is empty, skip this step.
 
-3. For each slug, locate its markdown file by searching under `.evolve/entities/` — the file may live at `.evolve/entities/guideline/<slug>.md` (local entities) or at `.evolve/entities/subscribed/<source>/guideline/<slug>.md` (entities recalled from a subscribed repository). Use a recursive search such as `find .evolve/entities -type f -name "<slug>.md"` and open the first match. Read its content + trigger — that is the guideline's intent. Skip the slug (log it as an assessment-less entry) if no file is found.
+3. For each identifier, open `.evolve/entities/<id>.md` with the Read tool. Read its content + trigger — that is the guideline's intent. Skip the identifier (log it as an assessment-less entry) if the file is not found.
 
-4. Compare against the transcript loaded in Step 0. For each slug, pick one verdict:
+4. Compare against the transcript loaded in Step 0. For each identifier, pick one verdict:
    - `followed` — the agent's actual actions are consistent with the guideline's recommendation.
    - `contradicted` — the guideline's trigger matched the task but the agent did the opposite, or hit the dead end the guideline would have prevented.
    - `not_applicable` — the guideline's trigger didn't match what this session was about.
@@ -139,10 +139,12 @@ Regardless of whether Step 3 produced new entities, judge whether the guidelines
 echo '{
   "session_id": "<session-id>",
   "assessments": [
-    {"entity": "<slug>", "verdict": "followed", "evidence": "Agent imported struct and parsed APP1 directly"}
+    {"entity": "guideline/<slug>", "verdict": "followed", "evidence": "Agent imported struct and parsed APP1 directly"}
   ]
 }' | python3 ${CLAUDE_PLUGIN_ROOT}/skills/learn/scripts/log_influence.py
 ```
+
+The `entity` value must match exactly what appeared in the recall event — include the `subscribed/<source>/` prefix if the entity came from a subscribed repo.
 
 Emit zero assessments (empty `assessments` list) when no recall events exist for this session.
 
