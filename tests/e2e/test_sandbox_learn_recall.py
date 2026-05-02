@@ -164,3 +164,36 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
     # pip-installed). Other libraries (PIL, piexif, exifread) may appear in a
     # valid guideline as "install via pip and use", so we don't ban them.
     assert not re.search(r"\bexiftool\b", joined), "session 2 invoked exiftool despite recall guideline:\n" + "\n".join(commands)
+
+    # --- Usage provenance: audit.log should record recall + influence ---
+    audit_log = sandbox_workspace / ".evolve" / "audit.log"
+    assert audit_log.is_file(), f"{audit_log} was not created — recall did not append audit events"
+
+    events = []
+    for line in audit_log.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        events.append(json.loads(line))
+
+    session2_id = session2_transcript.stem.removeprefix("claude-transcript_")
+    # Recall audit records qualified ids — path relative to .evolve/entities/
+    # without the .md suffix — so we match session 1's entities the same way.
+    session1_ids = {str(p.relative_to(entities_dir).with_suffix("")) for p in entity_files}
+
+    recall_events = [e for e in events if e.get("event") == "recall" and e.get("session_id") == session2_id]
+    assert recall_events, f"no recall audit event for session 2 ({session2_id}). all events: {events}"
+    recalled_ids = {eid for e in recall_events for eid in e.get("entities", [])}
+    assert recalled_ids & session1_ids, f"recall event entities {recalled_ids} did not include any id from session 1 ({session1_ids})"
+    log.info(f"session 2: audit recorded recall of {recalled_ids}")
+
+    influence_events = [e for e in events if e.get("event") == "influence" and e.get("session_id") == session2_id]
+    assert influence_events, (
+        f"no influence audit event for session 2 ({session2_id}). recall events exist but learn did not emit assessments."
+    )
+    for ie in influence_events:
+        assert ie.get("verdict") in {"followed", "contradicted", "not_applicable"}, f"influence event has invalid verdict: {ie}"
+    log.info(
+        f"session 2: audit recorded {len(influence_events)} influence assessment(s): "
+        f"{[(e['entity'], e['verdict']) for e in influence_events]}"
+    )
