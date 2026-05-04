@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from threading import Lock
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.filesystem import FilesystemSettings, filesystem_settings
@@ -64,7 +64,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
             raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
         try:
             return FilesystemNamespace.model_validate(json.loads(raw))
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, ValidationError) as e:
             logger.warning("Namespace file %s is corrupt (%s); removing and treating as missing.", file_path, e)
             file_path.unlink(missing_ok=True)
             raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found") from e

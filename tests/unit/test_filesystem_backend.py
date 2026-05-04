@@ -18,6 +18,7 @@ def backend(tmp_path: Path) -> FilesystemEntityBackend:
     return FilesystemEntityBackend(config=FilesystemSettings(data_dir=str(tmp_path)))
 
 
+@pytest.mark.unit
 def test_ensure_namespace_recovers_from_zero_byte_file(client: EvolveClient, tmp_path: Path):
     stale = tmp_path / "ns_stale.json"
     stale.write_text("")
@@ -30,6 +31,7 @@ def test_ensure_namespace_recovers_from_zero_byte_file(client: EvolveClient, tmp
     assert stale.exists() and stale.stat().st_size > 0
 
 
+@pytest.mark.unit
 def test_ensure_namespace_recovers_from_corrupt_json(client: EvolveClient, tmp_path: Path):
     corrupt = tmp_path / "ns_corrupt.json"
     corrupt.write_text("{not json")
@@ -40,6 +42,20 @@ def test_ensure_namespace_recovers_from_corrupt_json(client: EvolveClient, tmp_p
     assert ns.num_entities == 0
 
 
+@pytest.mark.unit
+def test_ensure_namespace_recovers_from_schema_invalid_json(client: EvolveClient, tmp_path: Path):
+    """Valid JSON that doesn't match FilesystemNamespace must also trigger recovery,
+    not propagate pydantic.ValidationError and wedge startup."""
+    bogus = tmp_path / "ns_bogus.json"
+    bogus.write_text('{"not_a_namespace": true}')
+
+    ns = client.ensure_namespace("ns_bogus")
+
+    assert ns.id == "ns_bogus"
+    assert ns.num_entities == 0
+
+
+@pytest.mark.unit
 def test_save_tolerates_stale_shared_tmp(backend: FilesystemEntityBackend, tmp_path: Path):
     """Stale <ns>.json.tmp from an interrupted write must not block subsequent saves.
 
