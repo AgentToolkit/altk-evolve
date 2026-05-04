@@ -10,6 +10,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
+from entity_io import get_trajectories_dir  # noqa: E402
+
 
 _log_file = None
 
@@ -36,20 +39,6 @@ def log(message):
             f.write(f"[{timestamp}] [save-trajectory-stop] {message}\n")
     except Exception:
         pass
-
-
-def get_trajectories_dir():
-    evolve_dir = os.environ.get("EVOLVE_DIR")
-    if evolve_dir:
-        base = Path(evolve_dir) / "trajectories"
-    else:
-        project_root = os.environ.get("CLAUDE_PROJECT_ROOT", "")
-        if project_root:
-            base = Path(project_root) / ".evolve" / "trajectories"
-        else:
-            base = Path(".evolve") / "trajectories"
-    base.mkdir(parents=True, exist_ok=True, mode=0o700)
-    return base.resolve()
 
 
 def main():

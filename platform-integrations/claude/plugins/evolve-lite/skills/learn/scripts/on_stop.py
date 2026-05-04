@@ -5,6 +5,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
+from entity_io import get_trajectories_dir  # noqa: E402
+
 
 def main():
     try:
@@ -20,7 +23,7 @@ def main():
     if transcript_path:
         session_id = Path(transcript_path).stem.removeprefix("claude-transcript_")
         if session_id:
-            saved_trajectory = f".evolve/trajectories/claude-transcript_{session_id}.jsonl"
+            saved_trajectory = str(get_trajectories_dir() / f"claude-transcript_{session_id}.jsonl")
             reason += f" The saved trajectory path is: {saved_trajectory}"
 
     print(

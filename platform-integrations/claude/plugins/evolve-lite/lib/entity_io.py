@@ -97,6 +97,17 @@ def get_default_entities_dir():
     return base.resolve()
 
 
+def get_trajectories_dir():
+    """Return (and create) the trajectories directory as an absolute Path.
+
+    Uses :func:`get_evolve_dir` for the base so trajectories land alongside
+    entities under the same ``EVOLVE_DIR`` / ``.evolve`` root.
+    """
+    base = get_evolve_dir() / "trajectories"
+    base.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return base.resolve()
+
+
 # ---------------------------------------------------------------------------
 # Slugify / filename helpers
 # ---------------------------------------------------------------------------

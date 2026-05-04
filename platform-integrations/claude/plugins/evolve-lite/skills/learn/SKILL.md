@@ -29,7 +29,7 @@ This skill analyzes the current conversation to extract guidelines that **correc
 
 This skill runs in a forked context with no access to the parent conversation. The stop-hook message (produced by `on_stop.py`) contains one literal marker:
 
-- `The saved trajectory path is: <path>` — a copy of the session transcript saved inside the project tree at `.evolve/trajectories/claude-transcript_<session-id>.jsonl`. Take everything after the colon, strip surrounding whitespace and quotes, and use the result as `saved_trajectory_path`. You will also attach this exact path to each entity's `trajectory` field in Step 4.
+- `The saved trajectory path is: <path>` — a copy of the session transcript written by the save-trajectory Stop hook. The path is absolute and resolves under `$EVOLVE_DIR/trajectories/` (or the project's `.evolve/trajectories/` when `EVOLVE_DIR` is unset), with filename `claude-transcript_<session-id>.jsonl`. Take everything after the colon, strip surrounding whitespace and quotes, and use the result as `saved_trajectory_path`. You will also attach this exact path to each entity's `trajectory` field in Step 4.
 
 **Read this file with the `Read` tool — do NOT shell out.** `Read` pages large files natively (use its `offset` / `limit` parameters if needed). Do not use `cat`, `head`, `wc`, `find`, or `python3 -c` loops on the transcript — those trigger a permission prompt for every invocation and are unnecessary.
 
