@@ -60,7 +60,7 @@ def _save_trajectory_path(stdout):
     line = stdout.strip().splitlines()[-1]
     prefix = "Trajectory saved: "
     assert line.startswith(prefix), f"unexpected stdout: {stdout!r}"
-    return line[len(prefix):]
+    return line[len(prefix) :]
 
 
 @pytest.fixture
