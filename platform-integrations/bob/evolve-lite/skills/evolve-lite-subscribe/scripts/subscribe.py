@@ -132,16 +132,12 @@ def main():
             remote=args.remote,
         )
     except Exception as exc:
-        repos.pop()
-        set_repos(cfg, repos)
-        try:
-            save_config(cfg, project_root)
-        except Exception:
-            pass
-        if dest.exists():
-            shutil.rmtree(dest)
-        print(f"Error: failed to record subscription — clone removed: {exc}", file=sys.stderr)
-        sys.exit(1)
+        # Audit logging is best-effort: a failed append shouldn't roll back
+        # an otherwise successful subscribe (the repo is cloned, the config
+        # has the entry). Warn loudly so the user can fix the audit log
+        # path without losing the subscription. Originally rolled back on
+        # main's PR #245 (#244 e2e fix).
+        print(f"Warning: failed to append audit entry for subscribe: {exc}", file=sys.stderr)
 
     print(f"Subscribed to '{args.name}' (scope={args.scope}) from {args.remote}")
 

@@ -371,7 +371,7 @@ class TestBobSync:
         cfg_path.write_text('repos:\n  - name: "../outside"\n    scope: "read"\n    remote: "git@github.com:x/y.git"\n    branch: "main"\n')
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
-        assert "invalid subscription name" in result.stdout
+        assert "invalid subscription name" in result.stderr
         assert not (evolve_dir / "entities" / "subscribed" / "outside").exists()
 
     def test_rejects_dot_and_double_dot_names(self, temp_project_dir):
@@ -382,12 +382,12 @@ class TestBobSync:
         cfg_path.write_text('repos:\n  - name: "."\n    scope: "read"\n    remote: "git@github.com:x/y.git"\n    branch: "main"\n')
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
-        assert "invalid subscription name" in result.stdout
+        assert "invalid subscription name" in result.stderr
 
         cfg_path.write_text('repos:\n  - name: ".."\n    scope: "read"\n    remote: "git@github.com:x/y.git"\n    branch: "main"\n')
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
-        assert "invalid subscription name" in result.stdout
+        assert "invalid subscription name" in result.stderr
 
     def test_removed_entity_disappears_after_sync(self, subscribed_project):
         """Entities deleted from a read-scope remote are removed from the mirror on next sync."""

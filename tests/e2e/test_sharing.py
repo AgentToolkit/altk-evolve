@@ -122,15 +122,18 @@ async def test_cross_namespace_public_discovery(mcp):
                 "get_entities",
                 {"task": "dependency injection", "entity_type": "guideline", "include_public": True},
             )
-            assert "dependency injection" in with_public.content[0].text
+            assert "use dependency injection for testability" in with_public.content[0].text
             assert "[public: alice]" in with_public.content[0].text
 
-            # Without include_public it must NOT appear (it lives in a different namespace)
+            # Without include_public it must NOT appear (it lives in a different namespace).
+            # Check for the entity content and owner marker — the query task echoes in
+            # the response header ("# Guidelines for: dependency injection") regardless of hits.
             without_public = await client.call_tool_mcp(
                 "get_entities",
                 {"task": "dependency injection", "entity_type": "guideline", "include_public": False},
             )
-            assert "dependency injection" not in without_public.content[0].text
+            assert "use dependency injection for testability" not in without_public.content[0].text
+            assert "[public: alice]" not in without_public.content[0].text
     finally:
         try:
             second_client.delete_namespace(second_ns)
