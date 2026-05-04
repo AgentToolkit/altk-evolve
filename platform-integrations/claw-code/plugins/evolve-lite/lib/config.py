@@ -336,7 +336,10 @@ def _coerce_repo(entry):
     if not isinstance(name, str) or not name.strip():
         return None
     if not is_valid_repo_name(name.strip()):
-        print(f"evolve-lite: {name!r} (skipped - invalid subscription name) — only A-Z, a-z, 0-9, '.', '_', '-' allowed")
+        print(
+            f"evolve-lite: {name!r} (skipped - invalid subscription name) — only A-Z, a-z, 0-9, '.', '_', '-' allowed",
+            file=sys.stderr,
+        )
         return None
     if not isinstance(remote, str) or not remote.strip():
         return None
