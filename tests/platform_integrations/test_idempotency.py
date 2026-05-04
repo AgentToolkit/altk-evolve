@@ -66,7 +66,7 @@ class TestBobIdempotency:
         # Manually delete one skill
         import shutil
 
-        shutil.rmtree(bob_dir / "skills" / "evolve-lite:learn")
+        shutil.rmtree(bob_dir / "skills" / "evolve-lite-learn")
 
         # Reinstall
         install_runner.run("install", platform="bob")
@@ -74,6 +74,70 @@ class TestBobIdempotency:
         # Assert: All skills are restored
         file_assertions.assert_all_bob_skills_installed(bob_dir)
         file_assertions.assert_file_exists(bob_dir / "custom_modes.yaml")
+
+
+@pytest.mark.platform_integrations
+class TestBobLegacyMigration:
+    """Upgrade path from the pre-rename `evolve-lite:<name>` colon-form layout."""
+
+    def _seed_legacy_artifacts(self, bob_dir):
+        """Drop a stale colon-form skill + command into .bob/, the way an old install left it."""
+        legacy_skill = bob_dir / "skills" / "evolve-lite:learn"
+        legacy_skill.mkdir(parents=True)
+        (legacy_skill / "SKILL.md").write_text("legacy colon-form skill\n")
+        legacy_cmd = bob_dir / "commands" / "evolve-lite:learn.md"
+        legacy_cmd.parent.mkdir(parents=True, exist_ok=True)
+        legacy_cmd.write_text("legacy colon-form command\n")
+        return legacy_skill, legacy_cmd
+
+    def test_install_purges_legacy_colon_form(self, temp_project_dir, install_runner, file_assertions):
+        """Re-running install over a pre-rename layout wipes the legacy artifacts.
+
+        Reproduces visahak's PR #235 finding: without the purge, `.bob/skills/`
+        ends up with both `evolve-lite:learn` and `evolve-lite-learn` after
+        upgrade.
+        """
+        bob_dir = temp_project_dir / ".bob"
+        legacy_skill, legacy_cmd = self._seed_legacy_artifacts(bob_dir)
+
+        install_runner.run("install", platform="bob", mode="lite")
+
+        # Legacy artifacts gone
+        assert not legacy_skill.exists(), "legacy colon-form skill survived install"
+        assert not legacy_cmd.exists(), "legacy colon-form command survived install"
+        # Current dash-form layout in place
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite-learn")
+        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve-lite-learn.md")
+
+    def test_uninstall_purges_legacy_colon_form(self, temp_project_dir, install_runner, file_assertions):
+        """Uninstall removes legacy colon-form stragglers alongside the dash-form."""
+        install_runner.run("install", platform="bob", mode="lite")
+        bob_dir = temp_project_dir / ".bob"
+
+        # Inject legacy artifacts post-install — simulates an upgrade gap where
+        # a user moved through several versions and accumulated both forms.
+        legacy_skill, legacy_cmd = self._seed_legacy_artifacts(bob_dir)
+
+        install_runner.run("uninstall", platform="bob")
+
+        assert not legacy_skill.exists(), "uninstall left legacy colon-form skill behind"
+        assert not legacy_cmd.exists(), "uninstall left legacy colon-form command behind"
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-learn")
+        file_assertions.assert_file_not_exists(bob_dir / "commands" / "evolve-lite-learn.md")
+
+    def test_install_preserves_user_content_during_legacy_purge(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
+        """The legacy purge MUST NOT clobber non-evolve user skills/commands."""
+        bob_dir = temp_project_dir / ".bob"
+        custom_skill = bob_fixtures.create_existing_skill(temp_project_dir)
+        custom_command = bob_fixtures.create_existing_command(temp_project_dir)
+        legacy_skill, _ = self._seed_legacy_artifacts(bob_dir)
+
+        install_runner.run("install", platform="bob", mode="lite")
+
+        # Legacy purged, user content intact.
+        assert not legacy_skill.exists()
+        file_assertions.assert_dir_exists(custom_skill)
+        file_assertions.assert_file_exists(custom_command)
 
 
 @pytest.mark.platform_integrations
@@ -105,7 +169,7 @@ class TestCodexIdempotency:
             group
             for group in prompt_hooks
             if any(
-                "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+                "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in hook.get("command", "")
                 for hook in group.get("hooks", [])
             )
         ]
@@ -120,12 +184,12 @@ class TestCodexIdempotency:
 
         import shutil
 
-        shutil.rmtree(plugin_dir / "skills" / "learn")
+        shutil.rmtree(plugin_dir / "skills" / "evolve-lite" / "learn")
 
         install_runner.run("install", platform="codex")
 
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "learn")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "learn" / "SKILL.md")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "learn")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "learn" / "SKILL.md")
         file_assertions.assert_file_exists(plugin_dir / "lib" / "entity_io.py")
 
 
@@ -143,13 +207,13 @@ class TestUninstallInstallCycle:
         install_runner.run("install", platform="bob")
 
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite:learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite-learn")
 
         # Uninstall
         install_runner.run("uninstall", platform="bob")
 
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite:learn")
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite:recall")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-learn")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-recall")
 
         # Reinstall
         install_runner.run("install", platform="bob")
@@ -189,7 +253,7 @@ class TestUninstallInstallCycle:
             hook
             for group in prompt_hooks
             for hook in group.get("hooks", [])
-            if "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+            if "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in hook.get("command", "")
         ]
         assert not evolve_hooks, "Evolve hook still present after uninstall"
 
@@ -209,7 +273,7 @@ class TestUninstallInstallCycle:
             for hook in group.get("hooks", [])
         )
         assert any(
-            "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in hook.get("command", "")
+            "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in hook.get("command", "")
             for group in reinstalled_hooks["hooks"]["UserPromptSubmit"]
             for hook in group.get("hooks", [])
         )

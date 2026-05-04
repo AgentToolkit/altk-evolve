@@ -481,6 +481,30 @@ class BobInstaller:
     def __init__(self, ops: FileOps):
         self.ops = ops
 
+    def _purge_evolve_artifacts(self, bob_target):
+        """Remove every evolve-prefixed skill, command, and directory under bob_target.
+
+        Catches both the current `evolve-lite-<name>` dash form and the legacy
+        `evolve-lite:<name>` colon form (plus any future `evolve-*` namespace),
+        so re-running install over an older layout converges to a clean state
+        instead of accumulating duplicates. User-owned non-evolve content
+        (`my-custom-skill/`, `my-command.md`, …) is preserved.
+        """
+        skills_dir = bob_target / "skills"
+        if skills_dir.is_dir():
+            for entry in sorted(skills_dir.iterdir()):
+                if entry.is_dir() and entry.name.startswith("evolve"):
+                    self.ops.remove_dir(entry)
+        commands_dir = bob_target / "commands"
+        if commands_dir.is_dir():
+            for entry in sorted(commands_dir.iterdir()):
+                if entry.is_file() and entry.name.startswith("evolve"):
+                    self.ops.remove_file(entry)
+        if bob_target.is_dir():
+            for entry in sorted(bob_target.iterdir()):
+                if entry.is_dir() and entry.name.startswith("evolve"):
+                    self.ops.remove_dir(entry)
+
     def install(self, target_dir, mode="lite"):
         _ensure_source_dir()
         source_dir = SOURCE_DIR
@@ -489,10 +513,17 @@ class BobInstaller:
 
         info(f"Installing Bob ({mode} mode) → {bob_target}")
 
+        # Wipe any existing evolve-prefixed artifacts (legacy colon-form
+        # skills/commands from before the rename, stale evolve-lib dirs,
+        # etc.) before re-rendering. Without this, re-running install
+        # over an old layout would leave duplicate `evolve-lite:<name>`
+        # alongside the new `evolve-lite-<name>`.
+        self._purge_evolve_artifacts(bob_target)
+
         if mode == "lite":
-            shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
+            shared_lib = bob_source_lite / "lib"
             if not self.ops.is_dry_run and not shared_lib.is_dir():
-                raise RuntimeError(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
+                raise RuntimeError(f"Shared lib not found: {shared_lib}")
             self.ops.copy_tree(shared_lib, bob_target / "evolve-lib")
             success("Copied Bob lib")
 
@@ -542,15 +573,7 @@ class BobInstaller:
         bob_target = Path(target_dir) / ".bob"
         info(f"Uninstalling Bob from {bob_target}")
 
-        self.ops.remove_dir(bob_target / "evolve-lib")
-        skills_dir = bob_target / "skills"
-        if skills_dir.is_dir():
-            for skill_dir in sorted(skills_dir.glob("evolve-lite:*")):
-                self.ops.remove_dir(skill_dir)
-        commands_dir = bob_target / "commands"
-        if commands_dir.is_dir():
-            for cmd_file in sorted(commands_dir.glob("evolve-lite:*.md")):
-                self.ops.remove_file(cmd_file)
+        self._purge_evolve_artifacts(bob_target)
         self.ops.remove_yaml_custom_mode(bob_target / "custom_modes.yaml", BOB_SLUG)
         self.ops.remove_yaml_custom_mode(bob_target / "custom_modes.yaml", "Evolve")
         self.ops.remove_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"])
@@ -562,14 +585,18 @@ class BobInstaller:
         print(f"  Bob (.bob/):")
         print(f"    evolve-lib/entity_io      : {'✓' if (bob_target / 'evolve-lib' / 'entity_io.py').is_file() else '✗'}")
         skills_dir = bob_target / "skills"
-        installed_skills = sorted(skills_dir.glob("evolve-lite:*")) if skills_dir.is_dir() else []
+        # Glob `evolve*` rather than `evolve-lite-*` so legacy colon-form
+        # skills (`evolve-lite:learn` etc.) show up in status; otherwise
+        # an upgrade-gap state would silently report ✗ while artifacts
+        # still squat on disk.
+        installed_skills = sorted(p for p in skills_dir.glob("evolve*") if p.is_dir()) if skills_dir.is_dir() else []
         if installed_skills:
             for s in installed_skills:
                 print(f"    skills/{s.name} : ✓")
         else:
-            print(f"    skills/evolve-lite:*      : ✗")
+            print(f"    skills/evolve*            : ✗")
         commands_dir = bob_target / "commands"
-        installed_cmds = sorted(commands_dir.glob("evolve-lite:*.md")) if commands_dir.is_dir() else []
+        installed_cmds = sorted(commands_dir.glob("evolve*.md")) if commands_dir.is_dir() else []
         print(f"    commands/ ({len(installed_cmds)} evolve commands) : {'✓' if installed_cmds else '✗'}")
         print(f"    custom_modes.yaml         : {'✓' if (bob_target / 'custom_modes.yaml').is_file() else '✗'}")
         has_mcp = "evolve" in read_json(bob_target / "mcp.json").get("mcpServers", {}) if (bob_target / "mcp.json").is_file() else False
@@ -728,7 +755,7 @@ class CodexInstaller:
             "sh -lc '"
             'd=\"$PWD\"; '
             "while :; do "
-            'candidate=\"$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py\"; '
+            'candidate=\"$d/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py\"; '
             'if [ -f \"$candidate\" ]; then EVOLVE_DIR=\"$d/.evolve\" exec python3 \"$candidate\"; fi; '
             '[ \"$d\" = \"/\" ] && break; '
             'd=\"$(dirname \"$d\")\"; '
@@ -738,7 +765,7 @@ class CodexInstaller:
 
     @staticmethod
     def _is_recall_command(command):
-        return isinstance(command, str) and "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py" in command
+        return isinstance(command, str) and "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in command
 
     @staticmethod
     def _recall_hook():
@@ -758,7 +785,7 @@ class CodexInstaller:
             "sh -lc '"
             'd=\"$PWD\"; '
             "while :; do "
-            'candidate=\"$d/plugins/evolve-lite/skills/sync/scripts/sync.py\"; '
+            'candidate=\"$d/plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py\"; '
             'if [ -f \"$candidate\" ]; then EVOLVE_DIR=\"$d/.evolve\" exec python3 \"$candidate\" --quiet --session-start; fi; '
             '[ \"$d\" = \"/\" ] && break; '
             'd=\"$(dirname \"$d\")\"; '
@@ -768,7 +795,7 @@ class CodexInstaller:
 
     @staticmethod
     def _is_sync_command(command):
-        return isinstance(command, str) and "plugins/evolve-lite/skills/sync/scripts/sync.py" in command
+        return isinstance(command, str) and "plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py" in command
 
     @staticmethod
     def _sync_hook():
@@ -1001,12 +1028,6 @@ class CodexInstaller:
         self.ops.copy_tree(plugin_source, plugin_target)
         success("Copied Codex plugin")
 
-        shared_lib = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / "evolve-lite" / "lib"
-        if not self.ops.is_dry_run and not shared_lib.is_dir():
-            raise RuntimeError(f"Shared lib not found: {shared_lib} — is the Claude plugin present in the source tree?")
-        self.ops.copy_tree(shared_lib, plugin_target / "lib")
-        success("Copied Codex lib")
-
         marketplace_target = Path(target_dir) / ".agents" / "plugins" / "marketplace.json"
         self._upsert_marketplace_entry(
             marketplace_target,
@@ -1049,8 +1070,8 @@ class CodexInstaller:
         print("  Codex:")
         print(f"    plugins/evolve-lite       : {'✓' if plugin_dir.is_dir() else '✗'}")
         print(f"    lib/entity_io.py          : {'✓' if (plugin_dir / 'lib' / 'entity_io.py').is_file() else '✗'}")
-        print(f"    skills/learn              : {'✓' if (plugin_dir / 'skills' / 'learn').is_dir() else '✗'}")
-        print(f"    skills/recall             : {'✓' if (plugin_dir / 'skills' / 'recall').is_dir() else '✗'}")
+        print(f"    skills/evolve-lite/learn  : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'learn').is_dir() else '✗'}")
+        print(f"    skills/evolve-lite/recall : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'recall').is_dir() else '✗'}")
 
         marketplace_path = Path(target_dir) / ".agents" / "plugins" / "marketplace.json"
         marketplace_present = (

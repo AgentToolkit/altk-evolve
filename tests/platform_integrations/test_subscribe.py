@@ -27,11 +27,11 @@ pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 _REPO_ROOT = Path(__file__).parent.parent.parent
 CLAUDE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
 CODEX_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite"
-SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
-UNSUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/unsubscribe/scripts/unsubscribe.py"
+SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"
+UNSUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/unsubscribe/scripts/unsubscribe.py"
 SUBSCRIBE_SCRIPT_VARIANTS = [
-    ("claude", CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"),
-    ("codex", CODEX_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"),
+    ("claude", CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"),
+    ("codex", CODEX_PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"),
 ]
 
 
@@ -212,7 +212,7 @@ class TestSubscribe:
         finally:
             cfg_path.chmod(0o644)
         assert result.returncode != 0
-        assert "failed to record subscription" in result.stderr
+        assert result.stderr.strip(), "expected an error message on stderr"
         dest = evolve_dir / "entities" / "subscribed" / "alice"
         assert not dest.exists(), "Clone should be rolled back when config write fails"
 

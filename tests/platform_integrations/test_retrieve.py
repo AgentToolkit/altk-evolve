@@ -1,4 +1,4 @@
-"""Tests for skills/recall/scripts/retrieve_entities.py."""
+"""Tests for skills/evolve-lite/recall/scripts/retrieve_entities.py."""
 
 import json
 import os
@@ -11,10 +11,14 @@ import pytest
 pytestmark = pytest.mark.platform_integrations
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
-CLAUDE_RETRIEVE_SCRIPT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
-CODEX_RETRIEVE_SCRIPT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
+CLAUDE_RETRIEVE_SCRIPT = (
+    _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
+)
+CODEX_RETRIEVE_SCRIPT = (
+    _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
+)
 SCRIPT_VARIANTS = [
-    ("claude", CLAUDE_RETRIEVE_SCRIPT, "Entities for this task"),
+    ("claude", CLAUDE_RETRIEVE_SCRIPT, "Evolve entities for this task"),
     ("codex", CODEX_RETRIEVE_SCRIPT, "Evolve entities for this task"),
 ]
 

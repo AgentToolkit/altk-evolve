@@ -11,12 +11,12 @@ import pytest
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/codex/plugins/evolve-lite"
-SAVE_SCRIPT = _PLUGIN_ROOT / "skills/learn/scripts/save_entities.py"
-RETRIEVE_SCRIPT = _PLUGIN_ROOT / "skills/recall/scripts/retrieve_entities.py"
-PUBLISH_SCRIPT = _PLUGIN_ROOT / "skills/publish/scripts/publish.py"
-SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
-UNSUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/unsubscribe/scripts/unsubscribe.py"
-SYNC_SCRIPT = _PLUGIN_ROOT / "skills/sync/scripts/sync.py"
+SAVE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/learn/scripts/save_entities.py"
+RETRIEVE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/recall/scripts/retrieve_entities.py"
+PUBLISH_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/publish/scripts/publish.py"
+SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"
+UNSUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/unsubscribe/scripts/unsubscribe.py"
+SYNC_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/sync/scripts/sync.py"
 HOOK_INPUT = json.dumps({"prompt": "How do I write clean code?"})
 
 

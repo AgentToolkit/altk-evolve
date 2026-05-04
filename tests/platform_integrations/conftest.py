@@ -254,7 +254,7 @@ class FileAssertions:
         """Assert every evolve-lite command in the source tree is installed."""
         repo_root = Path(__file__).parent.parent.parent
         commands_src = repo_root / "platform-integrations" / "bob" / "evolve-lite" / "commands"
-        for cmd_file in sorted(commands_src.glob("evolve-lite:*.md")):
+        for cmd_file in sorted(commands_src.glob("evolve-lite-*.md")):
             FileAssertions.assert_file_exists(bob_dir / "commands" / cmd_file.name)
 
     @staticmethod
@@ -491,7 +491,7 @@ class CodexFixtures:
                                             "sh -lc '"
                                             'd="$PWD"; '
                                             "while :; do "
-                                            'candidate="$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"; '
+                                            'candidate="$d/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"; '
                                             'if [ -f "$candidate" ]; then exec python3 "$candidate"; fi; '
                                             '[ "$d" = "/" ] && break; '
                                             'd="$(dirname "$d")"; '
@@ -536,7 +536,7 @@ class CodexFixtures:
                                             "sh -lc '"
                                             'd="$PWD"; '
                                             "while :; do "
-                                            'candidate="$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"; '
+                                            'candidate="$d/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"; '
                                             'if [ -f "$candidate" ]; then exec python3 "$candidate"; fi; '
                                             '[ "$d" = "/" ] && break; '
                                             'd="$(dirname "$d")"; '

@@ -8,8 +8,8 @@ import pytest
 
 
 EVOLVE_PLUGIN = "evolve-lite"
-EVOLVE_HOOK_SNIPPET = "plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"
-EVOLVE_SYNC_SNIPPET = "plugins/evolve-lite/skills/sync/scripts/sync.py"
+EVOLVE_HOOK_SNIPPET = "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
+EVOLVE_SYNC_SNIPPET = "plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py"
 
 
 def _marketplace_has_evolve_plugin(path):
@@ -59,18 +59,18 @@ class TestCodexInstall:
         file_assertions.assert_dir_exists(plugin_dir)
         file_assertions.assert_file_exists(plugin_dir / ".codex-plugin" / "plugin.json")
         file_assertions.assert_file_exists(plugin_dir / "README.md")
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "learn")
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "recall")
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "publish")
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "subscribe")
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "unsubscribe")
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "sync")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "learn" / "scripts" / "save_entities.py")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "recall" / "scripts" / "retrieve_entities.py")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "publish" / "scripts" / "publish.py")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "subscribe" / "scripts" / "subscribe.py")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "unsubscribe" / "scripts" / "unsubscribe.py")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "sync" / "scripts" / "sync.py")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "learn")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "recall")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "publish")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "subscribe")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "unsubscribe")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "sync")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "learn" / "scripts" / "save_entities.py")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "recall" / "scripts" / "retrieve_entities.py")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "publish" / "scripts" / "publish.py")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "subscribe" / "scripts" / "subscribe.py")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "unsubscribe" / "scripts" / "unsubscribe.py")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "sync" / "scripts" / "sync.py")
         file_assertions.assert_file_exists(plugin_dir / "lib" / "entity_io.py")
 
         marketplace_path = temp_project_dir / ".agents" / "plugins" / "marketplace.json"
@@ -94,7 +94,7 @@ class TestCodexInstall:
             "sh -lc '"
             'd="$PWD"; '
             "while :; do "
-            'candidate="$d/plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py"; '
+            'candidate="$d/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"; '
             'if [ -f "$candidate" ]; then EVOLVE_DIR="$d/.evolve" exec python3 "$candidate"; fi; '
             '[ "$d" = "/" ] && break; '
             'd="$(dirname "$d")"; '
@@ -113,7 +113,7 @@ class TestCodexInstall:
             "sh -lc '"
             'd="$PWD"; '
             "while :; do "
-            'candidate="$d/plugins/evolve-lite/skills/sync/scripts/sync.py"; '
+            'candidate="$d/plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py"; '
             'if [ -f "$candidate" ]; then EVOLVE_DIR="$d/.evolve" exec python3 "$candidate" --quiet --session-start; fi; '
             '[ "$d" = "/" ] && break; '
             'd="$(dirname "$d")"; '

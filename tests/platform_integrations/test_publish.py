@@ -1,4 +1,4 @@
-"""Tests for skills/publish/scripts/publish.py."""
+"""Tests for skills/evolve-lite/publish/scripts/publish.py."""
 
 import json
 import os
@@ -11,8 +11,8 @@ import pytest
 pytestmark = pytest.mark.platform_integrations
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
-CLAUDE_PUBLISH_SCRIPT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/publish/scripts/publish.py"
-CODEX_PUBLISH_SCRIPT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/publish/scripts/publish.py"
+CLAUDE_PUBLISH_SCRIPT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/publish/scripts/publish.py"
+CODEX_PUBLISH_SCRIPT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/evolve-lite/publish/scripts/publish.py"
 PUBLISH_SCRIPT = CLAUDE_PUBLISH_SCRIPT
 PUBLISH_SCRIPT_VARIANTS = [
     ("claude", CLAUDE_PUBLISH_SCRIPT),

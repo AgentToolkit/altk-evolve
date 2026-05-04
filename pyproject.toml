@@ -161,6 +161,7 @@ explicit_package_bases = true
 exclude = [
     "build/",
     "platform-integrations/",
+    "plugin-source/",
     "examples/",
 ]
 

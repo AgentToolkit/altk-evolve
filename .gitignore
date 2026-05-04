@@ -17,4 +17,5 @@ dist
 .secrets
 event.json
 site/
+example-guidelines
 .codex

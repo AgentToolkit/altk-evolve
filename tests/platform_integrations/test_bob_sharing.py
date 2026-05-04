@@ -10,36 +10,32 @@ from pathlib import Path
 import pytest
 
 
-def _load_claude_config_module():
-    path = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/config.py"
-    spec = importlib.util.spec_from_file_location("claude_evolve_lite_config", path)
+_BOB_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/bob/evolve-lite"
+
+
+def _load_bob_config_module():
+    path = _BOB_ROOT / "lib/config.py"
+    spec = importlib.util.spec_from_file_location("bob_evolve_lite_config", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-cfg_module = _load_claude_config_module()
+cfg_module = _load_bob_config_module()
 
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
-_BOB_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/bob/evolve-lite"
-_CLAUDE_LIB = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib"
-SUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:subscribe/scripts/subscribe.py"
-UNSUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:unsubscribe/scripts/unsubscribe.py"
-SYNC_SCRIPT = _BOB_ROOT / "skills/evolve-lite:sync/scripts/sync.py"
-PUBLISH_SCRIPT = _BOB_ROOT / "skills/evolve-lite:publish/scripts/publish.py"
-SAVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:learn/scripts/save_entities.py"
-RETRIEVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite:recall/scripts/retrieve_entities.py"
+SUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-subscribe/scripts/subscribe.py"
+UNSUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-unsubscribe/scripts/unsubscribe.py"
+SYNC_SCRIPT = _BOB_ROOT / "skills/evolve-lite-sync/scripts/sync.py"
+PUBLISH_SCRIPT = _BOB_ROOT / "skills/evolve-lite-publish/scripts/publish.py"
+SAVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-learn/scripts/save_entities.py"
+RETRIEVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-recall/scripts/retrieve_entities.py"
 
 
 def run_script(script, project_dir, args=None, evolve_dir=None, stdin_data=None, expect_success=True):
-    """Run a Bob script with proper environment setup.
-
-    Injects Claude's lib directory into PYTHONPATH so Bob's scripts can import
-    shared modules (config, audit, entity_io) without requiring a symlink in the repo.
-    """
+    """Run a Bob script with the test project as cwd."""
     env = {**os.environ}
-    env["PYTHONPATH"] = str(_CLAUDE_LIB) + os.pathsep + env.get("PYTHONPATH", "")
     if evolve_dir:
         env["EVOLVE_DIR"] = str(evolve_dir)
     return subprocess.run(
@@ -684,7 +680,7 @@ class TestBobRetrieveEntities:
 
         result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert "Private tip" in result.stdout
-        assert "## Entities for this task" in result.stdout
+        assert "## Evolve entities for this task" in result.stdout
 
     def test_returns_published_entities_from_write_clone(self, temp_project_dir):
         """Published guidelines live in entities/subscribed/{repo}/guideline/."""

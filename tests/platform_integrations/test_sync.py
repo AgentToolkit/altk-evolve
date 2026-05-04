@@ -1,4 +1,4 @@
-"""Tests for skills/sync/scripts/sync.py."""
+"""Tests for skills/evolve-lite/sync/scripts/sync.py."""
 
 import json
 import os
@@ -13,12 +13,12 @@ pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 _REPO_ROOT = Path(__file__).parent.parent.parent
 CLAUDE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
 CODEX_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite"
-SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/subscribe/scripts/subscribe.py"
-SYNC_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/sync/scripts/sync.py"
-RETRIEVE_SCRIPT = CODEX_PLUGIN_ROOT / "skills/recall/scripts/retrieve_entities.py"
+SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"
+SYNC_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/sync/scripts/sync.py"
+RETRIEVE_SCRIPT = CODEX_PLUGIN_ROOT / "skills/evolve-lite/recall/scripts/retrieve_entities.py"
 SYNC_SCRIPT_VARIANTS = [
-    ("claude", CLAUDE_PLUGIN_ROOT / "skills/sync/scripts/sync.py"),
-    ("codex", CODEX_PLUGIN_ROOT / "skills/sync/scripts/sync.py"),
+    ("claude", CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/sync/scripts/sync.py"),
+    ("codex", CODEX_PLUGIN_ROOT / "skills/evolve-lite/sync/scripts/sync.py"),
 ]
 
 
