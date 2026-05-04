@@ -190,7 +190,7 @@ class TestSync:
         cfg_path.write_text("repos:\n  - name: ../evil\n    scope: read\n    remote: git@github.com:x/y.git\n    branch: main\n")
         result = run_script(SYNC_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
         assert result.returncode == 0
-        assert "invalid subscription name" in result.stdout
+        assert "invalid subscription name" in result.stderr
         assert not (evolve_dir / "entities" / "evil").exists()
 
     def test_manual_run_ignores_on_session_start_false(self, subscribed_project):

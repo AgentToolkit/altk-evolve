@@ -1,11 +1,12 @@
 import datetime
 import json
 import logging
+import os
 import uuid
 from pathlib import Path
 from threading import Lock
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.filesystem import FilesystemSettings, filesystem_settings
@@ -47,16 +48,45 @@ class FilesystemEntityBackend(BaseEntityBackend):
         return self.data_dir / f"{namespace_id}.json"
 
     def _load_namespace_data(self, namespace_id: str) -> FilesystemNamespace:
-        """Load namespace data from JSON file."""
+        """Load namespace data from JSON file.
+
+        Empty or corrupt files are treated as missing AND unlinked, so that a subsequent
+        create_namespace() call does not trip on the stale file and raise
+        NamespaceAlreadyExistsException, which would leave ensure_namespace() stuck.
+        """
         file_path = self._namespace_file(namespace_id)
         if not file_path.exists():
             raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
-        return FilesystemNamespace.model_validate(json.loads(file_path.read_text()))
+        raw = file_path.read_text()
+        if not raw.strip():
+            logger.warning("Namespace file %s is empty (likely an interrupted write); removing and treating as missing.", file_path)
+            file_path.unlink(missing_ok=True)
+            raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
+        try:
+            return FilesystemNamespace.model_validate(json.loads(raw))
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.warning("Namespace file %s is corrupt (%s); removing and treating as missing.", file_path, e)
+            file_path.unlink(missing_ok=True)
+            raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found") from e
 
     def _save_namespace_data(self, namespace_id: str, data: FilesystemNamespace):
-        """Save namespace data to JSON file."""
+        """Save namespace data to JSON file atomically.
+
+        Why: Path.write_text truncates the file immediately and leaves it 0 bytes if the
+        process is interrupted mid-write (SIGTERM, kill, crash). Write to a uniquely-named
+        sibling tmp file and os.replace() so readers always see either the old or new
+        complete file. The uuid suffix keeps concurrent writers from the same data_dir
+        (e.g. CLI + MCP server) from clobbering each other's tmp file, which would cause
+        FileNotFoundError at os.replace time.
+        """
         file_path = self._namespace_file(namespace_id)
-        file_path.write_text(data.model_dump_json(indent=2))
+        tmp_path = file_path.with_suffix(f"{file_path.suffix}.tmp.{uuid.uuid4().hex}")
+        try:
+            tmp_path.write_text(data.model_dump_json(indent=2))
+            os.replace(tmp_path, file_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     def ready(self) -> bool:
         """Check if the backend is healthy."""
