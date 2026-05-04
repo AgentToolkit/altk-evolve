@@ -284,6 +284,35 @@ class TestCheckDrift:
         assert rc == 1
         assert "missing managed file:" in captured.err
 
+    def test_orphan_file_under_plugin_root_is_detected(self, rendered_repo, build_module, capsys):
+        """A file with no source path under plugin_root is flagged as an orphan.
+
+        Reproduces visahak's PR #235 finding: dropping `orphan.txt` into
+        `platform-integrations/claude/plugins/evolve-lite/` and re-running
+        `check_drift()` previously returned 0 because the check only walked
+        the *expected* file set and never enumerated the rendered tree
+        for unexpected extras.
+        """
+        orphan = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/orphan.txt"
+        orphan.write_text("not generated from plugin-source/\n")
+
+        rc = build_module.check_drift()
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "orphan:" in captured.err
+        assert "orphan.txt" in captured.err
+
+    def test_orphan_in_nested_subdir_is_detected(self, rendered_repo, build_module, capsys):
+        """The walk descends into subdirectories — orphans aren't only checked at the root."""
+        orphan = rendered_repo / "platform-integrations/codex/plugins/evolve-lite/skills/evolve-lite/learn/leftover.md"
+        orphan.write_text("stale skill artifact\n")
+
+        rc = build_module.check_drift()
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "orphan:" in captured.err
+        assert "leftover.md" in captured.err
+
 
 @pytest.mark.platform_integrations
 @pytest.mark.unit

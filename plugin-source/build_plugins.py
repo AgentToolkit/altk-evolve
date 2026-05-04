@@ -39,6 +39,7 @@ import argparse
 import filecmp
 import re
 import shutil
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -584,21 +585,58 @@ def render_to(out_root: Path) -> list[Path]:
     return written
 
 
+def _files_under_for_drift(root: Path) -> list[Path]:
+    """Files under `root` that participate in orphan checking, sorted.
+
+    Prefers `git ls-files --cached --others --exclude-standard` so build
+    artifacts that match `.gitignore` (`__pycache__/*.pyc`, `.DS_Store`,
+    editor swap files, …) don't surface as false-positive orphans —
+    they're not managed by the render pipeline AND not tracked by git,
+    so they're correctly invisible to drift checking.
+
+    Falls back to `Path.rglob` when the working tree isn't a git repo
+    (e.g. test fixtures running against a tmp_path), which surfaces
+    every file on disk so a deliberately seeded test orphan still trips
+    the check.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", str(root)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        result = None
+    if result is not None and result.returncode == 0:
+        return sorted(REPO_ROOT / line for line in result.stdout.splitlines() if line)
+    return sorted(p for p in root.rglob("*") if p.is_file())
+
+
 def check_drift() -> int:
     """Compare committed managed files against fresh-rendered content.
 
-    Returns 0 if every managed file matches its source, 1 otherwise.
+    Returns 0 only if every managed file matches its source AND no extra
+    (orphan) files exist under any plugin root. Returns 1 otherwise.
+
+    Three classes of failure:
+      * missing — manifest expects a file that isn't on disk
+      * drift   — committed bytes don't match a fresh render
+      * orphan  — file exists on disk but no source path generates it
     """
     manifest = load_manifest()
     env = _jinja_env()
     drifts: list[tuple[Path, Path]] = []
     missing: list[Path] = []
+    expected: set[Path] = set()
     for entry in manifest.files:
         for platform in entry.platforms:
             cfg = manifest.platforms[platform]
             if cfg.excludes(entry.target_rel):
                 continue
             committed = cfg.plugin_root / cfg.rewrite_target(entry.target_rel)
+            expected.add(committed)
             if not committed.is_file():
                 missing.append(committed)
                 continue
@@ -617,6 +655,7 @@ def check_drift() -> int:
         if cfg.metadata_target is None:
             continue
         committed = cfg.plugin_root / cfg.metadata_target
+        expected.add(committed)
         if not committed.is_file():
             missing.append(committed)
             continue
@@ -626,18 +665,36 @@ def check_drift() -> int:
 
     for skill_src, target_rel, content in _bob_command_targets():
         committed = REPO_ROOT / target_rel
+        expected.add(committed)
         if not committed.is_file():
             missing.append(committed)
             continue
         if committed.read_bytes() != content:
             drifts.append((skill_src, committed))
 
-    if missing or drifts:
+    # Orphan check: walk each plugin_root and flag any file that wasn't
+    # part of the expected render. Without this, a stale artifact left
+    # behind from a previous layout (or hand-edited bytes the render no
+    # longer emits) sails through `check` as if the tree were clean.
+    orphans: list[Path] = []
+    for cfg in manifest.platforms.values():
+        if not cfg.plugin_root.is_dir():
+            continue
+        for path in _files_under_for_drift(cfg.plugin_root):
+            if path not in expected:
+                orphans.append(path)
+
+    if missing or drifts or orphans:
         for path in missing:
             print(f"missing managed file: {path.relative_to(REPO_ROOT)}", file=sys.stderr)
         for src, dst in drifts:
             print(
                 f"drift: {dst.relative_to(REPO_ROOT)} differs from {src.relative_to(REPO_ROOT)}",
+                file=sys.stderr,
+            )
+        for orphan in orphans:
+            print(
+                f"orphan: {orphan.relative_to(REPO_ROOT)} (not generated from plugin-source/)",
                 file=sys.stderr,
             )
         print(
