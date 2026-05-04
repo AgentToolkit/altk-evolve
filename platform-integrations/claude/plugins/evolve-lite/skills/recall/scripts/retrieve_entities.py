@@ -8,8 +8,7 @@ from pathlib import Path
 
 # Add lib to path so we can import entity_io
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from entity_io import find_recall_entity_dirs, get_evolve_dir, markdown_to_entity, log as _log
-import audit
+from entity_io import find_recall_entity_dirs, markdown_to_entity, log as _log
 
 
 def log(message):
@@ -83,13 +82,6 @@ def load_entities_with_source(entities_dir):
             entity = markdown_to_entity(md)
             if not entity.get("content"):
                 continue
-            # Record the on-disk path relative to entities_dir (without the
-            # .md suffix) as a qualified identifier. This distinguishes
-            # same-named entities in different trees — e.g.
-            # "guideline/foo" (local) vs "subscribed/alice/guideline/foo"
-            # (from a subscribed repo) — so downstream auditing doesn't
-            # collapse them into one.
-            entity["_id"] = str(md.relative_to(entities_dir).with_suffix(""))
             # Detect subscribed entities by path: .../entities/subscribed/{name}/...
             parts = md.parts
             try:
@@ -136,24 +128,6 @@ def main():
     output = format_entities(entities)
     print(output)
     log(f"Output {len(output)} chars to stdout")
-
-    # Audit: record which entities were served to which session. Must not
-    # fail the hook if logging errors — recall is the user-visible path.
-    try:
-        transcript_path = input_data.get("transcript_path", "")
-        session_id = Path(transcript_path).stem if transcript_path else None
-        entity_ids = sorted({e["_id"] for e in entities if e.get("_id")})
-        if session_id and entity_ids:
-            project_root = get_evolve_dir().resolve().parent
-            audit.append(
-                project_root=str(project_root),
-                event="recall",
-                session_id=session_id,
-                entities=entity_ids,
-            )
-            log(f"Audit: recall session_id={session_id} entities={len(entity_ids)}")
-    except Exception as exc:
-        log(f"Audit append failed (non-fatal): {exc}")
 
 
 if __name__ == "__main__":
