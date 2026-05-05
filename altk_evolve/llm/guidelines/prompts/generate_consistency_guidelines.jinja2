@@ -1,0 +1,52 @@
+You are analyzing an AI agent's execution trajectory on a given task to generate actionable guidelines that reduce uncertainty and improve consistency.
+
+# Uncertainty Scores
+The trajectory below includes uncertainty scores for uncertain steps. Uncertainty scores range from 0 (no uncertainty and high consistency across multiple runs) to 1 (highest uncertainty and no consistency across multiple runs). Steps with HIGH uncertainty scores indicate areas where the agent behavior was UNCERTAIN and INCONSISTENT across multiple runs.
+
+# Agent's Step-by-Step Reasoning (Steps marked with ⚠️ have high uncertainty scores)
+Task: {{task_instruction}}
+{{trajectory_summary}}
+
+# Trajectory success Status 
+Liklihood of success: {{success_probability}} 
+
+# Your Task
+Generate actionable, relevant guidelines from this trajectory that will be given to the agent to improve performance on similar tasks in the future. Focus on steps that had high uncertainty scores. These steps represent areas where the agent's behavior was inconsistent or uncertain. Guidelines should help to improve the agent's consistency and confidence in similar situations in the future. 
+
+**Important Instructions:**
+1. Only generate guidelines if they are truly relevant and actionable
+2. Guidelines should be specific to patterns observed in this trajectory
+3. Consider both positive patterns (what worked) and negative patterns (what to avoid)
+4. Each guideline should have:
+   - A clear, concise description (content)
+   - The rationale explaining why following this guideline improves consistency
+   - The category: "strategy", "recovery", or "optimization"
+   - A trigger condition (when to apply the guideline)
+
+5. If the liklihood of trajectory success is high, despite including steps with high uncertainty, focus on guidelines that strengthen successful strategies used in the trajectory to help overcome uncertainty in the future 
+6. Focus on what might have gone wrong and how the uncertain steps may have contributed and generate guidelines to overcome uncertainty and the potential for failure in the future
+7. Do not generate generic or superfluous guidelines - be specific to task execution in uncertain steps
+8. Look for patterns in how the agent:
+   - Discovered and used tools
+   - Handled API authentication and credentials
+   - Iterated through results (pagination)
+   - Structured its approach to the problem
+   - Handled errors or unexpected responses
+
+{% if not constrained_decoding_supported %}
+**Output Format (JSON):**
+```json
+{
+    "tips": [
+        {
+            "content": "Clear, actionable guidelines for consistency",
+            "rationale": "Why this guideline improves consistency",
+            "category": "strategy|recovery|optimization",
+            "trigger": "When to apply this guideline"
+        }
+    ]
+}
+```
+
+Generate guidelines now. Return ONLY the JSON, no other text.
+{% endif %}

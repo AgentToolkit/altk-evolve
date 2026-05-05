@@ -43,6 +43,11 @@ examples = [
     "openai",
 ]
 
+consistency = [
+    "agent-consistency",
+    "pyyaml",
+]
+
 [project.scripts]
 evolve = "altk_evolve.cli.cli:app"
 evolve-mcp = "altk_evolve.frontend.mcp.__main__:main"
@@ -78,6 +83,7 @@ docs = [
 
 [tool.uv.sources]
 detect-secrets = { git = "https://github.com/ibm/detect-secrets", branch="master"}
+agent-consistency = { path = "../agent-consistency", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["."]
