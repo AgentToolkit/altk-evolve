@@ -12,8 +12,7 @@ pytestmark = pytest.mark.platform_integrations
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
 CLAUDE_RETRIEVE_SCRIPT = (
-    _REPO_ROOT
-    / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
+    _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
 )
 HOOK_INPUT = json.dumps({"prompt": "How do I write clean code?"})
 
