@@ -148,7 +148,7 @@ class TestSync:
         p = subscribed_project
         lr = p["local_repo"]
         real_file = lr["work"] / "guideline" / "real.md"
-        real_file.write_text("---\ntype: guideline\n---\n\nReal content.\n")
+        real_file.write_text("---\ntype: guideline\ntrigger: when reviewing PRs\n---\n\nReal content.\n")
         symlink_file = lr["work"] / "guideline" / "link.md"
         symlink_file.symlink_to(real_file)
         git_env = lr["env"]
@@ -180,7 +180,8 @@ class TestSync:
         )
 
         assert result.returncode == 0
-        assert "Real content." in result.stdout
+        assert "when reviewing PRs" in result.stdout
+        assert "Real content." not in result.stdout
         assert "link.md" not in result.stdout
 
     def test_skips_invalid_subscription_name(self, temp_project_dir):
