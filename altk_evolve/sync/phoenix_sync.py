@@ -54,10 +54,12 @@ class PhoenixSync:
         phoenix_url: str | None = None,
         namespace_id: str | None = None,
         project: str | None = None,
+        use_consistency_guidelines: bool = False,
     ):
         self.phoenix_url = phoenix_url or phoenix_settings.url
         self.project = project or phoenix_settings.project
         self.namespace_id = namespace_id or evolve_config.namespace_id
+        self.use_consistency_guidelines = use_consistency_guidelines
         self.client = EvolveClient()
 
     def _ensure_namespace(self):
@@ -480,7 +482,12 @@ class PhoenixSync:
             )
 
         # Generate guidelines from the trajectory (returns one result per subtask)
-        results = generate_guidelines(trajectory["messages"])
+        if self.use_consistency_guidelines:
+            from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+            results = generate_consistency_guidelines(trajectory)
+        else:
+            results = generate_guidelines(trajectory["messages"])
 
         guideline_entities = [
             Entity(

@@ -419,6 +419,7 @@ def sync_phoenix(
     project: Annotated[Optional[str], typer.Option("--project", "-p", help="Phoenix project name")] = None,
     limit: Annotated[int, typer.Option(help="Maximum number of spans to fetch")] = 100,
     include_errors: Annotated[bool, typer.Option("--include-errors", help="Include failed/error spans")] = False,
+    consistency: Annotated[bool, typer.Option("--consistency", help="Use consistency-based guideline generation (requires agent-consistency extra)")] = False,
 ):
     """Sync trajectories from Arize Phoenix and generate guidelines."""
     from altk_evolve.sync.phoenix_sync import PhoenixSync
@@ -427,6 +428,7 @@ def sync_phoenix(
         phoenix_url=phoenix_url,
         namespace_id=namespace,
         project=project,
+        use_consistency_guidelines=consistency,
     )
 
     console.print("[bold]Syncing from Phoenix[/bold]")
