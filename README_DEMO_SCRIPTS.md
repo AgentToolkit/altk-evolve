@@ -1,10 +1,10 @@
-# Kaizen Demo Scripts
+# Evolve Demo Scripts
 
-This directory contains demo scripts that showcase Kaizen's automatic trajectory extraction and guideline generation capabilities.
+This directory contains demo scripts that showcase Evolve's automatic trajectory extraction and guideline generation capabilities.
 
 ## Overview
 
-The demo scripts demonstrate the complete Kaizen workflow:
+The demo scripts demonstrate the complete Evolve workflow:
 1. Run an agent with automatic tracing via Phoenix
 2. Extract the agent trajectory from Phoenix traces
 3. Generate actionable guidelines/tips from the trajectory using LLM analysis
@@ -17,7 +17,7 @@ The demo scripts demonstrate the complete Kaizen workflow:
 Ensure you have the following installed:
 - Python 3.12+
 - `uv` package manager
-- Kaizen virtual environment activated
+- Evolve virtual environment activated
 
 ### 2. Phoenix Server
 
@@ -25,7 +25,7 @@ Phoenix must be running for trace collection:
 
 ```bash
 # Start Phoenix server (if not already running)
-cd /Users/duester/Work/kaizen
+cd <your-repo-root>
 source .venv/bin/activate
 phoenix serve > phoenix.log 2>&1 &
 ```
@@ -41,16 +41,16 @@ Add the following to your `.env` file:
 OPENAI_API_KEY=your-api-key-here
 OPENAI_BASE_URL="https://ete-litellm.bx.cloud9.ibm.com"
 
-# Kaizen Model Configuration (REQUIRED for tip generation)
-KAIZEN_MODEL_NAME="Azure/gpt-4o"
-KAIZEN_CUSTOM_LLM_PROVIDER="openai"
+# Evolve Model Configuration (REQUIRED for tip generation)
+EVOLVE_MODEL_NAME="Azure/gpt-4o"
+EVOLVE_CUSTOM_LLM_PROVIDER="openai"
 
-# Optional: Kaizen Configuration
-KAIZEN_NAMESPACE_ID="kaizen"  # Default namespace for storing guidelines
-KAIZEN_BACKEND="milvus"       # Backend storage (milvus or filesystem)
+# Optional: Evolve Configuration
+EVOLVE_NAMESPACE_ID="evolve"  # Default namespace for storing guidelines
+EVOLVE_BACKEND="milvus"       # Backend storage (milvus or filesystem)
 ```
 
-**Important**: The `KAIZEN_MODEL_NAME` and `KAIZEN_CUSTOM_LLM_PROVIDER` variables are **required** for the script to work with your LiteLLM proxy. Without these, Kaizen will try to use the default `gpt-4o` model which won't work with your proxy.
+**Important**: The `EVOLVE_MODEL_NAME` and `EVOLVE_CUSTOM_LLM_PROVIDER` variables are **required** for the script to work with your LiteLLM proxy. Without these, Evolve will try to use the default `gpt-4o` model which won't work with your proxy.
 
 ## Available Scripts
 
@@ -59,13 +59,13 @@ KAIZEN_BACKEND="milvus"       # Backend storage (milvus or filesystem)
 Complete end-to-end demo that:
 - Runs an OpenAI Agents SDK demo (multi-step math problem)
 - Extracts the trajectory from Phoenix
-- Generates guidelines using Kaizen's LLM analysis
+- Generates guidelines using Evolve's LLM analysis
 - Exports guidelines to JSON
 
 **Usage:**
 
 ```bash
-cd /Users/duester/Work/kaizen
+cd <your-repo-root>
 ./run_openai_agents_demo_with_tips.sh
 ```
 
@@ -73,12 +73,12 @@ cd /Users/duester/Work/kaizen
 
 Each run creates timestamped files (format: `HHMMSS`):
 - `trajectory_openai_agents_HHMMSS.json` - Complete agent trajectory with messages, tool calls, and responses
-- `generated_tips_openai_agents_HHMMSS.json` - Generated guidelines with metadata
+- `generated_guidelines_openai_agents_HHMMSS.json` - Generated guidelines with metadata
 
 **Example:**
 ```
 trajectory_openai_agents_105121.json
-generated_tips_openai_agents_105121.json
+generated_guidelines_openai_agents_105121.json
 ```
 
 ### `extract_trajectories.py`
@@ -89,20 +89,20 @@ Standalone script to extract trajectories from Phoenix traces.
 
 ```bash
 # Extract latest trajectory
-python3 extract_trajectories.py --limit 1 -o output.json --pretty --project kaizen-agent
+python3 scripts/extract_trajectories.py --limit 1 -o output.json --pretty --project evolve-agent
 
 # Extract multiple trajectories
-python3 extract_trajectories.py --limit 10 -o trajectories.json --project kaizen-agent
+python3 scripts/extract_trajectories.py --limit 10 -o trajectories.json --project evolve-agent
 
 # Include error spans
-python3 extract_trajectories.py --limit 5 --include-errors -o all_traces.json
+python3 scripts/extract_trajectories.py --limit 5 --include-errors -o all_traces.json
 ```
 
 **Options:**
 - `--limit N` - Maximum number of trajectories to extract
 - `-o FILE` - Output file path
 - `--pretty` - Pretty-print JSON output
-- `--project NAME` - Phoenix project name (default: `kaizen-agent`)
+- `--project NAME` - Phoenix project name (default: `evolve-agent`)
 - `--include-errors` - Include failed/error spans
 
 ## Output Format
@@ -201,15 +201,15 @@ AuthenticationError: team not allowed to access model. This team can only access
 
 **Solution:** Ensure your `.env` file has:
 ```bash
-KAIZEN_MODEL_NAME="Azure/gpt-4o"
-KAIZEN_CUSTOM_LLM_PROVIDER="openai"
+EVOLVE_MODEL_NAME="Azure/gpt-4o"
+EVOLVE_CUSTOM_LLM_PROVIDER="openai"
 ```
 
 ### Issue: No trajectories extracted
 
 **Possible causes:**
 1. Phoenix server not running
-2. Wrong project name (check with `--project kaizen-agent`)
+2. Wrong project name (check with `--project evolve-agent`)
 3. No recent agent runs
 
 **Solution:**
@@ -229,7 +229,7 @@ open http://localhost:6006
 
 **Solution:**
 - Run a more complex agent task
-- Check `KAIZEN_MODEL_NAME` is set correctly
+- Check `EVOLVE_MODEL_NAME` is set correctly
 - Review Phoenix sync logs for errors
 
 ## Managing Guidelines
@@ -237,25 +237,25 @@ open http://localhost:6006
 ### List all guidelines
 
 ```bash
-uv run kaizen entities list kaizen --type guideline
+uv run evolve entities list evolve --type guideline
 ```
 
 ### Search for specific guidelines
 
 ```bash
-uv run kaizen entities search kaizen "error handling"
+uv run evolve entities search evolve "error handling"
 ```
 
 ### View guideline details
 
 ```bash
-uv run kaizen entities show kaizen <entity_id>
+uv run evolve entities show evolve <entity_id>
 ```
 
 ### Delete a guideline
 
 ```bash
-uv run kaizen entities delete kaizen <entity_id>
+uv run evolve entities delete evolve <entity_id>
 ```
 
 ## Advanced Usage
@@ -265,10 +265,10 @@ uv run kaizen entities delete kaizen <entity_id>
 To manually sync trajectories from Phoenix and generate guidelines:
 
 ```bash
-uv run python -m kaizen.cli.cli sync phoenix \
-  --project kaizen-agent \
+uv run evolve sync phoenix \
+  --project evolve-agent \
   --limit 10 \
-  --namespace kaizen
+  --namespace evolve
 ```
 
 ### Custom Namespace
@@ -276,7 +276,7 @@ uv run python -m kaizen.cli.cli sync phoenix \
 To use a different namespace for guidelines:
 
 ```bash
-export KAIZEN_NAMESPACE_ID="my-custom-namespace"
+export EVOLVE_NAMESPACE_ID="my-custom-namespace"
 ./run_openai_agents_demo_with_tips.sh
 ```
 
@@ -285,8 +285,8 @@ export KAIZEN_NAMESPACE_ID="my-custom-namespace"
 To use filesystem storage instead of Milvus:
 
 ```bash
-export KAIZEN_BACKEND="filesystem"
-export KAIZEN_DATA_DIR="./kaizen_data"
+export EVOLVE_BACKEND="filesystem"
+export EVOLVE_DATA_DIR="./evolve_data"
 ./run_openai_agents_demo_with_tips.sh
 ```
 
@@ -308,7 +308,7 @@ All output files use timestamped filenames to prevent overwrites:
 
 ## Related Documentation
 
-- [Kaizen Main README](README.md)
+- [Evolve Main README](README.md)
 - [Configuration Guide](CONFIGURATION.md)
 - [Phoenix Sync Documentation](README_phoenix_sync.md)
 - [CLI Documentation](CLI.md)
