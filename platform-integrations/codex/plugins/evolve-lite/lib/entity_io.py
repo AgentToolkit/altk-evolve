@@ -78,12 +78,13 @@ def find_entities_dir():
 def find_recall_entity_dirs():
     """Locate all directories that should be searched during recall.
 
-    Returns the existing recall roots. Only ``entities/`` is canonical —
-    private entities live in ``entities/guideline/`` and shared entities
-    live in ``entities/subscribed/{repo}/guideline/``.
+    Returns the existing recall roots. Two trees contribute to recall:
+    ``entities/`` (private entities in ``entities/guideline/`` and
+    subscribed entities in ``entities/subscribed/{repo}/guideline/``) and
+    ``public/`` (entities published by the local project).
     """
     evolve_dir = get_evolve_dir()
-    candidates = [evolve_dir / "entities"]
+    candidates = [evolve_dir / "entities", evolve_dir / "public"]
     return [path for path in candidates if path.is_dir()]
 
 
@@ -222,6 +223,97 @@ def markdown_to_entity(path):
         entity["content"] = content
 
     return entity
+
+
+def _parse_frontmatter_lines(lines):
+    """Parse simple YAML-style frontmatter lines into a dict."""
+    entity = {}
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if key and value:
+            entity[key] = value
+    return entity
+
+
+def _parse_frontmatter_only(path):
+    """Parse only the frontmatter section from a markdown entity file."""
+    path = Path(path)
+    try:
+        with path.open(encoding="utf-8") as handle:
+            if handle.readline().strip() != "---":
+                return {}
+
+            frontmatter_lines = []
+            found_closing = False
+            for line in handle:
+                if line.strip() == "---":
+                    found_closing = True
+                    break
+                frontmatter_lines.append(line)
+    except (OSError, UnicodeDecodeError):
+        return {}
+
+    if not found_closing:
+        return {}
+
+    return _parse_frontmatter_lines(frontmatter_lines)
+
+
+def _manifest_path(path):
+    """Return a manifest path relative to the project root (parent of the evolve dir).
+
+    This keeps manifest paths stable regardless of the caller's working directory,
+    so hooks invoked from a subdirectory still emit ``.evolve/entities/...`` paths.
+    """
+    path = Path(path)
+    try:
+        project_root = get_evolve_dir().resolve().parent
+        return str(path.resolve().relative_to(project_root))
+    except ValueError:
+        return str(path)
+
+
+def dedupe_manifest_entries(entries):
+    """Return deterministically ordered manifest entries with exact dedupe."""
+    normalized = []
+    seen = set()
+    for entry in sorted(entries, key=lambda item: (item["path"], item["type"], item["trigger"])):
+        key = (entry["path"], entry["type"], entry["trigger"])
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(entry)
+    return normalized
+
+
+def load_manifest(root_dir):
+    """Load a frontmatter-only manifest from a recall root."""
+    root_dir = Path(root_dir)
+    entries = []
+    for md in sorted(root_dir.glob("**/*.md")):
+        if md.is_symlink() or ".git" in md.parts:
+            continue
+
+        entity = _parse_frontmatter_only(md)
+        entity_type = entity.get("type")
+        trigger = entity.get("trigger")
+        if not entity_type or not trigger:
+            continue
+
+        entries.append(
+            {
+                "path": _manifest_path(md),
+                "type": entity_type,
+                "trigger": trigger,
+            }
+        )
+
+    return dedupe_manifest_entries(entries)
 
 
 # ---------------------------------------------------------------------------

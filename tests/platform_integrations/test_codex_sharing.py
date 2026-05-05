@@ -83,10 +83,12 @@ class TestCodexSaveAndRetrieve:
         evolve_dir = temp_project_dir / ".evolve"
         own_dir = evolve_dir / "entities" / "guideline"
         own_dir.mkdir(parents=True)
-        (own_dir / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
+        (own_dir / "guideline.md").write_text("---\ntype: guideline\ntrigger: when refactoring\n---\n\nKeep functions small.\n")
         sub_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
         sub_dir.mkdir(parents=True)
-        (sub_dir / "alice-guideline.md").write_text("---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n")
+        (sub_dir / "alice-guideline.md").write_text(
+            "---\ntype: guideline\ntrigger: when adding coverage\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n"
+        )
 
         result = run_script(
             RETRIEVE_SCRIPT,
@@ -96,20 +98,26 @@ class TestCodexSaveAndRetrieve:
             expect_success=False,
         )
         assert result.returncode == 0
-        assert "Keep functions small." in result.stdout
-        assert "[from: alice]" in result.stdout
-        assert "Always write tests." in result.stdout
+        own_line = '{"path": ".evolve/entities/guideline/guideline.md", "type": "guideline", "trigger": "when refactoring"}'
+        assert own_line in result.stdout
+        subscribed_line = (
+            '{"path": ".evolve/entities/subscribed/alice/guideline/alice-guideline.md", '
+            '"type": "guideline", "trigger": "when adding coverage"}'
+        )
+        assert subscribed_line in result.stdout
+        assert "Keep functions small." not in result.stdout
+        assert "Always write tests." not in result.stdout
+        assert "[from: alice]" not in result.stdout
 
     def test_retrieve_includes_published_guidelines(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         own_dir = evolve_dir / "entities" / "guideline"
         own_dir.mkdir(parents=True)
-        (own_dir / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
-        # Published entities live inside the write-scope repo's local clone.
-        published_dir = evolve_dir / "entities" / "subscribed" / "my-memory" / "guideline"
-        published_dir.mkdir(parents=True)
-        (published_dir / "published-guideline.md").write_text(
-            "---\ntype: guideline\nvisibility: public\nsource: alice/evolve-guidelines\n---\n\nDocument edge cases.\n"
+        (own_dir / "guideline.md").write_text("---\ntype: guideline\ntrigger: when refactoring\n---\n\nKeep functions small.\n")
+        public_dir = evolve_dir / "public" / "guideline"
+        public_dir.mkdir(parents=True)
+        (public_dir / "published-guideline.md").write_text(
+            "---\ntype: guideline\ntrigger: when documenting edge cases\nvisibility: public\nsource: alice/evolve-guidelines\n---\n\nDocument edge cases.\n"
         )
 
         result = run_script(
@@ -120,8 +128,14 @@ class TestCodexSaveAndRetrieve:
             expect_success=False,
         )
         assert result.returncode == 0
-        assert "Keep functions small." in result.stdout
-        assert "Document edge cases." in result.stdout
+        own_line = '{"path": ".evolve/entities/guideline/guideline.md", "type": "guideline", "trigger": "when refactoring"}'
+        public_line = (
+            '{"path": ".evolve/public/guideline/published-guideline.md", "type": "guideline", "trigger": "when documenting edge cases"}'
+        )
+        assert own_line in result.stdout
+        assert public_line in result.stdout
+        assert "Keep functions small." not in result.stdout
+        assert "Document edge cases." not in result.stdout
 
 
 _WRITE_REPO_CONFIG = (
@@ -672,7 +686,12 @@ class TestCodexSharingScripts:
             expect_success=False,
         )
         assert result.returncode == 0
-        assert "Always write tests." in result.stdout
+        manifest_line = (
+            '{"path": ".evolve/entities/subscribed/alice/guideline/guideline-one.md", '
+            '"type": "guideline", "trigger": "when adding coverage"}'
+        )
+        assert manifest_line in result.stdout
+        assert "Always write tests." not in result.stdout
         assert "guideline-link" not in result.stdout
 
     def test_sync_removed_entity_disappears_after_sync(self, temp_project_dir, local_repo):
