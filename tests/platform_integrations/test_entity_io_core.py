@@ -158,3 +158,54 @@ class TestLoadAllEntities:
 
     def test_empty_directory_returns_empty_list(self, tmp_path):
         assert entity_io.load_all_entities(tmp_path) == []
+
+
+class TestManifestLoading:
+    def test_load_manifest_reads_frontmatter_only(self, temp_project_dir, monkeypatch):
+        monkeypatch.chdir(temp_project_dir)
+        path = temp_project_dir / ".evolve" / "entities" / "guideline" / "guideline.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "---\ntype: guideline\ntrigger: when writing tests\n---\n\nBody content that should not matter.\n\n## Rationale\n\nStill ignored.\n"
+        )
+
+        manifest = entity_io.load_manifest(temp_project_dir / ".evolve" / "entities")
+
+        assert manifest == [
+            {
+                "path": ".evolve/entities/guideline/guideline.md",
+                "type": "guideline",
+                "trigger": "when writing tests",
+            }
+        ]
+
+    def test_load_manifest_skips_symlinks_and_missing_trigger(self, temp_project_dir, monkeypatch):
+        monkeypatch.chdir(temp_project_dir)
+        root = temp_project_dir / ".evolve" / "entities" / "guideline"
+        root.mkdir(parents=True)
+        real_file = root / "real.md"
+        real_file.write_text("---\ntype: guideline\ntrigger: when testing\n---\n\nReal content.\n")
+        (root / "link.md").symlink_to(real_file)
+        (root / "missing-trigger.md").write_text("---\ntype: guideline\n---\n\nIgnored.\n")
+
+        manifest = entity_io.load_manifest(temp_project_dir / ".evolve" / "entities")
+
+        assert manifest == [
+            {
+                "path": ".evolve/entities/guideline/real.md",
+                "type": "guideline",
+                "trigger": "when testing",
+            }
+        ]
+
+    def test_dedupe_manifest_entries_is_deterministic(self):
+        entries = [
+            {"path": ".evolve/public/guideline/b.md", "type": "guideline", "trigger": "beta"},
+            {"path": ".evolve/entities/guideline/a.md", "type": "guideline", "trigger": "alpha"},
+            {"path": ".evolve/public/guideline/b.md", "type": "guideline", "trigger": "beta"},
+        ]
+
+        assert entity_io.dedupe_manifest_entries(entries) == [
+            {"path": ".evolve/entities/guideline/a.md", "type": "guideline", "trigger": "alpha"},
+            {"path": ".evolve/public/guideline/b.md", "type": "guideline", "trigger": "beta"},
+        ]

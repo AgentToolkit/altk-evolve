@@ -27,7 +27,7 @@ Before any non-trivial local work, you must complete the recall workflow below. 
 
 Do not proceed to other analysis or tool use until all steps below are complete.
 
-1. Inspect `${EVOLVE_DIR:-.evolve}/entities/` for guidance relevant to the current task.
+1. If a manifest has already been injected for this turn, use it to pick which entity files to open. Otherwise inspect `${EVOLVE_DIR:-.evolve}/entities/` and `${EVOLVE_DIR:-.evolve}/public/` for guidance relevant to the current task.
 2. Read each matching entity file that appears relevant.
 3. Summarize the applicable guidance in your own words before proceeding.
 4. If no relevant entities exist, state that explicitly before proceeding.
@@ -41,7 +41,7 @@ Before moving on, produce an explicit completion note in your reasoning or user 
 
 ### Minimum Acceptable Procedure
 
-1. List or search files under `${EVOLVE_DIR:-.evolve}/entities/`.
+1. List or search files under `${EVOLVE_DIR:-.evolve}/entities/` and `${EVOLVE_DIR:-.evolve}/public/` (or read the injected manifest if one is present).
 2. Identify candidate entities relevant to the task.
 3. Open and read those entity files.
 4. Summarize what applies, or state that nothing applies.
@@ -80,7 +80,14 @@ Entities can come from multiple sources:
         alice-guideline.md                        <- annotated [from: alice]
 ```
 
-Each file uses markdown with YAML frontmatter:
+The manifest output is human-readable:
+
+```text
+- `.evolve/entities/guideline/use-context-managers-for-file-operations.md` [guideline] — When processing files or managing resources
+- `.evolve/entities/subscribed/alice/guideline/error-handling.md` [guideline] — When writing error handlers
+```
+
+Each file still uses markdown with YAML frontmatter:
 
 ```markdown
 ---
@@ -94,3 +101,7 @@ Use context managers for file operations
 
 Ensures proper resource cleanup
 ```
+
+## On-Demand Expansion
+
+When a manifest entry's trigger matches the current task, use `read_file` to load the full entity. The file body contains the guideline content and an optional `## Rationale` section.
