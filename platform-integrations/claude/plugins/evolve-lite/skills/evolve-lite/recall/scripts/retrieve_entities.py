@@ -21,7 +21,8 @@ for _ancestor in _script.parents:
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
-from entity_io import find_entities_dir, markdown_to_entity, log as _log  # noqa: E402
+from entity_io import find_entities_dir, get_evolve_dir, markdown_to_entity, log as _log  # noqa: E402
+import audit  # noqa: E402
 
 
 def log(message):
@@ -81,6 +82,7 @@ def load_entities_with_source(entities_dir):
             continue
 
         entity.pop("_source", None)
+        entity["_id"] = str(md.relative_to(entities_dir).with_suffix(""))
         parts = md.relative_to(entities_dir).parts
         if parts and parts[0] == "subscribed" and len(parts) > 1:
             entity["_source"] = parts[1]
@@ -138,6 +140,31 @@ def main():
     output = format_entities(entities)
     print(output)
     log(f"Output {len(output)} chars to stdout")
+
+    # Audit which entity ids were served to this session. Logging is
+    # intentionally best-effort so recall never fails because provenance
+    # recording could not append to audit.log.
+    try:
+        if isinstance(input_data, dict):
+            transcript_path = input_data.get("transcript_path", "")
+        else:
+            transcript_path = ""
+        session_id = None
+        if transcript_path:
+            session_id = Path(transcript_path).stem.removeprefix("claude-transcript_")
+        elif isinstance(input_data.get("session_id"), str):
+            session_id = input_data["session_id"]
+        entity_ids = sorted({entity["_id"] for entity in entities if entity.get("_id")})
+        if session_id and entity_ids:
+            audit.append(
+                evolve_dir=str(get_evolve_dir().resolve()),
+                event="recall",
+                session_id=session_id,
+                entities=entity_ids,
+            )
+            log(f"Audit: recall session_id={session_id} entities={len(entity_ids)}")
+    except Exception as exc:
+        log(f"Audit append failed (non-fatal): {exc}")
 
 
 if __name__ == "__main__":

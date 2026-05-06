@@ -114,7 +114,7 @@ Write the trajectory JSON to a temporary file using the **Write** tool, then pas
 2. Run the helper script with the file path as an argument:
 
 ```bash
-
+tmp=.evolve/tmp/trajectory_input.json; mkdir -p .evolve/tmp; trap 'rm -f "$tmp"' EXIT; python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/save-trajectory/scripts/save_trajectory.py" "$tmp"
 ```
 
 **Important**: Do NOT use inline Python scripts, heredocs, or stdin piping to pass the trajectory JSON. Always use the Write tool to create a temp file first. This avoids escaping issues with backslashes, quotes, and newlines in conversation content.

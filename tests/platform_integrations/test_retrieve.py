@@ -127,3 +127,80 @@ class TestRetrieve:
 
         assert result.returncode == 0
         assert result.stdout.count("Real content.") == 1
+
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_writes_recall_audit_event_with_qualified_entity_ids(self, evolve_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(
+            retrieve_script,
+            evolve_dir=evolve_dir,
+            stdin_data=json.dumps(
+                {
+                    "prompt": "How do I write clean code?",
+                    "transcript_path": "/tmp/claude-transcript_session-123.jsonl",
+                }
+            ),
+        )
+
+        assert result.returncode == 0
+        events = [json.loads(line) for line in (evolve_dir / "audit.log").read_text().splitlines() if line.strip()]
+        assert len(events) == 1
+        assert events[0]["event"] == "recall"
+        assert events[0]["session_id"] == "session-123"
+        assert events[0]["entities"] == [
+            "guideline/guideline",
+            "subscribed/alice/guideline/alice-guideline",
+        ]
+
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_writes_recall_audit_event_with_session_id_fallback(self, evolve_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(
+            retrieve_script,
+            evolve_dir=evolve_dir,
+            stdin_data=json.dumps(
+                {
+                    "prompt": "How do I write clean code?",
+                    "session_id": "codex-session-123",
+                }
+            ),
+        )
+
+        assert result.returncode == 0
+        events = [json.loads(line) for line in (evolve_dir / "audit.log").read_text().splitlines() if line.strip()]
+        assert len(events) == 1
+        assert events[0]["event"] == "recall"
+        assert events[0]["session_id"] == "codex-session-123"
+
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_writes_recall_audit_under_custom_evolve_dir(
+        self, temp_project_dir, file_assertions, retrieve_script, expected_header, platform_name
+    ):
+        custom_evolve_dir = temp_project_dir / "custom-evolve-data"
+        file_assertions.write_text(
+            custom_evolve_dir / "entities" / "guideline" / "guideline.md",
+            "---\ntype: guideline\n---\n\nKeep functions small.\n",
+        )
+
+        result = run_retrieve(
+            retrieve_script,
+            evolve_dir=custom_evolve_dir,
+            stdin_data=json.dumps(
+                {
+                    "prompt": "How do I write clean code?",
+                    "session_id": "custom-session-123",
+                }
+            ),
+        )
+
+        assert result.returncode == 0
+        events = [json.loads(line) for line in (custom_evolve_dir / "audit.log").read_text().splitlines() if line.strip()]
+        assert len(events) == 1
+        assert events[0]["event"] == "recall"
+        assert events[0]["session_id"] == "custom-session-123"
+        assert not (temp_project_dir / ".evolve" / "audit.log").exists()
+
+    @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
+    def test_does_not_write_recall_audit_without_transcript_path(self, evolve_dir, retrieve_script, expected_header, platform_name):
+        result = run_retrieve(retrieve_script, evolve_dir=evolve_dir)
+
+        assert result.returncode == 0
+        assert not (evolve_dir / "audit.log").exists()

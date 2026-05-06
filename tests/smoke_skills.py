@@ -1024,6 +1024,7 @@ def run_bob(prompt: str, *, cwd: Path, evolve_dir: Path, log_file: Path, label: 
 class PlatformPlan:
     name: str
     cli: str  # binary on PATH
+    save_trajectory_cmd: str  # slash command text to save the current conversation
     learn_cmd: str  # slash command text to send for learn
     publish_cmd: str  # slash command text to invoke publish
     recall_prompt: str  # full prompt for recall
@@ -1033,6 +1034,7 @@ def claude_plan() -> PlatformPlan:
     return PlatformPlan(
         name="claude",
         cli="claude",
+        save_trajectory_cmd="/evolve-lite:save-trajectory",
         learn_cmd="/evolve-lite:learn",
         publish_cmd="/evolve-lite:publish",
         recall_prompt=(
@@ -1054,6 +1056,7 @@ def codex_plan() -> PlatformPlan:
     return PlatformPlan(
         name="codex",
         cli="codex",
+        save_trajectory_cmd="$evolve-lite:save-trajectory",
         learn_cmd="$evolve-lite:learn",
         publish_cmd="$evolve-lite:publish",
         recall_prompt=(
@@ -1069,6 +1072,7 @@ def bob_plan() -> PlatformPlan:
     return PlatformPlan(
         name="bob",
         cli="bob",
+        save_trajectory_cmd="/evolve-lite-save-trajectory",
         learn_cmd="/evolve-lite-learn",
         publish_cmd="/evolve-lite-publish",
         recall_prompt=(
@@ -1201,11 +1205,9 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
     # The chain differs by platform — see the module docstring for why:
     #   * claude: seed task alone; Stop hooks auto-fire save-trajectory + learn,
     #     and we do an extra explicit /evolve-lite:learn pass afterwards.
-    #   * codex/bob: no Stop hooks for this. Suffix the seed prompt with the
-    #     learn slash command so the same session invokes learn at the end
-    #     (learn is main-context on those platforms — build_plugins.py only
-    #     sets forked_context=True for claude — so it reads the conversation
-    #     directly, no trajectory file needed).
+    #   * codex/bob: no Stop hooks for this. Suffix the seed prompt with
+    #     save-trajectory and learn so the same session saves the conversation
+    #     before extracting entities.
     baseline_entities = entity_count(evolve_dir)
     if platform == "claude":
         t0 = time.time()
@@ -1223,19 +1225,28 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
         seed_and_learn_prompt = (
             f"{SEED_PROMPT}\n\n"
             f"After completing (or attempting) the task above, your final "
-            f"action MUST be to run {plan.learn_cmd} so it can extract "
-            f"learnings from this conversation."
+            f"actions MUST be to run {plan.save_trajectory_cmd}, then "
+            f"{plan.learn_cmd}, so learnings are extracted from a saved "
+            f"trajectory."
         )
         t0 = time.time()
         rc, _ = invoke(seed_and_learn_prompt, "seed-and-learn")
         dt = time.time() - t0
 
     post_learn = entity_count(evolve_dir)
+    trajectory_count = sum(1 for _ in (evolve_dir / "trajectories").glob("*")) if (evolve_dir / "trajectories").is_dir() else 0
     ok = (rc == 0) and (post_learn > baseline_entities)
+    if platform == "codex":
+        ok = ok and trajectory_count > 0
     if not ok and rc == 0:
-        detail = f"exit=0 in {dt:.1f}s but entities still {post_learn} (baseline {baseline_entities}); learn extracted nothing"
+        problems = []
+        if post_learn <= baseline_entities:
+            problems.append(f"entities still {post_learn} (baseline {baseline_entities}); learn extracted nothing")
+        if platform == "codex" and trajectory_count == 0:
+            problems.append("no trajectory saved")
+        detail = f"exit=0 in {dt:.1f}s but " + "; ".join(problems)
     else:
-        detail = f"exit={rc} in {dt:.1f}s; entities {baseline_entities}→{post_learn}"
+        detail = f"exit={rc} in {dt:.1f}s; entities {baseline_entities}→{post_learn}; trajectories={trajectory_count}"
     record_skill(result, "learn", ok, detail)
 
     # ── recall (seed entity, prompt agent to echo it)

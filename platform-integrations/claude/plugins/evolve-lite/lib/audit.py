@@ -5,14 +5,17 @@ import json
 import pathlib
 
 
-def append(project_root=".", **fields):
+def append(project_root=".", evolve_dir=None, **fields):
     """Append a JSON audit entry to .evolve/audit.log.
 
     Args:
         project_root: Root directory that contains .evolve/.
+        evolve_dir: Explicit evolve data directory. When set, writes directly
+            to ``<evolve_dir>/audit.log`` instead of deriving it from
+            ``project_root``.
         **fields: Arbitrary key-value fields to include in the log entry.
     """
-    path = pathlib.Path(project_root) / ".evolve" / "audit.log"
+    path = pathlib.Path(evolve_dir) / "audit.log" if evolve_dir is not None else pathlib.Path(project_root) / ".evolve" / "audit.log"
     path.parent.mkdir(parents=True, exist_ok=True)
     entry = {**fields, "ts": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")}
     with path.open("a", encoding="utf-8") as f:

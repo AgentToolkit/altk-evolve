@@ -6,6 +6,8 @@ Runs two sequential Claude Code sessions against the Dockerized sandbox:
      transcript and extracts a guideline.
   2. Ask about focal length — UserPromptSubmit recall hook injects the
      guideline from session 1, so Claude should skip the dead ends.
+  3. Run the offline provenance skill to record whether the recalled
+     guideline influenced session 2.
 
 Assertions:
   - Session 1 produces a guideline file under .evolve/entities/.
@@ -19,6 +21,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import time
@@ -76,6 +79,7 @@ def sandbox_workspace(tmp_path):
 
 def _run_sandbox_prompt(workspace: Path, prompt: str) -> subprocess.CompletedProcess:
     plugins = REPO_ROOT / "platform-integrations" / "claude" / "plugins"
+    command = "claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions -p " + shlex.quote(prompt)
     cmd = ["docker", "run", "--rm"]
     for var in FORWARDED_ENV_VARS:
         if os.environ.get(var):
@@ -90,7 +94,7 @@ def _run_sandbox_prompt(workspace: Path, prompt: str) -> subprocess.CompletedPro
         SANDBOX_IMAGE,
         "bash",
         "-c",
-        f'claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions -p "{prompt}"',
+        command,
     ]
     return subprocess.run(cmd, capture_output=True, text=True, timeout=SESSION_TIMEOUT_SECONDS)
 
@@ -116,8 +120,8 @@ def _bash_commands(transcript_path: Path) -> list[str]:
 
 
 @pytest.mark.e2e
-def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
-    """Session 1 extracts a guideline; session 2 benefits from recall."""
+def test_claude_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
+    """Session 1 learns, session 2 recalls, session 3 records influence."""
     del sandbox_ready  # only used for its skip side effect
 
     # --- Session 1: location query — expected dead ends then recovery ---
@@ -164,3 +168,51 @@ def test_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
     # pip-installed). Other libraries (PIL, piexif, exifread) may appear in a
     # valid guideline as "install via pip and use", so we don't ban them.
     assert not re.search(r"\bexiftool\b", joined), "session 2 invoked exiftool despite recall guideline:\n" + "\n".join(commands)
+
+    # --- Usage provenance: audit.log should record recall ---
+    audit_log = sandbox_workspace / ".evolve" / "audit.log"
+    assert audit_log.is_file(), f"{audit_log} was not created — recall did not append audit events"
+
+    events = []
+    for line in audit_log.read_text().splitlines():
+        line = line.strip()
+        if line:
+            events.append(json.loads(line))
+
+    session2_id = session2_transcript.stem.removeprefix("claude-transcript_")
+    session1_ids = {str(path.relative_to(entities_dir).with_suffix("")) for path in entity_files}
+
+    recall_events = [event for event in events if event.get("event") == "recall" and event.get("session_id") == session2_id]
+    assert recall_events, f"no recall audit event for session 2 ({session2_id}). all events: {events}"
+    recalled_ids = {entity_id for event in recall_events for entity_id in event.get("entities", [])}
+    assert recalled_ids & session1_ids, f"recall event entities {recalled_ids} did not include any id from session 1 ({session1_ids})"
+    log.info(f"session 2: audit recorded recall of {recalled_ids}")
+
+    # --- Offline provenance: audit.log should record usefulness verdicts ---
+    log.info("session 3: running offline provenance analysis...")
+    t2 = time.time()
+    result3 = _run_sandbox_prompt(
+        sandbox_workspace,
+        (
+            "Run /evolve-lite:provenance now. Analyze the saved trajectories and "
+            "the recall events in .evolve/audit.log. Record influence verdicts "
+            "for any recalled guideline that can be matched to the focal-length "
+            "photo session. Do not modify source files."
+        ),
+    )
+    log.info(f"session 3: exited {result3.returncode} after {time.time() - t2:.0f}s")
+    assert result3.returncode == 0, f"session 3 exited {result3.returncode}\nstderr:\n{result3.stderr[-2000:]}"
+
+    events = []
+    for line in audit_log.read_text().splitlines():
+        line = line.strip()
+        if line:
+            events.append(json.loads(line))
+
+    influence_events = [event for event in events if event.get("event") == "influence"]
+    assert influence_events, f"no influence audit event recorded. all events: {events}"
+    influenced_ids = {event.get("entity") for event in influence_events}
+    assert influenced_ids & recalled_ids, f"influence events {influence_events} did not assess any recalled ids {recalled_ids}"
+    for event in influence_events:
+        assert event.get("verdict") in {"followed", "contradicted", "not_applicable"}
+        assert event.get("evidence"), f"influence event missing evidence: {event}"
