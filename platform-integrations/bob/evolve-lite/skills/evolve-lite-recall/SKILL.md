@@ -82,7 +82,7 @@ Entities can come from multiple sources:
 
 The manifest output is human-readable:
 
-```
+```text
 - `.evolve/entities/guideline/use-context-managers-for-file-operations.md` [guideline] — When processing files or managing resources
 - `.evolve/entities/subscribed/alice/guideline/error-handling.md` [guideline] — When writing error handlers
 ```
