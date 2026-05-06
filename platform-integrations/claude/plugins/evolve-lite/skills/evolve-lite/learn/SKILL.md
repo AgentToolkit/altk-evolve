@@ -48,7 +48,7 @@ The transcript is JSONL: each line is a separate JSON object. Filter for `"type"
 
 ### Step 1: Analyze the Conversation
 
-Identify from your current conversation (loaded from the transcript):
+Identify from the saved trajectory loaded in Step 0:
 
 - **Task/Request**: What was the user asking for?
 - **Steps Taken**: What reasoning, actions, and observations occurred?
@@ -88,6 +88,11 @@ Create or update a local reusable artifact when any of these are true:
 Prefer one of these artifact forms:
 - a small script, saved to a stable path in the workspace or plugin, such as `scripts/`, `tools/`, or another obvious helper location.
 - a documented local workflow if code is not appropriate
+
+When turning an ad hoc command or script into a reusable artifact, remove
+incidental one-off inputs such as literal file names, IDs, answer values, or
+temporary paths. Keep the reusable procedure that was actually exercised in the
+session, and do not add capabilities that were not validated by the work.
 
 If you create an artifact, record:
 - its path
