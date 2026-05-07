@@ -159,7 +159,9 @@ class TestRetrieve:
         assert entries[0]["trigger"] == "when testing"
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_writes_recall_audit_event_with_qualified_entity_ids(self, evolve_dir, temp_project_dir, retrieve_script, expected_header, platform_name):
+    def test_writes_recall_audit_event_with_qualified_entity_ids(
+        self, evolve_dir, temp_project_dir, retrieve_script, expected_header, platform_name
+    ):
         result = run_retrieve(
             retrieve_script,
             temp_project_dir,
@@ -183,7 +185,9 @@ class TestRetrieve:
         }
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_writes_recall_audit_event_with_session_id_fallback(self, evolve_dir, temp_project_dir, retrieve_script, expected_header, platform_name):
+    def test_writes_recall_audit_event_with_session_id_fallback(
+        self, evolve_dir, temp_project_dir, retrieve_script, expected_header, platform_name
+    ):
         result = run_retrieve(
             retrieve_script,
             temp_project_dir,
@@ -232,7 +236,9 @@ class TestRetrieve:
         assert not (temp_project_dir / ".evolve" / "audit.log").exists()
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
-    def test_does_not_write_recall_audit_without_transcript_path(self, evolve_dir, temp_project_dir, retrieve_script, expected_header, platform_name):
+    def test_does_not_write_recall_audit_without_transcript_path(
+        self, evolve_dir, temp_project_dir, retrieve_script, expected_header, platform_name
+    ):
         result = run_retrieve(retrieve_script, temp_project_dir, evolve_dir=evolve_dir)
 
         assert result.returncode == 0
