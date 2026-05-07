@@ -8,6 +8,7 @@ import pytest
 pytestmark = pytest.mark.platform_integrations
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
+_CODEX_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/codex/plugins/evolve-lite"
 
 
 class TestPluginManifest:
@@ -69,11 +70,17 @@ class TestSkillScripts:
             "skills/evolve-lite/sync/scripts/sync.py",
             "skills/evolve-lite/recall/scripts/retrieve_entities.py",
             "skills/evolve-lite/learn/scripts/save_entities.py",
+            "skills/evolve-lite/provenance/scripts/log_influence.py",
         ],
     )
     def test_script_exists(self, script_rel):
         script = _PLUGIN_ROOT / script_rel
         assert script.exists(), f"Script not found: {script}"
+
+    def test_codex_save_trajectory_skill_documents_helper_invocation(self):
+        skill = _CODEX_PLUGIN_ROOT / "skills/evolve-lite/save-trajectory/SKILL.md"
+        content = skill.read_text()
+        assert "plugins/evolve-lite/skills/evolve-lite/save-trajectory/scripts/save_trajectory.py" in content
 
 
 class TestLibModules:
