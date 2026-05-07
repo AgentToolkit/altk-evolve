@@ -136,8 +136,13 @@ def main():
         set_repos(cfg, repos)
         try:
             save_config(cfg, project_root)
-        except Exception:
-            pass
+        except Exception as save_exc:
+            print(
+                f"Warning: rollback save_config failed under {project_root!r}: {save_exc}. "
+                f"The clone was removed but evolve.config.yaml may still list '{args.name}' - "
+                f"please inspect the file and remove the entry manually if present.",
+                file=sys.stderr,
+            )
         if dest.exists():
             shutil.rmtree(dest, ignore_errors=True)
         print(f"Error: failed to record subscription in audit log: {exc}", file=sys.stderr)
