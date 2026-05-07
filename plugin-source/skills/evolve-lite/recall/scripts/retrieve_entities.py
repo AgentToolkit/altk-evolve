@@ -151,8 +151,10 @@ def main():
             transcript_path = ""
         session_id = None
         if transcript_path:
-            session_id = Path(transcript_path).stem.removeprefix("claude-transcript_")
-        elif isinstance(input_data.get("session_id"), str):
+            stem = Path(transcript_path).stem
+            if stem.startswith("claude-transcript_"):
+                session_id = stem.removeprefix("claude-transcript_")
+        if not session_id and isinstance(input_data, dict) and isinstance(input_data.get("session_id"), str):
             session_id = input_data["session_id"]
         entity_ids = sorted({entity["_id"] for entity in entities if entity.get("_id")})
         if session_id and entity_ids:
