@@ -23,11 +23,12 @@ Skip any recall event that already has `influence` entries for the same `session
 
 List `.evolve/trajectories/` and match each recall event to a trajectory by `session_id`.
 
-Supported trajectory names:
-- `claude-transcript_<session-id>.jsonl`
-- `trajectory_*.json` when its content corresponds to the session being assessed
+Matching strategy (in order):
+1. `claude-transcript_<session-id>.jsonl` - the stop-hook transcript dump; the session id is in the filename.
+2. `trajectory_<timestamp>_<session-id>.json` - written by the evolve-lite:save-trajectory skill when a session id is available. Match on the `<session-id>` slice of the filename.
+3. `trajectory_<timestamp>.json` - open the file and match its top-level `session_id` field against the recall event. Only fall back to this step when the filename alone does not identify the session.
 
-If you cannot confidently match a recall event to a trajectory, skip it.
+If none of the above yields a confident match for a recall event, skip it. Do not guess.
 
 ### Step 3: Read Recalled Entities
 

@@ -9,6 +9,7 @@ import datetime
 import getpass
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -65,15 +66,29 @@ def get_trajectories_dir():
     return base.resolve()
 
 
-def open_trajectory_file(trajectories_dir):
+_SAFE_SESSION_ID = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def _sanitize_session_id(session_id):
+    """Return a filesystem-safe slice of ``session_id`` (empty if unusable)."""
+    if not isinstance(session_id, str):
+        return ""
+    cleaned = _SAFE_SESSION_ID.sub("-", session_id.strip())
+    return cleaned[:64]
+
+
+def open_trajectory_file(trajectories_dir, session_id=None):
     """Atomically claim a timestamped trajectory file.
 
     Returns a ``(Path, fd)`` tuple. Uses ``O_CREAT | O_EXCL`` so two saves
     racing within the same second pick distinct filenames instead of one
-    overwriting the other.
+    overwriting the other. When ``session_id`` is provided, it is embedded
+    in the filename so offline provenance can match this trajectory to
+    ``recall`` audit events for the same session without content inspection.
     """
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    base_name = f"trajectory_{now}"
+    sid = _sanitize_session_id(session_id)
+    base_name = f"trajectory_{now}_{sid}" if sid else f"trajectory_{now}"
 
     for suffix in range(0, 1000):
         name = f"{base_name}.json" if suffix == 0 else f"{base_name}_{suffix}.json"
@@ -121,9 +136,11 @@ def main():
 
     log(f"Trajectory has {len(messages)} messages")
 
-    # Atomically claim a unique output path (handles same-second races)
+    # Atomically claim a unique output path (handles same-second races).
+    # Embed session_id in the filename when present so offline provenance
+    # can match recall events to trajectories deterministically.
     trajectories_dir = get_trajectories_dir()
-    output_path, fd = open_trajectory_file(trajectories_dir)
+    output_path, fd = open_trajectory_file(trajectories_dir, trajectory.get("session_id"))
 
     # Write formatted JSON via the already-opened owner-only fd
     try:
