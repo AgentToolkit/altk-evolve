@@ -75,9 +75,9 @@ def main():
 
     session_id = payload.get("session_id")
     assessments = payload.get("assessments", [])
-    if not session_id or not isinstance(assessments, list):
+    if not isinstance(session_id, str) or not session_id or not isinstance(assessments, list):
         log(f"Bad payload shape: session_id={session_id!r} assessments_type={type(assessments).__name__}")
-        print("Error: payload must include `session_id` and a list `assessments`.", file=sys.stderr)
+        print("Error: payload must include a string `session_id` and a list `assessments`.", file=sys.stderr)
         sys.exit(1)
 
     evolve_dir = get_evolve_dir().resolve()
@@ -91,9 +91,14 @@ def main():
         entity = assessment.get("entity")
         verdict = assessment.get("verdict")
         evidence = assessment.get("evidence", "")
-        if not entity or verdict not in _ALLOWED_VERDICTS:
-            log(f"Skipping invalid assessment: {assessment}")
+        if not isinstance(entity, str) or not entity:
+            log(f"Skipping assessment with non-string entity: {assessment!r}")
             continue
+        if verdict not in _ALLOWED_VERDICTS:
+            log(f"Skipping invalid assessment verdict: {assessment}")
+            continue
+        if not isinstance(evidence, str):
+            evidence = str(evidence)
         key = (session_id, entity)
         if key in existing_keys:
             log(f"Skipping duplicate influence assessment: session_id={session_id} entity={entity}")
