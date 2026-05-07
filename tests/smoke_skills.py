@@ -1234,7 +1234,11 @@ def run_platform(platform: str, root_tempdir: Path) -> PlatformResult:
         dt = time.time() - t0
 
     post_learn = entity_count(evolve_dir)
-    trajectory_count = sum(1 for _ in (evolve_dir / "trajectories").glob("*")) if (evolve_dir / "trajectories").is_dir() else 0
+    trajectory_count = (
+        sum(1 for path in (evolve_dir / "trajectories").glob("trajectory_*.json") if path.is_file())
+        if (evolve_dir / "trajectories").is_dir()
+        else 0
+    )
     ok = (rc == 0) and (post_learn > baseline_entities)
     if platform == "codex":
         ok = ok and trajectory_count > 0
