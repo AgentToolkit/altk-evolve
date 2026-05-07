@@ -37,7 +37,7 @@ def read_audit(evolve_dir):
     path = evolve_dir / "audit.log"
     if not path.is_file():
         return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 class TestLogInfluence:

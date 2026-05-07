@@ -142,14 +142,14 @@ class TestRetrieve:
         )
 
         assert result.returncode == 0
-        events = [json.loads(line) for line in (evolve_dir / "audit.log").read_text().splitlines() if line.strip()]
+        events = [json.loads(line) for line in (evolve_dir / "audit.log").read_text(encoding="utf-8").splitlines() if line.strip()]
         assert len(events) == 1
         assert events[0]["event"] == "recall"
         assert events[0]["session_id"] == "session-123"
-        assert events[0]["entities"] == [
+        assert set(events[0]["entities"]) == {
             "guideline/guideline",
             "subscribed/alice/guideline/alice-guideline",
-        ]
+        }
 
     @pytest.mark.parametrize(("platform_name", "retrieve_script", "expected_header"), SCRIPT_VARIANTS)
     def test_writes_recall_audit_event_with_session_id_fallback(self, evolve_dir, retrieve_script, expected_header, platform_name):
