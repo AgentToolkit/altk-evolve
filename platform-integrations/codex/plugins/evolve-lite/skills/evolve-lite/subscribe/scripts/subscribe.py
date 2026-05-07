@@ -133,6 +133,7 @@ def main():
         )
     except Exception as exc:
         repos.pop()
+        set_repos(cfg, repos)
         try:
             save_config(cfg, project_root)
         except Exception:

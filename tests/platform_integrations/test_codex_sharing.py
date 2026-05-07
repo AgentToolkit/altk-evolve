@@ -367,7 +367,7 @@ class TestCodexSharingScripts:
         assert result.returncode != 0
         assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
 
-    def test_subscribe_warns_when_audit_write_fails(self, temp_project_dir, local_repo):
+    def test_subscribe_rolls_back_when_audit_write_fails(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
         (evolve_dir / "audit.log").mkdir(parents=True)
 
@@ -376,13 +376,14 @@ class TestCodexSharingScripts:
             project_dir=temp_project_dir,
             args=["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
+            expect_success=False,
         )
 
-        assert result.returncode == 0
-        assert "Warning: failed to append audit entry for subscribe" in result.stderr
-        assert (evolve_dir / "entities" / "subscribed" / "alice").is_dir()
+        assert result.returncode != 0
+        assert "failed to record subscription" in result.stderr
+        assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
         config_text = (temp_project_dir / "evolve.config.yaml").read_text()
-        assert "name: alice" in config_text
+        assert "name: alice" not in config_text
 
     def test_subscribe_rejects_path_traversal_in_name(self, temp_project_dir, local_repo):
         result = run_script(
