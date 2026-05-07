@@ -382,7 +382,8 @@ class TestCodexSharingScripts:
         assert result.returncode != 0
         assert "failed to record subscription" in result.stderr
         assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
-        config_text = (temp_project_dir / "evolve.config.yaml").read_text()
+        config_path = temp_project_dir / "evolve.config.yaml"
+        config_text = config_path.read_text() if config_path.exists() else ""
         assert "name: alice" not in config_text
 
     def test_subscribe_rejects_path_traversal_in_name(self, temp_project_dir, local_repo):
