@@ -99,12 +99,14 @@ Wrap the messages array in a trajectory envelope:
 {
   "model": "<model-id-from-session>",
   "timestamp": "2025-01-15T10:30:00Z",
+  "session_id": "<session-id-from-session>",
   "messages": [...]
 }
 ```
 
 - **model**: Use the exact model ID from the current session's environment context (e.g., the value after "You are powered by the model named …"). Do not hardcode a default — always read it from the session.
 - **timestamp**: Current ISO 8601 timestamp
+- **session_id**: The current session identifier. Read it from whatever the harness exposes — the `session_id` passed into the skill, the session id surfaced in the session context, or a runtime-provided environment variable. Include it verbatim so offline provenance can match this trajectory to `recall` audit events for the same session. Omit the field only if no session id is truly available in this environment.
 
 ### Step 5: Save via Helper Script
 

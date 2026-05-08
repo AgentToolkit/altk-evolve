@@ -162,7 +162,7 @@ def main():
         raw_name = rejection["raw_name"]
         reason = rejection["reason"]
         label = repr(raw_name) if raw_name else "<unnamed entry>"
-        summaries.append(f"{label} (skipped - {reason})")
+        print(f"{label} (skipped - {reason})", file=sys.stderr)
 
     for repo in repos:
         name = repo["name"]
@@ -174,7 +174,7 @@ def main():
         repo_path = (evolve_dir / "entities" / "subscribed" / name).resolve()
 
         if repo_path == subscribed_base or not repo_path.is_relative_to(subscribed_base):
-            summaries.append(f"{name!r} (skipped - invalid subscription name)")
+            print(f"{name!r} (skipped - invalid subscription name)", file=sys.stderr)
             continue
 
         if not repo_path.is_dir():

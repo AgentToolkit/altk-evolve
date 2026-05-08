@@ -28,6 +28,7 @@
     "defaultPrompt": [
       "Recall Evolve entities for this task.",
       "Save new Evolve learnings from this session.",
+      "Analyze saved trajectories for Evolve guideline provenance.",
       "Show me the entities stored for this repo.",
       "Publish one of my Evolve guidelines.",
       "Subscribe to a teammate's Evolve guidelines repo."
