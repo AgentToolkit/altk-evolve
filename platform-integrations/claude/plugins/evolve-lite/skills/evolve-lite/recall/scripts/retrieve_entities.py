@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retrieve and output entities for the agent to use as extra context."""
+"""Retrieve and output an entity manifest for claude to expand on demand."""
 
 import json
 import os
@@ -21,7 +21,7 @@ for _ancestor in _script.parents:
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
-from entity_io import find_entities_dir, get_evolve_dir, markdown_to_entity, log as _log  # noqa: E402
+from entity_io import dedupe_manifest_entries, find_recall_entity_dirs, get_evolve_dir, load_manifest, log as _log  # noqa: E402
 import audit  # noqa: E402
 
 
@@ -33,63 +33,28 @@ log("Script started")
 
 
 def format_entities(entities):
-    """Format all entities for the agent to review.
+    """Format a manifest of entities for claude to expand on demand."""
+    header = """## Evolve entity manifest for this task
 
-    Entities that came from a subscribed source have their path recorded in
-    the private ``_source`` key (set by load_entities_with_source). These are
-    annotated with ``[from: {name}]`` so the agent knows their provenance.
-    """
-    header = """## Evolve entities for this task
-
-Review these stored entities and apply any that are relevant to the user's request:
+These stored entities are available for this repo. Read only the files whose trigger looks relevant to the user's request:
 
 """
-    items = []
-    for entity in entities:
-        content = entity.get("content")
-        if not content:
-            continue
-        source = entity.get("_source")
-        if source:
-            content = f"[from: {source}] {content}"
-        item = f"- **[{entity.get('type', 'general')}]** {content}"
-        if entity.get("rationale"):
-            item += f"\n  Rationale: {entity['rationale']}"
-        if entity.get("trigger"):
-            item += f"\n  When: {entity['trigger']}"
-        items.append(item)
-
-    return header + "\n".join(items)
+    return header + "\n".join(json.dumps(entity) for entity in entities)
 
 
-def load_entities_with_source(entities_dir):
-    """Load markdown entities from one recall root and annotate subscribed content.
+def _audit_id(path_str):
+    """Derive the audit entity id from a manifest path.
 
-    Symlinks and any files inside a ``.git`` directory are skipped so we don't
-    surface git's own bookkeeping or sneak past path validation when a write
-    -scope clone lives under entities/subscribed/{name}/.
+    Matches upstream's convention for entities/: id is the path relative to
+    ``entities/`` with ``.md`` stripped (e.g. ``guideline/foo``,
+    ``subscribed/alice/guideline/bar``). Public entities are prefixed with
+    ``public/`` to keep the id space distinct from private entities.
     """
-    entities_dir = Path(entities_dir)
-    entities = []
-    for md in sorted(p for p in entities_dir.glob("**/*.md") if ".git" not in p.parts):
-        if md.is_symlink():
-            continue
-        try:
-            entity = markdown_to_entity(md)
-        except (OSError, UnicodeError):
-            continue
-        if not entity.get("content"):
-            continue
-
-        entity.pop("_source", None)
-        entity["_id"] = str(md.relative_to(entities_dir).with_suffix(""))
-        parts = md.relative_to(entities_dir).parts
-        if parts and parts[0] == "subscribed" and len(parts) > 1:
-            entity["_source"] = parts[1]
-
-        entities.append(entity)
-
-    return entities
+    if "/entities/" in path_str:
+        return path_str.split("/entities/", 1)[1].removesuffix(".md")
+    if "/public/" in path_str:
+        return "public/" + path_str.split("/public/", 1)[1].removesuffix(".md")
+    return path_str.removesuffix(".md")
 
 
 def main():
@@ -124,12 +89,13 @@ def main():
             log(f"  {key}={value}")
     log("=== End Environment Variables ===")
 
-    entities_dir = find_entities_dir()
-    log(f"Entities dir: {entities_dir}")
-
     entities = []
-    if entities_dir:
-        entities = load_entities_with_source(entities_dir)
+    recall_dirs = find_recall_entity_dirs()
+    log(f"Recall dirs: {recall_dirs}")
+    for root_dir in recall_dirs:
+        entities.extend(load_manifest(root_dir))
+
+    entities = dedupe_manifest_entries(entities)
 
     if not entities:
         log("No entities found")
@@ -156,7 +122,7 @@ def main():
                 session_id = stem.removeprefix("claude-transcript_")
         if not session_id and isinstance(input_data, dict) and isinstance(input_data.get("session_id"), str):
             session_id = input_data["session_id"]
-        entity_ids = sorted({entity["_id"] for entity in entities if entity.get("_id")})
+        entity_ids = sorted({_audit_id(entity["path"]) for entity in entities if entity.get("path")})
         if session_id and entity_ids:
             audit.append(
                 evolve_dir=str(get_evolve_dir().resolve()),
