@@ -20,6 +20,11 @@ from starlette.exceptions import HTTPException
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.frontend.api.routes import router as api_router
+from altk_evolve.llm.fact_extraction.fact_extraction import (
+    ExtractedFact,
+    categorize_facts,
+    extract_facts_from_messages,
+)
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines
 from altk_evolve.schema.core import Entity, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
@@ -278,6 +283,10 @@ def get_guidelines(
     return get_entities_logic(task, "guideline", user_id=user_id, namespace_id=namespace_id, session_id=session_id)
 
 
+def _empty_store_user_facts_response(user_id: str) -> str:
+    return json.dumps({"user_id": user_id, "stored_count": 0, "updates": []})
+
+
 @mcp.tool()
 def store_user_facts(
     user_id: str,
@@ -297,13 +306,44 @@ def store_user_facts(
             }
         )
 
-    updates = get_client().store_user_facts(
-        namespace_id=evolve_config.namespace_id,
-        message=message,
-        user_id=user_id,
-        metadata=metadata_dict,
-        enable_conflict_resolution=enable_conflict_resolution,
-    )
+    trimmed_message = (message or "").strip()
+    if not trimmed_message:
+        return _empty_store_user_facts_response(user_id)
+
+    resolved_ns = _resolve_namespace(None)
+
+    base_metadata: dict[str, Any] = dict(metadata_dict)
+    base_metadata["user_id"] = user_id
+
+    extracted = extract_facts_from_messages([{"role": "user", "content": trimmed_message}])
+    entities: list[Entity] = []
+    for one in extracted:
+        if isinstance(one, ExtractedFact):
+            fact_metadata = dict(base_metadata)
+            fact_metadata["category"] = one.category
+            fact_metadata["key"] = one.key
+            fact_metadata["value"] = one.value
+            entities.append(Entity(type="fact", content=one.content, metadata=fact_metadata))
+        else:
+            entities.append(Entity(type="fact", content=str(one), metadata=dict(base_metadata)))
+
+    if not entities:
+        return _empty_store_user_facts_response(user_id)
+
+    try:
+        updates = get_client().update_entities(
+            namespace_id=resolved_ns,
+            entities=entities,
+            enable_conflict_resolution=enable_conflict_resolution,
+        )
+    except NamespaceNotFoundException:
+        _evict_namespace(resolved_ns)
+        resolved_ns = _resolve_namespace(None)
+        updates = get_client().update_entities(
+            namespace_id=resolved_ns,
+            entities=entities,
+            enable_conflict_resolution=enable_conflict_resolution,
+        )
 
     serialized_updates = [
         {
@@ -325,15 +365,66 @@ def store_user_facts(
     )
 
 
+def _search_facts_with_fallback(
+    namespace_id: str,
+    user_id: str,
+    query: str | None,
+    limit: int,
+) -> list[RecordedEntity]:
+    """Fetch fact entities for a user with the legacy fallback chain.
+
+    Order: (1) user filter + query, (2) user filter without query, (3) default
+    user with query, (4) default user without query. The default-user fallback
+    is skipped when the caller is already ``"default"``.
+    """
+    client = get_client()
+    facts = client.search_entities(
+        namespace_id=namespace_id,
+        query=query,
+        filters={"type": "fact", "metadata.user_id": user_id},
+        limit=limit,
+    )
+    if query and not facts:
+        facts = client.search_entities(
+            namespace_id=namespace_id,
+            query=None,
+            filters={"type": "fact", "metadata.user_id": user_id},
+            limit=limit,
+        )
+    if not facts and user_id != "default":
+        facts = client.search_entities(
+            namespace_id=namespace_id,
+            query=query,
+            filters={"type": "fact", "metadata.user_id": "default"},
+            limit=limit,
+        )
+        if query and not facts:
+            facts = client.search_entities(
+                namespace_id=namespace_id,
+                query=None,
+                filters={"type": "fact", "metadata.user_id": "default"},
+                limit=limit,
+            )
+    return facts
+
+
 @mcp.tool()
 def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5) -> str:
     """Retrieve categorized user facts/preferences for a durable user identity."""
-    categories = get_client().retrieve_user_facts(
-        namespace_id=evolve_config.namespace_id,
-        user_id=user_id,
-        query=query,
-        limit=limit,
-    )
+    namespace_id = evolve_config.namespace_id
+
+    if limit <= 0 or not get_client().namespace_exists(namespace_id):
+        return json.dumps(
+            {
+                "user_id": user_id,
+                "query": query,
+                "matched_count": 0,
+                "categories": {},
+            }
+        )
+
+    facts = _search_facts_with_fallback(namespace_id, user_id, query, limit)
+    categories = categorize_facts(facts)
     matched_count = sum(len(items) for items in categories.values())
 
     return json.dumps(
