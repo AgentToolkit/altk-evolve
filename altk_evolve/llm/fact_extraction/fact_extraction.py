@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from altk_evolve.config.llm import llm_settings
 from altk_evolve.llm.fact_extraction.categorization import CategoryManager
+from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.utils.utils import clean_llm_response
 
 
@@ -77,3 +78,26 @@ def extract_facts_from_messages(messages: list[dict], use_categorization: bool |
             last_error = exc
             continue
     raise ValueError(f"Failed to parse extracted facts response: {last_error}")
+
+
+def categorize_facts(facts: list[RecordedEntity]) -> dict[str, list[dict[str, Any]]]:
+    """Group fact entities by their metadata category.
+
+    Pure helper with no client or CRUD coupling: takes a list of already-fetched
+    RecordedEntity facts and returns a dict keyed by ``metadata.category`` (or
+    ``"misc"`` when absent), with each entry exposing the id, content, key, and
+    value of the fact.
+    """
+    categorized: dict[str, list[dict[str, Any]]] = {}
+    for fact in facts:
+        metadata = fact.metadata or {}
+        category = str(metadata.get("category") or "misc")
+        categorized.setdefault(category, []).append(
+            {
+                "id": fact.id,
+                "content": str(fact.content),
+                "key": metadata.get("key"),
+                "value": metadata.get("value"),
+            }
+        )
+    return categorized

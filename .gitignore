@@ -13,6 +13,7 @@ demo/workdir/.claude/
 dist
 .coverage
 .evolve
+.omc
 .omx
 .secrets
 event.json
