@@ -26,6 +26,7 @@ from altk_evolve.llm.fact_extraction.fact_extraction import (
     extract_facts_from_messages,
 )
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines
+from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
 
@@ -236,6 +237,36 @@ def _parse_metadata(metadata: str | None) -> dict[str, Any]:
     return parsed
 
 
+def _persist_entities(
+    namespace_id: str | None,
+    entities: list[Entity],
+    enable_conflict_resolution: bool = False,
+) -> tuple[list[EntityUpdate], str]:
+    """Persist entities with a single retry if the namespace cache is stale.
+
+    Resolves ``namespace_id`` (falling back to the configured default), writes
+    via ``update_entities``, and on ``NamespaceNotFoundException`` evicts the
+    cached entry, re-resolves, and retries once. Returns the update records
+    and the namespace actually written to.
+    """
+    resolved_ns = _resolve_namespace(namespace_id)
+    try:
+        updates = get_client().update_entities(
+            namespace_id=resolved_ns,
+            entities=entities,
+            enable_conflict_resolution=enable_conflict_resolution,
+        )
+    except NamespaceNotFoundException:
+        _evict_namespace(resolved_ns)
+        resolved_ns = _resolve_namespace(namespace_id)
+        updates = get_client().update_entities(
+            namespace_id=resolved_ns,
+            entities=entities,
+            enable_conflict_resolution=enable_conflict_resolution,
+        )
+    return updates, resolved_ns
+
+
 @mcp.tool()
 def get_entities(
     task: str,
@@ -310,8 +341,6 @@ def store_user_facts(
     if not trimmed_message:
         return _empty_store_user_facts_response(user_id)
 
-    resolved_ns = _resolve_namespace(None)
-
     base_metadata: dict[str, Any] = dict(metadata_dict)
     base_metadata["user_id"] = user_id
 
@@ -330,20 +359,11 @@ def store_user_facts(
     if not entities:
         return _empty_store_user_facts_response(user_id)
 
-    try:
-        updates = get_client().update_entities(
-            namespace_id=resolved_ns,
-            entities=entities,
-            enable_conflict_resolution=enable_conflict_resolution,
-        )
-    except NamespaceNotFoundException:
-        _evict_namespace(resolved_ns)
-        resolved_ns = _resolve_namespace(None)
-        updates = get_client().update_entities(
-            namespace_id=resolved_ns,
-            entities=entities,
-            enable_conflict_resolution=enable_conflict_resolution,
-        )
+    updates, _ = _persist_entities(
+        namespace_id=None,
+        entities=entities,
+        enable_conflict_resolution=enable_conflict_resolution,
+    )
 
     serialized_updates = [
         {
@@ -487,20 +507,11 @@ def save_trajectory(
             )
         )
 
-    try:
-        get_client().update_entities(
-            namespace_id=resolved_ns,
-            entities=entities,
-            enable_conflict_resolution=False,
-        )
-    except NamespaceNotFoundException:
-        _evict_namespace(resolved_ns)
-        resolved_ns = _resolve_namespace(namespace_id)
-        get_client().update_entities(
-            namespace_id=resolved_ns,
-            entities=entities,
-            enable_conflict_resolution=False,
-        )
+    _, resolved_ns = _persist_entities(
+        namespace_id=namespace_id,
+        entities=entities,
+        enable_conflict_resolution=False,
+    )
     results = generate_guidelines(messages)
 
     guideline_metadata_base: dict = {
@@ -574,8 +585,7 @@ def create_entity(
     Returns:
         JSON string with the entity update details (ADD/UPDATE/DELETE/NONE) and entity ID
     """
-    resolved_ns = _resolve_namespace(namespace_id)
-    logger.info(f"Creating entity of type: {entity_type} in namespace: {resolved_ns}")
+    logger.info(f"Creating entity of type: {entity_type} (namespace override: {namespace_id})")
     try:
         if visibility not in ("private", "public"):
             return json.dumps({"error": f"Invalid visibility '{visibility}': must be 'private' or 'public'"})
@@ -611,16 +621,11 @@ def create_entity(
 
         entity = Entity(type=entity_type, content=content, metadata=metadata_dict)
 
-        try:
-            updates = get_client().update_entities(
-                namespace_id=resolved_ns, entities=[entity], enable_conflict_resolution=enable_conflict_resolution
-            )
-        except NamespaceNotFoundException:
-            _evict_namespace(resolved_ns)
-            resolved_ns = _resolve_namespace(namespace_id)
-            updates = get_client().update_entities(
-                namespace_id=resolved_ns, entities=[entity], enable_conflict_resolution=enable_conflict_resolution
-            )
+        updates, _ = _persist_entities(
+            namespace_id=namespace_id,
+            entities=[entity],
+            enable_conflict_resolution=enable_conflict_resolution,
+        )
 
         if updates:
             update = updates[0]
