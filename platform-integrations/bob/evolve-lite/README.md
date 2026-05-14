@@ -20,7 +20,7 @@ bash platform-integrations/install.sh install bob lite
 
 This installs:
 - 6 skills in `~/.bob/skills/`
-- Shared library in `~/.bob/evolve-lib/`
+- Shared library in `.bob/lib/evolve-lite/`
 - Custom mode configuration
 
 ## How It Works

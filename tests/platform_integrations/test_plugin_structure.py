@@ -89,9 +89,9 @@ class TestLibModules:
     @pytest.mark.parametrize(
         "module",
         [
-            "lib/entity_io.py",
-            "lib/config.py",
-            "lib/audit.py",
+            "lib/evolve-lite/entity_io.py",
+            "lib/evolve-lite/config.py",
+            "lib/evolve-lite/audit.py",
         ],
     )
     def test_lib_module_exists(self, module):
