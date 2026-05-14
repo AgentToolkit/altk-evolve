@@ -1069,7 +1069,7 @@ class CodexInstaller:
         plugin_dir = Path(target_dir) / "plugins" / CODEX_PLUGIN
         print("  Codex:")
         print(f"    plugins/evolve-lite       : {'✓' if plugin_dir.is_dir() else '✗'}")
-        print(f"    lib/entity_io.py          : {'✓' if (plugin_dir / 'lib' / 'evolve-lite' / 'entity_io.py').is_file() else '✗'}")
+        print(f"    lib/evolve-lite/entity_io : {'✓' if (plugin_dir / 'lib' / 'evolve-lite' / 'entity_io.py').is_file() else '✗'}")
         print(f"    skills/evolve-lite/learn  : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'learn').is_dir() else '✗'}")
         print(f"    skills/evolve-lite/recall : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'recall').is_dir() else '✗'}")
 
