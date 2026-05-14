@@ -343,6 +343,16 @@ PLATFORMS: dict[str, dict[str, Any]] = {
 }
 
 
+# Rewrites applied to every platform's target paths, ahead of any
+# platform-specific target_rewrites. The shared lib ships flat in
+# plugin-source/lib/ but renders into lib/evolve-lite/ on every host, so
+# multiple plugins can share a host's lib/ directory without their
+# modules colliding (e.g. .bob/lib/evolve-lite/).
+SHARED_TARGET_REWRITES: list[tuple[str, str]] = [
+    (r"^lib/", r"lib/evolve-lite/"),
+]
+
+
 # Bob's slash-command surface: one .md file per skill, generated from the
 # skill folder name and its SKILL.md.j2 frontmatter `description`. Bob
 # command frontmatter only honors `description` (and `argument-hints`,
@@ -439,7 +449,10 @@ class Manifest:
 def _platforms() -> dict[str, PlatformConfig]:
     out: dict[str, PlatformConfig] = {}
     for name, cfg in PLATFORMS.items():
-        rewrites = tuple(TargetRewrite(pattern=re.compile(pat), replacement=repl) for pat, repl in cfg.get("target_rewrites", []))
+        rewrites = tuple(
+            TargetRewrite(pattern=re.compile(pat), replacement=repl)
+            for pat, repl in (*SHARED_TARGET_REWRITES, *cfg.get("target_rewrites", []))
+        )
         excludes = tuple(re.compile(pat) for pat in cfg.get("target_excludes", []))
         metadata_target = cfg.get("metadata_target")
         out[name] = PlatformConfig(

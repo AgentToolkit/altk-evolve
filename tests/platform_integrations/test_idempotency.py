@@ -190,7 +190,7 @@ class TestCodexIdempotency:
 
         file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "learn")
         file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "learn" / "SKILL.md")
-        file_assertions.assert_file_exists(plugin_dir / "lib" / "entity_io.py")
+        file_assertions.assert_file_exists(plugin_dir / "lib" / "evolve-lite" / "entity_io.py")
 
 
 @pytest.mark.platform_integrations

@@ -13,7 +13,7 @@ _IS_WINDOWS = sys.platform == "win32"
 
 
 def _load_claude_config_module():
-    path = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/config.py"
+    path = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/evolve-lite/config.py"
     spec = importlib.util.spec_from_file_location("claude_evolve_lite_config_subscribe", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

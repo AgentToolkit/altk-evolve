@@ -521,10 +521,10 @@ class BobInstaller:
         self._purge_evolve_artifacts(bob_target)
 
         if mode == "lite":
-            shared_lib = bob_source_lite / "lib"
+            shared_lib = bob_source_lite / "lib" / "evolve-lite"
             if not self.ops.is_dry_run and not shared_lib.is_dir():
                 raise RuntimeError(f"Shared lib not found: {shared_lib}")
-            self.ops.copy_tree(shared_lib, bob_target / "evolve-lib")
+            self.ops.copy_tree(shared_lib, bob_target / "lib" / "evolve-lite")
             success("Copied Bob lib")
 
             skills_src = bob_source_lite / "skills"
@@ -583,7 +583,7 @@ class BobInstaller:
     def status(self, target_dir):
         bob_target = Path(target_dir) / ".bob"
         print(f"  Bob (.bob/):")
-        print(f"    evolve-lib/entity_io      : {'✓' if (bob_target / 'evolve-lib' / 'entity_io.py').is_file() else '✗'}")
+        print(f"    lib/evolve-lite/entity_io : {'✓' if (bob_target / 'lib' / 'evolve-lite' / 'entity_io.py').is_file() else '✗'}")
         skills_dir = bob_target / "skills"
         # Glob `evolve*` rather than `evolve-lite-*` so legacy colon-form
         # skills (`evolve-lite:learn` etc.) show up in status; otherwise
@@ -1069,7 +1069,7 @@ class CodexInstaller:
         plugin_dir = Path(target_dir) / "plugins" / CODEX_PLUGIN
         print("  Codex:")
         print(f"    plugins/evolve-lite       : {'✓' if plugin_dir.is_dir() else '✗'}")
-        print(f"    lib/entity_io.py          : {'✓' if (plugin_dir / 'lib' / 'entity_io.py').is_file() else '✗'}")
+        print(f"    lib/evolve-lite/entity_io : {'✓' if (plugin_dir / 'lib' / 'evolve-lite' / 'entity_io.py').is_file() else '✗'}")
         print(f"    skills/evolve-lite/learn  : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'learn').is_dir() else '✗'}")
         print(f"    skills/evolve-lite/recall : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'recall').is_dir() else '✗'}")
 
