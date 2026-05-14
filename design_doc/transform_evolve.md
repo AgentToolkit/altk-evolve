@@ -165,6 +165,17 @@ The four systems above were chosen because they're directly comparable to Evolve
   3. **Two-process architecture** with a separate **MemU Bot** that proactively monitors agent I/O, predicts intent, and pre-fetches context mid-session — rather than only injecting at session start. Combined with **dual retrieval modes** (`method="rag"` for sub-second vector recall, `method="llm"` for reasoning + intent prediction). Reports **92.09% on the Locomo benchmark**.
   
   **What MemU validates:** the MD-style agentic-memory market is hot. 13k★ means we need to ship, not perfect.
+
+- **[OpenClaw memory](https://docs.openclaw.ai/concepts/memory)** — production-grade `.md`-first memory system with several patterns we should absorb:
+  1. **Three file tiers:** `MEMORY.md` (long-term curated, only written by deep promotion), `memory/YYYY-MM-DD.md` (working/daily raw notes), `DREAMS.md` (consolidation human-review surface). Their separation of "raw observation" → "ranked candidate" → "blessed durable" is more granular than our two-tier `generated/` vs `authoritative/`. We don't need the daily-file tier (Phoenix spans cover that), but the multi-stage promotion pipeline is a useful reference.
+  2. **Disk-as-truth principle** — *"the model only 'remembers' what gets saved to disk — there is no hidden state."* Strong philosophical alignment with our recommendation; worth citing.
+  3. **Promotion gates use implicit usage signals** — items must pass thresholds on **score + recall_frequency + query_diversity**. This is a signal source we hadn't considered: instead of (or alongside) explicit outcome signals, you can use *retrieval patterns themselves* as quality proxies. See §7.1.1 — promoted to a sixth signal source there.
+  4. **Pre-compaction memory flush** — a silent turn that runs before context compaction, reminding the agent to save important state. Hot-path safeguard. Not in our doc previously; added as §7.1 feature 7.
+  5. **`memory-wiki` plugin** — compiles durable memory into a wiki vault with structured claims/evidence, **contradiction tracking**, and **freshness tracking**. Existence proof that the temporal-validity question (§8) is implementable.
+  6. **Pluggable indexing backends** (builtin SQLite, QMD, Honcho, LanceDB) over plain-MD substrate. Validates our SQLite-VSS choice for the trigger-only embedding index.
+  7. **Grounded backfill** with `rem-backfill --stage-short-term` and `--rollback` for safe historical replay. Concrete migration-plan template — see §8.
+  
+  **What Evolve still wins on:** OpenClaw memories are user-facts/preferences/observations free-form — not trajectory-mined procedural rules with `trigger`+`implementation_steps`+`category`. Their proxy signals (recall frequency, query diversity) are useful but **complementary** to our explicit outcome signals — not a replacement. They have heartbeat/dreaming sweep but not a proactive sidecar that recognizes triggering situations mid-task.
   
   **What Evolve still wins on:** MemU is in the *facts/preferences/skills* camp (like Mem0/Letta/Zep). It has no first-class outcome metadata, no authority split (generated and curated co-mingle — same flaw as Memsearch), no trajectory-mined procedural rules with explicit `trigger`+`implementation_steps`, no conflict resolution as a documented primitive. The procedural-memory-with-outcome-context moat (§1.1) holds. But see §7.1 — MemU's proactive-bot pattern is genuinely novel and we should adopt it.
 
@@ -352,6 +363,7 @@ The recommendation is now **asymmetric by design** (per §1.1): invest deeply in
 4. **Situational linking (A-MEM-inspired).** When a new guideline is generated, the system links it to situationally adjacent existing guidelines (similar trigger, same category, overlapping tools). This solves the trigger-slug-collision problem without forcing a brittle canonical normalizer. Links live in YAML frontmatter (`related: [trigger-slug-1, trigger-slug-2]`).
 5. **Trigger-only embedding index (Day-1 critical — not deferred).** In realistic injection, the agent rarely sends an exact trigger slug; it sends a *task description* and the system needs to recognize which triggers apply. The filesystem hierarchy handles **lookup** (trigger-slug → guideline file). It does *not* handle **recognition** (free-form task → candidate triggers). A tiny embedding index over `trigger + category + short description` (~500–2000 entries × 1536 dims ≈ 3–12 MB, in-memory or SQLite-VSS) makes recognition tractable while staying ~10–50× smaller than Paradigm B's "embed every chunk of every fact." Optional MemU-style dual mode: cheap embedding kNN for hot-path/continuous monitoring, LLM-as-router fallback when embedding confidence is low.
 6. **Proactive sidecar / mid-session injection (MemU-inspired).** Today Evolve injects guidelines once at agent-start. A separate `EvolveWatcher` process subscribed to Phoenix spans live can recognize triggering situations *as they happen* and surface relevant guidelines mid-session — turning guidelines from boot-time injection into mid-task coaching. This is a strategic upgrade to the moat: procedural rules are most valuable *exactly when* the matching scenario is unfolding, not 30 minutes earlier when context was loaded. MemU implements this for facts; Evolve doing it for procedural rules is a stronger product position. Roadmap: Phase 4 or 5 (after the storage substrate stabilizes).
+7. **Pre-compaction extraction flush (OpenClaw-inspired).** Long agent sessions trigger context compaction. When a host (Claude Code, Codex) signals impending compaction, the plugin can request a silent extraction turn — Evolve reads the recent trajectory window, runs targeted fact/guideline extraction *before* the in-flight context is summarized away, and persists the result. Without this, valuable trajectory detail collapses into a generic compaction summary and the extraction pipeline only ever sees the post-compaction blur. Each plugin (Claude/Codex/Bob/Claw) needs a small hook for the compaction signal; Evolve handles the rest. Roadmap: Phase 4 (alongside authority-split work, since both touch plugin contracts).
 
 #### The canonical retrieval flow (three steps)
 
@@ -388,6 +400,9 @@ The naive `success_count` / `failure_count` schema implies binary ground truth t
 | Trajectory-shape patterns (retry → success = recovery; reached `terminate()` cleanly = likely success; hit max-iters = likely failure) | medium | high | free |
 | User-reply patterns ("no, instead try X" = previous turn failed; same follow-up question = previous answer didn't land) | medium | medium | cheap LLM |
 | LLM-as-judge (post-hoc: "did the agent achieve the goal?") | medium-low | 100% if you pay for it | expensive, rate-limit-aware |
+| **Implicit usage signals** (recall frequency, query diversity, retrieval-then-no-correction pattern) — borrowed from [OpenClaw](https://docs.openclaw.ai/concepts/memory) | medium | 100% (free byproduct of retrieval telemetry) | free |
+
+**On implicit usage signals.** OpenClaw promotes guidelines from short-term to durable storage when they pass thresholds on *recall frequency* (was this guideline retrieved often?), *query diversity* (across diverse contexts?), and *retrieval-then-no-correction* (was the agent's subsequent action consistent with the guideline?). These are zero-cost — they're a free byproduct of telemetry we already need for §8.3. They're complementary to explicit outcome signals: a guideline can be *frequently retrieved and well-correlated with success* (high explicit + high implicit), or *frequently retrieved but never followed by success* (high implicit but low explicit, suggesting the guideline is wrong but situationally salient), or *rarely retrieved despite explicit success on training trajectories* (low implicit, suggesting the trigger-recognition step is failing). All three patterns matter and are signal sources for different fixes.
 
 **Schema** — `outcome_evidence` carries observations with provenance, not raw counts:
 
@@ -477,7 +492,7 @@ Coverage projection after #1+#2 alone: probably 50–70% of trajectories have *s
 ### 8.1 Architecture & data model
 
 - **Memory-type taxonomy.** Are guidelines really *episodic* or are they *procedural* (CoALA's third type)? See §2.1 caveat. The choice changes who/what writes them.
-- **Temporal validity / fact invalidation.** When a fact becomes false ("user's preferred IDE was VSCode, now Cursor"), how is the prior fact preserved with a valid-to timestamp instead of overwritten? Today's `resolve_conflicts` collapses to merge/replace, destroying history. Zep solves this with temporal edges (§3.6); a pure-MD or hybrid Evolve has no equivalent yet.
+- **Temporal validity / fact invalidation.** When a fact becomes false ("user's preferred IDE was VSCode, now Cursor"), how is the prior fact preserved with a valid-to timestamp instead of overwritten? Today's `resolve_conflicts` collapses to merge/replace, destroying history. Zep solves this with temporal edges (§3.6); OpenClaw's `memory-wiki` plugin (§3.6) implements *contradiction tracking + freshness tracking* over plain-MD as an existence proof. A pure-MD Evolve can adopt that pattern without inheriting graph-DB infra.
 - **Backend abstraction death.** Today `BaseEntityBackend` is type-agnostic — facts and guidelines share one mutation path, one `Entity` schema, one `resolve_conflicts` call, one `search_entities` retrieval. The §7 mix forks this. Is the team committed to splitting persistence per track (and thereby retiring the shared backend abstraction), or do we want the mix to preserve a unified facade? This decision must be made *before* the paradigm choice can be acted on.
 - **Per-track conflict resolution.** Today one prompt handles all conflicts. Splitting per track requires (a) a fact-side merger that doesn't exist today, (b) a separate guideline-side trigger-aware merger. Who owns the fact-side logic?
 - **Memory scoping (orthogonal to authority split).** Owner/lifetime scoping (Mem0's conversation < session < user < organizational) is a *separate axis* from authoritative-vs-generated. How do these two axes compose in the new directory layout?
@@ -501,7 +516,7 @@ Coverage projection after #1+#2 alone: probably 50–70% of trajectories have *s
 
 ### 8.4 Operations & ops budget
 
-- **Migration plan.** §9 is a kickoff, not a plan. Need shadow-write window → backfill → traffic flip → DB read-only → DB drop. Until that exists, the recommendation is provisional.
+- **Migration plan.** §9 is a kickoff, not a plan. Need shadow-write window → backfill → traffic flip → DB read-only → DB drop. OpenClaw's `rem-backfill --stage-short-term` + `--rollback` (§3.6) is a concrete template — replay historical observations into a staged area, validate, then promote or roll back atomically. Until our migration plan exists, the recommendation is provisional.
 - **Failure modes per paradigm.** What happens when:
   - File watcher dies (B drifts silently — how is sync drift detected)?
   - LLM rewrite returns garbage (A nukes a curated file)?
@@ -547,4 +562,5 @@ Coverage projection after #1+#2 alone: probably 50–70% of trajectories have *s
 - Mem0 — [docs.mem0.ai/core-concepts/memory-types](https://docs.mem0.ai/core-concepts/memory-types)
 - LangChain — [Memory for agents (CoALA-derived)](https://www.langchain.com/blog/memory-for-agents)
 - MemU (NevaMind-AI) — [github.com/NevaMind-AI/memU](https://github.com/NevaMind-AI/memU)
+- OpenClaw memory — [docs.openclaw.ai/concepts/memory](https://docs.openclaw.ai/concepts/memory)
 - Locomo benchmark — long-conversation memory benchmark used by MemU; consider for §8.4 commitment
