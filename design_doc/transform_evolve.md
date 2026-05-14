@@ -346,14 +346,98 @@ The recommendation is now **asymmetric by design** (per §1.1): invest deeply in
 
 **Paradigm A as the substrate**, plus three procedural-memory-specific features that no surveyed competitor offers:
 
-1. **Trigger-keyed directory layout.** `guidelines/{namespace}/{category}/{trigger-slug}.md` (categories: strategy / recovery / optimization). Pure `.md`, git-reviewed, no vector DB. Filesystem IS the trigger index.
+1. **Trigger-keyed directory layout.** `guidelines/{namespace}/{category}/{trigger-slug}.md` (categories: strategy / recovery / optimization). Pure `.md`, git-reviewed, no vector DB for content. The filesystem hierarchy serves as the **lookup index** (trigger-slug → file in O(1)). It does *not* serve as the recognition index — see feature 5 for that.
 2. **Authority split** (from §4.3): `authoritative/` (team-curated playbooks, PR-reviewed) vs `generated/` (extraction-pipeline output, candidates for promotion). Promotion workflow needs to be specified — see §8.
-3. **Outcome metadata as a first-class field.** Each guideline carries `outcome_evidence`: `success_count`, `failure_count`, references to source trajectories. This is what makes Evolve different from "file-of-tips." Conflict resolution prioritizes by outcome evidence; retrieval can rank by success-rate-in-similar-context.
+3. **Outcome metadata as a first-class field.** Each guideline carries `outcome_evidence`: signal-source-aware confidence-weighted observations (see §7.1.1), with confirmed/inferred/unknown buckets, source-trajectory back-refs, and recovery markers. Conflict resolution and retrieval ranking both prioritize by outcome evidence. This is what makes Evolve different from "file-of-tips."
 4. **Situational linking (A-MEM-inspired).** When a new guideline is generated, the system links it to situationally adjacent existing guidelines (similar trigger, same category, overlapping tools). This solves the trigger-slug-collision problem without forcing a brittle canonical normalizer. Links live in YAML frontmatter (`related: [trigger-slug-1, trigger-slug-2]`).
-5. **Lightweight situational embedding (optional, deferred).** A trigger-only embedding index can be added later if pure trigger-match misses too many situationally-similar cases. This is a far smaller index than B's "embed every chunk of every fact."
+5. **Trigger-only embedding index (Day-1 critical — not deferred).** In realistic injection, the agent rarely sends an exact trigger slug; it sends a *task description* and the system needs to recognize which triggers apply. The filesystem hierarchy handles **lookup** (trigger-slug → guideline file). It does *not* handle **recognition** (free-form task → candidate triggers). A tiny embedding index over `trigger + category + short description` (~500–2000 entries × 1536 dims ≈ 3–12 MB, in-memory or SQLite-VSS) makes recognition tractable while staying ~10–50× smaller than Paradigm B's "embed every chunk of every fact." Optional MemU-style dual mode: cheap embedding kNN for hot-path/continuous monitoring, LLM-as-router fallback when embedding confidence is low.
 6. **Proactive sidecar / mid-session injection (MemU-inspired).** Today Evolve injects guidelines once at agent-start. A separate `EvolveWatcher` process subscribed to Phoenix spans live can recognize triggering situations *as they happen* and surface relevant guidelines mid-session — turning guidelines from boot-time injection into mid-task coaching. This is a strategic upgrade to the moat: procedural rules are most valuable *exactly when* the matching scenario is unfolding, not 30 minutes earlier when context was loaded. MemU implements this for facts; Evolve doing it for procedural rules is a stronger product position. Roadmap: Phase 4 or 5 (after the storage substrate stabilizes).
 
-**Why Paradigm A here, not B:** trigger-match plus situational links covers the dominant retrieval pattern. The cost of running a full shadow vector index over guidelines is high relative to the marginal recall it adds — guidelines are low-volume and human-curated. Spend the complexity budget on outcome metadata, linking, and proactive injection — not embeddings.
+#### The canonical retrieval flow (three steps)
+
+```
+task description ("user is retrying a payment that failed")
+        │
+        ▼  STEP 1: RECOGNITION  (feature 5 — trigger-only embedding kNN
+        │                       OR LLM-as-router for high-stakes calls)
+        │
+        ▼   candidates: [auth_failed_401, payment_retry, card_declined_recovery]
+        │
+        ▼  STEP 2: LOOKUP  (feature 1 — filesystem path resolution, O(1))
+        │  Path(f"guidelines/{ns}/{cat}/{slug}.md") for each candidate
+        │
+        ▼   guideline MD files loaded; expand 1 hop via feature 4 `related: [...]` if results are thin
+        │
+        ▼  STEP 3: RANK  (feature 3 — outcome-aware confidence-weighted score)
+        │
+        ▼   top-K guidelines injected
+```
+
+The three steps have different costs and different acceleration structures: step 1 is the *small-index* problem, step 2 is the *no-index-needed* problem, step 3 is the *metadata-sort* problem.
+
+**Why Paradigm A here, not B:** the recognition step uses a tiny trigger-only embedding index (~3–12 MB total). Paradigm B by contrast embeds every chunk of every fact (≫ MB and ongoing churn cost). We pay for embedding *only on the trigger metadata*, not on full guideline content. Spend the complexity budget on outcome metadata, linking, and proactive injection — not on a shadow content index.
+
+#### 7.1.1 Outcome signal extraction strategy
+
+The naive `success_count` / `failure_count` schema implies binary ground truth that **most trajectories will not have**. A realistic distribution looks more like:
+
+| Source | Confidence | Coverage | Cost |
+|---|---|---|---|
+| Explicit user feedback (👍/👎, "that worked", ratings) | very high | low (~5–15%) | free |
+| Tool-level hard signals (HTTP errors, exceptions, schema mismatches, retries) | high | medium-high (depends on instrumentation) | free |
+| Trajectory-shape patterns (retry → success = recovery; reached `terminate()` cleanly = likely success; hit max-iters = likely failure) | medium | high | free |
+| User-reply patterns ("no, instead try X" = previous turn failed; same follow-up question = previous answer didn't land) | medium | medium | cheap LLM |
+| LLM-as-judge (post-hoc: "did the agent achieve the goal?") | medium-low | 100% if you pay for it | expensive, rate-limit-aware |
+
+**Schema** — `outcome_evidence` carries observations with provenance, not raw counts:
+
+```yaml
+outcome_evidence:
+  observations:
+    - trajectory_id: traj-abc-123
+      signal_source: tool_error            # explicit_feedback | tool_error |
+                                           # trajectory_shape | reply_pattern | llm_judge
+      observed_outcome: failure            # success | failure | unknown
+      confidence: 0.95
+      observed_at: 2026-05-10T14:22Z
+      detail: "auth_handler raised 401 after retry exhaustion"
+  aggregated:
+    confirmed_successes: 8                 # confidence ≥ 0.8 (explicit/tool sources)
+    confirmed_failures: 2
+    inferred_successes: 4                  # 0.4 ≤ confidence < 0.8 (shape/reply)
+    inferred_failures: 1
+    judge_successes: 6                     # llm_judge source
+    judge_failures: 1
+    unknown: 12                            # zero usable signal — counted for frequency only
+    confidence_weighted_score: 0.78
+    last_observed_at: 2026-05-10T14:22Z
+```
+
+**Three properties this preserves:**
+
+1. **`unknown` is first-class.** A guideline with `confirmed_successes=0, confirmed_failures=0, unknown=50` is *a trigger that fires often but we have no data on* — very different from `confirmed_successes=0, confirmed_failures=10` (a bad rule). Conflict resolution and ranking must distinguish them.
+2. **Confidence-weighted aggregation.** `confidence_weighted_score = Σ(confidence_i × outcome_value_i) / Σ(confidence_i)`, where `outcome_value` is `+1`/`-1`/`0` for success/failure/unknown. Falls back gracefully when only weak signals exist.
+3. **Source diversity is itself a quality signal.** A guideline with outcomes from 3 different signal sources is more trustworthy than the same numeric score from one.
+
+**Conflict resolution behavior:**
+
+| Situation | Behavior |
+|---|---|
+| Two contradictory guidelines, both with strong evidence | higher confidence-weighted score wins; loser annotated |
+| Strong vs all-unknown | strong wins; unknown is *not* deleted, tagged "needs validation" |
+| Both all-unknown | don't auto-resolve; flag for human review; both stay |
+| New guideline, zero observations (cold start) | category-based prior: `recovery` starts at 0.5 (we tried it because something failed); `strategy` at 0.6 (someone wrote it deliberately); LLM-extracted at 0.4. Refines from there as observations accumulate. |
+| Unknown count grows unboundedly | background LLM-judge sweep on the K most-frequent unknown-only triggers |
+
+**Build order in Phase 2** (each ships independently):
+
+1. Tool-level signals — Phoenix spans already capture errors/retries; just write the extractor (~1 week, highest ROI).
+2. Trajectory-shape patterns — retry detection, recovery detection, max-iter detection (~1–2 weeks). Free coverage on top of #1.
+3. Reply-pattern classifier — small LLM pass over user messages, batched (~2 weeks, optional).
+4. LLM-judge fallback — only on high-frequency unknown triggers, rate-limit-aware (~1 week + ongoing cost).
+5. Explicit user feedback — opportunistic; plumb through whenever Claude/Codex/Bob/Claw expose it.
+
+Coverage projection after #1+#2 alone: probably 50–70% of trajectories have *some* signal — enough to make the moat feature real before #3–#5.
 
 ### 7.2 Facts track — commodity (defer complexity)
 
