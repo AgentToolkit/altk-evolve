@@ -1,5 +1,7 @@
 import logging
 
+from pydantic_settings import BaseSettings
+
 from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.schema.conflict_resolution import EntityUpdate
@@ -10,37 +12,53 @@ from altk_evolve.schema.guidelines import ConsolidationResult
 logger = logging.getLogger(__name__)
 
 
+def _make_backend(name: str, settings: BaseSettings | None) -> BaseEntityBackend:
+    """Construct a concrete BaseEntityBackend by name.
+
+    Used for both the primary backend and (optionally) a shadow backend
+    for the Phase 1 dual-write pattern. Type-checks settings for backends
+    that require a specific settings class.
+    """
+    if name == "milvus":
+        from altk_evolve.backend.milvus import MilvusEntityBackend
+
+        return MilvusEntityBackend(settings)
+    if name == "filesystem":
+        from altk_evolve.backend.filesystem import FilesystemEntityBackend, FilesystemSettings
+
+        if not isinstance(settings, (FilesystemSettings, type(None))):
+            raise TypeError(f"filesystem backend requires `FilesystemSettings` or `None`, got `{type(settings).__name__}`")
+        return FilesystemEntityBackend(settings)
+    if name == "postgres":
+        from altk_evolve.backend.postgres import PostgresEntityBackend
+        from altk_evolve.config.postgres import PostgresDBSettings
+
+        if not isinstance(settings, (PostgresDBSettings, type(None))):
+            raise TypeError(f"postgres backend requires `PostgresDBSettings` or `None`, got `{type(settings).__name__}`")
+        return PostgresEntityBackend(settings)
+    if name == "markdown":
+        from altk_evolve.backend.markdown import MarkdownEntityBackend
+        from altk_evolve.config.markdown import MarkdownSettings
+
+        if not isinstance(settings, (MarkdownSettings, type(None))):
+            raise TypeError(f"markdown backend requires `MarkdownSettings` or `None`, got `{type(settings).__name__}`")
+        return MarkdownEntityBackend(settings)
+    raise NotImplementedError(f"Entity backend not implemented: {name}")
+
+
 class EvolveClient:
     """Wrapper client around evolve entity backends."""
 
     def __init__(self, config: EvolveConfig | None = None):
         """Initialize the Evolve client."""
         self.config = config or EvolveConfig()
-        self.backend: BaseEntityBackend
-
-        if self.config.backend == "milvus":
-            from altk_evolve.backend.milvus import MilvusEntityBackend
-
-            self.backend = MilvusEntityBackend(self.config.settings)
-        elif self.config.backend == "filesystem":
-            from altk_evolve.backend.filesystem import FilesystemEntityBackend, FilesystemSettings
-
-            if not isinstance(self.config.settings, (FilesystemSettings, type(None))):
-                raise TypeError(
-                    f"Type of `config` should be `{FilesystemSettings.__name__}` or `None`, got `{type(self.config.settings).__name__}`"
-                )
-            self.backend = FilesystemEntityBackend(self.config.settings)
-        elif self.config.backend == "postgres":
-            from altk_evolve.backend.postgres import PostgresEntityBackend
-            from altk_evolve.config.postgres import PostgresDBSettings
-
-            if not isinstance(self.config.settings, (PostgresDBSettings, type(None))):
-                raise TypeError(
-                    f"Type of `config` should be `{PostgresDBSettings.__name__}` or `None`, got `{type(self.config.settings).__name__}`"
-                )
-            self.backend = PostgresEntityBackend(self.config.settings)
-        else:
-            raise NotImplementedError(f"Entity backend not implemented: {self.config.backend}")
+        self.backend: BaseEntityBackend = _make_backend(self.config.backend, self.config.settings)
+        # Shadow backend is constructed but not yet used as a write target;
+        # the dual-write wrapper lands in a follow-up commit. Storing the
+        # handle now lets ops gate readiness on both backends.
+        self.shadow_backend: BaseEntityBackend | None = (
+            _make_backend(self.config.backend_shadow, None) if self.config.backend_shadow else None
+        )
 
     def ready(self) -> bool:
         """Check if the backend is healthy."""
