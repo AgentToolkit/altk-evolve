@@ -3,9 +3,9 @@
 from datetime import datetime, timezone
 
 import pytest
+from ulid import ULID
 
 from altk_evolve.backend._md_serialization import (
-    _CROCKFORD_BASE32,
     _isoformat_utc,
     _parse_isoformat,
     deserialize_entity,
@@ -21,46 +21,28 @@ from altk_evolve.schema.core import RecordedEntity
 pytestmark = pytest.mark.unit
 
 
+# Deterministic ULID for tests that need a stable value (all-zero bytes).
+_ZERO_ULID = str(ULID.from_bytes(b"\x00" * 16))
+
+
 def _ts() -> datetime:
     return datetime(2026, 5, 15, 14, 22, 0, tzinfo=timezone.utc)
 
 
-# ── ULID generator ─────────────────────────────────────────────────────────
+# ── ULID helpers (thin wrappers around python-ulid) ────────────────────────
 
 
 class TestNewULID:
     def test_length_is_26(self) -> None:
         assert len(new_ulid()) == 26
 
-    def test_uses_crockford_alphabet(self) -> None:
-        ulid = new_ulid()
-        for ch in ulid:
-            assert ch in _CROCKFORD_BASE32, f"char {ch!r} not in Crockford base32"
+    def test_returns_valid_ulid_string(self) -> None:
+        # Library accepts what we generate.
+        ULID.from_str(new_ulid())
 
     def test_uniqueness(self) -> None:
         ids = {new_ulid() for _ in range(1000)}
         assert len(ids) == 1000
-
-    def test_lexicographic_ordering_by_time(self) -> None:
-        a = new_ulid(ts_ms=1_700_000_000_000, rand_bytes=b"\x00" * 10)
-        b = new_ulid(ts_ms=1_700_000_001_000, rand_bytes=b"\x00" * 10)
-        assert a < b
-
-    def test_deterministic_with_explicit_inputs(self) -> None:
-        a = new_ulid(ts_ms=0, rand_bytes=b"\x00" * 10)
-        b = new_ulid(ts_ms=0, rand_bytes=b"\x00" * 10)
-        assert a == b
-        assert a == "0" * 26  # all-zero ts + all-zero rand
-
-    def test_rand_bytes_must_be_10(self) -> None:
-        with pytest.raises(ValueError, match="10 bytes"):
-            new_ulid(rand_bytes=b"\x00" * 9)
-
-    def test_ts_ms_must_fit_48_bits(self) -> None:
-        with pytest.raises(ValueError):
-            new_ulid(ts_ms=1 << 48)
-        with pytest.raises(ValueError):
-            new_ulid(ts_ms=-1)
 
 
 class TestIsValidULID:
@@ -71,10 +53,13 @@ class TestIsValidULID:
         assert not is_valid_ulid("0" * 25)
         assert not is_valid_ulid("0" * 27)
 
-    def test_rejects_invalid_characters(self) -> None:
-        # 'I', 'L', 'O', 'U' are excluded from Crockford base32.
-        assert not is_valid_ulid("I" + "0" * 25)
-        assert not is_valid_ulid("0" * 25 + "u")  # also rejects lowercase
+    def test_rejects_lowercase(self) -> None:
+        # ULIDs are uppercase Crockford base32.
+        assert not is_valid_ulid("a" * 26)
+
+    def test_rejects_garbage(self) -> None:
+        assert not is_valid_ulid("definitely not a ulid")
+        assert not is_valid_ulid("")
 
 
 # ── ISO datetime helpers ───────────────────────────────────────────────────
@@ -104,7 +89,7 @@ class TestDatetimeHelpers:
 class TestSerializeEntity:
     def _entity(self, *, content: str | list | dict = "guideline body text", entity_id: str | None = None) -> RecordedEntity:
         return RecordedEntity(
-            id=entity_id or new_ulid(ts_ms=0, rand_bytes=b"\x00" * 10),
+            id=entity_id or _ZERO_ULID,
             type="guideline",
             content=content,
             metadata={"category": "recovery", "trigger": "auth_failed_401"},
@@ -183,7 +168,7 @@ class TestParseMdFile:
 class TestRoundTrip:
     def _entity(self) -> RecordedEntity:
         return RecordedEntity(
-            id=new_ulid(ts_ms=0, rand_bytes=b"\x00" * 10),
+            id=_ZERO_ULID,
             type="guideline",
             content="re-authenticate after token refresh failure",
             metadata={"category": "recovery", "trigger": "auth_failed_401"},
@@ -202,7 +187,7 @@ class TestRoundTrip:
 
     def test_dict_content_round_trip(self) -> None:
         e = RecordedEntity(
-            id=new_ulid(ts_ms=0, rand_bytes=b"\x00" * 10),
+            id=_ZERO_ULID,
             type="fact",
             content={"endpoint": "/v1/refunds", "params": ["idempotency_key"]},
             metadata={"domain": "payments_api"},

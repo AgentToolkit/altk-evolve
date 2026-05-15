@@ -177,6 +177,7 @@ dependencies = [
     { name = "jinja2" },
     { name = "litellm" },
     { name = "pydantic" },
+    { name = "python-ulid" },
     { name = "sentence-transformers" },
     { name = "typer" },
     { name = "uvicorn" },
@@ -259,6 +260,7 @@ requires-dist = [
     { name = "pydantic" },
     { name = "pymilvus", marker = "platform_machine == 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
     { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
+    { name = "python-ulid", specifier = ">=2.0" },
     { name = "sentence-transformers" },
     { name = "smolagents", marker = "extra == 'examples'" },
     { name = "typer", specifier = ">=0.9.0" },
@@ -4160,6 +4162,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f7/ae/3ac172d9cb71dcf25be15c727ce84b3b16f31df98e8015a0a73fe3e29e1c/python_semantic_release-9.21.1.tar.gz", hash = "sha256:b5c509a573899e88e8f29504d2f83e9ddab9a66af861ec1baf39f2b86bbf3517", size = 308463, upload-time = "2025-05-05T04:29:12.818Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/af/b7c6e77142586c4809cb93b636f62cecda73fa543ec4bd00a89eb3e1d4f3/python_semantic_release-9.21.1-py3-none-any.whl", hash = "sha256:e69afe5100106390eec9e800132c947ed774bdcf9aa8f0df29589ea9ef375a21", size = 132726, upload-time = "2025-05-05T04:29:10.698Z" },
+]
+
+[[package]]
+name = "python-ulid"
+version = "3.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/40/7e/0d6c82b5ccc71e7c833aed43d9e8468e1f2ff0be1b3f657a6fcafbb8433d/python_ulid-3.1.0.tar.gz", hash = "sha256:ff0410a598bc5f6b01b602851a3296ede6f91389f913a5d5f8c496003836f636", size = 93175, upload-time = "2025-08-18T16:09:26.305Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/a0/4ed6632b70a52de845df056654162acdebaf97c20e3212c559ac43e7216e/python_ulid-3.1.0-py3-none-any.whl", hash = "sha256:e2cdc979c8c877029b4b7a38a6fba3bc4578e4f109a308419ff4d3ccf0a46619", size = 11577, upload-time = "2025-08-18T16:09:25.047Z" },
 ]
 
 [[package]]
