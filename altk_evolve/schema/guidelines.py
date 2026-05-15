@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field, model_validator
 from typing import Literal
 
+from altk_evolve.schema.outcome_evidence import OutcomeEvidence
+
 DEFAULT_TASK_DESCRIPTION = "Task description unknown"
 
 
@@ -11,6 +13,22 @@ class Guideline(BaseModel):
     category: Literal["strategy", "recovery", "optimization"]
     trigger: str = Field(description="When to apply this guideline")
     implementation_steps: list[str] = Field(default_factory=list, description="Specific steps to implement this guideline")
+    outcome_evidence: OutcomeEvidence | None = Field(
+        default=None,
+        description=(
+            "Provenance-aware, confidence-weighted outcome ledger. None for legacy records "
+            "and brand-new guidelines before the first observation lands. Populated by the "
+            "Phase 2 outcome-extraction pipeline; ranked by aggregated.confidence_weighted_score."
+        ),
+    )
+    related: list[str] = Field(
+        default_factory=list,
+        description=(
+            "A-MEM-style situational links to other guideline trigger slugs. Populated at "
+            "write-time by altk_evolve/linking/linker.py (Phase 5). Used by retrieval to "
+            "expand 1 hop when direct trigger-match returns thin results."
+        ),
+    )
 
 
 class GuidelineGenerationResponse(BaseModel):
