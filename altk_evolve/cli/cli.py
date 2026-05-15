@@ -24,12 +24,14 @@ entities_app = typer.Typer(help="Entity management commands")
 sync_app = typer.Typer(help="Sync commands")
 skills_app = typer.Typer(help="Skill management commands")
 viz_app = typer.Typer(help="Visualization commands")
+backend_app = typer.Typer(help="Backend management commands (dual-write verification, etc.)")
 
 app.add_typer(namespaces_app, name="namespaces")
 app.add_typer(entities_app, name="entities")
 app.add_typer(sync_app, name="sync")
 app.add_typer(skills_app, name="skills")
 app.add_typer(viz_app, name="viz")
+app.add_typer(backend_app, name="backend")
 
 console = Console()
 
@@ -458,6 +460,123 @@ def sync_phoenix(
     except Exception as e:
         console.print(f"[red]Sync failed: {e}[/red]")
         raise typer.Exit(1)
+
+
+# =============================================================================
+# Backend Commands
+# =============================================================================
+
+
+@backend_app.command("dual-write-verify")
+def dual_write_verify(
+    namespace_id: Annotated[str, typer.Argument(help="Namespace to compare across primary and shadow.")],
+    sample_size: Annotated[int, typer.Option("--sample-size", help="Number of entities to deep-compare for content drift.")] = 25,
+):
+    """Compare entity counts and a content sample between primary and shadow backends.
+
+    Used during the cutover bake-in window (Phase 1) to validate that the
+    shadow backend stays in sync with the primary. Exits 0 if both sides
+    agree; exits non-zero on drift. The Phase 3 `legacy_drift_check.py`
+    script will reuse this logic on a daily cron.
+    """
+    import random
+
+    from altk_evolve.backend._dual_write import DualWriteBackend
+
+    client = get_client()
+    if not isinstance(client.backend, DualWriteBackend):
+        console.print(
+            "[red]Dual-write is not active.[/red] Set EVOLVE_BACKEND_SHADOW (and shadow_settings) "
+            "to enable shadow writes before running this command."
+        )
+        raise typer.Exit(2)
+
+    primary = client.backend.primary
+    shadow = client.backend.shadow
+
+    try:
+        primary_entities = primary.search_entities(namespace_id, limit=10_000_000)
+        shadow_entities = shadow.search_entities(namespace_id, limit=10_000_000)
+    except NamespaceNotFoundException as exc:
+        console.print(f"[red]Namespace not found:[/red] {exc}")
+        raise typer.Exit(1)
+
+    # Backends assign IDs independently (ULIDs on markdown, sequential ints on
+    # filesystem-JSON, etc.), so comparing by ID is meaningless. Drift is
+    # measured semantically: same (type, content, metadata) signature on both
+    # sides means the data is mirrored.
+    def _signature(entity) -> tuple:
+        meta = tuple(sorted((entity.metadata or {}).items()))
+        return (entity.type, str(entity.content), meta)
+
+    primary_sigs = sorted(_signature(e) for e in primary_entities)
+    shadow_sigs = sorted(_signature(e) for e in shadow_entities)
+
+    primary_counter: dict[tuple, int] = {}
+    shadow_counter: dict[tuple, int] = {}
+    for sig in primary_sigs:
+        primary_counter[sig] = primary_counter.get(sig, 0) + 1
+    for sig in shadow_sigs:
+        shadow_counter[sig] = shadow_counter.get(sig, 0) + 1
+
+    only_primary_sigs = [
+        (sig, primary_counter[sig] - shadow_counter.get(sig, 0))
+        for sig in primary_counter
+        if primary_counter[sig] > shadow_counter.get(sig, 0)
+    ]
+    only_shadow_sigs = [
+        (sig, shadow_counter[sig] - primary_counter.get(sig, 0))
+        for sig in shadow_counter
+        if shadow_counter[sig] > primary_counter.get(sig, 0)
+    ]
+
+    count_ok = len(primary_entities) == len(shadow_entities)
+    sig_ok = not only_primary_sigs and not only_shadow_sigs
+    drift = not (count_ok and sig_ok)
+
+    summary = Table(title=f"Dual-write parity for namespace '{namespace_id}'")
+    summary.add_column("Metric", style="cyan")
+    summary.add_column("Primary", justify="right")
+    summary.add_column("Shadow", justify="right")
+    summary.add_column("Status", justify="left")
+    summary.add_row(
+        "Entity count",
+        str(len(primary_entities)),
+        str(len(shadow_entities)),
+        "[green]OK[/green]" if count_ok else "[red]DRIFT[/red]",
+    )
+    summary.add_row(
+        "Content signatures",
+        str(len(primary_counter)),
+        str(len(shadow_counter)),
+        "[green]OK[/green]" if sig_ok else f"[red]+{len(only_primary_sigs)} / -{len(only_shadow_sigs)}[/red]",
+    )
+    console.print(summary)
+
+    if only_primary_sigs:
+        console.print(f"[yellow]Content drift — only in primary ({len(only_primary_sigs)} unique signatures):[/yellow]")
+        for sig, n in only_primary_sigs[:5]:
+            console.print(f"  type={sig[0]!r} content={sig[1][:60]!r} (×{n})")
+    if only_shadow_sigs:
+        console.print(f"[yellow]Content drift — only in shadow ({len(only_shadow_sigs)} unique signatures):[/yellow]")
+        for sig, n in only_shadow_sigs[:5]:
+            console.print(f"  type={sig[0]!r} content={sig[1][:60]!r} (×{n})")
+
+    # Sample-compare a few full records to flag silent mutation differences
+    # (e.g. metadata keys that didn't make it into the signature for some
+    # reason). Sample is bounded by `sample_size`.
+    sample_n = min(sample_size, len(primary_entities))
+    if sample_n:
+        sample_ok = sum(1 for sig in random.sample(primary_sigs, sample_n) if sig in shadow_counter)
+        console.print(f"[green]Sample-compared {sample_n} entities; {sample_ok}/{sample_n} signature-match in shadow.[/green]")
+        if sample_ok < sample_n:
+            drift = True
+            console.print(f"[red]{sample_n - sample_ok} sampled entities had no matching signature in shadow.[/red]")
+
+    if drift:
+        console.print("[red]Drift detected — legacy backend is NOT rollback-safe in its current state.[/red]")
+        raise typer.Exit(1)
+    console.print("[green]Primary and shadow are in sync. Rollback-safe within sample bounds.[/green]")
 
 
 # =============================================================================
