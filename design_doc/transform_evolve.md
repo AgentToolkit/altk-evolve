@@ -332,7 +332,39 @@ Applied to Evolve, this looks like:
 - Injection can prioritize: authoritative layer loaded eagerly (like CLAUDE.md), generated layer retrieved lazily (like auto memory topic files).
 - Team workflows get a PR-review surface on the authoritative layer without gumming up the high-volume generated layer.
 
-**Why facts get a single tier:** the authoritative layer for facts would be near-empty (canonical API/tool references only) and creating it imposes three real costs — two directories, dual retrieval path, and a promotion workflow with no clear owner — for near-zero benefit. Codex follows the same asymmetry: `AGENTS.md` is procedural authority; `~/.codex/memories/` has no separate "authoritative facts" layer. For facts, authority is implicit (whoever merges the PR), with `git blame` as the audit trail.
+**Why facts default to a single tier (with an opt-in canonical layer for the minority that warrant it).** The split exists to answer "what's blessed vs what's a candidate?" The math depends on per-record stakes vs volume:
+
+| Track | Per-record stakes | Volume | Curation calculus |
+|---|---|---|---|
+| Guidelines (procedural) | High — wrong rule = systematically wrong action | Low–medium | Symmetric tiers worth it; curated set will be comparable in size to generated |
+| **Average fact** | Low–medium — wrong observation is annoying, not catastrophic | High (auto-extracted continuously) | Curation cost dominates; default to single tier |
+| **Minority of high-stakes facts** | High — API contracts, compliance invariants, domain canonicals | Small | Curation calculus flips back; opt-in `canonical` tier |
+
+**The honest position:** **single tier as default; opt-in `canonical` for the ~5% of facts that genuinely warrant blessing** (canonical API contracts, compliance/safety invariants, domain canonicals like enum value sets). Two implementation options:
+
+```
+# Option 1: directory-based opt-in
+facts/
+├── {namespace}/
+│   ├── canonical/{domain}/*.md       # opt-in, rare; PR-reviewed; team-curated
+│   └── {domain}/*.md                 # default; auto-extracted bulk
+
+# Option 2: frontmatter flag
+---
+canonical: true
+domain: payments_api
+last_reviewed_by: "@vinod"
+last_reviewed_at: 2026-05-12
+---
+```
+
+**Conflict resolution rule:** when a generated fact contradicts a canonical fact, canonical wins; the generated record is annotated with the conflict, not silently overwritten.
+
+**Why this differs from the guidelines split:**
+- For guidelines, `authoritative/` and `generated/` are *symmetric volumes* — curated set will be comparable in size to generated, because procedural rules are inherently low-volume.
+- For facts, `canonical/` is *deliberately small* — most facts will never live there. The split is opt-in for the minority, not a default workflow.
+
+**Industry parallel:** Codex's `AGENTS.md` is exactly this for facts — a small set of high-stakes canonical declarative content separate from `~/.codex/memories/` (the generated state). They're separate files rather than a flag, but the same idea: opt into curation only for what warrants it. OpenClaw's `MEMORY.md` follows the same shape — durable curated facts that passed promotion gates, separate from daily noise.
 
 **Open: promotion workflow for guidelines.** Authority split for guidelines requires answering: who promotes, at what cadence, with what UI? Is promotion a copy or a move? When a generated guideline contradicts an authoritative one, what wins, who decides? See §8.
 
@@ -514,9 +546,10 @@ Coverage projection after #1+#2 alone: probably 50–70% of trajectories have *s
 
 **Paradigm A as the starting point**, *not* B. Until telemetry proves latent-concept semantic recall is load-bearing, don't pay the shadow-index complexity cost.
 
-- `facts/{domain}/*.md`, no authority split (single tier per §4.3 update), no shadow index initially.
-- Retrieval: directory walk + grep + categorization. If this proves insufficient, *then* add a shadow vector index (i.e. graduate to Paradigm B). Don't lead with B.
-- Alternative path worth evaluating: **outsource facts to a memory-tool-style commodity layer** (Memory Tool API, Mem0). Free up engineering capacity for the moat.
+- `facts/{namespace}/{domain}/*.md` is the default tier (auto-extracted bulk). No shadow index initially.
+- **Opt-in `facts/{namespace}/canonical/{domain}/*.md`** for the small minority of high-stakes facts that warrant team blessing — API contracts, compliance/safety invariants, domain canonicals (per §4.3). Conflict resolution: canonical wins over generated; generated record is annotated, not silently overwritten.
+- Retrieval: directory walk + grep + categorization, with canonical entries loaded eagerly (small enough) and generated entries searched lazily. If this proves insufficient, *then* add a shadow vector index (i.e. graduate to Paradigm B). Don't lead with B.
+- Alternative path worth evaluating: **outsource generated facts to a memory-tool-style commodity layer** (Memory Tool API, Mem0) while keeping `canonical/` in-repo. Free up engineering capacity for the moat.
 
 **Why this is the asymmetric inversion of the prior recommendation:** the doc earlier argued "B-for-facts" because vector search is "where it earns its keep." That framing assumed facts are a primary product. If facts are commodity, the bar is "good enough to keep agents working," not "best-in-class semantic recall." Pure files clear that bar; B is over-investment in the wrong layer.
 
