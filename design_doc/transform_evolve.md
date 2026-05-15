@@ -218,6 +218,20 @@ The four systems above were chosen because they're directly comparable to Evolve
   7. **Grounded backfill** with `rem-backfill --stage-short-term` and `--rollback` for safe historical replay. Concrete migration-plan template — see §8.
   
   **What Evolve still wins on:** OpenClaw memories are user-facts/preferences/observations free-form — not trajectory-mined procedural rules with `trigger`+`implementation_steps`+`category`. Their proxy signals (recall frequency, query diversity) are useful but **complementary** to our explicit outcome signals — not a replacement. They have heartbeat/dreaming sweep but not a proactive sidecar that recognizes triggering situations mid-task.
+
+- **[PageIndex (VectifyAI)](https://github.com/VectifyAI/PageIndex)** — vectorless, reasoning-based RAG for **long professional documents** (financial reports, legal manuals, regulatory filings). Builds an LLM-optimized table-of-contents tree and uses LLM tree-search (AlphaGo-inspired) at retrieval time. Their thesis: *"similarity ≠ relevance."* Hits **98.7% on FinanceBench**, MIT-licensed.
+  
+  **Considered and explicitly not adopted for the core memory store** — wrong shape:
+  - PageIndex's sweet spot is *one long document with internal hierarchy*; Evolve's units are *many small atomic records* (each guideline ~50–200 lines, no internal sections worth indexing).
+  - The hard problem in Evolve's retrieval is **recognition** (free-form task → which trigger applies?), not reasoning over structured hierarchy. Recognition is a small-index similarity-from-context problem; PageIndex doesn't help there.
+  - LLM tree-search per retrieval is 10–100× slower / costlier than the trigger-only embedding kNN we already use (§7.1 feature 5). Wrong cost profile for hot-path mid-task injection.
+  - Per-document generation; no streaming-update story. Evolve has continuous mutation from extraction.
+  
+  **Where it could fit later (bookmarked, not Day-1):**
+  - **Wiki-layer retrieval.** If/when we adopt an OpenClaw-style `memory-wiki` (consolidated structured docs with claims/evidence), those documents *are* long structured content — PageIndex's sweet spot. The wiki layer would be a small number of large curated docs; PageIndex tree-search lets an LLM navigate a 50-page consolidated reference without loading it all. See §8.5.
+  - **Long-trajectory navigation during extraction.** A multi-hour agent trajectory has implicit hierarchy (session → turns → tool calls → results). For very long trajectories, a PageIndex tree index could let `llm/guidelines/segmentation.py` reason about which segment to focus on without loading the whole transcript. Niche, scale-driven.
+  
+  **One-line takeaway:** PageIndex solves *"navigate a long document via reasoning"*; Evolve's core problem is *"find the right small playbook for the current task."* Different problems, different tools.
   
   **What Evolve still wins on:** MemU is in the *facts/preferences/skills* camp (like Mem0/Letta/Zep). It has no first-class outcome metadata, no authority split (generated and curated co-mingle — same flaw as Memsearch), no trajectory-mined procedural rules with explicit `trigger`+`implementation_steps`, no conflict resolution as a documented primitive. The procedural-memory-with-outcome-context moat (§1.1) holds. But see §7.1 — MemU's proactive-bot pattern is genuinely novel and we should adopt it.
 
@@ -576,6 +590,8 @@ Coverage projection after #1+#2 alone: probably 50–70% of trajectories have *s
 - **Backwards compat.** Do any external consumers hit the current backend APIs directly? How long do we keep them working?
 - **Identity concern.** If we go Paradigm C, is "Evolve" still the right name / positioning?
 - **Memsearch as model.** It's a small Zilliz reference project, not production-scale. Are we comfortable adopting its architecture without an existence proof at our volume?
+- **Wiki-layer retrieval (Phase 6+ candidate).** If/when we adopt an OpenClaw-style `memory-wiki` layer (consolidated structured docs with claims/evidence — see §3.6), [PageIndex](https://github.com/VectifyAI/PageIndex) is a credible retrieval engine for that layer specifically: long curated documents are exactly its sweet spot (98.7% on FinanceBench). **Not Day-1** — and not a fit for the core trigger-keyed memory store (see §3.6 PageIndex entry for why) — but worth bookmarking for the wiki layer if it materializes.
+- **Long-trajectory navigation during extraction (scale-driven, niche).** For multi-hour agent sessions, `llm/guidelines/segmentation.py` could benefit from a PageIndex-style tree index over the trajectory — letting an LLM-judge or extractor reason about which segment to focus on without loading the whole transcript. Internal infrastructure, not user-facing memory; only matters at scale.
 
 ---
 
@@ -605,4 +621,5 @@ Coverage projection after #1+#2 alone: probably 50–70% of trajectories have *s
 - LangChain — [Memory for agents (CoALA-derived)](https://www.langchain.com/blog/memory-for-agents)
 - MemU (NevaMind-AI) — [github.com/NevaMind-AI/memU](https://github.com/NevaMind-AI/memU)
 - OpenClaw memory — [docs.openclaw.ai/concepts/memory](https://docs.openclaw.ai/concepts/memory)
+- PageIndex (VectifyAI) — [github.com/VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex) — considered and bookmarked for future wiki-layer retrieval, not adopted for the core memory store (see §3.6 entry for rationale)
 - Locomo benchmark — long-conversation memory benchmark used by MemU; consider for §8.4 commitment
