@@ -7,6 +7,48 @@
 
 ---
 
+## Contents
+
+- [1. Why are we considering this?](#1-why-are-we-considering-this)
+  - [1.1 What is Evolve's actual moat?](#11-what-is-evolves-actual-moat)
+- [2. Current Evolve at a Glance](#2-current-evolve-at-a-glance)
+  - [2.1 Two parallel memory tracks](#21-two-parallel-memory-tracks)
+  - [2.2 Six cross-track responsibilities](#22-six-cross-track-responsibilities)
+- [3. Prior Art — How the Industry is Doing This](#3-prior-art--how-the-industry-is-doing-this)
+  - [3.1 Anthropic — Claude Code (CLAUDE.md + Auto memory)](#31-anthropic--claude-code-claudemd--auto-memory)
+  - [3.2 Anthropic — Memory Tool API (client-side primitive)](#32-anthropic--memory-tool-api-client-side-primitive)
+  - [3.3 Anthropic — Claude Managed Agents Memory (hosted service)](#33-anthropic--claude-managed-agents-memory-hosted-service)
+  - [3.4 OpenAI — Codex Memories](#34-openai--codex-memories)
+  - [3.5 Zilliz — Memsearch](#35-zilliz--memsearch)
+  - [3.6 Adjacent Systems Worth Knowing About](#36-adjacent-systems-worth-knowing-about)
+  - [3.7 Common Themes Across the Surveyed Systems](#37-common-themes-across-the-surveyed-systems)
+- [4. The Three Paradigms for New Evolve](#4-the-three-paradigms-for-new-evolve)
+  - [Paradigm A — Pure File-Based (Claude-style)](#paradigm-a--pure-file-based-claude-style)
+  - [Paradigm B — Hybrid (MD source of truth + shadow vector index)](#paradigm-b--hybrid-md-source-of-truth--shadow-vector-index)
+  - [Paradigm C — Agent-Managed Memory (LLM-curated at runtime)](#paradigm-c--agent-managed-memory-llm-curated-at-runtime)
+  - [4.1 Mixed Paradigms (the interesting option)](#41-mixed-paradigms-the-interesting-option)
+  - [4.2 A Fifth, Hybrid-of-Hybrids (B+C for one track)](#42-a-fifth-hybrid-of-hybrids-bc-for-one-track)
+  - [4.3 Authority Split — an orthogonal dimension every paradigm should adopt](#43-authority-split--an-orthogonal-dimension-every-paradigm-should-adopt)
+- [5. Side-by-Side Comparison](#5-side-by-side-comparison)
+- [6. Decision Framework — Questions the Team Needs to Answer](#6-decision-framework--questions-the-team-needs-to-answer)
+- [7. Recommendation (Author's View)](#7-recommendation-authors-view)
+  - [7.1 Guidelines track — the moat (deep investment)](#71-guidelines-track--the-moat-deep-investment)
+    - [7.1.1 Outcome signal extraction strategy](#711-outcome-signal-extraction-strategy)
+  - [7.2 Facts track — commodity (defer complexity)](#72-facts-track--commodity-defer-complexity)
+  - [7.3 Reasoning](#73-reasoning)
+  - [7.4 Honest accounting of what dies in this transformation](#74-honest-accounting-of-what-dies-in-this-transformation)
+  - [7.5 Honest counterarguments](#75-honest-counterarguments)
+- [8. Open Questions / Unknowns](#8-open-questions--unknowns)
+  - [8.1 Architecture & data model](#81-architecture--data-model)
+  - [8.2 Extraction & writing](#82-extraction--writing)
+  - [8.3 Retrieval & injection](#83-retrieval--injection)
+  - [8.4 Operations & ops budget](#84-operations--ops-budget)
+  - [8.5 Strategy](#85-strategy)
+- [9. Next Steps Proposal](#9-next-steps-proposal)
+- [References](#references)
+
+---
+
 ## 1. Why are we considering this?
 
 Evolve today stores everything — trajectories, facts, guidelines — inside a vector database (Milvus / pgvector / filesystem-backed), with semantic similarity as the primary retrieval mechanism. That design has real costs:
