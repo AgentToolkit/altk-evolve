@@ -75,7 +75,12 @@ class TestEvolveClientWithMarkdown:
             backend="markdown",
             backend_shadow="filesystem",
             settings=MarkdownSettings(data_dir=str(tmp_path / "memory")),
+            shadow_settings=FilesystemSettings(data_dir=str(tmp_path / "shadow")),
         )
         client = EvolveClient(config=cfg)
-        assert isinstance(client.backend, MarkdownEntityBackend)
+        # client.backend is now the DualWriteBackend wrapping primary + shadow.
+        from altk_evolve.backend._dual_write import DualWriteBackend
+
+        assert isinstance(client.backend, DualWriteBackend)
+        assert isinstance(client.backend.primary, MarkdownEntityBackend)
         assert isinstance(client.shadow_backend, FilesystemEntityBackend)

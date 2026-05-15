@@ -52,13 +52,19 @@ class EvolveClient:
     def __init__(self, config: EvolveConfig | None = None):
         """Initialize the Evolve client."""
         self.config = config or EvolveConfig()
-        self.backend: BaseEntityBackend = _make_backend(self.config.backend, self.config.settings)
-        # Shadow backend is constructed but not yet used as a write target;
-        # the dual-write wrapper lands in a follow-up commit. Storing the
-        # handle now lets ops gate readiness on both backends.
+        primary: BaseEntityBackend = _make_backend(self.config.backend, self.config.settings)
+        # Shadow backend (Phase 1 dual-write). When configured, every mutating
+        # call is mirrored best-effort; reads still come from primary only.
+        # See altk_evolve/backend/_dual_write.py.
         self.shadow_backend: BaseEntityBackend | None = (
-            _make_backend(self.config.backend_shadow, None) if self.config.backend_shadow else None
+            _make_backend(self.config.backend_shadow, self.config.shadow_settings) if self.config.backend_shadow else None
         )
+        if self.shadow_backend is not None:
+            from altk_evolve.backend._dual_write import DualWriteBackend
+
+            self.backend: BaseEntityBackend = DualWriteBackend(primary, self.shadow_backend)
+        else:
+            self.backend = primary
 
     def ready(self) -> bool:
         """Check if the backend is healthy."""

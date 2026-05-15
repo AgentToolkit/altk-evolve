@@ -13,6 +13,12 @@ class EvolveConfig(BaseSettings):
     Used during the cutover bake-in window to keep the legacy backend warm
     and rollback-safe (see design_doc/implementation_plan.md §7).
     """
+    shadow_settings: BaseSettings | None = None
+    """Settings instance for the shadow backend. If None, the shadow backend
+    uses its default settings — but in test/multi-instance contexts this
+    leaks state across runs (e.g. filesystem default `data_dir = "evolve_data"`).
+    Always provide explicit shadow_settings in tests and production.
+    """
     namespace_id: str = "evolve"
     settings: BaseSettings | None = None
     clustering_threshold: float = 0.80
