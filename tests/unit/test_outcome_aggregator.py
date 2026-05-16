@@ -109,15 +109,16 @@ class TestScore:
         )
         assert agg.confidence_weighted_score == pytest.approx(1.0)
 
-    def test_pure_failures_score_negative(self) -> None:
+    def test_pure_failures_score_zero(self) -> None:
         agg = aggregate(
             [_obs(confidence=0.9, outcome=OutcomeKind.FAILURE) for _ in range(3)],
             category="strategy",
         )
-        assert agg.confidence_weighted_score == pytest.approx(-1.0)
+        assert agg.confidence_weighted_score == pytest.approx(0.0)
 
     def test_mixed_outcomes_weighted_by_confidence(self) -> None:
-        # 1 success at 0.9 + 1 failure at 0.5 → (0.9 - 0.5) / (0.9 + 0.5) = 0.4 / 1.4
+        # 1 success at 0.9 (value=1.0) + 1 failure at 0.5 (value=0.0)
+        # → (0.9*1.0 + 0.5*0.0) / (0.9 + 0.5) = 0.9 / 1.4
         agg = aggregate(
             [
                 _obs(confidence=0.9, outcome=OutcomeKind.SUCCESS),
@@ -125,7 +126,7 @@ class TestScore:
             ],
             category="strategy",
         )
-        assert agg.confidence_weighted_score == pytest.approx(0.4 / 1.4)
+        assert agg.confidence_weighted_score == pytest.approx(0.9 / 1.4)
 
     def test_unknown_excluded_from_score(self) -> None:
         # 1 success + 99 unknowns → score should still be 1.0
@@ -151,15 +152,14 @@ class TestScore:
 
 
 class TestColdStart:
-    def test_no_observations_uses_llm_prior_remapped_to_score_range(self) -> None:
+    def test_no_observations_uses_llm_prior_directly(self) -> None:
         agg = aggregate([], category="strategy", source="llm_extracted")
-        # prior 0.4 → score 2*0.4 - 1 = -0.2
-        assert agg.confidence_weighted_score == pytest.approx(2.0 * COLD_START_PRIOR_LLM_EXTRACTED - 1.0)
+        # prior 0.4 → score 0.4 (no remap; range is [0, 1])
+        assert agg.confidence_weighted_score == pytest.approx(COLD_START_PRIOR_LLM_EXTRACTED)
 
     def test_no_observations_human_authored_uses_category_prior(self) -> None:
         agg = aggregate([], category="strategy", source="human_authored")
-        expected = 2.0 * COLD_START_PRIOR_BY_CATEGORY["strategy"] - 1.0
-        assert agg.confidence_weighted_score == pytest.approx(expected)
+        assert agg.confidence_weighted_score == pytest.approx(COLD_START_PRIOR_BY_CATEGORY["strategy"])
 
     def test_only_unknown_observations_falls_back_to_prior(self) -> None:
         # 5 unknowns count toward the unknown counter but do NOT replace the cold-start prior.
@@ -169,8 +169,7 @@ class TestColdStart:
             source="human_authored",
         )
         assert agg.unknown == 5
-        expected = 2.0 * COLD_START_PRIOR_BY_CATEGORY["recovery"] - 1.0
-        assert agg.confidence_weighted_score == pytest.approx(expected)
+        assert agg.confidence_weighted_score == pytest.approx(COLD_START_PRIOR_BY_CATEGORY["recovery"])
 
     def test_one_measured_outcome_overrides_prior(self) -> None:
         # Single measured success should dominate the prior.

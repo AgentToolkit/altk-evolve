@@ -81,12 +81,14 @@ class AggregatedOutcome(BaseModel):
     judge_failures: int = Field(default=0, ge=0)
     unknown: int = Field(default=0, ge=0, description="Observations with no usable signal.")
     confidence_weighted_score: float = Field(
-        default=0.0,
-        ge=-1.0,
+        default=0.5,
+        ge=0.0,
         le=1.0,
         description=(
-            "Σ(confidence_i × outcome_value_i) / Σ(confidence_i), where outcome_value is +1/-1/0 "
-            "for success/failure/unknown. Falls back to category prior when no observations exist."
+            "Σ(confidence_i × outcome_value_i) / Σ(confidence_i), where outcome_value is "
+            "1.0 / 0.0 for success / failure (UNKNOWN excluded). Range [0, 1] reads as "
+            "probability-of-success: 0.0 = all failures, 0.5 = no data / neutral, 1.0 = "
+            "all successes. Falls back to category prior when no observations exist."
         ),
     )
     last_observed_at: datetime | None = Field(default=None)

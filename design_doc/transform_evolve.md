@@ -519,7 +519,7 @@ outcome_evidence:
 **Three properties this preserves:**
 
 1. **`unknown` is first-class.** A guideline with `confirmed_successes=0, confirmed_failures=0, unknown=50` is *a trigger that fires often but we have no data on* — very different from `confirmed_successes=0, confirmed_failures=10` (a bad rule). Conflict resolution and ranking must distinguish them.
-2. **Confidence-weighted aggregation.** `confidence_weighted_score = Σ(confidence_i × outcome_value_i) / Σ(confidence_i)`, where `outcome_value` is `+1`/`-1`/`0` for success/failure/unknown. Falls back gracefully when only weak signals exist.
+2. **Confidence-weighted aggregation.** `confidence_weighted_score = Σ(confidence_i × outcome_value_i) / Σ(confidence_i)`, where `outcome_value` is `1.0`/`0.0` for success/failure (UNKNOWN observations are excluded from both numerator and denominator). Output range `[0, 1]` reads as probability-of-success: `0.0` = all observed failures, `0.5` = no data / neutral, `1.0` = all observed successes. Cold-start prior is in `[0, 1]` directly. Falls back gracefully when only weak signals exist.
 3. **Source diversity is itself a quality signal.** A guideline with outcomes from 3 different signal sources is more trustworthy than the same numeric score from one.
 
 **Conflict resolution behavior:**

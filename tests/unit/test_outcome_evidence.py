@@ -70,16 +70,17 @@ class TestOutcomeObservation:
 
 
 class TestAggregatedOutcome:
-    def test_default_zeroed(self) -> None:
+    def test_default_neutral(self) -> None:
         agg = AggregatedOutcome()
         assert agg.confirmed_successes == 0
         assert agg.confirmed_failures == 0
         assert agg.unknown == 0
-        assert agg.confidence_weighted_score == 0.0
+        # 0.5 = neutral / no data on the [0, 1] probability-of-success scale.
+        assert agg.confidence_weighted_score == 0.5
         assert agg.last_observed_at is None
 
     def test_score_bounds(self) -> None:
-        for bad in (-1.5, 1.5):
+        for bad in (-0.1, 1.1):
             with pytest.raises(Exception):  # noqa: B017
                 AggregatedOutcome(confidence_weighted_score=bad)
 
