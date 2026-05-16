@@ -185,3 +185,65 @@ class TestInvariants:
         messages = [_user("x"), _assistant("max iterations reached")]
         observations = extract_trajectory_shape_signals(messages, trajectory_id="t1", observed_at=ts)
         assert all(o.observed_at == ts for o in observations)
+
+
+# ── dual-convention support (tool result as role=user) ────────────────────
+
+
+class TestAnthropicAppworldConvention:
+    """Trajectory shape detection must handle the dialect where tool results
+    arrive as role=user messages, not as separate role=tool messages.
+
+    In this dialect, "trajectory ends with a successful tool action" looks
+    like: assistant(tool_calls=[X]) → user("Output: {...}"). The current
+    extractor must recognize this as a clean terminate, not as mid-task."""
+
+    def test_tool_action_terminate_with_user_output_message(self) -> None:
+        messages = [
+            _user("send money"),
+            _assistant("", tool_calls=[{"id": "t1", "type": "function", "function": {"name": "send_money", "arguments": "{}"}}]),
+            # Successful tool output as role=user (AppWorld style).
+            _user('Output:\n```\n{"message": "Sent.", "id": 8216}\n```'),
+        ]
+        observations = _extract(messages)
+        successes = [o for o in observations if o.observed_outcome is OutcomeKind.SUCCESS]
+        assert len(successes) == 1
+        assert successes[0].detail is not None
+        assert "tool action" in successes[0].detail
+
+    def test_tool_action_terminate_with_error_output_does_not_emit_success(self) -> None:
+        messages = [
+            _user("send money"),
+            _assistant("", tool_calls=[{"id": "t1", "type": "function", "function": {"name": "send_money", "arguments": "{}"}}]),
+            # Error tool output — clean-terminate must NOT fire.
+            _user('Output:\n```\n{"error": "503 Service Unavailable"}\n```'),
+        ]
+        observations = _extract(messages)
+        successes = [o for o in observations if o.observed_outcome is OutcomeKind.SUCCESS]
+        assert successes == []
+
+    def test_mid_task_capture_no_tool_result_yet(self) -> None:
+        # Last assistant has tool_calls AND nothing follows → mid-task; no shape signal.
+        messages = [
+            _user("do thing"),
+            _assistant("", tool_calls=[{"id": "t1", "type": "function", "function": {"name": "do", "arguments": "{}"}}]),
+        ]
+        observations = _extract(messages)
+        # No SUCCESS / no FAILURE; mid-task is intentionally silent.
+        assert all(o.observed_outcome is not OutcomeKind.SUCCESS for o in observations)
+
+
+class TestVenmoFixtureRegression:
+    def test_venmo_trajectory_emits_clean_terminate_success(self) -> None:
+        import json
+        import pathlib
+
+        msgs = json.loads((pathlib.Path(__file__).parent.parent / "fixtures" / "appworld_venmo_task_trajectory.json").read_text())
+        observations = _extract(msgs)
+        successes = [o for o in observations if o.observed_outcome is OutcomeKind.SUCCESS]
+        # The fixture is a successful venmo task; the extractor should detect at
+        # least one terminate-style success. Exact flavor (chat-style vs tool-action)
+        # is not pinned — both are valid signals on this trajectory.
+        assert len(successes) >= 1
+        assert successes[0].signal_source is SignalSource.TRAJECTORY_SHAPE
+        assert successes[0].confidence == 0.65

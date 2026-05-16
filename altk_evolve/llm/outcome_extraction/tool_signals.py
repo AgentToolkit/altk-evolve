@@ -44,12 +44,27 @@ from altk_evolve.schema.outcome_evidence import (
 
 # Regex patterns. Compiled once at module load.
 _TRACEBACK_RE = re.compile(
-    r"(?:traceback \(most recent call last\)|^\s*Traceback:|raise [A-Z][A-Za-z]+(?:Error|Exception)|unhandled exception)",
+    r"(?:traceback \(most recent call last\)|\bTraceback:|raise [A-Z][A-Za-z]+(?:Error|Exception)|unhandled exception)",
     re.IGNORECASE | re.MULTILINE,
 )
-_HTTP_5XX_RE = re.compile(r"\b5\d{2}\b(?:\s+(?:internal|server|service|gateway|bad))?", re.IGNORECASE)
-_HTTP_4XX_RE = re.compile(r"\b4\d{2}\b(?:\s+(?:bad request|unauthorized|forbidden|not found|conflict|timeout))?", re.IGNORECASE)
+# HTTP status patterns require the status name as well — a bare `\b4\d{2}\b`
+# false-matches Python traceback line numbers, transaction IDs, etc.
+_HTTP_5XX_RE = re.compile(
+    r"\b5\d{2}\s+(?:internal[\s_-]*server[\s_-]*error|server[\s_-]*error|service[\s_-]*unavailable|gateway[\s_-]*timeout|bad[\s_-]*gateway)",
+    re.IGNORECASE,
+)
+_HTTP_4XX_RE = re.compile(
+    r"\b4\d{2}\s+(?:bad[\s_-]*request|unauthorized|forbidden|not[\s_-]*found|conflict|timeout|too[\s_-]*many[\s_-]*requests|payment[\s_-]*required)",
+    re.IGNORECASE,
+)
 _GENERIC_ERROR_RE = re.compile(r"\b(?:error|failed|failure|denied|exception|timeout|refused)\b", re.IGNORECASE)
+
+# Spec / documentation lookups: the response describes an API rather than the
+# result of CALLING it. These outputs contain words like "failure" / "error"
+# in describing error responses but are not themselves failures. Heuristic:
+# JSON with api_name + (path | method) keys → suppress generic-error matches.
+_SPEC_LOOKUP_RE = re.compile(r'"api_name"\s*:\s*"', re.IGNORECASE)
+_SPEC_HAS_PATH_OR_METHOD_RE = re.compile(r'"(?:path|method)"\s*:\s*"', re.IGNORECASE)
 
 
 # Confidence levels per detection class.
@@ -92,24 +107,66 @@ def _content_str(message: dict) -> str:
     return str(content)
 
 
-def _is_tool_result(message: dict) -> bool:
-    """Heuristic: tool-result messages have role 'tool' or carry a tool_call_id."""
-    if message.get("role") == "tool":
+_TOOL_OUTPUT_PREFIX_RE = re.compile(r"^\s*(?:Output|Result|Response|Tool[\s_-]*output)\s*:", re.IGNORECASE)
+
+
+def _is_tool_result_at(messages: list[dict], idx: int) -> bool:
+    """Is messages[idx] a tool-result message?
+
+    Recognizes the three conventions seen in real trajectories:
+
+    - **OpenAI strict:** `role == "tool"` or message carries `tool_call_id`.
+    - **Anthropic / OpenAI tool_calls:** `role == "user"` immediately following
+      an assistant message with `tool_calls` set. The tool output is stuffed
+      into a user message; the prior assistant's `tool_calls` field marks it.
+    - **Narrated AppWorld:** `role == "user"` whose content starts with a
+      literal "Output:" / "Result:" / "Response:" prefix. AppWorld trajectories
+      use this format with the tool-action implicit in the assistant's prose
+      rather than a `tool_calls` field.
+
+    The narrated form is heuristic but the prefix is distinctive enough that
+    real user prose rarely starts with "Output:" or "Result:".
+    """
+    if idx < 0 or idx >= len(messages):
+        return False
+    msg = messages[idx]
+    if msg.get("role") == "tool":
         return True
-    if message.get("tool_call_id"):
+    if msg.get("tool_call_id"):
         return True
+    if msg.get("role") == "user":
+        if idx > 0:
+            prev = messages[idx - 1]
+            if prev.get("role") == "assistant" and prev.get("tool_calls"):
+                return True
+        content = _content_str(msg)
+        if content and _TOOL_OUTPUT_PREFIX_RE.match(content):
+            return True
     return False
 
 
+def _looks_like_spec_lookup(content: str) -> bool:
+    """Heuristic: is this the response from an API-spec / documentation lookup
+    rather than a real call result? Such responses contain words like 'failure'
+    in describing error contracts but are not themselves failures."""
+    return bool(_SPEC_LOOKUP_RE.search(content) and _SPEC_HAS_PATH_OR_METHOD_RE.search(content))
+
+
 def _classify_error(content: str) -> tuple[float, str] | None:
-    """Return (confidence, detail_label) for the strongest match, or None."""
+    """Return (confidence, detail_label) for the strongest match, or None.
+
+    Strong signals (Traceback, HTTP status with name) fire regardless of context.
+    Generic word-level signals are suppressed when the content looks like an
+    API spec / documentation lookup — there `failure` / `error` describe the
+    contract, not an actual call outcome.
+    """
     if _TRACEBACK_RE.search(content):
         return (_CONF_TRACEBACK, "exception traceback in tool result")
     if _HTTP_5XX_RE.search(content):
         return (_CONF_HTTP_5XX, "HTTP 5xx status in tool result")
     if _HTTP_4XX_RE.search(content):
         return (_CONF_HTTP_4XX, "HTTP 4xx status in tool result")
-    if _GENERIC_ERROR_RE.search(content):
+    if _GENERIC_ERROR_RE.search(content) and not _looks_like_spec_lookup(content):
         return (_CONF_GENERIC, "error/failed/denied substring in tool result")
     return None
 
@@ -167,8 +224,8 @@ def extract_tool_signals(
     observations: list[OutcomeObservation] = []
 
     # Pass 1: error indicators in tool result messages.
-    for msg in messages:
-        if not _is_tool_result(msg):
+    for idx, msg in enumerate(messages):
+        if not _is_tool_result_at(messages, idx):
             continue
         text = _content_str(msg)
         if not text:
@@ -226,10 +283,9 @@ def extract_tool_signals(
 def _prior_call_failed(messages: list[dict], assistant_idx: int) -> bool:
     """Did the tool result following messages[assistant_idx] match an error pattern?"""
     for j in range(assistant_idx + 1, min(assistant_idx + 4, len(messages))):
-        m = messages[j]
-        if not _is_tool_result(m):
+        if not _is_tool_result_at(messages, j):
             continue
-        text = _content_str(m)
+        text = _content_str(messages[j])
         if text and _classify_error(text) is not None:
             return True
         # Found a tool result that wasn't an error — prior call succeeded.

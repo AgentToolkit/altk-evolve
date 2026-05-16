@@ -32,6 +32,10 @@ import datetime as _dt
 import re
 from typing import Any
 
+from altk_evolve.llm.outcome_extraction.tool_signals import (
+    _classify_error,
+    _is_tool_result_at,
+)
 from altk_evolve.schema.outcome_evidence import (
     OutcomeKind,
     OutcomeObservation,
@@ -94,10 +98,10 @@ def _content_str(message: dict) -> str:
     return str(content)
 
 
-def _last_assistant_message(messages: list[dict]) -> dict | None:
-    for msg in reversed(messages):
-        if msg.get("role") == "assistant":
-            return msg
+def _last_assistant_index(messages: list[dict]) -> int | None:
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "assistant":
+            return i
     return None
 
 
@@ -143,17 +147,28 @@ def extract_trajectory_shape_signals(
             )
             break  # one max-iter observation is enough
 
-    # 2) Last-assistant analysis — only meaningful if the conversation actually
-    #    terminated on an assistant turn (not still mid-tool-call, not the user
-    #    speaking last).
-    last = _last_assistant_message(messages)
-    if last is None:
+    # 2) Last-assistant analysis. The "decision to stop" is the final
+    #    assistant message; whether the trajectory then ends with that
+    #    message OR with a trailing tool result depends on dialect:
+    #    - chat-style: assistant message is messages[-1].
+    #    - tool-action style (AppWorld): assistant issues a final tool_call
+    #      and the trailing message is the tool result (often as role=user).
+    last_idx = _last_assistant_index(messages)
+    if last_idx is None:
         return observations
+    last = messages[last_idx]
     last_text = _content_str(last).strip()
 
-    # Mid-task capture: the trajectory ends on an assistant tool_call without
-    # a subsequent tool result. We can't tell success/failure shape-wise.
-    if _has_tool_calls(last) and messages[-1] is last:
+    # Find the first tool result that follows the last assistant, if any.
+    trailing_tool_result_idx: int | None = None
+    for j in range(last_idx + 1, len(messages)):
+        if _is_tool_result_at(messages, j):
+            trailing_tool_result_idx = j
+            break
+
+    # Mid-task capture: assistant issued tool_calls but no tool result followed.
+    # Shape-wise we can't tell success or failure.
+    if _has_tool_calls(last) and trailing_tool_result_idx is None:
         return observations
 
     # 3) Early abort — assistant says they can't help.
@@ -170,10 +185,33 @@ def extract_trajectory_shape_signals(
         )
         return observations  # don't also emit clean-terminate for the same trajectory
 
-    # 4) Clean terminate — substantive final assistant content, no errors,
-    #    no in-flight tool calls. The trajectory ends with the assistant
-    #    delivering an answer.
-    if messages[-1] is last and not _has_tool_calls(last) and len(last_text) >= _SUBSTANTIVE_CONTENT_MIN_CHARS:
+    # 4) Clean terminate, two flavors:
+    #    A) chat-style: assistant's substantive reply IS the trailing message
+    #       (no user follow-up, no tool_calls). If a real user message follows,
+    #       the conversation continued and we should not infer terminate.
+    #    B) tool-action style: assistant's final action was a tool_call AND the
+    #       trailing tool result did NOT match any error pattern. Common in
+    #       AppWorld where tasks complete with a tool call (e.g. send_money)
+    #       whose response confirms success. Note: under the dual convention,
+    #       a trailing role=user that's a tool result is fine here — that's
+    #       exactly the AppWorld pattern.
+    # A "real" user follow-up means the user kept talking after the assistant —
+    # NOT a tool result (which is dialect-dependent; see _is_tool_result_at).
+    has_real_user_followup = any(
+        messages[j].get("role") == "user" and not _is_tool_result_at(messages, j) for j in range(last_idx + 1, len(messages))
+    )
+    flavor_a = not _has_tool_calls(last) and len(last_text) >= _SUBSTANTIVE_CONTENT_MIN_CHARS and not has_real_user_followup
+    flavor_b = (
+        _has_tool_calls(last)
+        and trailing_tool_result_idx is not None
+        and _classify_error(_content_str(messages[trailing_tool_result_idx])) is None
+    )
+    if flavor_a or flavor_b:
+        detail = (
+            "trajectory ended on substantive assistant message (clean terminate)"
+            if flavor_a
+            else "trajectory ended on successful tool action (clean terminate)"
+        )
         observations.append(
             OutcomeObservation(
                 trajectory_id=trajectory_id,
@@ -181,7 +219,7 @@ def extract_trajectory_shape_signals(
                 observed_outcome=OutcomeKind.SUCCESS,
                 confidence=_CONF_TERMINATE,
                 observed_at=observed_at,
-                detail="trajectory ended on substantive assistant message (clean terminate)",
+                detail=detail,
             )
         )
 
