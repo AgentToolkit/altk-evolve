@@ -19,8 +19,12 @@ from altk_evolve.config.phoenix import phoenix_settings
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines
+from altk_evolve.llm.outcome_extraction.aggregator import aggregate
+from altk_evolve.llm.outcome_extraction.tool_signals import extract_tool_signals
+from altk_evolve.llm.outcome_extraction.trajectory_shape import extract_trajectory_shape_signals
 from altk_evolve.schema.core import Entity
 from altk_evolve.schema.exceptions import NamespaceNotFoundException
+from altk_evolve.schema.outcome_evidence import OutcomeEvidence
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("evolve.sync.phoenix")
@@ -482,6 +486,16 @@ class PhoenixSync:
         # Generate guidelines from the trajectory (returns one result per subtask)
         results = generate_guidelines(trajectory["messages"])
 
+        # Run outcome extractors once on the full trajectory; observations
+        # describe trajectory-level signals so every guideline mined from
+        # this trajectory inherits them. Phase 2.5 may match observations
+        # to specific subtasks; for now this is uniform attachment per §7.1.1.
+        trajectory_id = trajectory["trace_id"]
+        observations = [
+            *extract_tool_signals(messages, trajectory_id=trajectory_id),
+            *extract_trajectory_shape_signals(messages, trajectory_id=trajectory_id),
+        ]
+
         guideline_entities = [
             Entity(
                 type="guideline",
@@ -495,6 +509,14 @@ class PhoenixSync:
                     "source_span_id": trajectory["span_id"],
                     "task_description": result.task_description,
                     "creation_mode": "auto-phoenix",
+                    "outcome_evidence": OutcomeEvidence(
+                        observations=observations,
+                        aggregated=aggregate(
+                            observations,
+                            category=guideline.category,
+                            source="llm_extracted",
+                        ),
+                    ).model_dump(mode="json"),
                 },
             )
             for result in results

@@ -764,3 +764,100 @@ class TestGetProcessedSpanIds:
         result = phoenix_sync._get_processed_span_ids()
 
         assert result == set()
+
+
+# ── outcome-evidence wiring (Phase 2) ─────────────────────────────────────
+
+
+class TestOutcomeEvidenceWiring:
+    """_process_trajectory must run the outcome extractors over the messages
+    and attach the resulting OutcomeEvidence to every guideline entity it
+    writes. Verified without invoking the real LLM by mocking
+    generate_guidelines."""
+
+    def _trajectory_with_traceback(self) -> dict:
+        # Trajectory containing one Python traceback + one clean terminate.
+        return {
+            "trace_id": "trace-1",
+            "span_id": "span-1",
+            "model": "gpt-4o",
+            "timestamp": "2026-05-15T12:00:00Z",
+            "messages": [
+                {"role": "user", "content": "do thing"},
+                {
+                    "role": "assistant",
+                    "content": "calling api",
+                    "tool_calls": [{"id": "t1", "type": "function", "function": {"name": "api", "arguments": "{}"}}],
+                },
+                {"role": "user", "content": "Output:\n```\nExecution failed. Traceback:\n  File <x>, line 1\n```"},
+                {"role": "assistant", "content": "Done — handled the error and the task completed successfully with the expected result."},
+            ],
+            "usage": {},
+        }
+
+    def _stub_results(self) -> list:
+        from altk_evolve.schema.guidelines import Guideline
+
+        return [
+            GuidelineGenerationResult(
+                guidelines=[
+                    Guideline(
+                        content="Always retry on transient errors.",
+                        rationale="Transient errors recover when retried.",
+                        category="recovery",
+                        trigger="When a tool call returns an exception.",
+                        implementation_steps=["catch", "retry once"],
+                    ),
+                    Guideline(
+                        content="Prefer batch endpoints when fetching > 5 items.",
+                        rationale="Batching cuts latency.",
+                        category="optimization",
+                        trigger="When iterating over many items.",
+                        implementation_steps=["check size", "use batch"],
+                    ),
+                ],
+                task_description="recover from a transient API error",
+            )
+        ]
+
+    def test_outcome_evidence_attached_to_each_guideline(self, phoenix_sync) -> None:
+        with patch("altk_evolve.sync.phoenix_sync.generate_guidelines", return_value=self._stub_results()):
+            count = phoenix_sync._process_trajectory(self._trajectory_with_traceback())
+        assert count == 2
+
+        guideline_call = phoenix_sync.client.update_entities.call_args_list[-1]
+        entities = guideline_call.kwargs["entities"]
+        assert len(entities) == 2
+
+        from altk_evolve.schema.outcome_evidence import OutcomeEvidence
+
+        for ent in entities:
+            ev = ent.metadata.get("outcome_evidence")
+            assert ev is not None, "outcome_evidence missing from guideline metadata"
+            evidence = OutcomeEvidence.model_validate(ev)
+            assert len(evidence.observations) >= 2
+            sources = {o.signal_source.value for o in evidence.observations}
+            assert "tool_error" in sources
+            assert "trajectory_shape" in sources
+            assert 0.0 <= evidence.aggregated.confidence_weighted_score <= 1.0
+
+    def test_per_category_cold_start_when_no_signals(self, phoenix_sync) -> None:
+        trajectory: dict = {
+            "trace_id": "trace-2",
+            "span_id": "span-2",
+            "model": "gpt-4o",
+            "timestamp": "2026-05-15T12:00:00Z",
+            "messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok"}],
+            "usage": {},
+        }
+        with patch("altk_evolve.sync.phoenix_sync.generate_guidelines", return_value=self._stub_results()):
+            phoenix_sync._process_trajectory(trajectory)
+
+        from altk_evolve.schema.outcome_evidence import OutcomeEvidence
+
+        entities = phoenix_sync.client.update_entities.call_args_list[-1].kwargs["entities"]
+        for ent in entities:
+            evidence = OutcomeEvidence.model_validate(ent.metadata["outcome_evidence"])
+            # No extractable signals → cold-start prior. llm_extracted prior is 0.4.
+            assert evidence.observations == []
+            assert evidence.aggregated.confidence_weighted_score == pytest.approx(0.4)
