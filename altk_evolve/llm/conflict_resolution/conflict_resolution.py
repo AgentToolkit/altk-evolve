@@ -13,6 +13,15 @@ from pathlib import Path
 def resolve_conflicts(
     old_entities: list[RecordedEntity], new_entities: list[RecordedEntity], custom_update_entities_prompt: str | None = None
 ) -> list[EntityUpdate]:
+    # Per-track dispatch (Phase 2): guidelines use the score-aware resolver
+    # in guideline_resolver.py; everything else falls through to the
+    # base type-agnostic prompt below.
+    candidate_type = new_entities[0].type if new_entities else (old_entities[0].type if old_entities else None)
+    if candidate_type == "guideline" and custom_update_entities_prompt is None:
+        from altk_evolve.llm.conflict_resolution.guideline_resolver import resolve_guideline_conflicts
+
+        return resolve_guideline_conflicts(old_entities, new_entities)
+
     simplified_old_entities = SimpleEntity.from_recorded_entities(old_entities)
     simplified_new_entities = SimpleEntity.from_recorded_entities(new_entities)
     new_entities_by_id = {entity.id: entity for entity in new_entities}
