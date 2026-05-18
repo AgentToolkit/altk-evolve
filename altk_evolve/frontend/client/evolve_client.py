@@ -8,6 +8,7 @@ from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
 from altk_evolve.schema.guidelines import ConsolidationResult
+from altk_evolve.telemetry.decorators import with_retrieval_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -94,29 +95,33 @@ class EvolveClient:
         """Add multiple entities to a namespace."""
         return self.backend.update_entities(namespace_id, entities, enable_conflict_resolution)
 
+    @with_retrieval_telemetry(event_name="search_entities")
     def search_entities(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
     ) -> list[RecordedEntity]:
         """Search for entities in a namespace."""
         return self.backend.search_entities(namespace_id, query, filters, limit)
 
+    @with_retrieval_telemetry(event_name="get_all_entities")
     def get_all_entities(self, namespace_id: str, filters: dict | None = None, limit: int = 100) -> list[RecordedEntity]:
         """Get all entities from a namespace."""
-        return self.search_entities(namespace_id, query=None, filters=filters, limit=limit)
+        return self.backend.search_entities(namespace_id, query=None, filters=filters, limit=limit)
 
     def delete_entity_by_id(self, namespace_id: str, entity_id: str) -> None:
         """Delete a specific entity by its ID."""
         self.backend.delete_entity_by_id(namespace_id, entity_id)
 
+    @with_retrieval_telemetry(event_name="get_entity_by_id")
     def get_entity_by_id(self, namespace_id: str, entity_id: str) -> RecordedEntity | None:
         """Fetch a single entity by its ID. Returns None if not found."""
-        results = self.search_entities(namespace_id, filters={"id": entity_id}, limit=1)
+        results = self.backend.search_entities(namespace_id, filters={"id": entity_id}, limit=1)
         return results[0] if results else None
 
     def patch_entity_metadata(self, namespace_id: str, entity_id: str, metadata_updates: dict) -> RecordedEntity:
         """Merge metadata_updates into an entity without touching content or ID."""
         return self.backend.update_entity_metadata(namespace_id, entity_id, metadata_updates)
 
+    @with_retrieval_telemetry(event_name="get_public_entities")
     def get_public_entities(
         self,
         query: str | None = None,
@@ -150,6 +155,7 @@ class EvolveClient:
             all_results.extend(self.search_entities(ns.id, query=query, filters=filters, limit=remaining))
         return all_results
 
+    @with_retrieval_telemetry(event_name="cluster_guidelines")
     def cluster_guidelines(self, namespace_id: str, threshold: float | None = None, limit: int = 10000) -> list[list[RecordedEntity]]:
         """Cluster guideline entities by task description similarity.
 

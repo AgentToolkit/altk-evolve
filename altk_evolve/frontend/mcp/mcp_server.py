@@ -28,6 +28,7 @@ from altk_evolve.llm.fact_extraction.fact_extraction import (
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines
 from altk_evolve.schema.core import Entity, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
+from altk_evolve.telemetry.decorators import with_retrieval_telemetry
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-mcp")
@@ -153,6 +154,7 @@ def _evict_namespace(namespace_id: str) -> None:
         logger.info(f"Evicted namespace '{namespace_id}' from cache")
 
 
+@with_retrieval_telemetry(event_name="mcp_get_entities")
 def get_entities_logic(
     task: str,
     entity_type: str = "guideline",
@@ -409,6 +411,7 @@ def _search_facts_with_fallback(
 
 
 @mcp.tool()
+@with_retrieval_telemetry(event_name="mcp_retrieve_user_facts")
 def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5) -> str:
     """Retrieve categorized user facts/preferences for a durable user identity."""
     namespace_id = evolve_config.namespace_id
