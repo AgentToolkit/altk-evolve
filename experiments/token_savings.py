@@ -74,20 +74,22 @@ def _fresh_workspace(tmp_root: Path, label: str) -> Path:
 def _run_sandbox_prompt_json(workspace: Path, prompt: str) -> tuple[subprocess.CompletedProcess, dict | None]:
     """Run a prompt with --output-format json and return (proc, parsed_json)."""
     plugins = REPO_ROOT / "platform-integrations" / "claude" / "plugins"
-    command = (
-        "claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions "
-        "--output-format json -p " + shlex.quote(prompt)
-    )
+    command = "claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions --output-format json -p " + shlex.quote(prompt)
     cmd = ["docker", "run", "--rm"]
     for var in FORWARDED_ENV_VARS:
         if os.environ.get(var):
             cmd += ["-e", var]
     cmd += [
-        "-e", "EVOLVE_DEBUG=1",
-        "-v", f"{workspace}:/workspace",
-        "-v", f"{plugins}:/plugins",
+        "-e",
+        "EVOLVE_DEBUG=1",
+        "-v",
+        f"{workspace}:/workspace",
+        "-v",
+        f"{plugins}:/plugins",
         SANDBOX_IMAGE,
-        "bash", "-c", command,
+        "bash",
+        "-c",
+        command,
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=SESSION_TIMEOUT_SECONDS)
     parsed: dict | None = None
@@ -125,14 +127,16 @@ def _per_turn_usage(transcript_path: Path) -> list[dict]:
         usage = message.get("usage")
         if not isinstance(usage, dict):
             continue
-        turns.append({
-            "type": record.get("type"),
-            "role": message.get("role"),
-            "input_tokens": usage.get("input_tokens"),
-            "output_tokens": usage.get("output_tokens"),
-            "cache_creation_input_tokens": usage.get("cache_creation_input_tokens"),
-            "cache_read_input_tokens": usage.get("cache_read_input_tokens"),
-        })
+        turns.append(
+            {
+                "type": record.get("type"),
+                "role": message.get("role"),
+                "input_tokens": usage.get("input_tokens"),
+                "output_tokens": usage.get("output_tokens"),
+                "cache_creation_input_tokens": usage.get("cache_creation_input_tokens"),
+                "cache_read_input_tokens": usage.get("cache_read_input_tokens"),
+            }
+        )
     return turns
 
 
@@ -183,11 +187,13 @@ def _do_with_guidelines_run(tmp_root: Path, idx: int) -> dict:
     print(f"  [{label}] seeding (utterance 1)...", flush=True)
     t0 = time.time()
     seed_proc, _seed_parsed = _run_sandbox_prompt_json(workspace, UTTERANCE_LEARN)
-    print(f"  [{label}] seed done in {time.time()-t0:.0f}s rc={seed_proc.returncode}", flush=True)
+    print(f"  [{label}] seed done in {time.time() - t0:.0f}s rc={seed_proc.returncode}", flush=True)
     if seed_proc.returncode != 0:
         return {"label": label, "error": "seed_failed", "stderr": seed_proc.stderr[-1000:]}
 
-    seed_transcripts = set((workspace / ".evolve" / "trajectories").glob("*.jsonl")) if (workspace / ".evolve" / "trajectories").is_dir() else set()
+    seed_transcripts = (
+        set((workspace / ".evolve" / "trajectories").glob("*.jsonl")) if (workspace / ".evolve" / "trajectories").is_dir() else set()
+    )
     entities = _list_entities(workspace)
     if not entities:
         return {"label": label, "error": "no_guideline_learned", "stdout": seed_proc.stdout[-1000:]}
@@ -195,7 +201,7 @@ def _do_with_guidelines_run(tmp_root: Path, idx: int) -> dict:
     print(f"  [{label}] measure (utterance 2) — {len(entities)} guideline(s) recallable...", flush=True)
     t1 = time.time()
     proc, parsed = _run_sandbox_prompt_json(workspace, UTTERANCE_MEASURE)
-    print(f"  [{label}] measure done in {time.time()-t1:.0f}s rc={proc.returncode}", flush=True)
+    print(f"  [{label}] measure done in {time.time() - t1:.0f}s rc={proc.returncode}", flush=True)
     if proc.returncode != 0:
         return {"label": label, "error": "measure_failed", "stderr": proc.stderr[-1000:]}
 
@@ -225,7 +231,7 @@ def _do_shared_seed_runs(tmp_root: Path, n_runs: int) -> list[dict]:
     print(f"  [{label_root}] seeding (utterance 1)...", flush=True)
     t0 = time.time()
     seed_proc, _seed_parsed = _run_sandbox_prompt_json(workspace, UTTERANCE_LEARN)
-    print(f"  [{label_root}] seed done in {time.time()-t0:.0f}s rc={seed_proc.returncode}", flush=True)
+    print(f"  [{label_root}] seed done in {time.time() - t0:.0f}s rc={seed_proc.returncode}", flush=True)
     if seed_proc.returncode != 0:
         return [{"label": label_root, "error": "seed_failed", "stderr": seed_proc.stderr[-1000:]}]
 
@@ -244,21 +250,23 @@ def _do_shared_seed_runs(tmp_root: Path, n_runs: int) -> list[dict]:
         print(f"  [{label}] measure (utterance 2) — {len(entities)} guideline(s) recallable...", flush=True)
         t1 = time.time()
         proc, parsed = _run_sandbox_prompt_json(workspace, UTTERANCE_MEASURE)
-        print(f"  [{label}] measure done in {time.time()-t1:.0f}s rc={proc.returncode}", flush=True)
+        print(f"  [{label}] measure done in {time.time() - t1:.0f}s rc={proc.returncode}", flush=True)
         if proc.returncode != 0:
             results.append({"label": label, "error": "measure_failed", "stderr": proc.stderr[-1000:]})
             continue
 
         transcript = _newest_transcript(workspace, exclude=prior_transcripts)
-        results.append({
-            "label": label,
-            "condition": "with_guidelines",
-            "headline_usage": _extract_usage(parsed),
-            "raw_json": parsed,
-            "per_turn": _per_turn_usage(transcript) if transcript else [],
-            "transcript_path": str(transcript) if transcript else None,
-            "entities_seeded": entities,
-        })
+        results.append(
+            {
+                "label": label,
+                "condition": "with_guidelines",
+                "headline_usage": _extract_usage(parsed),
+                "raw_json": parsed,
+                "per_turn": _per_turn_usage(transcript) if transcript else [],
+                "transcript_path": str(transcript) if transcript else None,
+                "entities_seeded": entities,
+            }
+        )
     return results
 
 
@@ -268,7 +276,7 @@ def _do_without_guidelines_run(tmp_root: Path, idx: int) -> dict:
     print(f"  [{label}] measure (utterance 2) — no .evolve/ ...", flush=True)
     t0 = time.time()
     proc, parsed = _run_sandbox_prompt_json(workspace, UTTERANCE_MEASURE)
-    print(f"  [{label}] done in {time.time()-t0:.0f}s rc={proc.returncode}", flush=True)
+    print(f"  [{label}] done in {time.time() - t0:.0f}s rc={proc.returncode}", flush=True)
     if proc.returncode != 0:
         return {"label": label, "error": "measure_failed", "stderr": proc.stderr[-1000:]}
 
@@ -330,7 +338,7 @@ def _format_per_turn(run: dict) -> str:
     rows = ["| # | role | input | output | cache_create | cache_read |", "| --- | --- | --- | --- | --- | --- |"]
     for i, turn in enumerate(run["per_turn"], 1):
         rows.append(
-            f"| {i} | {turn.get('role','?')} | "
+            f"| {i} | {turn.get('role', '?')} | "
             f"{turn.get('input_tokens') or '-'} | "
             f"{turn.get('output_tokens') or '-'} | "
             f"{turn.get('cache_creation_input_tokens') or '-'} | "
@@ -417,10 +425,13 @@ def main() -> int:
             without_runs.append(_do_without_guidelines_run(workspace_root, i))
 
     raw_path = results_dir / "raw.json"
-    raw_path.write_text(json.dumps(
-        {"with_guidelines": with_runs, "without_guidelines": without_runs, "seeding_mode": seeding_mode},
-        indent=2, default=str,
-    ))
+    raw_path.write_text(
+        json.dumps(
+            {"with_guidelines": with_runs, "without_guidelines": without_runs, "seeding_mode": seeding_mode},
+            indent=2,
+            default=str,
+        )
+    )
     report_path = _write_report(results_dir, with_runs, without_runs, seeding_mode=seeding_mode)
 
     print("\n" + "=" * 60)
