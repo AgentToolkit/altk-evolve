@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Synthesize-skill helper: validate and install a synthesized skill.
+
+The synthesize-skill skill (a subagent) is responsible for the *judgment* —
+reading the trajectory, identifying the successful workflow, and writing
+draft SKILL.md + supporting scripts into a temporary directory.
+
+This script is the *plumbing* — it validates the draft frontmatter, copies
+the directory into both the canonical evolve-managed location and the
+platform-specific skills loader location, and writes an audit-log entry.
+
+Usage:
+    synthesize.py finalize --src <draft_dir> --name <kebab-case-name> \
+        [--trajectory <path>] [--workspace <path>] [--force]
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import shutil
+import sys
+from pathlib import Path
+
+# Reuse the plugin's lib helpers (audit-log writer + entities-dir locator).
+_script = Path(__file__).resolve()
+_lib = None
+for _ancestor in _script.parents:
+    for _candidate in (_ancestor / "lib", _ancestor / "evolve-lib"):
+        if (_candidate / "audit.py").is_file():
+            _lib = _candidate
+            break
+    if _lib is not None:
+        break
+if _lib is None:
+    raise ImportError(f"Cannot find plugin lib directory above {_script}")
+sys.path.insert(0, str(_lib))
+from audit import append as audit_append  # noqa: E402
+
+
+KEBAB_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+
+
+def _parse_frontmatter(skill_md: Path) -> tuple[dict[str, str], str]:
+    """Minimal YAML-ish frontmatter parser. Supports `key: value` lines only.
+
+    Returns (frontmatter_dict, body_text).
+    """
+    text = skill_md.read_text(encoding="utf-8")
+    match = FRONTMATTER_RE.match(text)
+    if not match:
+        raise ValueError(f"{skill_md} has no frontmatter block")
+    fm: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            raise ValueError(f"{skill_md}: malformed frontmatter line: {line!r}")
+        key, _, value = line.partition(":")
+        fm[key.strip()] = value.strip().strip('"').strip("'")
+    return fm, text[match.end():]
+
+
+def _validate_draft(src: Path, name: str) -> None:
+    if not KEBAB_RE.match(name):
+        raise SystemExit(f"--name {name!r} is not kebab-case")
+    if not src.is_dir():
+        raise SystemExit(f"--src {src} is not a directory")
+    skill_md = src / "SKILL.md"
+    if not skill_md.is_file():
+        raise SystemExit(f"missing SKILL.md in {src}")
+
+    fm, body = _parse_frontmatter(skill_md)
+    if "name" not in fm or "description" not in fm:
+        raise SystemExit(f"SKILL.md frontmatter must include `name` and `description` (got: {sorted(fm.keys())})")
+    if fm["name"] != name:
+        raise SystemExit(f"frontmatter name {fm['name']!r} does not match --name {name!r}")
+    if not fm["description"]:
+        raise SystemExit("SKILL.md description is empty")
+    if len(body.strip()) < 50:
+        raise SystemExit("SKILL.md body is suspiciously short — not enough instructions to be useful")
+
+
+def _resolve_workspace(arg: str | None) -> Path:
+    if arg:
+        return Path(arg).resolve()
+    # Fall back to the current working directory; at runtime this is the
+    # workspace mounted into the sandbox (`/workspace`) or the host repo root.
+    return Path.cwd().resolve()
+
+
+def _copy_into(src: Path, dst: Path, force: bool) -> None:
+    if dst.exists():
+        if not force:
+            raise SystemExit(f"{dst} already exists (use --force to overwrite)")
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
+
+
+# Per-platform runtime mirror — the loader-discoverable directory the
+# synthesized skill is copied into so the host agent picks it up
+# automatically. Set to None where the platform doesn't have a runtime
+# skills directory; only the canonical `.evolve/skills/<name>/` write
+# happens in that case.
+{%- if platform == "claude" %}
+_RUNTIME_MIRROR_DIR: str | None = ".claude/skills"
+{%- else %}
+_RUNTIME_MIRROR_DIR: str | None = None
+{%- endif %}
+
+
+def cmd_finalize(args: argparse.Namespace) -> int:
+    src = Path(args.src).resolve()
+    name = args.name
+    workspace = _resolve_workspace(args.workspace)
+
+    _validate_draft(src, name)
+
+    evolve_dst = workspace / ".evolve" / "skills" / name
+    _copy_into(src, evolve_dst, args.force)
+
+    runtime_dst: Path | None = None
+    if _RUNTIME_MIRROR_DIR is not None:
+        runtime_dst = workspace / _RUNTIME_MIRROR_DIR / name
+        _copy_into(src, runtime_dst, args.force)
+
+    audit_append(
+        project_root=str(workspace),
+        event="synthesize_skill",
+        skill=name,
+        evolve_path=str(evolve_dst.relative_to(workspace)),
+        runtime_path=str(runtime_dst.relative_to(workspace)) if runtime_dst else "",
+        trajectory=args.trajectory or "",
+    )
+
+    print(f"Installed skill {name!r}:")
+    print(f"  evolve:  {evolve_dst}")
+    if runtime_dst is not None:
+        print(f"  runtime: {runtime_dst}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_finalize = sub.add_parser(
+        "finalize",
+        help="Validate a draft skill directory and install it under .evolve/skills/ (and the platform's runtime skills dir, if any).",
+    )
+    p_finalize.add_argument("--src", required=True, help="Draft directory containing SKILL.md and any scripts/")
+    p_finalize.add_argument("--name", required=True, help="Kebab-case skill name; must match SKILL.md frontmatter")
+    p_finalize.add_argument("--trajectory", default="", help="Source trajectory path (recorded in audit.log)")
+    p_finalize.add_argument("--workspace", default=None, help="Project root (defaults to CWD)")
+    p_finalize.add_argument("--force", action="store_true", help="Overwrite existing skill of the same name")
+    p_finalize.set_defaults(func=cmd_finalize)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
