@@ -171,6 +171,7 @@ def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
     trajectory when segmentation is disabled or produces fewer than 2 subtasks).
     """
+    is_groq = llm_settings.custom_llm_provider == "groq" or llm_settings.guidelines_model.startswith("groq/")
     supported_params = get_supported_openai_params(
         model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
@@ -180,7 +181,7 @@ def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]
         model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
-    constrained_decoding_supported = bool(supports_response_format and response_schema_enabled)
+    constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
     trajectory_data = parse_openai_agents_trajectory(messages)
     task_instruction = trajectory_data["task_instruction"]

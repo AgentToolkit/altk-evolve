@@ -141,6 +141,7 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Guideline]:
     Raises:
         EvolveException: If the LLM call fails after 3 attempts.
     """
+    is_groq = llm_settings.custom_llm_provider == "groq" or llm_settings.guidelines_model.startswith("groq/")
     supported_params = get_supported_openai_params(
         model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
@@ -150,7 +151,7 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Guideline]:
         model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
-    constrained_decoding_supported = supports_response_format and response_schema_enabled
+    constrained_decoding_supported = not is_groq and supports_response_format and response_schema_enabled
 
     # Deduplicate task descriptions
     task_descriptions = list(
