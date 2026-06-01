@@ -60,7 +60,7 @@ def _parse_frontmatter(skill_md: Path) -> tuple[dict[str, str], str]:
             raise ValueError(f"{skill_md}: malformed frontmatter line: {line!r}")
         key, _, value = line.partition(":")
         fm[key.strip()] = value.strip().strip('"').strip("'")
-    return fm, text[match.end():]
+    return fm, text[match.end() :]
 
 
 def _validate_draft(src: Path, name: str) -> None:
