@@ -125,6 +125,21 @@ class TestBobLegacyMigration:
         file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-learn")
         file_assertions.assert_file_not_exists(bob_dir / "commands" / "evolve-lite-learn.md")
 
+    def test_uninstall_removes_namespaced_shared_lib(self, temp_project_dir, install_runner, file_assertions):
+        """Uninstall must remove the namespaced shared lib at .bob/lib/evolve-lite/.
+
+        After the lib/ namespacing rename, the lib is no longer an evolve-prefixed
+        top-level dir, so the generic purge loop misses it. Regression guard for
+        gaodan-fang's PR #258 finding (uninstall left .bob/lib/evolve-lite/ behind).
+        """
+        install_runner.run("install", platform="bob", mode="lite")
+        bob_dir = temp_project_dir / ".bob"
+        file_assertions.assert_dir_exists(bob_dir / "lib" / "evolve-lite")
+
+        install_runner.run("uninstall", platform="bob")
+
+        file_assertions.assert_dir_not_exists(bob_dir / "lib" / "evolve-lite")
+
     def test_install_preserves_user_content_during_legacy_purge(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """The legacy purge MUST NOT clobber non-evolve user skills/commands."""
         bob_dir = temp_project_dir / ".bob"
