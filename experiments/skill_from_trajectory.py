@@ -39,7 +39,7 @@ from pathlib import Path
 
 # Reuse helpers from the existing token-savings experiment.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from token_savings import (  # noqa: E402
+from token_savings import (  # type: ignore[import-not-found]  # noqa: E402
     FORWARDED_ENV_VARS,
     REPO_ROOT,
     SANDBOX_IMAGE,
@@ -53,7 +53,7 @@ from token_savings import (  # noqa: E402
 
 def _extract_usage(parsed: dict | None) -> dict:
     """Extend the base extractor with total_cost_usd, which we report per-trial."""
-    out = _extract_usage_base(parsed)
+    out: dict = _extract_usage_base(parsed)
     if parsed is not None:
         out["total_cost_usd"] = parsed.get("total_cost_usd")
     return out
