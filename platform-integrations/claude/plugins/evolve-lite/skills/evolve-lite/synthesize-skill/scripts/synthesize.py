@@ -72,7 +72,10 @@ def _validate_draft(src: Path, name: str) -> None:
     if not skill_md.is_file():
         raise SystemExit(f"missing SKILL.md in {src}")
 
-    fm, body = _parse_frontmatter(skill_md)
+    try:
+        fm, body = _parse_frontmatter(skill_md)
+    except ValueError as exc:
+        raise SystemExit(f"SKILL.md frontmatter is malformed: {exc}") from exc
     if "name" not in fm or "description" not in fm:
         raise SystemExit(f"SKILL.md frontmatter must include `name` and `description` (got: {sorted(fm.keys())})")
     if fm["name"] != name:
@@ -91,10 +94,14 @@ def _resolve_workspace(arg: str | None) -> Path:
     return Path.cwd().resolve()
 
 
-def _copy_into(src: Path, dst: Path, force: bool) -> None:
+def _check_dest(dst: Path, force: bool) -> None:
+    """Reject the install if dst would block it; let _copy_into do the actual write."""
+    if dst.exists() and not force:
+        raise SystemExit(f"{dst} already exists (use --force to overwrite)")
+
+
+def _copy_into(src: Path, dst: Path) -> None:
     if dst.exists():
-        if not force:
-            raise SystemExit(f"{dst} already exists (use --force to overwrite)")
         shutil.rmtree(dst)
     shutil.copytree(src, dst)
 
@@ -115,12 +122,17 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     _validate_draft(src, name)
 
     evolve_dst = workspace / ".evolve" / "skills" / name
-    _copy_into(src, evolve_dst, args.force)
+    runtime_dst: Path | None = workspace / _RUNTIME_MIRROR_DIR / name if _RUNTIME_MIRROR_DIR is not None else None
 
-    runtime_dst: Path | None = None
-    if _RUNTIME_MIRROR_DIR is not None:
-        runtime_dst = workspace / _RUNTIME_MIRROR_DIR / name
-        _copy_into(src, runtime_dst, args.force)
+    # Pre-check both destinations before any copy so a blocked second
+    # write doesn't leave the first half of the install on disk.
+    _check_dest(evolve_dst, args.force)
+    if runtime_dst is not None:
+        _check_dest(runtime_dst, args.force)
+
+    _copy_into(src, evolve_dst)
+    if runtime_dst is not None:
+        _copy_into(src, runtime_dst)
 
     audit_append(
         project_root=str(workspace),
