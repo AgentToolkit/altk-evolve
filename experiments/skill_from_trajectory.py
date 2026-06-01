@@ -94,10 +94,7 @@ def _run_sandbox_prompt_json(workspace: Path, prompt: str) -> tuple[subprocess.C
     workspace path before binding (see _docker_path).
     """
     plugins = REPO_ROOT / "platform-integrations" / "claude" / "plugins"
-    command = (
-        "claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions --output-format json -p "
-        + shlex.quote(prompt)
-    )
+    command = "claude --plugin-dir /plugins/evolve-lite/ --dangerously-skip-permissions --output-format json -p " + shlex.quote(prompt)
     cmd = ["docker", "run", "--rm"]
     for var in FORWARDED_ENV_VARS:
         if os.environ.get(var):
@@ -174,14 +171,7 @@ def _tool_calls_summary(transcript_path: Path | None) -> list[dict]:
             if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
             inp = block.get("input") or {}
-            brief = (
-                inp.get("command")
-                or inp.get("file_path")
-                or inp.get("skill")
-                or inp.get("path")
-                or inp.get("pattern")
-                or ""
-            )
+            brief = inp.get("command") or inp.get("file_path") or inp.get("skill") or inp.get("path") or inp.get("pattern") or ""
             if isinstance(brief, str) and len(brief) > 200:
                 brief = brief[:197] + "..."
             out.append({"tool": block.get("name"), "brief": brief})
@@ -219,10 +209,7 @@ def _seed_and_synthesize(tmp_root: Path, trial_idx: int, seed_keys: list[str]) -
     seed_traj_rel = "/".join(seed_transcript.relative_to(workspace).parts)
 
     print(f"  [{label}] synthesize-skill...", flush=True)
-    synth_prompt = (
-        f"Run /evolve-lite:synthesize-skill on the saved trajectory. "
-        f"The saved trajectory path is: {seed_traj_rel}"
-    )
+    synth_prompt = f"Run /evolve-lite:synthesize-skill on the saved trajectory. The saved trajectory path is: {seed_traj_rel}"
     t1 = time.time()
     synth_proc, synth_parsed = _run_sandbox_prompt_json(workspace, synth_prompt)
     print(f"  [{label}] synth done in {time.time() - t1:.0f}s rc={synth_proc.returncode}", flush=True)
@@ -288,9 +275,7 @@ def _do_measure_run(
     print(f"  [{label}] measure...", flush=True)
     t0 = time.time()
     pre_transcripts = (
-        set((workspace / ".evolve" / "trajectories").glob("*.jsonl"))
-        if (workspace / ".evolve" / "trajectories").is_dir()
-        else set()
+        set((workspace / ".evolve" / "trajectories").glob("*.jsonl")) if (workspace / ".evolve" / "trajectories").is_dir() else set()
     )
     proc, parsed = _run_sandbox_prompt_json(workspace, utterance)
     print(f"  [{label}] done in {time.time() - t0:.0f}s rc={proc.returncode}", flush=True)
@@ -486,9 +471,7 @@ def main() -> int:
         seed = _seed_and_synthesize(workspace_root, i, seed_keys)
         seeds.append(seed)
         # Persist progressively in case we crash mid-run.
-        (results_dir / "raw.json").write_text(
-            json.dumps({"seeds": seeds, "results": results}, indent=2, default=str)
-        )
+        (results_dir / "raw.json").write_text(json.dumps({"seeds": seeds, "results": results}, indent=2, default=str))
         if "error" in seed:
             print(f"  [trial {i}] seed/synth FAILED: {seed['error']} — skipping measure runs")
             continue
@@ -507,9 +490,7 @@ def main() -> int:
                 run_result["utterance"] = utt_key
                 run_result["trial"] = i
                 results[cond][utt_key].append(run_result)
-                (results_dir / "raw.json").write_text(
-                    json.dumps({"seeds": seeds, "results": results}, indent=2, default=str)
-                )
+                (results_dir / "raw.json").write_text(json.dumps({"seeds": seeds, "results": results}, indent=2, default=str))
 
     _save_synthesized_skills(seeds, results_dir)
     report_path = _write_report(results_dir, seeds, results, measure_keys, seed_keys)
@@ -523,13 +504,7 @@ def main() -> int:
     if not args.keep_workspaces:
         shutil.rmtree(workspace_root, ignore_errors=True)
 
-    errors = [s for s in seeds if "error" in s] + [
-        r
-        for cond in CONDITIONS
-        for u in measure_keys
-        for r in results[cond][u]
-        if "error" in r
-    ]
+    errors = [s for s in seeds if "error" in s] + [r for cond in CONDITIONS for u in measure_keys for r in results[cond][u] if "error" in r]
     if errors:
         print(f"\n{len(errors)} run(s) had errors — see raw.json")
         return 1
