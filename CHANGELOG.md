@@ -4,6 +4,15 @@
 
 <!-- version list -->
 
+## v1.1.2 (2026-06-01)
+
+### Bug Fixes
+
+- **platform-integrations**: Make bob custom-mode merge robust
+  ([#263](https://github.com/AgentToolkit/altk-evolve/pull/263),
+  [`aa93ad3`](https://github.com/AgentToolkit/altk-evolve/commit/aa93ad394bc95f8cd39a4f21ad96f0eb8c2b8874))
+
+
 ## v1.1.1 (2026-06-01)
 
 ### Bug Fixes
