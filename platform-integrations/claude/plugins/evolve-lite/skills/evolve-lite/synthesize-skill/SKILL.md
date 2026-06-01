@@ -72,7 +72,7 @@ Before continuing, list `.evolve/skills/` (use the `Glob` tool, not `find` / `ls
 
 Author a SKILL.md with this exact frontmatter shape — the validator in Step 5 will reject it otherwise:
 
-```
+```yaml
 ---
 name: <kebab-case-name>
 description: <one-line task description>
@@ -103,7 +103,7 @@ If the successful workflow used a non-trivial script (more than a one-liner), wr
 
 Common shape:
 
-```
+```text
 .evolve/skills/<name>/
 ├── SKILL.md
 └── scripts/
