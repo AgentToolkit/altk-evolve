@@ -26,11 +26,9 @@ from pathlib import Path
 _script = Path(__file__).resolve()
 _lib = None
 for _ancestor in _script.parents:
-    for _candidate in (_ancestor / "lib", _ancestor / "evolve-lib"):
-        if (_candidate / "audit.py").is_file():
-            _lib = _candidate
-            break
-    if _lib is not None:
+    _candidate = _ancestor / "lib" / "evolve-lite"
+    if (_candidate / "audit.py").is_file():
+        _lib = _candidate
         break
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
