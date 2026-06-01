@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(
     0,
-    str(Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib"),
+    str(Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/evolve-lite"),
 )
 import entity_io
 

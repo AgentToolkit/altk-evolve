@@ -4,6 +4,175 @@
 
 <!-- version list -->
 
+## v1.1.1 (2026-06-01)
+
+### Bug Fixes
+
+- **check_drift**: Detect orphan files under plugin roots
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **claude-plugin**: Qualify recall audit ids across local/subscribed trees
+  ([#239](https://github.com/AgentToolkit/altk-evolve/pull/239),
+  [`6cc2a5b`](https://github.com/AgentToolkit/altk-evolve/commit/6cc2a5b6d050cb7c0af7d97a0f058653e1f22b2f))
+
+- **e2e**: Resolve issue #244 test failures
+  ([#245](https://github.com/AgentToolkit/altk-evolve/pull/245),
+  [`a2ab28c`](https://github.com/AgentToolkit/altk-evolve/commit/a2ab28c44323b457e59da87fc1a38c05b2477249))
+
+- **e2e**: Resolve test failures from issue #244
+  ([#245](https://github.com/AgentToolkit/altk-evolve/pull/245),
+  [`a2ab28c`](https://github.com/AgentToolkit/altk-evolve/commit/a2ab28c44323b457e59da87fc1a38c05b2477249))
+
+- **filesystem**: Address Codex review on interrupted-write recovery
+  ([#245](https://github.com/AgentToolkit/altk-evolve/pull/245),
+  [`a2ab28c`](https://github.com/AgentToolkit/altk-evolve/commit/a2ab28c44323b457e59da87fc1a38c05b2477249))
+
+- **install**: Purge legacy evolve-prefixed bob artifacts on install/uninstall
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **learn**: Guard payload and assessment types in log_influence.py
+  ([#239](https://github.com/AgentToolkit/altk-evolve/pull/239),
+  [`6cc2a5b`](https://github.com/AgentToolkit/altk-evolve/commit/6cc2a5b6d050cb7c0af7d97a0f058653e1f22b2f))
+
+- **learn**: Renumber influence step to Step 5 after merge
+  ([#239](https://github.com/AgentToolkit/altk-evolve/pull/239),
+  [`6cc2a5b`](https://github.com/AgentToolkit/altk-evolve/commit/6cc2a5b6d050cb7c0af7d97a0f058653e1f22b2f))
+
+- **learn**: Resolve recalled slugs across subscribed entity trees
+  ([#239](https://github.com/AgentToolkit/altk-evolve/pull/239),
+  [`6cc2a5b`](https://github.com/AgentToolkit/altk-evolve/commit/6cc2a5b6d050cb7c0af7d97a0f058653e1f22b2f))
+
+- **learn**: Resolve saved-trajectory path via shared get_trajectories_dir
+  ([#247](https://github.com/AgentToolkit/altk-evolve/pull/247),
+  [`a584af6`](https://github.com/AgentToolkit/altk-evolve/commit/a584af621cd19aafdf09955c73f4215e0443119c))
+
+- **platform-integrations**: Correct bob uninstall + global custom-mode path
+  ([#258](https://github.com/AgentToolkit/altk-evolve/pull/258),
+  [`a8c7d61`](https://github.com/AgentToolkit/altk-evolve/commit/a8c7d6118ea3352453699dfc57d103e6e7a38248))
+
+- **platform-integrations**: Correct codex status label and bob README path notation
+  ([#258](https://github.com/AgentToolkit/altk-evolve/pull/258),
+  [`a8c7d61`](https://github.com/AgentToolkit/altk-evolve/commit/a8c7d6118ea3352453699dfc57d103e6e7a38248))
+
+- **provenance**: Harden payload type validation in log_influence
+  ([#251](https://github.com/AgentToolkit/altk-evolve/pull/251),
+  [`d7a3f49`](https://github.com/AgentToolkit/altk-evolve/commit/d7a3f49f14326e61db5c9a6b8a058ad0e7cc1423))
+
+- **recall**: Prefer explicit session_id over raw transcript_path stem
+  ([#251](https://github.com/AgentToolkit/altk-evolve/pull/251),
+  [`d7a3f49`](https://github.com/AgentToolkit/altk-evolve/commit/d7a3f49f14326e61db5c9a6b8a058ad0e7cc1423))
+
+- **save-trajectory**: Drop vendor-specific env-var reference from session_id guidance
+  ([#251](https://github.com/AgentToolkit/altk-evolve/pull/251),
+  [`d7a3f49`](https://github.com/AgentToolkit/altk-evolve/commit/d7a3f49f14326e61db5c9a6b8a058ad0e7cc1423))
+
+- **save-trajectory**: Embed session_id in trajectory filename for provenance
+  ([#251](https://github.com/AgentToolkit/altk-evolve/pull/251),
+  [`d7a3f49`](https://github.com/AgentToolkit/altk-evolve/commit/d7a3f49f14326e61db5c9a6b8a058ad0e7cc1423))
+
+- **subscribe**: Persist config rollback when audit append fails
+  ([#251](https://github.com/AgentToolkit/altk-evolve/pull/251),
+  [`d7a3f49`](https://github.com/AgentToolkit/altk-evolve/commit/d7a3f49f14326e61db5c9a6b8a058ad0e7cc1423))
+
+- **subscribe**: Roll back clone and config when audit append fails
+  ([#251](https://github.com/AgentToolkit/altk-evolve/pull/251),
+  [`d7a3f49`](https://github.com/AgentToolkit/altk-evolve/commit/d7a3f49f14326e61db5c9a6b8a058ad0e7cc1423))
+
+- **subscribe**: Warn on rollback save_config failure instead of silently swallowing
+  ([#251](https://github.com/AgentToolkit/altk-evolve/pull/251),
+  [`d7a3f49`](https://github.com/AgentToolkit/altk-evolve/commit/d7a3f49f14326e61db5c9a6b8a058ad0e7cc1423))
+
+- **sync**: Emit invalid-subscription rejections on stderr
+  ([#251](https://github.com/AgentToolkit/altk-evolve/pull/251),
+  [`d7a3f49`](https://github.com/AgentToolkit/altk-evolve/commit/d7a3f49f14326e61db5c9a6b8a058ad0e7cc1423))
+
+- **sync**: Surface invalid subscription entries in stdout summary
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **tests**: Satisfy ruff format on slice whitespace
+  ([#247](https://github.com/AgentToolkit/altk-evolve/pull/247),
+  [`a584af6`](https://github.com/AgentToolkit/altk-evolve/commit/a584af621cd19aafdf09955c73f4215e0443119c))
+
+### Documentation
+
+- Drop the ADR draft (#219 PRD already captures the rationale)
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **adr**: Record compile-time plugin code generation decision
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **experiments**: Add README for the experiments dir
+  ([#261](https://github.com/AgentToolkit/altk-evolve/pull/261),
+  [`c57148b`](https://github.com/AgentToolkit/altk-evolve/commit/c57148bc42b9ed05fe6ab2c0a7d8b3869d3e9d9a))
+
+### Features
+
+- Manifest-first entity recall for all platforms (#224)
+  ([#226](https://github.com/AgentToolkit/altk-evolve/pull/226),
+  [`003bd53`](https://github.com/AgentToolkit/altk-evolve/commit/003bd536f411cd7ab3f1d7910b2bf8ec60111c06))
+
+- **bob**: Rename skills to colon form; tighten learn/recall workflow text
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **build**: Add claude-only on_stop hooks as platform overlays
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **build**: Add Jinja2 templating to the plugin source pipeline
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **build**: Introduce plugin-source/ and the render-equality build pipeline
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **build**: Migrate identical claude/claw-code skill scripts to plugin-source
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **build**: Template all claude/claw-code SKILL.md prose
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **build**: Unify SKILL.md prose across all four platforms
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **claude-plugin**: Record guideline usage per session in audit.log
+  ([#239](https://github.com/AgentToolkit/altk-evolve/pull/239),
+  [`6cc2a5b`](https://github.com/AgentToolkit/altk-evolve/commit/6cc2a5b6d050cb7c0af7d97a0f058653e1f22b2f))
+
+- **evolve-lite**: Manifest-first entity recall in plugin-source tree
+  ([#226](https://github.com/AgentToolkit/altk-evolve/pull/226),
+  [`003bd53`](https://github.com/AgentToolkit/altk-evolve/commit/003bd536f411cd7ab3f1d7910b2bf8ec60111c06))
+
+- **learn**: Unify save_entities.py with codex's strict ownership semantics
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **platform-integrations**: Add provenance usage audits
+  ([#251](https://github.com/AgentToolkit/altk-evolve/pull/251),
+  [`d7a3f49`](https://github.com/AgentToolkit/altk-evolve/commit/d7a3f49f14326e61db5c9a6b8a058ad0e7cc1423))
+
+- **platform-integrations**: Unify plugin code under a single canonical source
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **recall**: Unify retrieve_entities.py across all four platforms
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+- **sharing**: Unify publish/subscribe/sync/unsubscribe + bob save_trajectory
+  ([#235](https://github.com/AgentToolkit/altk-evolve/pull/235),
+  [`09b173d`](https://github.com/AgentToolkit/altk-evolve/commit/09b173d50015b5d90f62a65938370c505a1d583b))
+
+
 ## v1.1.0 (2026-05-01)
 
 ### Bug Fixes
