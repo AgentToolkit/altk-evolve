@@ -4,6 +4,15 @@
 
 <!-- version list -->
 
+## v1.1.3 (2026-06-02)
+
+### Bug Fixes
+
+- **llm**: Avoid Groq schema-tool failures during guideline generation
+  ([#264](https://github.com/AgentToolkit/altk-evolve/pull/264),
+  [`5b7bc7c`](https://github.com/AgentToolkit/altk-evolve/commit/5b7bc7cf10e7bea93cf7a73866595de284c21f56))
+
+
 ## v1.1.2 (2026-06-01)
 
 ### Bug Fixes
