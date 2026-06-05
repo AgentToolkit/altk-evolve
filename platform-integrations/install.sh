@@ -342,7 +342,6 @@ class FileOps:
         mode_block = "\n".join(mode_lines).strip()
         start = _sentinel_start(slug)
         end   = _sentinel_end(slug)
-        block = f"\n{start}\n  {mode_block.replace(chr(10), chr(10) + '  ')}\n{end}\n"
 
         try:
             with open(target_yaml_path) as f:
@@ -353,9 +352,34 @@ class FileOps:
         if not existing.strip() or "customModes:" not in existing:
             existing = "customModes:\n"
 
-        if start in existing:
-            pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.DOTALL)
-            new_content = pattern.sub(block.strip(), existing)
+        # Match the list-item indentation already used under `customModes:` so the
+        # inserted block doesn't mix 0-indent and 2-indent sequence items (which is
+        # invalid YAML). The source uses 2-space items; a target written by
+        # yaml.safe_dump (Bob/marketplace tooling) may use 0-space. Detect and match.
+        item_indent = "  "
+        seen_modes = False
+        for ln in existing.splitlines():
+            if ln.strip() == "customModes:":
+                seen_modes = True
+                continue
+            if seen_modes and ln.lstrip().startswith("- "):
+                item_indent = ln[: len(ln) - len(ln.lstrip())]
+                break
+        block_body = "\n".join(item_indent + ln if ln else ln for ln in mode_block.split("\n"))
+        block = f"\n{start}\n{block_body}\n{end}\n"
+
+        # Match a *real* sentinel block only: the start and end markers must each
+        # sit at the beginning of a line. A bare sentinel substring inside another
+        # mode's quoted scalar (e.g. the install-evolve-lite mode documents the
+        # literal `# >>>evolve:evolve-lite<<<` in its customInstructions) must NOT
+        # be treated as an existing block — otherwise the replace finds no matching
+        # end, no-ops, and the merge is silently dropped while still reporting ✓.
+        block_re = re.compile(
+            r"^[ \t]*" + re.escape(start) + r".*?^[ \t]*" + re.escape(end) + r"[^\n]*$",
+            re.DOTALL | re.MULTILINE,
+        )
+        if block_re.search(existing):
+            new_content = block_re.sub(lambda _m: block.strip(), existing)
         else:
             new_content = existing.rstrip() + block
 
@@ -370,9 +394,11 @@ class FileOps:
             text = f.read()
         start = _sentinel_start(slug)
         end   = _sentinel_end(slug)
+        # Line-anchored so a sentinel literal mentioned inside another mode's
+        # quoted text is never mistaken for a real block (see merge above).
         pattern = re.compile(
-            r"\n?" + re.escape(start) + r".*?" + re.escape(end) + r"\n?",
-            re.DOTALL
+            r"^[ \t]*" + re.escape(start) + r".*?" + re.escape(end) + r"[^\n]*$\n?",
+            re.DOTALL | re.MULTILINE,
         )
         self.atomic_write_text(target_yaml_path, pattern.sub("", text))
 

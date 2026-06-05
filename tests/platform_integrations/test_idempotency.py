@@ -3,6 +3,7 @@ Tests to ensure install.sh is idempotent - running it multiple times is safe.
 """
 
 import json
+import re
 
 import pytest
 
@@ -139,6 +140,47 @@ class TestBobLegacyMigration:
         install_runner.run("uninstall", platform="bob")
 
         file_assertions.assert_dir_not_exists(bob_dir / "lib" / "evolve-lite")
+
+    def test_install_merges_mode_despite_sentinel_literal_in_another_mode(self, temp_project_dir, install_runner, file_assertions):
+        """A sentinel literal quoted inside another mode's text must not block the merge.
+
+        Regression: the install-evolve-lite marketplace mode documents the literal
+        `# >>>evolve:evolve-lite<<<` in its customInstructions. A naive `if start in
+        existing` substring check treated that as an existing block, took the replace
+        branch, found no matching end sentinel, and silently dropped the merge while
+        still reporting success. The sentinel match must be line-anchored.
+        """
+        bob_dir = temp_project_dir / ".bob"
+        modes_file = bob_dir / "custom_modes.yaml"
+        modes_file.parent.mkdir(parents=True, exist_ok=True)
+        # Reproduce the exact user failure: a 0-indent list (as yaml.safe_dump /
+        # Bob marketplace tooling writes it) whose quoted text mentions the
+        # sentinel literal. This trips BOTH the substring false-match and the
+        # 0-indent-vs-2-indent mismatch.
+        modes_file.write_text(
+            "customModes:\n"
+            "- slug: install-evolve-lite\n"
+            "  name: Install Evolve Lite\n"
+            '  customInstructions: "Merged between # >>>evolve:evolve-lite<<< sentinel comments."\n'
+            "  groups:\n"
+            "  - read\n"
+        )
+
+        install_runner.run("install", platform="bob", mode="lite")
+
+        content = modes_file.read_text()
+        # The evolve-lite mode was actually merged in (real sentinel block written).
+        assert "# >>>evolve:evolve-lite<<<" in content
+
+        # All top-level list items share one indentation — a 0-indent/2-indent mix
+        # would be invalid YAML (the indentation-matching fix).
+        indents = set(re.findall(r"(?m)^([ \t]*)- slug:", content))
+        assert len(indents) == 1, f"mixed custom-mode list indentation: {indents}"
+
+        slugs = re.findall(r"(?m)^[ \t]*- slug:\s*(\S+)", content)
+        assert "evolve-lite" in slugs, f"evolve-lite mode not merged; slugs={slugs}"
+        # ...and the pre-existing mode is preserved.
+        assert "install-evolve-lite" in slugs
 
     def test_install_preserves_user_content_during_legacy_purge(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """The legacy purge MUST NOT clobber non-evolve user skills/commands."""

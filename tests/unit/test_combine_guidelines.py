@@ -6,10 +6,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from altk_evolve.llm.guidelines import clustering as clustering_module
 from altk_evolve.llm.guidelines.clustering import combine_cluster
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
-from altk_evolve.schema.guidelines import Guideline, ConsolidationResult
+from altk_evolve.schema.guidelines import ConsolidationResult, Guideline
 
 
 def _make_entity(entity_id: str, content: str, task_description: str = "do a task") -> RecordedEntity:
@@ -110,7 +111,9 @@ class TestCombineCluster:
     @patch("altk_evolve.llm.guidelines.clustering.completion")
     @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=["response_format"])
-    def test_combine_cluster_uses_structured_output(self, _mock_params, _mock_schema, mock_completion):
+    def test_combine_cluster_uses_structured_output(self, _mock_params, _mock_schema, mock_completion, monkeypatch):
+        monkeypatch.setattr(clustering_module.llm_settings, "guidelines_model", "gpt-4o")
+        monkeypatch.setattr(clustering_module.llm_settings, "custom_llm_provider", "openai")
         mock_completion.return_value = _mock_completion_response(SAMPLE_GUIDELINES[:1])
 
         entities = [_make_entity("1", "Guideline A"), _make_entity("2", "Guideline B")]
@@ -120,6 +123,29 @@ class TestCombineCluster:
         # Verify response_format was passed
         _, kwargs = mock_completion.call_args
         assert "response_format" in kwargs
+
+    @patch("altk_evolve.llm.guidelines.clustering.completion")
+    @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=["response_format"])
+    def test_combine_cluster_uses_json_prompt_for_groq_even_when_schema_is_reported(
+        self,
+        _mock_params,
+        _mock_schema,
+        mock_completion,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(clustering_module.llm_settings, "guidelines_model", "groq/openai/gpt-oss-120b")
+        monkeypatch.setattr(clustering_module.llm_settings, "custom_llm_provider", "groq")
+        mock_completion.return_value = _mock_completion_response(SAMPLE_GUIDELINES[:1])
+
+        entities = [_make_entity("1", "Guideline A"), _make_entity("2", "Guideline B")]
+        result = combine_cluster(entities)
+
+        assert len(result) == 1
+        _, kwargs = mock_completion.call_args
+        assert "response_format" not in kwargs
+        assert kwargs["custom_llm_provider"] == "groq"
+        assert "Output Format (JSON)" in kwargs["messages"][0]["content"]
 
 
 # ---------------------------------------------------------------------------
