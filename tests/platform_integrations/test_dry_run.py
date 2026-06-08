@@ -27,7 +27,12 @@ class TestDryRunLocal:
         assert not (temp_project_dir / ".codex").exists()
 
     def test_bob_dry_run_mentions_expected_operations(self, temp_project_dir, install_runner, platform_integrations_dir):
-        """Bob dry-run output should name the skills it would copy."""
+        """Bob lite dry-run should name the skills it would copy and the always-on instruction wiring.
+
+        Lite no longer merges custom_modes.yaml, copies EVOLVE.md into .bob/,
+        or injects an AGENTS.md import. It writes the always-on instructions to
+        Bob's GLOBAL rules dir (~/.bob/rules/00-evolve-lite.md).
+        """
         result = install_runner.run("install", platform="bob", mode="lite", dry_run=True)
 
         assert result.returncode == 0
@@ -36,7 +41,14 @@ class TestDryRunLocal:
         for skill_dir in skills_src.iterdir():
             if skill_dir.is_dir():
                 assert skill_dir.name in result.stdout, f"Expected skill '{skill_dir.name}' to appear in dry-run output"
-        assert "custom_modes.yaml" in result.stdout
+        # New contract: the global rules file is written; no AGENTS.md / EVOLVE.md
+        # copy / sentinel-block wiring remains.
+        assert "00-evolve-lite.md" in result.stdout
+        assert "AGENTS.md" not in result.stdout
+        assert "inject sentinel block" not in result.stdout
+        assert "EVOLVE.md" not in result.stdout
+        # Lite no longer touches custom_modes.yaml.
+        assert "custom_modes.yaml" not in result.stdout
         assert not (temp_project_dir / ".bob").exists()
 
     def test_codex_dry_run_creates_no_files(self, temp_project_dir, install_runner):

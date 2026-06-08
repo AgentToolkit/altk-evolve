@@ -20,6 +20,75 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "integration: tests that require git and perform subprocess I/O")
 
 
+@pytest.fixture(autouse=True)
+def sandbox_home(tmp_path, monkeypatch):
+    """Redirect HOME to a temp dir for every platform-integrations test.
+
+    install.sh resolves a handful of global paths via Python's ``Path.home()``
+    (notably the Codex always-on instructions file ``~/.codex/AGENTS.md`` and the
+    global Bob target ``~/.bob``). Without sandboxing, simply running a codex
+    install in a test would inject the evolve block into the developer's REAL
+    ``~/.codex/AGENTS.md``. ``InstallRunner.run`` builds the subprocess env from
+    ``os.environ`` at call time, so monkeypatching HOME here flows through to the
+    install.sh child process.
+
+    Returns the sandboxed home directory.
+    """
+    home = tmp_path / "sandbox_home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    # Windows/`Path.home()` also consults these; keep them aligned defensively.
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("HOMEDRIVE", raising=False)
+    monkeypatch.delenv("HOMEPATH", raising=False)
+    return home
+
+
+@pytest.fixture
+def codex_agents_file(sandbox_home):
+    """Path to the sandboxed Codex always-on instructions file (~/.codex/AGENTS.md)."""
+    return sandbox_home / ".codex" / "AGENTS.md"
+
+
+@pytest.fixture
+def codex_evolve_md(sandbox_home):
+    """Path to the sandboxed on-disk COPY of EVOLVE.md (~/.codex/evolve-lite/EVOLVE.md).
+
+    Codex no longer inlines EVOLVE.md into AGENTS.md; it drops a copy here and
+    points AGENTS.md at it via a single greppable managed line."""
+    return sandbox_home / ".codex" / "evolve-lite" / "EVOLVE.md"
+
+
+@pytest.fixture
+def bob_rules_file(sandbox_home):
+    """Path to the sandboxed Bob GLOBAL custom-instructions rules file.
+
+    Bob loads every ``~/.bob/rules/*.md`` into every session, globally and
+    mode-independent, as the user's custom instructions. The lite installer
+    owns ``00-evolve-lite.md`` entirely (always global, never a project file)."""
+    return sandbox_home / ".bob" / "rules" / "00-evolve-lite.md"
+
+
+@pytest.fixture
+def bob_audit_script(sandbox_home):
+    """Path to the sandboxed Bob GLOBAL recall-audit script.
+
+    EVOLVE.md tells the model to run ``python3 ~/.bob/evolve-lite/audit_recall.py``
+    after recall, so the lite installer drops the script once at that global
+    absolute path (matching the always-global rules file)."""
+    return sandbox_home / ".bob" / "evolve-lite" / "audit_recall.py"
+
+
+@pytest.fixture
+def codex_audit_script(sandbox_home):
+    """Path to the sandboxed Codex GLOBAL recall-audit script.
+
+    The injected ~/.codex/AGENTS.md block tells the model to run
+    ``python3 ~/.codex/evolve-lite/audit_recall.py`` after recall, so the
+    installer drops the script once at that global absolute path."""
+    return sandbox_home / ".codex" / "evolve-lite" / "audit_recall.py"
+
+
 @pytest.fixture
 def temp_project_dir(tmp_path):
     """
@@ -226,6 +295,31 @@ class FileAssertions:
 
         assert start_sentinel in content, f"Start sentinel '{start_sentinel}' not found in {path}"
         assert end_sentinel in content, f"End sentinel '{end_sentinel}' not found in {path}"
+
+    @staticmethod
+    def assert_sentinel_block_count(path: Path, slug: str, expected: int):
+        """Assert the file contains exactly `expected` REAL sentinel blocks for `slug`.
+
+        A "real" block is a start marker anchored at the beginning of a line followed
+        by a matching end marker also anchored at the beginning of a line — the same
+        shape install.sh's inject_sentinel_block treats as a block. This deliberately
+        ignores a sentinel literal quoted mid-line inside unrelated user prose, so the
+        helper measures actual injected blocks (an idempotent installer leaves one).
+        """
+        import re
+
+        assert path.is_file(), f"File does not exist: {path}"
+        content = path.read_text()
+        start = f"# >>>evolve:{slug}<<<"
+        end = f"# <<<evolve:{slug}<<<"
+        block_re = re.compile(
+            r"^[ \t]*" + re.escape(start) + r".*?^[ \t]*" + re.escape(end) + r"[^\n]*$",
+            re.DOTALL | re.MULTILINE,
+        )
+        count = len(block_re.findall(content))
+        assert count == expected, (
+            f"Expected {expected} real sentinel block(s) for '{slug}' in {path}, found {count}.\nFile content:\n{content}"
+        )
 
     @staticmethod
     def assert_sentinel_block_not_exists(path: Path, slug: str):

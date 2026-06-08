@@ -121,9 +121,29 @@ EVOLVE_VERSION = os.environ.get("EVOLVE_VERSION", "main")
 DRY_RUN = False
 
 BOB_SLUG          = "evolve-lite"
+BOB_RULES_FILE    = "00-evolve-lite.md"
+AUDIT_SCRIPT      = "audit_recall.py"
 CLAUDE_PLUGIN     = "evolve-lite"
 CLAW_CODE_PLUGIN  = "evolve-lite"
 CODEX_PLUGIN      = "evolve-lite"
+
+# Marker used to manage a single greppable instruction line that an installer
+# injects into an agent's always-on instruction file (e.g. ~/.codex/AGENTS.md).
+# The marker is also the uninstall handle: any line containing it is "ours".
+MANAGED_MARKER    = "<!-- evolve-lite:managed -->"
+
+# Codex cannot `@`-import another file, but it can be told to read one on
+# demand. We drop a COPY of EVOLVE.md on disk and inject this single pointer
+# line into ~/.codex/AGENTS.md instead of inlining the whole document.
+CODEX_EVOLVE_MD_PATH = "~/.codex/evolve-lite/EVOLVE.md"
+
+def _codex_pointer_line():
+    return (
+        "Evolve memory is active: at the start of every conversation, read "
+        + CODEX_EVOLVE_MD_PATH + " and follow it — it governs recalling "
+        "relevant past learnings and saving durable new ones. "
+        + MANAGED_MARKER
+    )
 
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -273,6 +293,19 @@ class FileOps:
             return True
         return False
 
+    def remove_dir_if_empty(self, path):
+        """Remove `path` only when it exists and contains nothing.
+
+        Used to tidy up a per-plugin dir (e.g. ~/.bob/evolve-lite/) after its
+        last managed file is removed, while leaving it intact if a user (or
+        another plugin) dropped sibling content there."""
+        path = str(path)
+        if os.path.isdir(path) and not os.listdir(path):
+            os.rmdir(path)
+            debug(f"Removed empty dir: {path}")
+            return True
+        return False
+
     def run_subprocess(self, cmd_list):
         return subprocess.run(cmd_list)
 
@@ -402,6 +435,128 @@ class FileOps:
         )
         self.atomic_write_text(target_yaml_path, pattern.sub("", text))
 
+    # ── Sentinel-block helpers (generic always-on instruction files) ───────────
+
+    def inject_sentinel_block(self, path, slug, body):
+        """Idempotently inject a sentinel-wrapped block into a text file.
+
+        Writes:
+            # >>>evolve:{slug}<<<
+            {body}
+            # <<<evolve:{slug}<<<
+
+        If a block with the same sentinels already exists, it is replaced in
+        place; otherwise the block is appended (separated by a blank line from
+        any existing content). `body` is arbitrary text — a one-line `@`-import
+        or a full multi-line document — and is never inspected here.
+        """
+        path = str(path)
+        start = _sentinel_start(slug)
+        end   = _sentinel_end(slug)
+        block = f"{start}\n{body}\n{end}"
+
+        try:
+            with open(path) as f:
+                existing = f.read()
+        except FileNotFoundError:
+            existing = ""
+
+        # Match a real sentinel block only: start/end markers each anchored to
+        # the beginning of a line (mirrors merge_yaml_custom_mode), so a literal
+        # sentinel string quoted inside body content is never mistaken for one.
+        block_re = re.compile(
+            r"^[ \t]*" + re.escape(start) + r".*?^[ \t]*" + re.escape(end) + r"[^\n]*$",
+            re.DOTALL | re.MULTILINE,
+        )
+        if block_re.search(existing):
+            new_content = block_re.sub(lambda _m: block, existing)
+        elif existing.strip():
+            new_content = existing.rstrip() + "\n\n" + block + "\n"
+        else:
+            new_content = block + "\n"
+
+        self.atomic_write_text(path, new_content)
+        debug(f"Injected sentinel block '{slug}': {path}")
+
+    def remove_sentinel_block(self, path, slug):
+        """Remove the sentinel block for `slug` (and a trailing newline) if present."""
+        path = str(path)
+        if not os.path.isfile(path):
+            return
+        with open(path) as f:
+            text = f.read()
+        start = _sentinel_start(slug)
+        end   = _sentinel_end(slug)
+        pattern = re.compile(
+            r"\n*^[ \t]*" + re.escape(start) + r".*?" + re.escape(end) + r"[^\n]*$\n?",
+            re.DOTALL | re.MULTILINE,
+        )
+        self.atomic_write_text(path, pattern.sub("", text))
+        debug(f"Removed sentinel block '{slug}': {path}")
+
+    # ── Marker-line helpers (single greppable managed line) ────────────────────
+
+    def inject_marker_line(self, path, marker, line):
+        """Idempotently ensure a single managed `line` is present in `path`.
+
+        `line` must contain `marker` (the uninstall handle). If an existing
+        line in the file contains `marker`, that entire line is replaced with
+        `line`; otherwise `line` is appended (preceded by a blank line when the
+        file already has non-empty content). Creates the file/parents if
+        missing. Atomic write.
+        """
+        path = str(path)
+        if marker not in line:
+            raise ValueError("inject_marker_line: line must contain marker")
+
+        try:
+            with open(path) as f:
+                existing = f.read()
+        except FileNotFoundError:
+            existing = ""
+
+        lines = existing.split("\n")
+        replaced = False
+        for i, ln in enumerate(lines):
+            if marker in ln:
+                lines[i] = line
+                replaced = True
+                break
+
+        if replaced:
+            new_content = "\n".join(lines)
+        elif existing.strip():
+            new_content = existing.rstrip("\n") + "\n\n" + line + "\n"
+        else:
+            new_content = line + "\n"
+
+        self.atomic_write_text(path, new_content)
+        debug(f"Injected marker line ({marker}): {path}")
+
+    def remove_marker_line(self, path, marker):
+        """Remove every line containing `marker` from `path`. No-op if missing.
+
+        Avoids leaving a doubled blank line where the line used to be: when the
+        removed line sat between two blank lines (or had a blank line before it
+        and content after), the surrounding blank lines are collapsed.
+        """
+        path = str(path)
+        if not os.path.isfile(path):
+            return
+        with open(path) as f:
+            text = f.read()
+        # Drop the managed line together with a single trailing newline, then
+        # collapse any resulting run of 3+ newlines down to a paragraph break.
+        pattern = re.compile(r"^.*" + re.escape(marker) + r".*$\n?", re.MULTILINE)
+        new_text = pattern.sub("", text)
+        new_text = re.sub(r"\n{3,}", "\n\n", new_text)
+        # Tidy a trailing blank-line gap left behind at EOF.
+        new_text = new_text.rstrip("\n")
+        if text.endswith("\n") and new_text:
+            new_text += "\n"
+        self.atomic_write_text(path, new_text)
+        debug(f"Removed marker line ({marker}): {path}")
+
 
 class DryRunFileOps(FileOps):
     """No-op variant: logs what would happen instead of writing anything."""
@@ -432,12 +587,28 @@ class DryRunFileOps(FileOps):
         dryrun(f"remove file → {path}")
         return True
 
+    def remove_dir_if_empty(self, path):
+        dryrun(f"remove dir if empty → {path}")
+        return True
+
     def run_subprocess(self, cmd_list):
         dryrun(f"run: {' '.join(cmd_list)}")
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
     def merge_yaml_custom_mode(self, source_yaml_path, target_yaml_path, slug):
         dryrun(f"merge YAML custom mode '{slug}' → {target_yaml_path}")
+
+    def inject_sentinel_block(self, path, slug, body):
+        dryrun(f"inject sentinel block '{slug}' → {path}")
+
+    def remove_sentinel_block(self, path, slug):
+        dryrun(f"remove sentinel block '{slug}' → {path}")
+
+    def inject_marker_line(self, path, marker, line):
+        dryrun(f"inject marker line ({marker}) → {path}")
+
+    def remove_marker_line(self, path, marker):
+        dryrun(f"remove marker line ({marker}) → {path}")
 
 
 # ── Platform detection ────────────────────────────────────────────────────────
@@ -559,6 +730,24 @@ class BobInstaller:
             return bob_target / "settings" / "mcp_settings.json"
         return bob_target / "mcp.json"
 
+    def _rules_file(self):
+        """Resolve Bob's GLOBAL custom-instructions rules file.
+
+        Bob loads every ``~/.bob/rules/*.md`` into every session, globally,
+        ungated and mode-independent, as the user's custom instructions. The
+        lite installer owns ``00-evolve-lite.md`` entirely — it is always
+        global regardless of install scope, never a project file."""
+        return Path.home() / ".bob" / "rules" / BOB_RULES_FILE
+
+    def _audit_script_file(self):
+        """Resolve Bob's GLOBAL recall-audit script path.
+
+        EVOLVE.md tells the model to run ``python3 ~/.bob/evolve-lite/audit_recall.py``
+        after recall. The script is installed once, globally, regardless of
+        install scope (matching the always-global rules file), so the absolute
+        path baked into the instructions always resolves."""
+        return Path.home() / ".bob" / "evolve-lite" / AUDIT_SCRIPT
+
     def install(self, target_dir, mode="lite"):
         _ensure_source_dir()
         source_dir = SOURCE_DIR
@@ -596,12 +785,35 @@ class BobInstaller:
             self.ops.copy_tree(bob_source_lite / "commands", bob_target / "commands")
             success("Copied Bob commands")
 
-            self.ops.merge_yaml_custom_mode(
-                bob_source_lite / "custom_modes.yaml",
-                modes_file,
-                BOB_SLUG,
-            )
-            success(f"Merged custom mode '{BOB_SLUG}' into {modes_file}")
+            # Always-on instructions: write the full EVOLVE.md text to Bob's
+            # GLOBAL rules dir. Bob loads every `~/.bob/rules/*.md` into every
+            # session, ungated and mode-independent, as the user's custom
+            # instructions. This is always global regardless of install scope.
+            # The installer owns this file entirely — overwrite, no merging.
+            evolve_src = bob_source_lite / "EVOLVE.md"
+            if not self.ops.is_dry_run and not evolve_src.is_file():
+                evolve_src = Path(source_dir) / "plugin-source" / "EVOLVE.md"
+            rules_file = self._rules_file()
+            if not self.ops.is_dry_run:
+                self.ops.atomic_write_text(rules_file, evolve_src.read_text())
+            else:
+                self.ops.atomic_write_text(rules_file, "")
+            success(f"Wrote always-on instructions → {rules_file}")
+
+            # Recall-audit script: EVOLVE.md tells the model to run
+            # `python3 ~/.bob/evolve-lite/audit_recall.py` after recall, so
+            # install the script once at that GLOBAL absolute path (matching
+            # the always-global rules file). Prefer the rendered bob copy;
+            # fall back to the shared plugin-source original.
+            audit_src = bob_source_lite / "scripts" / AUDIT_SCRIPT
+            if not self.ops.is_dry_run and not audit_src.is_file():
+                audit_src = Path(source_dir) / "plugin-source" / "scripts" / AUDIT_SCRIPT
+            audit_file = self._audit_script_file()
+            if not self.ops.is_dry_run:
+                self.ops.atomic_write_text(audit_file, audit_src.read_text())
+            else:
+                self.ops.atomic_write_text(audit_file, "")
+            success(f"Installed recall-audit script → {audit_file}")
 
         elif mode == "full":
             bob_source_full = Path(source_dir) / "platform-integrations" / "bob" / "evolve-full"
@@ -630,8 +842,15 @@ class BobInstaller:
         info(f"Uninstalling Bob from {bob_target}")
 
         self._purge_evolve_artifacts(bob_target)
-        # Remove from the scope-correct location *and* the legacy top-level
-        # file, so installs written before the settings/ split are cleaned up.
+        # Lite: drop the global always-on instructions rules file and the
+        # recall-audit script (and its dir if nothing else lives there).
+        self.ops.remove_file(self._rules_file())
+        audit_file = self._audit_script_file()
+        self.ops.remove_file(audit_file)
+        self.ops.remove_dir_if_empty(audit_file.parent)
+        # Full: remove the 'Evolve' custom mode (scope-correct *and* legacy
+        # top-level file) and the MCP server entry. A stale BOB_SLUG custom mode
+        # from a pre-redesign lite install is also swept up here.
         modes_files = {self._modes_file(bob_target), bob_target / "custom_modes.yaml"}
         for mf in modes_files:
             self.ops.remove_yaml_custom_mode(mf, BOB_SLUG)
@@ -659,9 +878,13 @@ class BobInstaller:
         commands_dir = bob_target / "commands"
         installed_cmds = sorted(commands_dir.glob("evolve*.md")) if commands_dir.is_dir() else []
         print(f"    commands/ ({len(installed_cmds)} evolve commands) : {'✓' if installed_cmds else '✗'}")
+        rules_file = self._rules_file()
+        print(f"    rules/{BOB_RULES_FILE}    : {'✓' if rules_file.is_file() else '✗'}")
+        audit_file = self._audit_script_file()
+        print(f"    evolve-lite/{AUDIT_SCRIPT} : {'✓' if audit_file.is_file() else '✗'}")
         modes_file = self._modes_file(bob_target)
         modes_rel = str(modes_file.relative_to(bob_target))
-        print(f"    {modes_rel:<25} : {'✓' if modes_file.is_file() else '✗'}")
+        print(f"    {modes_rel:<25} : {'✓ (full mode)' if modes_file.is_file() else '✗'}")
         mcp_file = self._mcp_file(bob_target)
         has_mcp = "evolve" in read_json(mcp_file).get("mcpServers", {}) if mcp_file.is_file() else False
         print(f"    mcp (full mode)           : {'✓' if has_mcp else '✗'}")
@@ -811,166 +1034,7 @@ class CodexInstaller:
     def __init__(self, ops: FileOps):
         self.ops = ops
 
-    # ── Codex hook/marketplace schema helpers ─────────────────────────────────
-
-    @staticmethod
-    def _recall_hook_command():
-        return (
-            "sh -lc '"
-            'd=\"$PWD\"; '
-            "while :; do "
-            'candidate=\"$d/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py\"; '
-            'if [ -f \"$candidate\" ]; then EVOLVE_DIR=\"$d/.evolve\" exec python3 \"$candidate\"; fi; '
-            '[ \"$d\" = \"/\" ] && break; '
-            'd=\"$(dirname \"$d\")\"; '
-            "done; "
-            "exit 1'"
-        )
-
-    @staticmethod
-    def _is_recall_command(command):
-        return isinstance(command, str) and "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in command
-
-    @staticmethod
-    def _recall_hook():
-        return {
-            "type": "command",
-            "command": CodexInstaller._recall_hook_command(),
-            "statusMessage": "Loading Evolve guidance",
-        }
-
-    @staticmethod
-    def _recall_hook_group():
-        return {"matcher": "", "hooks": [CodexInstaller._recall_hook()]}
-
-    @staticmethod
-    def _sync_hook_command():
-        return (
-            "sh -lc '"
-            'd=\"$PWD\"; '
-            "while :; do "
-            'candidate=\"$d/plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py\"; '
-            'if [ -f \"$candidate\" ]; then EVOLVE_DIR=\"$d/.evolve\" exec python3 \"$candidate\" --quiet --session-start; fi; '
-            '[ \"$d\" = \"/\" ] && break; '
-            'd=\"$(dirname \"$d\")\"; '
-            "done; "
-            "exit 1'"
-        )
-
-    @staticmethod
-    def _is_sync_command(command):
-        return isinstance(command, str) and "plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py" in command
-
-    @staticmethod
-    def _sync_hook():
-        return {
-            "type": "command",
-            "command": CodexInstaller._sync_hook_command(),
-            "statusMessage": "Syncing Evolve subscriptions",
-        }
-
-    @staticmethod
-    def _sync_hook_group():
-        return {"matcher": "startup|resume", "hooks": [CodexInstaller._sync_hook()]}
-
-    @staticmethod
-    def _iter_group_hooks(group):
-        hooks = group.get("hooks", [])
-        if isinstance(hooks, list): return hooks
-        if isinstance(hooks, dict): return list(hooks.values())
-        return []
-
-    @staticmethod
-    def _group_has_recall(group):
-        return any(
-            isinstance(h, dict) and CodexInstaller._is_recall_command(h.get("command"))
-            for h in CodexInstaller._iter_group_hooks(group)
-        )
-
-    @staticmethod
-    def _group_has_sync(group):
-        return any(
-            isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command"))
-            for h in CodexInstaller._iter_group_hooks(group)
-        )
-
-    @staticmethod
-    def _upsert_recall_into_group(group):
-        updated = copy.deepcopy(group)
-        recall = CodexInstaller._recall_hook()
-        hooks = updated.get("hooks")
-        if isinstance(hooks, list):
-            for i, h in enumerate(hooks):
-                if isinstance(h, dict) and CodexInstaller._is_recall_command(h.get("command")):
-                    hooks[i] = merge_json_value(h, recall)
-                    break
-            else:
-                hooks.append(copy.deepcopy(recall))
-        elif isinstance(hooks, dict):
-            for key, h in hooks.items():
-                if isinstance(h, dict) and CodexInstaller._is_recall_command(h.get("command")):
-                    hooks[key] = merge_json_value(h, recall)
-                    break
-            else:
-                hooks["evolve-lite"] = copy.deepcopy(recall)
-        else:
-            updated["hooks"] = [copy.deepcopy(recall)]
-        return updated
-
-    @staticmethod
-    def _upsert_sync_into_group(group):
-        updated = copy.deepcopy(group)
-        sync = CodexInstaller._sync_hook()
-        hooks = updated.get("hooks")
-        if isinstance(hooks, list):
-            for i, h in enumerate(hooks):
-                if isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command")):
-                    hooks[i] = merge_json_value(h, sync)
-                    break
-            else:
-                hooks.append(copy.deepcopy(sync))
-        elif isinstance(hooks, dict):
-            for key, h in hooks.items():
-                if isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command")):
-                    hooks[key] = merge_json_value(h, sync)
-                    break
-            else:
-                hooks["evolve-lite"] = copy.deepcopy(sync)
-        else:
-            updated["hooks"] = [copy.deepcopy(sync)]
-        return updated
-
-    @staticmethod
-    def _remove_recall_from_group(group):
-        updated = copy.deepcopy(group)
-        hooks = updated.get("hooks")
-        if isinstance(hooks, list):
-            updated["hooks"] = [
-                h for h in hooks
-                if not (isinstance(h, dict) and CodexInstaller._is_recall_command(h.get("command")))
-            ]
-        elif isinstance(hooks, dict):
-            updated["hooks"] = {
-                k: h for k, h in hooks.items()
-                if not (isinstance(h, dict) and CodexInstaller._is_recall_command(h.get("command")))
-            }
-        return updated
-
-    @staticmethod
-    def _remove_sync_from_group(group):
-        updated = copy.deepcopy(group)
-        hooks = updated.get("hooks")
-        if isinstance(hooks, list):
-            updated["hooks"] = [
-                h for h in hooks
-                if not (isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command")))
-            ]
-        elif isinstance(hooks, dict):
-            updated["hooks"] = {
-                k: h for k, h in hooks.items()
-                if not (isinstance(h, dict) and CodexInstaller._is_sync_command(h.get("command")))
-            }
-        return updated
+    # ── Codex marketplace schema helpers ──────────────────────────────────────
 
     def _upsert_marketplace_entry(self, path, item):
         data = read_json(path)
@@ -989,95 +1053,6 @@ class CodexInstaller:
                 break
         else:
             plugins.append(copy.deepcopy(item))
-        self.ops.atomic_write_json(path, data)
-
-    def _upsert_user_prompt_hook(self, path, group):
-        data = read_json(path)
-        if not data:
-            data = {"hooks": {}}
-        if not isinstance(data, dict):
-            raise ValueError(f"{path} must contain a JSON object.")
-        hooks = data.setdefault("hooks", {})
-        if not isinstance(hooks, dict):
-            hooks = {}
-            data["hooks"] = hooks
-        groups = hooks.setdefault("UserPromptSubmit", [])
-        if not isinstance(groups, list):
-            groups = []
-            hooks["UserPromptSubmit"] = groups
-        for i, existing in enumerate(groups):
-            if isinstance(existing, dict) and self._group_has_recall(existing):
-                groups[i] = self._upsert_recall_into_group(existing)
-                break
-        else:
-            groups.append(copy.deepcopy(group))
-        self.ops.atomic_write_json(path, data)
-
-    def _remove_user_prompt_hook(self, path):
-        if not os.path.isfile(str(path)):
-            return
-        data = read_json(path)
-        hooks = data.get("hooks")
-        if not isinstance(hooks, dict):
-            return
-        groups = hooks.get("UserPromptSubmit", [])
-        if not isinstance(groups, list):
-            return
-        hooks["UserPromptSubmit"] = [
-            self._remove_recall_from_group(g) if isinstance(g, dict) and self._group_has_recall(g) else g
-            for g in groups
-        ]
-        # Prune empty groups (groups with no hooks left)
-        hooks["UserPromptSubmit"] = [
-            group for group in hooks["UserPromptSubmit"]
-            if not isinstance(group, dict) or self._iter_group_hooks(group)
-        ]
-        if not hooks["UserPromptSubmit"]:
-            hooks.pop("UserPromptSubmit", None)
-        self.ops.atomic_write_json(path, data)
-
-    def _upsert_session_start_hook(self, path, group):
-        data = read_json(path)
-        if not data:
-            data = {"hooks": {}}
-        if not isinstance(data, dict):
-            raise ValueError(f"{path} must contain a JSON object.")
-        hooks = data.setdefault("hooks", {})
-        if not isinstance(hooks, dict):
-            hooks = {}
-            data["hooks"] = hooks
-        groups = hooks.setdefault("SessionStart", [])
-        if not isinstance(groups, list):
-            groups = []
-            hooks["SessionStart"] = groups
-        for i, existing in enumerate(groups):
-            if isinstance(existing, dict) and self._group_has_sync(existing):
-                groups[i] = self._upsert_sync_into_group(existing)
-                break
-        else:
-            groups.append(copy.deepcopy(group))
-        self.ops.atomic_write_json(path, data)
-
-    def _remove_session_start_hook(self, path):
-        if not os.path.isfile(str(path)):
-            return
-        data = read_json(path)
-        hooks = data.get("hooks")
-        if not isinstance(hooks, dict):
-            return
-        groups = hooks.get("SessionStart", [])
-        if not isinstance(groups, list):
-            return
-        hooks["SessionStart"] = [
-            self._remove_sync_from_group(g) if isinstance(g, dict) and self._group_has_sync(g) else g
-            for g in groups
-        ]
-        hooks["SessionStart"] = [
-            group for group in hooks["SessionStart"]
-            if not isinstance(group, dict) or len(self._iter_group_hooks(group)) > 0
-        ]
-        if not hooks["SessionStart"]:
-            hooks.pop("SessionStart", None)
         self.ops.atomic_write_json(path, data)
 
     # ── Public interface ──────────────────────────────────────────────────────
@@ -1104,15 +1079,35 @@ class CodexInstaller:
         )
         success(f"Upserted Codex marketplace entry in {marketplace_target}")
 
-        hooks_target = Path(target_dir) / ".codex" / "hooks.json"
-        self._upsert_user_prompt_hook(hooks_target, self._recall_hook_group())
-        self._upsert_session_start_hook(hooks_target, self._sync_hook_group())
-        success(f"Upserted Codex UserPromptSubmit hook in {hooks_target}")
-        success(f"Upserted Codex SessionStart hook in {hooks_target}")
-        warn("Automatic Codex recall requires hooks to be enabled in ~/.codex/config.toml:")
-        print("      [features]")
-        print("      codex_hooks = true")
-        info("If you do not want to enable Codex hooks, invoke the installed evolve-lite:recall skill manually.")
+        # Always-on instructions: Codex reads ~/.codex/AGENTS.md verbatim and
+        # does NOT support `@`-imports. So we drop a COPY of EVOLVE.md on disk
+        # and inject a single greppable pointer line into AGENTS.md telling the
+        # agent to read that file on demand. Prefer the rendered codex copy;
+        # fall back to the shared plugin-source original.
+        evolve_src = plugin_source / "EVOLVE.md"
+        if not evolve_src.is_file():
+            evolve_src = Path(source_dir) / "plugin-source" / "EVOLVE.md"
+        evolve_text = "" if self.ops.is_dry_run and not evolve_src.is_file() else evolve_src.read_text()
+        evolve_dst = Path.home() / ".codex" / "evolve-lite" / "EVOLVE.md"
+        self.ops.atomic_write_text(evolve_dst, evolve_text)
+        success(f"Copied EVOLVE.md → {evolve_dst}")
+
+        agents_file = Path.home() / ".codex" / "AGENTS.md"
+        self.ops.inject_marker_line(agents_file, MANAGED_MARKER, _codex_pointer_line())
+        success(f"Injected '{CODEX_PLUGIN}' pointer into {agents_file}")
+
+        # Recall-audit script: the injected AGENTS.md block tells the model to
+        # run `python3 ~/.codex/evolve-lite/audit_recall.py` after recall, so
+        # install the script at that GLOBAL absolute path (matching how the
+        # always-on instructions live globally). Prefer the rendered codex
+        # copy; fall back to the shared plugin-source original.
+        audit_src = plugin_source / "scripts" / AUDIT_SCRIPT
+        if not audit_src.is_file():
+            audit_src = Path(source_dir) / "plugin-source" / "scripts" / AUDIT_SCRIPT
+        audit_text = "" if self.ops.is_dry_run and not audit_src.is_file() else audit_src.read_text()
+        audit_file = Path.home() / ".codex" / "evolve-lite" / AUDIT_SCRIPT
+        self.ops.atomic_write_text(audit_file, audit_text)
+        success(f"Installed recall-audit script → {audit_file}")
 
         success("Codex installation complete")
 
@@ -1124,8 +1119,14 @@ class CodexInstaller:
             Path(target_dir) / ".agents" / "plugins" / "marketplace.json",
             "plugins", "name", CODEX_PLUGIN,
         )
-        self._remove_user_prompt_hook(Path(target_dir) / ".codex" / "hooks.json")
-        self._remove_session_start_hook(Path(target_dir) / ".codex" / "hooks.json")
+        # Drop the single managed pointer line from the always-on instructions.
+        self.ops.remove_marker_line(Path.home() / ".codex" / "AGENTS.md", MANAGED_MARKER)
+        # Remove the on-disk EVOLVE.md copy and the recall-audit script, then the
+        # per-plugin dir if nothing else lives there.
+        evolve_dir = Path.home() / ".codex" / "evolve-lite"
+        self.ops.remove_file(evolve_dir / "EVOLVE.md")
+        self.ops.remove_file(evolve_dir / AUDIT_SCRIPT)
+        self.ops.remove_dir_if_empty(evolve_dir)
 
         success("Codex uninstall complete")
 
@@ -1144,19 +1145,18 @@ class CodexInstaller:
         )
         print(f"    marketplace.json entry    : {'✓' if marketplace_present else '✗'}")
 
-        hooks_path = Path(target_dir) / ".codex" / "hooks.json"
-        hook_present = (
-            any(isinstance(g, dict) and self._group_has_recall(g)
-                for g in read_json(hooks_path).get("hooks", {}).get("UserPromptSubmit", []))
-            if hooks_path.is_file() else False
+        agents_path = Path.home() / ".codex" / "AGENTS.md"
+        pointer_present = (
+            any(MANAGED_MARKER in ln for ln in agents_path.read_text().splitlines())
+            if agents_path.is_file() else False
         )
-        session_hook_present = (
-            any(isinstance(g, dict) and self._group_has_sync(g)
-                for g in read_json(hooks_path).get("hooks", {}).get("SessionStart", []))
-            if hooks_path.is_file() else False
-        )
-        print(f"    .codex/hooks.json entry   : {'✓' if hook_present else '✗'}")
-        print(f"    SessionStart sync hook    : {'✓' if session_hook_present else '✗'}")
+        print(f"    ~/.codex/AGENTS.md pointer : {'✓' if pointer_present else '✗'}")
+
+        evolve_md = Path.home() / ".codex" / "evolve-lite" / "EVOLVE.md"
+        print(f"    evolve-lite/EVOLVE.md     : {'✓' if evolve_md.is_file() else '✗'}")
+
+        audit_file = Path.home() / ".codex" / "evolve-lite" / AUDIT_SCRIPT
+        print(f"    evolve-lite/{AUDIT_SCRIPT} : {'✓' if audit_file.is_file() else '✗'}")
 
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────

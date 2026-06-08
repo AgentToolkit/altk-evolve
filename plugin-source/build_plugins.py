@@ -293,6 +293,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "forked_context": True,
             "user_skills_dir": "~/.claude/skills",
             "save_example_script_root": "${CLAUDE_PLUGIN_ROOT}/skills",
+            "audit_script": "~/.claude/evolve-lite/audit_recall.py",
         },
         "target_rewrites": [],
         "target_excludes": [],
@@ -304,6 +305,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "context": {
             "user_skills_dir": "~/.claw/skills",
             "save_example_script_root": "~/.claw/skills",
+            "audit_script": "~/.claw/evolve-lite/audit_recall.py",
         },
         "target_rewrites": [],
         "target_excludes": [],
@@ -316,6 +318,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "context": {
             "user_skills_dir": "plugins/evolve-lite/skills",
             "save_example_script_root": "plugins/evolve-lite/skills",
+            "audit_script": "~/.codex/evolve-lite/audit_recall.py",
         },
         "target_rewrites": [],
         "target_excludes": [],
@@ -327,6 +330,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "context": {
             "user_skills_dir": ".bob/skills",
             "save_example_script_root": ".bob/skills",
+            "audit_script": "~/.bob/evolve-lite/audit_recall.py",
         },
         # Bob has no plugin-namespace concept; skill folders are flat
         # under .bob/skills/. Collapse the source skills/evolve-lite/<name>/
