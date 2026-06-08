@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
+pytestmark = [pytest.mark.platform_integrations]
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
 PROVENANCE_SCRIPT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/provenance/scripts/provenance.py"
