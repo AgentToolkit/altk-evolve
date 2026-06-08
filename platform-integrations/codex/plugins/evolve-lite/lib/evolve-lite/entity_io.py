@@ -154,7 +154,7 @@ def unique_filename(directory, slug):
 # Markdown <-> dict conversion
 # ---------------------------------------------------------------------------
 
-_FRONTMATTER_KEYS = ("type", "trigger", "trajectory", "owner", "source", "visibility", "published_at")
+_FRONTMATTER_KEYS = ("type", "trigger", "trajectory", "owner", "source", "native_path", "visibility", "published_at")
 
 
 def entity_to_markdown(entity):
@@ -354,11 +354,23 @@ def load_all_entities(entities_dir):
     return entities
 
 
-def write_entity_file(directory, entity):
+def write_entity_file(directory, entity, filename=None, overwrite=False):
     """Write a single entity as a markdown file under *directory*.
 
     The file is placed in a ``{type}/`` subdirectory.  Uses atomic
     write (write to ``.tmp``, then ``os.rename``).
+
+    Args:
+        directory: Entities root directory.
+        entity: The entity dict to serialize.
+        filename: Optional explicit slug for the target file (without the
+            ``.md`` suffix). When omitted, the slug is derived from the
+            entity content (the historical default).
+        overwrite: When True, the entity is written to a deterministic
+            ``{type}/{filename}.md`` path, overwriting any existing file in
+            place (stable id, idempotent re-mirroring). When False (the
+            default), the historical collision-avoiding behavior is kept —
+            a ``-2``/``-3`` suffix is appended on collision.
 
     Returns:
         Path to the written file.
@@ -370,7 +382,7 @@ def write_entity_file(directory, entity):
     type_dir = Path(directory) / entity_type
     type_dir.mkdir(parents=True, exist_ok=True)
 
-    slug = slugify(entity.get("content", "entity"))
+    slug = filename if filename else slugify(entity.get("content", "entity"))
     content = entity_to_markdown(entity)
 
     # Write to a unique temp file first (avoids predictable .tmp collisions)
@@ -380,6 +392,13 @@ def write_entity_file(directory, entity):
         os.write(fd, content.encode("utf-8"))
         os.close(fd)
         fd = None
+
+        if overwrite:
+            # Deterministic target: overwrite any existing file in place so
+            # the entity id is stable across re-mirroring.
+            target = type_dir / f"{slug}.md"
+            os.replace(tmp_path, target)
+            return target
 
         # Atomically claim the target using O_EXCL; retry on race
         while True:

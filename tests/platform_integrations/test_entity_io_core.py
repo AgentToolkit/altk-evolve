@@ -4,18 +4,30 @@ The existing test_entity_io.py covers directory-resolution helpers. This file
 covers the serialization and I/O functions needed by the sharing feature.
 """
 
+import importlib.util
 import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(
-    0,
-    str(Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/evolve-lite"),
-)
-import entity_io
+_CLAUDE_PLUGIN = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
+sys.path.insert(0, str(_CLAUDE_PLUGIN / "lib/evolve-lite"))
+import entity_io  # noqa: E402
 
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.unit]
+
+
+def _load_adapt_memory():
+    """Load the rendered Claude adapt_memory.py as a module.
+
+    Its lib resolution only works in the rendered tree (it walks up to find
+    ``lib/evolve-lite/entity_io.py``), so we import the rendered copy.
+    """
+    path = _CLAUDE_PLUGIN / "skills/evolve-lite/adapt-memory/scripts/adapt_memory.py"
+    spec = importlib.util.spec_from_file_location("adapt_memory_rendered", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class TestSlugify:
@@ -150,6 +162,81 @@ class TestWriteEntityFile:
         assert path1 != path2
         assert path1.exists()
         assert path2.exists()
+
+    def test_explicit_filename_default_mode_still_suffixes_on_collision(self, tmp_path):
+        # Default (overwrite=False) behavior is unchanged even with an
+        # explicit filename: a second write gets a -2 suffix.
+        entity = {"type": "feedback", "content": "First."}
+        path1 = entity_io.write_entity_file(tmp_path, entity, filename="my-slug")
+        path2 = entity_io.write_entity_file(tmp_path, {"type": "feedback", "content": "Second."}, filename="my-slug")
+        assert path1 == tmp_path / "feedback" / "my-slug.md"
+        assert path2 == tmp_path / "feedback" / "my-slug-2.md"
+
+    def test_overwrite_mode_writes_deterministic_path_in_place(self, tmp_path):
+        path1 = entity_io.write_entity_file(tmp_path, {"type": "feedback", "content": "First."}, filename="my-slug", overwrite=True)
+        path2 = entity_io.write_entity_file(tmp_path, {"type": "feedback", "content": "Second."}, filename="my-slug", overwrite=True)
+        assert path1 == path2 == tmp_path / "feedback" / "my-slug.md"
+        assert "Second." in path2.read_text()
+        assert not (tmp_path / "feedback" / "my-slug-2.md").exists()
+
+
+class TestAdaptMemory:
+    """Integration tests against the rendered Claude adapt_memory.py."""
+
+    def _write_native(self, tmp_path, name, mem_type, body, description=None):
+        lines = ["---"]
+        if name is not None:
+            lines.append(f"name: {name}")
+        if description is not None:
+            lines.append(f"description: {description}")
+        lines += ["metadata:", f"  type: {mem_type}", "---", "", body, ""]
+        native = tmp_path / "memory.md"
+        native.write_text("\n".join(lines), encoding="utf-8")
+        return native
+
+    def _run(self, adapt, native, mem_type, trigger, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["adapt_memory.py", str(native), "--type", mem_type, "--trigger", trigger])
+        adapt.main()
+
+    def test_id_is_type_slash_name_and_native_path_stamped(self, tmp_path, monkeypatch, capsys):
+        adapt = _load_adapt_memory()
+        native = self._write_native(tmp_path, "my-fact", "feedback", "Always rebase.", "A short hook")
+        self._run(adapt, native, "feedback", "when rebasing", monkeypatch, tmp_path)
+
+        out = capsys.readouterr().out
+        assert "Entity id: feedback/my-fact" in out
+
+        entity_file = tmp_path / ".evolve" / "entities" / "feedback" / "my-fact.md"
+        assert entity_file.exists()
+        parsed = entity_io.markdown_to_entity(entity_file)
+        assert parsed["native_path"] == str(native)
+        assert parsed["source"] == "native-memory"
+        assert parsed["type"] == "feedback"
+
+    def test_deterministic_overwrite_on_same_name_and_type(self, tmp_path, monkeypatch, capsys):
+        adapt = _load_adapt_memory()
+        native = self._write_native(tmp_path, "my-fact", "feedback", "First version.")
+        self._run(adapt, native, "feedback", "trig", monkeypatch, tmp_path)
+        capsys.readouterr()
+
+        native.write_text("---\nname: my-fact\nmetadata:\n  type: feedback\n---\n\nSecond version.\n", encoding="utf-8")
+        self._run(adapt, native, "feedback", "trig", monkeypatch, tmp_path)
+
+        feedback_dir = tmp_path / ".evolve" / "entities" / "feedback"
+        files = sorted(p.name for p in feedback_dir.glob("*.md"))
+        assert files == ["my-fact.md"]  # no my-fact-2.md
+        assert "Second version." in (feedback_dir / "my-fact.md").read_text()
+
+    def test_falls_back_to_content_slug_when_name_missing(self, tmp_path, monkeypatch, capsys):
+        adapt = _load_adapt_memory()
+        native = self._write_native(tmp_path, None, "project", "Use deterministic builds everywhere.")
+        self._run(adapt, native, "project", "when building", monkeypatch, tmp_path)
+
+        out = capsys.readouterr().out
+        expected_slug = entity_io.slugify("Use deterministic builds everywhere.")
+        assert f"Entity id: project/{expected_slug}" in out
+        assert (tmp_path / ".evolve" / "entities" / "project" / f"{expected_slug}.md").exists()
 
 
 class TestLoadAllEntities:

@@ -48,6 +48,7 @@ sys.path.insert(0, str(_lib))
 from entity_io import (  # noqa: E402
     find_entities_dir,
     get_default_entities_dir,
+    slugify,
     write_entity_file,
     log as _log,
 )
@@ -58,14 +59,15 @@ def log(message):
 
 
 def parse_native_memory(text):
-    """Split a native memory file into (description, body).
+    """Split a native memory file into (name, description, body).
 
     Native frontmatter is simple ``key: value`` lines plus a nested
-    ``metadata:`` block; we only need ``description`` and the body, so we
-    parse the top-level ``description:`` line and treat everything after the
-    closing ``---`` as the body. Missing frontmatter is tolerated — the whole
-    text is then the body.
+    ``metadata:`` block; we parse the top-level ``name`` and ``description``
+    lines and treat everything after the closing ``---`` as the body. The
+    ``name`` is the native slug we reuse as the stable entity id. Missing
+    frontmatter is tolerated — the whole text is then the body.
     """
+    name = None
     description = None
     body = text
     if text.startswith("---"):
@@ -74,16 +76,17 @@ def parse_native_memory(text):
             frontmatter, body = parts[1], parts[2]
             for line in frontmatter.splitlines():
                 # Only top-level keys (no leading indentation) — keeps the
-                # nested metadata.* keys out of the description match.
+                # nested metadata.* keys out of the top-level matches.
                 if line[:1].isspace():
                     continue
                 key, _, value = line.partition(":")
-                if key.strip() == "description":
-                    value = value.strip()
-                    if value:
-                        description = value
-                    break
-    return description, body.strip()
+                key = key.strip()
+                value = value.strip()
+                if key == "name" and value:
+                    name = value
+                elif key == "description" and value:
+                    description = value
+    return name, description, body.strip()
 
 
 def main():
@@ -112,7 +115,7 @@ def main():
         print(f"Error: cannot read {memory_path} - {exc}", file=sys.stderr)
         sys.exit(1)
 
-    description, body = parse_native_memory(text)
+    name, description, body = parse_native_memory(text)
     if not body:
         print(f"Error: native memory {memory_path} has no body to mirror.", file=sys.stderr)
         sys.exit(1)
@@ -123,11 +126,18 @@ def main():
     if description and description not in body:
         content = f"{description}\n\n{body}"
 
+    # The native ``name`` becomes the stable, derivable entity slug so the
+    # entity id is ``<type>/<name>`` on both sides — provenance can map an
+    # audited native memory straight onto its mirror. Fall back to a
+    # content-derived slug only when the native frontmatter has no name.
+    slug = slugify(name) if name else slugify(content)
+
     entity = {
         "type": args.type,
         "trigger": args.trigger,
         "content": content,
         "source": "native-memory",
+        "native_path": args.memory_path,
     }
 
     entities_dir = find_entities_dir()
@@ -138,9 +148,14 @@ def main():
         entities_dir = get_default_entities_dir()
         log(f"Created entities dir: {entities_dir}")
 
-    path = write_entity_file(entities_dir, entity)
-    log(f"Mirrored {memory_path} -> {path}")
+    # Deterministic, idempotent write: re-mirroring the same native memory
+    # (same name + type) overwrites <type>/<name>.md in place rather than
+    # creating <name>-2.md, keeping the entity id stable.
+    path = write_entity_file(entities_dir, entity, filename=slug, overwrite=True)
+    entity_id = f"{entity['type']}/{slug}"
+    log(f"Mirrored {memory_path} -> {path} (id: {entity_id})")
     print(f"Mirrored native memory into evolve store: {path}")
+    print(f"Entity id: {entity_id}")
 
 
 if __name__ == "__main__":

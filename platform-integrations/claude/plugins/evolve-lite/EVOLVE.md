@@ -15,15 +15,17 @@ once per memory you saved.
 
 ## Record what you consulted
 
-After you read or consult memories this turn, log which ones you actually opened,
-so the value of this memory can be measured over time. Run:
+After you read or consult native memories this turn, log which ones you actually
+opened, so the value of this memory can be measured over time. Run:
 
 ```
-python3 ~/.claude/evolve-lite/audit_recall.py <file> [<file> ...]
+python3 ~/.claude/evolve-lite/audit_recall.py <id> [<id> ...]
 ```
 
-Pass the memory files you read this turn (space-separated paths, relative to the
-project root). Skip this step entirely if you consulted no memories. If the
-command prints a line beginning `evolve-session:`, include that line once,
-verbatim, somewhere in your reply — it lets later analysis tie this session to
-what you recalled.
+Pass the entity id `<type>/<name>` for each native memory you consulted, where
+`<type>` is the memory's `metadata.type` and `<name>` is its top-level `name`
+field — this is the id provenance resolves to `./.evolve/entities/<type>/<name>.md`
+(the same id /evolve-lite:adapt-memory mirrors to). Skip this step entirely
+if you consulted no memories. If the command prints a line beginning
+`evolve-session:`, include that line once, verbatim, somewhere in your reply — it
+lets later analysis tie this session to what you recalled.
