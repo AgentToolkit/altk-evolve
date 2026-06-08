@@ -71,6 +71,7 @@ class TestSkillScripts:
             "skills/evolve-lite/recall/scripts/retrieve_entities.py",
             "skills/evolve-lite/learn/scripts/save_entities.py",
             "skills/evolve-lite/provenance/scripts/log_influence.py",
+            "skills/evolve-lite/adapt-memory/scripts/adapt_memory.py",
         ],
     )
     def test_script_exists(self, script_rel):

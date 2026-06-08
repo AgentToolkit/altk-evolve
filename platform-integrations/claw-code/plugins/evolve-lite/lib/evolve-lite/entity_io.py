@@ -118,6 +118,21 @@ def slugify(text, max_length=60):
     return text or "entity"
 
 
+def sanitize_type(text):
+    """Sanitize an entity *type* into a filesystem-safe subdirectory name.
+
+    Like :func:`slugify` but without truncation — a type is a short label,
+    not free-form content, and truncating it could silently merge distinct
+    types. Returns an empty string for input that contains no usable
+    characters, leaving the fallback decision to the caller.
+    """
+    if not isinstance(text, str):
+        return ""
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    return text.strip("-")
+
+
 def unique_filename(directory, slug):
     """Return a Path that doesn't collide with existing files in *directory*.
 
@@ -348,10 +363,9 @@ def write_entity_file(directory, entity):
     Returns:
         Path to the written file.
     """
-    _ALLOWED_TYPES = {"guideline", "preference"}
-    entity_type = entity.get("type", "guideline")
-    if not isinstance(entity_type, str) or entity_type not in _ALLOWED_TYPES:
-        entity_type = "guideline"
+    # Any non-empty type is accepted and used (sanitized) as the
+    # subdirectory. An empty/invalid type falls back to "guideline".
+    entity_type = sanitize_type(entity.get("type", "guideline")) or "guideline"
     entity["type"] = entity_type
     type_dir = Path(directory) / entity_type
     type_dir.mkdir(parents=True, exist_ok=True)

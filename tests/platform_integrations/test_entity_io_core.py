@@ -120,10 +120,22 @@ class TestWriteEntityFile:
         path = entity_io.write_entity_file(tmp_path, entity)
         assert path.parent == tmp_path / "preference"
 
-    def test_invalid_type_defaults_to_guideline(self, tmp_path):
-        entity = {"type": "badtype", "content": "Some content."}
+    def test_arbitrary_type_goes_in_its_own_dir(self, tmp_path):
+        entity = {"type": "feedback", "content": "Some content."}
         path = entity_io.write_entity_file(tmp_path, entity)
-        assert path.parent == tmp_path / "guideline"
+        assert path.parent == tmp_path / "feedback"
+
+    def test_type_is_sanitized_for_filesystem_safety(self, tmp_path):
+        entity = {"type": "User Preference!", "content": "Some content."}
+        path = entity_io.write_entity_file(tmp_path, entity)
+        assert path.parent == tmp_path / "user-preference"
+        assert entity["type"] == "user-preference"
+
+    def test_empty_or_invalid_type_defaults_to_guideline(self, tmp_path):
+        for bad_type in ("", "   ", "!!!"):
+            entity = {"type": bad_type, "content": "Some content."}
+            path = entity_io.write_entity_file(tmp_path, entity)
+            assert path.parent == tmp_path / "guideline"
 
     def test_written_file_is_readable(self, tmp_path):
         entity = {"type": "guideline", "content": "Write clear commit messages."}

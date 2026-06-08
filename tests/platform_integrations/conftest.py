@@ -90,6 +90,35 @@ def codex_audit_script(sandbox_home):
 
 
 @pytest.fixture
+def claude_md_file(temp_project_dir):
+    """Path to the PER-REPO CLAUDE.md the Claude installer injects into.
+
+    Claude installs the plugin via marketplace (copies nothing to disk) and does
+    NOT auto-load an ambient EVOLVE.md, so the installer injects a single native
+    ``@.evolve/EVOLVE.md`` import pointer line into the repo's CLAUDE.md."""
+    return temp_project_dir / "CLAUDE.md"
+
+
+@pytest.fixture
+def claude_evolve_md(temp_project_dir):
+    """Path to the PER-REPO COPY of the thin EVOLVE.md (<repo>/.evolve/EVOLVE.md).
+
+    The CLAUDE.md ``@``-import points here (path resolves relative to CLAUDE.md,
+    i.e. the repo root)."""
+    return temp_project_dir / ".evolve" / "EVOLVE.md"
+
+
+@pytest.fixture
+def claude_audit_script(sandbox_home):
+    """Path to the sandboxed Claude GLOBAL recall-audit script.
+
+    The thin EVOLVE.md instructs running
+    ``~/.claude/evolve-lite/audit_recall.py`` after recall, so the installer
+    drops the script once at that global absolute path."""
+    return sandbox_home / ".claude" / "evolve-lite" / "audit_recall.py"
+
+
+@pytest.fixture
 def temp_project_dir(tmp_path):
     """
     Create an isolated temporary directory for testing install.sh.

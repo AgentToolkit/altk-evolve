@@ -146,6 +146,17 @@ def _codex_pointer_line():
     )
 
 
+# Claude installs via marketplace (`claude plugin install`), which copies
+# nothing to the repo and does NOT auto-load an ambient EVOLVE.md. So we drop a
+# COPY of the thin EVOLVE.md at <repo>/.evolve/EVOLVE.md and inject a single
+# native CLAUDE.md `@`-import line pointing at it. The path is repo-relative
+# (resolves from CLAUDE.md's directory, i.e. repo root). The line is its own
+# uninstall handle (the marker is a substring of the line) — no HTML comment.
+CLAUDE_EVOLVE_MD_REL = ".evolve/EVOLVE.md"
+CLAUDE_IMPORT_MARKER = CLAUDE_EVOLVE_MD_REL
+CLAUDE_IMPORT_LINE   = "@" + CLAUDE_EVOLVE_MD_REL
+
+
 # ── Colour helpers ────────────────────────────────────────────────────────────
 IS_TTY = sys.stdout.isatty()
 def _c(code, text): return f"\033[{code}m{text}\033[0m" if IS_TTY else text
@@ -896,8 +907,63 @@ class ClaudeInstaller:
     def __init__(self, ops: FileOps):
         self.ops = ops
 
+    def _deliver_files(self, target_dir):
+        """Per-repo file delivery (independent of the `claude` CLI).
+
+        Claude installs the plugin via marketplace, which copies nothing to the
+        repo and does NOT auto-load an ambient EVOLVE.md. So we deliver the thin
+        EVOLVE.md ourselves: drop a COPY at <repo>/.evolve/EVOLVE.md and inject a
+        single native `@`-import pointer line into <repo>/CLAUDE.md, exactly as
+        CodexInstaller injects its pointer into ~/.codex/AGENTS.md. Kept as a
+        separate method so it is exercisable in tests without the real CLI.
+        """
+        _ensure_source_dir()
+        source_dir = SOURCE_DIR
+        plugin_source = Path(source_dir) / "platform-integrations" / "claude" / "plugins" / CLAUDE_PLUGIN
+
+        # Drop a COPY of the thin EVOLVE.md at <repo>/.evolve/EVOLVE.md. Prefer
+        # the rendered claude plugin copy; fall back to the shared original.
+        evolve_src = plugin_source / "EVOLVE.md"
+        if not evolve_src.is_file():
+            evolve_src = Path(source_dir) / "plugin-source" / "EVOLVE.md"
+        evolve_text = "" if self.ops.is_dry_run and not evolve_src.is_file() else evolve_src.read_text()
+        evolve_dst = Path(target_dir) / CLAUDE_EVOLVE_MD_REL
+        self.ops.atomic_write_text(evolve_dst, evolve_text)
+        success(f"Copied EVOLVE.md → {evolve_dst}")
+
+        # Inject the single native `@`-import pointer line into <repo>/CLAUDE.md.
+        # The path resolves relative to CLAUDE.md (repo root). The line is its
+        # own uninstall handle (marker is a substring of the line).
+        claude_md = Path(target_dir) / "CLAUDE.md"
+        self.ops.inject_marker_line(claude_md, CLAUDE_IMPORT_MARKER, CLAUDE_IMPORT_LINE)
+        success(f"Injected '{CLAUDE_PLUGIN}' import pointer into {claude_md}")
+        if self.ops.is_dry_run:
+            dryrun("Claude shows a one-time 'allow external imports' dialog on first session")
+        else:
+            warn(
+                "On the first Claude session in this repo, an 'allow external "
+                "imports' dialog will appear — you must Allow it, or the "
+                f"{CLAUDE_IMPORT_LINE} import is silently disabled."
+            )
+
+        # Recall-audit script: the thin EVOLVE.md instructs running
+        # `~/.claude/evolve-lite/audit_recall.py`, so install it at that GLOBAL
+        # absolute path (mirroring CodexInstaller). Prefer the rendered claude
+        # copy; fall back to the shared plugin-source original.
+        audit_src = plugin_source / "scripts" / AUDIT_SCRIPT
+        if not audit_src.is_file():
+            audit_src = Path(source_dir) / "plugin-source" / "scripts" / AUDIT_SCRIPT
+        audit_text = "" if self.ops.is_dry_run and not audit_src.is_file() else audit_src.read_text()
+        audit_file = Path.home() / ".claude" / "evolve-lite" / AUDIT_SCRIPT
+        self.ops.atomic_write_text(audit_file, audit_text)
+        success(f"Installed recall-audit script → {audit_file}")
+
     def install(self, target_dir):
         info("Installing Claude plugin via marketplace")
+
+        # Deliver the per-repo EVOLVE.md + import pointer + global audit script
+        # regardless of whether the `claude` CLI is present below.
+        self._deliver_files(target_dir)
 
         marketplace_dir = Path(SOURCE_DIR).resolve() if SOURCE_DIR else None
         has_local_marketplace = marketplace_dir is not None and (marketplace_dir / ".claude-plugin" / "marketplace.json").is_file()
@@ -938,6 +1004,16 @@ class ClaudeInstaller:
 
     def uninstall(self, target_dir):
         info("Uninstalling Claude plugin")
+
+        # Drop the single managed `@`-import pointer line from <repo>/CLAUDE.md,
+        # remove the per-repo EVOLVE.md copy we placed (NOT the whole .evolve/
+        # store), and remove the global recall-audit script (mirrors Codex).
+        self.ops.remove_marker_line(Path(target_dir) / "CLAUDE.md", CLAUDE_IMPORT_MARKER)
+        self.ops.remove_file(Path(target_dir) / CLAUDE_EVOLVE_MD_REL)
+        claude_evolve_dir = Path.home() / ".claude" / "evolve-lite"
+        self.ops.remove_file(claude_evolve_dir / AUDIT_SCRIPT)
+        self.ops.remove_dir_if_empty(claude_evolve_dir)
+
         claude = shutil.which("claude")
         if not claude:
             warn("Could not uninstall Claude plugin automatically.")

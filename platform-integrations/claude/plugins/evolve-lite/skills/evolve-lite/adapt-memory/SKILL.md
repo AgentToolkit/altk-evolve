@@ -1,0 +1,59 @@
+---
+name: adapt-memory
+description: Mirror a just-saved native memory into the shared evolve store so it becomes shareable and auditable
+context: fork
+---
+
+# Adapt Memory
+
+## Overview
+
+You have native, self-directed memory: you decide what to remember and write it
+under `~/.claude/projects/<hash>/memory/`. That store has no provenance or
+sharing. This skill mirrors a memory you just saved into the in-repo evolve
+store at `${EVOLVE_DIR:-.evolve}/entities/<type>/<slug>.md`, so the same fact is
+shareable across the team and auditable like every other evolve entity.
+
+Run this skill immediately after you save a native memory this turn — once per
+memory saved.
+
+## Required Action
+
+For each native memory file you saved this turn:
+
+1. **Read the just-saved memory file** so you are mirroring its real content,
+   not a guess. Note its `metadata.type` (one of `user`, `feedback`, `project`,
+   `reference`) — this passes straight through as the entity type, with no
+   remapping.
+
+2. **Compose a high-quality `trigger`.** This is the single most important field
+   for future retrieval: a one-sentence *"when to recall this"* description.
+   Base it on what the memory actually says and the situations in which a future
+   agent would benefit from it — do **not** mechanically copy the memory's
+   `description`. Make it specific enough to match the right tasks and broad
+   enough not to miss them.
+
+3. **Run the adapter script**, passing the native file path, its type, and your
+   synthesized trigger:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/adapt-memory/scripts/adapt_memory.py \
+  <native_memory_path> \
+  --type <type> \
+  --trigger "<your synthesized trigger>"
+```
+
+The script parses the native frontmatter and body, builds the entity
+(`type` = native type, `trigger` = your synthesized trigger, `content` = the
+native body with its `description` carried in as a lead line), and persists it
+via the shared entity writer. It is safe to run repeatedly.
+
+## Notes
+
+- One invocation per saved memory. If you saved several memories this turn,
+  invoke the script once for each, with a trigger tailored to each.
+- The trigger quality directly determines whether the memory resurfaces when it
+  matters. Spend a moment on it.
+- If you saved no native memory this turn, there is nothing to mirror — skip
+  this skill.
+
