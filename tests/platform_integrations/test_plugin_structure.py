@@ -28,34 +28,21 @@ class TestPluginManifest:
 
 
 class TestHooksManifest:
-    def test_hooks_json_is_valid_json(self):
-        data = json.loads((_PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
-        assert isinstance(data, dict)
+    """The Claude plugin is fully hookless under the native-memory + CLAUDE.md
+    `@import` redesign. Recall is native and save is native, so the plugin must
+    register NO auto-firing hooks — otherwise recall/save fire twice. The skills
+    themselves stay invokable (see TestSkillScripts); only the hook WIRING is gone.
+    """
 
-    def test_hooks_json_has_hooks_key(self):
-        data = json.loads((_PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
-        assert "hooks" in data
+    def test_no_hooks_json_shipped(self):
+        # No hooks/hooks.json under the rendered Claude plugin: the plugin
+        # registers no auto-firing lifecycle hooks at all.
+        assert not (_PLUGIN_ROOT / "hooks" / "hooks.json").exists()
 
-    def test_known_lifecycle_events_present(self):
-        data = json.loads((_PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
-        hooks = data["hooks"]
-        assert "UserPromptSubmit" in hooks
-        assert "SessionStart" in hooks
-        assert "Stop" in hooks
-
-    def test_command_hook_scripts_exist(self):
-        data = json.loads((_PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
-        for event, groups in data["hooks"].items():
-            for group in groups:
-                for hook in group.get("hooks", []):
-                    if hook.get("type") == "command":
-                        cmd = hook["command"]
-                        resolved = cmd.replace("${CLAUDE_PLUGIN_ROOT}", str(_PLUGIN_ROOT))
-                        # Find the script token — commands may have trailing flags
-                        script_tokens = [t for t in resolved.split() if t.endswith((".py", ".sh"))]
-                        assert script_tokens, f"No script found in hook command: {cmd}"
-                        script_path = Path(script_tokens[0])
-                        assert script_path.exists(), f"Hook script missing: {script_path} (event: {event})"
+    def test_no_hooks_directory(self):
+        # The render wipes and rewrites the plugin root from plugin-source/;
+        # with the source hooks.json removed, no hooks/ dir should remain.
+        assert not (_PLUGIN_ROOT / "hooks").exists()
 
 
 class TestSkillScripts:
