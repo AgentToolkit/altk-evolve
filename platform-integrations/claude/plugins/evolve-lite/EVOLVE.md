@@ -1,3 +1,4 @@
+<!-- evolve-import-canary EVOLVE_IMPORT_CANARY_v1 -->
 # Evolve — shared, auditable memory
 
 You already have native, self-directed memory: you decide what to recall at the
