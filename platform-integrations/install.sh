@@ -446,6 +446,52 @@ class FileOps:
         )
         self.atomic_write_text(target_yaml_path, pattern.sub("", text))
 
+    def remove_yaml_custom_mode_by_slug(self, target_yaml_path, slug):
+        """Remove a plain ``- slug: <slug>`` sequence item from a custom_modes file.
+
+        The new-design modes are sentinel-wrapped (see remove_yaml_custom_mode),
+        but the legacy ``install-evolve-lite`` bootstrap mode was written as a
+        bare YAML list item with no sentinels. Drop the whole item: the
+        ``- slug: <slug>`` line plus every following line indented deeper than
+        the dash (the item body), stopping at the next sibling item or any
+        less-indented line. No-op when the file or the slug is absent."""
+        target_yaml_path = str(target_yaml_path)
+        if not os.path.isfile(target_yaml_path):
+            return
+        with open(target_yaml_path) as f:
+            lines = f.read().splitlines(keepends=True)
+
+        # A list item header for this slug: optional indent, `- `, then
+        # `slug: <slug>` (quoted or bare), to end of line.
+        head_re = re.compile(
+            r"^(\s*)-\s+slug:\s*[\"']?" + re.escape(slug) + r"[\"']?\s*$"
+        )
+        out = []
+        i = 0
+        removed = False
+        while i < len(lines):
+            m = head_re.match(lines[i])
+            if not m:
+                out.append(lines[i])
+                i += 1
+                continue
+            removed = True
+            dash_indent = len(m.group(1))
+            i += 1
+            # Consume body lines: blank lines, or lines indented past the dash.
+            while i < len(lines):
+                ln = lines[i]
+                if ln.strip() == "":
+                    i += 1
+                    continue
+                indent = len(ln) - len(ln.lstrip())
+                if indent <= dash_indent:
+                    break
+                i += 1
+        if removed:
+            self.atomic_write_text(target_yaml_path, "".join(out))
+            debug(f"Removed YAML custom mode (slug '{slug}'): {target_yaml_path}")
+
     # ── Sentinel-block helpers (generic always-on instruction files) ───────────
 
     def inject_sentinel_block(self, path, slug, body):
@@ -568,6 +614,50 @@ class FileOps:
         self.atomic_write_text(path, new_text)
         debug(f"Removed marker line ({marker}): {path}")
 
+    # ── TOML helpers (legacy codex config.toml migration) ──────────────────────
+
+    def remove_toml_tables(self, path, header_pred):
+        """Remove every top-level TOML table whose header matches `header_pred`.
+
+        `header_pred(header_name)` is called with the bare table name from a
+        `[name]` header line (e.g. `plugins."evolve-lite@evolve-marketplace"`);
+        when it returns True the header line plus all its body lines (up to the
+        next top-level `[` table header or EOF) are dropped. There is no toml
+        writer in the 3.11 stdlib, so this is line-surgery, mirroring the
+        marker/sentinel helpers. No-op when the file is absent. Returns True if
+        anything was removed.
+        """
+        path = str(path)
+        if not os.path.isfile(path):
+            return False
+        with open(path) as f:
+            lines = f.read().splitlines(keepends=True)
+
+        # A plain `[name]` table header; `[[name]]` array-of-tables and nested
+        # subtables of a removed table also start with `[`, so any line whose
+        # first non-space char is `[` ends the previous table's body.
+        header_re = re.compile(r"^\s*\[([^\[\]]+)\]\s*$")
+        is_table_line = re.compile(r"^\s*\[")
+        out = []
+        skipping = False
+        removed = False
+        for ln in lines:
+            if is_table_line.match(ln):
+                m = header_re.match(ln)
+                # A new top-level table header decides whether we keep skipping.
+                if m and header_pred(m.group(1).strip()):
+                    skipping = True
+                    removed = True
+                    continue
+                skipping = False
+            if not skipping:
+                out.append(ln)
+
+        if removed:
+            self.atomic_write_text(path, "".join(out))
+            debug(f"Removed legacy TOML tables: {path}")
+        return removed
+
 
 class DryRunFileOps(FileOps):
     """No-op variant: logs what would happen instead of writing anything."""
@@ -609,6 +699,9 @@ class DryRunFileOps(FileOps):
     def merge_yaml_custom_mode(self, source_yaml_path, target_yaml_path, slug):
         dryrun(f"merge YAML custom mode '{slug}' → {target_yaml_path}")
 
+    def remove_yaml_custom_mode_by_slug(self, target_yaml_path, slug):
+        dryrun(f"remove YAML custom mode (slug '{slug}') → {target_yaml_path}")
+
     def inject_sentinel_block(self, path, slug, body):
         dryrun(f"inject sentinel block '{slug}' → {path}")
 
@@ -620,6 +713,11 @@ class DryRunFileOps(FileOps):
 
     def remove_marker_line(self, path, marker):
         dryrun(f"remove marker line ({marker}) → {path}")
+
+    def remove_toml_tables(self, path, header_pred):
+        if os.path.isfile(str(path)):
+            dryrun(f"remove legacy TOML tables → {path}")
+        return True
 
 
 # ── Platform detection ────────────────────────────────────────────────────────
@@ -864,8 +962,12 @@ class BobInstaller:
         # from a pre-redesign lite install is also swept up here.
         modes_files = {self._modes_file(bob_target), bob_target / "custom_modes.yaml"}
         for mf in modes_files:
+            # New-design modes are sentinel-wrapped blocks.
             self.ops.remove_yaml_custom_mode(mf, BOB_SLUG)
             self.ops.remove_yaml_custom_mode(mf, "Evolve")
+            # Legacy migration: the pre-redesign `install-evolve-lite` bootstrap
+            # mode was a bare YAML list item (no sentinels), so remove it by slug.
+            self.ops.remove_yaml_custom_mode_by_slug(mf, "install-evolve-lite")
         for mcpf in {self._mcp_file(bob_target), bob_target / "mcp.json"}:
             self.ops.remove_json_key(mcpf, ["mcpServers", "evolve"])
 
@@ -1014,6 +1116,32 @@ class ClaudeInstaller:
         self.ops.remove_file(claude_evolve_dir / AUDIT_SCRIPT)
         self.ops.remove_dir_if_empty(claude_evolve_dir)
 
+        # Legacy migration: remove orphan plugin data dirs left by older installs
+        # (e.g. evolve-lite-inline, evolve-lite-evolve-marketplace). GLOBAL, only
+        # dirs whose name starts with `evolve-lite-` under plugins/data/.
+        data_dir = Path.home() / ".claude" / "plugins" / "data"
+        if data_dir.is_dir():
+            for entry in sorted(data_dir.iterdir()):
+                if entry.is_dir() and entry.name.startswith("evolve-lite-"):
+                    self.ops.remove_dir(entry)
+
+        # Legacy migration: remove orphan plugin caches left by older installs at
+        # plugins/cache/<marketplace>/evolve-lite/ (e.g. the OLD hooks/ bundle).
+        # `claude plugin uninstall` leaves these behind; because the plugin version
+        # isn't bumped, a stale cache can resurrect the OLD bundle on reinstall.
+        # Remove cache/<marketplace>/evolve-lite/, then rmdir the marketplace parent
+        # if it is now empty. Only ever delete a dir whose final component is
+        # `evolve-lite` (or its emptied parent). GLOBAL, defensive, idempotent.
+        cache_root = Path.home() / ".claude" / "plugins" / "cache"
+        if cache_root.is_dir():
+            for marketplace_dir in sorted(cache_root.iterdir()):
+                if not marketplace_dir.is_dir():
+                    continue
+                evolve_cache = marketplace_dir / "evolve-lite"
+                if evolve_cache.is_dir():
+                    self.ops.remove_dir(evolve_cache)
+                    self.ops.remove_dir_if_empty(marketplace_dir)
+
         claude = shutil.which("claude")
         if not claude:
             warn("Could not uninstall Claude plugin automatically.")
@@ -1026,6 +1154,15 @@ class ClaudeInstaller:
         else:
             warn(f"claude plugin uninstall exited with code {result.returncode}")
             warn(f"Run manually: claude plugin uninstall {CLAUDE_PLUGIN}")
+
+        # Legacy migration: install added the marketplace but uninstall never
+        # removed it. Tolerate non-zero exit / missing entry (mirrors the
+        # uninstall call above — best-effort, never fatal).
+        result = self.ops.run_subprocess([claude, "plugin", "marketplace", "remove", "evolve-marketplace"])
+        if result.returncode == 0:
+            success("Removed claude marketplace 'evolve-marketplace'")
+        else:
+            warn(f"claude plugin marketplace remove exited with code {result.returncode} (ignored)")
 
     def status(self, target_dir):
         print(f"  Claude:")
@@ -1131,6 +1268,52 @@ class CodexInstaller:
             plugins.append(copy.deepcopy(item))
         self.ops.atomic_write_json(path, data)
 
+    # ── Legacy (pre-redesign) global migration ─────────────────────────────────
+
+    def _purge_legacy_global(self):
+        """Reverse pre-redesign GLOBAL ~/.codex/ artifacts (migration cleanup).
+
+        Old installs registered the plugin globally in ~/.codex/config.toml as
+        `[plugins."evolve-lite@<marketplace>"]` tables and left plugin caches at
+        ~/.codex/plugins/cache/<marketplace>/evolve-lite/. The new design never
+        writes these, but an upgrading user still has them on disk — strip them
+        so uninstall is a true clean slate. GLOBAL regardless of --dir; defensive
+        and idempotent (no-op when absent)."""
+        codex_home = Path.home() / ".codex"
+
+        # 1. config.toml: drop every `[plugins."evolve-lite@..."]` table.
+        config_toml = codex_home / "config.toml"
+        legacy_plugin_re = re.compile(r'^plugins\.\s*"evolve-lite@[^"]*"\s*$')
+        self.ops.remove_toml_tables(
+            config_toml, lambda header: bool(legacy_plugin_re.match(header))
+        )
+        # Post-condition (skipped in dry-run, which doesn't mutate the file):
+        # the result must still parse and carry no evolve-lite@* plugin key.
+        if not self.ops.is_dry_run and config_toml.is_file():
+            try:
+                import tomllib
+
+                with open(config_toml, "rb") as f:
+                    parsed = tomllib.load(f)
+                stray = [k for k in parsed.get("plugins", {}) if k.startswith("evolve-lite@")]
+                if stray:
+                    warn(f"Legacy codex plugin keys remain in {config_toml}: {stray}")
+            except Exception as e:  # tomllib missing (<3.11) or unparseable
+                debug(f"Skipped config.toml validation: {e}")
+
+        # 2. plugin caches: remove cache/<marketplace>/evolve-lite/, then rmdir
+        #    the marketplace parent if it is now empty. Only ever delete a dir
+        #    whose final component is `evolve-lite` (or its emptied parent).
+        cache_root = codex_home / "plugins" / "cache"
+        if cache_root.is_dir():
+            for marketplace_dir in sorted(cache_root.iterdir()):
+                if not marketplace_dir.is_dir():
+                    continue
+                evolve_cache = marketplace_dir / "evolve-lite"
+                if evolve_cache.is_dir():
+                    self.ops.remove_dir(evolve_cache)
+                    self.ops.remove_dir_if_empty(marketplace_dir)
+
     # ── Public interface ──────────────────────────────────────────────────────
 
     def install(self, target_dir):
@@ -1203,6 +1386,10 @@ class CodexInstaller:
         self.ops.remove_file(evolve_dir / "EVOLVE.md")
         self.ops.remove_file(evolve_dir / AUDIT_SCRIPT)
         self.ops.remove_dir_if_empty(evolve_dir)
+
+        # Reverse pre-redesign GLOBAL artifacts (config.toml plugin tables +
+        # plugin caches). GLOBAL migration, independent of --dir.
+        self._purge_legacy_global()
 
         success("Codex uninstall complete")
 
