@@ -37,7 +37,7 @@ For each native memory file you saved this turn:
    synthesized trigger:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/adapt-memory/scripts/adapt_memory.py \
+python3 ~/.claude/evolve-lite/adapt_memory.py \
   <native_memory_path> \
   --type <type> \
   --trigger "<your synthesized trigger>"

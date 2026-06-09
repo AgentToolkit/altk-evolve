@@ -40,7 +40,7 @@ For each native memory file you saved this turn:
    synthesized trigger:
 
 ```bash
-{{ invoke("adapt-memory", "adapt_memory.py", ["<native_memory_path>", "--type <type>", "--trigger \"<your synthesized trigger>\""]) }}
+{{ invoke("adapt-memory", "adapt_memory.py", ["<native_memory_path>", "--type <type>", "--trigger \"<your synthesized trigger>\""], path_override=adapt_memory_script) }}
 ```
 
 The script parses the native frontmatter and body, builds the entity

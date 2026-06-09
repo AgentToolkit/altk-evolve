@@ -119,6 +119,37 @@ def claude_audit_script(sandbox_home):
 
 
 @pytest.fixture
+def claude_adapt_script(sandbox_home):
+    """Path to the sandboxed Claude GLOBAL adapt-memory adapter script.
+
+    The adapt-memory skill invokes ``python3 ~/.claude/evolve-lite/adapt_memory.py``
+    (a stable, version-proof path that can be permission-allowlisted), so the
+    installer ships the script to that global absolute path alongside the audit
+    script."""
+    return sandbox_home / ".claude" / "evolve-lite" / "adapt_memory.py"
+
+
+@pytest.fixture
+def claude_adapt_lib(sandbox_home):
+    """Path to the sandboxed shared lib shipped beside the global adapt script.
+
+    adapt_memory.py imports ``entity_io`` from the shared lib, resolving it by
+    walking up its own ancestors for ``lib/evolve-lite/entity_io.py``; the
+    installer ships the lib here so that walk succeeds from the global path."""
+    return sandbox_home / ".claude" / "evolve-lite" / "lib" / "evolve-lite" / "entity_io.py"
+
+
+@pytest.fixture
+def claude_settings_file(temp_project_dir):
+    """Path to the PER-REPO project settings the Claude installer allowlists in.
+
+    Claude plugins cannot self-declare permissions, so the installer pre-authorizes
+    the evolve scripts and ``.evolve/`` writes by merging allow-rules into the
+    repo's ``<repo>/.claude/settings.json`` (idempotent; removed on uninstall)."""
+    return temp_project_dir / ".claude" / "settings.json"
+
+
+@pytest.fixture
 def temp_project_dir(tmp_path):
     """
     Create an isolated temporary directory for testing install.sh.

@@ -10,6 +10,13 @@
              other platforms stay single-line because the whole command is
              either wrapped in `sh -lc '...'` (claw-code) or invoked through
              a single python3 call (codex, bob).
+   path_override — when set, the script is invoked from this exact path on
+             EVERY platform (e.g. "~/.claude/evolve-lite/adapt_memory.py"), and
+             the per-platform plugin-relative path resolution is bypassed. Used
+             for scripts the installer ships to a stable, version-proof global
+             path so they can be permission-allowlisted (mirrors how EVOLVE.md
+             invokes `python3 {{ audit_script }}`). The arg rendering still
+             follows the per-platform rules above.
 
    Path resolution per platform:
      claude    — ${CLAUDE_PLUGIN_ROOT} expanded by the Claude plugin runtime.
@@ -17,8 +24,18 @@
      codex     — git-rev-parse from any cwd inside the project clone.
      bob       — project-rooted .bob/skills/evolve-lite-<skill>/ (post-rename).
 #}
-{%- macro invoke(skill, script, args=None) -%}
-{%- if platform == "claude" -%}
+{%- macro invoke(skill, script, args=None, path_override=None) -%}
+{%- if path_override is not none -%}
+{#- Stable global path (installer-shipped, version-proof, allowlistable). Same
+   head on every platform; arg formatting follows the per-platform rules. -#}
+python3 {{ path_override }}
+{%- if args is none %}{# no args; nothing appended #}
+{%- elif args is string %} {{ args }}
+{%- elif platform == "claude" %} \
+  {{ args | join(" \\\n  ") }}
+{%- else %} {{ args | join(" ") }}
+{%- endif -%}
+{%- elif platform == "claude" -%}
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/evolve-lite/{{ skill }}/scripts/{{ script }}
 {%- if args is none %}{# no args; nothing appended #}
 {%- elif args is string %} {{ args }}

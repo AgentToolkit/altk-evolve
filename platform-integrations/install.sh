@@ -123,6 +123,7 @@ DRY_RUN = False
 BOB_SLUG          = "evolve-lite"
 BOB_RULES_FILE    = "00-evolve-lite.md"
 AUDIT_SCRIPT      = "audit_recall.py"
+ADAPT_SCRIPT      = "adapt_memory.py"
 CLAUDE_PLUGIN     = "evolve-lite"
 CLAW_CODE_PLUGIN  = "evolve-lite"
 CODEX_PLUGIN      = "evolve-lite"
@@ -155,6 +156,24 @@ def _codex_pointer_line():
 CLAUDE_EVOLVE_MD_REL = ".evolve/EVOLVE.md"
 CLAUDE_IMPORT_MARKER = CLAUDE_EVOLVE_MD_REL
 CLAUDE_IMPORT_LINE   = "@" + CLAUDE_EVOLVE_MD_REL
+
+# Claude plugins cannot self-declare tool permissions, env vars aren't expanded
+# in permission rules, and plugin install dirs are version-unstable — so the
+# only way to pre-authorize evolve's scripts/.evolve writes without a per-use
+# prompt is to merge these allow-rules into the repo's project settings at
+# <repo>/.claude/settings.json. The script paths use the GLOBAL stable paths the
+# installer ships to (`~/.claude/evolve-lite/*.py`), which are allowlistable
+# because they never move between plugin versions. The `~/` prefix and the
+# trailing `:*` (match-any-args) suffix are both valid per the Claude Code
+# settings docs.
+CLAUDE_SETTINGS_REL  = ".claude/settings.json"
+CLAUDE_ALLOW_RULES   = [
+    "Bash(python3 ~/.claude/evolve-lite/" + ADAPT_SCRIPT + ":*)",
+    "Bash(python3 ~/.claude/evolve-lite/" + AUDIT_SCRIPT + ":*)",
+    "Read(.evolve/**)",
+    "Edit(.evolve/**)",
+    "Write(.evolve/**)",
+]
 
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -363,6 +382,47 @@ class FileOps:
         data = read_json(path)
         data[array_key] = [item for item in data.get(array_key, []) if item.get(id_key) != id_val]
         self.atomic_write_json(path, data)
+
+    def merge_json_permission_rules(self, path, rules):
+        """Idempotently merge `rules` into a Claude settings file's
+        ``permissions.allow`` array, preserving every rule already present and
+        any other settings keys. Creates the file/parents if missing. No
+        duplicates on re-run (set-membership against the existing list)."""
+        data = read_json(path)
+        permissions = data.get("permissions")
+        if not isinstance(permissions, dict):
+            permissions = {}
+            data["permissions"] = permissions
+        allow = permissions.get("allow")
+        if not isinstance(allow, list):
+            allow = []
+            permissions["allow"] = allow
+        for rule in rules:
+            if rule not in allow:
+                allow.append(rule)
+        self.atomic_write_json(path, data)
+
+    def remove_json_permission_rules(self, path, rules):
+        """Remove exactly `rules` from ``permissions.allow`` in a Claude settings
+        file, leaving any user-added rules intact. Empties clean up: when
+        ``allow`` becomes empty drop the key; when ``permissions`` becomes empty
+        drop it too; when the whole file reduces to ``{}`` remove the file. No-op
+        when the file is absent."""
+        if not os.path.isfile(str(path)):
+            return
+        data = read_json(path)
+        permissions = data.get("permissions")
+        if isinstance(permissions, dict) and isinstance(permissions.get("allow"), list):
+            drop = set(rules)
+            permissions["allow"] = [r for r in permissions["allow"] if r not in drop]
+            if not permissions["allow"]:
+                permissions.pop("allow", None)
+            if not permissions:
+                data.pop("permissions", None)
+        if not data:
+            self.remove_file(path)
+        else:
+            self.atomic_write_json(path, data)
 
     # ── YAML helpers ──────────────────────────────────────────────────────────
 
@@ -695,6 +755,16 @@ class DryRunFileOps(FileOps):
     def run_subprocess(self, cmd_list):
         dryrun(f"run: {' '.join(cmd_list)}")
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def merge_json_permission_rules(self, path, rules):
+        dryrun(f"merge {len(rules)} permission allow-rule(s) → {path}")
+        for rule in rules:
+            debug(f"  + {rule}")
+
+    def remove_json_permission_rules(self, path, rules):
+        dryrun(f"remove {len(rules)} permission allow-rule(s) → {path}")
+        for rule in rules:
+            debug(f"  - {rule}")
 
     def merge_yaml_custom_mode(self, source_yaml_path, target_yaml_path, slug):
         dryrun(f"merge YAML custom mode '{slug}' → {target_yaml_path}")
@@ -1060,12 +1130,45 @@ class ClaudeInstaller:
         self.ops.atomic_write_text(audit_file, audit_text)
         success(f"Installed recall-audit script → {audit_file}")
 
+        # adapt-memory adapter script: the adapt-memory skill invokes
+        # `python3 ~/.claude/evolve-lite/adapt_memory.py` (a STABLE, version-proof
+        # path so it can be permission-allowlisted — the versioned plugin dir
+        # cannot). Ship it to that GLOBAL path, mirroring the audit script above.
+        # Unlike audit_recall.py (self-contained), adapt_memory.py imports
+        # `entity_io` from the shared lib: it walks up its own ancestors looking
+        # for `lib/evolve-lite/entity_io.py`, so ship the shared lib alongside it
+        # at ~/.claude/evolve-lite/lib/evolve-lite/ (matching bob/codex, which
+        # also ship a sibling lib/ for their scripts).
+        claude_evolve_dir = Path.home() / ".claude" / "evolve-lite"
+        adapt_src = plugin_source / "skills" / "evolve-lite" / "adapt-memory" / "scripts" / ADAPT_SCRIPT
+        if not adapt_src.is_file():
+            adapt_src = Path(source_dir) / "plugin-source" / "skills" / "evolve-lite" / "adapt-memory" / "scripts" / ADAPT_SCRIPT
+        adapt_text = "" if self.ops.is_dry_run and not adapt_src.is_file() else adapt_src.read_text()
+        adapt_file = claude_evolve_dir / ADAPT_SCRIPT
+        self.ops.atomic_write_text(adapt_file, adapt_text)
+        success(f"Installed adapt-memory script → {adapt_file}")
+
+        lib_src = plugin_source / "lib" / "evolve-lite"
+        if not (lib_src / "entity_io.py").is_file():
+            lib_src = Path(source_dir) / "plugin-source" / "lib"
+        lib_dst = claude_evolve_dir / "lib" / "evolve-lite"
+        self.ops.copy_tree(lib_src, lib_dst)
+        success(f"Installed shared lib → {lib_dst}")
+
     def install(self, target_dir):
         info("Installing Claude plugin via marketplace")
 
-        # Deliver the per-repo EVOLVE.md + import pointer + global audit script
-        # regardless of whether the `claude` CLI is present below.
+        # Deliver the per-repo EVOLVE.md + import pointer + global audit/adapt
+        # scripts regardless of whether the `claude` CLI is present below.
         self._deliver_files(target_dir)
+
+        # Pre-authorize evolve's scripts + .evolve writes so they never trigger a
+        # per-use permission prompt. Plugins can't self-declare permissions, so
+        # merge the allow-rules into the repo's project settings (idempotent,
+        # preserves existing rules/keys). See CLAUDE_ALLOW_RULES for the rationale.
+        settings_path = Path(target_dir) / CLAUDE_SETTINGS_REL
+        self.ops.merge_json_permission_rules(settings_path, CLAUDE_ALLOW_RULES)
+        success(f"Allowlisted evolve scripts + .evolve writes in {settings_path} (no per-use prompts)")
 
         marketplace_dir = Path(SOURCE_DIR).resolve() if SOURCE_DIR else None
         has_local_marketplace = marketplace_dir is not None and (marketplace_dir / ".claude-plugin" / "marketplace.json").is_file()
@@ -1109,11 +1212,18 @@ class ClaudeInstaller:
 
         # Drop the single managed `@`-import pointer line from <repo>/CLAUDE.md,
         # remove the per-repo EVOLVE.md copy we placed (NOT the whole .evolve/
-        # store), and remove the global recall-audit script (mirrors Codex).
+        # store), remove the project-settings allow-rules we merged in, and
+        # remove the global recall-audit + adapt-memory scripts and the shared
+        # lib we shipped alongside them (mirrors Codex).
         self.ops.remove_marker_line(Path(target_dir) / "CLAUDE.md", CLAUDE_IMPORT_MARKER)
         self.ops.remove_file(Path(target_dir) / CLAUDE_EVOLVE_MD_REL)
+        settings_path = Path(target_dir) / CLAUDE_SETTINGS_REL
+        self.ops.remove_json_permission_rules(settings_path, CLAUDE_ALLOW_RULES)
+        self.ops.remove_dir_if_empty(Path(target_dir) / ".claude")
         claude_evolve_dir = Path.home() / ".claude" / "evolve-lite"
         self.ops.remove_file(claude_evolve_dir / AUDIT_SCRIPT)
+        self.ops.remove_file(claude_evolve_dir / ADAPT_SCRIPT)
+        self.ops.remove_dir(claude_evolve_dir / "lib")
         self.ops.remove_dir_if_empty(claude_evolve_dir)
 
         # Legacy migration: remove orphan plugin data dirs left by older installs
