@@ -205,9 +205,14 @@ class TestBobCommandGeneration:
         return _plugin_root(manifest, "bob") / "commands"
 
     def test_one_command_per_skill(self, rendered_repo, build_module):
-        skill_names = sorted(d.name for d in build_module._discover_skills())
+        # Bob commands are 1:1 with the skills bob actually renders, which
+        # excludes skills filtered by bob's `target_excludes` (the Claude-only
+        # `doctor` skill). Derive the expected set from _bob_command_targets()
+        # so this stays in sync with the exclusion logic.
+        expected = sorted(target_rel.stem.removeprefix("evolve-lite-") for _, target_rel, _ in build_module._bob_command_targets())
         commands = sorted(p.stem.removeprefix("evolve-lite-") for p in self._bob_commands_dir(rendered_repo, build_module).glob("*.md"))
-        assert commands == skill_names, "bob commands are not 1:1 with skills"
+        assert commands == expected, "bob commands are not 1:1 with bob-rendered skills"
+        assert "doctor" not in commands, "Claude-only `doctor` skill must not produce a bob command"
 
     def test_command_body_references_dash_form(self, rendered_repo, build_module):
         for cmd_file in self._bob_commands_dir(rendered_repo, build_module).glob("*.md"):
@@ -217,9 +222,13 @@ class TestBobCommandGeneration:
             assert f"evolve-lite:{skill}" not in body, f"{cmd_file.name} body should not use the colon form (bob resolves by folder)"
 
     def test_command_description_comes_from_skill_frontmatter(self, rendered_repo, build_module):
-        for skill_dir in build_module._discover_skills():
-            description = build_module._read_skill_description(skill_dir)
-            cmd_file = self._bob_commands_dir(rendered_repo, build_module) / f"evolve-lite-{skill_dir.name}.md"
+        # Only skills bob actually renders get a command file; iterate the
+        # command targets (which honor bob's `target_excludes`) rather than
+        # every discovered skill, so the Claude-only `doctor` skill — which
+        # bob doesn't render — isn't expected to have a command.
+        for skill_src, target_rel, _ in build_module._bob_command_targets():
+            description = build_module._read_skill_description(skill_src.parent)
+            cmd_file = self._bob_commands_dir(rendered_repo, build_module) / target_rel.name
             assert f"description: {description}\n" in cmd_file.read_text()
 
     def test_command_frontmatter_has_no_name_field(self, rendered_repo, build_module):

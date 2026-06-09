@@ -321,7 +321,10 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "audit_script": "~/.codex/evolve-lite/audit_recall.py",
         },
         "target_rewrites": [],
-        "target_excludes": [],
+        # The `doctor` skill diagnoses Claude's @import canary in
+        # ~/.claude transcripts; that mechanism doesn't exist on codex
+        # (codex uses an ~/.codex/AGENTS.md pointer), so exclude it.
+        "target_excludes": [r"^skills/evolve-lite/doctor/"],
         "metadata_target": ".codex-plugin/plugin.json",
         "metadata_emit": _codex_plugin_json,
     },
@@ -336,7 +339,11 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         # under .bob/skills/. Collapse the source skills/evolve-lite/<name>/
         # layout to skills/evolve-lite-<name>/ for bob's render output.
         "target_rewrites": [(r"^skills/evolve-lite/([^/]+)/", r"skills/evolve-lite-\1/")],
-        "target_excludes": [],
+        # Exclude the Claude-only `doctor` skill (matches the source-side
+        # path, before the rewrite above flattens it to
+        # skills/evolve-lite-doctor/). Its @import-canary diagnostic is
+        # meaningless on bob, which has no ~/.claude transcript layout.
+        "target_excludes": [r"^skills/evolve-lite/doctor/"],
         # Bob has no plugin system, so no plugin.json is emitted. Bob's
         # commands/ directory is generated 1:1 from the skills walk by
         # _bob_command_targets(); no static command files exist in
@@ -396,10 +403,19 @@ def _bob_command_bytes(skill_dir: Path) -> bytes:
 
 def _bob_command_targets() -> list[tuple[Path, Path, bytes]]:
     """Triples of (skill_source_for_drift_label, target_rel_to_repo_root, content)
-    for every bob command — one per skill — derived from the skills walk."""
+    for every bob command — one per skill — derived from the skills walk.
+
+    Skills excluded by bob's `target_excludes` get no command file: a skill
+    that isn't rendered into bob's skills/ must not leave a dangling slash
+    command pointing at it (e.g. the Claude-only `doctor` skill)."""
     bob_root_rel = Path(PLATFORMS["bob"]["plugin_root"])
+    bob_excludes = [re.compile(pat) for pat in PLATFORMS["bob"].get("target_excludes", [])]
     out: list[tuple[Path, Path, bytes]] = []
     for skill_dir in _discover_skills():
+        # Match against the source-side path, mirroring PlatformConfig.excludes.
+        source_rel = f"skills/evolve-lite/{skill_dir.name}/"
+        if any(p.search(source_rel) for p in bob_excludes):
+            continue
         target_rel = bob_root_rel / "commands" / f"evolve-lite-{skill_dir.name}.md"
         out.append((skill_dir / "SKILL.md.j2", target_rel, _bob_command_bytes(skill_dir)))
     return out
