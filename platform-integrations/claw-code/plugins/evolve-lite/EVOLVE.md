@@ -23,7 +23,7 @@ function, command, or flag, verify it still exists before relying on it.
 After recall, log which entries you actually opened, so the value of this memory
 can be measured over time. Run:
 
-```
+```bash
 python3 ~/.claw/evolve-lite/audit_recall.py <file> [<file> ...]
 ```
 

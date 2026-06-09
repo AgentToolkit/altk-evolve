@@ -148,7 +148,7 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
 
 
 def read_recall_rows(evolve_dir):
-    """Yield ``(session_id, [entity_id, ...])`` for every ``recall`` audit row.
+    """Return a list of ``(session_id, [entity_id, ...])`` tuples for every ``recall`` audit row.
 
     Rows with no ``session_id`` or an empty ``entities`` list are skipped.
     """

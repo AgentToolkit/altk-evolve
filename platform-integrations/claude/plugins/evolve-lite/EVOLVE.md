@@ -18,7 +18,7 @@ once per memory you saved.
 After you read or consult native memories this turn, log which ones you actually
 opened, so the value of this memory can be measured over time. Run:
 
-```
+```bash
 python3 ~/.claude/evolve-lite/audit_recall.py <id> [<id> ...]
 ```
 

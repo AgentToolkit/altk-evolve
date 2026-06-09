@@ -382,7 +382,7 @@ def write_entity_file(directory, entity, filename=None, overwrite=False):
     type_dir = Path(directory) / entity_type
     type_dir.mkdir(parents=True, exist_ok=True)
 
-    slug = filename if filename else slugify(entity.get("content", "entity"))
+    slug = slugify(filename) if filename else slugify(entity.get("content", "entity"))
     content = entity_to_markdown(entity)
 
     # Write to a unique temp file first (avoids predictable .tmp collisions)
