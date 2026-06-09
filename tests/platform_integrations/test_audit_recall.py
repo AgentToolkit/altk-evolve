@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 
-_SCRIPT = Path(__file__).parent.parent.parent / "plugin-source" / "scripts" / "audit_recall.py"
+_SCRIPT = Path(__file__).parent.parent.parent / "plugin-source" / "lib" / "audit_recall.py"
 
 
 def _run(cwd, args, env_overrides):

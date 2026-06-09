@@ -36,7 +36,7 @@ pytestmark = [pytest.mark.platform_integrations]
 _REPO_ROOT = Path(__file__).parent.parent.parent
 _PLUGIN = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
 ADAPT_SCRIPT = _PLUGIN / "skills/evolve-lite/adapt-memory/scripts/adapt_memory.py"
-AUDIT_SCRIPT = _PLUGIN / "scripts/audit_recall.py"
+AUDIT_SCRIPT = _PLUGIN / "lib/evolve-lite/audit_recall.py"
 PROVENANCE_SCRIPT = _PLUGIN / "skills/evolve-lite/provenance/scripts/provenance.py"
 
 SID = "claude-e2e-session-0001"

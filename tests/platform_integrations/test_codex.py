@@ -70,8 +70,9 @@ class TestCodexInstall:
         file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "learn" / "scripts" / "save_entities.py")
         file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "recall" / "scripts" / "retrieve_entities.py")
         file_assertions.assert_file_exists(plugin_dir / "lib" / "evolve-lite" / "entity_io.py")
-        # The recall-audit script ships in the plugin tree too (root-level scripts/).
-        file_assertions.assert_file_exists(plugin_dir / "scripts" / "audit_recall.py")
+        # The recall-audit script ships in the plugin tree too, alongside the
+        # shared lib (lib/evolve-lite/).
+        file_assertions.assert_file_exists(plugin_dir / "lib" / "evolve-lite" / "audit_recall.py")
 
         marketplace_path = temp_project_dir / ".agents" / "plugins" / "marketplace.json"
         file_assertions.assert_valid_json(marketplace_path)

@@ -816,9 +816,9 @@ class BobInstaller:
             # install the script once at that GLOBAL absolute path (matching
             # the always-global rules file). Prefer the rendered bob copy;
             # fall back to the shared plugin-source original.
-            audit_src = bob_source_lite / "scripts" / AUDIT_SCRIPT
+            audit_src = bob_source_lite / "lib" / "evolve-lite" / AUDIT_SCRIPT
             if not self.ops.is_dry_run and not audit_src.is_file():
-                audit_src = Path(source_dir) / "plugin-source" / "scripts" / AUDIT_SCRIPT
+                audit_src = Path(source_dir) / "plugin-source" / "lib" / AUDIT_SCRIPT
             audit_file = self._audit_script_file()
             if not self.ops.is_dry_run:
                 self.ops.atomic_write_text(audit_file, audit_src.read_text())
@@ -950,9 +950,9 @@ class ClaudeInstaller:
         # `~/.claude/evolve-lite/audit_recall.py`, so install it at that GLOBAL
         # absolute path (mirroring CodexInstaller). Prefer the rendered claude
         # copy; fall back to the shared plugin-source original.
-        audit_src = plugin_source / "scripts" / AUDIT_SCRIPT
+        audit_src = plugin_source / "lib" / "evolve-lite" / AUDIT_SCRIPT
         if not audit_src.is_file():
-            audit_src = Path(source_dir) / "plugin-source" / "scripts" / AUDIT_SCRIPT
+            audit_src = Path(source_dir) / "plugin-source" / "lib" / AUDIT_SCRIPT
         audit_text = "" if self.ops.is_dry_run and not audit_src.is_file() else audit_src.read_text()
         audit_file = Path.home() / ".claude" / "evolve-lite" / AUDIT_SCRIPT
         self.ops.atomic_write_text(audit_file, audit_text)
@@ -1177,9 +1177,9 @@ class CodexInstaller:
         # install the script at that GLOBAL absolute path (matching how the
         # always-on instructions live globally). Prefer the rendered codex
         # copy; fall back to the shared plugin-source original.
-        audit_src = plugin_source / "scripts" / AUDIT_SCRIPT
+        audit_src = plugin_source / "lib" / "evolve-lite" / AUDIT_SCRIPT
         if not audit_src.is_file():
-            audit_src = Path(source_dir) / "plugin-source" / "scripts" / AUDIT_SCRIPT
+            audit_src = Path(source_dir) / "plugin-source" / "lib" / AUDIT_SCRIPT
         audit_text = "" if self.ops.is_dry_run and not audit_src.is_file() else audit_src.read_text()
         audit_file = Path.home() / ".codex" / "evolve-lite" / AUDIT_SCRIPT
         self.ops.atomic_write_text(audit_file, audit_text)
