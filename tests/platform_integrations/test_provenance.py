@@ -118,6 +118,30 @@ class TestCandidatesNativeTranscript:
         assert "missing" not in cand
 
 
+class TestCandidatesCodexTranscript:
+    """Codex writes ~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<sid>.jsonl; the
+    locator finds it by a recursive glob on the thread id."""
+
+    def test_locates_native_codex_transcript(self, tmp_path):
+        home = tmp_path / "home"
+        evolve_dir = tmp_path / "proj" / ".evolve"
+        evolve_dir.mkdir(parents=True)
+        sid = "019eb34f-f827-7311-b775-b749ae4fae72"
+        write_audit(evolve_dir, [{"event": "recall", "session_id": sid, "entities": ["project/baz"]}])
+        write_entity(evolve_dir, "project/baz", body="baz guidance")
+        rollout = home / ".codex" / "sessions" / "2026" / "06" / "10" / f"rollout-2026-06-10T12-00-{sid}.jsonl"
+        rollout.parent.mkdir(parents=True)
+        rollout.write_text('{"x":1}\n', encoding="utf-8")
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        assert result.returncode == 0, result.stderr
+        candidates = parse_jsonl(result.stdout)
+        assert len(candidates) == 1
+        assert candidates[0]["entity_id"] == "project/baz"
+        assert candidates[0]["trajectory_path"] == str(rollout)
+        assert "missing" not in candidates[0]
+
+
 class TestCandidatesBobTranscript:
     """Bob writes ~/.bob/tmp/<projecthash>/chats/session-<ts>-<sid8>.json with a
     real ``sessionId`` field; the locator matches the chat file by that id."""

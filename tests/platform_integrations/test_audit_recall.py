@@ -180,3 +180,28 @@ class TestAuditRecall:
 
         rows = _read_rows(proj / ".evolve" / "audit.log")
         assert rows[0]["session_id"] == "codex-wins"
+
+    def test_bob_recovers_via_pwd_when_getcwd_differs(self, tmp_path):
+        """If Bob captured a symlinked path (preserved in $PWD) that differs from
+        os.getcwd()'s resolved path, the $PWD-based hash still finds the chat —
+        even though nothing is seeded under sha256(os.getcwd())."""
+        import hashlib
+
+        home = tmp_path / "home"
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        symlink_path = "/some/symlinked/workspace"  # what $PWD would carry
+        sid = "d6484b2c-24f4-474c-8f43-36544e2dbcd8"
+        chats = home / ".bob" / "tmp" / hashlib.sha256(symlink_path.encode()).hexdigest() / "chats"
+        chats.mkdir(parents=True)
+        (chats / "session-2026-06-10T21-12-d6484b2c.json").write_text(json.dumps({"sessionId": sid}), encoding="utf-8")
+
+        result = _run(
+            proj,
+            ["project/baz"],
+            {"BOBSHELL_CLI": "1", "PWD": symlink_path, "HOME": str(home), "USERPROFILE": str(home)},
+        )
+
+        rows = _read_rows(proj / ".evolve" / "audit.log")
+        assert rows[0]["session_id"] == sid
+        assert "evolve-session:" not in result.stdout

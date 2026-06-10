@@ -43,14 +43,19 @@ def _bob_session_id() -> str | None:
     if not os.environ.get("BOBSHELL_CLI"):
         return None
     try:
-        project_hash = hashlib.sha256(os.getcwd().encode()).hexdigest()
-        chats = Path.home() / ".bob" / "tmp" / project_hash / "chats"
-        files = sorted(
-            chats.glob("session-*.json"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        for chat in files:
+        # Bob hashes the project path it was launched in. os.getcwd() returns
+        # the resolved (symlink-free) path, but Bob may have captured the
+        # symlinked path the user cd'd through; $PWD preserves that. Try both
+        # candidate hashes and pick the newest chat across them.
+        chats = []
+        seen_paths: set[str] = set()
+        for raw in (os.getcwd(), os.environ.get("PWD")):
+            if not raw or raw in seen_paths:
+                continue
+            seen_paths.add(raw)
+            project_hash = hashlib.sha256(raw.encode()).hexdigest()
+            chats.extend((Path.home() / ".bob" / "tmp" / project_hash / "chats").glob("session-*.json"))
+        for chat in sorted(chats, key=lambda p: p.stat().st_mtime, reverse=True):
             try:
                 sid = json.loads(chat.read_text(encoding="utf-8")).get("sessionId")
             except (OSError, json.JSONDecodeError):
