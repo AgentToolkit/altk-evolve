@@ -95,7 +95,7 @@ bob-run: _bob-force-sso
     docker run --rm -it --hostname {{bob_hostname}} --env BOB_SHELL_FORCE_FILE_STORAGE=true --env SSO_PORT={{bob_sso_port}} --publish 127.0.0.1:{{bob_sso_port}}:{{bob_sso_port}} -v "$(cd {{workspace}} && pwd)":/workspace -v "$(pwd)/{{bob_home}}":/home/sandbox/.bob {{bob_image}}
 
 # Authenticate Bob in the sandbox with browser SSO. Open the printed URL on the host.
-bob-auth: _bob-force-sso
+bob-auth: _bob-force-sso  # pragma: allowlist secret
     mkdir -p {{bob_home}}
     docker run --rm -it --hostname {{bob_hostname}} --env BOB_SHELL_FORCE_FILE_STORAGE=true --env SSO_PORT={{bob_sso_port}} --publish 127.0.0.1:{{bob_sso_port}}:{{bob_sso_port}} -v "$(pwd)/{{bob_home}}":/home/sandbox/.bob {{bob_image}} bob --accept-license --auth-method sso
     just _bob-force-sso
