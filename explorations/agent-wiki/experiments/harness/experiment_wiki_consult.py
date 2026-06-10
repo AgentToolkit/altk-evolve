@@ -124,8 +124,21 @@ def _seed_codebase(ws: Path) -> None:
 def _seed_format_group(ws: Path, group: str) -> list[str]:
     """Seed image/archive/text format samples via the stdlib generators in
     `_format_samples.py`. Group is one of `image-formats`, `archive-formats`,
-    `text-formats`."""
-    from _format_samples import seed_into  # local import — script lives next door
+    `text-formats`.
+
+    `_format_samples.py` is a project-level sandbox asset not shipped in this
+    exploration tree (see the module docstring — this runner is reference-only).
+    The import is deferred so the rest of the module imports cleanly; if a run
+    actually reaches here without the asset, fail with a clear message.
+    """
+    try:
+        from _format_samples import seed_into  # project sandbox asset, not in this tree
+    except ImportError as exc:
+        raise RuntimeError(
+            "_seed_format_group requires _format_samples.py, a project-level sandbox "
+            "asset not included in explorations/agent-wiki/. This A/B runner is "
+            "reference-only here; run it from the full project."
+        ) from exc
 
     return seed_into(ws, group)
 
@@ -434,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
             ct = sum(r["cited_guideline"] for r in rows)
             om = sum(r["outcome_match"] for r in rows)
             durs = sorted(r["duration_s"] for r in rows)
-            median = durs[n // 2]
+            median = durs[n // 2] if n % 2 == 1 else (durs[n // 2 - 1] + durs[n // 2]) / 2
             md_lines.append(f"| {condition:<10} | {rd}/{n} | {ct}/{n} | {om}/{n} | {median:.0f} |")
         md_lines.append("")
     md_lines.extend(

@@ -365,7 +365,7 @@ Detailed report: [`experiments/twobatch-fiveway-comparison.md`](twobatch-fiveway
 
 5. **Cost reduction comes mainly from output tokens and tool-call
    reduction**, not from input-token compression. The agent doesn't read
-   *fewer* bytes when it has the wiki — it reads MORE byes (cache-creation
+   *fewer* bytes when it has the wiki — it reads MORE bytes (cache-creation
    on guideline pages goes up). But it produces shorter responses and
    takes fewer tool turns.
 
