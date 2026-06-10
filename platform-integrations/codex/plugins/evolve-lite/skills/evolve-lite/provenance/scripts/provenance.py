@@ -95,11 +95,16 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
     2. NEW native Claude transcript: ``~/.claude/projects/<slug>/<sid>.jsonl``
        where ``<slug>`` is the project root path slugified the way Claude does
        (every non-alphanumeric char -> ``-``; see ``_claude_transcript_slug``).
+    3. NEW native Codex transcript: ``~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<sid>.jsonl``.
+       Codex names each rollout file with the thread id as the trailing segment,
+       so a recursive glob for ``*<sid>*.jsonl`` under ``~/.codex/sessions/``
+       finds it regardless of date directory.
 
     Native discovery makes provenance work in the hookless world where no
-    ``.evolve/trajectories/`` file is ever written. It is platform-neutral:
-    Bob/Codex keep their transcripts elsewhere, so the native step simply falls
-    through to ``None`` for them rather than misfiring.
+    ``.evolve/trajectories/`` file is ever written. Each native step is keyed on
+    the host's own session-id scheme and falls through to the next (and finally
+    ``None``) when it does not match, so a Claude sid never resolves a Codex file
+    or vice versa.
     """
     evolve_dir = Path(evolve_dir)
 
@@ -138,6 +143,18 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
     native = base / ".claude" / "projects" / slug / f"{session_id}.jsonl"
     if native.is_file():
         return native
+
+    # --- 3. Native Codex transcript -----------------------------------------
+    # Codex stores rollouts at ~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<sid>.jsonl
+    # with the thread id as the filename's trailing segment. Match by glob so we
+    # don't have to reconstruct the date path. Guard the sid to a sane shape so
+    # the glob can't be widened by an empty/odd session_id.
+    if session_id and "/" not in session_id and "*" not in session_id:
+        codex_sessions = base / ".codex" / "sessions"
+        if codex_sessions.is_dir():
+            matches = sorted(codex_sessions.rglob(f"*{session_id}*.jsonl"))
+            if matches:
+                return matches[0]
 
     return None
 
