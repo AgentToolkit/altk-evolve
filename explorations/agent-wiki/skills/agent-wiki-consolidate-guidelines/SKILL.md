@@ -29,7 +29,7 @@ theme is visible.
 ### Step 1: Read the corpus
 
 ```bash
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py dump-guidelines > /tmp/guidelines.json
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py dump-guidelines > /tmp/guidelines.json
 ```
 
 Output is a JSON array of `{id, filename, title, trigger, cluster,
@@ -76,7 +76,7 @@ Rules:
 Pipe to:
 
 ```bash
-echo '<json>' | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py render-cluster
+echo '<json>' | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py render-cluster
 ```
 
 The helper:
@@ -89,7 +89,7 @@ The helper:
 After writing all new cluster pages:
 
 ```bash
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py catalog
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py catalog
 ```
 
 `catalog` propagates the cluster membership back to atomic pages: each

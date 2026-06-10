@@ -3,6 +3,16 @@
 # Exploration/reference code — not type-checked to the project standard.
 """A/B experiment: does pointing an agent at AGENTS.md alter its behavior?
 
+REFERENCE ONLY — not runnable from this exploration tree as-is. The runner
+needs sandbox assets that live in the full project, not under
+explorations/agent-wiki/: a `claude-sandbox` Docker image, the demo workspace
+(`demo/workspace`), the `_wiki_hint_plugin`, the Claude plugins dir, and the
+`_format_samples` seeder. It is included to document *how* the wiki-helps
+numbers in this directory's reports were produced (method, conditions,
+scoring), not as a turnkey reproduction. The metric rollups under
+`../metrics/` and the comparison scripts beside this file are the parts that
+re-run standalone.
+
 Paired design (utt1 → wiki → utt2):
 
 - utt1 produces a small focal-length-extraction trajectory (reused from
@@ -23,8 +33,8 @@ in a fresh sandbox container and score three binary signals:
   a key wiki concept (0xA434, 0x8769, ExifIFD)
 - outcome_match: response contains "Google Pixel 4a Rear Wide Camera"
 
-Usage:
-    uv run python tests/e2e/experiment_wiki_consult.py \\
+Usage (within the full project, not this exploration tree):
+    uv run python explorations/agent-wiki/experiments/harness/experiment_wiki_consult.py \\
         --conditions baseline,skill,prompt,claude_md \\
         --trials 3
 """
@@ -306,8 +316,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {WIKI_SRC} does not exist. Run Phase A first.", file=sys.stderr)
         return 2
 
-    # Load tasks (--task may be comma-separated)
-    tasks_file = REPO_ROOT / "tests" / "e2e" / "wiki_consult_tasks.yaml"
+    # Load tasks (--task may be comma-separated). The task spec is checked in
+    # beside this script under experiments/harness/.
+    tasks_file = Path(__file__).resolve().parent / "wiki_consult_tasks.yaml"
     tasks = {t["id"]: t for t in yaml.safe_load(tasks_file.read_text())}
     task_ids = [t.strip() for t in args.task.split(",") if t.strip()]
     for tid in task_ids:

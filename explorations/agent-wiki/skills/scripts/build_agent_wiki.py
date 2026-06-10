@@ -869,13 +869,11 @@ def cmd_render_cluster(args) -> int:
     }
     save_config(wiki_root, cfg)
 
-    # render the cluster page
-    out_path = wiki_root / GUIDELINES_DIR / f"{slug}__cluster.md"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(_render_cluster_md(slug, cfg["clusters"][slug], wiki_root), encoding="utf-8")
-    print(f"wrote: {out_path}")
-
-    # Archive each member atomic — the cluster page now represents them.
+    # Archive each member atomic FIRST (when requested) so the cluster page is
+    # rendered against final on-disk locations. Archiving moves a member to
+    # `_archived/` and drops it from the id-index; rendering afterward lets
+    # `_render_cluster_md` resolve each member to its real path (guidelines/ or
+    # _archived/) instead of emitting links to files that no longer exist.
     if getattr(args, "archive_members", False):
         archived = 0
         for gid in members:
@@ -883,9 +881,35 @@ def cmd_render_cluster(args) -> int:
                 archived += 1
         if archived:
             print(f"  archived {archived} member atomic(s) to {_ARCHIVED_DIR}/")
+
+    # render the cluster page
+    out_path = wiki_root / GUIDELINES_DIR / f"{slug}__cluster.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(_render_cluster_md(slug, cfg["clusters"][slug], wiki_root), encoding="utf-8")
+    print(f"wrote: {out_path}")
+
     _refresh_agent_retrieval_indexes(wiki_root)
     print("refreshed: skills/index.md, guidelines/index.md, _index.jsonl")
     return 0
+
+
+def _resolve_member_link(gid: str, id_index: dict, wiki_root: Path) -> str | None:
+    """Return the cluster-page-relative link to a member guideline, or None.
+
+    The cluster page lives in `guidelines/`. A live member is a sibling
+    (`<name>.md`); a member archived by `--archive-members` lives in
+    `_archived/<name>.md` and is no longer in the id-index, so fall back to
+    locating it there and emit a `../_archived/<name>.md` link.
+    """
+    link = id_index.get(gid)
+    if link:
+        return Path(link).name
+    # Archived member: id-index dropped it; find the file under _archived/.
+    arch_dir = wiki_root / _ARCHIVED_DIR
+    if arch_dir.is_dir():
+        for p in arch_dir.glob(f"*__{gid}.md"):
+            return f"../{_ARCHIVED_DIR}/{p.name}"
+    return None
 
 
 def _render_cluster_md(slug: str, info: dict, wiki_root: Path) -> str:
@@ -903,11 +927,10 @@ def _render_cluster_md(slug: str, info: dict, wiki_root: Path) -> str:
         "members:",
     ]
     for gid in members:
-        link = id_index.get(gid)
+        link = _resolve_member_link(gid, id_index, wiki_root)
         fm.append(f"  - id: {gid}")
         if link:
-            # cluster page lives in guidelines/, so relative link is just basename
-            fm.append(f"    link: {Path(link).name}")
+            fm.append(f"    link: {link}")
     fm.append("priority: high")
     fm.append("---")
     fm.append("")
@@ -925,9 +948,15 @@ def _render_cluster_md(slug: str, info: dict, wiki_root: Path) -> str:
     )
     body.append("")
     for gid in members:
-        link = id_index.get(gid)
-        title, snippet, trigger, related = _read_guideline_meta(wiki_root, link) if link else (gid, "", "", "")
-        body.append(f"### [{title}]({Path(link).name if link else gid})")
+        # Resolve to a relative link (sibling in guidelines/, or ../_archived/…).
+        rel_link = _resolve_member_link(gid, id_index, wiki_root)
+        # Meta is read from the path relative to wiki_root: live members come
+        # from the id-index; archived members from the resolved ../_archived link.
+        meta_path = id_index.get(gid)
+        if not meta_path and rel_link:
+            meta_path = rel_link.replace("../", "", 1)
+        title, snippet, trigger, related = _read_guideline_meta(wiki_root, meta_path) if meta_path else (gid, "", "", "")
+        body.append(f"### [{title}]({rel_link if rel_link else gid})")
         body.append("")
         body.append(f"- **id:** `{gid}`")
         if trigger:
@@ -1521,6 +1550,10 @@ def cmd_dump_summaries(args) -> int:
 def cmd_catalog(args) -> int:
     wiki_root = find_wiki_root(override=args.wiki_root)
     wiki_root.mkdir(parents=True, exist_ok=True)
+    # Ensure every section dir exists before any index writer runs — a fresh
+    # `catalog` on a bare wiki_root otherwise crashes writing summaries/index.md.
+    for _section in (SUMMARIES_DIR, GUIDELINES_DIR, TASKS_DIR, SKILLS_DIR):
+        (wiki_root / _section).mkdir(parents=True, exist_ok=True)
     cfg = load_config(wiki_root)
     today = datetime.date.today().isoformat()
 

@@ -53,4 +53,3 @@ Median per-trial within each family. Skills column shows Δ vs guidelines.
 
 - Empty + guidelines columns reproduce the original twobatch comparison; skills column is new.
 - 3 skills were synthesized from twobatch's batch-1 trajectories by the `agent-wiki-synthesize-skill` skill: `extract-jpeg-exif-camera-optics`, `read-image-format-dimensions`, `count-csv-rows-with-quoted-fields`. All other tasks in this arm have **no matching skill** — the agent should fall through to whatever it'd do on an empty wiki.
-

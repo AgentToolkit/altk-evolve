@@ -26,18 +26,18 @@ explorations/agent-wiki/
 ├── docs/
 │   ├── design.md      design & rationale
 │   └── schema.md      on-disk page/index schema
-├── experiments/       the empirical evidence (see RESULTS-SUMMARY.md)
-│   ├── RESULTS-SUMMARY.md
-│   ├── twobatch-*.md  the comparison reports (wiki vs no-wiki; skills vs guidelines; …)
-│   ├── pruned-index-hypothesis.md
-│   ├── metrics/       per-trial metric rollups (.jsonl)
-│   └── harness/       sandbox runner + comparison scripts to reproduce
-└── wikis/             worked examples — wikis built by the skills above
-    ├── wiki-twobatch/            16-task corpus, guidelines arm
-    ├── wiki-twobatch-skills/     same corpus, skills-only arm
-    ├── wiki-twobatch-both/       skills + guidelines
-    └── wiki-twobatch-pruned/     skills + only no-skill-coverage atomics (delete-on-promote)
+└── experiments/       the empirical evidence (see RESULTS-SUMMARY.md)
+    ├── RESULTS-SUMMARY.md
+    ├── twobatch-*.md  the comparison reports (wiki vs no-wiki; skills vs guidelines; …)
+    ├── pruned-index-hypothesis.md
+    ├── metrics/       per-trial metric rollups (.jsonl)
+    └── harness/       comparison scripts (re-runnable) + the A/B runner (reference)
 ```
+
+The example **wikis** built by these skills (`wiki-twobatch` / `-skills` /
+`-both` / `-pruned`) are shipped in a companion PR to keep this one focused on
+reviewable code — they are ~10k lines of generated output. They land under
+`explorations/agent-wiki/wikis/` once that PR merges.
 
 ## Reading order
 
@@ -45,19 +45,24 @@ explorations/agent-wiki/
 2. **`experiments/RESULTS-SUMMARY.md`** — the running tape of findings
    (wiki cuts cost ~20% at equal accuracy; skills beat guidelines; pointer
    wording is load-bearing; composition matters more than wiki size).
-3. **`wikis/wiki-twobatch-skills/`** — open `AGENTS.md`, then `_index.jsonl`,
-   then any page, to see a real built wiki end-to-end.
-4. **`skills/agent-wiki-ingest/SKILL.md`** — how a batch of traces becomes a
+3. **`skills/agent-wiki-ingest/SKILL.md`** — how a batch of traces becomes a
    wiki in one pass.
+4. **The example wikis** (companion PR) — open a built `wiki-twobatch-skills/`'s
+   `AGENTS.md`, then `_index.jsonl`, then any page, to see a real wiki
+   end-to-end.
 
 ## Scope of this exploration
 
-These are **benchmark-derived** example wikis (a synthetic 16-task
-file-format corpus). The raw per-trial sandbox transcripts and any wikis built from
-internal trajectory corpora are intentionally **not** included — only the metric
-rollups, the narrative reports, and the benchmark-derived wikis. Source links in
-wiki frontmatter are shown in the generic form `trajectories/<session-id>.json`.
+The example wikis (companion PR) are **benchmark-derived** (a synthetic 16-task
+file-format corpus). The raw per-trial sandbox transcripts and any wikis built
+from internal trajectory corpora are intentionally **not** included — only the
+metric rollups, the narrative reports, and the benchmark-derived wikis. Source
+links in wiki frontmatter are shown in the generic form
+`trajectories/<session-id>.json`.
 
 The skills here are a **standalone reference copy**, runnable via
-`skills/scripts/build_agent_wiki.py`; they are not wired into any plugin loader
-in this tree.
+`explorations/agent-wiki/skills/scripts/build_agent_wiki.py`; they are not wired
+into any plugin loader in this tree. The experiment **harness** ships the
+re-runnable comparison scripts; the sandbox A/B runner
+(`experiments/harness/experiment_wiki_consult.py`) is reference-only — it needs
+project-level sandbox assets not included here.

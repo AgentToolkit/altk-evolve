@@ -130,7 +130,7 @@ one where it was first observed, or omit `arc` to keep the link generic.
 ### Step 5: Pipe to the helper
 
 ```bash
-echo '<json>' | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py render-guidelines
+echo '<json>' | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py render-guidelines
 ```
 
 Add `--rewrite` to overwrite existing pages. The helper:
@@ -159,7 +159,7 @@ never *proposes* them — consolidation is the pass that proposes.
 Then, after processing all input files, run **once**:
 
 ```bash
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py catalog
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py catalog
 ```
 
 ## Best practices

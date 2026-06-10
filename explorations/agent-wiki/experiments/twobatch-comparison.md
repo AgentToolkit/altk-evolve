@@ -88,4 +88,3 @@ Median across 3 trials per cell. Token = `billable_tokens_proxy` (input + cache-
 - `billable_tokens_proxy` = `input_tokens + cache_creation_input_tokens + output_tokens` (cache reads are very cheap and not directly billed at the same rate).
 - A trial that timed out is recorded with `outcome_match=False`, `duration_s=300`, all token fields = 0. These bring batch-1 means down if they happen.
 - Only `claude_md_strong` was run in this experiment for clean comparison (no condition mixing).
-

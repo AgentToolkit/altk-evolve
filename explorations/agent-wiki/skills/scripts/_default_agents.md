@@ -165,7 +165,7 @@ clear.
 ## Bootstrapping notes
 
 If `AGENTS.md` does not exist in a wiki, run
-`uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py
+`uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py
 --wiki-root <wiki-root> catalog` — the bootstrap pass copies the template
 in. After bootstrap, this file is yours to edit; subsequent catalog runs
 do not overwrite an existing `AGENTS.md`.

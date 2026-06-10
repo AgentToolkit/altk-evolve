@@ -61,7 +61,7 @@ retrieval recipe. Read it in full — it's typically 3–5 KB.
 If the file does not exist, run:
 
 ```bash
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py \
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py \
   --wiki-root <wiki-root> catalog
 ```
 

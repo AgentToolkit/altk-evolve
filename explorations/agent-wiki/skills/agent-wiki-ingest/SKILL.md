@@ -91,7 +91,7 @@ The converter writes three files per trace; the ingest pipeline consumes the
 
 **claude stream-json:**
 ```bash
-uv run python scripts/normalize_stream_json_transcripts.py \
+uv run python explorations/agent-wiki/experiments/harness/normalize_stream_json_transcripts.py \
   --in <transcripts-dir> --out trajectories/normalized \
   --label <label> --user-prompt "<the task prompt>"
 ```
@@ -107,7 +107,7 @@ If `<wiki-root>/_index.jsonl` does **not** exist:
 
 ```bash
 mkdir -p <wiki-root>/{summaries,guidelines,tasks,skills}
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py \
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py \
   --wiki-root <wiki-root> catalog
 ```
 
@@ -124,7 +124,7 @@ characters in the shell-quoted string). Tell every subagent to write its
 payload to a temp file and `cat` it instead:
 
 ```bash
-cat /tmp/ingest-payload.json | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-guidelines
+cat /tmp/ingest-payload.json | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-guidelines
 ```
 
 ## Step 1.5 — Skip already-processed traces (pre-flight)
@@ -180,7 +180,7 @@ prompt include:
 
 Each subagent pipes its summary JSON to:
 ```bash
-echo '<json>' | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-summary
+echo '<json>' | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-summary
 ```
 
 ## Step 3 — Extract guidelines (sequential subagents)
@@ -205,7 +205,7 @@ prompt:
 
 Pipe via:
 ```bash
-echo '<json>' | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-guidelines
+echo '<json>' | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-guidelines
 ```
 
 ## Step 4 — Synthesize skills (sequential subagents)
@@ -221,7 +221,7 @@ prompt:
 - when promoting, pipe with `--archive-covered` so the atomics the skill
   subsumes are soft-archived:
   ```bash
-  cat /tmp/skill-payload.json | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-skill --archive-covered
+  cat /tmp/skill-payload.json | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-skill --archive-covered
   ```
   `--archive-covered` is safe to run blind: the matcher only archives an
   atomic from *another* trajectory when the skill's tags are a true superset
@@ -257,14 +257,14 @@ whole surviving-atomic corpus. In its prompt:
 
 Each cluster is piped via:
 ```bash
-echo '<json>' | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-cluster
+echo '<json>' | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-cluster
 ```
 
 ## Step 6 — Catalog (you run this directly)
 
 One final bookkeeping pass:
 ```bash
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py --wiki-root <wiki-root> catalog
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py --wiki-root <wiki-root> catalog
 ```
 
 This regenerates `_index.jsonl`, the section indexes, the priority table,

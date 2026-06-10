@@ -129,7 +129,7 @@ backed by trajectory text.
 ### Step 4: Pipe the JSON to the helper
 
 ```bash
-echo '<json>' | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py render-summary
+echo '<json>' | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py render-summary
 ```
 
 Add `--rewrite` to overwrite an existing page. The helper:
@@ -146,7 +146,7 @@ Add `--rewrite` to overwrite an existing page. The helper:
 After processing all input files, run **once**:
 
 ```bash
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py catalog
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py catalog
 ```
 
 This regenerates `index.md`, section indexes, `_index.jsonl`, and enriches

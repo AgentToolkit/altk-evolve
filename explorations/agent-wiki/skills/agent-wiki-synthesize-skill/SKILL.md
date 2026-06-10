@@ -166,7 +166,7 @@ Notes on each field:
 ### Step 6: Pipe the JSON to the helper
 
 ```bash
-echo '<json>' | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py render-skill
+echo '<json>' | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py render-skill
 ```
 
 Add `--rewrite` to overwrite an existing skill page.
@@ -193,7 +193,7 @@ The helper:
 After processing all trajectories, run **once**:
 
 ```bash
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py catalog
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py catalog
 ```
 
 This regenerates `<wiki>/skills/index.md`, the section indexes, and

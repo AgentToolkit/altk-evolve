@@ -30,7 +30,7 @@ This is the cross-trajectory **analysis** pass of the `agent-wiki` family.
 ### Step 1: Read the corpus
 
 ```bash
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py dump-summaries > /tmp/summaries.json
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py dump-summaries > /tmp/summaries.json
 ```
 
 Output is a JSON array of one row per summary: `{session_id, goal, family,
@@ -86,7 +86,7 @@ Rules:
 Pipe to:
 
 ```bash
-echo '<json>' | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py render-task
+echo '<json>' | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py render-task
 ```
 
 The helper:
@@ -102,7 +102,7 @@ patch `_config.yaml`:
 
 ```bash
 echo '{"session_family_overrides": {"<session-id>": {"family": "image-dims", "trial": 0, "condition": "claude_md_strong"}}}' \
-  | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py update-config
+  | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py update-config
 ```
 
 ### Step 5: Subtask pass — mandatory before refresh
@@ -121,7 +121,7 @@ when 1 representative captures the pattern.
 ### Step 6: Refresh indexes
 
 ```bash
-uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py catalog
+uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py catalog
 ```
 
 This re-reads `_config.yaml`, re-classifies every summary, regenerates
@@ -192,7 +192,7 @@ Treat each session in the corpus as a potential subtask candidate.
 Pipe to:
 
 ```bash
-echo '<json>' | uv run python plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py render-subtask
+echo '<json>' | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py render-subtask
 ```
 
 Subtask pages are *authored* (not regenerated from `_config.yaml`). The
