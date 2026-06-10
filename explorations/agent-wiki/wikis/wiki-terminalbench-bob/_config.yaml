@@ -1,0 +1,173 @@
+schema_version: 1
+tags:
+  guideline:
+    716da6023763:
+    - minimal-env
+    - python
+    - pandas
+    - dependencies
+    - container
+    d1f23ef113ae:
+    - minimal-env
+    - apt
+    - package-manager
+    - dependencies
+    - container
+    1cd395fcf4f2:
+    - pandas
+    - pyarrow
+    - parquet
+    - apt
+    - pip
+    - dependencies
+    e0aaf94eeafc:
+    - pip
+    - pep668
+    - externally-managed
+    - python
+    - container
+    224dabd0bcb9:
+    - pip
+    - python
+    - site-packages
+    - dist-info
+    - ensurepip
+    - container
+    6719e8cb6a4a:
+    - pip
+    - python
+    - urllib
+    - get-pip
+    - minimal-env
+    - container
+    1511ed668e5f:
+    - debugging
+    - traceback
+    - shebang
+    - python
+    - diagnosis
+    eaaa989db78a:
+    - debugging
+    - verification
+    - diagnosis
+    - iteration
+    208291bdb33b:
+    - pandas
+    - version-mismatch
+    - diagnosis
+    - typeerror
+    - dependencies
+    98ba70a51156:
+    - pandas
+    - pyarrow
+    - version-mismatch
+    - dependencies
+    - upgrade
+    887f407a9d6b:
+    - pandas
+    - version-mismatch
+    - diagnosis
+    - source-reading
+    - upgrade
+    d59bbf28f224:
+    - jq
+    - json
+    - data-transformation
+    f69e16ac865b:
+    - jq
+    - dates
+    - data-transformation
+    f3a43cc1b801:
+    - jq
+    - json
+    - edge-cases
+    3a8b875e4382:
+    - jq
+    - yaml
+    - reproducibility
+    - verification
+    f35c351a3403:
+    - docker
+    - containers
+    - file-access
+    db39ac5cefdd:
+    - dates
+    - parsing
+    - python
+    - data-transformation
+    6661f54f1ad7:
+    - dates
+    - data-transformation
+    - csv
+    - python
+    3ef4ed4a5952:
+    - docker
+    - containers
+    - python
+    - scripting
+    056000ede00b:
+    - json
+    - data-transformation
+    - jsonl
+    4be167482caa:
+    - verification
+    - containers
+    - data-transformation
+clusters:
+  cross-the-host-container-boundary-with-docker-exec:
+    title: Cross the host/container boundary with docker exec
+    description: 'When a task is confined to a Docker container, the harness''s host-side
+      tools — the file reader, the file writer — are sandboxed to the workspace and
+      cannot see or touch paths inside the container (e.g. /app/...). Any attempt
+      to read_file an in-container path is rejected as outside the allowed directories.
+
+
+      The escape hatch is the shell tool plus `docker exec <container> ...`: every
+      file read, file write, and program execution that must happen inside the container
+      is routed through it. Reach for this immediately on seeing an in-container path,
+      not after a failed host-side attempt.'
+    takeaway: Treat `docker exec <container> ...` as the only path across the host/container
+      boundary. Read in-container files with `docker exec <container> cat <path>`;
+      write non-trivial programs in with a quoted-delimiter heredoc (`docker exec
+      <container> bash -c 'cat > /app/x.py << '\''EOF'\''...EOF'`) and run them with
+      `docker exec <container> python3 /app/x.py`. Do not waste a turn trying the
+      host-side read_file/write tools on `/app/...` paths first.
+    members:
+    - f35c351a3403
+    - 3ef4ed4a5952
+    tags:
+    - docker
+    - container
+    - filesystem
+    - shell
+  let-the-system-tell-you-dont-assume:
+    title: Let the system tell you — never trust assumptions or success prints
+    description: 'A recurring failure mode is building on belief instead of ground
+      truth: assuming a library is installed, assuming a repair worked, assuming a
+      script that printed ''done'' actually produced the required output. Each assumption
+      that goes unchecked can silently invalidate everything built on top of it.
+
+
+      The shared discipline is to make the system itself the source of truth at every
+      stage — before you start (probe what''s actually installed), during repair (re-run
+      the failing command after each fix), and after producing a deliverable (read
+      the file back and check its shape). Let the first real failure, not a guess,
+      dictate the next step.'
+    takeaway: Replace assumptions with cheap empirical checks. Before planning around
+      a package, probe it (`python3 -c 'import pandas'`) and treat a bare base as
+      stdlib-only until proven otherwise. After each repair step, immediately re-run
+      the exact failing command and treat the fix as unproven until the symptom is
+      gone. After a script reports success, read its output file back and confirm
+      structure, key names, nesting, rounding, and int-vs-float against the spec —
+      a clean exit code only proves it ran, not that it is correct.
+    members:
+    - 716da6023763
+    - eaaa989db78a
+    - 4be167482caa
+    tags:
+    - empiricism
+    - verification
+    - debugging
+    - assumptions
+tasks: {}
+session_family_overrides: {}
