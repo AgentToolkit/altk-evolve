@@ -187,6 +187,30 @@ class TestCandidatesBobTranscript:
         assert candidates[0]["trajectory_path"] is None
         assert candidates[0]["missing"] == ["trajectory"]
 
+    def test_bob_non_dict_chat_does_not_crash(self, tmp_path):
+        """A chat whose filename prefix matches the sid_head prefilter but whose
+        JSON is valid-but-NON-dict ([], null, a scalar) must not crash the run:
+        ``.get`` is only called on a dict. It simply falls through (no match),
+        so the trajectory is reported missing rather than raising."""
+        home = tmp_path / "home"
+        evolve_dir = tmp_path / "proj" / ".evolve"
+        evolve_dir.mkdir(parents=True)
+        sid = "d6484b2c-24f4-474c-8f43-36544e2dbcd8"
+        write_audit(evolve_dir, [{"event": "recall", "session_id": sid, "entities": ["project/baz"]}])
+        write_entity(evolve_dir, "project/baz")
+        # Filename prefix d6484b2c matches the sid_head prefilter, but the body
+        # is a JSON array (non-dict) — previously crashed on .get("sessionId").
+        chat = home / ".bob" / "tmp" / "abc123hash" / "chats" / "session-2026-06-10T21-12-d6484b2c.json"
+        chat.parent.mkdir(parents=True)
+        chat.write_text("[]", encoding="utf-8")
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        assert result.returncode == 0, result.stderr
+        candidates = parse_jsonl(result.stdout)
+        assert len(candidates) == 1
+        assert candidates[0]["trajectory_path"] is None
+        assert candidates[0]["missing"] == ["trajectory"]
+
 
 class TestCandidatesMissing:
     def test_missing_trajectory_still_emitted(self, tmp_path):

@@ -177,7 +177,7 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
                     data = json.loads(chat.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError):
                     continue
-                if data.get("sessionId") == session_id:
+                if isinstance(data, dict) and data.get("sessionId") == session_id:
                     return chat
 
     return None

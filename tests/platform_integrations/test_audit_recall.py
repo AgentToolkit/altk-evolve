@@ -150,6 +150,56 @@ class TestAuditRecall:
         assert rows[0]["session_id"] == newest
         assert "evolve-session:" not in result.stdout
 
+    def test_bob_non_dict_chat_does_not_crash(self, tmp_path):
+        """A valid-but-non-dict newest chat file ([], null, a scalar) must not
+        crash the run: ``.get`` is only called on a dict. With no usable dict
+        chat, the script falls back to a minted uuid (exit 0, row written). When
+        a real dict chat also exists, its sessionId still wins over the non-dict
+        newest file."""
+        import hashlib
+
+        home = tmp_path / "home"
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        # A real dict chat (older).
+        self._seed_bob_chat(home, proj, "dict-sid-1234", filename="session-2026-06-10T20-00-dictsid1.json")
+        # The newest file is valid JSON but NOT a dict — would previously crash.
+        project_hash = hashlib.sha256(os.path.realpath(str(proj)).encode()).hexdigest()
+        bad = home / ".bob" / "tmp" / project_hash / "chats" / "session-2026-06-10T21-30-baadbaad.json"
+        bad.write_text("[]", encoding="utf-8")
+        os.utime(bad, (10**10, 10**10))  # newest => examined first
+
+        result = _run(proj, ["project/baz"], {"BOBSHELL_CLI": "1", "HOME": str(home), "USERPROFILE": str(home)})
+
+        # Did not crash; the non-dict newest is skipped and the real dict chat wins.
+        assert result.returncode == 0
+        rows = _read_rows(proj / ".evolve" / "audit.log")
+        assert len(rows) == 1
+        assert rows[0]["session_id"] == "dict-sid-1234"
+        assert "evolve-session:" not in result.stdout
+
+    def test_bob_non_dict_chat_only_mints_uuid(self, tmp_path):
+        """When the ONLY Bob chat present is valid-but-non-dict JSON (e.g. null),
+        the lookup yields nothing and the script mints a uuid (exit 0, echoed),
+        rather than crashing on ``.get``."""
+        import hashlib
+
+        home = tmp_path / "home"
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        project_hash = hashlib.sha256(os.path.realpath(str(proj)).encode()).hexdigest()
+        chats = home / ".bob" / "tmp" / project_hash / "chats"
+        chats.mkdir(parents=True)
+        (chats / "session-2026-06-10T21-30-baadbaad.json").write_text("null", encoding="utf-8")
+
+        result = _run(proj, ["project/baz"], {"BOBSHELL_CLI": "1", "HOME": str(home), "USERPROFILE": str(home)})
+
+        assert result.returncode == 0
+        rows = _read_rows(proj / ".evolve" / "audit.log")
+        assert len(rows) == 1
+        minted = rows[0]["session_id"]
+        assert f"evolve-session: {minted}" in result.stdout  # minted => echoed
+
     def test_bob_branch_inert_without_bobshell_cli(self, tmp_path):
         """No BOBSHELL_CLI => the Bob lookup never runs (even with a chat present),
         so the script mints a uuid as before. Keeps the branch inert off-Bob."""

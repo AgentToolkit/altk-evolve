@@ -57,9 +57,10 @@ def _bob_session_id() -> str | None:
             chats.extend((Path.home() / ".bob" / "tmp" / project_hash / "chats").glob("session-*.json"))
         for chat in sorted(chats, key=lambda p: p.stat().st_mtime, reverse=True):
             try:
-                sid = json.loads(chat.read_text(encoding="utf-8")).get("sessionId")
+                data = json.loads(chat.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
+            sid = data.get("sessionId") if isinstance(data, dict) else None
             if sid:
                 return str(sid)
     except OSError:
