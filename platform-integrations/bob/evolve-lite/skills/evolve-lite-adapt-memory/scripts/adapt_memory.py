@@ -18,13 +18,21 @@ frontmatter of the form::
 
     <body>
 
-The agent passes the native ``--type`` through verbatim (native types map
-straight onto the entity type — no remapping) and supplies a synthesized
-``--trigger`` (the single most important field for future retrieval). The body
-of the native file becomes the entity content; the native ``description`` is
-carried into the body as a lead line when present.
+The agent supplies a synthesized ``--trigger`` (the single most important field
+for future retrieval). The body of the native file becomes the entity content;
+the native ``description`` is carried into the body as a lead line when present.
+
+By default the script auto-locates the just-saved memory: it derives the
+project's native memory dir ``~/.claude/projects/<slug>/memory/`` (slug =
+:func:`entity_io.claude_project_slug` of the resolved cwd — the same slug
+doctor.py uses) and mirrors the most-recently-modified ``*.md`` there other than
+``MEMORY.md``. The entity ``--type`` defaults to the native ``metadata.type``
+from that file's frontmatter (``project`` if absent). Both can still be
+overridden: pass an explicit memory path (e.g. when several memories were saved
+this turn) and/or ``--type``.
 
 Usage:
+    python3 adapt_memory.py --trigger "<trigger>"
     python3 adapt_memory.py <native_memory_path> --type <type> --trigger <trigger>
 """
 
@@ -46,6 +54,7 @@ if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
 from entity_io import (  # noqa: E402
+    claude_memory_dir,
     find_entities_dir,
     get_default_entities_dir,
     slugify,
@@ -59,43 +68,75 @@ def log(message):
 
 
 def parse_native_memory(text):
-    """Split a native memory file into (name, description, body).
+    """Split a native memory file into (name, description, mem_type, body).
 
     Native frontmatter is simple ``key: value`` lines plus a nested
     ``metadata:`` block; we parse the top-level ``name`` and ``description``
-    lines and treat everything after the closing ``---`` as the body. The
-    ``name`` is the native slug we reuse as the stable entity id. Missing
-    frontmatter is tolerated — the whole text is then the body.
+    lines, the nested ``metadata.type`` value, and treat everything after the
+    closing ``---`` as the body. The ``name`` is the native slug we reuse as the
+    stable entity id; ``mem_type`` is used as the entity type when the caller
+    doesn't pass ``--type``. Missing frontmatter is tolerated — the whole text
+    is then the body.
     """
     name = None
     description = None
+    mem_type = None
     body = text
     if text.startswith("---"):
         parts = text.split("---", 2)
         if len(parts) >= 3:
             frontmatter, body = parts[1], parts[2]
+            in_metadata = False
             for line in frontmatter.splitlines():
-                # Only top-level keys (no leading indentation) — keeps the
-                # nested metadata.* keys out of the top-level matches.
-                if line[:1].isspace():
+                stripped = line.strip()
+                if not stripped:
                     continue
+                if line[:1].isspace():
+                    # Nested keys (under metadata:); we only care about type.
+                    if in_metadata:
+                        key, _, value = stripped.partition(":")
+                        if key.strip() == "type" and value.strip():
+                            mem_type = value.strip()
+                    continue
+                # Top-level key — keeps the nested metadata.* keys out of the
+                # top-level matches.
+                in_metadata = False
                 key, _, value = line.partition(":")
                 key = key.strip()
                 value = value.strip()
-                if key == "name" and value:
+                if key == "metadata":
+                    in_metadata = True
+                elif key == "name" and value:
                     name = value
                 elif key == "description" and value:
                     description = value
-    return name, description, body.strip()
+    return name, description, mem_type, body.strip()
+
+
+def locate_latest_memory(memory_dir):
+    """Return the most-recently-modified ``*.md`` under *memory_dir* other than
+    ``MEMORY.md`` (that's the memory just saved), or ``None`` if there is none.
+    """
+    if not memory_dir.is_dir():
+        return None
+    candidates = [p for p in memory_dir.glob("*.md") if p.is_file() and p.name != "MEMORY.md"]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Mirror a native memory into the evolve store.")
-    parser.add_argument("memory_path", help="Path to the just-saved native memory file.")
+    parser.add_argument(
+        "memory_path",
+        nargs="?",
+        help="Path to the just-saved native memory file. Omit to auto-locate the newest memory under ~/.claude/projects/<slug>/memory/.",
+    )
     parser.add_argument(
         "--type",
-        required=True,
-        help="Native memory type, passed through as the entity type (e.g. user, feedback, project, reference).",
+        default=None,
+        help="Entity type override (e.g. user, feedback, project, reference). "
+        "Defaults to the native frontmatter metadata.type, else 'project'.",
     )
     parser.add_argument(
         "--trigger",
@@ -104,10 +145,24 @@ def main():
     )
     args = parser.parse_args()
 
-    memory_path = Path(args.memory_path).expanduser()
-    if not memory_path.is_file():
-        print(f"Error: native memory file not found: {memory_path}", file=sys.stderr)
-        sys.exit(1)
+    if args.memory_path:
+        memory_path = Path(args.memory_path).expanduser()
+        if not memory_path.is_file():
+            print(f"Error: native memory file not found: {memory_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Auto-locate the just-saved native memory for this project.
+        memory_dir = claude_memory_dir(Path.cwd())
+        located = locate_latest_memory(memory_dir)
+        if located is None:
+            print(
+                f"No native memory found under {memory_dir}; pass the path explicitly.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        memory_path = located
+
+    memory_path = memory_path.resolve()
 
     try:
         text = memory_path.read_text(encoding="utf-8")
@@ -115,7 +170,7 @@ def main():
         print(f"Error: cannot read {memory_path} - {exc}", file=sys.stderr)
         sys.exit(1)
 
-    name, description, body = parse_native_memory(text)
+    name, description, mem_type, body = parse_native_memory(text)
     if not body:
         print(f"Error: native memory {memory_path} has no body to mirror.", file=sys.stderr)
         sys.exit(1)
@@ -132,12 +187,17 @@ def main():
     # content-derived slug only when the native frontmatter has no name.
     slug = slugify(name) if name else slugify(content)
 
+    # Explicit --type wins (back-compat); otherwise infer from the native
+    # frontmatter metadata.type, defaulting to "project" when neither is set.
+    entity_type = args.type or mem_type or "project"
+
     entity = {
-        "type": args.type,
+        "type": entity_type,
         "trigger": args.trigger,
         "content": content,
         "source": "native-memory",
-        "native_path": args.memory_path,
+        # Record the resolved path actually used (auto-located or explicit).
+        "native_path": str(memory_path),
     }
 
     entities_dir = find_entities_dir()

@@ -118,6 +118,32 @@ def slugify(text, max_length=60):
     return text or "entity"
 
 
+def claude_project_slug(path):
+    """Derive Claude's per-project directory name from an absolute path.
+
+    Claude names a project's ``~/.claude/projects/<slug>/`` directory by
+    replacing every non-alphanumeric character in the resolved absolute project
+    path with ``-``.
+
+    >>> claude_project_slug("/Users/x/evolve-smoke-test2")
+    '-Users-x-evolve-smoke-test2'
+
+    This is the single source of truth shared by doctor.py (transcript dir) and
+    adapt_memory.py (native memory dir).
+    """
+    return re.sub(r"[^A-Za-z0-9]", "-", str(Path(path).resolve()))
+
+
+def claude_memory_dir(path, home=None):
+    """Return the native Claude memory dir for the project rooted at *path*.
+
+    ``~/.claude/projects/<slug>/memory/`` where ``<slug>`` is
+    :func:`claude_project_slug` of *path*. *home* defaults to ``Path.home()``.
+    """
+    home = Path.home() if home is None else Path(home)
+    return home / ".claude" / "projects" / claude_project_slug(path) / "memory"
+
+
 def sanitize_type(text):
     """Sanitize an entity *type* into a filesystem-safe subdirectory name.
 

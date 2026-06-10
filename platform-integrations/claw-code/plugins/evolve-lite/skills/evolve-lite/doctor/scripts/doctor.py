@@ -36,6 +36,10 @@ import re
 import sys
 from pathlib import Path
 
+# Note: the shared lib import below provides `claude_project_slug`, the single
+# source of truth for the ~/.claude/projects/<slug>/ directory name (shared with
+# adapt_memory.py).
+
 # Walk up from the script location to find the installed plugin lib directory.
 # Every host installs the shared lib under lib/evolve-lite/ so multiple plugins
 # can coexist side by side. The doctor only needs the shared `log` helper, but
@@ -51,7 +55,7 @@ for _ancestor in _script.parents:
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
-from entity_io import log as _log  # noqa: E402
+from entity_io import claude_project_slug, log as _log  # noqa: E402
 
 
 def log(message):
@@ -78,18 +82,12 @@ def _evolve_dir(root):
     return root / ".evolve"
 
 
-def _transcript_slug(root):
-    """Claude derives a project's transcript dir name by replacing every
-    non-alphanumeric character in the absolute project path with ``-``.
-
-    e.g. /Users/x/Documents/kaizen -> -Users-x-Documents-kaizen
-    """
-    return re.sub(r"[^A-Za-z0-9]", "-", str(root))
-
-
 def _recent_transcripts(home, root, limit=_RECENT_N):
     """The most recent N ``*.jsonl`` transcripts for this project, by mtime."""
-    slug = _transcript_slug(root)
+    # Claude derives a project's transcript dir name the same way it derives the
+    # native memory dir name — see entity_io.claude_project_slug (one source of
+    # truth, shared with adapt_memory.py).
+    slug = claude_project_slug(root)
     proj_dir = home / ".claude" / "projects" / slug
     if not proj_dir.is_dir():
         return []

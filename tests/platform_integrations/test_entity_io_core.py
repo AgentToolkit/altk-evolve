@@ -5,6 +5,7 @@ covers the serialization and I/O functions needed by the sharing feature.
 """
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -51,6 +52,17 @@ class TestSlugify:
 
     def test_all_special_chars_returns_entity(self):
         assert entity_io.slugify("!!!") == "entity"
+
+
+class TestClaudeProjectSlug:
+    def test_maps_known_path_to_dash_form(self):
+        # The single source of truth shared by doctor.py and adapt_memory.py.
+        assert entity_io.claude_project_slug("/Users/x/evolve-smoke-test2") == "-Users-x-evolve-smoke-test2"
+
+    def test_memory_dir_under_given_home(self, tmp_path):
+        home = tmp_path / "home"
+        memory_dir = entity_io.claude_memory_dir("/Users/x/proj", home=home)
+        assert memory_dir == home / ".claude" / "projects" / "-Users-x-proj" / "memory"
 
 
 class TestUniqueFilename:
@@ -199,6 +211,11 @@ class TestAdaptMemory:
         monkeypatch.setattr(sys, "argv", ["adapt_memory.py", str(native), "--type", mem_type, "--trigger", trigger])
         adapt.main()
 
+    def _run_argv(self, adapt, argv, monkeypatch, cwd):
+        monkeypatch.chdir(cwd)
+        monkeypatch.setattr(sys, "argv", ["adapt_memory.py", *argv])
+        adapt.main()
+
     def test_id_is_type_slash_name_and_native_path_stamped(self, tmp_path, monkeypatch, capsys):
         adapt = _load_adapt_memory()
         native = self._write_native(tmp_path, "my-fact", "feedback", "Always rebase.", "A short hook")
@@ -237,6 +254,93 @@ class TestAdaptMemory:
         expected_slug = entity_io.slugify("Use deterministic builds everywhere.")
         assert f"Entity id: project/{expected_slug}" in out
         assert (tmp_path / ".evolve" / "entities" / "project" / f"{expected_slug}.md").exists()
+
+    def _seed_native_dir(self, sandbox_home, cwd):
+        """Create the project's native memory dir under the sandbox HOME and
+        return it. The dir name is derived exactly as the script does."""
+        memory_dir = entity_io.claude_memory_dir(cwd, home=sandbox_home)
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        return memory_dir
+
+    def test_auto_locate_picks_newest_non_memory_md(self, tmp_path, monkeypatch, capsys, sandbox_home):
+        # The script auto-locates the newest *.md (excluding MEMORY.md) under
+        # ~/.claude/projects/<slug-of-cwd>/memory/ when no path is passed.
+        adapt = _load_adapt_memory()
+        memory_dir = self._seed_native_dir(sandbox_home, tmp_path)
+
+        (memory_dir / "MEMORY.md").write_text("# index\n", encoding="utf-8")
+        older = memory_dir / "old-fact.md"
+        older.write_text("---\nname: old-fact\nmetadata:\n  type: reference\n---\n\nOld body.\n", encoding="utf-8")
+        newer = memory_dir / "new-fact.md"
+        newer.write_text("---\nname: new-fact\nmetadata:\n  type: feedback\n---\n\nNew body.\n", encoding="utf-8")
+        # Make the ordering unambiguous regardless of write speed.
+        os.utime(older, (1_000_000, 1_000_000))
+        os.utime(newer, (2_000_000, 2_000_000))
+
+        self._run_argv(adapt, ["--trigger", "when X happens"], monkeypatch, tmp_path)
+
+        out = capsys.readouterr().out
+        # Newest non-MEMORY.md mirrored; type inferred from its frontmatter.
+        assert "Entity id: feedback/new-fact" in out
+        entity_file = tmp_path / ".evolve" / "entities" / "feedback" / "new-fact.md"
+        assert entity_file.exists()
+        parsed = entity_io.markdown_to_entity(entity_file)
+        assert parsed["native_path"] == str(newer.resolve())
+        assert parsed["trigger"] == "when X happens"
+        # MEMORY.md was excluded; old-fact was not the newest.
+        assert not (tmp_path / ".evolve" / "entities" / "reference" / "old-fact.md").exists()
+
+    def test_type_default_project_when_no_frontmatter_type(self, tmp_path, monkeypatch, capsys, sandbox_home):
+        adapt = _load_adapt_memory()
+        memory_dir = self._seed_native_dir(sandbox_home, tmp_path)
+        (memory_dir / "MEMORY.md").write_text("# index\n", encoding="utf-8")
+        (memory_dir / "fact.md").write_text("---\nname: fact\n---\n\nNo type here.\n", encoding="utf-8")
+
+        self._run_argv(adapt, ["--trigger", "trig"], monkeypatch, tmp_path)
+
+        out = capsys.readouterr().out
+        assert "Entity id: project/fact" in out
+
+    def test_type_override_wins_over_frontmatter(self, tmp_path, monkeypatch, capsys, sandbox_home):
+        adapt = _load_adapt_memory()
+        memory_dir = self._seed_native_dir(sandbox_home, tmp_path)
+        (memory_dir / "MEMORY.md").write_text("# index\n", encoding="utf-8")
+        (memory_dir / "fact.md").write_text("---\nname: fact\nmetadata:\n  type: feedback\n---\n\nBody.\n", encoding="utf-8")
+
+        self._run_argv(adapt, ["--type", "user", "--trigger", "trig"], monkeypatch, tmp_path)
+
+        out = capsys.readouterr().out
+        assert "Entity id: user/fact" in out
+
+    def test_explicit_memory_path_still_works(self, tmp_path, monkeypatch, capsys, sandbox_home):
+        # Back-compat: an explicit path bypasses auto-location entirely.
+        adapt = _load_adapt_memory()
+        native = self._write_native(tmp_path, "my-fact", "feedback", "Explicit path body.")
+
+        self._run_argv(adapt, [str(native), "--type", "feedback", "--trigger", "trig"], monkeypatch, tmp_path)
+
+        out = capsys.readouterr().out
+        assert "Entity id: feedback/my-fact" in out
+
+    def test_error_when_memory_dir_absent_and_no_path(self, tmp_path, monkeypatch, capsys, sandbox_home):
+        adapt = _load_adapt_memory()
+        # Do NOT seed the native dir — auto-location should fail clearly.
+        with pytest.raises(SystemExit) as exc:
+            self._run_argv(adapt, ["--trigger", "trig"], monkeypatch, tmp_path)
+        assert exc.value.code != 0
+        err = capsys.readouterr().err
+        assert "No native memory found" in err
+
+    def test_error_when_memory_dir_empty_and_no_path(self, tmp_path, monkeypatch, capsys, sandbox_home):
+        adapt = _load_adapt_memory()
+        memory_dir = self._seed_native_dir(sandbox_home, tmp_path)
+        # Only MEMORY.md present — no eligible memory to mirror.
+        (memory_dir / "MEMORY.md").write_text("# index\n", encoding="utf-8")
+        with pytest.raises(SystemExit) as exc:
+            self._run_argv(adapt, ["--trigger", "trig"], monkeypatch, tmp_path)
+        assert exc.value.code != 0
+        err = capsys.readouterr().err
+        assert "No native memory found" in err
 
 
 class TestLoadAllEntities:
