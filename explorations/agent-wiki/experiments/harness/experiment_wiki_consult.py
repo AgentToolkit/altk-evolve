@@ -82,6 +82,15 @@ PLUGINS_DIR = REPO_ROOT / "platform-integrations" / "claude" / "plugins"
 DEMO_WORKSPACE = REPO_ROOT / "demo" / "workspace"
 
 
+def _display_path(p: Path) -> str:
+    """Path relative to REPO_ROOT when it lives under it, else the absolute
+    path. Avoids a ValueError when --out-root points outside the repo."""
+    try:
+        return str(p.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(p)
+
+
 _STRONG_HINT = (
     f"Before doing anything else in this workspace, read `{WIKI_NAME}/AGENTS.md` "
     f"and follow its retrieval recipe to find guidelines that apply to your task. "
@@ -464,8 +473,8 @@ def main(argv: list[str] | None = None) -> int:
             "- **cited guideline**: agent's text contains an expected guideline filename or wiki concept (e.g. `0xA434`, `0x8769`, `ExifIFD`).",
             "- **outcome match**: agent's text contains all required substrings — for the lens-model task, the answer `Google Pixel 4a Rear Wide Camera`.",
             "",
-            f"Runs JSONL: `{runs_path.relative_to(REPO_ROOT)}`",
-            f"Transcripts: `{transcripts_dir.relative_to(REPO_ROOT)}/`",
+            f"Runs JSONL: `{_display_path(runs_path)}`",
+            f"Transcripts: `{_display_path(transcripts_dir)}/`",
         ]
     )
     (out_dir / "summary.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
