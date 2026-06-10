@@ -110,3 +110,51 @@ as environment variables, for example `CODEX_MODEL_PROVIDER`,
 `CODEX_MODEL_PROVIDER_BASE_URL`, `CODEX_MODEL_PROVIDER_ENV_KEY`, and
 `CODEX_MODEL_PROVIDER_WIRE_API`. The test forwards only environment variable
 values into Docker; it does not mount host credential or Codex config files.
+
+## Bob Sandbox Auth
+
+Build the Bob image:
+
+```bash
+just sandbox-build bob
+```
+
+Authenticate once with browser SSO:
+
+```bash
+just bob-auth
+```
+
+Open the URL printed by Bob on the host machine. The recipe fixes
+`SSO_PORT` and publishes it to `127.0.0.1`, so the browser callback can reach
+the Bob process inside Docker. Auth state is stored in the ignored
+`.bob-sandbox-home/` directory and reused by `just bob-run`, `just bob-test`,
+and `just bob-prompt "..."`. The recipes also set a stable Docker hostname
+because Bob's encrypted file storage derives its key from the hostname; without
+that, credentials written in one `docker run --rm` session cannot be decrypted
+in the next.
+
+API-key auth with older `sk-` / `pk-` Bob keys can route Bob Shell 1.0.4 to
+`prod.ibm-bob-staging.cloud.ibm.com`, which may fail with a Cloudflare 403
+from inside Docker. Prefer SSO auth for this sandbox unless you have a current
+Bob API key known to work with the production Bob auth backend.
+
+## Bob Automated E2E Test
+
+`tests/e2e/test_bob_sandbox_learn_recall.py` runs the same learn + recall flow
+against the Dockerized Bob sandbox. Build the image, authenticate once, then
+run pytest:
+
+```bash
+just sandbox-build bob
+just bob-auth          # one-time browser SSO
+uv run pytest tests/e2e/test_bob_sandbox_learn_recall.py \
+  --run-e2e -m e2e -v --log-cli-level=INFO
+```
+
+The test mounts `.bob-sandbox-home/` (created by `bob-auth`) as the
+container's `~/.bob`, pins the Docker hostname so Bob's encrypted file storage
+decrypts across runs, and publishes `SSO_PORT` to `127.0.0.1`. It skips with a
+clear message if the image isn't built or if the auth state directory is
+missing. Set `BOB_HOME` / `BOB_HOSTNAME` / `BOB_SSO_PORT` env vars to override
+defaults.
