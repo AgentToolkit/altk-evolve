@@ -175,6 +175,19 @@ CLAUDE_ALLOW_RULES   = [
     "Write(.evolve/**)",
 ]
 
+# Bob (a Gemini-CLI fork) prefix-matches its shell allowlist and splits chained
+# commands, so allowlisting the exact recall-audit command can't widen (a
+# `; rm -rf` after it still prompts). We allowlist ONLY that command so the
+# recall-audit step stops prompting every session. We deliberately do NOT
+# touch the entity read/write prompts: Bob's file-tool allowlist is not
+# path-scopable to `.evolve/` the way Claude's `Write(.evolve/**)` is, and
+# enabling blanket auto-accept is too broad to do on the user's behalf. Lives in
+# `tools.allowed` of the GLOBAL ~/.bob/settings.json — the user's own config, so
+# we only ever add/remove this one rule and never own or delete the file.
+BOB_ALLOWED_TOOLS    = [
+    "run_shell_command(python3 ~/.bob/evolve-lite/" + AUDIT_SCRIPT + ")",
+]
+
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
 IS_TTY = sys.stdout.isatty()
@@ -423,6 +436,43 @@ class FileOps:
             self.remove_file(path)
         else:
             self.atomic_write_json(path, data)
+
+    def merge_bob_allowed_tools(self, path, rules):
+        """Idempotently merge `rules` into Bob's ``tools.allowed`` array,
+        preserving every rule already present and any other settings keys.
+        Creates the file/parents if missing. No duplicates on re-run."""
+        data = read_json(path)
+        tools = data.get("tools")
+        if not isinstance(tools, dict):
+            tools = {}
+            data["tools"] = tools
+        allowed = tools.get("allowed")
+        if not isinstance(allowed, list):
+            allowed = []
+            tools["allowed"] = allowed
+        for rule in rules:
+            if rule not in allowed:
+                allowed.append(rule)
+        self.atomic_write_json(path, data)
+
+    def remove_bob_allowed_tools(self, path, rules):
+        """Remove exactly `rules` from Bob's ``tools.allowed``, leaving any
+        user-added rules and every other key intact. Empties clean up the
+        ``allowed``/``tools`` keys, but — unlike the Claude variant — this NEVER
+        deletes the file: ``~/.bob/settings.json`` is the user's own global
+        config, not an evolve-owned artifact. No-op when the file is absent."""
+        if not os.path.isfile(str(path)):
+            return
+        data = read_json(path)
+        tools = data.get("tools")
+        if isinstance(tools, dict) and isinstance(tools.get("allowed"), list):
+            drop = set(rules)
+            tools["allowed"] = [r for r in tools["allowed"] if r not in drop]
+            if not tools["allowed"]:
+                tools.pop("allowed", None)
+            if not tools:
+                data.pop("tools", None)
+        self.atomic_write_json(path, data)
 
     # ── YAML helpers ──────────────────────────────────────────────────────────
 
@@ -927,6 +977,13 @@ class BobInstaller:
         path baked into the instructions always resolves."""
         return Path.home() / ".bob" / "evolve-lite" / AUDIT_SCRIPT
 
+    def _settings_file(self):
+        """Resolve Bob's GLOBAL settings.json — the user's own config. We merge a
+        single scoped allow-rule for the recall-audit command into its
+        ``tools.allowed`` (see BOB_ALLOWED_TOOLS); always global, matching the
+        always-global rules file and audit script."""
+        return Path.home() / ".bob" / "settings.json"
+
     def install(self, target_dir, mode="lite"):
         _ensure_source_dir()
         source_dir = SOURCE_DIR
@@ -994,6 +1051,16 @@ class BobInstaller:
                 self.ops.atomic_write_text(audit_file, "")
             success(f"Installed recall-audit script → {audit_file}")
 
+            # Auto-allowlist ONLY the recall-audit shell command so that one
+            # step stops prompting every session. Scoped to that exact command
+            # (Bob prefix-matches and splits chained commands, so it can't
+            # widen); entity read/write prompts are intentionally left intact
+            # and blanket auto-accept is not enabled. Merges into the user's
+            # global settings.json, preserving their other settings.
+            settings_file = self._settings_file()
+            self.ops.merge_bob_allowed_tools(settings_file, BOB_ALLOWED_TOOLS)
+            success(f"Allowlisted recall-audit command in {settings_file}")
+
         elif mode == "full":
             bob_source_full = Path(source_dir) / "platform-integrations" / "bob" / "evolve-full"
             mcp_source = bob_source_full / "mcp.json"
@@ -1027,6 +1094,10 @@ class BobInstaller:
         audit_file = self._audit_script_file()
         self.ops.remove_file(audit_file)
         self.ops.remove_dir_if_empty(audit_file.parent)
+        # Drop exactly our recall-audit allow-rule from the user's global
+        # settings.json; leaves their other settings intact and never deletes
+        # the file.
+        self.ops.remove_bob_allowed_tools(self._settings_file(), BOB_ALLOWED_TOOLS)
         # Full: remove the 'Evolve' custom mode (scope-correct *and* legacy
         # top-level file) and the MCP server entry. A stale BOB_SLUG custom mode
         # from a pre-redesign lite install is also swept up here.
@@ -1065,6 +1136,10 @@ class BobInstaller:
         print(f"    rules/{BOB_RULES_FILE}    : {'✓' if rules_file.is_file() else '✗'}")
         audit_file = self._audit_script_file()
         print(f"    evolve-lite/{AUDIT_SCRIPT} : {'✓' if audit_file.is_file() else '✗'}")
+        settings_file = self._settings_file()
+        allowed = read_json(settings_file).get("tools", {}).get("allowed", []) if settings_file.is_file() else []
+        has_allow = all(r in allowed for r in BOB_ALLOWED_TOOLS)
+        print(f"    settings audit allowlist  : {'✓' if has_allow else '✗'}")
         modes_file = self._modes_file(bob_target)
         modes_rel = str(modes_file.relative_to(bob_target))
         print(f"    {modes_rel:<25} : {'✓ (full mode)' if modes_file.is_file() else '✗'}")

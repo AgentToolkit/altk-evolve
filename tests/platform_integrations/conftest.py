@@ -80,6 +80,15 @@ def bob_audit_script(sandbox_home):
 
 
 @pytest.fixture
+def bob_settings_file(sandbox_home):
+    """Path to the sandboxed Bob GLOBAL settings.json (the user's own config).
+
+    The lite installer merges a single scoped allow-rule for the recall-audit
+    command into its ``tools.allowed``; always global, like the rules file."""
+    return sandbox_home / ".bob" / "settings.json"
+
+
+@pytest.fixture
 def codex_audit_script(sandbox_home):
     """Path to the sandboxed Codex GLOBAL recall-audit script.
 
