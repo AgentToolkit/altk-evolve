@@ -1,0 +1,143 @@
+# Tasks for the wiki-consult A/B experiment.
+# Each block defines a prompt + outcome match rules.
+
+- id: t1-lens-model
+  prompt: "what lens model was used for @sample.jpg. use exif metadata"
+  outcome_match_all:
+    - "Google Pixel 4a Rear Wide Camera"
+  outcome_match_any:
+    - "0xA434"
+    - "0x8769"
+    - "ExifIFD"
+    - "Exif sub-IFD"
+  expected_guideline_filenames:
+    - "walk-exififd-via-tag-0x8769-for-camera__29547d9e9042.md"
+    - "use-stdlib-struct-exif-parser-when__967ec7025f31.md"
+    - "find-exif-behind-app1-marker-0xffe1__b20480acbb88.md"
+
+# ─────── Codebase-exploration family (shared "grep a path scope" pattern) ───────
+
+- id: t2-imports
+  prompt: "List every file under /workspace/src or /workspace/tests that imports the `parser` module."
+  outcome_match_all:
+    - "writer.py"
+    - "api.py"
+    - "test_parser.py"
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: codebase
+
+- id: t3-todos
+  prompt: "Find every TODO comment under /workspace/ — show the file and the matching line."
+  outcome_match_all:
+    - "parser.py"
+    - "TODO"
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: codebase
+
+- id: t4-defs
+  prompt: "How many Python `def` function definitions are in /workspace/src/? Reply with just the integer."
+  outcome_match_all:
+    - "4"
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: codebase
+
+# ─────── Disjoint task (no shared pattern; tests skip-when-inapplicable) ───────
+
+- id: t5-base64
+  prompt: "Convert the ASCII string 'Hello, World!' to standard base64. Reply with just the base64 string."
+  outcome_match_all:
+    - "SGVsbG8sIFdvcmxkIQ=="
+  outcome_match_any: []
+  expected_guideline_filenames: []
+
+# ─────── Real-task family: data/file-format parsing ───────
+# Each trial seeds a tiny valid sample of the format under /workspace/.
+# The agent's job is to read specific fields. Outcome scoring is loose —
+# we want a parser-recipe atomic to fall out of each trajectory.
+
+- id: t6-png-dim
+  prompt: "Read the width and height of /workspace/sample.png. Reply as 'WIDTHxHEIGHT'."
+  outcome_match_all: ["100x100"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: image-formats
+
+- id: t7-gif-dim
+  prompt: "Read the GIF version string and dimensions from /workspace/sample.gif. Reply on one line."
+  outcome_match_all: ["GIF89a", "50", "30"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: image-formats
+
+- id: t8-bmp-info
+  prompt: "Read the width and bit depth of /workspace/sample.bmp."
+  outcome_match_all: ["4", "24"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: image-formats
+
+- id: t9-webp-dim
+  prompt: "Read the width and height of /workspace/sample.webp. Reply as 'WIDTHxHEIGHT'."
+  outcome_match_all: ["32x32"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: image-formats
+
+- id: t10-zip-list
+  prompt: "List all entry names inside /workspace/sample.zip, one per line."
+  outcome_match_all: ["foo.txt", "bar/baz.txt"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: archive-formats
+
+- id: t11-tar-list
+  prompt: "List all entries in /workspace/sample.tar."
+  outcome_match_all: ["alpha.txt", "nested/beta.txt"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: archive-formats
+
+- id: t12-wav-info
+  prompt: "What is the sample rate and channel count of /workspace/sample.wav?"
+  outcome_match_all: ["44100", "1"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: archive-formats
+
+- id: t13-gzip-dec
+  prompt: "Decompress /workspace/sample.gz and show the first line."
+  outcome_match_all: ["hello"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: archive-formats
+
+- id: t14-csv-quoted
+  prompt: "How many rows in /workspace/data.csv contain a quoted comma in any field? Reply with just the integer."
+  outcome_match_all: ["2"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: text-formats
+
+- id: t15-jsonl-kinds
+  prompt: "Count the distinct values of the 'kind' field across /workspace/events.jsonl. Reply with just the integer."
+  outcome_match_all: ["3"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: text-formats
+
+- id: t16-ini-key
+  prompt: "Read the value of [server].port from /workspace/config.ini."
+  outcome_match_all: ["8080"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: text-formats
+
+- id: t17-log-errors
+  prompt: "How many ERROR lines are in /workspace/app.log? Reply with just the integer."
+  outcome_match_all: ["2"]
+  outcome_match_any: []
+  expected_guideline_filenames: []
+  seed: text-formats

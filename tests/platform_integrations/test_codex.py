@@ -75,7 +75,7 @@ class TestCodexInstall:
         file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "subscribe" / "scripts" / "subscribe.py")
         file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "unsubscribe" / "scripts" / "unsubscribe.py")
         file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "sync" / "scripts" / "sync.py")
-        file_assertions.assert_file_exists(plugin_dir / "lib" / "entity_io.py")
+        file_assertions.assert_file_exists(plugin_dir / "lib" / "evolve-lite" / "entity_io.py")
 
         marketplace_path = temp_project_dir / ".agents" / "plugins" / "marketplace.json"
         file_assertions.assert_valid_json(marketplace_path)

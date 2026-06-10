@@ -1,6 +1,6 @@
 [project]
 name = "altk-evolve"
-version = "1.1.0"
+version = "1.1.3"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -46,6 +46,9 @@ examples = [
 [project.scripts]
 evolve = "altk_evolve.cli.cli:app"
 evolve-mcp = "altk_evolve.frontend.mcp.__main__:main"
+
+
+
 
 [dependency-groups]
 dev = [
@@ -103,6 +106,9 @@ anyio_mode = "auto"
 [tool.ruff]
 line-length = 140
 indent-width = 4
+# Generated example-wiki content (scripts the wiki builder emitted verbatim from
+# trajectories) is exploration artifact, not project source — don't lint it.
+extend-exclude = ["explorations/agent-wiki/wikis/"]
 
 [tool.semantic_release]
 allow_zero_version = true
@@ -163,6 +169,7 @@ exclude = [
     "platform-integrations/",
     "plugin-source/",
     "examples/",
+    "explorations/agent-wiki/wikis/",
 ]
 
 [[tool.mypy.overrides]]

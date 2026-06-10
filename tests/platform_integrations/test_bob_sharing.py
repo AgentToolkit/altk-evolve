@@ -14,7 +14,7 @@ _BOB_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/bob/evo
 
 
 def _load_bob_config_module():
-    path = _BOB_ROOT / "lib/config.py"
+    path = _BOB_ROOT / "lib/evolve-lite/config.py"
     spec = importlib.util.spec_from_file_location("bob_evolve_lite_config", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

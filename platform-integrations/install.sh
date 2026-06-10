@@ -342,7 +342,6 @@ class FileOps:
         mode_block = "\n".join(mode_lines).strip()
         start = _sentinel_start(slug)
         end   = _sentinel_end(slug)
-        block = f"\n{start}\n  {mode_block.replace(chr(10), chr(10) + '  ')}\n{end}\n"
 
         try:
             with open(target_yaml_path) as f:
@@ -353,9 +352,34 @@ class FileOps:
         if not existing.strip() or "customModes:" not in existing:
             existing = "customModes:\n"
 
-        if start in existing:
-            pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.DOTALL)
-            new_content = pattern.sub(block.strip(), existing)
+        # Match the list-item indentation already used under `customModes:` so the
+        # inserted block doesn't mix 0-indent and 2-indent sequence items (which is
+        # invalid YAML). The source uses 2-space items; a target written by
+        # yaml.safe_dump (Bob/marketplace tooling) may use 0-space. Detect and match.
+        item_indent = "  "
+        seen_modes = False
+        for ln in existing.splitlines():
+            if ln.strip() == "customModes:":
+                seen_modes = True
+                continue
+            if seen_modes and ln.lstrip().startswith("- "):
+                item_indent = ln[: len(ln) - len(ln.lstrip())]
+                break
+        block_body = "\n".join(item_indent + ln if ln else ln for ln in mode_block.split("\n"))
+        block = f"\n{start}\n{block_body}\n{end}\n"
+
+        # Match a *real* sentinel block only: the start and end markers must each
+        # sit at the beginning of a line. A bare sentinel substring inside another
+        # mode's quoted scalar (e.g. the install-evolve-lite mode documents the
+        # literal `# >>>evolve:evolve-lite<<<` in its customInstructions) must NOT
+        # be treated as an existing block — otherwise the replace finds no matching
+        # end, no-ops, and the merge is silently dropped while still reporting ✓.
+        block_re = re.compile(
+            r"^[ \t]*" + re.escape(start) + r".*?^[ \t]*" + re.escape(end) + r"[^\n]*$",
+            re.DOTALL | re.MULTILINE,
+        )
+        if block_re.search(existing):
+            new_content = block_re.sub(lambda _m: block.strip(), existing)
         else:
             new_content = existing.rstrip() + block
 
@@ -370,9 +394,11 @@ class FileOps:
             text = f.read()
         start = _sentinel_start(slug)
         end   = _sentinel_end(slug)
+        # Line-anchored so a sentinel literal mentioned inside another mode's
+        # quoted text is never mistaken for a real block (see merge above).
         pattern = re.compile(
-            r"\n?" + re.escape(start) + r".*?" + re.escape(end) + r"\n?",
-            re.DOTALL
+            r"^[ \t]*" + re.escape(start) + r".*?" + re.escape(end) + r"[^\n]*$\n?",
+            re.DOTALL | re.MULTILINE,
         )
         self.atomic_write_text(target_yaml_path, pattern.sub("", text))
 
@@ -504,12 +530,41 @@ class BobInstaller:
             for entry in sorted(bob_target.iterdir()):
                 if entry.is_dir() and entry.name.startswith("evolve"):
                     self.ops.remove_dir(entry)
+        # The shared lib now renders under lib/evolve-lite/ (namespaced so
+        # plugins can co-locate in lib/). It is no longer an evolve-prefixed
+        # top-level dir, so the loop above misses it — remove our subdir
+        # explicitly, leaving the shared lib/ parent and any sibling
+        # lib/<other-plugin>/ intact.
+        lib_dir = bob_target / "lib" / "evolve-lite"
+        if lib_dir.is_dir():
+            self.ops.remove_dir(lib_dir)
+
+    def _modes_file(self, bob_target):
+        """Resolve where Bob *reads* custom modes for this target.
+
+        Bob's config is asymmetric: it loads global modes from
+        ``<home>/.bob/settings/custom_modes.yaml`` but project-scoped modes
+        from ``<project>/.bob/custom_modes.yaml`` (bob bundle: the global
+        reader joins ``settings/``, the workspace reader does not). Writing to
+        the wrong one installs a mode Bob never loads, so mirror Bob's split.
+        """
+        if bob_target.resolve() == (Path.home() / ".bob").resolve():
+            return bob_target / "settings" / "custom_modes.yaml"
+        return bob_target / "custom_modes.yaml"
+
+    def _mcp_file(self, bob_target):
+        """Global MCP settings live at ``<home>/.bob/settings/mcp_settings.json``;
+        project scope keeps ``<project>/.bob/mcp.json``."""
+        if bob_target.resolve() == (Path.home() / ".bob").resolve():
+            return bob_target / "settings" / "mcp_settings.json"
+        return bob_target / "mcp.json"
 
     def install(self, target_dir, mode="lite"):
         _ensure_source_dir()
         source_dir = SOURCE_DIR
         bob_source_lite = Path(source_dir) / "platform-integrations" / "bob" / "evolve-lite"
         bob_target = Path(target_dir) / ".bob"
+        modes_file = self._modes_file(bob_target)
 
         info(f"Installing Bob ({mode} mode) → {bob_target}")
 
@@ -521,10 +576,10 @@ class BobInstaller:
         self._purge_evolve_artifacts(bob_target)
 
         if mode == "lite":
-            shared_lib = bob_source_lite / "lib"
+            shared_lib = bob_source_lite / "lib" / "evolve-lite"
             if not self.ops.is_dry_run and not shared_lib.is_dir():
                 raise RuntimeError(f"Shared lib not found: {shared_lib}")
-            self.ops.copy_tree(shared_lib, bob_target / "evolve-lib")
+            self.ops.copy_tree(shared_lib, bob_target / "lib" / "evolve-lite")
             success("Copied Bob lib")
 
             skills_src = bob_source_lite / "skills"
@@ -543,29 +598,30 @@ class BobInstaller:
 
             self.ops.merge_yaml_custom_mode(
                 bob_source_lite / "custom_modes.yaml",
-                bob_target / "custom_modes.yaml",
+                modes_file,
                 BOB_SLUG,
             )
-            success(f"Merged custom mode '{BOB_SLUG}' into {bob_target / 'custom_modes.yaml'}")
+            success(f"Merged custom mode '{BOB_SLUG}' into {modes_file}")
 
         elif mode == "full":
             bob_source_full = Path(source_dir) / "platform-integrations" / "bob" / "evolve-full"
             mcp_source = bob_source_full / "mcp.json"
             if not self.ops.is_dry_run and not mcp_source.exists():
                 raise RuntimeError(f"Source MCP config not found: {mcp_source}")
+            mcp_file = self._mcp_file(bob_target)
             if not self.ops.is_dry_run:
                 mcp_data = read_json(mcp_source)
-                self.ops.upsert_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"], mcp_data["mcpServers"]["evolve"])
+                self.ops.upsert_json_key(mcp_file, ["mcpServers", "evolve"], mcp_data["mcpServers"]["evolve"])
             else:
-                self.ops.upsert_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"], {})
-            success(f"Upserted MCP server config in {bob_target / 'mcp.json'}")
+                self.ops.upsert_json_key(mcp_file, ["mcpServers", "evolve"], {})
+            success(f"Upserted MCP server config in {mcp_file}")
 
             self.ops.merge_yaml_custom_mode(
                 bob_source_full / "custom_modes.yaml",
-                bob_target / "custom_modes.yaml",
+                modes_file,
                 "Evolve",
             )
-            success(f"Merged custom mode 'Evolve' into {bob_target / 'custom_modes.yaml'}")
+            success(f"Merged custom mode 'Evolve' into {modes_file}")
 
         success("Bob installation complete")
 
@@ -574,16 +630,21 @@ class BobInstaller:
         info(f"Uninstalling Bob from {bob_target}")
 
         self._purge_evolve_artifacts(bob_target)
-        self.ops.remove_yaml_custom_mode(bob_target / "custom_modes.yaml", BOB_SLUG)
-        self.ops.remove_yaml_custom_mode(bob_target / "custom_modes.yaml", "Evolve")
-        self.ops.remove_json_key(bob_target / "mcp.json", ["mcpServers", "evolve"])
+        # Remove from the scope-correct location *and* the legacy top-level
+        # file, so installs written before the settings/ split are cleaned up.
+        modes_files = {self._modes_file(bob_target), bob_target / "custom_modes.yaml"}
+        for mf in modes_files:
+            self.ops.remove_yaml_custom_mode(mf, BOB_SLUG)
+            self.ops.remove_yaml_custom_mode(mf, "Evolve")
+        for mcpf in {self._mcp_file(bob_target), bob_target / "mcp.json"}:
+            self.ops.remove_json_key(mcpf, ["mcpServers", "evolve"])
 
         success("Bob uninstall complete")
 
     def status(self, target_dir):
         bob_target = Path(target_dir) / ".bob"
         print(f"  Bob (.bob/):")
-        print(f"    evolve-lib/entity_io      : {'✓' if (bob_target / 'evolve-lib' / 'entity_io.py').is_file() else '✗'}")
+        print(f"    lib/evolve-lite/entity_io : {'✓' if (bob_target / 'lib' / 'evolve-lite' / 'entity_io.py').is_file() else '✗'}")
         skills_dir = bob_target / "skills"
         # Glob `evolve*` rather than `evolve-lite-*` so legacy colon-form
         # skills (`evolve-lite:learn` etc.) show up in status; otherwise
@@ -598,9 +659,12 @@ class BobInstaller:
         commands_dir = bob_target / "commands"
         installed_cmds = sorted(commands_dir.glob("evolve*.md")) if commands_dir.is_dir() else []
         print(f"    commands/ ({len(installed_cmds)} evolve commands) : {'✓' if installed_cmds else '✗'}")
-        print(f"    custom_modes.yaml         : {'✓' if (bob_target / 'custom_modes.yaml').is_file() else '✗'}")
-        has_mcp = "evolve" in read_json(bob_target / "mcp.json").get("mcpServers", {}) if (bob_target / "mcp.json").is_file() else False
-        print(f"    mcp.json (full mode)      : {'✓' if has_mcp else '✗'}")
+        modes_file = self._modes_file(bob_target)
+        modes_rel = str(modes_file.relative_to(bob_target))
+        print(f"    {modes_rel:<25} : {'✓' if modes_file.is_file() else '✗'}")
+        mcp_file = self._mcp_file(bob_target)
+        has_mcp = "evolve" in read_json(mcp_file).get("mcpServers", {}) if mcp_file.is_file() else False
+        print(f"    mcp (full mode)           : {'✓' if has_mcp else '✗'}")
 
 
 # ── Claude ────────────────────────────────────────────────────────────────────
@@ -1069,7 +1133,7 @@ class CodexInstaller:
         plugin_dir = Path(target_dir) / "plugins" / CODEX_PLUGIN
         print("  Codex:")
         print(f"    plugins/evolve-lite       : {'✓' if plugin_dir.is_dir() else '✗'}")
-        print(f"    lib/entity_io.py          : {'✓' if (plugin_dir / 'lib' / 'entity_io.py').is_file() else '✗'}")
+        print(f"    lib/evolve-lite/entity_io : {'✓' if (plugin_dir / 'lib' / 'evolve-lite' / 'entity_io.py').is_file() else '✗'}")
         print(f"    skills/evolve-lite/learn  : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'learn').is_dir() else '✗'}")
         print(f"    skills/evolve-lite/recall : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'recall').is_dir() else '✗'}")
 

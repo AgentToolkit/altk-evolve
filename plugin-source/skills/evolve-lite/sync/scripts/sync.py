@@ -20,16 +20,14 @@ import sys
 from pathlib import Path
 
 # Walk up from the script location to find the installed plugin lib directory.
-# claude/claw-code/codex/bob all ship a sibling lib/ next to skills/; bob's
-# installer copies it to .bob/evolve-lib/, hence both names are checked.
+# Every host installs the shared lib under lib/evolve-lite/ so multiple
+# plugins can coexist side by side (e.g. .bob/lib/evolve-lite/).
 _script = Path(__file__).resolve()
 _lib = None
 for _ancestor in _script.parents:
-    for _candidate in (_ancestor / "lib", _ancestor / "evolve-lib"):
-        if (_candidate / "entity_io.py").is_file():
-            _lib = _candidate
-            break
-    if _lib is not None:
+    _candidate = _ancestor / "lib" / "evolve-lite"
+    if (_candidate / "entity_io.py").is_file():
+        _lib = _candidate
         break
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
