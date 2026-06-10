@@ -1,12 +1,18 @@
 """End-to-end test of the evolve-lite learn + recall flow in the Bob sandbox.
 
-Runs three sequential Bob CLI sessions against the Dockerized Bob sandbox:
+Runs two sequential Bob CLI sessions against the Dockerized Bob sandbox:
   1. Session 1 performs an EXIF task, then explicitly invokes the evolve-lite
      save-trajectory and learn skills so a trajectory and guideline are saved.
   2. Session 2 asks a related EXIF question. The recall skill should surface
      the guideline from session 1 before substantive work begins.
-  3. Session 3 runs the offline provenance skill so the recall audit gets
-     follow-up influence verdicts.
+
+Bob 1.0.4 has no ``UserPromptSubmit`` hook, so the recall script never gets a
+session id from the runtime and cannot emit a ``recall`` audit event the way
+the Claude/Codex tests rely on. Without a recall audit event there is nothing
+for ``evolve-lite:provenance`` to assess, so this test does not run a third
+provenance session — it validates only the learn + recall evidence that Bob
+can actually produce: guideline files in ``.evolve/entities/`` and references
+to those guidelines in session 2's saved trajectory.
 
 Requires Docker, the ``evolve-bob-sandbox`` image built, and a persisted Bob
 SSO auth state on the host (created by ``just bob-auth``). The test mounts
@@ -14,7 +20,6 @@ that auth state read-write into the container alongside a stable hostname so
 Bob's encrypted file storage decrypts across runs.
 """
 
-import json
 import logging
 import os
 import shutil
@@ -115,16 +120,9 @@ def _run_bob_prompt(
     return subprocess.run(cmd, capture_output=True, text=True, timeout=SESSION_TIMEOUT_SECONDS)
 
 
-def _audit_events(evolve_dir: Path) -> list[dict]:
-    audit_log = evolve_dir / "audit.log"
-    if not audit_log.is_file():
-        return []
-    return [json.loads(line) for line in audit_log.read_text().splitlines() if line.strip()]
-
-
 @pytest.mark.e2e
 def test_bob_learn_then_recall_flow(bob_sandbox_ready, bob_workspace):
-    """Session 1 learns, session 2 recalls, session 3 records influence."""
+    """Session 1 learns, session 2 recalls."""
     bob_home = bob_sandbox_ready
     evolve_dir = bob_workspace / ".evolve"
 
@@ -176,43 +174,14 @@ def test_bob_learn_then_recall_flow(bob_sandbox_ready, bob_workspace):
     assert session2_trajectories, f"no Bob trajectory saved for session 2 in {trajectories_dir}"
     session2_trajectory = max(session2_trajectories, key=lambda p: p.stat().st_mtime)
 
-    # Bob has no UserPromptSubmit hook, so the recall skill cannot emit a
-    # recall audit event the way the codex/claude tests do. Verify recall
-    # influence indirectly: session 2's saved trajectory should reference
-    # one of the guideline files (or its key content) from session 1.
+    # Bob 1.0.4 has no UserPromptSubmit hook, so the recall script never
+    # gets a session id from the runtime and cannot emit a recall audit
+    # event. Without a recall audit there is nothing for evolve-lite:provenance
+    # to assess, so this test stops at the indirect evidence Bob can produce:
+    # session 2's saved trajectory should reference one of the guideline
+    # files learned in session 1.
     learned_ids = {str(path.relative_to(entities_dir).with_suffix("")) for path in entity_files}
     session2_text = session2_trajectory.read_text(encoding="utf-8")
     assert any(eid.split("/")[-1] in session2_text for eid in learned_ids), (
         f"session 2 trajectory did not reference any guideline filename from {learned_ids}"
     )
-
-    log.info("bob session 3: running offline provenance analysis...")
-    t2 = time.time()
-    session2_id = session2_trajectory.stem
-    result3 = _run_bob_prompt(
-        bob_workspace,
-        bob_home,
-        (
-            "Run the evolve-lite provenance skill now. Analyze the saved trajectories in "
-            ".evolve/trajectories/. Record influence verdicts for the guidelines under "
-            f".evolve/entities/guideline/ as applied (or not) in trajectory {session2_id}. "
-            "Do not modify source files."
-        ),
-    )
-    log.info(f"bob session 3: exited {result3.returncode} after {time.time() - t2:.0f}s")
-    assert result3.returncode == 0, (
-        f"session 3 exited {result3.returncode}\nstdout:\n{result3.stdout[-2000:]}\nstderr:\n{result3.stderr[-2000:]}"
-    )
-
-    events = _audit_events(evolve_dir)
-    influence_events = [event for event in events if event.get("event") == "influence"]
-    assert influence_events, f"no influence audit event recorded. all events: {events}"
-    influenced_ids = {event.get("entity") for event in influence_events}
-    assert influenced_ids & learned_ids, f"influence events {influence_events} did not assess any learned ids {learned_ids}"
-    allowed_verdicts = {"followed", "contradicted", "not_applicable"}
-    assert any(event.get("verdict") in allowed_verdicts for event in influence_events), (
-        f"no learned guideline was assessed with an allowed verdict. influence events: {influence_events}"
-    )
-    for event in influence_events:
-        assert event.get("verdict") in allowed_verdicts
-        assert event.get("evidence"), f"influence event missing evidence: {event}"
