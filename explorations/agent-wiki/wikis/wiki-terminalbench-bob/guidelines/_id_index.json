@@ -1,8 +1,0 @@
-{
-  "1cd395fcf4f2": "guidelines/get-pandas-from-apt-and-pyarrow-from-pip__1cd395fcf4f2.md",
-  "3ef4ed4a5952": "guidelines/heredoc-python-scripts-into-the__3ef4ed4a5952.md",
-  "4be167482caa": "guidelines/verify-the-written-output-by-reading-it__4be167482caa.md",
-  "716da6023763": "guidelines/probe-the-runtime-before-assuming__716da6023763.md",
-  "eaaa989db78a": "guidelines/re-run-the-failing-command-after-every__eaaa989db78a.md",
-  "f35c351a3403": "guidelines/read-in-container-files-via-docker-exec__f35c351a3403.md"
-}

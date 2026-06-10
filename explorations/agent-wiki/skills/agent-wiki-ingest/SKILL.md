@@ -61,7 +61,7 @@ One of:
 - a directory of traces (the skill globs it)
 - already-normalized analysis JSON files
 
-…plus a target `--wiki-root` (e.g. `wiki-terminalbench-bob`).
+…plus a target `--wiki-root` (e.g. `wiki-twobatch-skills`).
 
 ### Detecting trace shape (Step 0 dispatch)
 

@@ -1,8 +1,0 @@
-{
-  "aggregate-jsonl-records-top-n-by-key": "skills/aggregate-jsonl-records-top-n-by-key/SKILL.md",
-  "author-jq-transform-with-yaml-roundtrip": "skills/author-jq-transform-with-yaml-roundtrip/SKILL.md",
-  "diagnose-and-bump-version-mismatch-on-upgrade": "skills/diagnose-and-bump-version-mismatch-on-upgrade/SKILL.md",
-  "install-python-data-stack-on-pep668-debian": "skills/install-python-data-stack-on-pep668-debian/SKILL.md",
-  "join-csvs-on-heterogeneous-date-keys": "skills/join-csvs-on-heterogeneous-date-keys/SKILL.md",
-  "repair-broken-system-pip-installation": "skills/repair-broken-system-pip-installation/SKILL.md"
-}

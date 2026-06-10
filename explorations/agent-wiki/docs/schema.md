@@ -5,13 +5,13 @@ kind, the load-bearing metadata fields, how pages link, and the lifecycle by
 which atomic guidelines get promoted into clusters or archived under skills.
 
 For the *why* behind this structure, see
-[`agent-wiki-design.md`](agent-wiki-design.md). For the recall-time contract
+[`design.md`](design.md). For the recall-time contract
 an agent follows, see
-[`_default_agents.md`](../plugin-source/skills/agent-wiki/scripts/_default_agents.md)
+[`_default_agents.md`](../skills/scripts/_default_agents.md)
 (copied into each wiki as `AGENTS.md`). The source of truth for everything
 below is the builder
-[`build_agent_wiki.py`](../plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py);
-real examples are drawn from `wiki-terminalbench-bob/`.
+[`build_agent_wiki.py`](../skills/scripts/build_agent_wiki.py);
+real examples are drawn from the `wiki-twobatch-*` example wikis.
 
 ---
 
@@ -137,7 +137,7 @@ id: 84ed6cf26387
 type: guideline
 trigger: Need to put a multi-line script inside a running Docker container before executing it.
 agent: claude-code
-tags: [docker, heredoc, shell, scripting, terminal-bench]
+tags: [docker, heredoc, shell, scripting, example]
 sources:
   - trajectories/df2b08e4-openai-chat-completions.analysis.json
 related_summary: summaries/df2b08e4-7853-47ec-9c46-fee4b0a33eb7.md
@@ -200,7 +200,7 @@ sources:
   - trajectories/d0e03862-openai-chat-completions.analysis.json
 related_summary: summaries/d0e03862-30c5-49b6-9aef-b97dcea57dc0.md
 verified_at: 2026-06-09
-tags: [jq, json, yaml, terminal-bench]
+tags: [jq, json, yaml, example]
 ---
 ```
 
@@ -239,8 +239,8 @@ add `priority: high`; guideline rows add `cluster` and (when clustered)
 
 ```jsonl
 {"kind": "cluster", "id": "cluster:container-boundary-one-shot", "title": "Cross the host/container boundary in one docker exec", "tags": ["docker","container","shell","io"], "trigger": "", "summary": "Benchmark tasks frequently live inside a named Docker container…", "link": "guidelines/container-boundary-one-shot__cluster.md", "members": ["84ed6cf26387","6c2bd298dd0d"], "priority": "high"}
-{"kind": "skill", "id": "skill:aggregate-jsonl-records-top-n-by-sum-and-count", "title": "aggregate-jsonl-records-top-n-by-sum-and-count", "tags": ["jsonl","python","aggregation","terminal-bench"], "trigger": "Task gives a directory of large JSONL files…", "summary": "Aggregate many JSONL files in one streaming Python pass…", "link": "skills/aggregate-jsonl-records-top-n-by-sum-and-count/SKILL.md", "priority": "high"}
-{"kind": "guideline", "id": "3c019235c9f8", "title": "Format ISO 8601 to YYYY-MM-DD with split T", "tags": ["jq","iso-8601","date-formatting","terminal-bench"], "trigger": "Inside a jq filter, you need only the calendar date…", "summary": "…use `(.last_login | split(\"T\")[0])`.", "link": "guidelines/format-iso-8601-to-yyyy-mm-dd-with__3c019235c9f8.md", "cluster": null}
+{"kind": "skill", "id": "skill:aggregate-jsonl-records-top-n-by-sum-and-count", "title": "aggregate-jsonl-records-top-n-by-sum-and-count", "tags": ["jsonl","python","aggregation","example"], "trigger": "Task gives a directory of large JSONL files…", "summary": "Aggregate many JSONL files in one streaming Python pass…", "link": "skills/aggregate-jsonl-records-top-n-by-sum-and-count/SKILL.md", "priority": "high"}
+{"kind": "guideline", "id": "3c019235c9f8", "title": "Format ISO 8601 to YYYY-MM-DD with split T", "tags": ["jq","iso-8601","date-formatting","example"], "trigger": "Inside a jq filter, you need only the calendar date…", "summary": "…use `(.last_login | split(\"T\")[0])`.", "link": "guidelines/format-iso-8601-to-yyyy-mm-dd-with__3c019235c9f8.md", "cluster": null}
 ```
 
 **Archived guidelines are absent from `_index.jsonl`** — that's what makes
@@ -420,8 +420,7 @@ re-cataloging by hand.
 
 ## 6. Worked example — one real chain
 
-Tracing the atomic `heredoc-python-scripts-into-the__84ed6cf26387` through
-`wiki-terminalbench-bob/`.
+Tracing the atomic `heredoc-python-scripts-into-the__84ed6cf26387` through one of the example wikis.
 
 **(a) The atomic** carries forward links to its summary + its cluster (the
 `cluster:`/`superseded_by:` pair was stamped by catalog when the cluster was
@@ -431,7 +430,7 @@ declared):
 id: 84ed6cf26387
 type: guideline
 agent: claude-code
-tags: [docker, heredoc, shell, scripting, terminal-bench]
+tags: [docker, heredoc, shell, scripting, example]
 sources:
   - trajectories/df2b08e4-openai-chat-completions.analysis.json
 related_summary: summaries/df2b08e4-7853-47ec-9c46-fee4b0a33eb7.md
@@ -479,7 +478,6 @@ either authored at render (forward) or recomputed by catalog (reverse).
 
 ## See also
 
-- [`agent-wiki-design.md`](agent-wiki-design.md) — why the wiki is shaped this way (rationale, principles, empirical results).
-- [`_default_agents.md`](../plugin-source/skills/agent-wiki/scripts/_default_agents.md) — the recall-time contract (`AGENTS.md`).
-- [`WIKIS.md`](../WIKIS.md) — inventory of the wikis in this repo.
-- [`build_agent_wiki.py`](../plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py) — the builder; the implementation of everything above.
+- [`design.md`](design.md) — why the wiki is shaped this way (rationale, principles, empirical results).
+- [`_default_agents.md`](../skills/scripts/_default_agents.md) — the recall-time contract (`AGENTS.md`).
+- [`build_agent_wiki.py`](../skills/scripts/build_agent_wiki.py) — the builder; the implementation of everything above.

@@ -41,7 +41,7 @@ overhead exceeds the work.
 ### Step 1: Resolve the wiki root
 
 If the user passed a path argument (e.g. `wiki-twobatch`,
-`wiki-terminalbench-bob`, or any other path), use it.
+`wiki-twobatch-skills`, or any other path), use it.
 
 Otherwise auto-detect: walk up from the current working directory looking
 for any sibling directory matching `wiki-*` that contains an `_config.yaml`
@@ -105,7 +105,7 @@ reasoning) with:
 This skill accepts:
 
 - An optional path to the wiki root. Examples: `wiki-twobatch`,
-  `wiki-terminalbench-bob`, or an absolute path.
+  `wiki-twobatch-skills`, or an absolute path.
 - An optional task description. If omitted, infer from the conversation
   context.
 

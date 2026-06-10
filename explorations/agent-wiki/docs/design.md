@@ -7,9 +7,8 @@ This doc explains **why** the agent-wiki is shaped the way it is, **what**
 its pieces are, **how** a raw trace becomes a recallable page, and **what
 the experiments show**. It is the canonical design statement; for the
 operational contracts it links to the recall recipe
-([`_default_agents.md`](../plugin-source/skills/agent-wiki/scripts/_default_agents.md),
-copied into every wiki as `AGENTS.md`), the wiki inventory
-([`WIKIS.md`](../WIKIS.md)), and the empirical log
+([`_default_agents.md`](../skills/scripts/_default_agents.md),
+copied into every wiki as `AGENTS.md`), and the empirical log
 ([`experiments/RESULTS-SUMMARY.md`](../experiments/RESULTS-SUMMARY.md)).
 
 ---
@@ -102,7 +101,7 @@ Sort order is `cluster → skill → guideline → task`, so the most
 consolidated and most directly-actionable artifacts surface first. The exact
 retrieval recipe (parse task → read `_index.jsonl` → filter by tag/trigger →
 prefer clusters → read top 2–5) lives in the recall contract; see
-[`_default_agents.md`](../plugin-source/skills/agent-wiki/scripts/_default_agents.md).
+[`_default_agents.md`](../skills/scripts/_default_agents.md).
 
 ### Procedural over declarative where possible
 
@@ -145,7 +144,7 @@ consult the wiki gets followed; a soft "you may want to check" gets skipped
 
 The build pipeline is a sequence of LLM passes, each piping structured JSON
 to a deterministic builder
-([`build_agent_wiki.py`](../plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py))
+([`build_agent_wiki.py`](../skills/scripts/build_agent_wiki.py))
 that writes the page and maintains the indexes:
 
 ```
@@ -163,10 +162,10 @@ raw trace ─┬─[convert]──▶ normalized JSON
 | Stage | Skill | Builder subcommand | Scope |
 |---|---|---|---|
 | Convert | (bob-trace-converter / `normalize_stream_json_transcripts.py`) | — | per trace |
-| Summarize | [`agent-wiki-summarize`](../plugin-source/skills/agent-wiki/agent-wiki-summarize/SKILL.md) | `render-summary` | per trace |
-| Extract guidelines | [`agent-wiki-extract-guidelines`](../plugin-source/skills/agent-wiki/agent-wiki-extract-guidelines/SKILL.md) | `render-guidelines` | per trace |
-| Synthesize skill | [`agent-wiki-synthesize-skill`](../plugin-source/skills/agent-wiki/agent-wiki-synthesize-skill/SKILL.md) | `render-skill` | per trace |
-| Consolidate | [`agent-wiki-consolidate-guidelines`](../plugin-source/skills/agent-wiki/agent-wiki-consolidate-guidelines/SKILL.md) | `render-cluster` | **cross-corpus, once** |
+| Summarize | [`agent-wiki-summarize`](../skills/agent-wiki-summarize/SKILL.md) | `render-summary` | per trace |
+| Extract guidelines | [`agent-wiki-extract-guidelines`](../skills/agent-wiki-extract-guidelines/SKILL.md) | `render-guidelines` | per trace |
+| Synthesize skill | [`agent-wiki-synthesize-skill`](../skills/agent-wiki-synthesize-skill/SKILL.md) | `render-skill` | per trace |
+| Consolidate | [`agent-wiki-consolidate-guidelines`](../skills/agent-wiki-consolidate-guidelines/SKILL.md) | `render-cluster` | **cross-corpus, once** |
 | Catalog | (any) | `catalog` | bookkeeping |
 
 **Order matters.** `synthesize-skill` runs *before* `consolidate` so skills
@@ -184,7 +183,7 @@ consolidation declared them first.
 
 ### The one-pass entry point
 
-[`agent-wiki-ingest`](../plugin-source/skills/agent-wiki/agent-wiki-ingest/SKILL.md)
+[`agent-wiki-ingest`](../skills/agent-wiki-ingest/SKILL.md)
 orchestrates the whole pipeline end-to-end (convert → bootstrap → summarize
 → extract → synthesize → consolidate → catalog) via subagent fan-out:
 summarize runs in parallel (independent file writes), extract and synthesize
@@ -196,8 +195,7 @@ skipped** when ingesting a batch — the failure mode that motivated it.
 
 The same corpus can be turned into a wiki three ways, varying *when* the
 wiki is built and *what* the agent sees during each trial (see
-[`WIKIS.md`](../WIKIS.md) and
-[`experiments/wiki-build-comparison.md`](../experiments/wiki-build-comparison.md)):
+[`RESULTS-SUMMARY.md` §3–4](../experiments/RESULTS-SUMMARY.md)):
 
 - **Open-loop** — trials run against a fixed external wiki; the new wiki is a
   study log built from observing them.
@@ -221,7 +219,7 @@ methodology: [`experiments/RESULTS-SUMMARY.md`](../experiments/RESULTS-SUMMARY.m
 |---|---|---|
 | **Wiki vs no wiki** | −20% cost, −38% duration, −43% tool calls, accuracy unchanged (96%) | [twobatch-comparison](../experiments/twobatch-comparison.md) |
 | **Pointer wording is load-bearing** | strong-imperative CLAUDE.md 3/3 reads; soft phrasing 1/3 | [RESULTS-SUMMARY §1](../experiments/RESULTS-SUMMARY.md#1-agentsmd-ab-sweep-the-original) |
-| **Build pattern is robust** | same 3 clusters emerge open-/closed-/retroactive | [wiki-build-comparison](../experiments/wiki-build-comparison.md) |
+| **Build pattern is robust** | same 3 clusters emerge open-/closed-/retroactive | [RESULTS-SUMMARY §3–4](../experiments/RESULTS-SUMMARY.md#34-build-pattern-comparison-closed-loop-vs-retroactive) |
 | **Skills > guidelines** | skills-only $0.146 vs guidelines $0.17 (−14%), accuracy 98% vs 96% | [twobatch-skills-comparison](../experiments/twobatch-skills-comparison.md) |
 | **Composition is non-additive** | skills+guidelines costs +22% vs skills, +5% vs guidelines | [twobatch-fourway-comparison](../experiments/twobatch-fourway-comparison.md) |
 | **Composition > size; skills-only still cheapest** | delete-on-promote (corrected index): −3% vs both, +18% vs skills | [twobatch-fiveway-comparison](../experiments/twobatch-fiveway-comparison.md) |
@@ -259,8 +257,7 @@ questions — live, not yet resolved:
 
 ## See also
 
-- [`agent-wiki-schema.md`](agent-wiki-schema.md) — the on-disk schema reference: directory layout, per-kind frontmatter, links, and the promotion/archival lifecycle.
-- [`_default_agents.md`](../plugin-source/skills/agent-wiki/scripts/_default_agents.md) — the recall contract copied into every wiki as `AGENTS.md` (page kinds, retrieval recipe, provenance chain).
-- [`WIKIS.md`](../WIKIS.md) — inventory of the wikis in this repo + build patterns.
+- [`schema.md`](schema.md) — the on-disk schema reference: directory layout, per-kind frontmatter, links, and the promotion/archival lifecycle.
+- [`_default_agents.md`](../skills/scripts/_default_agents.md) — the recall contract copied into every wiki as `AGENTS.md` (page kinds, retrieval recipe, provenance chain).
 - [`experiments/RESULTS-SUMMARY.md`](../experiments/RESULTS-SUMMARY.md) — the full empirical log.
-- The `agent-wiki-*` skills under [`plugin-source/skills/agent-wiki/`](../plugin-source/skills/agent-wiki/) and the builder [`build_agent_wiki.py`](../plugin-source/skills/agent-wiki/scripts/build_agent_wiki.py).
+- The `agent-wiki-*` skills under [`skills/`](../skills/) and the builder [`build_agent_wiki.py`](../skills/scripts/build_agent_wiki.py).

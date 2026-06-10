@@ -33,7 +33,6 @@ explorations/agent-wiki/
 │   ├── metrics/       per-trial metric rollups (.jsonl)
 │   └── harness/       sandbox runner + comparison scripts to reproduce
 └── wikis/             worked examples — wikis built by the skills above
-    ├── wiki-terminalbench-bob/   built from terminal-bench (bob) traces
     ├── wiki-twobatch/            16-task corpus, guidelines arm
     ├── wiki-twobatch-skills/     same corpus, skills-only arm
     ├── wiki-twobatch-both/       skills + guidelines
@@ -46,15 +45,15 @@ explorations/agent-wiki/
 2. **`experiments/RESULTS-SUMMARY.md`** — the running tape of findings
    (wiki cuts cost ~20% at equal accuracy; skills beat guidelines; pointer
    wording is load-bearing; composition matters more than wiki size).
-3. **`wikis/wiki-terminalbench-bob/`** — open `AGENTS.md`, then `_index.jsonl`,
+3. **`wikis/wiki-twobatch-skills/`** — open `AGENTS.md`, then `_index.jsonl`,
    then any page, to see a real built wiki end-to-end.
 4. **`skills/agent-wiki-ingest/SKILL.md`** — how a batch of traces becomes a
    wiki in one pass.
 
 ## Scope of this exploration
 
-These are **benchmark-derived** example wikis (terminal-bench tasks + a synthetic
-16-task corpus). The raw per-trial sandbox transcripts and any wikis built from
+These are **benchmark-derived** example wikis (a synthetic 16-task
+file-format corpus). The raw per-trial sandbox transcripts and any wikis built from
 internal trajectory corpora are intentionally **not** included — only the metric
 rollups, the narrative reports, and the benchmark-derived wikis. Source links in
 wiki frontmatter are shown in the generic form `trajectories/<session-id>.json`.
