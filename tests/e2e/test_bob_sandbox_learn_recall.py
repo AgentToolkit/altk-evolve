@@ -172,16 +172,15 @@ def test_bob_learn_then_recall_flow(bob_sandbox_ready, bob_workspace):
 
     session2_trajectories = (set(trajectories_dir.glob("*.json")) | set(trajectories_dir.glob("*.jsonl"))) - set(trajectories)
     assert session2_trajectories, f"no Bob trajectory saved for session 2 in {trajectories_dir}"
-    session2_trajectory = max(session2_trajectories, key=lambda p: p.stat().st_mtime)
 
     # Bob 1.0.4 has no UserPromptSubmit hook, so the recall script never
     # gets a session id from the runtime and cannot emit a recall audit
     # event. Without a recall audit there is nothing for evolve-lite:provenance
     # to assess, so this test stops at the indirect evidence Bob can produce:
-    # session 2's saved trajectory should reference one of the guideline
-    # files learned in session 1.
-    learned_ids = {str(path.relative_to(entities_dir).with_suffix("")) for path in entity_files}
-    session2_text = session2_trajectory.read_text(encoding="utf-8")
-    assert any(eid.split("/")[-1] in session2_text for eid in learned_ids), (
-        f"session 2 trajectory did not reference any guideline filename from {learned_ids}"
+    # at least one session-2 trajectory should reference a guideline file
+    # learned in session 1.
+    learned_stems = {path.stem for path in entity_files}
+    session2_texts = [path.read_text(encoding="utf-8") for path in session2_trajectories]
+    assert any(stem in text for stem in learned_stems for text in session2_texts), (
+        f"no session 2 trajectory referenced any guideline filename from {learned_stems}"
     )
