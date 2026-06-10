@@ -118,6 +118,52 @@ class TestCandidatesNativeTranscript:
         assert "missing" not in cand
 
 
+class TestCandidatesBobTranscript:
+    """Bob writes ~/.bob/tmp/<projecthash>/chats/session-<ts>-<sid8>.json with a
+    real ``sessionId`` field; the locator matches the chat file by that id."""
+
+    def _seed_bob_chat(self, home, *, sid, body_sid, project_hash="abc123hash", filename=None):
+        fname = filename or f"session-2026-06-10T21-12-{sid.split('-')[0]}.json"
+        chat = home / ".bob" / "tmp" / project_hash / "chats" / fname
+        chat.parent.mkdir(parents=True)
+        chat.write_text(json.dumps({"sessionId": body_sid, "messages": []}), encoding="utf-8")
+        return chat
+
+    def test_locates_native_bob_transcript(self, tmp_path):
+        home = tmp_path / "home"
+        evolve_dir = tmp_path / "proj" / ".evolve"
+        evolve_dir.mkdir(parents=True)
+        sid = "d6484b2c-24f4-474c-8f43-36544e2dbcd8"
+        write_audit(evolve_dir, [{"event": "recall", "session_id": sid, "entities": ["project/baz"]}])
+        write_entity(evolve_dir, "project/baz", body="baz guidance")
+        chat = self._seed_bob_chat(home, sid=sid, body_sid=sid)
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        assert result.returncode == 0, result.stderr
+        candidates = parse_jsonl(result.stdout)
+        assert len(candidates) == 1
+        assert candidates[0]["entity_id"] == "project/baz"
+        assert candidates[0]["trajectory_path"] == str(chat)
+        assert "missing" not in candidates[0]
+
+    def test_bob_sessionid_body_mismatch_not_matched(self, tmp_path):
+        """A chat whose filename prefix collides but whose ``sessionId`` differs
+        is NOT returned — the body field is authoritative (no false positive)."""
+        home = tmp_path / "home"
+        evolve_dir = tmp_path / "proj" / ".evolve"
+        evolve_dir.mkdir(parents=True)
+        sid = "d6484b2c-24f4-474c-8f43-36544e2dbcd8"
+        write_audit(evolve_dir, [{"event": "recall", "session_id": sid, "entities": ["project/baz"]}])
+        write_entity(evolve_dir, "project/baz")
+        # Same filename prefix d6484b2c, different sessionId in the body.
+        self._seed_bob_chat(home, sid=sid, body_sid="ffffffff-0000-0000-0000-000000000000")
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        candidates = parse_jsonl(result.stdout)
+        assert candidates[0]["trajectory_path"] is None
+        assert candidates[0]["missing"] == ["trajectory"]
+
+
 class TestCandidatesMissing:
     def test_missing_trajectory_still_emitted(self, tmp_path):
         # Empty HOME -> no native transcript, no legacy dir -> trajectory missing.

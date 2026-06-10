@@ -99,3 +99,84 @@ class TestAuditRecall:
 
         rows = _read_rows(tmp_path / ".evolve" / "audit.log")
         assert [r["entities"] for r in rows] == [["mem1.md"], ["mem2.md"]]
+
+    def _seed_bob_chat(self, home, cwd, session_id, *, filename="session-2026-06-10T21-12-d6484b2c.json"):
+        """Write a fake Bob session file at ~/.bob/tmp/<sha256(cwd)>/chats/."""
+        import hashlib
+
+        project_hash = hashlib.sha256(os.path.realpath(str(cwd)).encode()).hexdigest()
+        chats = Path(home) / ".bob" / "tmp" / project_hash / "chats"
+        chats.mkdir(parents=True)
+        (chats / filename).write_text(
+            json.dumps({"sessionId": session_id, "projectHash": project_hash, "messages": []}),
+            encoding="utf-8",
+        )
+
+    def test_bob_session_id_recovered_from_chat_file(self, tmp_path):
+        """Under Bob (BOBSHELL_CLI set), with no Claude/Codex env id, the script
+        recovers the real sessionId from ~/.bob/tmp/<sha256(cwd)>/chats/ rather
+        than minting one — so provenance can tie the recall to the trajectory."""
+        home = tmp_path / "home"
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        sid = "d6484b2c-24f4-474c-8f43-36544e2dbcd8"
+        self._seed_bob_chat(home, proj, sid)
+
+        result = _run(proj, ["project/baz"], {"BOBSHELL_CLI": "1", "HOME": str(home), "USERPROFILE": str(home)})
+
+        rows = _read_rows(proj / ".evolve" / "audit.log")
+        assert rows[0]["session_id"] == sid
+        # A recovered (non-minted) id is not echoed.
+        assert "evolve-session:" not in result.stdout
+
+    def test_bob_picks_newest_chat(self, tmp_path):
+        """When several Bob sessions exist for the project, the newest (the one
+        being written now) wins."""
+        import hashlib
+
+        home = tmp_path / "home"
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        self._seed_bob_chat(home, proj, "old-1111", filename="session-2026-06-10T20-00-old11111.json")
+        newest = "new02222-3333-4444-5555-66667777aaaa"
+        project_hash = hashlib.sha256(os.path.realpath(str(proj)).encode()).hexdigest()
+        chat = home / ".bob" / "tmp" / project_hash / "chats" / "session-2026-06-10T21-30-new02222.json"
+        chat.write_text(json.dumps({"sessionId": newest, "messages": []}), encoding="utf-8")
+        os.utime(chat, (10**10, 10**10))  # far-future mtime => newest
+
+        result = _run(proj, ["project/baz"], {"BOBSHELL_CLI": "1", "HOME": str(home), "USERPROFILE": str(home)})
+
+        rows = _read_rows(proj / ".evolve" / "audit.log")
+        assert rows[0]["session_id"] == newest
+        assert "evolve-session:" not in result.stdout
+
+    def test_bob_branch_inert_without_bobshell_cli(self, tmp_path):
+        """No BOBSHELL_CLI => the Bob lookup never runs (even with a chat present),
+        so the script mints a uuid as before. Keeps the branch inert off-Bob."""
+        home = tmp_path / "home"
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        self._seed_bob_chat(home, proj, "d6484b2c-24f4-474c-8f43-36544e2dbcd8")
+
+        result = _run(proj, ["project/baz"], {"HOME": str(home), "USERPROFILE": str(home)})
+
+        rows = _read_rows(proj / ".evolve" / "audit.log")
+        assert rows[0]["session_id"] != "d6484b2c-24f4-474c-8f43-36544e2dbcd8"
+        assert f"evolve-session: {rows[0]['session_id']}" in result.stdout  # minted => echoed
+
+    def test_env_session_id_beats_bob_lookup(self, tmp_path):
+        """An explicit Claude/Codex env id takes precedence over the Bob file
+        lookup (the env id is authoritative when present)."""
+        home = tmp_path / "home"
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        self._seed_bob_chat(home, proj, "bob-sid-should-not-win")
+
+        _run(
+            proj,
+            ["project/baz"],
+            {"BOBSHELL_CLI": "1", "CODEX_THREAD_ID": "codex-wins", "HOME": str(home), "USERPROFILE": str(home)},
+        )
+
+        rows = _read_rows(proj / ".evolve" / "audit.log")
+        assert rows[0]["session_id"] == "codex-wins"

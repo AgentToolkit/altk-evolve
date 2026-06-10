@@ -15,6 +15,7 @@ minted UUID (printed as `evolve-session: <id>` for the model to echo).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -28,12 +29,48 @@ def _evolve_dir() -> Path:
     return Path(env) if env else Path.cwd() / ".evolve"
 
 
+def _bob_session_id() -> str | None:
+    """Recover Bob's real session id for the current run.
+
+    Bob (a Gemini-CLI fork) exposes no session-id environment variable to tool
+    subprocesses, but it writes the live session to
+    ``~/.bob/tmp/<sha256(cwd)>/chats/session-<ts>-<sid8>.json`` with a real
+    ``sessionId`` field (the filename's trailing segment is that id's first
+    block). Recovering it lets `provenance` tie this recall to the saved
+    trajectory instead of an opaque minted uuid. Gated on ``BOBSHELL_CLI`` so it
+    is inert on every other host. Returns the id, or ``None`` when not under Bob
+    or no chat file is found (caller then mints a uuid)."""
+    if not os.environ.get("BOBSHELL_CLI"):
+        return None
+    try:
+        project_hash = hashlib.sha256(os.getcwd().encode()).hexdigest()
+        chats = Path.home() / ".bob" / "tmp" / project_hash / "chats"
+        files = sorted(
+            chats.glob("session-*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for chat in files:
+            try:
+                sid = json.loads(chat.read_text(encoding="utf-8")).get("sessionId")
+            except (OSError, json.JSONDecodeError):
+                continue
+            if sid:
+                return str(sid)
+    except OSError:
+        return None
+    return None
+
+
 def _session_id() -> tuple[str, bool]:
     """Return (session_id, self_minted)."""
     for var in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         val = os.environ.get(var)
         if val:
             return val, False
+    bob_sid = _bob_session_id()
+    if bob_sid:
+        return bob_sid, False
     return str(uuid.uuid4()), True
 
 

@@ -99,6 +99,10 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
        Codex names each rollout file with the thread id as the trailing segment,
        so a recursive glob for ``*<sid>*.jsonl`` under ``~/.codex/sessions/``
        finds it regardless of date directory.
+    4. NEW native Bob transcript: ``~/.bob/tmp/<sha256(projectpath)>/chats/session-<ts>-<sid8>.json``.
+       Bob carries the real session id in the file's ``sessionId`` field (the
+       filename's trailing segment is that id's first block). ``audit_recall.py``
+       logs that real id, so match the chat file whose ``sessionId`` equals it.
 
     Native discovery makes provenance work in the hookless world where no
     ``.evolve/trajectories/`` file is ever written. Each native step is keyed on
@@ -155,6 +159,26 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
             matches = sorted(codex_sessions.rglob(f"*{session_id}*.jsonl"))
             if matches:
                 return matches[0]
+
+    # --- 4. Native Bob transcript -------------------------------------------
+    # Bob (a Gemini-CLI fork) stores sessions at
+    # ~/.bob/tmp/<sha256(projectpath)>/chats/session-<ts>-<sid8>.json, each
+    # carrying a real ``sessionId`` field whose first block is the filename's
+    # trailing segment. audit_recall.py logs that real sessionId (see its
+    # ``_bob_session_id``), so match the chat file whose sessionId equals it.
+    # Glob across project-hash dirs (cheap) and prefilter filenames by the id's
+    # first block rather than recomputing the hash.
+    if session_id and "/" not in session_id and "*" not in session_id:
+        bob_tmp = base / ".bob" / "tmp"
+        if bob_tmp.is_dir():
+            sid_head = session_id.split("-", 1)[0]
+            for chat in sorted(bob_tmp.glob(f"*/chats/session-*{sid_head}*.json")):
+                try:
+                    data = json.loads(chat.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if data.get("sessionId") == session_id:
+                    return chat
 
     return None
 
