@@ -172,9 +172,7 @@ def test_bob_learn_then_recall_flow(bob_sandbox_ready, bob_workspace):
         f"session 2 exited {result2.returncode}\nstdout:\n{result2.stdout[-2000:]}\nstderr:\n{result2.stderr[-2000:]}"
     )
 
-    session2_trajectories = (
-        set(trajectories_dir.glob("*.json")) | set(trajectories_dir.glob("*.jsonl"))
-    ) - set(trajectories)
+    session2_trajectories = (set(trajectories_dir.glob("*.json")) | set(trajectories_dir.glob("*.jsonl"))) - set(trajectories)
     assert session2_trajectories, f"no Bob trajectory saved for session 2 in {trajectories_dir}"
     session2_trajectory = max(session2_trajectories, key=lambda p: p.stat().st_mtime)
 
@@ -210,9 +208,7 @@ def test_bob_learn_then_recall_flow(bob_sandbox_ready, bob_workspace):
     influence_events = [event for event in events if event.get("event") == "influence"]
     assert influence_events, f"no influence audit event recorded. all events: {events}"
     influenced_ids = {event.get("entity") for event in influence_events}
-    assert influenced_ids & learned_ids, (
-        f"influence events {influence_events} did not assess any learned ids {learned_ids}"
-    )
+    assert influenced_ids & learned_ids, f"influence events {influence_events} did not assess any learned ids {learned_ids}"
     allowed_verdicts = {"followed", "contradicted", "not_applicable"}
     assert any(event.get("verdict") in allowed_verdicts for event in influence_events), (
         f"no learned guideline was assessed with an allowed verdict. influence events: {influence_events}"
