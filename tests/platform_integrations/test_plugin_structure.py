@@ -55,8 +55,6 @@ class TestSkillScripts:
             "skills/evolve-lite/subscribe/scripts/subscribe.py",
             "skills/evolve-lite/unsubscribe/scripts/unsubscribe.py",
             "skills/evolve-lite/sync/scripts/sync.py",
-            "skills/evolve-lite/recall/scripts/retrieve_entities.py",
-            "skills/evolve-lite/learn/scripts/save_entities.py",
             "skills/evolve-lite/provenance/scripts/log_influence.py",
             "skills/evolve-lite/adapt-memory/scripts/adapt_memory.py",
             "skills/evolve-lite/doctor/scripts/doctor.py",
@@ -70,6 +68,23 @@ class TestSkillScripts:
         skill = _CODEX_PLUGIN_ROOT / "skills/evolve-lite/save-trajectory/SKILL.md"
         content = skill.read_text()
         assert "plugins/evolve-lite/skills/evolve-lite/save-trajectory/scripts/save_trajectory.py" in content
+
+
+class TestRecallLearnExcludedFromClaude:
+    """Native auto-memory owns recall + save on Claude, so the recall/learn
+    skills are excluded from the Claude plugin only (codex/bob keep them)."""
+
+    @pytest.mark.parametrize("skill", ["recall", "learn"])
+    def test_claude_plugin_lacks_skill(self, skill):
+        assert not (_PLUGIN_ROOT / "skills/evolve-lite" / skill).exists(), (
+            f"Claude plugin must not ship the `{skill}` skill — native memory owns it"
+        )
+
+    @pytest.mark.parametrize("skill", ["recall", "learn"])
+    def test_codex_plugin_still_has_skill(self, skill):
+        assert (_CODEX_PLUGIN_ROOT / "skills/evolve-lite" / skill / "SKILL.md").is_file(), (
+            f"codex must still ship the `{skill}` skill — exclusion is Claude-scoped"
+        )
 
 
 class TestLibModules:

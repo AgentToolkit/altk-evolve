@@ -11,14 +11,13 @@ import pytest
 pytestmark = pytest.mark.platform_integrations
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
-CLAUDE_RETRIEVE_SCRIPT = (
-    _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
-)
+# The `recall` skill (and its retrieve_entities.py) is built OUT of the Claude
+# plugin — native auto-memory owns recall there — so only codex/bob ship this
+# script. The codex variant exercises the identical retrieve logic.
 CODEX_RETRIEVE_SCRIPT = (
     _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
 )
 SCRIPT_VARIANTS = [
-    ("claude", CLAUDE_RETRIEVE_SCRIPT, "Evolve entity manifest for this task"),
     ("codex", CODEX_RETRIEVE_SCRIPT, "Evolve entity manifest for this task"),
 ]
 

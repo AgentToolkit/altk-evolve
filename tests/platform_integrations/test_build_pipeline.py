@@ -253,8 +253,10 @@ class TestCheckDrift:
         assert rc == 0, f"check_drift returned {rc}. stderr:\n{captured.err}\nRun `just compile-plugins` and commit the result."
 
     def test_perturbed_template_is_detected_as_drift(self, rendered_repo, build_module, capsys):
-        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/learn/SKILL.md"
-        assert target.is_file(), "test prerequisite missing — claude learn/SKILL.md not rendered"
+        # `save` is a templated skill that still ships to Claude (recall/learn
+        # are excluded from the Claude plugin, so they can't be used here).
+        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/save/SKILL.md"
+        assert target.is_file(), "test prerequisite missing — claude save/SKILL.md not rendered"
         target.write_bytes(target.read_bytes() + b"\n# perturbation\n")
 
         rc = build_module.check_drift()
@@ -263,8 +265,10 @@ class TestCheckDrift:
         assert "drift:" in captured.err
 
     def test_perturbed_verbatim_file_is_detected_as_drift(self, rendered_repo, build_module, capsys):
-        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/learn/scripts/on_stop.py"
-        assert target.is_file(), "test prerequisite missing — claude learn/scripts/on_stop.py not rendered"
+        # adapt_memory.py is a verbatim (non-template) script that still ships
+        # to Claude; recall/learn are excluded from the Claude plugin.
+        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/adapt-memory/scripts/adapt_memory.py"
+        assert target.is_file(), "test prerequisite missing — claude adapt-memory/scripts/adapt_memory.py not rendered"
         target.write_bytes(target.read_bytes() + b"\n# perturbation\n")
 
         rc = build_module.check_drift()
@@ -284,7 +288,7 @@ class TestCheckDrift:
         assert "drift:" in captured.err
 
     def test_missing_rendered_file_is_detected(self, rendered_repo, build_module, capsys):
-        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/learn/SKILL.md"
+        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/save/SKILL.md"
         assert target.is_file()
         target.unlink()
 
@@ -321,6 +325,42 @@ class TestCheckDrift:
         assert rc == 1
         assert "orphan:" in captured.err
         assert "leftover.md" in captured.err
+
+
+@pytest.mark.platform_integrations
+@pytest.mark.unit
+class TestRecallLearnExcludedFromClaudeOnly:
+    """On Claude, native auto-memory owns recall + save, so the recall/learn
+    skills are redundant and their "Must be used" descriptions made the agent
+    auto-invoke recall as pure noise. They're built OUT of the Claude plugin
+    only — codex and bob still ship them."""
+
+    def test_claude_excludes_recall_and_learn(self, rendered_repo, build_module):
+        manifest = build_module.load_manifest()
+        claude_root = _plugin_root(manifest, "claude")
+        for skill in ("recall", "learn"):
+            assert not (claude_root / "skills/evolve-lite" / skill).exists(), (
+                f"Claude plugin must not ship the `{skill}` skill (native memory owns it)"
+            )
+
+    def test_codex_still_ships_recall_and_learn(self, rendered_repo, build_module):
+        manifest = build_module.load_manifest()
+        codex_root = _plugin_root(manifest, "codex")
+        for skill in ("recall", "learn"):
+            assert (codex_root / "skills/evolve-lite" / skill / "SKILL.md").is_file(), (
+                f"codex must still ship the `{skill}` skill — exclusion is Claude-scoped"
+            )
+
+    def test_bob_still_ships_recall_and_learn_skills_and_commands(self, rendered_repo, build_module):
+        manifest = build_module.load_manifest()
+        bob_root = _plugin_root(manifest, "bob")
+        for skill in ("recall", "learn"):
+            assert (bob_root / "skills" / f"evolve-lite-{skill}" / "SKILL.md").is_file(), (
+                f"bob must still ship the `{skill}` skill — exclusion is Claude-scoped"
+            )
+            assert (bob_root / "commands" / f"evolve-lite-{skill}.md").is_file(), (
+                f"bob must still emit the `{skill}` command file — exclusion is Claude-scoped"
+            )
 
 
 @pytest.mark.platform_integrations

@@ -297,7 +297,15 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "adapt_memory_script": "~/.claude/evolve-lite/adapt_memory.py",
         },
         "target_rewrites": [],
-        "target_excludes": [],
+        # On Claude, native auto-memory already owns recall + save, so the
+        # recall/learn skills are redundant. Worse, their "Must be used"
+        # descriptions made the agent auto-invoke recall every session (it
+        # fires, finds nothing, pure noise). Build them OUT of the Claude
+        # plugin only; codex/bob still ship recall + learn.
+        "target_excludes": [
+            r"^skills/evolve-lite/recall/",
+            r"^skills/evolve-lite/learn/",
+        ],
         "metadata_target": ".claude-plugin/plugin.json",
         "metadata_emit": _claude_plugin_json,
     },
