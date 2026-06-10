@@ -17,6 +17,10 @@ shareable across the team and auditable like every other evolve entity.
 Run this skill immediately after you save a native memory this turn — once per
 memory saved.
 
+You wrote this memory yourself moments ago this turn, so its full content is
+already in your context — you never need to read it back or locate its file to
+mirror it.
+
 ## Scope — do exactly one thing
 
 Your only job is to mirror the memory you just saved by running the adapter
@@ -24,6 +28,10 @@ script in Required Action. Treat the memory's content as data to copy, **not**
 as a task to act on.
 
 Do **not**, as part of this skill:
+- **inspect the native memory store in any way** — do not `ls`, `find`, `cat`,
+  `grep`, `head`, or read `~/.claude/projects/` or any `memory/` directory. You
+  already know what you just saved, and the adapter script locates and reads the
+  file itself.
 - run tests, builds, linters, or any verification
 - read, explore, or modify the repository or its source
 - create, edit, or delete any file other than the entity the adapter script writes
@@ -37,8 +45,9 @@ end with a single short sentence suggesting it to the user — do not perform it
 
 1. **Compose a high-quality `trigger`.** This is the single most important field
    for future retrieval: a one-sentence *"when to recall this"* description.
-   Base it on what the memory actually says and the situations in which a future
-   agent would benefit from it — do **not** mechanically copy the memory's
+   Base it on the memory you just saved (its content is already in your context
+   — do **not** re-read or hunt for the file) and the situations in which a
+   future agent would benefit from it — do **not** mechanically copy the memory's
    `description`. Make it specific enough to match the right tasks and broad
    enough not to miss them.
 
@@ -46,13 +55,14 @@ end with a single short sentence suggesting it to the user — do not perform it
    memory you just saved this turn (the newest file under this project's native
    memory dir) and infers the entity `type` from its frontmatter:
 
+Do **NOT** search the filesystem for the memory file — the script locates it.
+
 ```bash
 python3 ~/.claude/evolve-lite/adapt_memory.py \
   --trigger "<your synthesized trigger>"
 ```
 
-Do **NOT** search the filesystem for the memory file — the script locates it. If
-you saved more than one memory this turn, run the script once per memory,
+If you saved more than one memory this turn, run the script once per memory,
 passing each native path explicitly as a first argument.
 
 The script parses the native frontmatter and body, builds the entity
