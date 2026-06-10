@@ -426,7 +426,9 @@ def _render_summary_md(summary: dict, recalled: list[dict], arc_slug: str = "", 
         body.append("## Key turns")
         body.append("")
         for kt in key_turns:
-            body.append(f"- {kt}")
+            # rstrip: a truncated tool command can end in whitespace, which
+            # otherwise leaves a trailing-whitespace line (git diff --check).
+            body.append(f"- {str(kt).rstrip()}")
         body.append("")
     if recalled:
         body.append("## Recalled guidelines")
