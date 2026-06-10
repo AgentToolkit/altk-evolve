@@ -54,7 +54,12 @@ from pathlib import Path
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# Project root holds the sandbox assets this reference runner mounts
+# (demo/workspace, platform-integrations/, tests/e2e/_wiki_hint_plugin). The
+# script lives at <repo>/explorations/agent-wiki/experiments/harness/, so the
+# repo root is parents[4]. (This runner is reference-only here — see the module
+# docstring — and only resolves these assets when executed from the full repo.)
+REPO_ROOT = Path(__file__).resolve().parents[4]
 SANDBOX_IMAGE = "claude-sandbox"
 TIMEOUT_SECONDS = 300
 FORWARDED_ENV_VARS = (

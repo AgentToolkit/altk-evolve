@@ -49,10 +49,12 @@ repos:
       - id: detect-secrets
         name: detect secrets
         args: ['--baseline', '.secrets.baseline']
-        # explorations/agent-wiki/ holds generated example wiki content + a schema
-        # doc full of example IDs whose 12-hex guideline content-hashes and session
-        # UUIDs trip the high-entropy detector; they are identifiers, not secrets.
-        exclude: 'package.lock.json|^explorations/agent-wiki/'
+        # Narrowly skip only the generated example-wiki tree and the schema doc's
+        # worked examples: their 12-hex guideline content-hashes and session UUIDs
+        # are identifiers, not secrets. Hand-written code/docs/harness under
+        # explorations/agent-wiki/ stay scanned. (Mirrors the ruff/mypy scoping,
+        # which excludes only explorations/agent-wiki/wikis/.)
+        exclude: 'package.lock.json|^explorations/agent-wiki/wikis/|^explorations/agent-wiki/docs/schema\.md$'
 
   # Plugin render-equality gate — fails if platform-integrations/ has drifted
   # from plugin-source/. Runs whenever plugin-source/ or the rendered tree
