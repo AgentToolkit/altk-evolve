@@ -106,6 +106,9 @@ anyio_mode = "auto"
 [tool.ruff]
 line-length = 140
 indent-width = 4
+# Generated example-wiki content (scripts the wiki builder emitted verbatim from
+# trajectories) is exploration artifact, not project source — don't lint it.
+extend-exclude = ["explorations/agent-wiki/wikis/"]
 
 [tool.semantic_release]
 allow_zero_version = true
@@ -166,6 +169,7 @@ exclude = [
     "platform-integrations/",
     "plugin-source/",
     "examples/",
+    "explorations/agent-wiki/wikis/",
 ]
 
 [[tool.mypy.overrides]]

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# mypy: ignore-errors
+# Exploration/reference code — not type-checked to the project standard.
 """Normalize `claude -p --output-format stream-json --verbose` outputs.
 
 Reads stream-json transcripts emitted by the experiment runners and writes
@@ -73,17 +75,21 @@ def parse_stream_json_file(path: Path, user_prompt: str) -> dict[str, Any]:
                     name = b.get("name", "")
                     tool_counter[name] += 1
                     tool_calls += 1
-                    messages.append({
-                        "role": "assistant",
-                        "tool_calls": [{
-                            "id": b.get("id"),
-                            "type": "function",
-                            "function": {
-                                "name": name,
-                                "arguments": json.dumps(b.get("input") or {}),
-                            },
-                        }],
-                    })
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": b.get("id"),
+                                    "type": "function",
+                                    "function": {
+                                        "name": name,
+                                        "arguments": json.dumps(b.get("input") or {}),
+                                    },
+                                }
+                            ],
+                        }
+                    )
         elif ev.get("type") == "user":
             msg = ev.get("message", {}) or {}
             content = msg.get("content")
@@ -102,15 +108,16 @@ def parse_stream_json_file(path: Path, user_prompt: str) -> dict[str, Any]:
                         text = raw
                     else:
                         text = json.dumps(raw)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": b.get("tool_use_id"),
-                        "content": text,
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": b.get("tool_use_id"),
+                            "content": text,
+                        }
+                    )
 
     top_tools = [{"tool": t, "count": c} for t, c in tool_counter.most_common(5)]
 
-    started = (init or {}).get("session_start_time") or ""
     return {
         "schema_version": "1",
         "dataset": "claude-transcripts",

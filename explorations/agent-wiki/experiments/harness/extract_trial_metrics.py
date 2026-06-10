@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# mypy: ignore-errors
+# Exploration/reference code — not type-checked to the project standard.
 """Extract per-trial metrics from a stream-json transcript.
 
 Pulls token counts from `assistant.usage` events + the terminal `result`
@@ -18,19 +20,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 
 
 def parse(transcript: Path) -> dict:
-    events = [json.loads(l) for l in transcript.read_text(encoding="utf-8").splitlines() if l.strip()]
+    events = [json.loads(ln) for ln in transcript.read_text(encoding="utf-8").splitlines() if ln.strip()]
     sid = "?"
     duration_ms = 0
     total_cost_usd = 0.0
     final_text = ""
     in_tokens = cache_creation = cache_read = out_tokens = 0
     tool_calls = 0
-    wiki_reads = 0           # Read of AGENTS.md / _index.jsonl / guidelines/*.md
+    wiki_reads = 0  # Read of AGENTS.md / _index.jsonl / guidelines/*.md
     agents_md_read = False
     index_read = False
     guideline_reads = 0
@@ -112,8 +113,7 @@ def main() -> int:
     ap.add_argument("--batch", required=True)
     ap.add_argument("--condition", default="claude_md_strong")
     ap.add_argument("--trial", required=True)
-    ap.add_argument("--outcome-match-all", default="",
-                    help="Comma-separated must-all-substrings for outcome_match")
+    ap.add_argument("--outcome-match-all", default="", help="Comma-separated must-all-substrings for outcome_match")
     args = ap.parse_args()
 
     rec = parse(Path(args.transcript))

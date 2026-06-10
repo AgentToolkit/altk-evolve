@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# mypy: ignore-errors
+# Exploration/reference code — not type-checked to the project standard.
 """Four-way comparison: empty / guidelines / skills / both.
 
 Reads three metrics files:
@@ -19,21 +21,40 @@ REPO = Path(__file__).resolve().parents[1]
 
 TASK_IDS_ORDER = [
     "t1-lens-model",
-    "t6-png-dim", "t7-gif-dim", "t8-bmp-info", "t9-webp-dim",
-    "t10-zip-list", "t11-tar-list", "t12-wav-info", "t13-gzip-dec",
-    "t14-csv-quoted", "t15-jsonl-kinds", "t16-ini-key", "t17-log-errors",
-    "t2-imports", "t3-todos", "t5-base64",
+    "t6-png-dim",
+    "t7-gif-dim",
+    "t8-bmp-info",
+    "t9-webp-dim",
+    "t10-zip-list",
+    "t11-tar-list",
+    "t12-wav-info",
+    "t13-gzip-dec",
+    "t14-csv-quoted",
+    "t15-jsonl-kinds",
+    "t16-ini-key",
+    "t17-log-errors",
+    "t2-imports",
+    "t3-todos",
+    "t5-base64",
 ]
 
 FAMILY = {
     "t1-lens-model": "lens-model",
-    "t6-png-dim": "image", "t7-gif-dim": "image",
-    "t8-bmp-info": "image", "t9-webp-dim": "image",
-    "t10-zip-list": "archive", "t11-tar-list": "archive",
-    "t12-wav-info": "archive", "t13-gzip-dec": "archive",
-    "t14-csv-quoted": "text", "t15-jsonl-kinds": "text",
-    "t16-ini-key": "text", "t17-log-errors": "text",
-    "t2-imports": "skip", "t3-todos": "skip", "t5-base64": "skip",
+    "t6-png-dim": "image",
+    "t7-gif-dim": "image",
+    "t8-bmp-info": "image",
+    "t9-webp-dim": "image",
+    "t10-zip-list": "archive",
+    "t11-tar-list": "archive",
+    "t12-wav-info": "archive",
+    "t13-gzip-dec": "archive",
+    "t14-csv-quoted": "text",
+    "t15-jsonl-kinds": "text",
+    "t16-ini-key": "text",
+    "t17-log-errors": "text",
+    "t2-imports": "skip",
+    "t3-todos": "skip",
+    "t5-base64": "skip",
 }
 
 ARMS = ("empty", "guidelines", "skills", "both")
@@ -115,10 +136,12 @@ def main() -> int:
     md: list[str] = []
     md.append("# Four-way wiki-helps comparison: empty / guidelines / skills / both")
     md.append("")
-    md.append("Same 16-task corpus, four arms, all `claude_md_strong` condition. "
-              "Empty + guidelines arms are twobatch's batch-1 / batch-2. Skills arm "
-              "is twobatch-skills (3 skills, no guidelines). Both arm is "
-              "twobatch-both (those same 3 skills + ~15 atomics, no clusters).")
+    md.append(
+        "Same 16-task corpus, four arms, all `claude_md_strong` condition. "
+        "Empty + guidelines arms are twobatch's batch-1 / batch-2. Skills arm "
+        "is twobatch-skills (3 skills, no guidelines). Both arm is "
+        "twobatch-both (those same 3 skills + ~15 atomics, no clusters)."
+    )
     md.append("")
 
     md.append("## Aggregate")
@@ -147,12 +170,14 @@ def main() -> int:
             else:
                 vals[a] = median([r.get(field) for r in arm_rows])
         if field == "len":
-            md.append(f"| {label} | {vals['empty']} | {vals['guidelines']} | {vals['skills']} | {vals['both']} | "
-                      f"{vals['both']-vals['guidelines']:+d} | {vals['both']-vals['skills']:+d} |")
+            md.append(
+                f"| {label} | {vals['empty']} | {vals['guidelines']} | {vals['skills']} | {vals['both']} | "
+                f"{vals['both'] - vals['guidelines']:+d} | {vals['both'] - vals['skills']:+d} |"
+            )
         else:
             md.append(
-                f"| {label} | {fmt(vals['empty'],kind)} | {fmt(vals['guidelines'],kind)} | "
-                f"{fmt(vals['skills'],kind)} | {fmt(vals['both'],kind)} | "
+                f"| {label} | {fmt(vals['empty'], kind)} | {fmt(vals['guidelines'], kind)} | "
+                f"{fmt(vals['skills'], kind)} | {fmt(vals['both'], kind)} | "
                 f"{delta(vals['guidelines'], vals['both'], kind)} | "
                 f"{delta(vals['skills'], vals['both'], kind)} |"
             )
@@ -172,12 +197,12 @@ def main() -> int:
         cs = {a: median([r.get("total_cost_usd") for r in in_fam[a]]) for a in ARMS}
         md.append(
             f"| {fam} | {len(tids)} | "
-            f"{fmt(acc(in_fam['empty']),'pct')} | {fmt(acc(in_fam['guidelines']),'pct')} | "
-            f"{fmt(acc(in_fam['skills']),'pct')} | {fmt(acc(in_fam['both']),'pct')} | "
-            f"{fmt(cs['empty'],'dollars')} | {fmt(cs['guidelines'],'dollars')} | "
-            f"{fmt(cs['skills'],'dollars')} | {fmt(cs['both'],'dollars')} | "
-            f"{delta(cs['guidelines'], cs['both'],'dollars')} | "
-            f"{delta(cs['skills'], cs['both'],'dollars')} |"
+            f"{fmt(acc(in_fam['empty']), 'pct')} | {fmt(acc(in_fam['guidelines']), 'pct')} | "
+            f"{fmt(acc(in_fam['skills']), 'pct')} | {fmt(acc(in_fam['both']), 'pct')} | "
+            f"{fmt(cs['empty'], 'dollars')} | {fmt(cs['guidelines'], 'dollars')} | "
+            f"{fmt(cs['skills'], 'dollars')} | {fmt(cs['both'], 'dollars')} | "
+            f"{delta(cs['guidelines'], cs['both'], 'dollars')} | "
+            f"{delta(cs['skills'], cs['both'], 'dollars')} |"
         )
     md.append("")
 
@@ -190,10 +215,10 @@ def main() -> int:
             continue
         cs = {a: median([r.get("total_cost_usd") for r in by_task[tid].get(a, [])]) for a in ARMS}
         md.append(
-            f"| `{tid}` | {fmt(cs['empty'],'dollars')} | {fmt(cs['guidelines'],'dollars')} | "
-            f"{fmt(cs['skills'],'dollars')} | {fmt(cs['both'],'dollars')} | "
-            f"{delta(cs['guidelines'], cs['both'],'dollars')} | "
-            f"{delta(cs['skills'], cs['both'],'dollars')} |"
+            f"| `{tid}` | {fmt(cs['empty'], 'dollars')} | {fmt(cs['guidelines'], 'dollars')} | "
+            f"{fmt(cs['skills'], 'dollars')} | {fmt(cs['both'], 'dollars')} | "
+            f"{delta(cs['guidelines'], cs['both'], 'dollars')} | "
+            f"{delta(cs['skills'], cs['both'], 'dollars')} |"
         )
     md.append("")
 
@@ -206,19 +231,20 @@ def main() -> int:
             continue
         as_ = {a: acc(by_task[tid].get(a, [])) for a in ARMS}
         md.append(
-            f"| `{tid}` | {fmt(as_['empty'],'pct')} | {fmt(as_['guidelines'],'pct')} | "
-            f"{fmt(as_['skills'],'pct')} | {fmt(as_['both'],'pct')} |"
+            f"| `{tid}` | {fmt(as_['empty'], 'pct')} | {fmt(as_['guidelines'], 'pct')} | "
+            f"{fmt(as_['skills'], 'pct')} | {fmt(as_['both'], 'pct')} |"
         )
     md.append("")
     md.append("## Notes")
     md.append("")
     md.append("- Empty + guidelines columns reproduce twobatch.")
     md.append("- Skills column reproduces the skills-arm experiment.")
-    md.append("- Both column is the new arm: same 3 skills + ~15 atomics from "
-              "twobatch's batch-1 trajectories. No clusters (matching the "
-              "guidelines arm's structure).")
-    md.append("- Trivial-recipe tasks (t11-tar, t13-gzip, t15-jsonl, t16-ini, "
-              "t17-log, t2/t3, t5) have no matching skill in any arm.")
+    md.append(
+        "- Both column is the new arm: same 3 skills + ~15 atomics from "
+        "twobatch's batch-1 trajectories. No clusters (matching the "
+        "guidelines arm's structure)."
+    )
+    md.append("- Trivial-recipe tasks (t11-tar, t13-gzip, t15-jsonl, t16-ini, t17-log, t2/t3, t5) have no matching skill in any arm.")
     Path(args.out).write_text("\n".join(md) + "\n", encoding="utf-8")
     print(f"wrote {args.out}", flush=True)
     return 0

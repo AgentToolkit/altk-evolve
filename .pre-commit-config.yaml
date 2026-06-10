@@ -49,7 +49,10 @@ repos:
       - id: detect-secrets
         name: detect secrets
         args: ['--baseline', '.secrets.baseline']
-        exclude: package.lock.json
+        # explorations/agent-wiki/ holds generated example wiki content + a schema
+        # doc full of example IDs whose 12-hex guideline content-hashes and session
+        # UUIDs trip the high-entropy detector; they are identifiers, not secrets.
+        exclude: 'package.lock.json|^explorations/agent-wiki/'
 
   # Plugin render-equality gate — fails if platform-integrations/ has drifted
   # from plugin-source/. Runs whenever plugin-source/ or the rendered tree

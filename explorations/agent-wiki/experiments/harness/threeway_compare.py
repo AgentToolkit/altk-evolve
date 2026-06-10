@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# mypy: ignore-errors
+# Exploration/reference code — not type-checked to the project standard.
 """Three-way comparison of empty / guidelines / skills arms on the same task corpus.
 
 Reads:
@@ -20,21 +22,40 @@ REPO = Path(__file__).resolve().parents[1]
 
 TASK_IDS_ORDER = [
     "t1-lens-model",
-    "t6-png-dim", "t7-gif-dim", "t8-bmp-info", "t9-webp-dim",
-    "t10-zip-list", "t11-tar-list", "t12-wav-info", "t13-gzip-dec",
-    "t14-csv-quoted", "t15-jsonl-kinds", "t16-ini-key", "t17-log-errors",
-    "t2-imports", "t3-todos", "t5-base64",
+    "t6-png-dim",
+    "t7-gif-dim",
+    "t8-bmp-info",
+    "t9-webp-dim",
+    "t10-zip-list",
+    "t11-tar-list",
+    "t12-wav-info",
+    "t13-gzip-dec",
+    "t14-csv-quoted",
+    "t15-jsonl-kinds",
+    "t16-ini-key",
+    "t17-log-errors",
+    "t2-imports",
+    "t3-todos",
+    "t5-base64",
 ]
 
 FAMILY = {
     "t1-lens-model": "lens-model",
-    "t6-png-dim": "image", "t7-gif-dim": "image",
-    "t8-bmp-info": "image", "t9-webp-dim": "image",
-    "t10-zip-list": "archive", "t11-tar-list": "archive",
-    "t12-wav-info": "archive", "t13-gzip-dec": "archive",
-    "t14-csv-quoted": "text", "t15-jsonl-kinds": "text",
-    "t16-ini-key": "text", "t17-log-errors": "text",
-    "t2-imports": "skip", "t3-todos": "skip", "t5-base64": "skip",
+    "t6-png-dim": "image",
+    "t7-gif-dim": "image",
+    "t8-bmp-info": "image",
+    "t9-webp-dim": "image",
+    "t10-zip-list": "archive",
+    "t11-tar-list": "archive",
+    "t12-wav-info": "archive",
+    "t13-gzip-dec": "archive",
+    "t14-csv-quoted": "text",
+    "t15-jsonl-kinds": "text",
+    "t16-ini-key": "text",
+    "t17-log-errors": "text",
+    "t2-imports": "skip",
+    "t3-todos": "skip",
+    "t5-base64": "skip",
 }
 
 
@@ -112,16 +133,20 @@ def main() -> int:
     md: list[str] = []
     md.append("# Three-way wiki-helps comparison: empty vs guidelines vs skills")
     md.append("")
-    md.append("Same 16-task corpus, three arms, all `claude_md_strong` condition. "
-              "Empty + guidelines arms are the existing twobatch experiment's "
-              "batch-1 / batch-2. Skills arm is the new run against "
-              "`wiki-twobatch-skills/`, populated from twobatch's batch-1 "
-              "trajectories via `agent-wiki-synthesize-skill`.")
+    md.append(
+        "Same 16-task corpus, three arms, all `claude_md_strong` condition. "
+        "Empty + guidelines arms are the existing twobatch experiment's "
+        "batch-1 / batch-2. Skills arm is the new run against "
+        "`wiki-twobatch-skills/`, populated from twobatch's batch-1 "
+        "trajectories via `agent-wiki-synthesize-skill`."
+    )
     md.append("")
 
-    by_arm = {"empty": [r for r in rows if r["arm"] == "empty"],
-              "guidelines": [r for r in rows if r["arm"] == "guidelines"],
-              "skills": [r for r in rows if r["arm"] == "skills"]}
+    by_arm = {
+        "empty": [r for r in rows if r["arm"] == "empty"],
+        "guidelines": [r for r in rows if r["arm"] == "guidelines"],
+        "skills": [r for r in rows if r["arm"] == "skills"],
+    }
 
     md.append("## Aggregate (3 trials × 16 tasks per arm)")
     md.append("")
@@ -141,22 +166,25 @@ def main() -> int:
     for label, field, kind in pairs:
         if field == "len":
             vals = {a: len(by_arm[a]) for a in ("empty", "guidelines", "skills")}
-            md.append(f"| {label} | {vals['empty']} | {vals['guidelines']} | {vals['skills']} | "
-                      f"{vals['skills']-vals['guidelines']:+d} |")
+            md.append(f"| {label} | {vals['empty']} | {vals['guidelines']} | {vals['skills']} | {vals['skills'] - vals['guidelines']:+d} |")
             continue
         if field == "_acc":
             vals = {a: acc(by_arm[a]) for a in ("empty", "guidelines", "skills")}
         else:
             vals = {a: median([r.get(field) for r in by_arm[a]]) for a in ("empty", "guidelines", "skills")}
-        md.append(f"| {label} | {fmt(vals['empty'],kind)} | {fmt(vals['guidelines'],kind)} | "
-                  f"{fmt(vals['skills'],kind)} | {delta(vals['guidelines'], vals['skills'], kind)} |")
+        md.append(
+            f"| {label} | {fmt(vals['empty'], kind)} | {fmt(vals['guidelines'], kind)} | "
+            f"{fmt(vals['skills'], kind)} | {delta(vals['guidelines'], vals['skills'], kind)} |"
+        )
     md.append("")
 
     md.append("## By task family")
     md.append("")
     md.append("Median per-trial within each family. Skills column shows Δ vs guidelines.")
     md.append("")
-    md.append("| Family | Tasks | E acc | G acc | S acc | E dur | G dur | S dur | E tokens | G tokens | S tokens | E $ | G $ | S $ | Skills Δ$ |")
+    md.append(
+        "| Family | Tasks | E acc | G acc | S acc | E dur | G dur | S dur | E tokens | G tokens | S tokens | E $ | G $ | S $ | Skills Δ$ |"
+    )
     md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     fam_groups: dict[str, list[str]] = defaultdict(list)
     for tid, fam in FAMILY.items():
@@ -168,16 +196,16 @@ def main() -> int:
         s = [r for r in in_fam if r["arm"] == "skills"]
         md.append(
             f"| {fam} | {len(tids)} tasks | "
-            f"{fmt(acc(e),'pct')} | {fmt(acc(g),'pct')} | {fmt(acc(s),'pct')} | "
-            f"{fmt(median([r.get('duration_s') for r in e]),'duration')} | "
-            f"{fmt(median([r.get('duration_s') for r in g]),'duration')} | "
-            f"{fmt(median([r.get('duration_s') for r in s]),'duration')} | "
-            f"{fmt(median([r.get('billable_tokens_proxy') for r in e]),'tokens')} | "
-            f"{fmt(median([r.get('billable_tokens_proxy') for r in g]),'tokens')} | "
-            f"{fmt(median([r.get('billable_tokens_proxy') for r in s]),'tokens')} | "
-            f"{fmt(median([r.get('total_cost_usd') for r in e]),'dollars')} | "
-            f"{fmt(median([r.get('total_cost_usd') for r in g]),'dollars')} | "
-            f"{fmt(median([r.get('total_cost_usd') for r in s]),'dollars')} | "
+            f"{fmt(acc(e), 'pct')} | {fmt(acc(g), 'pct')} | {fmt(acc(s), 'pct')} | "
+            f"{fmt(median([r.get('duration_s') for r in e]), 'duration')} | "
+            f"{fmt(median([r.get('duration_s') for r in g]), 'duration')} | "
+            f"{fmt(median([r.get('duration_s') for r in s]), 'duration')} | "
+            f"{fmt(median([r.get('billable_tokens_proxy') for r in e]), 'tokens')} | "
+            f"{fmt(median([r.get('billable_tokens_proxy') for r in g]), 'tokens')} | "
+            f"{fmt(median([r.get('billable_tokens_proxy') for r in s]), 'tokens')} | "
+            f"{fmt(median([r.get('total_cost_usd') for r in e]), 'dollars')} | "
+            f"{fmt(median([r.get('total_cost_usd') for r in g]), 'dollars')} | "
+            f"{fmt(median([r.get('total_cost_usd') for r in s]), 'dollars')} | "
             f"{delta(median([r.get('total_cost_usd') for r in g]), median([r.get('total_cost_usd') for r in s]), 'dollars')} |"
         )
     md.append("")
@@ -193,25 +221,26 @@ def main() -> int:
         if not (e or g or s):
             continue
         md.append(
-            f"| `{tid}` | {fmt(acc(e),'pct')} | {fmt(acc(g),'pct')} | {fmt(acc(s),'pct')} | "
-            f"{fmt(median([r.get('duration_s') for r in e]),'duration')} | "
-            f"{fmt(median([r.get('duration_s') for r in g]),'duration')} | "
-            f"{fmt(median([r.get('duration_s') for r in s]),'duration')} | "
-            f"{fmt(median([r.get('total_cost_usd') for r in e]),'dollars')} | "
-            f"{fmt(median([r.get('total_cost_usd') for r in g]),'dollars')} | "
-            f"{fmt(median([r.get('total_cost_usd') for r in s]),'dollars')} | "
+            f"| `{tid}` | {fmt(acc(e), 'pct')} | {fmt(acc(g), 'pct')} | {fmt(acc(s), 'pct')} | "
+            f"{fmt(median([r.get('duration_s') for r in e]), 'duration')} | "
+            f"{fmt(median([r.get('duration_s') for r in g]), 'duration')} | "
+            f"{fmt(median([r.get('duration_s') for r in s]), 'duration')} | "
+            f"{fmt(median([r.get('total_cost_usd') for r in e]), 'dollars')} | "
+            f"{fmt(median([r.get('total_cost_usd') for r in g]), 'dollars')} | "
+            f"{fmt(median([r.get('total_cost_usd') for r in s]), 'dollars')} | "
             f"{delta(median([r.get('total_cost_usd') for r in g]), median([r.get('total_cost_usd') for r in s]), 'dollars')} |"
         )
     md.append("")
     md.append("## Notes")
     md.append("")
-    md.append("- Empty + guidelines columns reproduce the original twobatch comparison; "
-              "skills column is new.")
-    md.append("- 3 skills were synthesized from twobatch's batch-1 trajectories by the "
-              "`agent-wiki-synthesize-skill` skill: `extract-jpeg-exif-camera-optics`, "
-              "`read-image-format-dimensions`, `count-csv-rows-with-quoted-fields`. "
-              "All other tasks in this arm have **no matching skill** — the agent "
-              "should fall through to whatever it'd do on an empty wiki.")
+    md.append("- Empty + guidelines columns reproduce the original twobatch comparison; skills column is new.")
+    md.append(
+        "- 3 skills were synthesized from twobatch's batch-1 trajectories by the "
+        "`agent-wiki-synthesize-skill` skill: `extract-jpeg-exif-camera-optics`, "
+        "`read-image-format-dimensions`, `count-csv-rows-with-quoted-fields`. "
+        "All other tasks in this arm have **no matching skill** — the agent "
+        "should fall through to whatever it'd do on an empty wiki."
+    )
     md.append("")
     Path(args.out).write_text("\n".join(md) + "\n", encoding="utf-8")
     print(f"wrote {args.out}", flush=True)

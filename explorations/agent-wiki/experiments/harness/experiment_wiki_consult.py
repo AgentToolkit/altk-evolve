@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# mypy: ignore-errors
+# Exploration/reference code — not type-checked to the project standard.
 """A/B experiment: does pointing an agent at AGENTS.md alter its behavior?
 
 Paired design (utt1 → wiki → utt2):
@@ -39,7 +41,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -87,10 +88,7 @@ _CODEBASE_SEED = {
         "    return json.loads(text)\n"
     ),
     "src/writer.py": (
-        "from .parser import parse_csv\n"
-        "\n"
-        "def write_csv(rows):\n"
-        "    return '\\n'.join(','.join(map(str, r)) for r in rows)\n"
+        "from .parser import parse_csv\n\ndef write_csv(rows):\n    return '\\n'.join(','.join(map(str, r)) for r in rows)\n"
     ),
     "src/api.py": (
         "from .parser import parse_csv, parse_json\n"
@@ -100,16 +98,9 @@ _CODEBASE_SEED = {
     ),
     "tests/__init__.py": "",
     "tests/test_parser.py": (
-        "from src.parser import parse_csv\n"
-        "\n"
-        "def test_parse_basic():\n"
-        "    assert parse_csv('a,b\\nc,d') == [['a','b'], ['c','d']]\n"
+        "from src.parser import parse_csv\n\ndef test_parse_basic():\n    assert parse_csv('a,b\\nc,d') == [['a','b'], ['c','d']]\n"
     ),
-    "README.md": (
-        "# demo\n"
-        "\n"
-        "Small Python project under `src/` with tests under `tests/`.\n"
-    ),
+    "README.md": ("# demo\n\nSmall Python project under `src/` with tests under `tests/`.\n"),
 }
 
 
@@ -125,6 +116,7 @@ def _seed_format_group(ws: Path, group: str) -> list[str]:
     `_format_samples.py`. Group is one of `image-formats`, `archive-formats`,
     `text-formats`."""
     from _format_samples import seed_into  # local import — script lives next door
+
     return seed_into(ws, group)
 
 
@@ -132,15 +124,13 @@ def make_workspace(tmp_root: Path, condition: str, seed: str | None = None) -> P
     """Build a per-run workspace with the wiki + condition-specific setup +
     optional task-specific seed (e.g. a small mock python project)."""
     ws = tmp_root / "workspace"
-    shutil.copytree(DEMO_WORKSPACE, ws,
-                    ignore=shutil.ignore_patterns(".evolve", "backup", "sandbox-backup"))
+    shutil.copytree(DEMO_WORKSPACE, ws, ignore=shutil.ignore_patterns(".evolve", "backup", "sandbox-backup"))
     # Mount the wiki inside the workspace at the same name the conditions reference.
     shutil.copytree(WIKI_SRC, ws / WIKI_NAME)
     # Per-condition setup
     if condition == "claude_md":
         (ws / "CLAUDE.md").write_text(
-            "Before non-trivial tasks in this repo, consult "
-            f"`{WIKI_NAME}/AGENTS.md` for relevant guidelines.\n",
+            f"Before non-trivial tasks in this repo, consult `{WIKI_NAME}/AGENTS.md` for relevant guidelines.\n",
             encoding="utf-8",
         )
     elif condition == "claude_md_strong":
@@ -155,10 +145,7 @@ def make_workspace(tmp_root: Path, condition: str, seed: str | None = None) -> P
 
 def build_prompt(condition: str, base_prompt: str) -> str:
     if condition == "skill":
-        return (
-            "Use any skills that may help. "
-            + base_prompt
-        )
+        return "Use any skills that may help. " + base_prompt
     if condition == "prompt":
         return _STRONG_HINT + " " + base_prompt
     return base_prompt
@@ -193,7 +180,8 @@ def run_sandbox(workspace: Path, prompt: str, condition: str) -> dict:
     cmd += docker_args
     cmd += [
         SANDBOX_IMAGE,
-        "bash", "-c",
+        "bash",
+        "-c",
         f"claude {claude_extras}--dangerously-skip-permissions --output-format stream-json --verbose -p {json.dumps(prompt)}",
     ]
     t0 = time.time()
@@ -287,21 +275,19 @@ def main(argv: list[str] | None = None) -> int:
     # as a plugin skill in evolve-lite's plugin.json (which only declares
     # ./skills/evolve-lite/). Loading the plugin to register it would also
     # pull in the recall hook + recall skill, which confound the test.
-    parser.add_argument("--conditions", default="baseline,prompt,claude_md",
-                        help="Comma-separated condition slugs. "
-                             "Available: baseline, prompt, claude_md, claude_md_strong, "
-                             "system_prompt, session_hook. (skill condition deferred — "
-                             "agent-wiki/* not registered as plugin skills.)")
-    parser.add_argument("--trials", type=int, default=3,
-                        help="Trials per condition")
-    parser.add_argument("--task", default="t1-lens-model",
-                        help="Task id (or comma-separated task ids) from wiki_consult_tasks.yaml")
-    parser.add_argument("--wiki", default=None,
-                        help=f"Wiki dir to mount at /workspace/<name>/. Default: {WIKI_NAME}")
-    parser.add_argument("--out-root", default="experiments/results",
-                        help="Where to write the results dir")
-    parser.add_argument("--keep-workspaces", action="store_true",
-                        help="Don't delete per-run workspaces (debug)")
+    parser.add_argument(
+        "--conditions",
+        default="baseline,prompt,claude_md",
+        help="Comma-separated condition slugs. "
+        "Available: baseline, prompt, claude_md, claude_md_strong, "
+        "system_prompt, session_hook. (skill condition deferred — "
+        "agent-wiki/* not registered as plugin skills.)",
+    )
+    parser.add_argument("--trials", type=int, default=3, help="Trials per condition")
+    parser.add_argument("--task", default="t1-lens-model", help="Task id (or comma-separated task ids) from wiki_consult_tasks.yaml")
+    parser.add_argument("--wiki", default=None, help=f"Wiki dir to mount at /workspace/<name>/. Default: {WIKI_NAME}")
+    parser.add_argument("--out-root", default="experiments/results", help="Where to write the results dir")
+    parser.add_argument("--keep-workspaces", action="store_true", help="Don't delete per-run workspaces (debug)")
     args = parser.parse_args(argv)
 
     # Allow --wiki to override the module-level constants. _STRONG_HINT is
@@ -330,8 +316,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
-    valid = {"baseline", "skill", "prompt", "claude_md",
-             "claude_md_strong", "system_prompt", "session_hook"}
+    valid = {"baseline", "skill", "prompt", "claude_md", "claude_md_strong", "system_prompt", "session_hook"}
     for c in conditions:
         if c not in valid:
             print(f"error: unknown condition {c!r}; valid: {sorted(valid)}", file=sys.stderr)
@@ -346,8 +331,7 @@ def main(argv: list[str] | None = None) -> int:
     runs_f = runs_path.open("w", encoding="utf-8")
 
     print(f"writing results to {out_dir}", file=sys.stderr)
-    print(f"conditions: {conditions}, trials: {args.trials}, tasks: {task_ids}",
-          file=sys.stderr)
+    print(f"conditions: {conditions}, trials: {args.trials}, tasks: {task_ids}", file=sys.stderr)
 
     summary: dict[tuple[str, str], list[dict]] = {(t, c): [] for t in task_ids for c in conditions}
     for tid in task_ids:
@@ -363,16 +347,25 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     run = run_sandbox(ws, prompt, condition)
                 except subprocess.TimeoutExpired:
-                    print(f"  ✗ TIMEOUT after {TIMEOUT_SECONDS}s — skipping this trial",
-                          file=sys.stderr)
-                    runs_f.write(json.dumps({
-                        "task": tid, "condition": condition, "trial": trial,
-                        "duration_s": TIMEOUT_SECONDS, "returncode": None,
-                        "read_agents_md": False, "cited_guideline": False,
-                        "outcome_match": False,
-                        "access_paths_n": 0, "assistant_text_len": 0,
-                        "timed_out": True,
-                    }) + "\n")
+                    print(f"  ✗ TIMEOUT after {TIMEOUT_SECONDS}s — skipping this trial", file=sys.stderr)
+                    runs_f.write(
+                        json.dumps(
+                            {
+                                "task": tid,
+                                "condition": condition,
+                                "trial": trial,
+                                "duration_s": TIMEOUT_SECONDS,
+                                "returncode": None,
+                                "read_agents_md": False,
+                                "cited_guideline": False,
+                                "outcome_match": False,
+                                "access_paths_n": 0,
+                                "assistant_text_len": 0,
+                                "timed_out": True,
+                            }
+                        )
+                        + "\n"
+                    )
                     runs_f.flush()
                     if not args.keep_workspaces:
                         shutil.rmtree(tmp_root, ignore_errors=True)
@@ -392,10 +385,13 @@ def main(argv: list[str] | None = None) -> int:
                 runs_f.write(json.dumps(row) + "\n")
                 runs_f.flush()
                 summary[(tid, condition)].append(row)
-                print(f"  read_agents_md={sig['read_agents_md']}  "
-                      f"cited_guideline={sig['cited_guideline']}  "
-                      f"outcome_match={sig['outcome_match']}  "
-                      f"({run['duration_s']:.0f}s)", file=sys.stderr)
+                print(
+                    f"  read_agents_md={sig['read_agents_md']}  "
+                    f"cited_guideline={sig['cited_guideline']}  "
+                    f"outcome_match={sig['outcome_match']}  "
+                    f"({run['duration_s']:.0f}s)",
+                    file=sys.stderr,
+                )
                 # Stash the stream-json output for spot-checks
                 dst_dir2 = transcripts_dir / tid / condition
                 dst_dir2.mkdir(parents=True, exist_ok=True)
@@ -430,17 +426,19 @@ def main(argv: list[str] | None = None) -> int:
             median = durs[n // 2]
             md_lines.append(f"| {condition:<10} | {rd}/{n} | {ct}/{n} | {om}/{n} | {median:.0f} |")
         md_lines.append("")
-    md_lines.extend([
-        "",
-        "Signals:",
-        "",
-        "- **read AGENTS.md**: agent's trajectory contains a `Read` of `AGENTS.md`.",
-        "- **cited guideline**: agent's text contains an expected guideline filename or wiki concept (e.g. `0xA434`, `0x8769`, `ExifIFD`).",
-        "- **outcome match**: agent's text contains all required substrings — for the lens-model task, the answer `Google Pixel 4a Rear Wide Camera`.",
-        "",
-        f"Runs JSONL: `{runs_path.relative_to(REPO_ROOT)}`",
-        f"Transcripts: `{transcripts_dir.relative_to(REPO_ROOT)}/`",
-    ])
+    md_lines.extend(
+        [
+            "",
+            "Signals:",
+            "",
+            "- **read AGENTS.md**: agent's trajectory contains a `Read` of `AGENTS.md`.",
+            "- **cited guideline**: agent's text contains an expected guideline filename or wiki concept (e.g. `0xA434`, `0x8769`, `ExifIFD`).",
+            "- **outcome match**: agent's text contains all required substrings — for the lens-model task, the answer `Google Pixel 4a Rear Wide Camera`.",
+            "",
+            f"Runs JSONL: `{runs_path.relative_to(REPO_ROOT)}`",
+            f"Transcripts: `{transcripts_dir.relative_to(REPO_ROOT)}/`",
+        ]
+    )
     (out_dir / "summary.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
     print(f"\nwrote {runs_path}", file=sys.stderr)

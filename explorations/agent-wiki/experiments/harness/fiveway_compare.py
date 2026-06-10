@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# mypy: ignore-errors
+# Exploration/reference code — not type-checked to the project standard.
 """Five-way comparison: empty / guidelines / skills / both / pruned.
 
 Reads four metrics files:
@@ -20,21 +22,40 @@ REPO = Path(__file__).resolve().parents[1]
 
 TASK_IDS_ORDER = [
     "t1-lens-model",
-    "t6-png-dim", "t7-gif-dim", "t8-bmp-info", "t9-webp-dim",
-    "t10-zip-list", "t11-tar-list", "t12-wav-info", "t13-gzip-dec",
-    "t14-csv-quoted", "t15-jsonl-kinds", "t16-ini-key", "t17-log-errors",
-    "t2-imports", "t3-todos", "t5-base64",
+    "t6-png-dim",
+    "t7-gif-dim",
+    "t8-bmp-info",
+    "t9-webp-dim",
+    "t10-zip-list",
+    "t11-tar-list",
+    "t12-wav-info",
+    "t13-gzip-dec",
+    "t14-csv-quoted",
+    "t15-jsonl-kinds",
+    "t16-ini-key",
+    "t17-log-errors",
+    "t2-imports",
+    "t3-todos",
+    "t5-base64",
 ]
 
 FAMILY = {
     "t1-lens-model": "lens-model",
-    "t6-png-dim": "image", "t7-gif-dim": "image",
-    "t8-bmp-info": "image", "t9-webp-dim": "image",
-    "t10-zip-list": "archive", "t11-tar-list": "archive",
-    "t12-wav-info": "archive", "t13-gzip-dec": "archive",
-    "t14-csv-quoted": "text", "t15-jsonl-kinds": "text",
-    "t16-ini-key": "text", "t17-log-errors": "text",
-    "t2-imports": "skip", "t3-todos": "skip", "t5-base64": "skip",
+    "t6-png-dim": "image",
+    "t7-gif-dim": "image",
+    "t8-bmp-info": "image",
+    "t9-webp-dim": "image",
+    "t10-zip-list": "archive",
+    "t11-tar-list": "archive",
+    "t12-wav-info": "archive",
+    "t13-gzip-dec": "archive",
+    "t14-csv-quoted": "text",
+    "t15-jsonl-kinds": "text",
+    "t16-ini-key": "text",
+    "t17-log-errors": "text",
+    "t2-imports": "skip",
+    "t3-todos": "skip",
+    "t5-base64": "skip",
 }
 
 ARMS = ("empty", "guidelines", "skills", "both", "pruned")
@@ -100,9 +121,7 @@ def main() -> int:
         r = json.loads(line)
         r["arm"] = "empty" if r["batch"] == 1 else "guidelines"
         rows.append(r)
-    for arm, path in (("skills", args.skills_metrics),
-                      ("both", args.both_metrics),
-                      ("pruned", args.pruned_metrics)):
+    for arm, path in (("skills", args.skills_metrics), ("both", args.both_metrics), ("pruned", args.pruned_metrics)):
         p = Path(path)
         if not p.exists():
             continue
@@ -122,14 +141,16 @@ def main() -> int:
     md: list[str] = []
     md.append("# Five-way wiki-helps comparison: empty / guidelines / skills / both / pruned")
     md.append("")
-    md.append("Same 16-task corpus, five arms, all `claude_md_strong` condition. "
-              "Empty + guidelines arms are twobatch's batch-1 / batch-2. Skills arm "
-              "is twobatch-skills (3 skills, no guidelines). Both arm is "
-              "twobatch-both (those same 3 skills + ~15 atomics, no clusters). "
-              "**Pruned arm** is twobatch-pruned: same 3 skills + only the "
-              "no-skill-coverage atomics (delete-on-promote policy applied — "
-              "image-format and CSV atomics archived because their corresponding "
-              "skills were synthesized).")
+    md.append(
+        "Same 16-task corpus, five arms, all `claude_md_strong` condition. "
+        "Empty + guidelines arms are twobatch's batch-1 / batch-2. Skills arm "
+        "is twobatch-skills (3 skills, no guidelines). Both arm is "
+        "twobatch-both (those same 3 skills + ~15 atomics, no clusters). "
+        "**Pruned arm** is twobatch-pruned: same 3 skills + only the "
+        "no-skill-coverage atomics (delete-on-promote policy applied — "
+        "image-format and CSV atomics archived because their corresponding "
+        "skills were synthesized)."
+    )
     md.append("")
 
     md.append("## Aggregate")
@@ -158,16 +179,18 @@ def main() -> int:
             else:
                 vals[a] = median([r.get(field) for r in arm_rows])
         if field == "len":
-            md.append(f"| {label} | {vals['empty']} | {vals['guidelines']} | {vals['skills']} | "
-                      f"{vals['both']} | {vals['pruned']} | "
-                      f"{vals['pruned']-vals['guidelines']:+d} | "
-                      f"{vals['pruned']-vals['skills']:+d} | "
-                      f"{vals['pruned']-vals['both']:+d} |")
+            md.append(
+                f"| {label} | {vals['empty']} | {vals['guidelines']} | {vals['skills']} | "
+                f"{vals['both']} | {vals['pruned']} | "
+                f"{vals['pruned'] - vals['guidelines']:+d} | "
+                f"{vals['pruned'] - vals['skills']:+d} | "
+                f"{vals['pruned'] - vals['both']:+d} |"
+            )
         else:
             md.append(
-                f"| {label} | {fmt(vals['empty'],kind)} | {fmt(vals['guidelines'],kind)} | "
-                f"{fmt(vals['skills'],kind)} | {fmt(vals['both'],kind)} | "
-                f"{fmt(vals['pruned'],kind)} | "
+                f"| {label} | {fmt(vals['empty'], kind)} | {fmt(vals['guidelines'], kind)} | "
+                f"{fmt(vals['skills'], kind)} | {fmt(vals['both'], kind)} | "
+                f"{fmt(vals['pruned'], kind)} | "
                 f"{delta(vals['guidelines'], vals['pruned'], kind)} | "
                 f"{delta(vals['skills'], vals['pruned'], kind)} | "
                 f"{delta(vals['both'], vals['pruned'], kind)} |"
@@ -188,14 +211,14 @@ def main() -> int:
         cs = {a: median([r.get("total_cost_usd") for r in in_fam[a]]) for a in ARMS}
         md.append(
             f"| {fam} | {len(tids)} | "
-            f"{fmt(acc(in_fam['empty']),'pct')} | {fmt(acc(in_fam['guidelines']),'pct')} | "
-            f"{fmt(acc(in_fam['skills']),'pct')} | {fmt(acc(in_fam['both']),'pct')} | "
-            f"{fmt(acc(in_fam['pruned']),'pct')} | "
-            f"{fmt(cs['empty'],'dollars')} | {fmt(cs['guidelines'],'dollars')} | "
-            f"{fmt(cs['skills'],'dollars')} | {fmt(cs['both'],'dollars')} | "
-            f"{fmt(cs['pruned'],'dollars')} | "
-            f"{delta(cs['skills'], cs['pruned'],'dollars')} | "
-            f"{delta(cs['both'], cs['pruned'],'dollars')} |"
+            f"{fmt(acc(in_fam['empty']), 'pct')} | {fmt(acc(in_fam['guidelines']), 'pct')} | "
+            f"{fmt(acc(in_fam['skills']), 'pct')} | {fmt(acc(in_fam['both']), 'pct')} | "
+            f"{fmt(acc(in_fam['pruned']), 'pct')} | "
+            f"{fmt(cs['empty'], 'dollars')} | {fmt(cs['guidelines'], 'dollars')} | "
+            f"{fmt(cs['skills'], 'dollars')} | {fmt(cs['both'], 'dollars')} | "
+            f"{fmt(cs['pruned'], 'dollars')} | "
+            f"{delta(cs['skills'], cs['pruned'], 'dollars')} | "
+            f"{delta(cs['both'], cs['pruned'], 'dollars')} |"
         )
     md.append("")
 
@@ -208,11 +231,11 @@ def main() -> int:
             continue
         cs = {a: median([r.get("total_cost_usd") for r in by_task[tid].get(a, [])]) for a in ARMS}
         md.append(
-            f"| `{tid}` | {fmt(cs['empty'],'dollars')} | {fmt(cs['guidelines'],'dollars')} | "
-            f"{fmt(cs['skills'],'dollars')} | {fmt(cs['both'],'dollars')} | "
-            f"{fmt(cs['pruned'],'dollars')} | "
-            f"{delta(cs['skills'], cs['pruned'],'dollars')} | "
-            f"{delta(cs['both'], cs['pruned'],'dollars')} |"
+            f"| `{tid}` | {fmt(cs['empty'], 'dollars')} | {fmt(cs['guidelines'], 'dollars')} | "
+            f"{fmt(cs['skills'], 'dollars')} | {fmt(cs['both'], 'dollars')} | "
+            f"{fmt(cs['pruned'], 'dollars')} | "
+            f"{delta(cs['skills'], cs['pruned'], 'dollars')} | "
+            f"{delta(cs['both'], cs['pruned'], 'dollars')} |"
         )
     md.append("")
 
@@ -225,39 +248,47 @@ def main() -> int:
             continue
         as_ = {a: acc(by_task[tid].get(a, [])) for a in ARMS}
         md.append(
-            f"| `{tid}` | {fmt(as_['empty'],'pct')} | {fmt(as_['guidelines'],'pct')} | "
-            f"{fmt(as_['skills'],'pct')} | {fmt(as_['both'],'pct')} | "
-            f"{fmt(as_['pruned'],'pct')} |"
+            f"| `{tid}` | {fmt(as_['empty'], 'pct')} | {fmt(as_['guidelines'], 'pct')} | "
+            f"{fmt(as_['skills'], 'pct')} | {fmt(as_['both'], 'pct')} | "
+            f"{fmt(as_['pruned'], 'pct')} |"
         )
     md.append("")
     md.append("## Notes")
     md.append("")
     md.append("- Empty + guidelines + skills + both columns reproduce the 4-way comparison.")
-    md.append("- Pruned column is the new arm, testing the **delete-on-promote** policy: "
-              "when `synthesize-skill` produces a skill, it inferentially archives the "
-              "atomic guidelines covered by the skill (via tag-superset, slug-keyword, or "
-              "format-identifier description match). Result: 3 skills + 9 atomics + 6 archived.")
-    md.append("- The pruned arm is the experimental answer to the open question \"if "
-              "'both' loses to 'skills-only', does 'skills + only the no-skill-coverage "
-              "guidelines' beat 'skills-only'?\" raised in §7 of RESULTS-SUMMARY.md.")
+    md.append(
+        "- Pruned column is the new arm, testing the **delete-on-promote** policy: "
+        "when `synthesize-skill` produces a skill, it inferentially archives the "
+        "atomic guidelines covered by the skill (via tag-superset, slug-keyword, or "
+        "format-identifier description match). Result: 3 skills + 9 atomics + 6 archived."
+    )
+    md.append(
+        '- The pruned arm is the experimental answer to the open question "if '
+        "'both' loses to 'skills-only', does 'skills + only the no-skill-coverage "
+        "guidelines' beat 'skills-only'?\" raised in §7 of RESULTS-SUMMARY.md."
+    )
     md.append("")
     md.append("### Correction — Pruned column is the re-run against a fixed index")
     md.append("")
-    md.append("The original pruned arm (commit `8bcd713`) ran against a wiki whose "
-              "`_index.jsonl` was **stale**: `render-skill` archived the covered atomics "
-              "but never refreshed the indexes, so the wiki exposed **0 skills, 15 "
-              "guideline rows, 6 broken links**. Agents couldn't see the skills and fell "
-              "back to dangling guideline rows (original: median $0.181, 290 output "
-              "tokens, 3 wiki reads, 1 guideline read).")
+    md.append(
+        "The original pruned arm (commit `8bcd713`) ran against a wiki whose "
+        "`_index.jsonl` was **stale**: `render-skill` archived the covered atomics "
+        "but never refreshed the indexes, so the wiki exposed **0 skills, 15 "
+        "guideline rows, 6 broken links**. Agents couldn't see the skills and fell "
+        "back to dangling guideline rows (original: median $0.181, 290 output "
+        "tokens, 3 wiki reads, 1 guideline read)."
+    )
     md.append("")
-    md.append("Commit `2adc67a` fixed the builder to refresh the section indexes + "
-              "`_index.jsonl` after `render-skill`/`render-cluster` (with an integrity "
-              "assertion). This Pruned column is the full 16-task re-run against the "
-              "corrected wiki: median **$0.173**, ~225 output tokens, 2 wiki reads, **0** "
-              "guideline reads. Net: pruned moved from +1% to **-3% vs both** and from "
-              "+24% to **+18% vs skills**. Skills-only is still cheapest, but the apparent "
-              "\"pruning is worse than both\" result was largely the stale-index bug, not "
-              "the policy. See `pruned-index-hypothesis.md` for the slice-level diagnosis.")
+    md.append(
+        "Commit `2adc67a` fixed the builder to refresh the section indexes + "
+        "`_index.jsonl` after `render-skill`/`render-cluster` (with an integrity "
+        "assertion). This Pruned column is the full 16-task re-run against the "
+        "corrected wiki: median **$0.173**, ~225 output tokens, 2 wiki reads, **0** "
+        "guideline reads. Net: pruned moved from +1% to **-3% vs both** and from "
+        "+24% to **+18% vs skills**. Skills-only is still cheapest, but the apparent "
+        '"pruning is worse than both" result was largely the stale-index bug, not '
+        "the policy. See `pruned-index-hypothesis.md` for the slice-level diagnosis."
+    )
     Path(args.out).write_text("\n".join(md) + "\n", encoding="utf-8")
     print(f"wrote {args.out}", flush=True)
     return 0

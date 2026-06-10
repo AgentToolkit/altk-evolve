@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# mypy: ignore-errors
+# Exploration/reference code — not type-checked to the project standard.
 """build_agent_wiki.py — single CLI driving the `agent-wiki` family of skills.
 
 Subcommands:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# mypy: ignore-errors
+# Exploration/reference code — not type-checked to the project standard.
 """Compare batch-1 (no wiki) and batch-2 (with wiki) metrics from
 the two-batch experiment. Emits a markdown report.
 
@@ -20,13 +22,21 @@ REPO = Path(__file__).resolve().parents[1]
 
 FAMILY = {
     "t1-lens-model": "lens-model",
-    "t6-png-dim": "image", "t7-gif-dim": "image",
-    "t8-bmp-info": "image", "t9-webp-dim": "image",
-    "t10-zip-list": "archive", "t11-tar-list": "archive",
-    "t12-wav-info": "archive", "t13-gzip-dec": "archive",
-    "t14-csv-quoted": "text", "t15-jsonl-kinds": "text",
-    "t16-ini-key": "text", "t17-log-errors": "text",
-    "t2-imports": "skip", "t3-todos": "skip", "t5-base64": "skip",
+    "t6-png-dim": "image",
+    "t7-gif-dim": "image",
+    "t8-bmp-info": "image",
+    "t9-webp-dim": "image",
+    "t10-zip-list": "archive",
+    "t11-tar-list": "archive",
+    "t12-wav-info": "archive",
+    "t13-gzip-dec": "archive",
+    "t14-csv-quoted": "text",
+    "t15-jsonl-kinds": "text",
+    "t16-ini-key": "text",
+    "t17-log-errors": "text",
+    "t2-imports": "skip",
+    "t3-todos": "skip",
+    "t5-base64": "skip",
 }
 
 
@@ -77,7 +87,7 @@ def main() -> int:
 
     metrics_path = Path(args.metrics)
     out_path = Path(args.out)
-    rows = [json.loads(l) for l in metrics_path.read_text().splitlines() if l.strip()]
+    rows = [json.loads(ln) for ln in metrics_path.read_text().splitlines() if ln.strip()]
 
     # by_task: {task_id: {1: [rows], 2: [rows]}}
     by_task: dict[str, dict[int, list[dict]]] = defaultdict(lambda: defaultdict(list))
@@ -95,12 +105,15 @@ def main() -> int:
     md: list[str] = []
     md.append("# Two-batch wiki-helps comparison")
     md.append("")
-    md.append("**Question**: does a populated wiki reduce token cost / wall-clock at "
-              "equal-or-better accuracy, vs the same task on an empty wiki?")
+    md.append(
+        "**Question**: does a populated wiki reduce token cost / wall-clock at equal-or-better accuracy, vs the same task on an empty wiki?"
+    )
     md.append("")
-    md.append("Setup: 16 tasks × 3 trials × 2 batches = 96 sandbox trials, all "
-              "`claude_md_strong`. Batch 1's agent saw an empty wiki. After ingestion "
-              "the wiki was frozen. Batch 2's agent saw the populated wiki.")
+    md.append(
+        "Setup: 16 tasks × 3 trials × 2 batches = 96 sandbox trials, all "
+        "`claude_md_strong`. Batch 1's agent saw an empty wiki. After ingestion "
+        "the wiki was frozen. Batch 2's agent saw the populated wiki."
+    )
     md.append("")
 
     # ── Aggregate ──
@@ -127,11 +140,12 @@ def main() -> int:
     for label, field, agg_op, kind in pairs:
         if field == "len":
             v1, v2 = len(all_b1), len(all_b2)
-            md.append(f"| {label} | {v1} | {v2} | {v2-v1:+d} |")
+            md.append(f"| {label} | {v1} | {v2} | {v2 - v1:+d} |")
             continue
         if agg_op == "mean":
             if field == "outcome_match":
-                v1 = acc(all_b1); v2 = acc(all_b2)
+                v1 = acc(all_b1)
+                v2 = acc(all_b2)
             else:
                 v1 = mean_or_none([r.get(field) for r in all_b1])
                 v2 = mean_or_none([r.get(field) for r in all_b2])
@@ -146,8 +160,7 @@ def main() -> int:
     md.append("")
     md.append("Median per-trial cost within each family. Δ = batch-2 minus batch-1.")
     md.append("")
-    md.append("| Family | Tasks | B1 acc | B2 acc | Δ acc | B1 dur | B2 dur | Δ dur | "
-              "B1 tokens | B2 tokens | Δ tokens |")
+    md.append("| Family | Tasks | B1 acc | B2 acc | Δ acc | B1 dur | B2 dur | Δ dur | B1 tokens | B2 tokens | Δ tokens |")
     md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     fam_groups: dict[str, list[str]] = defaultdict(list)
     for tid, fam in FAMILY.items():
@@ -155,53 +168,60 @@ def main() -> int:
     for fam, tids in fam_groups.items():
         b1 = [r for r in rows if r["batch"] == 1 and r["task"] in tids]
         b2 = [r for r in rows if r["batch"] == 2 and r["task"] in tids]
-        a1 = acc(b1); a2 = acc(b2)
+        a1 = acc(b1)
+        a2 = acc(b2)
         d1 = median_or_none([r.get("duration_s") for r in b1])
         d2 = median_or_none([r.get("duration_s") for r in b2])
         t1 = median_or_none([r.get("billable_tokens_proxy") for r in b1])
         t2 = median_or_none([r.get("billable_tokens_proxy") for r in b2])
-        md.append(f"| {fam} | {', '.join(tids)} | {fmt(a1,'pct')} | {fmt(a2,'pct')} | "
-                  f"{delta_str(a1,a2,'pct')} | {fmt(d1,'duration')} | {fmt(d2,'duration')} | "
-                  f"{delta_str(d1,d2,'duration')} | {fmt(t1,'tokens')} | {fmt(t2,'tokens')} | "
-                  f"{delta_str(t1,t2,'tokens')} |")
+        md.append(
+            f"| {fam} | {', '.join(tids)} | {fmt(a1, 'pct')} | {fmt(a2, 'pct')} | "
+            f"{delta_str(a1, a2, 'pct')} | {fmt(d1, 'duration')} | {fmt(d2, 'duration')} | "
+            f"{delta_str(d1, d2, 'duration')} | {fmt(t1, 'tokens')} | {fmt(t2, 'tokens')} | "
+            f"{delta_str(t1, t2, 'tokens')} |"
+        )
     md.append("")
 
     # ── Per task ──
     md.append("## Per task")
     md.append("")
-    md.append("Median across 3 trials per cell. Token = `billable_tokens_proxy` "
-              "(input + cache-creation + output; cache reads excluded).")
+    md.append("Median across 3 trials per cell. Token = `billable_tokens_proxy` (input + cache-creation + output; cache reads excluded).")
     md.append("")
-    md.append("| Task | B1 acc | B2 acc | B1 dur | B2 dur | Δ dur | "
-              "B1 tokens | B2 tokens | Δ tokens | B1 tools | B2 tools |")
+    md.append("| Task | B1 acc | B2 acc | B1 dur | B2 dur | Δ dur | B1 tokens | B2 tokens | Δ tokens | B1 tools | B2 tools |")
     md.append("|---|:-:|:-:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for tid in TASK_IDS_ORDER:
         b1 = by_task[tid].get(1, [])
         b2 = by_task[tid].get(2, [])
         if not b1 and not b2:
             continue
-        a1 = acc(b1); a2 = acc(b2)
+        a1 = acc(b1)
+        a2 = acc(b2)
         d1 = median_or_none([r.get("duration_s") for r in b1])
         d2 = median_or_none([r.get("duration_s") for r in b2])
         t1 = median_or_none([r.get("billable_tokens_proxy") for r in b1])
         t2 = median_or_none([r.get("billable_tokens_proxy") for r in b2])
         tc1 = median_or_none([r.get("tool_calls") for r in b1])
         tc2 = median_or_none([r.get("tool_calls") for r in b2])
-        md.append(f"| `{tid}` | {fmt(a1,'pct')} | {fmt(a2,'pct')} | "
-                  f"{fmt(d1,'duration')} | {fmt(d2,'duration')} | {delta_str(d1,d2,'duration')} | "
-                  f"{fmt(t1,'tokens')} | {fmt(t2,'tokens')} | {delta_str(t1,t2,'tokens')} | "
-                  f"{fmt(tc1)} | {fmt(tc2)} |")
+        md.append(
+            f"| `{tid}` | {fmt(a1, 'pct')} | {fmt(a2, 'pct')} | "
+            f"{fmt(d1, 'duration')} | {fmt(d2, 'duration')} | {delta_str(d1, d2, 'duration')} | "
+            f"{fmt(t1, 'tokens')} | {fmt(t2, 'tokens')} | {delta_str(t1, t2, 'tokens')} | "
+            f"{fmt(tc1)} | {fmt(tc2)} |"
+        )
     md.append("")
 
     md.append("## Notes")
     md.append("")
-    md.append("- `billable_tokens_proxy` = `input_tokens + cache_creation_input_tokens + output_tokens` "
-              "(cache reads are very cheap and not directly billed at the same rate).")
-    md.append("- A trial that timed out is recorded with `outcome_match=False`, "
-              "`duration_s=300`, all token fields = 0. These bring batch-1 means down "
-              "if they happen.")
-    md.append("- Only `claude_md_strong` was run in this experiment for clean comparison "
-              "(no condition mixing).")
+    md.append(
+        "- `billable_tokens_proxy` = `input_tokens + cache_creation_input_tokens + output_tokens` "
+        "(cache reads are very cheap and not directly billed at the same rate)."
+    )
+    md.append(
+        "- A trial that timed out is recorded with `outcome_match=False`, "
+        "`duration_s=300`, all token fields = 0. These bring batch-1 means down "
+        "if they happen."
+    )
+    md.append("- Only `claude_md_strong` was run in this experiment for clean comparison (no condition mixing).")
     md.append("")
 
     out_path.write_text("\n".join(md) + "\n", encoding="utf-8")
@@ -211,10 +231,21 @@ def main() -> int:
 
 TASK_IDS_ORDER = [
     "t1-lens-model",
-    "t6-png-dim", "t7-gif-dim", "t8-bmp-info", "t9-webp-dim",
-    "t10-zip-list", "t11-tar-list", "t12-wav-info", "t13-gzip-dec",
-    "t14-csv-quoted", "t15-jsonl-kinds", "t16-ini-key", "t17-log-errors",
-    "t2-imports", "t3-todos", "t5-base64",
+    "t6-png-dim",
+    "t7-gif-dim",
+    "t8-bmp-info",
+    "t9-webp-dim",
+    "t10-zip-list",
+    "t11-tar-list",
+    "t12-wav-info",
+    "t13-gzip-dec",
+    "t14-csv-quoted",
+    "t15-jsonl-kinds",
+    "t16-ini-key",
+    "t17-log-errors",
+    "t2-imports",
+    "t3-todos",
+    "t5-base64",
 ]
 
 
