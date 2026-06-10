@@ -7,22 +7,26 @@ decide, on your own judgment, when something is worth remembering — nothing
 forces a save, and there is no step to "complete." Curate this store like notes
 you'll thank yourself for later: small, accurate, high-signal.
 
-## Recall — at the start of a non-trivial task
+## Recall — your first action, before any other tool use
 
-Before substantive work (code changes, debugging, repo exploration, or
-environment/tooling investigation), look through `./.evolve/entities/` if it
-exists. Every entity carries a `trigger` line in its frontmatter describing the
-situation it applies to. Read the triggers, open the entity files whose trigger
-looks relevant to the task at hand, and let them inform what you do. If the
-directory is missing or nothing looks relevant, just proceed — that's normal.
+On a non-trivial task (code changes, debugging, repo exploration, or
+environment/tooling investigation), your FIRST action — before reading source,
+running commands, or anything else — is to check `./.evolve/entities/`: list
+that directory, read each entity's `trigger` line, and open the entity files
+whose trigger matches the task. The moment you open one or more entities, your
+next step — still part of this same first action — is to record them with the
+audit command under "Record what you consulted" below; do it before you move on
+to the task. Let what you find inform the work that follows. If the directory is
+missing or nothing matches, note that and proceed — that's normal.
 
 Entities reflect what was true when written. If one names a file, function,
 command, or flag, verify it still exists before relying on it.
 
 ## Record what you consulted
 
-After recall, log which entities you actually opened, so the value of this
-memory can be measured over time. Run:
+Whenever you opened entities in the recall step above, record them now — run
+this before doing anything else, so the value of this memory can be measured
+over time:
 
 ```bash
 python3 ~/.bob/evolve-lite/audit_recall.py <id> [<id> ...]
