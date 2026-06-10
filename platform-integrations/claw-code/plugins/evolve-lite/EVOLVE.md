@@ -1,61 +1,66 @@
 # Evolve — self-directed memory
 
-You have a persistent, file-based memory for the current project, stored under
-`./.evolve/memory/` (relative to the workspace/project root). You decide, on
-your own judgment, when something is worth remembering — nothing forces a save,
-and there is no step to "complete." Curate this memory like notes you'll thank
-yourself for later: small, accurate, high-signal.
+You have a persistent, file-based memory for the current project, stored as
+*entities* under `./.evolve/entities/<type>/` (relative to the workspace/project
+root). Each entity is one fact; "memory" and "entity" are the same thing. You
+decide, on your own judgment, when something is worth remembering — nothing
+forces a save, and there is no step to "complete." Curate this store like notes
+you'll thank yourself for later: small, accurate, high-signal.
 
 ## Recall — at the start of a non-trivial task
 
 Before substantive work (code changes, debugging, repo exploration, or
-environment/tooling investigation), read your memory index at
-`./.evolve/memory/MEMORY.md` if it exists. It holds one line per memory with a
-short description. Open the individual memory files whose description looks
-relevant to the task at hand, and let them inform what you do. If the index is
-missing or nothing looks relevant, just proceed — that's normal.
+environment/tooling investigation), look through `./.evolve/entities/` if it
+exists. Every entity carries a `trigger` line in its frontmatter describing the
+situation it applies to. Read the triggers, open the entity files whose trigger
+looks relevant to the task at hand, and let them inform what you do. If the
+directory is missing or nothing looks relevant, just proceed — that's normal.
 
-Memories reflect what was true when written. If a memory names a file,
-function, command, or flag, verify it still exists before relying on it.
+Entities reflect what was true when written. If one names a file, function,
+command, or flag, verify it still exists before relying on it.
 
 ## Record what you consulted
 
-After recall, log which entries you actually opened, so the value of this memory
-can be measured over time. Run:
+After recall, log which entities you actually opened, so the value of this
+memory can be measured over time. Run:
 
 ```bash
-python3 ~/.claw/evolve-lite/audit_recall.py <file> [<file> ...]
+python3 ~/.claw/evolve-lite/audit_recall.py <id> [<id> ...]
 ```
 
-Pass the memory files you read this turn (space-separated paths, relative to the
-project root). Skip this step entirely if you consulted no memories. If the
-command prints a line beginning `evolve-session:`, include that line once,
-verbatim, somewhere in your reply — it lets later analysis tie this session to
-what you recalled.
+Pass the entity id `<type>/<name>` for each entity you consulted, where `<type>`
+is its directory under `entities/` and `<name>` is its filename without `.md`
+(e.g. `project/test-fixture-generated`). Skip this step entirely if you
+consulted no entities. If the command prints a line beginning `evolve-session:`,
+include that line once, verbatim, somewhere in your reply — it lets later
+analysis tie this session to what you recalled.
 
 ## Save — only when you learn something durable
 
 Near the end of a task, if it produced a reusable fact that isn't already
-obvious from the code or git history — and only then — write it to memory.
+obvious from the code or git history — and only then — write it as an entity.
 Saving nothing is the right outcome more often than not; never force a
-low-value memory just to have saved one.
+low-value entity just to have saved one.
 
-Each memory is one file holding one fact, under `./.evolve/memory/` (create the
-directory if it doesn't exist), with frontmatter:
+Each entity is one file holding one fact, at
+`./.evolve/entities/<type>/<short-kebab-slug>.md` (create the directory if it
+doesn't exist — `<type>` is one of the types below). The filename is the
+entity's name; the frontmatter carries its type and trigger:
 
 ```markdown
 ---
-name: <short-kebab-case-slug>
-description: <one-line summary — used to decide relevance during recall>
-metadata:
-  type: user | feedback | project | reference
+type: <user | feedback | project | reference>
+trigger: <one line naming the situation in which a future session should recall this>
 ---
 
 <the fact. For feedback/project, follow with **Why:** and **How to apply:** lines.
-Link related memories with [[their-name]].>
+Link related entities with [[their-name]].>
 ```
 
-Types:
+The `trigger` is what a future session matches against during recall, so make it
+about *when* the fact applies, not just what it is.
+
+Types (the `<type>` directory and frontmatter value):
 - **user** — who the user is: role, expertise, durable preferences.
 - **feedback** — guidance on how you should work, both corrections and
   confirmed approaches; always include the why.
@@ -63,13 +68,9 @@ Types:
   or git history; convert relative dates ("next week") to absolute ones.
 - **reference** — pointers to external resources (URLs, dashboards, tickets).
 
-In the body, link related memories with `[[name]]`, where `name` is another
-memory's `name:` slug. Link liberally; a `[[name]]` with no file yet marks
+In the body, link related entities with `[[name]]`, where `name` is another
+entity's filename slug. Link liberally; a `[[name]]` with no file yet marks
 something worth writing later, not an error.
-
-After writing the file, add a one-line pointer to `./.evolve/memory/MEMORY.md`:
-`- [Title](file.md) — short hook`. MEMORY.md is the index you read during
-recall — one line per memory, no frontmatter, never put memory content there.
 
 ## When NOT to save, and housekeeping
 
@@ -77,6 +78,6 @@ recall — one line per memory, no frontmatter, never put memory content there.
   READMEs, existing docs. If asked to remember one of those, ask what was
   non-obvious about it and save that instead.
 - Don't save what only matters to the current conversation.
-- Before saving, check for an existing memory that already covers it — update
+- Before saving, check for an existing entity that already covers it — update
   that file rather than creating a duplicate.
-- Delete memories that turn out to be wrong.
+- Delete entities that turn out to be wrong.
