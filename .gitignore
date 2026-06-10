@@ -9,6 +9,7 @@ __pycache__
 evolve_data
 demo/workdir/.claude/
 .bob
+.bob-sandbox-home/
 .claude
 dist
 .coverage
