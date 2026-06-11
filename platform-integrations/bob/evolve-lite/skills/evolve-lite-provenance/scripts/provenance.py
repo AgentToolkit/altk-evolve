@@ -24,6 +24,7 @@ Two modes:
                            ``influence`` row via log_influence.py's writer.
 """
 
+import glob
 import json
 import sys
 from pathlib import Path
@@ -156,9 +157,10 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
     if session_id and "/" not in session_id and "*" not in session_id:
         codex_sessions = base / ".codex" / "sessions"
         if codex_sessions.is_dir():
-            matches = sorted(codex_sessions.rglob(f"*{session_id}*.jsonl"))
+            matches = sorted(codex_sessions.rglob(f"*{glob.escape(session_id)}*.jsonl"))
             if matches:
-                return matches[0]
+                exact = [m for m in matches if m.stem.endswith(session_id)]
+                return (exact or matches)[0]
 
     # --- 4. Native Bob transcript -------------------------------------------
     # Bob (a Gemini-CLI fork) stores sessions at
@@ -172,7 +174,7 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
         bob_tmp = base / ".bob" / "tmp"
         if bob_tmp.is_dir():
             sid_head = session_id.split("-", 1)[0]
-            for chat in sorted(bob_tmp.glob(f"*/chats/session-*{sid_head}*.json")):
+            for chat in sorted(bob_tmp.glob(f"*/chats/session-*{glob.escape(sid_head)}*.json")):
                 try:
                     data = json.loads(chat.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError):
@@ -224,7 +226,12 @@ def _read_entity(evolve_dir, entity_id):
     the file is missing. ``entity_id`` is a ``<type>/<name>`` id relative to
     ``entities/`` (without ``.md``).
     """
-    entity_path = Path(evolve_dir) / "entities" / f"{entity_id}.md"
+    entities_root = (Path(evolve_dir) / "entities").resolve()
+    entity_path = entities_root / f"{entity_id}.md"
+    # Containment: a crafted entity_id (e.g. ``../../etc/passwd``) must not
+    # resolve outside the entities dir. Treat any escape as a missing entity.
+    if entities_root not in entity_path.resolve().parents:
+        return entity_path, None
     if not entity_path.is_file():
         return entity_path, None
     try:

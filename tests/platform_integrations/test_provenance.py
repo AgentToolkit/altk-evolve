@@ -20,7 +20,9 @@ import pytest
 pytestmark = [pytest.mark.platform_integrations]
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
-PROVENANCE_SCRIPT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/provenance/scripts/provenance.py"
+_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
+PROVENANCE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/provenance/scripts/provenance.py"
+ENTITY_IO_SCRIPT = _PLUGIN_ROOT / "lib/evolve-lite/entity_io.py"
 
 
 def _claude_slug(root: Path) -> str:
@@ -314,3 +316,60 @@ class TestRecord:
         events = read_audit(evolve_dir)
         assert len(events) == 1
         assert events[0]["verdict"] == "followed"
+
+
+def _load_module(name, path, extra_syspath=None):
+    """Load a module from an explicit file path via importlib.
+
+    ``extra_syspath`` entries are prepended to ``sys.path`` for the duration of
+    the import so a module whose top-level imports rely on a sibling lib dir
+    (provenance.py does ``from entity_io import ...``) can resolve them.
+    """
+    import importlib.util
+
+    added = list(extra_syspath or [])
+    for entry in added:
+        sys.path.insert(0, str(entry))
+    try:
+        spec = importlib.util.spec_from_file_location(name, str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        for entry in added:
+            try:
+                sys.path.remove(str(entry))
+            except ValueError:
+                pass
+
+
+class TestSlugAgreement:
+    """Pin provenance._claude_transcript_slug to entity_io.claude_project_slug.
+
+    The two implementations are hand-kept-in-sync (provenance.py's docstring
+    admits "if you change one, change both"). This converts that footgun into a
+    CI invariant. Both are loaded by file path via importlib so the rendered
+    scripts — which do not import one another — can be compared directly.
+
+    ``claude_project_slug`` resolves its argument to an absolute path before
+    slugging, while ``_claude_transcript_slug`` slugs the (already-absolute)
+    project root it is handed. To compare apples to apples we pass absolute
+    paths and resolve them the same way before handing them to the provenance
+    slug.
+    """
+
+    def test_slug_implementations_agree(self):
+        lib_dir = PROVENANCE_SCRIPT.parent
+        provenance = _load_module("_prov_slug", PROVENANCE_SCRIPT, extra_syspath=[ENTITY_IO_SCRIPT.parent, lib_dir])
+        entity_io = _load_module("_entity_io_slug", ENTITY_IO_SCRIPT)
+
+        samples = [
+            "/Users/x/Documents/kaizen",
+            "/tmp/evolve-smoke-test2",
+            "/Users/x/My Documents/with spaces",
+            "/Users/x/Documents/kaizen/",
+            "/a/b/c.d/e_f",
+        ]
+        for raw in samples:
+            resolved = Path(raw).resolve()
+            assert provenance._claude_transcript_slug(resolved) == entity_io.claude_project_slug(raw), raw
