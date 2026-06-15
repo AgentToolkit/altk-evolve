@@ -9,6 +9,7 @@ pytestmark = pytest.mark.platform_integrations
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
 _CODEX_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/codex/plugins/evolve-lite"
+_CLAW_CODE_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claw-code/plugins/evolve-lite"
 
 
 class TestPluginManifest:
@@ -70,9 +71,12 @@ class TestSkillScripts:
         assert "plugins/evolve-lite/skills/evolve-lite/save-trajectory/scripts/save_trajectory.py" in content
 
 
-class TestRecallLearnExcludedFromClaude:
-    """Native auto-memory owns recall + save on Claude, so the recall/learn
-    skills are excluded from the Claude plugin only (codex/bob keep them)."""
+class TestRecallLearnExcludedFromClaudeCodexBob:
+    """EVOLVE.md's injected recall + direct entity-save instructions drive the
+    identical workflow on claude, codex, and bob, so the recall/learn skills
+    are redundant double-delivery and excluded from those plugins. Only
+    claw-code keeps them — its PreToolUse hook consumes recall's
+    retrieve_entities.py."""
 
     @pytest.mark.parametrize("skill", ["recall", "learn"])
     def test_claude_plugin_lacks_skill(self, skill):
@@ -81,9 +85,15 @@ class TestRecallLearnExcludedFromClaude:
         )
 
     @pytest.mark.parametrize("skill", ["recall", "learn"])
-    def test_codex_plugin_still_has_skill(self, skill):
-        assert (_CODEX_PLUGIN_ROOT / "skills/evolve-lite" / skill / "SKILL.md").is_file(), (
-            f"codex must still ship the `{skill}` skill — exclusion is Claude-scoped"
+    def test_codex_plugin_lacks_skill(self, skill):
+        assert not (_CODEX_PLUGIN_ROOT / "skills/evolve-lite" / skill).exists(), (
+            f"codex must not ship the `{skill}` skill — EVOLVE.md drives the workflow"
+        )
+
+    @pytest.mark.parametrize("skill", ["recall", "learn"])
+    def test_claw_code_plugin_still_has_skill(self, skill):
+        assert (_CLAW_CODE_PLUGIN_ROOT / "skills/evolve-lite" / skill / "SKILL.md").is_file(), (
+            f"claw-code must still ship the `{skill}` skill — its PreToolUse hook consumes it"
         )
 
 

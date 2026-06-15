@@ -29,8 +29,13 @@ SUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-subscribe/scripts/subscribe.p
 UNSUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-unsubscribe/scripts/unsubscribe.py"
 SYNC_SCRIPT = _BOB_ROOT / "skills/evolve-lite-sync/scripts/sync.py"
 PUBLISH_SCRIPT = _BOB_ROOT / "skills/evolve-lite-publish/scripts/publish.py"
-SAVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-learn/scripts/save_entities.py"
-RETRIEVE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-recall/scripts/retrieve_entities.py"
+# learn (save_entities.py) is excluded from bob — EVOLVE.md's injected
+# instructions drive that workflow there. The save logic is identical and still
+# ships on claw-code (whose PreToolUse hook consumes it), so exercise it there;
+# the other sharing scripts still ship on bob. (recall/retrieve is covered
+# against the claw-code copy in test_retrieve.py.)
+_CLAW_CODE_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claw-code/plugins/evolve-lite"
+SAVE_SCRIPT = _CLAW_CODE_ROOT / "skills/evolve-lite/learn/scripts/save_entities.py"
 
 
 def run_script(script, project_dir, args=None, evolve_dir=None, stdin_data=None, expect_success=True):
@@ -661,63 +666,9 @@ class TestBobSaveEntities:
         assert "Added 2" in result.stdout
 
 
-# ============================================================================
-# Retrieve Entities Tests
-# ============================================================================
-
-
-class TestBobRetrieveEntities:
-    """Tests for Bob's retrieve_entities.py script.
-
-    Bob outputs human-readable manifest markdown (not JSON like Claude/Codex).
-    """
-
-    def test_returns_entities_from_private_dir(self, temp_project_dir):
-        evolve_dir = temp_project_dir / ".evolve"
-        entities_dir = evolve_dir / "entities" / "guideline"
-        entities_dir.mkdir(parents=True)
-        (entities_dir / "tip.md").write_text("---\ntype: guideline\ntrigger: when writing private code\n---\n\nPrivate tip.\n")
-
-        result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        assert "Evolve entity manifest for this task" in result.stdout
-        assert "[guideline]" in result.stdout
-        assert "when writing private code" in result.stdout
-        assert "Private tip." not in result.stdout
-
-    def test_returns_published_entities_from_write_clone(self, temp_project_dir):
-        """Published guidelines live in entities/subscribed/{repo}/guideline/."""
-        evolve_dir = temp_project_dir / ".evolve"
-        public_dir = evolve_dir / "public" / "guideline"
-        public_dir.mkdir(parents=True)
-        (public_dir / "tip.md").write_text(
-            "---\ntype: guideline\ntrigger: when sharing guidelines\nvisibility: public\n---\n\nPublic tip.\n"
-        )
-
-        result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        assert "when sharing guidelines" in result.stdout
-        assert "Public tip." not in result.stdout
-
-    def test_returns_entities_from_subscribed_dir(self, temp_project_dir):
-        evolve_dir = temp_project_dir / ".evolve"
-        subscribed_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
-        subscribed_dir.mkdir(parents=True)
-        (subscribed_dir / "tip.md").write_text("---\ntype: guideline\ntrigger: when adding coverage\n---\n\nSubscribed tip.\n")
-
-        result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        assert "when adding coverage" in result.stdout
-        assert ".evolve/entities/subscribed/alice/guideline/tip.md" in result.stdout
-        assert "Subscribed tip." not in result.stdout
-
-    def test_retrieve_filters_symlinked_entities(self, temp_project_dir):
-        evolve_dir = temp_project_dir / ".evolve"
-        subscribed_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
-        subscribed_dir.mkdir(parents=True)
-        real_file = subscribed_dir / "real.md"
-        real_file.write_text("---\ntype: guideline\ntrigger: when testing\n---\n\nReal content.\n")
-        link_file = subscribed_dir / "link.md"
-        link_file.symlink_to(real_file)
-
-        result = run_script(RETRIEVE_SCRIPT, temp_project_dir, evolve_dir=evolve_dir)
-        assert "when testing" in result.stdout
-        assert result.stdout.count("when testing") == 1, "Symlinked duplicate should be filtered out"
-        assert "Real content." not in result.stdout
+# recall (retrieve_entities.py) is excluded from bob now — EVOLVE.md's injected
+# recall instructions drive that workflow. The retrieve manifest logic still
+# ships on claw-code (its PreToolUse hook consumes it) and is exercised in
+# test_retrieve.py + test_codex_retrieve_manifest.py against the claw-code copy,
+# so the former bob-specific retrieve tests were removed rather than repointed
+# (bob's human-readable manifest format no longer ships anywhere).

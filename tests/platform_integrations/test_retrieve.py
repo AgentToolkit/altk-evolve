@@ -11,14 +11,16 @@ import pytest
 pytestmark = pytest.mark.platform_integrations
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
-# The `recall` skill (and its retrieve_entities.py) is built OUT of the Claude
-# plugin — native auto-memory owns recall there — so only codex/bob ship this
-# script. The codex variant exercises the identical retrieve logic.
-CODEX_RETRIEVE_SCRIPT = (
-    _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
+# The `recall` skill (and its retrieve_entities.py) is built OUT of the
+# claude, codex, and bob plugins — EVOLVE.md's injected recall instructions
+# drive that workflow there. Only claw-code still ships this script: its
+# PreToolUse hook is a live consumer of it. The claw-code variant exercises
+# the identical retrieve logic.
+CLAW_CODE_RETRIEVE_SCRIPT = (
+    _REPO_ROOT / "platform-integrations/claw-code/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
 )
 SCRIPT_VARIANTS = [
-    ("codex", CODEX_RETRIEVE_SCRIPT, "Evolve entity manifest for this task"),
+    ("claw-code", CLAW_CODE_RETRIEVE_SCRIPT, "Evolve entity manifest for this task"),
 ]
 
 # The hook pipes this JSON to the script on stdin

@@ -335,7 +335,15 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         # The `doctor` skill diagnoses Claude's @import canary in
         # ~/.claude transcripts; that mechanism doesn't exist on codex
         # (codex uses an ~/.codex/AGENTS.md pointer), so exclude it.
-        "target_excludes": [r"^skills/evolve-lite/doctor/"],
+        #
+        # EVOLVE.md's injected first-action recall + direct entity-save
+        # instructions already drive the identical workflow on codex, so the
+        # recall/learn skills are redundant double-delivery — exclude them too.
+        "target_excludes": [
+            r"^skills/evolve-lite/doctor/",
+            r"^skills/evolve-lite/recall/",
+            r"^skills/evolve-lite/learn/",
+        ],
         "metadata_target": ".codex-plugin/plugin.json",
         "metadata_emit": _codex_plugin_json,
     },
@@ -355,7 +363,17 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         # path, before the rewrite above flattens it to
         # skills/evolve-lite-doctor/). Its @import-canary diagnostic is
         # meaningless on bob, which has no ~/.claude transcript layout.
-        "target_excludes": [r"^skills/evolve-lite/doctor/"],
+        #
+        # EVOLVE.md's injected first-action recall + direct entity-save
+        # instructions already drive the identical workflow on bob, so the
+        # recall/learn skills are redundant double-delivery — exclude them too.
+        # _bob_command_targets() follows the excludes, so the recall/learn
+        # slash-command files drop out automatically.
+        "target_excludes": [
+            r"^skills/evolve-lite/doctor/",
+            r"^skills/evolve-lite/recall/",
+            r"^skills/evolve-lite/learn/",
+        ],
         # Bob has no plugin system, so no plugin.json is emitted. Bob's
         # commands/ directory is generated 1:1 from the skills walk by
         # _bob_command_targets(); no static command files exist in

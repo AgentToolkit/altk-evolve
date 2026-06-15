@@ -314,6 +314,7 @@ class TestMultiPlatformPreservation:
             for hook in group.get("hooks", [])
         )
 
-        # Assert: Evolve content is added everywhere
-        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-lite-learn")
+        # Assert: Evolve content is added everywhere (recall/learn are excluded
+        # from bob now, so check a skill bob still ships).
+        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-lite-save")
         file_assertions.assert_dir_exists(temp_project_dir / "plugins" / "evolve-lite")

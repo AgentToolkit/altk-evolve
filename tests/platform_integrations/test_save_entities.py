@@ -1,4 +1,9 @@
-"""Tests for the Claude plugin's skills/evolve-lite/learn/scripts/save_entities.py."""
+"""Tests for the learn skill's save_entities.py.
+
+learn is excluded from claude/codex/bob (EVOLVE.md's injected direct
+entity-save instructions drive that workflow). claw-code still ships the
+identical script (its PreToolUse hook is a live consumer), so the save logic
+is exercised against the claw-code copy."""
 
 import json
 import os
@@ -10,7 +15,7 @@ import pytest
 
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
-_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
+_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claw-code/plugins/evolve-lite"
 SAVE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/learn/scripts/save_entities.py"
 
 

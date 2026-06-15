@@ -578,12 +578,14 @@ def verify_codex_cache_matches_workspace(workspace: Path) -> tuple[bool, str]:
     if len(versions) > 1:
         logger.warning(f"multiple codex cache versions: {[v.name for v in versions]}; comparing newest")
     cached = versions[-1]
-    cached_skill = cached / "skills" / "recall" / "SKILL.md"
-    workspace_skill = workspace / "plugins/evolve-lite/skills/evolve-lite/recall/SKILL.md"
+    # recall/learn are excluded from codex now (EVOLVE.md drives that
+    # workflow); use a skill codex still ships to prove the cache matches.
+    cached_skill = cached / "skills" / "save" / "SKILL.md"
+    workspace_skill = workspace / "plugins/evolve-lite/skills/evolve-lite/save/SKILL.md"
     if not workspace_skill.is_file():
-        return False, f"workspace recall SKILL.md missing at {workspace_skill}"
+        return False, f"workspace save SKILL.md missing at {workspace_skill}"
     if not cached_skill.is_file():
-        return False, f"cached recall SKILL.md missing at {cached_skill}"
+        return False, f"cached save SKILL.md missing at {cached_skill}"
     if cached_skill.read_text(encoding="utf-8") != workspace_skill.read_text(encoding="utf-8"):
         return False, (f"cached SKILL.md content != workspace SKILL.md ({cached_skill} vs {workspace_skill}); cache was overwritten")
     return True, f"codex cache content matches workspace plugin ({cached})"
@@ -595,7 +597,9 @@ def _verify_bob(workspace: Path) -> tuple[bool, str]:
     under <workspace>/.bob/skills/). Per the brief, file presence in the
     workspace is enough: bob auto-discovers .bob/ from cwd, so the
     presence of skills at the expected path proves the load source."""
-    skill = workspace / ".bob/skills/evolve-lite-learn/SKILL.md"
+    # recall/learn are excluded from bob now (EVOLVE.md drives that
+    # workflow); verify presence of a skill bob still ships.
+    skill = workspace / ".bob/skills/evolve-lite-save/SKILL.md"
     if skill.is_file():
         return True, f"bob skill present at {skill}"
     return False, f"bob skill missing at {skill}"

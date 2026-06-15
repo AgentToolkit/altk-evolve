@@ -91,7 +91,7 @@ class TestBobIdempotency:
         # Manually delete one skill
         import shutil
 
-        shutil.rmtree(bob_dir / "skills" / "evolve-lite-learn")
+        shutil.rmtree(bob_dir / "skills" / "evolve-lite-save")
 
         # Reinstall
         install_runner.run("install", platform="bob")
@@ -132,8 +132,8 @@ class TestBobLegacyMigration:
         assert not legacy_skill.exists(), "legacy colon-form skill survived install"
         assert not legacy_cmd.exists(), "legacy colon-form command survived install"
         # Current dash-form layout in place
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite-learn")
-        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve-lite-learn.md")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite-save")
+        file_assertions.assert_file_exists(bob_dir / "commands" / "evolve-lite-save.md")
 
     def test_uninstall_purges_legacy_colon_form(self, temp_project_dir, install_runner, file_assertions):
         """Uninstall removes legacy colon-form stragglers alongside the dash-form."""
@@ -148,8 +148,8 @@ class TestBobLegacyMigration:
 
         assert not legacy_skill.exists(), "uninstall left legacy colon-form skill behind"
         assert not legacy_cmd.exists(), "uninstall left legacy colon-form command behind"
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-learn")
-        file_assertions.assert_file_not_exists(bob_dir / "commands" / "evolve-lite-learn.md")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-save")
+        file_assertions.assert_file_not_exists(bob_dir / "commands" / "evolve-lite-save.md")
 
     def test_uninstall_removes_rules_file_and_preserves_user_rules(
         self, temp_project_dir, install_runner, file_assertions, bob_rules_file, bob_audit_script
@@ -256,12 +256,12 @@ class TestCodexIdempotency:
 
         import shutil
 
-        shutil.rmtree(plugin_dir / "skills" / "evolve-lite" / "learn")
+        shutil.rmtree(plugin_dir / "skills" / "evolve-lite" / "save")
 
         install_runner.run("install", platform="codex")
 
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "learn")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "learn" / "SKILL.md")
+        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "save")
+        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "save" / "SKILL.md")
         file_assertions.assert_file_exists(plugin_dir / "lib" / "evolve-lite" / "entity_io.py")
 
     def test_install_appends_pointer_preserving_user_prose(self, temp_project_dir, install_runner, file_assertions, codex_agents_file):
@@ -311,13 +311,13 @@ class TestUninstallInstallCycle:
         install_runner.run("install", platform="bob")
 
         bob_dir = temp_project_dir / ".bob"
-        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite-learn")
+        file_assertions.assert_dir_exists(bob_dir / "skills" / "evolve-lite-save")
 
         # Uninstall
         install_runner.run("uninstall", platform="bob")
 
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-learn")
-        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-recall")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-save")
+        file_assertions.assert_dir_not_exists(bob_dir / "skills" / "evolve-lite-provenance")
 
         # Reinstall
         install_runner.run("install", platform="bob")

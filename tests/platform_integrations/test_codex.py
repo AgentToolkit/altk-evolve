@@ -59,16 +59,19 @@ class TestCodexInstall:
         file_assertions.assert_dir_exists(plugin_dir)
         file_assertions.assert_file_exists(plugin_dir / ".codex-plugin" / "plugin.json")
         file_assertions.assert_file_exists(plugin_dir / "README.md")
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "learn")
-        file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "recall")
+        # recall/learn are excluded from codex — EVOLVE.md's injected
+        # first-action recall + direct entity-save instructions drive the
+        # identical workflow, so the skills would be redundant double-delivery.
+        file_assertions.assert_dir_not_exists(plugin_dir / "skills" / "evolve-lite" / "learn")
+        file_assertions.assert_dir_not_exists(plugin_dir / "skills" / "evolve-lite" / "recall")
         file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "publish")
         file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "provenance")
         file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "save-trajectory")
         file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "subscribe")
         file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "unsubscribe")
         file_assertions.assert_dir_exists(plugin_dir / "skills" / "evolve-lite" / "sync")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "learn" / "scripts" / "save_entities.py")
-        file_assertions.assert_file_exists(plugin_dir / "skills" / "evolve-lite" / "recall" / "scripts" / "retrieve_entities.py")
+        file_assertions.assert_file_not_exists(plugin_dir / "skills" / "evolve-lite" / "learn" / "scripts" / "save_entities.py")
+        file_assertions.assert_file_not_exists(plugin_dir / "skills" / "evolve-lite" / "recall" / "scripts" / "retrieve_entities.py")
         file_assertions.assert_file_exists(plugin_dir / "lib" / "evolve-lite" / "entity_io.py")
         # The recall-audit script ships in the plugin tree too, alongside the
         # shared lib (lib/evolve-lite/).

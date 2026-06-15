@@ -13,9 +13,13 @@ pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 _REPO_ROOT = Path(__file__).parent.parent.parent
 CLAUDE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
 CODEX_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite"
+CLAW_CODE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claw-code/plugins/evolve-lite"
 SUBSCRIBE_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"
 SYNC_SCRIPT = CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/sync/scripts/sync.py"
-RETRIEVE_SCRIPT = CODEX_PLUGIN_ROOT / "skills/evolve-lite/recall/scripts/retrieve_entities.py"
+# recall is excluded from claude/codex/bob — EVOLVE.md drives that workflow.
+# claw-code still ships retrieve_entities.py (its PreToolUse hook consumes it),
+# so the symlink-filtering check below runs against the claw-code copy.
+RETRIEVE_SCRIPT = CLAW_CODE_PLUGIN_ROOT / "skills/evolve-lite/recall/scripts/retrieve_entities.py"
 SYNC_SCRIPT_VARIANTS = [
     ("claude", CLAUDE_PLUGIN_ROOT / "skills/evolve-lite/sync/scripts/sync.py"),
     ("codex", CODEX_PLUGIN_ROOT / "skills/evolve-lite/sync/scripts/sync.py"),
