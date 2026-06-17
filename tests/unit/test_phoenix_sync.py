@@ -454,9 +454,9 @@ class TestSync:
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
 
-        # Mock that this span was already processed
+        # Mock that this trace was already processed
         mock_entity = MagicMock()
-        mock_entity.metadata = {"span_id": "already_processed"}
+        mock_entity.metadata = {"span_id": "already_processed", "trace_id": "t1"}
         phoenix_sync.client.search_entities.return_value = [mock_entity]
 
         result = phoenix_sync.sync(limit=10)
@@ -639,9 +639,9 @@ class TestSync:
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
 
-        # old_span was already processed
+        # old_span / trace t2 was already processed
         mock_entity = MagicMock()
-        mock_entity.metadata = {"span_id": "old_span"}
+        mock_entity.metadata = {"span_id": "old_span", "trace_id": "t2"}
         phoenix_sync.client.search_entities.return_value = [mock_entity]
         # Create mock Guideline object with required attributes
         mock_guideline = MagicMock()
