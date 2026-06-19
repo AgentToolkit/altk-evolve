@@ -1,6 +1,6 @@
 ---
 name: agent-wiki-ingest
-description: Ingest one or more agent trajectories (raw bob/claude traces or normalized JSON) into an agent-wiki end-to-end — convert, summarize, extract guidelines, synthesize skills, consolidate into clusters, and catalog. Use when you have a batch of traces to turn into a wiki in one pass.
+description: Ingest one or more agent trajectories (raw bob/claude traces or normalized JSON) into an agent-wiki end-to-end — convert, summarize, extract guidelines, synthesize skills, optionally compare outcomes, consolidate into clusters, and catalog. Use when you have a batch of traces to turn into a wiki in one pass.
 ---
 
 # Agent Wiki — Ingest (end-to-end orchestrator)
@@ -18,8 +18,8 @@ You — the driving agent — run this by **spawning one subagent per
 small (you never load every trace's full JSON) and lets independent passes
 run in parallel. Each subagent acts as the corresponding single-purpose
 skill (`agent-wiki-summarize`, `-extract-guidelines`, `-synthesize-skill`,
-`-consolidate-guidelines`); this skill only sequences them and passes the
-per-trace adapter notes.
+`-compare-outcomes`, `-consolidate-guidelines`); this skill only sequences
+them and passes the per-trace adapter notes.
 
 The pipeline:
 
@@ -30,6 +30,7 @@ The pipeline:
 2.  Summarize  1 subagent / new-trace → summaries/<sid>.md          [PARALLEL]
 3.  Extract    1 subagent / new-trace → guidelines/*.md (+tags)     [SEQUENTIAL]
 4.  Synthesize 1 subagent / new-trace → skills/<slug>/ --archive-covered  [SEQUENTIAL]
+4.5 Compare    success/failure contrasts → contrastive guidelines   [CONDITIONAL]
 5.  Consolidate 1 subagent over the whole corpus → cluster pages    [SINGLE — MANDATORY]
 6.  Catalog    final bookkeeping → indexes, used-by, priority       [you run this directly]
 ```
@@ -231,6 +232,48 @@ prompt:
   longer reach across into an unrelated trace's atomic on a coincidental
   word like "python" or "csv".
 - **do NOT run `catalog`**
+
+## Step 4.5 — Compare outcomes (conditional)
+
+Run this step when the corpus has multiple trajectories that can be judged as
+successes and failures for the same or similar task — benchmark corpora,
+repeated attempts, A/B experiment arms, or user-labeled sessions. **Skip it
+when there is no success/failure contrast**: a corpus of only apparent
+successes still produces summaries, atomics, skills, and clusters, but it
+cannot safely derive contrastive rules.
+
+Spawn **one** subagent acting as `agent-wiki-compare-outcomes` over the whole
+corpus (point it at that skill's SKILL.md). It derives *contrastive*
+guidelines — rules backed by a failed path, a successful path, and concrete
+trajectory evidence — rather than mining from one trajectory alone. It does
+not depend on benchmark-specific outcome labels; it can LLM-judge success or
+failure from the normalized transcript. In its prompt:
+
+- the `--wiki-root` and the trace `agent:` value (so promoted contrastive
+  guidelines are stamped with the right source, not defaulted to `claude-code`)
+- build the evidence pack:
+  ```bash
+  uv run python explorations/agent-wiki/skills/agent-wiki-compare-outcomes/scripts/compare_outcomes.py \
+    --input <normalized-dir-or-json> \
+    --out-json /tmp/agent-wiki-outcome-comparison.json \
+    --out-md <wiki-root>/tasks/outcome-comparison.md \
+    --judge-outcomes always
+  ```
+  Prefer `--judge-outcomes always` when stored labels come from a benchmark
+  evaluator or other dataset-specific schema; use `--judge-outcomes missing`
+  only for trusted, dataset-neutral labels.
+- instruct it to promote **only** strong candidates (one failed + one
+  successful run in the same group, a task-action tool/API or workflow
+  difference, source trajectory IDs for both sides) per that skill's "Inspect"
+  and "Promote Carefully" rules — keep weak ones as hypotheses, not rules.
+- pipe promoted entities through the helper (avoid `echo`; use a temp file):
+  ```bash
+  cat /tmp/contrastive-guidelines.json | uv run python explorations/agent-wiki/skills/scripts/build_agent_wiki.py --wiki-root <wiki-root> render-guidelines
+  ```
+- **do NOT run `catalog`** — the orchestrator runs it once at the end
+
+Run this **after** synthesize and **before** consolidate, so the new
+contrastive guidelines can participate in clusters.
 
 ## Step 5 — Consolidate (single subagent — MANDATORY)
 
