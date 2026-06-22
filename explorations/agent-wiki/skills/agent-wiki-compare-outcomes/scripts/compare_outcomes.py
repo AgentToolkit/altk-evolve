@@ -254,7 +254,7 @@ def judge_outcome(
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ETE_LITELLM_API_KEY")
     if not api_key:
         raise SystemExit("LLM judging requires OPENAI_API_KEY or ETE_LITELLM_API_KEY.")
-    client_kwargs: dict[str, Any] = {"api_key": api_key}
+    client_kwargs: dict[str, Any] = {"api_key": api_key, "timeout": 60.0}
     if args.judge_base_url:
         client_kwargs["base_url"] = args.judge_base_url
     client = OpenAI(**client_kwargs)
