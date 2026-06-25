@@ -1,4 +1,9 @@
-"""Tests for Codex manifest-first recall output."""
+"""Tests for manifest-first recall output.
+
+recall (and its retrieve_entities.py) is excluded from claude/codex/bob —
+EVOLVE.md's injected recall instructions drive that workflow there. claw-code
+still ships the script (its PreToolUse hook is a live consumer), so the
+manifest-first logic is exercised against the claw-code copy."""
 
 import json
 import os
@@ -11,16 +16,14 @@ import pytest
 pytestmark = pytest.mark.platform_integrations
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
-CODEX_RETRIEVE_SCRIPT = (
-    _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
-)
+RETRIEVE_SCRIPT = _REPO_ROOT / "platform-integrations/claw-code/plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py"
 HOOK_INPUT = json.dumps({"prompt": "How do I write clean code?"})
 
 
 def run_retrieve(project_dir, evolve_dir, stdin_data=None):
     env = {**os.environ, "EVOLVE_DIR": str(evolve_dir)}
     return subprocess.run(
-        [sys.executable, str(CODEX_RETRIEVE_SCRIPT)],
+        [sys.executable, str(RETRIEVE_SCRIPT)],
         input=stdin_data or HOOK_INPUT,
         capture_output=True,
         text=True,

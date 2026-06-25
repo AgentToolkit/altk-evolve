@@ -11,8 +11,14 @@ import pytest
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/codex/plugins/evolve-lite"
-SAVE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/learn/scripts/save_entities.py"
-RETRIEVE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/recall/scripts/retrieve_entities.py"
+# recall/learn (retrieve_entities.py / save_entities.py) are excluded from
+# codex — EVOLVE.md's injected instructions drive that workflow there. The
+# save/retrieve logic is identical and still ships on claw-code (whose
+# PreToolUse hook consumes it), so exercise it there; the remaining sharing
+# scripts (publish/subscribe/sync/unsubscribe) still ship on codex.
+_CLAW_CODE_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claw-code/plugins/evolve-lite"
+SAVE_SCRIPT = _CLAW_CODE_PLUGIN_ROOT / "skills/evolve-lite/learn/scripts/save_entities.py"
+RETRIEVE_SCRIPT = _CLAW_CODE_PLUGIN_ROOT / "skills/evolve-lite/recall/scripts/retrieve_entities.py"
 PUBLISH_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/publish/scripts/publish.py"
 SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"
 UNSUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/unsubscribe/scripts/unsubscribe.py"

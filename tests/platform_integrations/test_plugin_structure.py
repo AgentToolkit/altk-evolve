@@ -9,6 +9,7 @@ pytestmark = pytest.mark.platform_integrations
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite"
 _CODEX_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/codex/plugins/evolve-lite"
+_CLAW_CODE_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claw-code/plugins/evolve-lite"
 
 
 class TestPluginManifest:
@@ -28,34 +29,21 @@ class TestPluginManifest:
 
 
 class TestHooksManifest:
-    def test_hooks_json_is_valid_json(self):
-        data = json.loads((_PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
-        assert isinstance(data, dict)
+    """The Claude plugin is fully hookless under the native-memory + CLAUDE.md
+    `@import` redesign. Recall is native and save is native, so the plugin must
+    register NO auto-firing hooks — otherwise recall/save fire twice. The skills
+    themselves stay invokable (see TestSkillScripts); only the hook WIRING is gone.
+    """
 
-    def test_hooks_json_has_hooks_key(self):
-        data = json.loads((_PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
-        assert "hooks" in data
+    def test_no_hooks_json_shipped(self):
+        # No hooks/hooks.json under the rendered Claude plugin: the plugin
+        # registers no auto-firing lifecycle hooks at all.
+        assert not (_PLUGIN_ROOT / "hooks" / "hooks.json").exists()
 
-    def test_known_lifecycle_events_present(self):
-        data = json.loads((_PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
-        hooks = data["hooks"]
-        assert "UserPromptSubmit" in hooks
-        assert "SessionStart" in hooks
-        assert "Stop" in hooks
-
-    def test_command_hook_scripts_exist(self):
-        data = json.loads((_PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
-        for event, groups in data["hooks"].items():
-            for group in groups:
-                for hook in group.get("hooks", []):
-                    if hook.get("type") == "command":
-                        cmd = hook["command"]
-                        resolved = cmd.replace("${CLAUDE_PLUGIN_ROOT}", str(_PLUGIN_ROOT))
-                        # Find the script token — commands may have trailing flags
-                        script_tokens = [t for t in resolved.split() if t.endswith((".py", ".sh"))]
-                        assert script_tokens, f"No script found in hook command: {cmd}"
-                        script_path = Path(script_tokens[0])
-                        assert script_path.exists(), f"Hook script missing: {script_path} (event: {event})"
+    def test_no_hooks_directory(self):
+        # The render wipes and rewrites the plugin root from plugin-source/;
+        # with the source hooks.json removed, no hooks/ dir should remain.
+        assert not (_PLUGIN_ROOT / "hooks").exists()
 
 
 class TestSkillScripts:
@@ -68,9 +56,9 @@ class TestSkillScripts:
             "skills/evolve-lite/subscribe/scripts/subscribe.py",
             "skills/evolve-lite/unsubscribe/scripts/unsubscribe.py",
             "skills/evolve-lite/sync/scripts/sync.py",
-            "skills/evolve-lite/recall/scripts/retrieve_entities.py",
-            "skills/evolve-lite/learn/scripts/save_entities.py",
             "skills/evolve-lite/provenance/scripts/log_influence.py",
+            "skills/evolve-lite/adapt-memory/scripts/adapt_memory.py",
+            "skills/evolve-lite/doctor/scripts/doctor.py",
         ],
     )
     def test_script_exists(self, script_rel):
@@ -81,6 +69,32 @@ class TestSkillScripts:
         skill = _CODEX_PLUGIN_ROOT / "skills/evolve-lite/save-trajectory/SKILL.md"
         content = skill.read_text()
         assert "plugins/evolve-lite/skills/evolve-lite/save-trajectory/scripts/save_trajectory.py" in content
+
+
+class TestRecallLearnExcludedFromClaudeCodexBob:
+    """EVOLVE.md's injected recall + direct entity-save instructions drive the
+    identical workflow on claude, codex, and bob, so the recall/learn skills
+    are redundant double-delivery and excluded from those plugins. Only
+    claw-code keeps them — its PreToolUse hook consumes recall's
+    retrieve_entities.py."""
+
+    @pytest.mark.parametrize("skill", ["recall", "learn"])
+    def test_claude_plugin_lacks_skill(self, skill):
+        assert not (_PLUGIN_ROOT / "skills/evolve-lite" / skill).exists(), (
+            f"Claude plugin must not ship the `{skill}` skill — native memory owns it"
+        )
+
+    @pytest.mark.parametrize("skill", ["recall", "learn"])
+    def test_codex_plugin_lacks_skill(self, skill):
+        assert not (_CODEX_PLUGIN_ROOT / "skills/evolve-lite" / skill).exists(), (
+            f"codex must not ship the `{skill}` skill — EVOLVE.md drives the workflow"
+        )
+
+    @pytest.mark.parametrize("skill", ["recall", "learn"])
+    def test_claw_code_plugin_still_has_skill(self, skill):
+        assert (_CLAW_CODE_PLUGIN_ROOT / "skills/evolve-lite" / skill / "SKILL.md").is_file(), (
+            f"claw-code must still ship the `{skill}` skill — its PreToolUse hook consumes it"
+        )
 
 
 class TestLibModules:
