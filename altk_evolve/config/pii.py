@@ -31,3 +31,12 @@ class PIIConfig(BaseModel):
         description="Also redact entity metadata values. Off by default — metadata is mostly structural "
         "(trace_id, span_id, timestamps) and prone to false positives.",
     )
+    custom_patterns: list[dict] = Field(
+        default_factory=list,
+        description="Extra user regex patterns for the detector; each is {name, description, pattern}. "
+        "Use to catch entities the built-in flags miss (e.g. specific names — the regex backend has no NER).",
+    )
+    whitelist_patterns: list[dict] = Field(
+        default_factory=list,
+        description="Patterns to exempt from redaction (passed through to the detector).",
+    )
