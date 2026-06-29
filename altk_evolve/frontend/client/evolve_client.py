@@ -1,7 +1,9 @@
+import datetime
 import logging
 
 from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.evolve import EvolveConfig
+from altk_evolve.pii import get_redactor
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
@@ -41,6 +43,11 @@ class EvolveClient:
             self.backend = PostgresEntityBackend(self.config.settings)
         else:
             raise NotImplementedError(f"Entity backend not implemented: {self.config.backend}")
+
+        # Attach a PII redactor so the backend write choke-point can scrub
+        # entity content before it is persisted (issue #275). NullRedactor
+        # (a no-op) unless pii.enabled is set, so existing flows are untouched.
+        self.backend.redactor = get_redactor(self.config.pii)
 
     def ready(self) -> bool:
         """Check if the backend is healthy."""
@@ -92,6 +99,20 @@ class EvolveClient:
     def patch_entity_metadata(self, namespace_id: str, entity_id: str, metadata_updates: dict) -> RecordedEntity:
         """Merge metadata_updates into an entity without touching content or ID."""
         return self.backend.update_entity_metadata(namespace_id, entity_id, metadata_updates)
+
+    def record_access(self, namespace_id: str, entity_ids: list[str], when: datetime.datetime | None = None) -> None:
+        """Stamp ``metadata.last_accessed`` (ISO-8601) on the given entities.
+
+        Provides the "unused" signal the retention engine needs (issue #275).
+        Call this from recall/read flows after surfacing memories. Failures on
+        individual ids are logged and skipped rather than raised.
+        """
+        ts = (when or datetime.datetime.now(datetime.UTC)).isoformat()
+        for entity_id in entity_ids:
+            try:
+                self.patch_entity_metadata(namespace_id, entity_id, {"last_accessed": ts})
+            except Exception:
+                logger.warning("record_access: failed to stamp entity %s", entity_id, exc_info=True)
 
     def get_public_entities(
         self,
