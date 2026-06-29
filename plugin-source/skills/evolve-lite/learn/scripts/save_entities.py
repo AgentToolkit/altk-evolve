@@ -30,6 +30,8 @@ from entity_io import (  # noqa: E402
     write_entity_file,
     log as _log,
 )
+from config import load_config  # noqa: E402
+from pii import get_redactor, redact_entity_fields  # noqa: E402
 
 
 def log(message):
@@ -48,6 +50,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--user", default=None, help="Stamp owner on every entity written")
     args = parser.parse_args()
+
+    # PII redactor (issue #275). NullRedactor unless pii.enabled in
+    # evolve.config.yaml; scrubs content before it is written to memory.
+    redactor = get_redactor(load_config())
 
     try:
         input_data = json.load(sys.stdin)
@@ -89,6 +95,12 @@ def main():
         if not content:
             log(f"Skipping entity without content: {entity}")
             continue
+
+        # Redact PII before dedup or persistence, so what we compare and store
+        # is already scrubbed (issue #275). No-op unless pii.enabled.
+        redact_entity_fields(entity, redactor)
+        content = entity.get("content")
+
         if normalize(content) in existing_contents:
             log(f"Skipping duplicate: {content[:60]}")
             continue

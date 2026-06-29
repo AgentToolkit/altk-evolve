@@ -191,6 +191,7 @@ module = [
     "local_mcp_server",
     "config",
     "audit",
+    "pii",
     "cpex_pii_filter.*",
 ]
 ignore_missing_imports = true
