@@ -113,6 +113,46 @@ Store after apply:
 
 ---
 
+## Benchmark — how effective is it?
+
+```bash
+uv run --extra pii python examples/pii_benchmark.py
+```
+
+Scores the redactor against a labeled gold set (text with known PII spans) and
+reports **recall** (did we remove it — `1 - recall` is the span-level leak
+rate), **precision** (over-redaction), **F1**, and a record-level **leak rate**.
+
+```
+== CPEX regex — structured entities only ==
+  records=24  TP=45  FP=0  FN(leaked spans)=21
+  recall=0.68  precision=1.00  F1=0.81
+  record-level leak rate=0.62
+  per-entity recall:
+    address        0/6    recall=0.00
+    credit_card    6/6    recall=1.00
+    email         15/15   recall=1.00
+    ip_address     6/6    recall=1.00
+    person         0/15   recall=0.00
+    phone         12/12   recall=1.00
+    ssn            6/6    recall=1.00
+
+== CPEX regex + custom name patterns ==
+  recall=0.91  precision=1.00  F1=0.95   record-level leak rate=0.25
+```
+
+**Talking points**
+- On **structured PII** (email, phone, SSN, card, IP) recall is **1.00** with
+  **zero false positives** — it removes all of it and mangles nothing.
+- **Names/addresses leak** out of the box (regex has no NER): that's the 0.68
+  overall recall. Adding `custom_patterns` for names lifts recall to **0.91** —
+  the honest mitigation, and the case for a `semantic` backend.
+- The harness takes `--data PATH` (JSONL of `{text, spans}`) to score against a
+  real corpus (e.g. ai4privacy/pii-masking-200k or Presidio's evaluator data)
+  instead of the built-in synthetic set.
+
+---
+
 ## Using it for real
 
 ### Enable PII redaction
