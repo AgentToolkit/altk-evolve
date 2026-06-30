@@ -16,7 +16,11 @@ class PIIConfig(BaseModel):
     enabled: bool = Field(default=False, description="Redact PII from entity content before persisting.")
     mode: Literal["regex", "semantic"] = Field(
         default="regex",
-        description="Detection backend. 'regex' uses CPEX (cpex-pii-filter); 'semantic' is a reserved seam.",
+        description="Detection backend. 'regex' uses CPEX (cpex-pii-filter); 'semantic' uses IBM READI (readi-privacy) NER.",
+    )
+    readi_detection_type: Literal["PII", "PHI", "PII_NO_MODEL"] = Field(
+        default="PII",
+        description="READI DetectionType for mode=semantic. 'PII_NO_MODEL' skips the transformer (faster, less recall).",
     )
     entities: list[str] = Field(
         default_factory=lambda: ["ssn", "credit_card", "email", "phone", "ip_address"],

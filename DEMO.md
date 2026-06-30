@@ -181,9 +181,45 @@ uv run --extra pii --extra bench python examples/pii_benchmark.py \
 
 **Takeaway:** strong, zero-false-positive removal of well-formatted structured
 PII; real-world format variety and untargeted types (names, addresses) are where
-you need `custom_patterns`, broader regex, or a semantic backend. The harness
-also takes `--data PATH` for a local JSONL corpus, or any ai4privacy-style HF id
-via `--dataset`.
+you need `custom_patterns`, broader regex, or the semantic backend below.
+
+### Two backends: regex (CPEX) vs. semantic (IBM READI)
+
+`pii.mode: semantic` swaps the CPEX regex detector for **IBM READI**
+(`readi-privacy`) — a transformer NER (spaCy `en_core_web_trf`) + dictionary
+ensemble that catches free-form PII (names, locations, dates) regex can't.
+
+```bash
+uv run --extra pii --extra readi python examples/pii_benchmark.py \
+    --dataset ai4privacy/pii-masking-200k --limit 150 --mode both
+```
+
+Same 150 real records, both backends:
+
+| Metric | regex (CPEX) | semantic (READI) |
+|---|---|---|
+| Overall recall | 0.12 | **0.45** |
+| Precision | 1.00 | 1.00 |
+| Record-level leak rate | 0.99 | **0.87** |
+| firstname recall | 0.00 | **0.93** |
+| lastname recall | 0.00 | **0.92** |
+| middlename | 0.00 | **1.00** |
+| city / county / state | 0.00 | 0.60 / 1.00 / 0.92 |
+| street / zipcode | 0.00 | 0.70 / 0.33 |
+| dob / date / url | 0.00 / 0.20 / 0.00 | 0.88 / 0.70 / 1.00 |
+| email / ip_address | 1.00 / 1.00 | 1.00 / 1.00 |
+
+**Talking points**
+- Semantic ~**4×** the overall recall, driven entirely by the free-form entities
+  regex has no detector for — **names jump 0.00 → ~0.92**.
+- **Precision stays 1.00** for both — neither over-redacts.
+- Both still miss the same hard structured cases (non-Luhn cards, crypto,
+  passwords), so leak rate is lower but not zero — defense-in-depth, not a silver
+  bullet. READI is **far heavier** (torch + spaCy transformer; ~450MB model,
+  seconds per batch) — the classic precision/speed vs. coverage trade-off.
+
+The harness also takes `--data PATH` for a local JSONL corpus, `--dataset` for
+any ai4privacy-style HF id, and `--mode regex|semantic|both`.
 
 ---
 
@@ -210,6 +246,14 @@ client = EvolveClient(EvolveConfig(pii=PIIConfig(
 Or via environment (nested env vars): `EVOLVE_PII__ENABLED=true`,
 `EVOLVE_PII__MASK_STRATEGY=hash`, …
 
+For the semantic (NER) backend, install the `[readi]` extra and set
+`mode="semantic"` (catches names/locations; downloads the spaCy transformer on
+first use):
+
+```python
+PIIConfig(enabled=True, mode="semantic")   # IBM READI; redaction_text still applies
+```
+
 ### Run a retention policy
 
 ```bash
@@ -225,11 +269,13 @@ your recall path — it stamps `metadata.last_accessed`.
 
 ## Limitations (be upfront)
 
-- **Regex, not NER.** CPEX (`cpex-pii-filter`) detects structured PII
-  (emails, phones, SSNs, cards, IPs, …) but not free-form names unless you add
-  a `custom_patterns` rule. A semantic/NER backend is a documented seam
-  (`pii.mode: semantic`) — CPEX has no embedding detector, so that would plug
-  in a library like Presidio.
+- **Two backends, different trade-offs.** `mode: regex` (CPEX) is fast and
+  precise on structured PII but has no NER (names need `custom_patterns`).
+  `mode: semantic` (IBM READI) adds transformer NER for free-form PII (names,
+  locations, dates) at ~4× recall, but is heavy (torch + spaCy, ~450MB model)
+  and still misses some hard structured cases. Neither alone is a silver bullet;
+  a hybrid (regex for precision + NER for coverage) is the natural production
+  setup.
 - **Plugin scope.** Redaction is mirrored into the evolve-lite plugin, but the
   wired save path only ships to the `claw-code` variant; claude/codex/bob use
   native memory. The package is the guarantee for those flows.

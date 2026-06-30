@@ -156,6 +156,56 @@ class CpexRegexRedactor(PIIRedactor):
         return cast(str, self._detector.mask(text, self._detector.detect(text)))
 
 
+class ReadiSemanticRedactor(PIIRedactor):
+    """Semantic (NER) redactor backed by IBM READI (``readi-privacy``).
+
+    READI (Risk Evaluation and De-Identification) is a hybrid detector: a
+    transformer spaCy NER pipeline (``en_core_web_trf``) plus dictionary/regex
+    identifier extractors, merged by a POS-validated aggregator. Unlike the
+    regex backend it catches free-form PII — names, locations, organizations —
+    which is the whole point of ``mode: semantic``.
+
+    READI only *detects* (``analyzer.detect(text) -> list[Entity]`` with
+    ``start``/``end``/``entity_type``); it has no masking, so we apply the
+    configured filler over the detected spans ourselves. The package import is
+    validated at construction (so a missing ``[readi]`` extra degrades to a
+    no-op), but the heavy model load is deferred to the first ``detect`` call.
+    """
+
+    def __init__(self, pii_config=None):
+        from risk_assessment.readi.analyzer import READIAnalyzer  # cheap import; validates the [readi] extra
+
+        self._analyzer_cls = READIAnalyzer
+        self._detection_type = str(_cfg(pii_config, "readi_detection_type", "PII") or "PII").upper()
+        strategy = _cfg(pii_config, "mask_strategy", DEFAULT_MASK_STRATEGY)
+        self._mask = "" if strategy == "remove" else _cfg(pii_config, "redaction_text", DEFAULT_REDACTION_TEXT)
+        self._analyzer = None
+
+    def _detect_entities(self, text: str):
+        if self._analyzer is None:
+            # Loads en_core_web_trf on first use (downloads ~450MB once if absent).
+            detection_type = getattr(self._analyzer_cls.DetectionType, self._detection_type, self._analyzer_cls.DetectionType.PII)
+            self._analyzer = self._analyzer_cls(detection_type=detection_type)
+        return self._analyzer.detect(text)
+
+    def detect(self, text: str) -> dict:
+        if not text:
+            return {}
+        out: dict = {}
+        for e in self._detect_entities(text):
+            out.setdefault(e.entity_type, []).append({"value": text[e.start : e.end], "start": e.start, "end": e.end})
+        return out
+
+    def redact(self, text: str) -> str:
+        if not text:
+            return text
+        out = text
+        # Apply right-to-left so earlier offsets stay valid as we splice.
+        for e in sorted(self._detect_entities(text), key=lambda e: e.start, reverse=True):
+            out = out[: e.start] + self._mask + out[e.end :]
+        return out
+
+
 def get_redactor(pii_config) -> PIIRedactor:
     """Return a :class:`PIIRedactor` for the given PII config.
 
@@ -165,19 +215,19 @@ def get_redactor(pii_config) -> PIIRedactor:
     - ``mode == "regex"`` (default) -> :class:`CpexRegexRedactor`, or a
       :class:`NullRedactor` with a loud warning when ``cpex-pii-filter`` is not
       installed (a misconfiguration, not a crash).
-    - ``mode == "semantic"`` -> :class:`NotImplementedError`. This is the seam
-      for a future embedding/NER backend. CPEX has no semantic detector today;
-      add a ``SemanticRedactor`` (e.g. Presidio + spaCy/transformers) and
-      dispatch to it here.
+    - ``mode == "semantic"`` -> :class:`ReadiSemanticRedactor` (IBM READI NER),
+      or a :class:`NullRedactor` with a warning when ``readi-privacy`` is not
+      installed.
     """
     if not _cfg(pii_config, "enabled", False):
         return NullRedactor()
 
     redact_metadata = bool(_cfg(pii_config, "redact_metadata", False))
     mode = (_cfg(pii_config, "mode", "regex") or "regex").strip().lower()
+    redactor: PIIRedactor
     if mode == "regex":
         try:
-            redactor: PIIRedactor = CpexRegexRedactor(pii_config)
+            redactor = CpexRegexRedactor(pii_config)
         except ImportError:
             logger.warning(
                 "pii.enabled is set but 'cpex-pii-filter' is not installed; "
@@ -185,13 +235,18 @@ def get_redactor(pii_config) -> PIIRedactor:
                 "(pip install 'altk-evolve[pii]') or `pip install cpex-pii-filter`."
             )
             return NullRedactor()
-        redactor.redact_metadata = redact_metadata
-        return redactor
-    if mode == "semantic":
-        raise NotImplementedError(
-            "pii.mode 'semantic' is not implemented. CPEX ships only a regex "
-            "detector (cpex-pii-filter / PIIDetectorRust). A semantic/embedding "
-            "backend is the documented seam here — add a SemanticRedactor "
-            "(e.g. Presidio + spaCy/transformers) and dispatch to it in get_redactor()."
-        )
-    raise ValueError(f"Unknown pii.mode: {mode!r} (expected 'regex' or 'semantic')")
+    elif mode == "semantic":
+        try:
+            redactor = ReadiSemanticRedactor(pii_config)
+        except ImportError:
+            logger.warning(
+                "pii.mode is 'semantic' but 'readi-privacy' (IBM READI) is not "
+                "installed; PII will NOT be redacted. Install the project's "
+                "[readi] extra (pip install 'altk-evolve[readi]')."
+            )
+            return NullRedactor()
+    else:
+        raise ValueError(f"Unknown pii.mode: {mode!r} (expected 'regex' or 'semantic')")
+
+    redactor.redact_metadata = redact_metadata
+    return redactor

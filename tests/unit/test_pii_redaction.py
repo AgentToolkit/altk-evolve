@@ -14,6 +14,7 @@ from altk_evolve.pii.redaction import (
     CpexRegexRedactor,
     NullRedactor,
     PIIRedactor,
+    ReadiSemanticRedactor,
     detector_options,
     get_redactor,
 )
@@ -22,6 +23,9 @@ pytestmark = pytest.mark.unit
 
 HAS_CPEX = importlib.util.find_spec("cpex_pii_filter") is not None
 requires_cpex = pytest.mark.skipif(not HAS_CPEX, reason="requires the [pii] extra (cpex-pii-filter)")
+
+HAS_READI = importlib.util.find_spec("risk_assessment") is not None
+requires_readi = pytest.mark.skipif(not HAS_READI, reason="requires the [readi] extra (readi-privacy)")
 
 
 class _UpperRedactor(PIIRedactor):
@@ -54,9 +58,12 @@ def test_get_redactor_disabled_returns_null():
     assert isinstance(get_redactor(PIIConfig(enabled=False)), NullRedactor)
 
 
-def test_get_redactor_semantic_is_a_documented_seam():
-    with pytest.raises(NotImplementedError, match="semantic"):
-        get_redactor(PIIConfig(enabled=True, mode="semantic"))
+@requires_readi
+def test_get_redactor_semantic_returns_readi_backend():
+    # Construction is cheap: it validates the import but defers the model load to
+    # the first detect() call, so this does not download en_core_web_trf.
+    r = get_redactor(PIIConfig(enabled=True, mode="semantic"))
+    assert isinstance(r, ReadiSemanticRedactor)
 
 
 def test_null_redactor_is_passthrough():

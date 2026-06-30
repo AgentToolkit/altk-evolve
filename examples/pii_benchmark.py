@@ -212,11 +212,22 @@ def main() -> int:
     parser.add_argument("--split", default="train", help="HF split to stream (default: train).")
     parser.add_argument("--limit", type=int, default=1000, help="Max records to score from --dataset (default: 1000).")
     parser.add_argument("--language", default="en", help="Filter HF records by language (default: en; empty for all).")
+    parser.add_argument(
+        "--mode",
+        choices=["regex", "semantic", "both"],
+        default="regex",
+        help="Backend(s) to benchmark: regex (CPEX), semantic (IBM READI NER), or both.",
+    )
     args = parser.parse_args()
 
-    if importlib.util.find_spec("cpex_pii_filter") is None:
-        print("This benchmark needs the [pii] extra. Try:")
-        print("    uv run --extra pii python examples/pii_benchmark.py")
+    want_regex = args.mode in ("regex", "both")
+    want_semantic = args.mode in ("semantic", "both")
+
+    if want_regex and importlib.util.find_spec("cpex_pii_filter") is None:
+        print("regex mode needs the [pii] extra. Try: uv run --extra pii python examples/pii_benchmark.py")
+        return 1
+    if want_semantic and importlib.util.find_spec("risk_assessment") is None:
+        print("semantic mode needs the [readi] extra. Try: uv run --extra readi python examples/pii_benchmark.py --mode semantic")
         return 1
 
     from altk_evolve.config.pii import PIIConfig
@@ -232,23 +243,26 @@ def main() -> int:
 
     structured = ["email", "phone", "ssn", "credit_card", "ip_address"]
 
-    base = get_redactor(PIIConfig(enabled=True, entities=structured))
-    _print("CPEX regex — structured entities only", score(records, base))
+    if want_regex:
+        base = get_redactor(PIIConfig(enabled=True, entities=structured))
+        _print("CPEX regex — structured entities only", score(records, base))
+        if not args.dataset:
+            # Synthetic set: show the no-NER mitigation by adding name patterns.
+            name_patterns = [
+                {"name": f"person{i}", "description": "demo name", "pattern": re.escape(n)} for i, n in enumerate(VALUES["person"])
+            ]
+            augmented = get_redactor(PIIConfig(enabled=True, entities=structured, custom_patterns=name_patterns))
+            _print("CPEX regex + custom name patterns", score(records, augmented))
 
-    if not args.dataset:
-        # Synthetic set: show the no-NER mitigation by adding name patterns.
-        name_patterns = [
-            {"name": f"person{i}", "description": "demo name", "pattern": re.escape(n)} for i, n in enumerate(VALUES["person"])
-        ]
-        augmented = get_redactor(PIIConfig(enabled=True, entities=structured, custom_patterns=name_patterns))
-        _print("CPEX regex + custom name patterns", score(records, augmented))
+    if want_semantic:
+        print("\n(Loading IBM READI / en_core_web_trf — first run downloads ~450MB and transformer NER is slow.)")
+        semantic = get_redactor(PIIConfig(enabled=True, mode="semantic"))
+        _print("IBM READI semantic (transformer NER)", score(records, semantic))
 
     print("\nNotes:")
-    print("  - 'recall on CPEX-supported types only' is the fair number: of the PII types")
-    print("    CPEX targets (email/phone/ssn/credit_card/ip), how much does it remove?")
-    print("  - Overall recall is dragged down by types CPEX has no detector for (names,")
-    print("    addresses, DOB, IBAN, crypto, …) — the case for custom_patterns or a")
-    print("    semantic backend (pii.mode: semantic).")
+    print("  - 'recall on CPEX-supported types only' is the fair number for the regex backend.")
+    print("  - regex (CPEX) excels at structured PII at precision ~1.0 but has no NER, so it")
+    print("    misses names/addresses; semantic (READI) catches those free-form entities.")
     return 0
 
 

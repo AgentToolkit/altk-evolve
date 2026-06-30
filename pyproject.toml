@@ -23,6 +23,11 @@ build = ["uv"]
 # prebuilt wheel; keep it optional so installs without redaction stay lean.
 pii = ["cpex-pii-filter>=0.3.5"]
 
+# Semantic PII backend: IBM READI (transformer NER). Heavy (torch/spaCy/flair);
+# powers pii.mode = "semantic". The en_core_web_trf model downloads on first use;
+# spacy-curated-transformers provides the curated_transformer factory it needs.
+readi = ["readi-privacy>=0.1.6", "spacy-curated-transformers"]
+
 # Benchmarking against external labeled corpora (examples/pii_benchmark.py --dataset).
 bench = ["datasets>=2.14"]
 
@@ -197,5 +202,6 @@ module = [
     "pii",
     "cpex_pii_filter.*",
     "datasets.*",
+    "risk_assessment.*",
 ]
 ignore_missing_imports = true
