@@ -23,6 +23,9 @@ build = ["uv"]
 # prebuilt wheel; keep it optional so installs without redaction stay lean.
 pii = ["cpex-pii-filter>=0.3.5"]
 
+# Benchmarking against external labeled corpora (examples/pii_benchmark.py --dataset).
+bench = ["datasets>=2.14"]
+
 tracing = [
     "openinference-instrumentation-openai",
     "openinference-instrumentation-litellm",
@@ -193,5 +196,6 @@ module = [
     "audit",
     "pii",
     "cpex_pii_filter.*",
+    "datasets.*",
 ]
 ignore_missing_imports = true

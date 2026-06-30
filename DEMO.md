@@ -141,15 +141,49 @@ rate), **precision** (over-redaction), **F1**, and a record-level **leak rate**.
   recall=0.91  precision=1.00  F1=0.95   record-level leak rate=0.25
 ```
 
-**Talking points**
+**Talking points (synthetic set)**
 - On **structured PII** (email, phone, SSN, card, IP) recall is **1.00** with
   **zero false positives** — it removes all of it and mangles nothing.
 - **Names/addresses leak** out of the box (regex has no NER): that's the 0.68
   overall recall. Adding `custom_patterns` for names lifts recall to **0.91** —
   the honest mitigation, and the case for a `semantic` backend.
-- The harness takes `--data PATH` (JSONL of `{text, spans}`) to score against a
-  real corpus (e.g. ai4privacy/pii-masking-200k or Presidio's evaluator data)
-  instead of the built-in synthetic set.
+
+### Against a real corpus (ai4privacy/pii-masking-200k)
+
+```bash
+uv run --extra pii --extra bench python examples/pii_benchmark.py \
+    --dataset ai4privacy/pii-masking-200k --limit 1000
+```
+
+```
+== CPEX regex — structured entities only ==  (1000 real English records)
+  recall=0.11  precision=1.00   record-level leak rate=0.99
+  recall on CPEX-supported types only=0.71  (over 393 spans)
+    email        84/84    recall=1.00
+    ip_address  146/146   recall=1.00
+    phone        31/67    recall=0.46
+    ssn          15/33    recall=0.45
+    credit_card   2/63    recall=0.03
+    (firstname, lastname, street, dob, iban, … all 0.00 — no CPEX detector)
+```
+
+**Why the real-data numbers matter (and differ from the synthetic 1.00s):**
+- **email / IP stay perfect** (1.00) — well-defined formats.
+- **phone & SSN drop to ~0.45** — real data has many formats (international
+  phones, varied SSN styling) the regex doesn't cover.
+- **credit_card collapses to 0.03** — ai4privacy's card numbers are bare,
+  mostly **non-Luhn-valid** 16-digit strings; CPEX's detector is strict (Luhn +
+  grouping), so it (correctly) rejects them. This is as much a dataset-format
+  artifact as a CPEX limit — a reminder that **benchmark numbers depend on the
+  corpus's formatting conventions**.
+- **Overall recall 0.11 / leak 0.99** because CPEX targets ~5 of ai4privacy's
+  ~42 PII types; the *fair* number is **"supported-types recall" = 0.71**.
+
+**Takeaway:** strong, zero-false-positive removal of well-formatted structured
+PII; real-world format variety and untargeted types (names, addresses) are where
+you need `custom_patterns`, broader regex, or a semantic backend. The harness
+also takes `--data PATH` for a local JSONL corpus, or any ai4privacy-style HF id
+via `--dataset`.
 
 ---
 

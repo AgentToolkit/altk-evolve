@@ -12,12 +12,16 @@ and reports the metrics that matter for compliance:
   * leak rate   — fraction of *records* where any PII literal survived redaction
 
 The gold set is generated deterministically from templates with known values, so
-offsets are exact and the run needs no network or external corpus. To benchmark
-against a real corpus instead, pass --data PATH to a JSONL file of
-{"text": ..., "spans": [{"start","end","label","value"}]} records (e.g. an export
-of ai4privacy/pii-masking-200k, or Microsoft Presidio's evaluator data).
+offsets are exact and the run needs no network or external corpus.
 
-Run:  uv run --extra pii python examples/pii_benchmark.py
+To benchmark against a real, established corpus instead:
+  * --dataset ai4privacy/pii-masking-200k   stream an ai4privacy-style HF dataset
+    (its privacy_mask is already {value,start,end,label}); needs the [bench] extra.
+  * --data PATH                             a local JSONL of {text, spans:[...]}.
+
+Run (synthetic):  uv run --extra pii python examples/pii_benchmark.py
+Run (real corpus): uv run --extra pii --extra bench python examples/pii_benchmark.py \\
+                       --dataset ai4privacy/pii-masking-200k --limit 1000
 """
 
 from __future__ import annotations
@@ -53,6 +57,54 @@ TEMPLATES = [
 ]
 
 REPEATS = 3  # how many times to cycle the templates (advances the value picker)
+
+# Canonical entity types the CPEX regex backend actually targets. Used to report
+# a "supported-subset" recall: of the PII types CPEX claims to detect, how well
+# does it remove them? (Distinct from overall recall, which is dragged down by
+# types CPEX has no detector for — names, addresses, DOB, IBAN, crypto, …)
+SUPPORTED = {"email", "phone", "ssn", "credit_card", "ip_address"}
+
+# ai4privacy/pii-masking-* label vocabulary -> our canonical types. Unmapped
+# ai4privacy labels are lowercased as-is (firstname, street, dob, …) so per-label
+# recall still shows them (at recall 0 for CPEX).
+AI4_NORMALIZE = {
+    "EMAIL": "email",
+    "PHONENUMBER": "phone",
+    "CREDITCARDNUMBER": "credit_card",
+    "SSN": "ssn",
+    "IP": "ip_address",
+    "IPV4": "ip_address",
+    "IPV6": "ip_address",
+}
+
+
+def load_hf(dataset_id: str, split: str, limit: int, language: str | None) -> list[dict]:
+    """Load an ai4privacy-style HF dataset into {text, spans:[{start,end,label,value}]}.
+
+    The ai4privacy `privacy_mask` is already {value,start,end,label} with char
+    offsets into `source_text`, so this is a near-1:1 mapping; labels are
+    normalized to our canonical types where CPEX has an equivalent detector.
+    """
+    from datasets import load_dataset  # lazy: only needed for --dataset (the [bench] extra)
+
+    ds = load_dataset(dataset_id, split=split, streaming=True)
+    records: list[dict] = []
+    for row in ds:
+        if language and row.get("language") != language:
+            continue
+        spans = [
+            {
+                "start": m["start"],
+                "end": m["end"],
+                "label": AI4_NORMALIZE.get(m["label"], str(m["label"]).lower()),
+                "value": m["value"],
+            }
+            for m in (row.get("privacy_mask") or [])
+        ]
+        records.append({"text": row["source_text"], "spans": spans})
+        if len(records) >= limit:
+            break
+    return records
 
 
 def build_gold() -> list[dict]:
@@ -124,6 +176,8 @@ def score(records: list[dict], redactor) -> dict:
     recall = tp / (tp + fn) if (tp + fn) else 0.0
     precision = tp / (tp + fp) if (tp + fp) else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+    sup_detected = sum(d for lab, (d, _t) in per_label.items() if lab in SUPPORTED)
+    sup_total = sum(t for lab, (_d, t) in per_label.items() if lab in SUPPORTED)
     return {
         "records": len(records),
         "tp": tp,
@@ -133,6 +187,8 @@ def score(records: list[dict], redactor) -> dict:
         "precision": precision,
         "f1": f1,
         "leak_rate": leaked_records / len(records) if records else 0.0,
+        "supported_recall": sup_detected / sup_total if sup_total else 0.0,
+        "supported_total": sup_total,
         "per_label": dict(per_label),
     }
 
@@ -141,6 +197,7 @@ def _print(title: str, result: dict) -> None:
     print(f"\n== {title} ==")
     print(f"  records={result['records']}  TP={result['tp']}  FP={result['fp']}  FN(leaked spans)={result['fn']}")
     print(f"  recall={result['recall']:.2f}  precision={result['precision']:.2f}  F1={result['f1']:.2f}")
+    print(f"  recall on CPEX-supported types only={result['supported_recall']:.2f}  (over {result['supported_total']} spans)")
     print(f"  record-level leak rate={result['leak_rate']:.2f}")
     print("  per-entity recall:")
     for label, (detected, total) in sorted(result["per_label"].items()):
@@ -151,6 +208,10 @@ def _print(title: str, result: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", help="JSONL gold file ({text, spans}); defaults to the built-in synthetic set.")
+    parser.add_argument("--dataset", help="Hugging Face dataset id of an ai4privacy-style set, e.g. ai4privacy/pii-masking-200k.")
+    parser.add_argument("--split", default="train", help="HF split to stream (default: train).")
+    parser.add_argument("--limit", type=int, default=1000, help="Max records to score from --dataset (default: 1000).")
+    parser.add_argument("--language", default="en", help="Filter HF records by language (default: en; empty for all).")
     args = parser.parse_args()
 
     if importlib.util.find_spec("cpex_pii_filter") is None:
@@ -161,28 +222,33 @@ def main() -> int:
     from altk_evolve.config.pii import PIIConfig
     from altk_evolve.pii import get_redactor
 
-    if args.data:
+    if args.dataset:
+        print(f"Loading {args.dataset} (split={args.split}, limit={args.limit}, language={args.language or 'all'}) ...")
+        records = load_hf(args.dataset, args.split, args.limit, args.language or None)
+    elif args.data:
         records = [json.loads(line) for line in open(args.data, encoding="utf-8") if line.strip()]
     else:
         records = build_gold()
 
     structured = ["email", "phone", "ssn", "credit_card", "ip_address"]
 
-    # Run 1: built-in structured entity flags (no names/addresses).
     base = get_redactor(PIIConfig(enabled=True, entities=structured))
     _print("CPEX regex — structured entities only", score(records, base))
 
-    # Run 2: add custom_patterns for the persona names to show the mitigation
-    # path for the no-NER gap (exact-name regexes here; in production these would
-    # be name lists / a semantic backend).
-    name_patterns = [{"name": f"person{i}", "description": "demo name", "pattern": re.escape(n)} for i, n in enumerate(VALUES["person"])]
-    augmented = get_redactor(PIIConfig(enabled=True, entities=structured, custom_patterns=name_patterns))
-    _print("CPEX regex + custom name patterns", score(records, augmented))
+    if not args.dataset:
+        # Synthetic set: show the no-NER mitigation by adding name patterns.
+        name_patterns = [
+            {"name": f"person{i}", "description": "demo name", "pattern": re.escape(n)} for i, n in enumerate(VALUES["person"])
+        ]
+        augmented = get_redactor(PIIConfig(enabled=True, entities=structured, custom_patterns=name_patterns))
+        _print("CPEX regex + custom name patterns", score(records, augmented))
 
     print("\nNotes:")
-    print("  - Recall on structured PII is the headline 'did we remove it' number.")
-    print("  - 'person'/'address' have no built-in detector (regex has no NER), so they")
-    print("    leak until you add custom_patterns or a semantic backend (pii.mode: semantic).")
+    print("  - 'recall on CPEX-supported types only' is the fair number: of the PII types")
+    print("    CPEX targets (email/phone/ssn/credit_card/ip), how much does it remove?")
+    print("  - Overall recall is dragged down by types CPEX has no detector for (names,")
+    print("    addresses, DOB, IBAN, crypto, …) — the case for custom_patterns or a")
+    print("    semantic backend (pii.mode: semantic).")
     return 0
 
 
