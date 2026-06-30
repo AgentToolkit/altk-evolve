@@ -149,7 +149,9 @@ class PhoenixSync:
         return by_trace
 
     def _span_id(self, span: dict) -> Optional[str]:
-        return span.get("context", {}).get("span_id")
+        ctx = span.get("context") or {}
+        val = ctx.get("span_id")
+        return str(val) if val is not None else None
 
     def _select_representative_span(self, llm_spans: list[dict]) -> dict:
         """Pick the most complete LLM span: the one with the latest start_time.
@@ -357,25 +359,27 @@ class PhoenixSync:
             prefix = f"llm.input_messages.{i}.message.tool_calls."
             for key in attrs:
                 if key.startswith(prefix):
-                    parts = key[len(prefix):].split(".")
+                    parts = key[len(prefix) :].split(".")
                     if parts and parts[0].isdigit():
                         tc_indices.add(int(parts[0]))
             tool_calls = []
             for j in sorted(tc_indices):
                 tc_prefix = f"llm.input_messages.{i}.message.tool_calls.{j}.tool_call."
-                tool_calls.append({
-                    "tool_call.id": attrs.get(f"{tc_prefix}id", ""),
-                    "tool_call.function.name": attrs.get(f"{tc_prefix}function.name", ""),
-                    "tool_call.function.arguments": attrs.get(f"{tc_prefix}function.arguments", "{}"),
-                })
+                tool_calls.append(
+                    {
+                        "tool_call.id": attrs.get(f"{tc_prefix}id", ""),
+                        "tool_call.function.name": attrs.get(f"{tc_prefix}function.name", ""),
+                        "tool_call.function.arguments": attrs.get(f"{tc_prefix}function.arguments", "{}"),
+                    }
+                )
 
             if role:
-                mapped_msg: dict = {"index": i, "type": "prompt", "role": role, "content": content}
+                indexed_msg: dict = {"index": i, "type": "prompt", "role": role, "content": content}
                 if tool_calls:
-                    mapped_msg["tool_calls"] = tool_calls
+                    indexed_msg["tool_calls"] = tool_calls
                 if tool_call_id:
-                    mapped_msg["tool_call_id"] = tool_call_id
-                messages.append(mapped_msg)
+                    indexed_msg["tool_call_id"] = tool_call_id
+                messages.append(indexed_msg)
 
         for i in sorted(output_indices):
             role = attrs.get(f"llm.output_messages.{i}.message.role")
@@ -385,17 +389,19 @@ class PhoenixSync:
             prefix_out = f"llm.output_messages.{i}.message.tool_calls."
             for key in attrs:
                 if key.startswith(prefix_out):
-                    parts = key[len(prefix_out):].split(".")
+                    parts = key[len(prefix_out) :].split(".")
                     if parts and parts[0].isdigit():
                         tc_indices_out.add(int(parts[0]))
             tool_calls_out = []
             for j in sorted(tc_indices_out):
                 tc_prefix_out = f"llm.output_messages.{i}.message.tool_calls.{j}.tool_call."
-                tool_calls_out.append({
-                    "tool_call.id": attrs.get(f"{tc_prefix_out}id", ""),
-                    "tool_call.function.name": attrs.get(f"{tc_prefix_out}function.name", ""),
-                    "tool_call.function.arguments": attrs.get(f"{tc_prefix_out}function.arguments", "{}"),
-                })
+                tool_calls_out.append(
+                    {
+                        "tool_call.id": attrs.get(f"{tc_prefix_out}id", ""),
+                        "tool_call.function.name": attrs.get(f"{tc_prefix_out}function.name", ""),
+                        "tool_call.function.arguments": attrs.get(f"{tc_prefix_out}function.arguments", "{}"),
+                    }
+                )
 
             if role:
                 mapped_msg_out: dict = {"index": i, "type": "completion", "role": role, "content": content}
@@ -618,14 +624,16 @@ class PhoenixSync:
             name = tc.get("tool_call.function.name")
             if name is not None:
                 arguments = tc.get("tool_call.function.arguments", "{}")
-                result.append({
-                    "id": tc.get("tool_call.id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments),
-                    },
-                })
+                result.append(
+                    {
+                        "id": tc.get("tool_call.id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments),
+                        },
+                    }
+                )
             elif "id" in tc or "function" in tc:
                 result.append(tc)
         return result
@@ -740,7 +748,7 @@ class PhoenixSync:
         the trajectory must mean "the model produced this," and only a genuine LLM span's
         own output satisfies that.
         """
-        parent_of = {self._span_id(s): s.get("parent_id") for s in spans}
+        parent_of: dict[str, Optional[str]] = {sid: s.get("parent_id") for s in spans if (sid := self._span_id(s)) is not None}
         llm_spans = self._dedupe_nested_llm_spans([s for s in spans if self._is_llm_span(s)], parent_of)
 
         if not llm_spans:

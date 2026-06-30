@@ -927,9 +927,7 @@ class TestConvertOpeninferenceToolCalls:
 
     def test_passes_through_already_openai_format(self, phoenix_sync):
         """A tool call already in OpenAI format (has id/function, no OpenInference keys) passes through."""
-        tool_calls = [
-            {"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{}"}}
-        ]
+        tool_calls = [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{}"}}]
 
         result = phoenix_sync._convert_openinference_tool_calls(tool_calls)
 
