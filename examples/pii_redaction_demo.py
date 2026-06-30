@@ -29,7 +29,7 @@ from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.pii import NullRedactor
 from altk_evolve.schema.core import Entity
 
-FILLER = "[INERT]"
+FILLER = "[REDACTED]"
 
 # All fictional — a made-up persona and obviously-fake identifiers.
 PERSONA = "Dana Whitfield"

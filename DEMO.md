@@ -44,18 +44,18 @@ redaction enabled, then **reads them back from storage** to prove the PII is
 gone (this is the real persisted content, not a cosmetic reprint):
 
 ```
-Redaction active: CpexRegexRedactor (mask -> [INERT])
+Redaction active: CpexRegexRedactor (mask -> [REDACTED])
 
 What the agent tried to remember  ->  what actually got stored
 
   IN : Primary contact is Dana Whitfield, who replies fastest at dana.whitfield@example.com.
-  OUT: Primary contact is [INERT], who replies fastest at [INERT].
+  OUT: Primary contact is [REDACTED], who replies fastest at [REDACTED].
 
   IN : For billing we have SSN 123-45-6789 and card 4111 1111 1111 1111 on file.
-  OUT: For billing we have SSN [INERT] and card [INERT] on file.
+  OUT: For billing we have SSN [REDACTED] and card [REDACTED] on file.
 
   IN : Last successful login came from IP 192.168.10.42 on the office network.
-  OUT: Last successful login came from IP [INERT] on the office network.
+  OUT: Last successful login came from IP [REDACTED] on the office network.
 
   IN : Remember: the customer prefers metric units and a dark UI theme.
   OUT: Remember: the customer prefers metric units and a dark UI theme.
