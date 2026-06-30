@@ -13,7 +13,7 @@ import logging
 import urllib.request
 import warnings
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from altk_evolve.config.phoenix import phoenix_settings
 from altk_evolve.config.evolve import evolve_config
@@ -117,23 +117,78 @@ class PhoenixSync:
         except NamespaceNotFoundException:
             return set()
 
-    def _select_representative_spans(self, spans: list[dict]) -> list[dict]:
-        """For each trace, return only the last span by timestamp.
+    def _is_llm_span(self, span: dict) -> bool:
+        """Whether a span represents an actual LLM call, not a tool/agent/chain span.
 
-        Each LLM call in an agent run receives the full accumulated message history
-        as input, so the last span chronologically contains the most complete
-        conversation and is the right unit for guideline generation. Processing
-        all spans would analyse the same steps multiple times with growing context.
+        Phoenix's REST API promotes OpenInference's `openinference.span.kind` to a
+        top-level `span_kind` field (`LLM`, `TOOL`, `CHAIN`, `AGENT`, ...) — the canonical,
+        framework-agnostic signal. Fall back to attribute heuristics for spans from older or
+        partial instrumentors that don't set it: OpenInference sets the generic
+        `input.value`/`output.value` attributes on every span kind, so those alone can't
+        distinguish an LLM call — only genuine LLM spans carry prompt/message attributes or
+        a model name.
         """
+        if span.get("span_kind") == "LLM":
+            return True
+        attrs = span.get("attributes") or {}
+        if any(k.startswith("gen_ai.prompt.") for k in attrs):
+            return True
+        if any(k.startswith("llm.input_messages") or k.startswith("llm.output_messages") for k in attrs):
+            return True
+        if attrs.get("llm.model_name") or attrs.get("gen_ai.request.model"):
+            return True
+        return False
+
+    def _group_spans_by_trace(self, spans: list[dict]) -> dict[str, list[dict]]:
+        """Group spans by their trace_id."""
         by_trace: dict[str, list[dict]] = {}
         for span in spans:
             trace_id = span.get("context", {}).get("trace_id")
             if trace_id:
                 by_trace.setdefault(trace_id, []).append(span)
-        return [
-            max(trace_spans, key=lambda s: s.get("start_time") or "")
-            for trace_spans in by_trace.values()
-        ]
+        return by_trace
+
+    def _span_id(self, span: dict) -> Optional[str]:
+        return span.get("context", {}).get("span_id")
+
+    def _select_representative_span(self, llm_spans: list[dict]) -> dict:
+        """Pick the most complete LLM span: the one with the latest start_time.
+
+        Each LLM call in a sequential agent run receives the full accumulated message
+        history as input (the agent framework's own conversation-state mechanism), so the
+        last call chronologically already contains everything that happened before it —
+        that span alone is the right unit to extract, no merge across spans needed.
+        """
+        return max(llm_spans, key=lambda s: s.get("start_time") or "")
+
+    def _is_ancestor(self, parent_of: dict[str, Optional[str]], ancestor_id: Optional[str], span_id: Optional[str]) -> bool:
+        """Whether `ancestor_id` is an ancestor of `span_id`, walking up `parent_id` links."""
+        if ancestor_id is None or span_id is None:
+            return False
+        current = parent_of.get(span_id)
+        seen: set[str] = set()
+        while current and current not in seen:
+            if current == ancestor_id:
+                return True
+            seen.add(current)
+            current = parent_of.get(current)
+        return False
+
+    def _dedupe_nested_llm_spans(self, llm_spans: list[dict], parent_of: dict[str, Optional[str]]) -> list[dict]:
+        """Collapse multi-layer instrumentation of one logical call to its innermost span.
+
+        A single model call is often wrapped by several instrumentation layers that each
+        emit their own LLM-kind span (e.g. smolagents' `LiteLLMModel.generate` ->
+        litellm's `completion` -> the underlying `ChatCompletion` span). Keep only the
+        innermost (deepest) span per such chain — it carries the most complete attributes.
+        """
+        ids = {self._span_id(s) for s in llm_spans}
+
+        def wraps_another_llm_span(span: dict) -> bool:
+            span_id = self._span_id(span)
+            return any(other_id != span_id and self._is_ancestor(parent_of, span_id, other_id) for other_id in ids)
+
+        return [s for s in llm_spans if not wraps_another_llm_span(s)]
 
     def _format_payload_summary(self, payload: Any) -> str:
         """Format a payload summary for secure logging (avoid PII)."""
@@ -297,6 +352,7 @@ class PhoenixSync:
             content = attrs.get(f"llm.input_messages.{i}.message.content")
             tool_call_id = attrs.get(f"llm.input_messages.{i}.message.tool_call_id")
 
+            # Collect indexed tool_calls: llm.input_messages.{i}.message.tool_calls.{j}.*
             tc_indices: set[int] = set()
             prefix = f"llm.input_messages.{i}.message.tool_calls."
             for key in attrs:
@@ -314,12 +370,12 @@ class PhoenixSync:
                 })
 
             if role:
-                mapped_msg_in: dict = {"index": i, "type": "prompt", "role": role, "content": content}
+                mapped_msg: dict = {"index": i, "type": "prompt", "role": role, "content": content}
                 if tool_calls:
-                    mapped_msg_in["tool_calls"] = tool_calls
+                    mapped_msg["tool_calls"] = tool_calls
                 if tool_call_id:
-                    mapped_msg_in["tool_call_id"] = tool_call_id
-                messages.append(mapped_msg_in)
+                    mapped_msg["tool_call_id"] = tool_call_id
+                messages.append(mapped_msg)
 
         for i in sorted(output_indices):
             role = attrs.get(f"llm.output_messages.{i}.message.role")
@@ -468,8 +524,8 @@ class PhoenixSync:
 
         Tries three attribute conventions in order:
         1. llm.invocation_parameters (LiteLLM GenAI convention) — JSON dict with a "tools" key
-        2. llm.tools as a JSON array where each item is {"tool.json_schema": "<json>"}
-        3. Indexed llm.tools.{i}.tool.json_schema keys (Phoenix REST API flat format)
+        2. llm.tools as a JSON array (OpenInference flat convention)
+        3. Indexed llm.tools.{i}.tool.* keys (OpenInference indexed convention)
         """
         attrs = span.get("attributes") or {}
 
@@ -489,7 +545,8 @@ class PhoenixSync:
             try:
                 tools = json.loads(tools_attr) if isinstance(tools_attr, str) else tools_attr
                 if isinstance(tools, list) and tools:
-                    # OpenInference list format: each item is {"tool.json_schema": "<json string>"}
+                    # OpenInference stores each tool as {"tool.json_schema": "<json string>"}
+                    # where the schema value is already in OpenAI function-tool format.
                     openai_tools = []
                     for item in tools:
                         if isinstance(item, dict):
@@ -507,7 +564,8 @@ class PhoenixSync:
             except (json.JSONDecodeError, Exception):
                 pass
 
-        # Indexed flat format from Phoenix REST API: llm.tools.{i}.tool.json_schema
+        # Indexed OpenInference format from REST API: llm.tools.{i}.tool.json_schema
+        # (Phoenix REST API expands llm.tools list into flat indexed attributes)
         tool_indices: set[int] = set()
         for key in attrs:
             if key.startswith("llm.tools."):
@@ -526,7 +584,7 @@ class PhoenixSync:
                         continue
                     except (json.JSONDecodeError, Exception):
                         pass
-                # Fall back to building from name/description/parameters parts
+                # Fall back to building the tool from name/description/parameters parts
                 name = attrs.get(f"llm.tools.{i}.tool.name")
                 if not name:
                     continue
@@ -572,11 +630,8 @@ class PhoenixSync:
                 result.append(tc)
         return result
 
-    def _extract_trajectory(self, span: dict) -> dict:
-        """Extract a complete trajectory from a span."""
-        attrs = span.get("attributes") or {}
-        messages = self._extract_messages_from_span(span)
-
+    def _assemble_openai_messages(self, messages: list[dict]) -> list[dict]:
+        """Convert extracted prompt/completion message dicts into OpenAI chat format."""
         openai_messages = []
 
         for msg in messages:
@@ -597,7 +652,7 @@ class PhoenixSync:
                         }
                     )
             elif role == "tool" and tool_call_id:
-                # OpenInference format — tool_call_id extracted from span attribute
+                # OpenInference format — tool_call_id was on the span attribute
                 openai_messages.append(
                     {
                         "role": "tool",
@@ -610,58 +665,89 @@ class PhoenixSync:
                 openai_tool_calls = self._convert_openinference_tool_calls(raw_tool_calls)
                 if openai_tool_calls:
                     converted["tool_calls"] = openai_tool_calls
+                    # Assistant tool-call messages have no text content
                     if converted.get("content") in (None, "None", ""):
                         converted.pop("content", None)
                 openai_messages.append(converted)
             else:
                 openai_messages.append(converted)
 
+        return openai_messages
+
+    def _extract_usage(self, attrs: dict) -> dict:
+        return {
+            "prompt_tokens": next(
+                (
+                    v
+                    for v in [
+                        attrs.get("gen_ai.usage.prompt_tokens"),
+                        attrs.get("llm.token_count.prompt"),
+                        attrs.get("llm.usage.prompt_tokens"),
+                    ]
+                    if v is not None
+                ),
+                None,
+            ),
+            "completion_tokens": next(
+                (
+                    v
+                    for v in [
+                        attrs.get("gen_ai.usage.completion_tokens"),
+                        attrs.get("llm.token_count.completion"),
+                        attrs.get("llm.usage.completion_tokens"),
+                    ]
+                    if v is not None
+                ),
+                None,
+            ),
+            "total_tokens": next(
+                (
+                    v
+                    for v in [
+                        attrs.get("gen_ai.usage.total_tokens"),
+                        attrs.get("llm.token_count.total"),
+                        attrs.get("llm.usage.total_tokens"),
+                    ]
+                    if v is not None
+                ),
+                None,
+            ),
+        }
+
+    def _extract_trajectory(self, span: dict) -> dict:
+        """Extract a complete trajectory from a single span (its own input + output)."""
+        attrs = span.get("attributes") or {}
+        messages = self._extract_messages_from_span(span)
+
         return {
             "trace_id": span["context"]["trace_id"],
             "span_id": span["context"]["span_id"],
             "model": attrs.get("gen_ai.request.model") or attrs.get("llm.model_name", "unknown"),
             "timestamp": span.get("start_time"),
-            "messages": openai_messages,
+            "messages": self._assemble_openai_messages(messages),
             "tools": self._extract_tools_from_span(span),
-            "usage": {
-                "prompt_tokens": next(
-                    (
-                        v
-                        for v in [
-                            attrs.get("gen_ai.usage.prompt_tokens"),
-                            attrs.get("llm.token_count.prompt"),
-                            attrs.get("llm.usage.prompt_tokens"),
-                        ]
-                        if v is not None
-                    ),
-                    None,
-                ),
-                "completion_tokens": next(
-                    (
-                        v
-                        for v in [
-                            attrs.get("gen_ai.usage.completion_tokens"),
-                            attrs.get("llm.token_count.completion"),
-                            attrs.get("llm.usage.completion_tokens"),
-                        ]
-                        if v is not None
-                    ),
-                    None,
-                ),
-                "total_tokens": next(
-                    (
-                        v
-                        for v in [
-                            attrs.get("gen_ai.usage.total_tokens"),
-                            attrs.get("llm.token_count.total"),
-                            attrs.get("llm.usage.total_tokens"),
-                        ]
-                        if v is not None
-                    ),
-                    None,
-                ),
-            },
+            "usage": self._extract_usage(attrs),
         }
+
+    def _build_trajectory_for_trace(self, trace_id: str, spans: list[dict]) -> Optional[dict]:
+        """Build the trajectory for one trace from its candidate LLM spans.
+
+        Each LLM call in a sequential agent run receives the full accumulated message
+        history as input (the agent framework's own conversation-state mechanism), so the
+        single most-complete LLM span — after collapsing multi-layer instrumentation of one
+        logical call to its innermost span — already contains everything that happened in
+        the trace. No cross-span merge is needed or correct: an assistant-role message in
+        the trajectory must mean "the model produced this," and only a genuine LLM span's
+        own output satisfies that.
+        """
+        parent_of = {self._span_id(s): s.get("parent_id") for s in spans}
+        llm_spans = self._dedupe_nested_llm_spans([s for s in spans if self._is_llm_span(s)], parent_of)
+
+        if not llm_spans:
+            return None
+
+        representative = self._select_representative_span(llm_spans)
+        return self._extract_trajectory(representative)
 
     def _clean_trajectory(self, trajectory: dict) -> dict:
         """Clean up a trajectory by removing system reminders."""
@@ -770,10 +856,7 @@ class PhoenixSync:
         spans = self._fetch_spans(limit)
         logger.info(f"Fetched {len(spans)} spans from Phoenix")
 
-        # Dedup at trace level: each agent run produces multiple spans (one per LLM call),
-        # each accumulating the full message history. Processing all would analyse the same
-        # steps multiple times. We skip any trace already stored, then pick one
-        # representative span per remaining trace (the latest, which has the complete context).
+        # Get already processed trace IDs (one trajectory entity stored per trace)
         processed_trace_ids = self._get_processed_trace_ids()
         logger.info(f"Found {len(processed_trace_ids)} already processed traces")
 
@@ -782,21 +865,11 @@ class PhoenixSync:
         guidelines_generated = 0
         errors = []
 
-        # First pass: filter to candidate LLM spans, skipping already-processed traces
-        candidates = []
+        # First pass: filter to LLM spans from unprocessed traces
         skipped_trace_ids: set[str] = set()
+        candidate_spans: list[dict] = []
         for span in spans:
             if not include_errors and span.get("status_code") == "ERROR":
-                continue
-
-            attrs = span.get("attributes") or {}
-            has_gen_ai = any(k.startswith("gen_ai.prompt.") for k in attrs)
-            has_llm_msgs = (
-                "llm.input_messages" in attrs
-                or "input.value" in attrs
-                or any(k.startswith("llm.input_messages.") for k in attrs)
-            )
-            if not (has_gen_ai or has_llm_msgs):
                 continue
 
             trace_id = span.get("context", {}).get("trace_id")
@@ -804,18 +877,22 @@ class PhoenixSync:
                 skipped_trace_ids.add(trace_id)
                 continue
 
-            candidates.append(span)
+            if not self._is_llm_span(span):
+                continue
+
+            candidate_spans.append(span)
 
         skipped = len(skipped_trace_ids)
 
-        # Second pass: one representative span per trace (latest start_time = most complete context)
-        representative_spans = self._select_representative_spans(candidates)
-        logger.info(f"Selected {len(representative_spans)} representative spans from {len(candidates)} candidates")
+        # Second pass: build one trajectory per trace from all of its candidate spans
+        spans_by_trace = self._group_spans_by_trace(candidate_spans)
+        logger.info(f"Selected {len(spans_by_trace)} traces from {len(candidate_spans)} candidate spans")
 
-        for span in representative_spans:
-            span_id = span.get("context", {}).get("span_id")
+        for trace_id, trace_spans in spans_by_trace.items():
             try:
-                trajectory = self._extract_trajectory(span)
+                trajectory = self._build_trajectory_for_trace(trace_id, trace_spans)
+                if trajectory is None:
+                    continue
                 trajectory = self._clean_trajectory(trajectory)
 
                 if trajectory["messages"]:
@@ -824,7 +901,7 @@ class PhoenixSync:
                     guidelines_generated += guidelines_count
                     logger.info(f"Processed trace {trajectory['trace_id'][:12]}... - generated {guidelines_count} guidelines")
             except Exception as e:
-                error_msg = f"Error processing span {span_id}: {e}"
+                error_msg = f"Error processing trace {trace_id}: {e}"
                 logger.exception(error_msg)
                 errors.append(error_msg)
 
