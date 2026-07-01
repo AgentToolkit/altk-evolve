@@ -130,7 +130,7 @@ class PhoenixSync:
         """
         span_kind = span.get("span_kind")
         if span_kind:
-            return span_kind == "LLM"
+            return bool(span_kind == "LLM")
         attrs = span.get("attributes") or {}
         if any(k.startswith("gen_ai.prompt.") for k in attrs):
             return True
