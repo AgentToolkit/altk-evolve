@@ -295,41 +295,44 @@ Run at scale, 4 processes in parallel, with runtimes.
 | email / ip | 1.00 / 1.00 | 1.00 / 0.95 |
 | phone / ssn / credit_card | 0.46 / 0.22 / 0.04 | 0.60 / 0.43 / 0.03 |
 
-**Japanese — WikiANN (`ja`), 10,000 records** (~8–9 min each, run in parallel).
-English model vs a language-matched Japanese spaCy model, selected purely via
-the pluggable `readi_extractor` / `readi_model` config:
+**Japanese — `ai4privacy/pii-masking-openpii-1.5m` (`ja`), 2,000 records** — real
+Japanese PII (names, email, phone, zipcode, credit card, My-Number-style IDs).
+Three engines, selected via the pluggable `readi_extractor` / `readi_model`:
 
 ```bash
-uv run --extra readi --extra bench python examples/pii_benchmark.py \
-    --dataset unimelb-nlp/wikiann --dataset-config ja --dataset-format wikiann \
-    --split validation --limit 10000 --mode semantic \
-    --readi-extractor spacy --readi-model ja_core_news_trf --readi-language ja
+uv run --extra pii --extra readi --extra bench python examples/pii_benchmark.py \
+    --dataset ai4privacy/pii-masking-openpii-1.5m --language ja --split validation \
+    --limit 2000 --mode both --readi-extractor spacy --readi-model ja_core_news_trf --readi-language ja
 ```
 
-| Metric | English model (`en_core_web_trf`) | Japanese model (`ja_core_news_trf`) |
-|---|---|---|
-| Overall recall | **0.00** | **0.87** |
-| person (per) | 0.00 | **0.93** |
-| location (loc) | 0.00 | 0.89 |
-| organization (org) | 0.01 | 0.79 |
-| Precision | 0.12 | 0.49\* |
-| Leak rate | 1.00 | 0.16 |
+| PII type | regex (CPEX) | English NER¹ (`en_core_web_trf`) | Japanese NER (`ja_core_news_trf`) |
+|---|---|---|---|
+| **Overall recall** | 0.03 | 0.15 | **0.92** |
+| **Precision** | 0.99 | 0.99 | 0.93 |
+| email | 0.09 | 0.09 | 0.94 |
+| phone | 0.13 | 0.47 | 0.99 |
+| zipcode | 0.00 | 0.46 | 1.00 |
+| credit card | 0.02 | 0.03 | 1.00 |
+| social / ID number | 0.46 | 0.46 | 1.00 |
+| given / surname | 0.00 / 0.00 | 0.07 / 0.04 | 0.82 / 0.96 |
+| city / street | 0.00 / 0.00 | 0.00 / 0.00 | 1.00 / 0.95 |
 
-\* WikiANN labels only PER/ORG/LOC, but the spaCy model also emits
-DATE/PRODUCT/MONEY/etc.; those extra detections count as "false positives" in
-this scoring, so 0.49 understates real precision. For redaction it means some
-over-redaction, not leaked PII.
+¹ READI's default English pipeline (`en_core_web_trf` NER + identifier
+extractors). The Japanese column is NER-only, yet still catches structured PII
+because the Japanese spaCy model also tags numeric/date entities.
 
 **Takeaways**
-- Semantic NER buys ~4× recall on free-form PII (names, locations) at ~1.0
-  precision on English — but it is **language-bound**: the English model scores
-  **0.00** on Japanese.
-- A **language-matched model recovers it entirely** — `ja_core_news_trf` lifts
-  Japanese person recall from 0.00 to **0.93** — and swapping it in is a one-line
-  config change.
-- Structured PII (cards, phones, SSNs) stays the weak spot for *both* engines —
-  the case for a **hybrid** deployment: regex (CPEX) for structured PII at high
-  precision, plus a language-matched NER for names/locations.
+- On real Japanese PII, **regex is largely ineffective** (0.03) — Western-format
+  patterns don't fit PII embedded in no-space Japanese text (even email → 0.09).
+- The **English NER barely helps** (0.15): its identifier extractors recover some
+  structured PII (phone 0.47, zip 0.46) but it can't read Japanese names/places
+  (givenname 0.07, city 0.00).
+- A **language-matched model catches ~92% at ~93% precision** — the decisive case
+  for language-matched (or multilingual) models, and a one-line config change
+  (`readi_extractor="spacy", readi_model="ja_core_news_trf"`).
+- Bonus: this benchmark caught a real bug — CPEX returned **byte** offsets, which
+  broke span scoring on multi-byte text (precision looked like 0.31). Fixed to
+  char offsets (0.99); redaction itself was always correct.
 
 ---
 
