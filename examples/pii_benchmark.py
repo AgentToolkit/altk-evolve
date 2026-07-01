@@ -70,8 +70,10 @@ SUPPORTED = {"email", "phone", "ssn", "credit_card", "ip_address"}
 AI4_NORMALIZE = {
     "EMAIL": "email",
     "PHONENUMBER": "phone",
+    "TELEPHONENUM": "phone",  # openpii-1.5m
     "CREDITCARDNUMBER": "credit_card",
     "SSN": "ssn",
+    "SOCIALNUM": "ssn",  # openpii-1.5m
     "IP": "ip_address",
     "IPV4": "ip_address",
     "IPV6": "ip_address",

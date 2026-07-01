@@ -70,6 +70,29 @@ OK — all 6 PII items were replaced with inert filler before storage;
 - The fictional *name* is caught via a `custom_patterns` regex (the detector is
   regex-based and has no NER on its own — see Limitations).
 
+### Example: a learned guideline, before and after
+
+Memories are usually *guidelines* an agent learns. Here's one that happens to
+carry PII — the redaction runs at the write choke-point, so this is what
+actually gets stored:
+
+```
+INPUT guideline
+  trigger: When a user asks how to resolve a billing dispute
+  content: For billing disputes, call account owner Dana Whitfield at
+           415-555-0199 or dana.whitfield@acme.com; verify the card on file
+           (4111 1111 1111 1111) before issuing a refund over $500.
+
+STORED guideline (PII removed)
+  trigger: When a user asks how to resolve a billing dispute
+  content: For billing disputes, call account owner [REDACTED] at [REDACTED] or
+           [REDACTED]; verify the card on file ([REDACTED]) before issuing a
+           refund over $500.
+```
+
+The *reusable* knowledge — how to handle a billing dispute, the $500 threshold —
+is kept intact; only the person, phone, email, and card are removed.
+
 ---
 
 ## Demo 2 — Retention policies & provenance cascade
@@ -110,6 +133,40 @@ Store after apply:
 - **Cascade**: deleting the old *session* also deletes the memory derived from
   it (linked by provenance: `metadata.source_task_id == trace_id`).
 - The fresh guideline is untouched. **Dry-run** changes nothing.
+
+### Why each memory was kept, flagged, or removed
+
+The engine records *why* it acted (or didn't) on every memory — so a decision is
+always explainable and auditable:
+
+```
+Decision & why (how the engine derived each outcome):
+    FLAG   1 [guideline]  STALE: deploy only on Fridays
+           why: not accessed in 200d ≥ rule 'unused-guidelines'
+    KEEP   2 [guideline]  FRESH: prefer uv over pip for installs
+           why: idle 0d < 90d
+    DELETE 3 [guideline]  DERIVED from old session   [derived from session T1]
+           why: its source session T1 was deleted → provenance cascade
+    DELETE 4 [trajectory] SESSION transcript of an old support chat
+           why: created 400d ago ≥ rule 'old-sessions'
+```
+
+Note memory **3**: it's only a few days old and would normally be *kept* — it's
+removed **not for its own age** but because the session it was derived from
+expired, and provenance links the two.
+
+### When retention is useful (scenarios)
+
+| Scenario | Rule | Example → decision |
+|---|---|---|
+| **Data minimization / compliance** — regulations cap how long you retain data | `max_age_days`, action `delete` | a 400-day-old session → **deleted** (over a 365-day cap) |
+| **Right-to-be-forgotten / session expiry** — a session is deleted; everything learned *from* it must go too | session `delete` + `cascade_derived` | delete session T1 → its derived guideline **3** is **deleted too** (provenance cascade) |
+| **Memory hygiene / drift** — guidelines nobody uses anymore accumulate and mislead | `max_unused_days` | a guideline unused for 200 days → **flagged** for review |
+| **Human-in-the-loop** — don't hard-delete; let a person confirm first | action `flag` | flag (marker written), reviewed, then purged in a later pass |
+
+The "unused" signal comes from `metadata.last_accessed`, which
+`EvolveClient.record_access(namespace, ids)` stamps from your recall path;
+absent that, it falls back to `created_at`.
 
 ---
 
@@ -194,9 +251,10 @@ uv run --extra pii --extra readi python examples/pii_benchmark.py \
     --dataset ai4privacy/pii-masking-200k --limit 150 --mode both
 ```
 
-Same 150 real records, both backends:
+Same 150 real records, both backends (semantic uses READI's default English NER,
+spaCy `en_core_web_trf`):
 
-| Metric | regex (CPEX) | semantic (READI) |
+| Metric | regex (CPEX) | semantic (READI, `en_core_web_trf`) |
 |---|---|---|
 | Overall recall | 0.12 | **0.45** |
 | Precision | 1.00 | 1.00 |

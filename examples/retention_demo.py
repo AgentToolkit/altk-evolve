@@ -59,6 +59,63 @@ def _print_report(report) -> None:
         print(f"    FLAG    {item.entity_id:<3} {item.entity_type:<10} reason={item.reason:<12} rule={item.rule}")
 
 
+def _age_days(e, now: datetime.datetime) -> int:
+    ca = e.created_at if e.created_at.tzinfo else e.created_at.replace(tzinfo=datetime.UTC)
+    return int((now - ca).days)
+
+
+def _unused_days(e, now: datetime.datetime) -> int:
+    la = (e.metadata or {}).get("last_accessed")
+    when = None
+    if la:
+        try:
+            when = datetime.datetime.fromisoformat(la.replace("Z", "+00:00"))
+        except ValueError:
+            when = None
+    if when is None:
+        when = e.created_at
+    when = when if when.tzinfo else when.replace(tzinfo=datetime.UTC)
+    return int((now - when).days)
+
+
+def _why_kept(entity, policy, now: datetime.datetime) -> str:
+    checks = []
+    for rule in policy.rules:
+        if rule.entity_type is not None and entity.type != rule.entity_type:
+            continue
+        if rule.max_age_days is not None:
+            checks.append(f"age {_age_days(entity, now)}d < {rule.max_age_days}d")
+        if rule.max_unused_days is not None:
+            checks.append(f"idle {_unused_days(entity, now)}d < {rule.max_unused_days}d")
+    return "; ".join(checks) if checks else "no retention rule applies to this type"
+
+
+def _decision_table(engine, namespace, policy, now: datetime.datetime) -> None:
+    """Show each memory's decision (KEEP/FLAG/DELETE) and *why* it was derived."""
+    entities = sorted(engine.client.get_all_entities(namespace), key=lambda e: e.id)
+    acted = {it.entity_id: it for it in engine.evaluate(namespace, policy, now)}
+    print("Decision & why (how the engine derived each outcome):")
+    for e in entities:
+        src = (e.metadata or {}).get("source_task_id")
+        derived = f"  [derived from session {src}]" if src else ""
+        if e.id in acted:
+            it = acted[e.id]
+            decision = it.action.upper()
+            if it.reason.startswith("cascade:"):
+                why = f"its source session {it.reason.split(':', 1)[1]} was deleted → provenance cascade"
+            elif it.reason == "age":
+                why = f"created {_age_days(e, now)}d ago ≥ rule '{it.rule}'"
+            elif it.reason == "unused":
+                why = f"not accessed in {_unused_days(e, now)}d ≥ rule '{it.rule}'"
+            else:
+                why = it.reason
+        else:
+            decision, why = "KEEP", _why_kept(e, policy, now)
+        print(f"    {decision:<6} {e.id} [{e.type}] {str(e.content)[:40]:<40}{derived}")
+        print(f"           why: {why}")
+    print()
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as data_dir:
         client = EvolveClient(EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=data_dir)))
@@ -101,6 +158,8 @@ def main() -> int:
         for e in sorted(client.get_all_entities("demo"), key=lambda e: e.id):
             print(f"    {e.id} [{e.type}] {e.content}")
         print()
+
+        _decision_table(engine, "demo", policy, datetime.datetime.now(datetime.UTC))
 
         print("DRY RUN (what the policy would do):")
         _print_report(engine.apply("demo", policy, dry_run=True))
