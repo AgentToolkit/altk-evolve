@@ -117,6 +117,17 @@ def test_cpex_redactor_redacts_nested_content():
 
 
 @requires_cpex
+def test_cpex_detect_returns_char_offsets_on_multibyte_text():
+    # cpex-pii-filter returns byte offsets; detect() must convert to char offsets
+    # so spans align with Python str indexing on multi-byte (e.g. Japanese) text.
+    r = get_redactor(PIIConfig(enabled=True, entities=["email"]))
+    text = "連絡先は taro@example.jp です。"  # email starts at char 5, byte 13
+    span = r.detect(text)["email"][0]
+    assert text[span["start"] : span["end"]] == "taro@example.jp"
+    assert "taro@example.jp" not in r.redact(text)
+
+
+@requires_cpex
 def test_client_redacts_pii_at_the_write_chokepoint(tmp_path):
     """End-to-end: PII never reaches the persisted store (issue #275)."""
     from altk_evolve.backend.filesystem import FilesystemSettings

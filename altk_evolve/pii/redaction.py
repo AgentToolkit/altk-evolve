@@ -148,11 +148,24 @@ class CpexRegexRedactor(PIIRedactor):
     def detect(self, text: str) -> dict:
         if not text:
             return {}
-        return cast(dict, self._detector.detect(text))
+        raw = cast(dict, self._detector.detect(text))
+        # cpex-pii-filter is a Rust regex engine and returns BYTE offsets; convert
+        # them to Python character offsets so spans align with str indexing on
+        # multi-byte text (e.g. Japanese). For ASCII this is a no-op.
+        data = text.encode("utf-8")
+        out: dict = {}
+        for entity, spans in raw.items():
+            out[entity] = [
+                {**s, "start": len(data[: s["start"]].decode("utf-8", "ignore")), "end": len(data[: s["end"]].decode("utf-8", "ignore"))}
+                for s in spans
+            ]
+        return out
 
     def redact(self, text: str) -> str:
         if not text:
             return text
+        # mask() operates on the Rust side with byte-consistent offsets, so it is
+        # correct as-is — do not feed it the char-converted detect() output.
         return cast(str, self._detector.mask(text, self._detector.detect(text)))
 
 
