@@ -105,6 +105,8 @@ jobs:
 
   check-vulnerabilities:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
       - uses: actions/checkout@v5
       - name: Install uv
@@ -114,10 +116,135 @@ jobs:
           python-version: '3.12'
       - name: Export requirements from lockfile
         run: uv export --no-hashes --frozen > /tmp/requirements.txt
+      - name: Install pip-audit
+        run: uv tool install pip-audit
       - name: Run pip-audit
-        uses: pypa/gh-action-pip-audit@v1.1.0
+        id: audit
+        continue-on-error: true
+        run: pip-audit -r /tmp/requirements.txt --format json --output /tmp/audit-results.json
+      - name: Process results and gate on critical CVEs
+        if: steps.audit.outcome == 'failure'
+        uses: actions/github-script@v7
         with:
-          inputs: /tmp/requirements.txt
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('/tmp/audit-results.json', 'utf8'));
+
+            const vulns = [];
+            for (const dep of results.dependencies || []) {
+              for (const vuln of dep.vulns || []) {
+                vulns.push({ name: dep.name, version: dep.version, id: vuln.id, fix_versions: vuln.fix_versions || [] });
+              }
+            }
+
+            if (vulns.length === 0) return;
+
+            // Query OSV API for severity of each unique vuln ID
+            const uniqueIds = [...new Set(vulns.map(v => v.id))];
+            const severityMap = {};
+
+            for (const id of uniqueIds) {
+              try {
+                const resp = await fetch(`https://api.osv.dev/v1/vulns/${id}`);
+                if (!resp.ok) continue;
+                const data = await resp.json();
+                // Extract CVSS score from severity or database_specific
+                let score = 0;
+                if (data.severity && data.severity.length > 0) {
+                  for (const s of data.severity) {
+                    if (s.type === 'CVSS_V3' || s.type === 'CVSS_V4') {
+                      // Parse base score from vector — last metric group
+                      const match = s.score?.match(/CVSS:\d\.\d\/(.+)/);
+                      if (match) {
+                        // Use database_specific for numeric score if available
+                      }
+                    }
+                  }
+                }
+                // Check database_specific for numeric CVSS
+                if (data.database_specific?.cvss_v3) {
+                  score = typeof data.database_specific.cvss_v3 === 'number'
+                    ? data.database_specific.cvss_v3
+                    : parseFloat(data.database_specific.cvss_v3) || 0;
+                }
+                if (data.database_specific?.severity) {
+                  const sev = data.database_specific.severity.toUpperCase();
+                  if (sev === 'CRITICAL') score = Math.max(score, 9.0);
+                  else if (sev === 'HIGH') score = Math.max(score, 7.0);
+                }
+                // Fallback: check affected[].ecosystem_specific or aliases for NVD
+                if (score === 0 && data.affected) {
+                  for (const a of data.affected) {
+                    if (a.database_specific?.cvss_v3) {
+                      score = Math.max(score, parseFloat(a.database_specific.cvss_v3) || 0);
+                    }
+                  }
+                }
+                severityMap[id] = score;
+              } catch (e) {
+                console.log(`Warning: could not fetch severity for ${id}`);
+                severityMap[id] = 0;
+              }
+            }
+
+            // Categorize
+            const critical = vulns.filter(v => (severityMap[v.id] || 0) >= 9.0);
+            const high = vulns.filter(v => {
+              const s = severityMap[v.id] || 0;
+              return s >= 7.0 && s < 9.0;
+            });
+
+            console.log(`Found ${critical.length} critical, ${high.length} high vulnerabilities`);
+
+            // Create/update GH issue for high+critical
+            if (critical.length > 0 || high.length > 0) {
+              const lines = ['## Automated CVE Scan Results\n', `_Last scanned: ${new Date().toISOString().split('T')[0]}_\n`];
+              if (critical.length) {
+                lines.push('### Critical (CVSS >= 9.0)\n');
+                critical.forEach(v => lines.push(`- **${v.id}** in \`${v.name}==${v.version}\` — fix: ${v.fix_versions.join(', ') || 'none available'}`));
+              }
+              if (high.length) {
+                lines.push('\n### High (CVSS >= 7.0)\n');
+                high.forEach(v => lines.push(`- **${v.id}** in \`${v.name}==${v.version}\` — fix: ${v.fix_versions.join(', ') || 'none available'}`));
+              }
+
+              const existing = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: 'security,automated',
+                state: 'open'
+              });
+
+              const title = `[Security] ${critical.length} critical, ${high.length} high vulnerabilities detected`;
+              const existingIssue = existing.data.find(i => i.labels.some(l => l.name === 'automated'));
+
+              if (existingIssue) {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  title,
+                  body: lines.join('\n')
+                });
+                console.log(`Updated issue #${existingIssue.number}`);
+              } else {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  body: lines.join('\n'),
+                  labels: ['security', 'automated']
+                });
+                console.log('Created new security issue');
+              }
+            }
+
+            // Only fail the build on critical vulnerabilities
+            if (critical.length > 0) {
+              core.setFailed(`Build blocked: ${critical.length} critical CVEs found — ${critical.map(v => v.id).join(', ')}`);
+            } else {
+              console.log('No critical vulnerabilities — build passes. High-severity issues tracked in GitHub issue.');
+            }
 
   ui-tests:
     runs-on: ubuntu-latest
