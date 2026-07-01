@@ -229,187 +229,178 @@ class PhoenixSync:
         attrs = span.get("attributes") or {}
         messages = []
 
-        # Try OpenInference schema first (input_messages/output_messages)
-        # Note: Phoenix API might return these as JSON strings or lists depending on version
-        input_msgs = attrs.get("llm.input_messages")
-        output_msgs = attrs.get("llm.output_messages")
+        # Determine which format is available per message side, preferring indexed over flat.
+        # Real OpenInference LLM spans often emit BOTH input.value and llm.input_messages.*
+        # keys simultaneously, so the source must be chosen independently per side to avoid
+        # double-counting the same messages when both formats are present.
+        has_indexed_input = any(k.startswith("llm.input_messages.") for k in attrs)
+        has_indexed_output = any(k.startswith("llm.output_messages.") for k in attrs)
 
-        # If input_messages is missing, try parsing input.value
-        if input_msgs is None:
-            input_val = attrs.get("input.value")
-            if input_val:
-                try:
-                    parsed_input = self._parse_content(input_val)
-                    if isinstance(parsed_input, dict) and "messages" in parsed_input:
-                        input_msgs = parsed_input["messages"]
-                    elif isinstance(parsed_input, list):  # rare but possible
-                        input_msgs = parsed_input
-                except Exception as e:
-                    logger.debug(f"Failed to parse input.value: {e}. Payload: {self._format_payload_summary(input_val)}")
-
-        if input_msgs:
-            # Handle OpenInference format
-            # Ensure it's a list
-            if isinstance(input_msgs, str):
-                input_msgs = self._parse_content(input_msgs)
-
-            if isinstance(input_msgs, list):
-                for i, msg in enumerate(input_msgs):
-                    # OpenInference often uses message.role / message.content keys in flattened export
-                    # but via API it might be cleaner. Let's handle dict access safely.
-                    if isinstance(msg, str):
-                        try:
-                            msg = self._parse_content(msg)
-                        except Exception as e:
-                            logger.debug(f"Failed to parse input message string: {e}. Payload: {self._format_payload_summary(msg)}")
-
-                    if not isinstance(msg, dict):
-                        continue
-                    role = msg.get("message.role") or msg.get("role")
-                    content = msg.get("message.content") or msg.get("content")
-                    tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
-                    tool_call_id = msg.get("message.tool_call_id") or msg.get("tool_call_id")
-
-                    if role:
-                        mapped_msg = {
-                            "index": i,
-                            "type": "prompt",
-                            "role": role,
-                            "content": self._parse_content(content),
-                        }
-                        if tool_calls:
-                            mapped_msg["tool_calls"] = tool_calls
-                        if tool_call_id:
-                            mapped_msg["tool_call_id"] = tool_call_id
-                        messages.append(mapped_msg)
-
-        # Handle Output/Completion from OpenInference
-        if output_msgs is None:
-            output_val = attrs.get("output.value")
-            if output_val:
-                try:
-                    parsed_output = self._parse_content(output_val)
-                    # output.value is often just the string content or a list of choices
-                    if isinstance(parsed_output, list) and len(parsed_output) > 0 and "message" in parsed_output[0]:
-                        output_msgs = [c["message"] for c in parsed_output]
-                    elif isinstance(parsed_output, dict) and "choices" in parsed_output:  # OpenAI response format
-                        output_msgs = [c["message"] for c in parsed_output["choices"]]
-                    else:
-                        # Fallback for simple string output
-                        output_msgs = [{"role": "assistant", "content": output_val}]
-                        # pass
-                except Exception as e:
-                    logger.debug(f"Failed to parse output.value: {e}. Payload: {self._format_payload_summary(output_val)}")
-
-        if output_msgs:
-            if isinstance(output_msgs, str):
-                output_msgs = self._parse_content(output_msgs)
-
-            if isinstance(output_msgs, list):
-                for i, msg in enumerate(output_msgs):
-                    if isinstance(msg, str):
-                        try:
-                            msg = self._parse_content(msg)
-                        except Exception as e:
-                            logger.debug(f"Failed to parse output message string: {e}. Payload: {self._format_payload_summary(msg)}")
-
-                    if not isinstance(msg, dict):
-                        continue
-                    role = msg.get("message.role") or msg.get("role")
-                    content = msg.get("message.content") or msg.get("content")
-                    tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
-                    tool_call_id = msg.get("message.tool_call_id") or msg.get("tool_call_id")
-
-                    if role:
-                        mapped_msg = {
-                            "index": i,
-                            "type": "completion",
-                            "role": role,
-                            "content": self._parse_content(content),
-                        }
-                        if tool_calls:
-                            mapped_msg["tool_calls"] = tool_calls
-                        if tool_call_id:
-                            mapped_msg["tool_call_id"] = tool_call_id
-                        messages.append(mapped_msg)
-
-        has_indexed = any(k.startswith("llm.input_messages.") or k.startswith("llm.output_messages.") for k in attrs)
-        if messages and not has_indexed:
-            return messages
-
-        # Indexed OpenInference format from Phoenix REST API:
-        # llm.input_messages.{i}.message.role / .content / .tool_calls.{j}.* / .tool_call_id
-        input_indices: set[int] = set()
-        output_indices: set[int] = set()
-        for key in attrs:
-            if key.startswith("llm.input_messages."):
-                parts = key.split(".")
-                if len(parts) >= 3 and parts[2].isdigit():
-                    input_indices.add(int(parts[2]))
-            elif key.startswith("llm.output_messages."):
-                parts = key.split(".")
-                if len(parts) >= 3 and parts[2].isdigit():
-                    output_indices.add(int(parts[2]))
-
-        for i in sorted(input_indices):
-            role = attrs.get(f"llm.input_messages.{i}.message.role")
-            content = attrs.get(f"llm.input_messages.{i}.message.content")
-            tool_call_id = attrs.get(f"llm.input_messages.{i}.message.tool_call_id")
-
-            # Collect indexed tool_calls: llm.input_messages.{i}.message.tool_calls.{j}.*
-            tc_indices: set[int] = set()
-            prefix = f"llm.input_messages.{i}.message.tool_calls."
+        # --- Input messages ---
+        if has_indexed_input:
+            input_indices: set[int] = set()
             for key in attrs:
-                if key.startswith(prefix):
-                    parts = key[len(prefix) :].split(".")
-                    if parts and parts[0].isdigit():
-                        tc_indices.add(int(parts[0]))
-            tool_calls = []
-            for j in sorted(tc_indices):
-                tc_prefix = f"llm.input_messages.{i}.message.tool_calls.{j}.tool_call."
-                tool_calls.append(
-                    {
-                        "tool_call.id": attrs.get(f"{tc_prefix}id", ""),
-                        "tool_call.function.name": attrs.get(f"{tc_prefix}function.name", ""),
-                        "tool_call.function.arguments": attrs.get(f"{tc_prefix}function.arguments", "{}"),
-                    }
-                )
+                if key.startswith("llm.input_messages."):
+                    parts = key.split(".")
+                    if len(parts) >= 3 and parts[2].isdigit():
+                        input_indices.add(int(parts[2]))
 
-            if role:
-                indexed_msg: dict = {"index": i, "type": "prompt", "role": role, "content": content}
-                if tool_calls:
-                    indexed_msg["tool_calls"] = tool_calls
-                if tool_call_id:
-                    indexed_msg["tool_call_id"] = tool_call_id
-                messages.append(indexed_msg)
+            for i in sorted(input_indices):
+                role = attrs.get(f"llm.input_messages.{i}.message.role")
+                content = attrs.get(f"llm.input_messages.{i}.message.content")
+                tool_call_id = attrs.get(f"llm.input_messages.{i}.message.tool_call_id")
 
-        for i in sorted(output_indices):
-            role = attrs.get(f"llm.output_messages.{i}.message.role")
-            content = attrs.get(f"llm.output_messages.{i}.message.content")
+                # Collect indexed tool_calls: llm.input_messages.{i}.message.tool_calls.{j}.*
+                tc_indices: set[int] = set()
+                prefix = f"llm.input_messages.{i}.message.tool_calls."
+                for key in attrs:
+                    if key.startswith(prefix):
+                        parts = key[len(prefix) :].split(".")
+                        if parts and parts[0].isdigit():
+                            tc_indices.add(int(parts[0]))
+                tool_calls = []
+                for j in sorted(tc_indices):
+                    tc_prefix = f"llm.input_messages.{i}.message.tool_calls.{j}.tool_call."
+                    tool_calls.append(
+                        {
+                            "tool_call.id": attrs.get(f"{tc_prefix}id", ""),
+                            "tool_call.function.name": attrs.get(f"{tc_prefix}function.name", ""),
+                            "tool_call.function.arguments": attrs.get(f"{tc_prefix}function.arguments", "{}"),
+                        }
+                    )
 
-            tc_indices_out: set[int] = set()
-            prefix_out = f"llm.output_messages.{i}.message.tool_calls."
+                if role:
+                    indexed_msg: dict = {"index": i, "type": "prompt", "role": role, "content": content}
+                    if tool_calls:
+                        indexed_msg["tool_calls"] = tool_calls
+                    if tool_call_id:
+                        indexed_msg["tool_call_id"] = tool_call_id
+                    messages.append(indexed_msg)
+        else:
+            # Non-indexed: flat llm.input_messages list or input.value JSON
+            input_msgs = attrs.get("llm.input_messages")
+            if input_msgs is None:
+                input_val = attrs.get("input.value")
+                if input_val:
+                    try:
+                        parsed_input = self._parse_content(input_val)
+                        if isinstance(parsed_input, dict) and "messages" in parsed_input:
+                            input_msgs = parsed_input["messages"]
+                        elif isinstance(parsed_input, list):
+                            input_msgs = parsed_input
+                    except Exception as e:
+                        logger.debug(f"Failed to parse input.value: {e}. Payload: {self._format_payload_summary(input_val)}")
+
+            if input_msgs:
+                if isinstance(input_msgs, str):
+                    input_msgs = self._parse_content(input_msgs)
+                if isinstance(input_msgs, list):
+                    for i, msg in enumerate(input_msgs):
+                        if isinstance(msg, str):
+                            try:
+                                msg = self._parse_content(msg)
+                            except Exception as e:
+                                logger.debug(f"Failed to parse input message string: {e}. Payload: {self._format_payload_summary(msg)}")
+                        if not isinstance(msg, dict):
+                            continue
+                        role = msg.get("message.role") or msg.get("role")
+                        content = msg.get("message.content") or msg.get("content")
+                        tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
+                        tool_call_id = msg.get("message.tool_call_id") or msg.get("tool_call_id")
+                        if role:
+                            mapped_msg = {
+                                "index": i,
+                                "type": "prompt",
+                                "role": role,
+                                "content": self._parse_content(content),
+                            }
+                            if tool_calls:
+                                mapped_msg["tool_calls"] = tool_calls
+                            if tool_call_id:
+                                mapped_msg["tool_call_id"] = tool_call_id
+                            messages.append(mapped_msg)
+
+        # --- Output messages ---
+        if has_indexed_output:
+            output_indices: set[int] = set()
             for key in attrs:
-                if key.startswith(prefix_out):
-                    parts = key[len(prefix_out) :].split(".")
-                    if parts and parts[0].isdigit():
-                        tc_indices_out.add(int(parts[0]))
-            tool_calls_out = []
-            for j in sorted(tc_indices_out):
-                tc_prefix_out = f"llm.output_messages.{i}.message.tool_calls.{j}.tool_call."
-                tool_calls_out.append(
-                    {
-                        "tool_call.id": attrs.get(f"{tc_prefix_out}id", ""),
-                        "tool_call.function.name": attrs.get(f"{tc_prefix_out}function.name", ""),
-                        "tool_call.function.arguments": attrs.get(f"{tc_prefix_out}function.arguments", "{}"),
-                    }
-                )
+                if key.startswith("llm.output_messages."):
+                    parts = key.split(".")
+                    if len(parts) >= 3 and parts[2].isdigit():
+                        output_indices.add(int(parts[2]))
 
-            if role:
-                mapped_msg_out: dict = {"index": i, "type": "completion", "role": role, "content": content}
-                if tool_calls_out:
-                    mapped_msg_out["tool_calls"] = tool_calls_out
-                messages.append(mapped_msg_out)
+            for i in sorted(output_indices):
+                role = attrs.get(f"llm.output_messages.{i}.message.role")
+                content = attrs.get(f"llm.output_messages.{i}.message.content")
+
+                tc_indices_out: set[int] = set()
+                prefix_out = f"llm.output_messages.{i}.message.tool_calls."
+                for key in attrs:
+                    if key.startswith(prefix_out):
+                        parts = key[len(prefix_out) :].split(".")
+                        if parts and parts[0].isdigit():
+                            tc_indices_out.add(int(parts[0]))
+                tool_calls_out = []
+                for j in sorted(tc_indices_out):
+                    tc_prefix_out = f"llm.output_messages.{i}.message.tool_calls.{j}.tool_call."
+                    tool_calls_out.append(
+                        {
+                            "tool_call.id": attrs.get(f"{tc_prefix_out}id", ""),
+                            "tool_call.function.name": attrs.get(f"{tc_prefix_out}function.name", ""),
+                            "tool_call.function.arguments": attrs.get(f"{tc_prefix_out}function.arguments", "{}"),
+                        }
+                    )
+
+                if role:
+                    mapped_msg_out: dict = {"index": i, "type": "completion", "role": role, "content": content}
+                    if tool_calls_out:
+                        mapped_msg_out["tool_calls"] = tool_calls_out
+                    messages.append(mapped_msg_out)
+        else:
+            # Non-indexed: flat llm.output_messages list or output.value
+            output_msgs = attrs.get("llm.output_messages")
+            if output_msgs is None:
+                output_val = attrs.get("output.value")
+                if output_val:
+                    try:
+                        parsed_output = self._parse_content(output_val)
+                        if isinstance(parsed_output, list) and len(parsed_output) > 0 and "message" in parsed_output[0]:
+                            output_msgs = [c["message"] for c in parsed_output]
+                        elif isinstance(parsed_output, dict) and "choices" in parsed_output:
+                            output_msgs = [c["message"] for c in parsed_output["choices"]]
+                        else:
+                            output_msgs = [{"role": "assistant", "content": output_val}]
+                    except Exception as e:
+                        logger.debug(f"Failed to parse output.value: {e}. Payload: {self._format_payload_summary(output_val)}")
+
+            if output_msgs:
+                if isinstance(output_msgs, str):
+                    output_msgs = self._parse_content(output_msgs)
+                if isinstance(output_msgs, list):
+                    for i, msg in enumerate(output_msgs):
+                        if isinstance(msg, str):
+                            try:
+                                msg = self._parse_content(msg)
+                            except Exception as e:
+                                logger.debug(f"Failed to parse output message string: {e}. Payload: {self._format_payload_summary(msg)}")
+                        if not isinstance(msg, dict):
+                            continue
+                        role = msg.get("message.role") or msg.get("role")
+                        content = msg.get("message.content") or msg.get("content")
+                        tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
+                        tool_call_id = msg.get("message.tool_call_id") or msg.get("tool_call_id")
+                        if role:
+                            mapped_msg = {
+                                "index": i,
+                                "type": "completion",
+                                "role": role,
+                                "content": self._parse_content(content),
+                            }
+                            if tool_calls:
+                                mapped_msg["tool_calls"] = tool_calls
+                            if tool_call_id:
+                                mapped_msg["tool_call_id"] = tool_call_id
+                            messages.append(mapped_msg)
 
         if messages:
             return messages
