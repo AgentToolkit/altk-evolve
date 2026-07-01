@@ -221,6 +221,58 @@ Same 150 real records, both backends:
 The harness also takes `--data PATH` for a local JSONL corpus, `--dataset` for
 any ai4privacy-style HF id, and `--mode regex|semantic|both`.
 
+### Full-sized runs: English (43k) and a dedicated Japanese model (10k)
+
+Run at scale, 4 processes in parallel, with runtimes.
+
+**English — `ai4privacy/pii-masking-200k`, 43,501 records** (~65 min, both modes):
+
+| Metric | regex (CPEX) | semantic (READI, `en_core_web_trf`) |
+|---|---|---|
+| Overall recall | 0.12 | 0.47 |
+| Precision | 1.00 | 0.99 |
+| Leak rate | 0.99 | 0.86 |
+| firstname / lastname / middlename | 0.00 / 0.00 / 0.00 | **0.92 / 0.97 / 0.94** |
+| city / county / state | 0.00 | 0.88 / 0.90 / 0.86 |
+| email / ip | 1.00 / 1.00 | 1.00 / 0.95 |
+| phone / ssn / credit_card | 0.46 / 0.22 / 0.04 | 0.60 / 0.43 / 0.03 |
+
+**Japanese — WikiANN (`ja`), 10,000 records** (~8–9 min each, run in parallel).
+English model vs a language-matched Japanese spaCy model, selected purely via
+the pluggable `readi_extractor` / `readi_model` config:
+
+```bash
+uv run --extra readi --extra bench python examples/pii_benchmark.py \
+    --dataset unimelb-nlp/wikiann --dataset-config ja --dataset-format wikiann \
+    --split validation --limit 10000 --mode semantic \
+    --readi-extractor spacy --readi-model ja_core_news_trf --readi-language ja
+```
+
+| Metric | English model (`en_core_web_trf`) | Japanese model (`ja_core_news_trf`) |
+|---|---|---|
+| Overall recall | **0.00** | **0.87** |
+| person (per) | 0.00 | **0.93** |
+| location (loc) | 0.00 | 0.89 |
+| organization (org) | 0.01 | 0.79 |
+| Precision | 0.12 | 0.49\* |
+| Leak rate | 1.00 | 0.16 |
+
+\* WikiANN labels only PER/ORG/LOC, but the spaCy model also emits
+DATE/PRODUCT/MONEY/etc.; those extra detections count as "false positives" in
+this scoring, so 0.49 understates real precision. For redaction it means some
+over-redaction, not leaked PII.
+
+**Takeaways**
+- Semantic NER buys ~4× recall on free-form PII (names, locations) at ~1.0
+  precision on English — but it is **language-bound**: the English model scores
+  **0.00** on Japanese.
+- A **language-matched model recovers it entirely** — `ja_core_news_trf` lifts
+  Japanese person recall from 0.00 to **0.93** — and swapping it in is a one-line
+  config change.
+- Structured PII (cards, phones, SSNs) stays the weak spot for *both* engines —
+  the case for a **hybrid** deployment: regex (CPEX) for structured PII at high
+  precision, plus a language-matched NER for names/locations.
+
 ---
 
 ## Using it for real
