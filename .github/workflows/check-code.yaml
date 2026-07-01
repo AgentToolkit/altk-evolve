@@ -106,9 +106,12 @@ jobs:
   check-vulnerabilities:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       issues: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
