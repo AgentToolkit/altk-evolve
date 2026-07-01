@@ -128,8 +128,9 @@ class PhoenixSync:
         distinguish an LLM call — only genuine LLM spans carry prompt/message attributes or
         a model name.
         """
-        if span.get("span_kind") == "LLM":
-            return True
+        span_kind = span.get("span_kind")
+        if span_kind:
+            return span_kind == "LLM"
         attrs = span.get("attributes") or {}
         if any(k.startswith("gen_ai.prompt.") for k in attrs):
             return True
@@ -332,7 +333,8 @@ class PhoenixSync:
                             mapped_msg["tool_call_id"] = tool_call_id
                         messages.append(mapped_msg)
 
-        if messages:
+        has_indexed = any(k.startswith("llm.input_messages.") or k.startswith("llm.output_messages.") for k in attrs)
+        if messages and not has_indexed:
             return messages
 
         # Indexed OpenInference format from Phoenix REST API:
