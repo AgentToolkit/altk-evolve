@@ -103,6 +103,22 @@ jobs:
     - name: Verify platform-integrations matches a fresh render of plugin-source
       run: uv run python plugin-source/build_plugins.py check
 
+  check-vulnerabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: Export requirements from lockfile
+        run: uv export --no-hashes --frozen > /tmp/requirements.txt
+      - name: Run pip-audit
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: /tmp/requirements.txt
+
   ui-tests:
     runs-on: ubuntu-latest
     steps:
