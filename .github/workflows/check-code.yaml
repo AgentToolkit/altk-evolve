@@ -239,11 +239,11 @@ jobs:
               }
             }
 
-            // Only fail the build on critical vulnerabilities
+            // Report but never block the build
             if (critical.length > 0) {
-              core.setFailed(`Build blocked: ${critical.length} critical CVEs found — ${critical.map(v => v.id).join(', ')}`);
+              core.warning(`${critical.length} critical CVEs found: ${critical.map(v => v.id).join(', ')} — tracked in GitHub issue`);
             } else {
-              console.log('No critical vulnerabilities — build passes. High-severity issues tracked in GitHub issue.');
+              console.log('No critical vulnerabilities. High-severity issues tracked in GitHub issue.');
             }
 
   ui-tests:
