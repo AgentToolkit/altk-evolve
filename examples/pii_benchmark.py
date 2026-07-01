@@ -107,6 +107,48 @@ def load_hf(dataset_id: str, split: str, limit: int, language: str | None) -> li
     return records
 
 
+WIKIANN_LABELS = ["O", "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC"]
+
+
+def load_wikiann(dataset_id: str, config: str, split: str, limit: int) -> list[dict]:
+    """Load a WikiANN-style NER dataset (tokens + BIO ner_tags) into span records.
+
+    Tokens are concatenated with no separator (correct for CJK scripts), and the
+    BIO tags are folded into PER/ORG/LOC character spans. Used to benchmark NER
+    coverage on languages ai4privacy doesn't include (e.g. Japanese).
+    """
+    from datasets import load_dataset  # lazy: [bench] extra
+
+    ds = load_dataset(dataset_id, config, split=split, streaming=True)
+    records: list[dict] = []
+    for row in ds:
+        tokens = row["tokens"]
+        tags = [WIKIANN_LABELS[t] if isinstance(t, int) else t for t in row["ner_tags"]]
+        text = "".join(tokens)
+        offsets, pos = [], 0
+        for tok in tokens:
+            offsets.append(pos)
+            pos += len(tok)
+        spans: list[dict] = []
+        i = 0
+        while i < len(tags):
+            if tags[i].startswith("B-"):
+                label = tags[i][2:]
+                start, end = offsets[i], offsets[i] + len(tokens[i])
+                j = i + 1
+                while j < len(tags) and tags[j] == f"I-{label}":
+                    end = offsets[j] + len(tokens[j])
+                    j += 1
+                spans.append({"start": start, "end": end, "label": label.lower(), "value": text[start:end]})
+                i = j
+            else:
+                i += 1
+        records.append({"text": text, "spans": spans})
+        if len(records) >= limit:
+            break
+    return records
+
+
 def build_gold() -> list[dict]:
     """Render templates into (text, spans) records with exact offsets."""
     counters: dict[str, int] = defaultdict(int)
@@ -218,6 +260,12 @@ def main() -> int:
         default="regex",
         help="Backend(s) to benchmark: regex (CPEX), semantic (IBM READI NER), or both.",
     )
+    parser.add_argument("--dataset-format", choices=["ai4privacy", "wikiann"], default="ai4privacy", help="Schema of --dataset.")
+    parser.add_argument("--dataset-config", default=None, help="HF dataset config name (e.g. 'ja' for wikiann).")
+    # Semantic-backend selection (passed through to PIIConfig for --mode semantic/both).
+    parser.add_argument("--readi-extractor", choices=["default", "spacy", "hf", "presidio"], default="default")
+    parser.add_argument("--readi-model", default=None, help="spaCy pipeline name or HF pipeline('ner') id for the extractor.")
+    parser.add_argument("--readi-language", default="en", help="Language code for the spacy/presidio extractor.")
     args = parser.parse_args()
 
     want_regex = args.mode in ("regex", "both")
@@ -233,7 +281,10 @@ def main() -> int:
     from altk_evolve.config.pii import PIIConfig
     from altk_evolve.pii import get_redactor
 
-    if args.dataset:
+    if args.dataset and args.dataset_format == "wikiann":
+        print(f"Loading {args.dataset} [{args.dataset_config}] (split={args.split}, limit={args.limit}) ...")
+        records = load_wikiann(args.dataset, args.dataset_config, args.split, args.limit)
+    elif args.dataset:
         print(f"Loading {args.dataset} (split={args.split}, limit={args.limit}, language={args.language or 'all'}) ...")
         records = load_hf(args.dataset, args.split, args.limit, args.language or None)
     elif args.data:
@@ -255,9 +306,20 @@ def main() -> int:
             _print("CPEX regex + custom name patterns", score(records, augmented))
 
     if want_semantic:
-        print("\n(Loading IBM READI / en_core_web_trf — first run downloads ~450MB and transformer NER is slow.)")
-        semantic = get_redactor(PIIConfig(enabled=True, mode="semantic"))
-        _print("IBM READI semantic (transformer NER)", score(records, semantic))
+        label = f"IBM READI semantic ({args.readi_extractor}"
+        label += f":{args.readi_model}" if args.readi_model else ""
+        label += ")"
+        print(f"\n(Loading {label} — transformer NER is slow; models download once.)")
+        semantic = get_redactor(
+            PIIConfig(
+                enabled=True,
+                mode="semantic",
+                readi_extractor=args.readi_extractor,
+                readi_model=args.readi_model,
+                readi_language=args.readi_language,
+            )
+        )
+        _print(label, score(records, semantic))
 
     print("\nNotes:")
     print("  - 'recall on CPEX-supported types only' is the fair number for the regex backend.")

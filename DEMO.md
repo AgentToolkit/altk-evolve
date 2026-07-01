@@ -287,3 +287,51 @@ your recall path — it stamps `metadata.last_accessed`.
   native memory. The package is the guarantee for those flows.
 - **Retention is package-side** in this PoC; a plugin-side equivalent over the
   `.evolve/` store is a follow-up.
+
+---
+
+## Reviewing this PoC (for agents)
+
+This was built verification-first: every claim above is backed by code you can
+run. Review it the same way — **reproduce, don't trust the prose.** Ideally spawn
+a subagent per area (PII, retention, benchmark, plugin), have each verify by
+*running*, and adversarially spot-check anything surprising.
+
+**Setup:** `uv sync --extra pii --extra readi --extra bench`
+
+**1. PII redaction — that PII never reaches storage.**
+- Run `examples/pii_redaction_demo.py`; confirm OUT lines contain no PII and the
+  non-PII sentence is byte-identical.
+- *Adversarial:* don't trust the printout — the redaction is at the backend
+  choke-point (`BaseEntityBackend.update_entities`), so write an entity with PII
+  via `EvolveClient`, then grep the on-disk namespace JSON (filesystem backend)
+  for the raw PII — it must be **absent**. Confirm a disabled config is a true
+  no-op (`NullRedactor`) and a missing extra degrades gracefully (no crash).
+
+**2. Retention — flag/delete/cascade + dry-run safety.**
+- Run `examples/retention_demo.py`; confirm stale→flagged (not deleted), old
+  session + its derived memory both deleted (provenance cascade), fresh
+  untouched.
+- *Adversarial:* re-run with `dry_run=True` and confirm the store is byte-identical
+  after (nothing mutated). Confirm cascade only removes memories whose
+  `metadata.source_task_id` matches the deleted trajectory's `trace_id`.
+
+**3. Benchmark — reproduce the numbers.**
+- Synthetic: `examples/pii_benchmark.py`. Real: `--dataset ai4privacy/pii-masking-200k --mode both`.
+  Japanese: `--dataset unimelb-nlp/wikiann --dataset-config ja --dataset-format wikiann --mode semantic`.
+  Re-run and confirm recall/precision match the tables within noise.
+- *Adversarial:* surprising numbers deserve a spot-check. E.g. `credit_card`
+  recall 0.03 on ai4privacy — verify it's *real* (values are non-Luhn) and not a
+  harness bug by running CPEX's detector on a few gold card strings directly.
+- Check the scorer: spans match by overlap; precision counts detections that
+  overlap no gold span. Confirm gold offsets are correct (synthetic generates
+  them; wikiann derives them from BIO tags).
+
+**4. Plugin parity.** Run `uv run python plugin-source/build_plugins.py check` —
+must exit 0 (rendered `platform-integrations/` matches `plugin-source/`). Confirm
+`plugin-source/lib/pii.py` is stdlib-only.
+
+**Be skeptical of:** numbers that look too clean (synthetic 1.00s hide real-world
+format sensitivity); "semantic is strictly better" (it's ~4× recall on free-form
+PII but heavier, English-default, and still misses hard structured cases); and
+any claim here without a runnable command behind it.
