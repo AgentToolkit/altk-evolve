@@ -248,10 +248,16 @@ Or via environment (nested env vars): `EVOLVE_PII__ENABLED=true`,
 
 For the semantic (NER) backend, install the `[readi]` extra and set
 `mode="semantic"` (catches names/locations; downloads the spaCy transformer on
-first use):
+first use). The detection engine is pluggable, using the extractors READI ships,
+and defaults to READI's spaCy-English pipeline:
 
 ```python
-PIIConfig(enabled=True, mode="semantic")   # IBM READI; redaction_text still applies
+PIIConfig(enabled=True, mode="semantic")                          # default: READI spaCy-English
+PIIConfig(enabled=True, mode="semantic", readi_extractor="presidio")  # Microsoft Presidio (MIT)
+PIIConfig(enabled=True, mode="semantic",                          # any spaCy pipeline, e.g. Japanese
+          readi_extractor="spacy", readi_model="ja_core_news_trf", readi_language="ja")
+PIIConfig(enabled=True, mode="semantic",                          # any HF pipeline("ner") model
+          readi_extractor="hf", readi_model="julian-schelb/roberta-ner-multilingual")
 ```
 
 ### Run a retention policy

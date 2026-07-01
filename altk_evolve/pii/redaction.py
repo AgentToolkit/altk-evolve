@@ -159,33 +159,83 @@ class CpexRegexRedactor(PIIRedactor):
 class ReadiSemanticRedactor(PIIRedactor):
     """Semantic (NER) redactor backed by IBM READI (``readi-privacy``).
 
-    READI (Risk Evaluation and De-Identification) is a hybrid detector: a
-    transformer spaCy NER pipeline (``en_core_web_trf``) plus dictionary/regex
-    identifier extractors, merged by a POS-validated aggregator. Unlike the
-    regex backend it catches free-form PII — names, locations, organizations —
-    which is the whole point of ``mode: semantic``.
+    READI (Risk Evaluation and De-Identification) catches free-form PII — names,
+    locations, organizations — which is the point of ``mode: semantic``. It only
+    *detects* (``analyzer.detect(text) -> list[Entity]`` with ``start``/``end``/
+    ``entity_type``); it has no masking, so we apply the configured filler over
+    the detected spans ourselves.
 
-    READI only *detects* (``analyzer.detect(text) -> list[Entity]`` with
-    ``start``/``end``/``entity_type``); it has no masking, so we apply the
-    configured filler over the detected spans ourselves. The package import is
-    validated at construction (so a missing ``[readi]`` extra degrades to a
-    no-op), but the heavy model load is deferred to the first ``detect`` call.
+    The detection engine is pluggable via config, using the extractors READI
+    already ships — no custom pipeline is assembled here:
+
+    - ``readi_extractor: default`` (the default) -> READI's ``DetectionType.PII``,
+      i.e. spaCy ``en_core_web_trf`` + READI's identifier extractors. English.
+    - ``readi_extractor: spacy`` + ``readi_model`` -> ``SpacyEntityExtractor``
+      with any spaCy pipeline (e.g. ``ja_core_news_trf`` for Japanese). NER only.
+    - ``readi_extractor: hf`` + ``readi_model`` -> ``HFEntityExtractor`` with any
+      ``pipeline("ner")`` model (e.g. a multilingual XLM-R NER). NER only.
+    - ``readi_extractor: presidio`` (+ ``readi_model``/``readi_language``) ->
+      ``PresidioEntityExtractor`` (Microsoft Presidio; full PII incl. structured).
+
+    The package import is validated at construction (so a missing ``[readi]``
+    extra degrades to a no-op), but model load is deferred to the first detect.
     """
 
     def __init__(self, pii_config=None):
         from risk_assessment.readi.analyzer import READIAnalyzer  # cheap import; validates the [readi] extra
 
         self._analyzer_cls = READIAnalyzer
+        self._extractor = str(_cfg(pii_config, "readi_extractor", "default") or "default").strip().lower()
+        self._model = _cfg(pii_config, "readi_model")
+        self._language = str(_cfg(pii_config, "readi_language", "en") or "en")
         self._detection_type = str(_cfg(pii_config, "readi_detection_type", "PII") or "PII").upper()
         strategy = _cfg(pii_config, "mask_strategy", DEFAULT_MASK_STRATEGY)
         self._mask = "" if strategy == "remove" else _cfg(pii_config, "redaction_text", DEFAULT_REDACTION_TEXT)
         self._analyzer = None
 
+    def _build_extractor(self):
+        """Instantiate one of the extractors READI ships, selected by config."""
+        if self._extractor == "spacy":
+            from risk_assessment.classification.unstructured.spacy import SpacyEntityExtractor
+
+            return SpacyEntityExtractor(self._model or "en_core_web_trf")
+        if self._extractor == "hf":
+            if not self._model:
+                raise ValueError("pii.readi_model is required when readi_extractor='hf'")
+            from risk_assessment.classification.unstructured.hf import HFEntityExtractor
+
+            return HFEntityExtractor(self._model)
+        if self._extractor == "presidio":
+            from presidio_analyzer.nlp_engine import NlpEngineProvider
+
+            from risk_assessment.classification.unstructured.presidio import PresidioEntityExtractor
+
+            model = self._model or "en_core_web_trf"
+            nlp_engine = NlpEngineProvider(
+                nlp_configuration={"nlp_engine_name": "spacy", "models": [{"lang_code": self._language, "model_name": model}]}
+            ).create_engine()
+            return PresidioEntityExtractor({}, nlp_engine=nlp_engine, supported_languages=[self._language])
+        raise ValueError(f"Unknown pii.readi_extractor: {self._extractor!r} (expected default|spacy|hf|presidio)")
+
+    def _build_analyzer(self):
+        cls = self._analyzer_cls
+        if self._extractor == "default":
+            # READI's own default pipeline (spaCy en_core_web_trf + identifiers).
+            detection_type = getattr(cls.DetectionType, self._detection_type, cls.DetectionType.PII)
+            return cls(detection_type=detection_type)
+        # A single READI-provided extractor of the caller's choosing.
+        from risk_assessment.classification.unstructured.aggregator import AggregatorConfiguration
+
+        return cls(
+            cls.DetectionType.CUSTOM,
+            entity_extractors=[self._build_extractor()],
+            aggregator_configuration=AggregatorConfiguration(merge_entities=True),
+        )
+
     def _detect_entities(self, text: str):
         if self._analyzer is None:
-            # Loads en_core_web_trf on first use (downloads ~450MB once if absent).
-            detection_type = getattr(self._analyzer_cls.DetectionType, self._detection_type, self._analyzer_cls.DetectionType.PII)
-            self._analyzer = self._analyzer_cls(detection_type=detection_type)
+            # Model loads on first use (weights download once if absent).
+            self._analyzer = self._build_analyzer()
         return self._analyzer.detect(text)
 
     def detect(self, text: str) -> dict:

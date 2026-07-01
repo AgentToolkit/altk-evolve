@@ -64,6 +64,16 @@ def test_get_redactor_semantic_returns_readi_backend():
     # the first detect() call, so this does not download en_core_web_trf.
     r = get_redactor(PIIConfig(enabled=True, mode="semantic"))
     assert isinstance(r, ReadiSemanticRedactor)
+    assert r._extractor == "default"  # default = READI's spaCy-English pipeline
+
+
+@requires_readi
+def test_semantic_extractor_and_model_are_configurable():
+    # Still cheap — no analyzer/model is built until the first detect().
+    r = get_redactor(PIIConfig(enabled=True, mode="semantic", readi_extractor="hf", readi_model="some/ner-model", readi_language="ja"))
+    assert r._extractor == "hf"
+    assert r._model == "some/ner-model"
+    assert r._language == "ja"
 
 
 def test_null_redactor_is_passthrough():

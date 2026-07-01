@@ -20,7 +20,21 @@ class PIIConfig(BaseModel):
     )
     readi_detection_type: Literal["PII", "PHI", "PII_NO_MODEL"] = Field(
         default="PII",
-        description="READI DetectionType for mode=semantic. 'PII_NO_MODEL' skips the transformer (faster, less recall).",
+        description="READI DetectionType for the default extractor. 'PII_NO_MODEL' skips the transformer (faster, less recall).",
+    )
+    readi_extractor: Literal["default", "spacy", "hf", "presidio"] = Field(
+        default="default",
+        description="Which READI-provided extractor mode=semantic uses. 'default' = READI's spaCy-English PII pipeline; "
+        "'spacy'/'hf' swap the NER model (needs readi_model); 'presidio' uses Microsoft Presidio.",
+    )
+    readi_model: str | None = Field(
+        default=None,
+        description="Model for the chosen extractor: a spaCy pipeline name (spacy/presidio, e.g. 'ja_core_news_trf') "
+        "or a Hugging Face pipeline('ner') id (hf). None uses the extractor's default (en_core_web_trf).",
+    )
+    readi_language: str = Field(
+        default="en",
+        description="Language code for the spacy/presidio extractors (e.g. 'ja').",
     )
     entities: list[str] = Field(
         default_factory=lambda: ["ssn", "credit_card", "email", "phone", "ip_address"],
