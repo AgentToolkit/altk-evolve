@@ -305,7 +305,7 @@ class PhoenixSync:
                             continue
                         role = msg.get("message.role") or msg.get("role")
                         content = msg.get("message.content") or msg.get("content")
-                        tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
+                        msg_tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
                         tool_call_id = msg.get("message.tool_call_id") or msg.get("tool_call_id")
                         if role:
                             mapped_msg = {
@@ -314,8 +314,8 @@ class PhoenixSync:
                                 "role": role,
                                 "content": self._parse_content(content),
                             }
-                            if tool_calls:
-                                mapped_msg["tool_calls"] = tool_calls
+                            if msg_tool_calls:
+                                mapped_msg["tool_calls"] = msg_tool_calls
                             if tool_call_id:
                                 mapped_msg["tool_call_id"] = tool_call_id
                             messages.append(mapped_msg)
@@ -387,7 +387,7 @@ class PhoenixSync:
                             continue
                         role = msg.get("message.role") or msg.get("role")
                         content = msg.get("message.content") or msg.get("content")
-                        tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
+                        msg_tool_calls = msg.get("message.tool_calls") or msg.get("tool_calls")
                         tool_call_id = msg.get("message.tool_call_id") or msg.get("tool_call_id")
                         if role:
                             mapped_msg = {
@@ -396,8 +396,8 @@ class PhoenixSync:
                                 "role": role,
                                 "content": self._parse_content(content),
                             }
-                            if tool_calls:
-                                mapped_msg["tool_calls"] = tool_calls
+                            if msg_tool_calls:
+                                mapped_msg["tool_calls"] = msg_tool_calls
                             if tool_call_id:
                                 mapped_msg["tool_call_id"] = tool_call_id
                             messages.append(mapped_msg)
