@@ -247,7 +247,8 @@ class PhoenixSync:
 
             for i in sorted(input_indices):
                 role = attrs.get(f"llm.input_messages.{i}.message.role")
-                content = attrs.get(f"llm.input_messages.{i}.message.content")
+                content = attrs.get(f"llm.input_messages.{i}.message.content") or \
+                          attrs.get(f"llm.input_messages.{i}.message.contents.0.message_content.text")
                 tool_call_id = attrs.get(f"llm.input_messages.{i}.message.tool_call_id")
 
                 # Collect indexed tool_calls: llm.input_messages.{i}.message.tool_calls.{j}.*
@@ -331,7 +332,8 @@ class PhoenixSync:
 
             for i in sorted(output_indices):
                 role = attrs.get(f"llm.output_messages.{i}.message.role")
-                content = attrs.get(f"llm.output_messages.{i}.message.content")
+                content = attrs.get(f"llm.output_messages.{i}.message.content") or \
+                          attrs.get(f"llm.output_messages.{i}.message.contents.0.message_content.text")
 
                 tc_indices_out: set[int] = set()
                 prefix_out = f"llm.output_messages.{i}.message.tool_calls."
