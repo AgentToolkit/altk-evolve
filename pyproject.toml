@@ -200,6 +200,7 @@ module = [
     "config",
     "audit",
     "pii",
+    "retention",
     "cpex_pii_filter.*",
     "datasets.*",
     "risk_assessment.*",
