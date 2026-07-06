@@ -342,6 +342,48 @@ def test_halting_delete_raises_and_preserves_entity(client: EvolveClient):
     assert client.get_entity_by_id("FORBIDDEN_ns", entity.id) is not None
 
 
+# ── payload immutability ─────────────────────────────────────────────
+
+
+class InPlaceMutator(Plugin):
+    """Adversarial plugin: mutates the payload's entity dicts in place.
+
+    frozen=True only guards attribute assignment — nested dicts/lists are
+    plain mutable objects. Whether the mutation may reach the store must
+    depend solely on returning it via ``modified_payload``.
+    """
+
+    def __init__(self, return_modified: bool):
+        super().__init__(_config("in_place_mutator", [HookType.MEMORY_PRE_WRITE.value]))
+        self.return_modified = return_modified
+
+    async def memory_pre_write(self, payload, context):
+        payload.entities[0]["content"] = "MUTATED"
+        if self.return_modified:
+            return PluginResult(continue_processing=True, modified_payload=payload.model_copy(update={"entities": payload.entities}))
+        return PluginResult(continue_processing=True)
+
+
+@pytest.mark.unit
+def test_in_place_payload_mutation_does_not_reach_the_store(client: EvolveClient):
+    enable_hooks(InPlaceMutator(return_modified=False))
+    client.create_namespace("ns")
+    _write(client, "ns", "original content")
+
+    stored = client.search_entities("ns", limit=1)[0]
+    assert stored.content == "original content"
+
+
+@pytest.mark.unit
+def test_same_mutation_returned_via_modified_payload_applies(client: EvolveClient):
+    enable_hooks(InPlaceMutator(return_modified=True))
+    client.create_namespace("ns")
+    _write(client, "ns", "original content")
+
+    stored = client.search_entities("ns", limit=1)[0]
+    assert stored.content == "MUTATED"
+
+
 # ── sync bridge ──────────────────────────────────────────────────────
 
 
