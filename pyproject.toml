@@ -44,8 +44,9 @@ examples = [
 ]
 
 consistency = [
-    "agent-consistency",
     "pyyaml",
+    "scipy",
+    "pandas",
 ]
 
 [project.scripts]
@@ -83,7 +84,7 @@ docs = [
 
 [tool.uv.sources]
 detect-secrets = { git = "https://github.com/ibm/detect-secrets", branch="master"}
-agent-consistency = { path = "../agent-consistency", editable = true }
+
 
 [tool.setuptools.packages.find]
 where = ["."]

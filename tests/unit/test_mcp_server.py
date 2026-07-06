@@ -272,6 +272,116 @@ def test_save_trajectory_backward_compat_no_extra_params(mock_get_client):
 
 
 # ---------------------------------------------------------------------------
+# save_trajectory guidelines_mode tests
+# ---------------------------------------------------------------------------
+
+
+def _mock_guideline_result(content="Write clear code."):
+    from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResult
+    g = Guideline(content=content, category="strategy", rationale="Clarity", trigger="code review", implementation_steps=["Review the diff"])
+    return GuidelineGenerationResult(guidelines=[g], task_description="some task")
+
+
+def test_save_trajectory_regular_mode_default(mock_get_client):
+    """Default guidelines_mode='regular' calls generate_guidelines and tags generation_method."""
+    with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_gen:
+        mock_gen.return_value = [_mock_guideline_result()]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-r1")
+
+        mock_gen.assert_called_once()
+        guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
+        entities = guideline_call["entities"]
+        assert len(entities) == 1
+        assert entities[0].metadata["generation_method"] == "regular"
+        assert entities[0].metadata["creation_mode"] == "auto-mcp"
+
+
+def test_save_trajectory_consistency_mode_calls_consistency_pipeline(mock_get_client):
+    """guidelines_mode='consistency' calls generate_consistency_guidelines, not generate_guidelines."""
+    with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular, \
+         patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency:
+        mock_consistency.return_value = [_mock_guideline_result("Use deterministic prompts.")]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-c1", guidelines_mode="consistency")
+
+        mock_regular.assert_not_called()
+        mock_consistency.assert_called_once()
+        guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
+        entities = guideline_call["entities"]
+        assert len(entities) == 1
+        assert entities[0].metadata["generation_method"] == "consistency"
+        assert entities[0].metadata["creation_mode"] == "auto-mcp"
+
+
+def test_save_trajectory_both_mode_calls_both_pipelines(mock_get_client):
+    """guidelines_mode='both' runs both pipelines and tags each entity with its generation_method."""
+    with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular, \
+         patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency:
+        mock_regular.return_value = [_mock_guideline_result("Write tests.")]
+        mock_consistency.return_value = [_mock_guideline_result("Reduce uncertainty.")]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-b1", guidelines_mode="both")
+
+        mock_regular.assert_called_once()
+        mock_consistency.assert_called_once()
+        guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
+        entities = guideline_call["entities"]
+        assert len(entities) == 2
+        methods = {e.metadata["generation_method"] for e in entities}
+        assert methods == {"regular", "consistency"}
+
+
+def test_save_trajectory_both_mode_merges_into_single_update_entities_call(mock_get_client):
+    """Both pipelines' entities are merged and sent in a single update_entities call."""
+    with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular, \
+         patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency:
+        mock_regular.return_value = [_mock_guideline_result("Write tests.")]
+        mock_consistency.return_value = [_mock_guideline_result("Reduce uncertainty.")]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-b2", guidelines_mode="both")
+
+        # update_entities called twice: once for trajectory, once for all guidelines combined
+        assert mock_get_client.update_entities.call_count == 2
+        guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
+        assert guideline_call["enable_conflict_resolution"] is True
+
+
+def test_save_trajectory_consistency_mode_passes_model_to_trajectory(mock_get_client):
+    """The model parameter is forwarded in the trajectory dict passed to the consistency pipeline."""
+    with patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency:
+        mock_consistency.return_value = []
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(
+            trajectory_data=trajectory_data,
+            task_id="task-m1",
+            guidelines_mode="consistency",
+            model="gpt-4o",
+        )
+
+        call_trajectory = mock_consistency.call_args[0][0]
+        assert call_trajectory["model"] == "gpt-4o"
+        assert call_trajectory["trace_id"] == "task-m1"
+
+
+def test_save_trajectory_consistency_mode_model_defaults_to_none(mock_get_client):
+    """When model is not passed, the trajectory dict carries model=None (fallback handled downstream)."""
+    with patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency:
+        mock_consistency.return_value = []
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-m2", guidelines_mode="consistency")
+
+        call_trajectory = mock_consistency.call_args[0][0]
+        assert call_trajectory["model"] is None
+
+
+# ---------------------------------------------------------------------------
 # User facts tests
 # ---------------------------------------------------------------------------
 

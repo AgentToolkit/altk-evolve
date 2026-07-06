@@ -591,7 +591,7 @@ class TestSyncPhoenix:
             result = runner.invoke(app, ["sync", "phoenix", "--url", "http://custom:8080"])
 
             assert result.exit_code == 0
-            MockSync.assert_called_once_with(phoenix_url="http://custom:8080", namespace_id=None, project=None)
+            MockSync.assert_called_once_with(phoenix_url="http://custom:8080", namespace_id=None, project=None, guidelines_mode="regular", consistency_debug_output_dir=None)
 
     def test_sync_phoenix_with_custom_namespace(self):
         """Test sync phoenix with custom namespace."""
@@ -606,7 +606,7 @@ class TestSyncPhoenix:
             result = runner.invoke(app, ["sync", "phoenix", "--namespace", "my_namespace"])
 
             assert result.exit_code == 0
-            MockSync.assert_called_once_with(phoenix_url=None, namespace_id="my_namespace", project=None)
+            MockSync.assert_called_once_with(phoenix_url=None, namespace_id="my_namespace", project=None, guidelines_mode="regular", consistency_debug_output_dir=None)
 
     def test_sync_phoenix_with_custom_project(self):
         """Test sync phoenix with custom project."""
@@ -621,7 +621,7 @@ class TestSyncPhoenix:
             result = runner.invoke(app, ["sync", "phoenix", "--project", "my_project"])
 
             assert result.exit_code == 0
-            MockSync.assert_called_once_with(phoenix_url=None, namespace_id=None, project="my_project")
+            MockSync.assert_called_once_with(phoenix_url=None, namespace_id=None, project="my_project", guidelines_mode="regular", consistency_debug_output_dir=None)
 
     def test_sync_phoenix_with_custom_limit(self):
         """Test sync phoenix with custom limit."""
@@ -778,5 +778,42 @@ class TestSyncPhoenixMore:
             )
 
             assert result.exit_code == 0
-            MockSync.assert_called_once_with(phoenix_url="http://custom:9000", namespace_id="production", project="prod")
+            MockSync.assert_called_once_with(phoenix_url="http://custom:9000", namespace_id="production", project="prod", guidelines_mode="regular", consistency_debug_output_dir=None)
             mock_syncer.sync.assert_called_once_with(limit=500, include_errors=True)
+
+    def test_sync_phoenix_guidelines_mode_consistency(self):
+        """--guidelines-mode consistency is forwarded to PhoenixSync."""
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.return_value = MagicMock(processed=1, skipped=0, guidelines_generated=2, errors=[])
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix", "--guidelines-mode", "consistency"])
+
+            assert result.exit_code == 0
+            MockSync.assert_called_once_with(phoenix_url=None, namespace_id=None, project=None, guidelines_mode="consistency", consistency_debug_output_dir=None)
+
+    def test_sync_phoenix_guidelines_mode_both(self):
+        """--guidelines-mode both is forwarded to PhoenixSync."""
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync") as MockSync:
+            mock_syncer = MagicMock()
+            mock_syncer.phoenix_url = "http://localhost:6006"
+            mock_syncer.project = "default"
+            mock_syncer.namespace_id = "test_ns"
+            mock_syncer.sync.return_value = MagicMock(processed=1, skipped=0, guidelines_generated=4, errors=[])
+            MockSync.return_value = mock_syncer
+
+            result = runner.invoke(app, ["sync", "phoenix", "--guidelines-mode", "both"])
+
+            assert result.exit_code == 0
+            MockSync.assert_called_once_with(phoenix_url=None, namespace_id=None, project=None, guidelines_mode="both", consistency_debug_output_dir=None)
+
+    def test_sync_phoenix_guidelines_mode_invalid_exits_with_error(self):
+        """An unrecognised --guidelines-mode value exits non-zero with an error message."""
+        with patch("altk_evolve.sync.phoenix_sync.PhoenixSync"):
+            result = runner.invoke(app, ["sync", "phoenix", "--guidelines-mode", "turbo"])
+
+            assert result.exit_code != 0

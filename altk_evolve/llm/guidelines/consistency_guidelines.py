@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Optional
@@ -10,8 +11,8 @@ from jinja2 import Template
 from litellm import completion, get_supported_openai_params, supports_response_schema
 from pydantic import ValidationError
 
-from consistency_analyzer.consistency_analysis import analyze_consistency
-from consistency_analyzer.resampling import resample_trajectory
+from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
+from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
 
 from altk_evolve.config.llm import llm_settings
 from altk_evolve.schema.exceptions import EvolveException
@@ -26,6 +27,61 @@ logger = logging.getLogger(__name__)
 
 HIGH_UNCERTAINTY = 0.2
 LOW_UNCERTAINTY = 0.1
+SKIP_ON_NO_UNCERTAINTY = True
+
+
+def _strip_orphaned_tool_messages(messages: list[dict]) -> list[dict]:
+    """Remove tool-role messages that have no preceding assistant tool_calls entry.
+
+    When the gen_ai instrumentation format is used, tool_calls are not captured
+    on intermediate assistant messages — only the text content (often "None").
+    Sending such sequences to the LLM API during resampling causes a 400 error.
+    This strips the orphaned tool messages so resampling receives a valid prompt.
+    """
+    result = []
+    last_had_tool_calls = False
+    for msg in messages:
+        role = msg.get("role")
+        if role == "assistant":
+            last_had_tool_calls = bool(msg.get("tool_calls"))
+            result.append(msg)
+        elif role == "tool":
+            if last_had_tool_calls:
+                result.append(msg)
+            # else: skip — no tool_calls on the preceding assistant message
+        else:
+            result.append(msg)
+    return result
+
+
+def _is_well_formed_tool_calls(tool_calls: Any) -> bool:
+    """Whether `tool_calls` is a clean OpenAI-format list (every entry names a function)."""
+    return (
+        isinstance(tool_calls, list)
+        and bool(tool_calls)
+        and all(isinstance(tc, dict) and isinstance(tc.get("function"), dict) and tc["function"].get("name") for tc in tool_calls)
+    )
+
+
+def _classify_step_response(msg: dict) -> tuple[str, Any]:
+    """Classify an assistant message's raw_response_type: content, tool_calls, or other.
+
+    "other" covers turns that don't cleanly fit either bucket — malformed tool_calls, or
+    no usable text content and no tool_calls at all. Genuine OpenAI-protocol responses
+    (native chat-completions output) should never actually land here; it exists as a safety
+    net for less predictable/non-native response shapes.
+    """
+    tool_calls = msg.get("tool_calls")
+    if tool_calls:
+        if _is_well_formed_tool_calls(tool_calls):
+            return "tool_calls", json.dumps(tool_calls, indent=2)
+        return "other", json.dumps(tool_calls, indent=2)
+
+    content = msg.get("content")
+    if isinstance(content, str) and content.strip():
+        return "content", content
+
+    return "other", content if content is not None else ""
 
 
 def transform_trajectory_to_IR(trajectory: dict) -> dict:
@@ -33,12 +89,19 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
 
     Produces a task + list-of-steps structure where each step carries the messages
     that preceded it, the assistant's raw response, and the LLM params used.
+
+    Steps are named with an "OpenAIAgent" prefix when the trajectory carries a real OpenAI
+    tools JSON schema (`trajectory["tools"]` populated) — meaning its tool_calls came from
+    the native chat-completions protocol and can be resampled with real tool-calling rebound.
+    Trajectories without one (e.g. smolagents' CodeAgent, which never declares an OpenAI
+    `tools` param — it only describes tools in its system prompt) get a generic "AnyAgent"
+    prefix instead, since we can't assume the same resampling behavior is safe for them.
     """
     messages = trajectory.get("messages", [])
     model = trajectory.get("model", "unknown")
     tools = trajectory.get("tools")
     trace_id = trajectory.get("trace_id", "unknown")
-    step_name = "OpenAIAgent"
+    step_name = "OpenAIAgent" if tools else "AnyAgent"
 
     task = "Unknown task"
     for msg in messages:
@@ -54,19 +117,14 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
         role = msg.get("role")
 
         if role == "assistant":
-            raw_response: Any = msg.get("content", "")
-            raw_response_type = "content"
-
-            if msg.get("tool_calls"):
-                raw_response = json.dumps(msg["tool_calls"], indent=2)
-                raw_response_type = "tool_calls"
+            raw_response_type, raw_response = _classify_step_response(msg)
 
             step = {
                 "name": f"{step_name}_{raw_response_type}",
                 "step_number": step_number,
                 "raw_response": raw_response,
                 "raw_response_type": raw_response_type,
-                "messages": current_messages.copy(),
+                "messages": _strip_orphaned_tool_messages(current_messages.copy()),
                 "llm_params": {"model": model},
             }
             if raw_response_type == "tool_calls":
@@ -82,6 +140,17 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
         "name": f"Trajectory {str(trace_id)[:8]}",
         "steps": steps,
     }
+
+
+def _write_guidelines_debug(debug_dir: Path, trace_id: Any, results: list[GuidelineGenerationResult]) -> None:
+    payload = [
+        {
+            "task_description": result.task_description,
+            "guidelines": [guideline.model_dump() for guideline in result.guidelines],
+        }
+        for result in results
+    ]
+    (debug_dir / f"guidelines_{str(trace_id)[:8]}.json").write_text(json.dumps(payload, indent=2))
 
 
 def parse_consistency_score_card(score_card: dict) -> dict:
@@ -108,7 +177,8 @@ def format_trajectory_data(messages: list, consistency_data: dict) -> str:
 
     if not high_uncertainty_steps and step_uncertainties:
         highest = max(step_uncertainties.items(), key=lambda x: x[1])
-        high_uncertainty_steps = {highest[0]: highest[1]}
+        if highest[1] > LOW_UNCERTAINTY:
+            high_uncertainty_steps = {highest[0]: highest[1]}
 
     highest_step_num = max(high_uncertainty_steps.keys()) if high_uncertainty_steps else 0
     max_steps = max(highest_step_num + 2, 15)
@@ -161,14 +231,13 @@ def generate_consistency_guidelines(
     Args:
         trajectory: dict with keys messages, model, trace_id, and optionally tools.
         config_path: YAML config consumed by consistency_analyzer. Defaults to
-            `openai_agent.yaml` next to this module.
+            `agent_config.yaml` next to this module.
         debug_output_dir: if set, writes IR + score card JSON artifacts here for inspection.
     """
-    config_path = Path(config_path) if config_path else Path(__file__).parent / "openai_agent.yaml"
+    config_path = Path(config_path) if config_path else Path(__file__).parent / "agent_config.yaml"
     if not config_path.exists():
         raise FileNotFoundError(
-            f"Consistency analyzer config not found: {config_path}. "
-            f"Provide config_path= or create the default file alongside this module."
+            f"Consistency analyzer config not found: {config_path}. Provide config_path= or create the default file alongside this module."
         )
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -202,20 +271,39 @@ def generate_consistency_guidelines(
     if debug_dir:
         (debug_dir / f"trajectory_ir_{str(trace_id)[:8]}.json").write_text(json.dumps(trajectory_ir, indent=2))
 
+    steps = trajectory_ir.get("steps", [])
+    if len(steps) == 0:
+        raise EvolveException("generate_consistency_guidelines called on trajectory with no steps")
+
     logger.info("Resampling trajectory IR")
     trajectory_ir = resample_trajectory(
         trajectory=trajectory_ir,
         samples=config.get("max_samples", 10),
-        model_name=model,
+        model_name=model or llm_settings.guidelines_model,
+        max_steps=config.get("max_steps", -1),
     )
     if debug_dir:
         (debug_dir / f"trajectory_ir_{str(trace_id)[:8]}_spl.json").write_text(json.dumps(trajectory_ir, indent=2))
 
     logger.info(f"Computing consistency score card for {trajectory_ir.get('name', '')}")
-    score_card = analyze_consistency(trajectory=trajectory_ir, config=config)
+    score_card, trajectory_ir = analyze_consistency(trajectory=trajectory_ir, config=config)
+    if debug_dir:
+        (debug_dir / f"trajectory_ir_{str(trace_id)[:8]}_cns.json").write_text(json.dumps(trajectory_ir, indent=2))
+
     consistency_data = parse_consistency_score_card(score_card)
     if debug_dir:
         (debug_dir / f"consistency_score_card_{str(trace_id)[:8]}.json").write_text(json.dumps(score_card, indent=2))
+
+    if SKIP_ON_NO_UNCERTAINTY:
+        step_uncertainties = consistency_data.get("step_uncertainties", {})
+        has_uncertain_steps = bool(step_uncertainties) and max(step_uncertainties.values()) > LOW_UNCERTAINTY
+        if not has_uncertain_steps:
+            task_description = trajectory_ir["task"] or DEFAULT_TASK_DESCRIPTION
+            logger.info(f"Skipping guideline generation: no steps above LOW_UNCERTAINTY threshold ({LOW_UNCERTAINTY})")
+            results = [GuidelineGenerationResult(guidelines=[], task_description=task_description)]
+            if debug_dir:
+                _write_guidelines_debug(debug_dir, trace_id, results)
+            return results
 
     trajectory_summary = format_trajectory_data(messages, consistency_data)
     task_description = trajectory_ir["task"] or DEFAULT_TASK_DESCRIPTION
@@ -263,14 +351,28 @@ def generate_consistency_guidelines(
 
     if not clean_response:
         logger.warning(f"LLM returned empty response for consistency guideline generation. Model: {llm_settings.guidelines_model}")
-        return [GuidelineGenerationResult(guidelines=[], task_description=task_description)]
+        results = [GuidelineGenerationResult(guidelines=[], task_description=task_description)]
+        if debug_dir:
+            _write_guidelines_debug(debug_dir, trace_id, results)
+        return results
 
     try:
         guidelines = GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
-        return [GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)]
-    except JSONDecodeError as e:
-        logger.warning(f"Failed to parse consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-        return [GuidelineGenerationResult(guidelines=[], task_description=task_description)]
+        results = [GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)]
+    except JSONDecodeError:
+        # LLMs sometimes emit LaTeX-style \( \) in string values which are not valid JSON
+        # escape sequences. Escape lone backslashes and retry before giving up.
+        fixed = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", clean_response)
+        try:
+            guidelines = GuidelineGenerationResponse.model_validate(json.loads(fixed)).guidelines
+            results = [GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)]
+        except (JSONDecodeError, ValidationError) as e:
+            logger.warning(f"Failed to parse consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
+            results = [GuidelineGenerationResult(guidelines=[], task_description=task_description)]
     except ValidationError as e:
         logger.warning(f"Failed to validate consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-        return [GuidelineGenerationResult(guidelines=[], task_description=task_description)]
+        results = [GuidelineGenerationResult(guidelines=[], task_description=task_description)]
+
+    if debug_dir:
+        _write_guidelines_debug(debug_dir, trace_id, results)
+    return results

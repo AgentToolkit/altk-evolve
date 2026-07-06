@@ -2,21 +2,22 @@
 # Step names produced by transform_trajectory_to_IR() are "OpenAIAgent_content"
 # (assistant text turns) and "OpenAIAgent_tool_calls" (assistant tool-call turns).
 # Users can override by passing config_path= to generate_consistency_guidelines().
-name: openai_agent
+name: agent consistency configuration 
 aggregation: mean
-max_samples: 10
+max_samples: 5
 agents:
   - name: OpenAIAgent_content
     response_type: text
-    alternates:
-      - fields:
-          - name: content
-            metric: sbert_small
-            backfill: "(no content)"
+    metric: sbert_small #jaccard
   - name: OpenAIAgent_tool_calls
     response_type: tool_calls
-    alternates:
-      - fields:
-          - name: tool_calls
-            metric: cat_entropy
-            backfill: "[]"
+    fields:
+      - name: function_name
+        metric: jaccard 
+      - name: function_arguments
+        metric: jaccard 
+  - name: AnyAgent_content
+    response_type: text
+    metric: sbert_small #jaccard
+ #   response_type: tool_calls
+ #   metric: jaccard

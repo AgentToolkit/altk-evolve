@@ -354,6 +354,8 @@ def save_trajectory(
     user_id: str | None = None,
     namespace_id: str | None = None,
     session_id: str | None = None,
+    guidelines_mode: str = "regular",
+    model: str | None = None,
 ) -> list[RecordedEntity]:
     """
     Save the full agent trajectory to the Entity DB and generate guidelines
@@ -365,6 +367,8 @@ def save_trajectory(
         user_id: Optional caller user ID. Attached as metadata to trajectory and guideline entities.
         namespace_id: Optional namespace override. Falls back to the configured default.
         session_id: Optional session/thread ID. Attached as metadata to trajectory and guideline entities.
+        guidelines_mode: Guideline generation mode: 'regular', 'consistency', or 'both'. Defaults to 'regular'.
+        model: Model name used by the agent (e.g. 'gpt-4o'). Required for accurate resampling in consistency mode.
     """
     resolved_ns = _resolve_namespace(namespace_id)
     # Prefer explicit user_id; fall back to owner_id for backward compatibility
@@ -410,8 +414,6 @@ def save_trajectory(
             entities=entities,
             enable_conflict_resolution=False,
         )
-    results = generate_guidelines(messages)
-
     guideline_metadata_base: dict = {
         "source_task_id": task_id,
         "creation_mode": "auto-mcp",
@@ -422,22 +424,52 @@ def save_trajectory(
     if session_id:
         guideline_metadata_base["session_id"] = session_id
 
-    guideline_entities = [
-        Entity(
-            type="guideline",
-            content=guideline.content,
-            metadata={
-                **guideline_metadata_base,
-                "task_description": result.task_description,
-                "category": guideline.category,
-                "rationale": guideline.rationale,
-                "trigger": guideline.trigger,
-                "implementation_steps": guideline.implementation_steps,
-            },
-        )
-        for result in results
-        for guideline in result.guidelines
-    ]
+    # Build entity lists per pipeline so each carries its own generation_method tag,
+    # then merge before the single update_entities call.
+    guideline_entities = []
+
+    if guidelines_mode in ("regular", "both"):
+        regular_results = generate_guidelines(messages)
+        guideline_entities += [
+            Entity(
+                type="guideline",
+                content=guideline.content,
+                metadata={
+                    **guideline_metadata_base,
+                    "task_description": result.task_description,
+                    "category": guideline.category,
+                    "rationale": guideline.rationale,
+                    "trigger": guideline.trigger,
+                    "implementation_steps": guideline.implementation_steps,
+                    "generation_method": "regular",
+                },
+            )
+            for result in regular_results
+            for guideline in result.guidelines
+        ]
+
+    if guidelines_mode in ("consistency", "both"):
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        trajectory = {"messages": messages, "trace_id": task_id, "model": model}
+        consistency_results = generate_consistency_guidelines(trajectory)
+        guideline_entities += [
+            Entity(
+                type="guideline",
+                content=guideline.content,
+                metadata={
+                    **guideline_metadata_base,
+                    "task_description": result.task_description,
+                    "category": guideline.category,
+                    "rationale": guideline.rationale,
+                    "trigger": guideline.trigger,
+                    "implementation_steps": guideline.implementation_steps,
+                    "generation_method": "consistency",
+                },
+            )
+            for result in consistency_results
+            for guideline in result.guidelines
+        ]
     if guideline_entities:
         get_client().update_entities(
             namespace_id=resolved_ns,
