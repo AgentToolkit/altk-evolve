@@ -5,7 +5,7 @@ This module provides functionality to:
 1. Fetch agent trajectories from Phoenix's REST API
 2. Deduplicate already-processed trajectories
 3. Generate guidelines from new trajectories
-4. Store both trajectories and guidelines in the Evolve backend
+4. Store trajectories and guidelines in the Evolve backend
 """
 
 import json
