@@ -17,10 +17,10 @@ Rather than baking each concern in, Evolve defines its own hook types and delega
 
 - **Optional dependency.** `cpex` pulls heavy transitive dependencies (fastapi, mcp, prometheus), so it lives behind an extra: `pip install 'altk-evolve[hooks]'`. Without it — or with `hooks.enabled=False`, the default — every hook site is a fast no-op (a boolean check), and behavior is byte-for-byte identical to previous releases.
 - **Backend-layer choke points.** Write/read hooks fire inside `BaseEntityBackend` template methods, so no frontend (client, MCP server, CLI, Phoenix sync) can bypass them. Backends override protected `_*_impl` methods only; the public methods own hook dispatch.
-- **Frozen payloads.** Payloads are immutable pydantic models; plugins return a `model_copy(update={...})` via `PluginResult.modified_payload`. Transform-mode plugins chain; the final payload flows back to the call site.
+- **Frozen payloads.** Payloads are immutable pydantic models; plugins return a `model_copy(update={...})` via `PluginResult.modified_payload`. Transform-mode plugins chain; the final payload flows back to the call site. This is enforced, not just convention: mutable payload contents are deep-copied at dispatch, and a plugin that mutates a payload in place without returning `modified_payload` has its mutation discarded.
 - **Halting raises, never drops.** A plugin that halts the pipeline (`continue_processing=False`) raises `altk_evolve.hooks.MemoryPolicyViolation` — a blocked write is an error the caller sees, not a silent no-op.
 - **Sync bridge.** CPEX's `invoke_hook` is async-only; Evolve's call sites are sync. The seam uses `asyncio.run` when no event loop is running and a dedicated thread when one is. Fire-and-forget plugin tasks are awaited before the bridge returns so their side effects are never lost with the closing loop.
-- **Singleton caveat.** CPEX's `PluginManager` is a process-wide (Borg) singleton. If multiple `EvolveClient` instances enable hooks with different configs, the last initialization wins. Per-instance isolation (CPEX's `TenantPluginManager`) is deferred until a real use case needs it.
+- **Singleton caveat.** CPEX's `PluginManager` is a process-wide (Borg) singleton — the hook seam is process-global, not per-client. Two sharp edges follow: (a) constructing a second `EvolveClient` with `hooks.enabled=True` calls `PluginManager.reset()` and silently **replaces** the first client's plugins — for a compliance plugin (e.g. PII redaction) this means redaction can be silently disabled by unrelated code constructing its own client; (b) a client constructed with `enabled=False` does not reset the manager, but it still inherits whatever process-global hooks another client enabled — its operations flow through those plugins too. Per-instance isolation (CPEX's `TenantPluginManager`) is deferred until a real use case needs it.
 
 ## Hook taxonomy
 
@@ -34,6 +34,8 @@ Rather than baking each concern in, Evolve defines its own hook types and delega
 | `llm_pre_call` | Immediately before every litellm `completion` (fact extraction, guidelines, segmentation, clustering, conflict resolution) | transform (redact) / halt | `messages`, `purpose` (call-site tag), `model` |
 
 Recursion safety: a `memory_post_read` plugin that patches metadata goes through `update_entity_metadata`, whose read-before-merge uses the internal `_search_entities_impl` seam — plus a context-local guard suppresses nested `memory_post_read` dispatch.
+
+**Known limitation — LLM-initiated deletes.** Conflict resolution inside `update_entities` can produce DELETE verdicts against *stored* entities; those internal deletes do **not** fire `memory_pre_delete`. `memory_pre_write` fires earlier on the same call, but its payload is the incoming entity batch — not the stored entities the DELETE verdicts target — so `memory_pre_delete` subscribers (e.g. a legal-hold plugin) cannot veto LLM-initiated deletions. Covering these is slated for the future lifecycle/policy hook family (see [Deferred](#deferred)).
 
 ## Enabling hooks
 
@@ -72,6 +74,8 @@ See [`examples/hooks_plugins.yaml`](https://github.com/AgentToolkit/altk-evolve/
 | `MetadataNormalizerPlugin` | `memory_pre_write` | transform | Copies `task_id` → `trace_id` when only the former is present (MCP-saved trajectories vs Phoenix-synced ones) and stamps `created_at` |
 | `AccessStampPlugin` | `memory_post_read` | fire_and_forget | Stamps `last_accessed` (ISO-8601 UTC) on read entities via the metadata-patch path |
 | `PIIFilterMemoryPlugin` | `memory_pre_write`, `llm_pre_call` | transform | Regex PII redaction (aliases the native `cpex-pii-filter` plugin onto Evolve's hook types); requires `pip install 'altk-evolve[pii]'` |
+
+Read-cost note for `AccessStampPlugin`: fire-and-forget tasks are awaited before the sync bridge returns (their side effects would otherwise be lost with the closing event loop), so the stamp is **not** free for the reader — every public read pays one metadata write per returned entity before `search_entities` returns. Measured on the filesystem backend: ~3.7 ms vs ~0.1 ms for a 10-entity read; on milvus/postgres it adds N extra store round trips per read. Enable it only where access audit trails are worth that latency.
 
 ## Writing a plugin
 

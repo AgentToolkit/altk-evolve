@@ -29,6 +29,10 @@ plugins:
       stamp_created_at: true
 
   # Stamps last_accessed (ISO-8601 UTC) on entities returned by public reads.
+  # Read cost: fire-and-forget tasks are awaited at the sync seam, so every
+  # public read pays one metadata write per returned entity before it returns
+  # (~3.7ms vs ~0.1ms for a 10-entity filesystem read; N extra round trips
+  # per read on milvus/postgres). Enable only where audit trails justify it.
   - name: access_stamp
     kind: altk_evolve.hooks.plugins.access_stamp.AccessStampPlugin
     description: Access auditing on memory reads

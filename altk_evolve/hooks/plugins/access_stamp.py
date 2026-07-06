@@ -30,6 +30,14 @@ if HAS_CPEX:
         Runs in fire_and_forget mode: it cannot modify or block the read, only
         record the access via the metadata-patch path.
 
+        Read cost: fire-and-forget tasks are awaited before the sync bridge
+        returns (see ``altk_evolve.hooks.manager``), so the stamp is not free
+        for the reader — every public read pays one metadata write per
+        returned entity before ``search_entities`` returns (~3.7 ms vs
+        ~0.1 ms for a 10-entity read on the filesystem backend; N extra
+        store round trips per read on milvus/postgres). Enable only where
+        access audit trails are worth that latency.
+
         Recursion safety: ``update_entity_metadata`` fires
         ``memory_pre_metadata_patch`` (not ``memory_post_read``), and its base
         implementation reads through the internal ``_search_entities_impl``

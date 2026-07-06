@@ -83,9 +83,14 @@ class BaseEntityBackend(ABC):
     def delete_entity_by_id(self, namespace_id: str, entity_id: str):
         """Delete an entity (public API). Fires memory_pre_delete; do not override — override _delete_entity_by_id_impl.
 
-        Internal deletes issued by conflict resolution inside update_entities
-        go through ``_delete_entity`` and are covered by memory_pre_write
-        instead.
+        Known limitation: internal deletes issued by conflict resolution
+        inside ``update_entities`` (LLM DELETE verdicts) go through
+        ``_delete_entity`` and do NOT fire memory_pre_delete.
+        ``memory_pre_write`` fires earlier on that call, but its payload is
+        the incoming entity batch — not the stored entities the DELETE
+        verdicts target — so memory_pre_delete subscribers (e.g. a legal-hold
+        plugin) cannot veto LLM-initiated deletions. Covering these is slated
+        for the future lifecycle/policy hook family.
         """
         dispatch_memory_pre_delete(self, namespace_id, entity_id)
         self._delete_entity_by_id_impl(namespace_id, entity_id)
