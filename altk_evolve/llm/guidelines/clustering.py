@@ -14,6 +14,7 @@ from litellm import completion, get_supported_openai_params, supports_response_s
 from sentence_transformers import SentenceTransformer
 
 from altk_evolve.config.llm import llm_settings
+from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResponse
@@ -185,6 +186,9 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Guideline]:
     )
 
     litellm.enable_json_schema_validation = constrained_decoding_supported
+    llm_messages = dispatch_llm_pre_call(
+        [{"role": "user", "content": prompt}], purpose="guideline_combination", model=llm_settings.guidelines_model
+    )
 
     last_error: Exception | None = None
     for attempt in range(3):
@@ -193,7 +197,7 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Guideline]:
                 content = (
                     completion(
                         model=llm_settings.guidelines_model,
-                        messages=[{"role": "user", "content": prompt}],
+                        messages=llm_messages,
                         response_format=GuidelineGenerationResponse,
                         custom_llm_provider=llm_settings.custom_llm_provider,
                     )
@@ -207,7 +211,7 @@ def combine_cluster(entities: list[RecordedEntity]) -> list[Guideline]:
                 content = (
                     completion(
                         model=llm_settings.guidelines_model,
-                        messages=[{"role": "user", "content": prompt}],
+                        messages=llm_messages,
                         custom_llm_provider=llm_settings.custom_llm_provider,
                     )
                     .choices[0]

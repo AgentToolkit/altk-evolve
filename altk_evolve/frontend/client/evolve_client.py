@@ -42,6 +42,15 @@ class EvolveClient:
         else:
             raise NotImplementedError(f"Entity backend not implemented: {self.config.backend}")
 
+        # Initialize the memory hook seam (no-op unless config.hooks.enabled).
+        # Note: the CPEX PluginManager is a process-wide singleton — if
+        # multiple clients enable hooks with different configs, the most
+        # recently constructed client's hook config wins.
+        if self.config.hooks.enabled:
+            from altk_evolve.hooks.manager import initialize_hooks
+
+            initialize_hooks(self.config.hooks)
+
     def ready(self) -> bool:
         """Check if the backend is healthy."""
         return self.backend.ready()

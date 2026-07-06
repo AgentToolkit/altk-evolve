@@ -152,7 +152,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
                     break
         return namespaces
 
-    def delete_namespace(self, namespace_id: str):
+    def _delete_namespace_impl(self, namespace_id: str):
         """Delete a namespace and all its entities."""
         file_path = self._namespace_file(namespace_id)
         with self._lock:
@@ -283,7 +283,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
             for ent in results
         ]
 
-    def search_entities(
+    def _search_entities_impl(
         self,
         namespace_id: str,
         query: str | None = None,
@@ -298,7 +298,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
             data = self._load_namespace_data(namespace_id)
             return self._search_entities_internal(data, query, filters, limit)
 
-    def delete_entity_by_id(self, namespace_id: str, entity_id: str):
+    def _delete_entity_by_id_impl(self, namespace_id: str, entity_id: str):
         """Delete a specific entity by its ID."""
         with self._lock:
             data = self._load_namespace_data(namespace_id)

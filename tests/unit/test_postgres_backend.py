@@ -496,7 +496,7 @@ def test_update_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
     """Test updating entities."""
     entity_update = EntityUpdate(id="12345", type="Test entity content", content="fact", event="ADD")
 
-    def search_entities(self, namespace_id, query, filters=None, limit=10):
+    def _search_entities_impl(self, namespace_id, query, filters=None, limit=10):
         return []
 
     def resolve_conflicts(old_entities, new_entities):
@@ -504,7 +504,7 @@ def test_update_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
 
     monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(True))
     monkeypatch.setattr(postgres_backend.embedding_model, "encode", arbitrary_embedding)
-    monkeypatch.setattr(postgres_backend, "search_entities", search_entities.__get__(postgres_backend, PostgresEntityBackend))
+    monkeypatch.setattr(postgres_backend, "_search_entities_impl", _search_entities_impl.__get__(postgres_backend, PostgresEntityBackend))
 
     mock_cursor = MagicMock()
     mock_cursor.fetchone.return_value = (12345,)

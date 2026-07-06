@@ -4,6 +4,13 @@ from abc import ABC, abstractmethod
 
 from pydantic_settings import BaseSettings
 
+from altk_evolve.hooks.manager import (
+    dispatch_memory_post_read,
+    dispatch_memory_pre_delete,
+    dispatch_memory_pre_metadata_patch,
+    dispatch_memory_pre_namespace_delete,
+    dispatch_memory_pre_write,
+)
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
@@ -40,18 +47,51 @@ class BaseEntityBackend(ABC):
     def search_namespaces(self, limit: int = 10) -> list[Namespace]:
         pass
 
-    @abstractmethod
+    # ── hook-wrapped template methods ────────────────────────────────
+    #
+    # The public methods below are template methods: they fire the memory
+    # hooks and delegate to protected ``_*_impl`` methods. Backends override
+    # the ``_impl`` variants ONLY, so an override can never skip a hook.
+
     def delete_namespace(self, namespace_id: str):
-        pass
+        """Delete a namespace. Fires memory_pre_namespace_delete; do not override — override _delete_namespace_impl."""
+        dispatch_memory_pre_namespace_delete(self, namespace_id)
+        self._delete_namespace_impl(namespace_id)
 
     @abstractmethod
+    def _delete_namespace_impl(self, namespace_id: str):
+        pass
+
     def search_entities(
+        self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
+    ) -> list[RecordedEntity]:
+        """Search entities (public API read). Fires memory_post_read on the results.
+
+        Internal reads (conflict-resolution pre-reads, the metadata-patch
+        read-before-merge) call ``_search_entities_impl`` directly and never
+        fire the hook. Do not override — override _search_entities_impl.
+        """
+        results = self._search_entities_impl(namespace_id, query, filters, limit)
+        return dispatch_memory_post_read(self, namespace_id, results, query=query, filters=filters)
+
+    @abstractmethod
+    def _search_entities_impl(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
     ) -> list[RecordedEntity]:
         pass
 
-    @abstractmethod
     def delete_entity_by_id(self, namespace_id: str, entity_id: str):
+        """Delete an entity (public API). Fires memory_pre_delete; do not override — override _delete_entity_by_id_impl.
+
+        Internal deletes issued by conflict resolution inside update_entities
+        go through ``_delete_entity`` and are covered by memory_pre_write
+        instead.
+        """
+        dispatch_memory_pre_delete(self, namespace_id, entity_id)
+        self._delete_entity_by_id_impl(namespace_id, entity_id)
+
+    @abstractmethod
+    def _delete_entity_by_id_impl(self, namespace_id: str, entity_id: str):
         pass
 
     # ── update_entities template method ──────────────────────────────
@@ -91,12 +131,24 @@ class BaseEntityBackend(ABC):
     def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
         """Merge metadata_patch into an entity's metadata without touching content.
 
-        The default implementation fetches via search_entities, merges, then calls patch_entity.
-        DB-backed backends should override with a native atomic update.
+        Template method: fires memory_pre_metadata_patch (which may transform
+        or block the patch) and delegates to ``_update_entity_metadata_impl``.
+        Do not override — override _update_entity_metadata_impl.
+        """
+        metadata_patch = dispatch_memory_pre_metadata_patch(self, namespace_id, entity_id, metadata_patch)
+        return self._update_entity_metadata_impl(namespace_id, entity_id, metadata_patch)
+
+    def _update_entity_metadata_impl(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+        """Default implementation: fetch (internal read), merge, patch_entity.
+
+        DB-backed backends should override with a native atomic update. Uses
+        ``_search_entities_impl`` so this internal read never fires
+        memory_post_read (recursion guard for read-triggered plugins that
+        patch metadata).
         """
         from altk_evolve.utils.utils import serialize_content
 
-        results = self.search_entities(namespace_id, filters={"id": entity_id}, limit=1)
+        results = self._search_entities_impl(namespace_id, filters={"id": entity_id}, limit=1)
         if not results:
             from altk_evolve.schema.exceptions import EvolveException
 
@@ -124,6 +176,11 @@ class BaseEntityBackend(ABC):
         if not all(entity.type == entity_type for entity in entities):
             raise EvolveException("All entities must have the same type.")
 
+        # Fire memory_pre_write BEFORE conflict resolution so transform
+        # plugins (normalization, PII redaction, ...) run before any entity
+        # content is sent to an LLM.
+        entities = dispatch_memory_pre_write(self, namespace_id, entities)
+
         now = datetime.datetime.now(datetime.UTC)
         timestamp = int(now.timestamp())
 
@@ -144,8 +201,10 @@ class BaseEntityBackend(ABC):
             old_entities: list[RecordedEntity] = []
             for entity in entities:
                 query_str = serialize_content(entity.content)
+                # Internal pre-read for conflict resolution — must not fire
+                # memory_post_read (public-API reads only).
                 old_entities.extend(
-                    self.search_entities(
+                    self._search_entities_impl(
                         namespace_id=namespace_id,
                         query=query_str,
                         filters={"type": entity_type},

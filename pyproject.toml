@@ -36,6 +36,20 @@ pgvector = [
     "pgvector>=0.3",
 ]
 
+# Optional plugin/hook framework (CPEX). Kept out of core deps because cpex
+# pulls heavy transitive dependencies (fastapi, mcp, prometheus). Without this
+# extra installed, the hook seam is a fast no-op.
+hooks = [
+    "cpex>=0.1.0,<0.2",
+]
+
+# PII redaction plugin for the hook seam (separate from [hooks] so users who
+# only want normalization/audit plugins don't pull the PII filter).
+pii = [
+    "altk-evolve[hooks]",
+    "cpex-pii-filter>=0.3",
+]
+
 examples = [
     "altk-evolve[tracing]",
     "smolagents",
@@ -175,6 +189,8 @@ exclude = [
 
 [[tool.mypy.overrides]]
 module = [
+    "cpex.*",
+    "cpex_pii_filter.*",
     "pymilvus.*",
     "smolagents.*",
     "milvus_lite.*",

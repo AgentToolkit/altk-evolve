@@ -2,6 +2,7 @@ import json
 
 from jinja2 import Template
 from altk_evolve.config.llm import llm_settings
+from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.conflict_resolution import SimpleEntity, EntityUpdate
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
@@ -18,13 +19,16 @@ def resolve_conflicts(
     new_entities_by_id = {entity.id: entity for entity in new_entities}
 
     prompt = get_update_entities_messages(simplified_old_entities, simplified_new_entities, custom_update_entities_prompt)
+    llm_messages = dispatch_llm_pre_call(
+        [{"role": "user", "content": prompt}], purpose="conflict_resolution", model=llm_settings.conflict_resolution_model
+    )
 
     last_error: Exception | None = None
     for attempt in range(3):
         try:
             completion_response = completion(
                 model=llm_settings.conflict_resolution_model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=llm_messages,
                 custom_llm_provider=llm_settings.custom_llm_provider,
             )
             response = completion_response.choices[0].message.content or ""  # type: ignore[union-attr]
