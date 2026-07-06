@@ -91,9 +91,9 @@ class ConsolidationResult:
     """Summary of a guideline consolidation run.
 
     ``support_before``/``support_after`` track the total support (sum of ``support`` over
-    the affected guidelines) before and after consolidation. For lossless/lossy modes they
-    are equal (support is conserved); for the ``support`` mode ``support_after`` is smaller
-    because low-support guidelines are pruned.
+    the affected guidelines) before and after consolidation. For the current lossless/lossy
+    modes they are equal (support is conserved). A future support-threshold filtering step
+    (not yet implemented) may reduce ``support_after`` by pruning low-support guidelines.
     """
 
     clusters_found: int

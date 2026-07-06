@@ -171,7 +171,14 @@ def _attribute_support(
     out: list[Guideline] = []
 
     for cg in consolidated:
-        idxs = [i for i in cg.source_indices if isinstance(i, int) and 0 <= i < n and not assigned[i]]
+        # Dedupe within a single guideline's source_indices so a repeated index (e.g.
+        # [0, 0, 1]) can't double-count its member's support.
+        seen: set[int] = set()
+        idxs: list[int] = []
+        for i in cg.source_indices:
+            if isinstance(i, int) and 0 <= i < n and not assigned[i] and i not in seen:
+                seen.add(i)
+                idxs.append(i)
         if not idxs:
             continue
         for i in idxs:

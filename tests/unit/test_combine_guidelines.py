@@ -130,6 +130,25 @@ class TestCombineCluster:
     @patch("altk_evolve.llm.guidelines.clustering.completion")
     @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
     @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
+    def test_combine_cluster_dedupes_repeated_source_indices(self, _mock_params, _mock_schema, mock_completion):
+        # A repeated index within one guideline's source_indices must not double-count support.
+        mock_completion.return_value = _mock_completion_response([_cg("Merged rule", "strategy", [0, 0, 1])])
+
+        entities = [
+            _make_entity("1", "Rule A", support=2),
+            _make_entity("2", "Rule B", support=3),
+        ]
+
+        result = combine_cluster(entities)
+
+        assert len(result) == 1
+        # 2 + 3 == 5, NOT 2 + 2 + 3.
+        assert result[0].support == 5
+        assert sum(g.support for g in result) == 5
+
+    @patch("altk_evolve.llm.guidelines.clustering.completion")
+    @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
+    @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
     def test_combine_cluster_lossy_uses_aggressive_prompt(self, _mock_params, _mock_schema, mock_completion):
         mock_completion.return_value = _mock_completion_response([_cg("Merged", "strategy", [0, 1])])
 
