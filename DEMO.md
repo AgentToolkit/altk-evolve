@@ -20,7 +20,7 @@ demoing it to others — copy-paste commands and the output to expect.
 | **PII redaction** | `altk_evolve/pii/` + `BaseEntityBackend.update_entities` | Every entity write (CLI, MCP, API, Phoenix sync) passes through one choke-point that scrubs PII *before* it's persisted. Backend = CPEX `cpex-pii-filter` (regex). |
 | **Retention engine** | `altk_evolve/retention/` | Age-based and unused-based **flag** or **delete**, plus session retention that **cascade-deletes derived memories** via provenance. |
 | **CLI** | `evolve retention run` | Run a policy file against a namespace. Dry-run by default. |
-| **Plugin parity** | `plugin-source/lib/pii.py` | Same redaction wired into the evolve-lite save path (stdlib-only, CPEX optional). |
+| **Plugin parity** | `plugin-source/lib/pii.py`, `plugin-source/lib/retention.py` | Same redaction wired into the evolve-lite save path (stdlib-only, CPEX optional), and the same retention rules as a `retention` skill over the plugin's `.evolve/` store (stdlib-only, dry-run by default). |
 
 ---
 
@@ -384,6 +384,46 @@ See `retention.example.yaml` for the rule format (age / unused / cascade).
 To power the "unused" signal, call `EvolveClient.record_access(ns, ids)` from
 your recall path — it stamps `metadata.last_accessed`.
 
+### Plugin-side retention (evolve-lite)
+
+The same rules run against the plugin's `.evolve/` file store
+(`plugin-source/lib/retention.py`, stdlib-only), exposed as a `retention`
+skill on all four variants (claude / claw-code / codex / bob). Add a
+`retention:` block to `evolve.config.yaml`:
+
+```yaml
+retention:
+  rules:
+    - name: stale-guidelines
+      entity_type: guideline
+      max_age_days: 90
+      action: flag
+    - name: old-sessions
+      entity_type: trajectory
+      max_age_days: 365
+      action: delete
+      cascade_derived: true
+```
+
+then invoke the `retention` skill (or its `run_retention.py` script directly,
+optionally with `--policy <file>`). Dry-run by default; `--apply` mutates, and
+the skill requires explicit user confirmation before passing it.
+
+Semantics carry over — first-match rules, flag vs delete, dry-run default,
+session→derived cascade — mapped onto what the file store actually carries:
+
+- **age** = file mtime (the markdown store has no `created_at` metadata);
+  flagging preserves mtime so it doesn't reset the age clock.
+- **unused** = the latest `recall` row naming the entity in `.evolve/audit.log`
+  (the plugin's `record_access` equivalent), falling back to mtime.
+- **cascade** = the `trajectory:` frontmatter link the learn skill stamps on
+  each saved entity, instead of `metadata.source_task_id`.
+- **flag** = `retention_*` frontmatter markers on entities; trajectory files
+  are opaque JSON, so their flag is recorded in the audit log only.
+- Applied actions append `event: "retention"` audit rows. Subscribed entities
+  (`.evolve/entities/subscribed/`) are out of scope — they're sync-owned
+  clones, and local deletes would be restored on the next sync.
+
 ---
 
 ## Limitations (be upfront)
@@ -398,8 +438,11 @@ your recall path — it stamps `metadata.last_accessed`.
 - **Plugin scope.** Redaction is mirrored into the evolve-lite plugin, but the
   wired save path only ships to the `claw-code` variant; claude/codex/bob use
   native memory. The package is the guarantee for those flows.
-- **Retention is package-side** in this PoC; a plugin-side equivalent over the
-  `.evolve/` store is a follow-up.
+- **Plugin retention signals are file-level.** The plugin's markdown store has
+  no `created_at`/`last_accessed` metadata, so plugin-side age = file mtime and
+  unused = `recall` rows in `.evolve/audit.log` — coarser than the package's
+  per-entity metadata. Trajectory flags land in the audit log only (opaque
+  JSON, no frontmatter to mark).
 
 ---
 
@@ -442,7 +485,11 @@ a subagent per area (PII, retention, benchmark, plugin), have each verify by
 
 **4. Plugin parity.** Run `uv run python plugin-source/build_plugins.py check` —
 must exit 0 (rendered `platform-integrations/` matches `plugin-source/`). Confirm
-`plugin-source/lib/pii.py` is stdlib-only.
+`plugin-source/lib/pii.py` and `plugin-source/lib/retention.py` are stdlib-only.
+For retention, run `uv run pytest tests/platform_integrations/test_retention_plugin.py`
+and adversarially confirm a dry run leaves the seeded `.evolve/` tree
+byte-identical while `--apply` deletes the session *and* its derived entity
+(cascade via the `trajectory:` frontmatter link).
 
 **Be skeptical of:** numbers that look too clean (synthetic 1.00s hide real-world
 format sensitivity); "semantic is strictly better" (it's ~4× recall on free-form
