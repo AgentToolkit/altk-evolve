@@ -11,8 +11,14 @@ import pytest
 pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/codex/plugins/evolve-lite"
-SAVE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/learn/scripts/save_entities.py"
-RETRIEVE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/recall/scripts/retrieve_entities.py"
+# recall/learn (retrieve_entities.py / save_entities.py) are excluded from
+# codex — EVOLVE.md's injected instructions drive that workflow there. The
+# save/retrieve logic is identical and still ships on claw-code (whose
+# PreToolUse hook consumes it), so exercise it there; the remaining sharing
+# scripts (publish/subscribe/sync/unsubscribe) still ship on codex.
+_CLAW_CODE_PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claw-code/plugins/evolve-lite"
+SAVE_SCRIPT = _CLAW_CODE_PLUGIN_ROOT / "skills/evolve-lite/learn/scripts/save_entities.py"
+RETRIEVE_SCRIPT = _CLAW_CODE_PLUGIN_ROOT / "skills/evolve-lite/recall/scripts/retrieve_entities.py"
 PUBLISH_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/publish/scripts/publish.py"
 SUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/subscribe/scripts/subscribe.py"
 UNSUBSCRIBE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/unsubscribe/scripts/unsubscribe.py"
@@ -83,10 +89,12 @@ class TestCodexSaveAndRetrieve:
         evolve_dir = temp_project_dir / ".evolve"
         own_dir = evolve_dir / "entities" / "guideline"
         own_dir.mkdir(parents=True)
-        (own_dir / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
+        (own_dir / "guideline.md").write_text("---\ntype: guideline\ntrigger: when refactoring\n---\n\nKeep functions small.\n")
         sub_dir = evolve_dir / "entities" / "subscribed" / "alice" / "guideline"
         sub_dir.mkdir(parents=True)
-        (sub_dir / "alice-guideline.md").write_text("---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n")
+        (sub_dir / "alice-guideline.md").write_text(
+            "---\ntype: guideline\ntrigger: when adding coverage\nowner: alice\nvisibility: public\n---\n\nAlways write tests.\n"
+        )
 
         result = run_script(
             RETRIEVE_SCRIPT,
@@ -96,20 +104,26 @@ class TestCodexSaveAndRetrieve:
             expect_success=False,
         )
         assert result.returncode == 0
-        assert "Keep functions small." in result.stdout
-        assert "[from: alice]" in result.stdout
-        assert "Always write tests." in result.stdout
+        own_line = '{"path": ".evolve/entities/guideline/guideline.md", "type": "guideline", "trigger": "when refactoring"}'
+        assert own_line in result.stdout
+        subscribed_line = (
+            '{"path": ".evolve/entities/subscribed/alice/guideline/alice-guideline.md", '
+            '"type": "guideline", "trigger": "when adding coverage"}'
+        )
+        assert subscribed_line in result.stdout
+        assert "Keep functions small." not in result.stdout
+        assert "Always write tests." not in result.stdout
+        assert "[from: alice]" not in result.stdout
 
     def test_retrieve_includes_published_guidelines(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         own_dir = evolve_dir / "entities" / "guideline"
         own_dir.mkdir(parents=True)
-        (own_dir / "guideline.md").write_text("---\ntype: guideline\n---\n\nKeep functions small.\n")
-        # Published entities live inside the write-scope repo's local clone.
-        published_dir = evolve_dir / "entities" / "subscribed" / "my-memory" / "guideline"
-        published_dir.mkdir(parents=True)
-        (published_dir / "published-guideline.md").write_text(
-            "---\ntype: guideline\nvisibility: public\nsource: alice/evolve-guidelines\n---\n\nDocument edge cases.\n"
+        (own_dir / "guideline.md").write_text("---\ntype: guideline\ntrigger: when refactoring\n---\n\nKeep functions small.\n")
+        public_dir = evolve_dir / "public" / "guideline"
+        public_dir.mkdir(parents=True)
+        (public_dir / "published-guideline.md").write_text(
+            "---\ntype: guideline\ntrigger: when documenting edge cases\nvisibility: public\nsource: alice/evolve-guidelines\n---\n\nDocument edge cases.\n"
         )
 
         result = run_script(
@@ -120,8 +134,14 @@ class TestCodexSaveAndRetrieve:
             expect_success=False,
         )
         assert result.returncode == 0
-        assert "Keep functions small." in result.stdout
-        assert "Document edge cases." in result.stdout
+        own_line = '{"path": ".evolve/entities/guideline/guideline.md", "type": "guideline", "trigger": "when refactoring"}'
+        public_line = (
+            '{"path": ".evolve/public/guideline/published-guideline.md", "type": "guideline", "trigger": "when documenting edge cases"}'
+        )
+        assert own_line in result.stdout
+        assert public_line in result.stdout
+        assert "Keep functions small." not in result.stdout
+        assert "Document edge cases." not in result.stdout
 
 
 _WRITE_REPO_CONFIG = (
@@ -367,7 +387,7 @@ class TestCodexSharingScripts:
         assert result.returncode != 0
         assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
 
-    def test_subscribe_warns_when_audit_write_fails(self, temp_project_dir, local_repo):
+    def test_subscribe_rolls_back_when_audit_write_fails(self, temp_project_dir, local_repo):
         evolve_dir = temp_project_dir / ".evolve"
         (evolve_dir / "audit.log").mkdir(parents=True)
 
@@ -376,13 +396,15 @@ class TestCodexSharingScripts:
             project_dir=temp_project_dir,
             args=["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
             evolve_dir=evolve_dir,
+            expect_success=False,
         )
 
-        assert result.returncode == 0
-        assert "Warning: failed to append audit entry for subscribe" in result.stderr
-        assert (evolve_dir / "entities" / "subscribed" / "alice").is_dir()
-        config_text = (temp_project_dir / "evolve.config.yaml").read_text()
-        assert "name: alice" in config_text
+        assert result.returncode != 0
+        assert "failed to record subscription" in result.stderr
+        assert not (evolve_dir / "entities" / "subscribed" / "alice").exists()
+        config_path = temp_project_dir / "evolve.config.yaml"
+        config_text = config_path.read_text() if config_path.exists() else ""
+        assert "name: alice" not in config_text
 
     def test_subscribe_rejects_path_traversal_in_name(self, temp_project_dir, local_repo):
         result = run_script(
@@ -672,7 +694,12 @@ class TestCodexSharingScripts:
             expect_success=False,
         )
         assert result.returncode == 0
-        assert "Always write tests." in result.stdout
+        manifest_line = (
+            '{"path": ".evolve/entities/subscribed/alice/guideline/guideline-one.md", '
+            '"type": "guideline", "trigger": "when adding coverage"}'
+        )
+        assert manifest_line in result.stdout
+        assert "Always write tests." not in result.stdout
         assert "guideline-link" not in result.stdout
 
     def test_sync_removed_entity_disappears_after_sync(self, temp_project_dir, local_repo):

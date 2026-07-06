@@ -112,7 +112,7 @@ Source: `platform-integrations/codex/plugins/evolve-lite/`
 Target: project directory
 
 1. Copy `platform-integrations/codex/plugins/evolve-lite/` → `plugins/evolve-lite/` in the target project
-2. Copy shared lib from `platform-integrations/claude/plugins/evolve-lite/lib/` → `plugins/evolve-lite/lib/`
+2. Copy shared lib from `platform-integrations/codex/plugins/evolve-lite/lib/evolve-lite/` → `plugins/evolve-lite/lib/evolve-lite/`
 3. Upsert plugin entry `evolve-lite` into `.agents/plugins/marketplace.json`
 4. Upsert a `UserPromptSubmit` hook into `.codex/hooks.json` that runs the Evolve recall helper script by walking upward from the current working directory until it finds `plugins/evolve-lite/skills/recall/scripts/retrieve_entities.py` (does not require `git`)
 5. Print post-install guidance that automatic recall requires `~/.codex/config.toml` to include:

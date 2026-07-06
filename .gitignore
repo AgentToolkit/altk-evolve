@@ -10,10 +10,12 @@ __pycache__
 evolve_data
 demo/workdir/.claude/
 .bob
+.bob-sandbox-home/
 .claude
 dist
 .coverage
 .evolve
+.omc
 .omx
 .secrets
 event.json

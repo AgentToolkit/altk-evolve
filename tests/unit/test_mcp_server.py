@@ -11,7 +11,8 @@ from altk_evolve.frontend.mcp.mcp_server import (
     store_user_facts,
     retrieve_user_facts,
 )
-from altk_evolve.schema.core import Namespace
+from altk_evolve.llm.fact_extraction.fact_extraction import ExtractedFact
+from altk_evolve.schema.core import Namespace, RecordedEntity
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 
 pytestmark = pytest.mark.unit
@@ -387,58 +388,114 @@ def test_save_trajectory_consistency_mode_model_defaults_to_none(mock_get_client
 
 
 def test_store_user_facts_returns_structured_payload(mock_get_client):
-    mock_update = EntityUpdate(id="fact-1", type="fact", content="Prefers concise answers", event="ADD", metadata={"category": "style"})
-    mock_get_client.store_user_facts.return_value = [mock_update]
-
-    result = json.loads(
-        store_user_facts(
-            user_id="user-123",
-            message="I prefer concise answers.",
-            metadata=json.dumps({"source": "cuga-lite"}),
-        )
+    extracted = ExtractedFact(
+        category="style",
+        key="response_style",
+        value="concise",
+        content="Prefers concise answers",
     )
+    mock_update = EntityUpdate(
+        id="fact-1",
+        type="fact",
+        content="Prefers concise answers",
+        event="ADD",
+        metadata={"category": "style"},
+    )
+    mock_get_client.update_entities.return_value = [mock_update]
+
+    with patch(
+        "altk_evolve.frontend.mcp.mcp_server.extract_facts_from_messages",
+        return_value=[extracted],
+    ) as mock_extract:
+        result = json.loads(
+            store_user_facts(
+                user_id="user-123",
+                message="I prefer concise answers.",
+                metadata=json.dumps({"source": "cuga-lite"}),
+            )
+        )
 
     assert result["user_id"] == "user-123"
     assert result["stored_count"] == 1
     assert result["updates"][0]["id"] == "fact-1"
     assert result["updates"][0]["metadata"]["category"] == "style"
 
+    # Verify the MCP tool orchestrated directly: extraction + update_entities.
+    assert mock_extract.called
+    mock_get_client.update_entities.assert_called_once()
+    call_kwargs = mock_get_client.update_entities.call_args.kwargs
+    entities = call_kwargs["entities"]
+    assert len(entities) == 1
+    assert entities[0].type == "fact"
+    assert entities[0].metadata["user_id"] == "user-123"
+    assert entities[0].metadata["category"] == "style"
+    assert entities[0].metadata["source"] == "cuga-lite"
+    assert call_kwargs["enable_conflict_resolution"] is False
+
 
 def test_store_user_facts_invalid_metadata_json(mock_get_client):
-    result = json.loads(
-        store_user_facts(
-            user_id="user-123",
-            message="I prefer concise answers.",
-            metadata="{bad json",
+    with patch("altk_evolve.frontend.mcp.mcp_server.extract_facts_from_messages") as mock_extract:
+        result = json.loads(
+            store_user_facts(
+                user_id="user-123",
+                message="I prefer concise answers.",
+                metadata="{bad json",
+            )
         )
-    )
 
     assert result["error"] == "Invalid JSON"
     assert "invalid_metadata" in result
-    mock_get_client.store_user_facts.assert_not_called()
+    mock_extract.assert_not_called()
+    mock_get_client.update_entities.assert_not_called()
 
 
-def test_store_user_facts_empty_message_returns_zero_updates(mock_get_client):
-    mock_get_client.store_user_facts.return_value = []
-
-    result = json.loads(store_user_facts(user_id="user-123", message=""))
+@pytest.mark.parametrize("message", [None, "", "   \t\n"])
+def test_store_user_facts_skips_blank_message(mock_get_client, message):
+    with patch("altk_evolve.frontend.mcp.mcp_server.extract_facts_from_messages") as mock_extract:
+        result = json.loads(store_user_facts(user_id="user-123", message=message))
 
     assert result["user_id"] == "user-123"
     assert result["stored_count"] == 0
     assert result["updates"] == []
+    mock_extract.assert_not_called()
+    mock_get_client.update_entities.assert_not_called()
+
+
+def test_store_user_facts_trims_whitespace(mock_get_client):
+    mock_get_client.update_entities.return_value = [EntityUpdate(id="fact-1", type="fact", content="hello world", event="ADD")]
+
+    with patch(
+        "altk_evolve.frontend.mcp.mcp_server.extract_facts_from_messages",
+        return_value=["hello world"],
+    ) as mock_extract:
+        store_user_facts(user_id="u1", message="  hello world \n")
+
+    # Extraction should have been called with the trimmed message.
+    passed_messages = mock_extract.call_args.args[0]
+    assert passed_messages[0]["content"] == "hello world"
+
+    # The resulting entity should carry the string content (non-ExtractedFact branch).
+    entities = mock_get_client.update_entities.call_args.kwargs["entities"]
+    assert entities[0].content == "hello world"
+    assert entities[0].metadata == {"user_id": "u1"}
 
 
 def test_retrieve_user_facts_returns_structured_payload(mock_get_client):
-    mock_get_client.retrieve_user_facts.return_value = {
-        "style": [
-            {
-                "id": "fact-1",
-                "content": "Prefers concise answers",
+    mock_get_client.namespace_exists.return_value = True
+    mock_get_client.search_entities.return_value = [
+        RecordedEntity(
+            id="fact-1",
+            type="fact",
+            content="Prefers concise answers",
+            created_at=datetime.datetime.now(datetime.UTC),
+            metadata={
+                "category": "style",
                 "key": "response_style",
                 "value": "concise",
-            }
-        ]
-    }
+                "user_id": "user-123",
+            },
+        )
+    ]
 
     result = json.loads(retrieve_user_facts(user_id="user-123", query="How should I answer?", limit=5))
 
@@ -446,3 +503,25 @@ def test_retrieve_user_facts_returns_structured_payload(mock_get_client):
     assert result["query"] == "How should I answer?"
     assert result["matched_count"] == 1
     assert result["categories"]["style"][0]["value"] == "concise"
+    # First search call should filter by the caller's user_id with the query.
+    first_call = mock_get_client.search_entities.call_args_list[0]
+    assert first_call.kwargs["filters"] == {"type": "fact", "metadata.user_id": "user-123"}
+    assert first_call.kwargs["query"] == "How should I answer?"
+
+
+def test_retrieve_user_facts_empty_when_namespace_missing(mock_get_client):
+    mock_get_client.namespace_exists.return_value = False
+
+    result = json.loads(retrieve_user_facts(user_id="user-123", query="anything", limit=5))
+
+    assert result["matched_count"] == 0
+    assert result["categories"] == {}
+    mock_get_client.search_entities.assert_not_called()
+
+
+def test_retrieve_user_facts_empty_when_limit_not_positive(mock_get_client):
+    result = json.loads(retrieve_user_facts(user_id="user-123", query=None, limit=0))
+
+    assert result["matched_count"] == 0
+    assert result["categories"] == {}
+    mock_get_client.search_entities.assert_not_called()

@@ -167,6 +167,37 @@ class TestExtractMessagesFromSpan:
         assert messages[0]["index"] == 0
         assert messages[1]["index"] == 5
 
+    def test_extract_no_duplication_when_input_value_and_indexed_keys_coexist(self, phoenix_sync):
+        """Real OpenInference LLM spans often carry both input.value and indexed
+        llm.input_messages.* keys simultaneously. The input side must use only the
+        indexed path when indexed keys are present — not both — to avoid duplicating
+        the prompt messages in the extracted trajectory."""
+        span = {
+            "attributes": {
+                # Non-indexed input (input.value with messages JSON)
+                "input.value": '{"messages": [{"role": "system", "content": "You are helpful."}, {"role": "user", "content": "What is 10*2?"}]}',
+                # Indexed input (same data, the Phoenix REST API also expands it flat)
+                "llm.input_messages.0.message.role": "system",
+                "llm.input_messages.0.message.content": "You are helpful.",
+                "llm.input_messages.1.message.role": "user",
+                "llm.input_messages.1.message.content": "What is 10*2?",
+                # Indexed output
+                "llm.output_messages.0.message.role": "assistant",
+                "llm.output_messages.0.message.content": "20",
+            }
+        }
+        messages = phoenix_sync._extract_messages_from_span(span)
+
+        prompts = [m for m in messages if m["type"] == "prompt"]
+        completions = [m for m in messages if m["type"] == "completion"]
+
+        assert len(prompts) == 2, f"Expected 2 prompt messages, got {len(prompts)}: {prompts}"
+        assert len(completions) == 1
+        assert prompts[0]["role"] == "system"
+        assert prompts[1]["role"] == "user"
+        assert completions[0]["role"] == "assistant"
+        assert completions[0]["content"] == "20"
+
 
 # =============================================================================
 # _convert_to_openai_format() Tests

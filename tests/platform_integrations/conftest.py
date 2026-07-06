@@ -20,6 +20,144 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "integration: tests that require git and perform subprocess I/O")
 
 
+@pytest.fixture(autouse=True)
+def sandbox_home(tmp_path, monkeypatch):
+    """Redirect HOME to a temp dir for every platform-integrations test.
+
+    install.sh resolves a handful of global paths via Python's ``Path.home()``
+    (notably the Codex always-on instructions file ``~/.codex/AGENTS.md`` and the
+    global Bob target ``~/.bob``). Without sandboxing, simply running a codex
+    install in a test would inject the evolve block into the developer's REAL
+    ``~/.codex/AGENTS.md``. ``InstallRunner.run`` builds the subprocess env from
+    ``os.environ`` at call time, so monkeypatching HOME here flows through to the
+    install.sh child process.
+
+    Returns the sandboxed home directory.
+    """
+    home = tmp_path / "sandbox_home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    # Windows/`Path.home()` also consults these; keep them aligned defensively.
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("HOMEDRIVE", raising=False)
+    monkeypatch.delenv("HOMEPATH", raising=False)
+    return home
+
+
+@pytest.fixture
+def codex_agents_file(sandbox_home):
+    """Path to the sandboxed Codex always-on instructions file (~/.codex/AGENTS.md)."""
+    return sandbox_home / ".codex" / "AGENTS.md"
+
+
+@pytest.fixture
+def codex_evolve_md(sandbox_home):
+    """Path to the sandboxed on-disk COPY of EVOLVE.md (~/.codex/evolve-lite/EVOLVE.md).
+
+    Codex no longer inlines EVOLVE.md into AGENTS.md; it drops a copy here and
+    points AGENTS.md at it via a single greppable managed line."""
+    return sandbox_home / ".codex" / "evolve-lite" / "EVOLVE.md"
+
+
+@pytest.fixture
+def bob_rules_file(sandbox_home):
+    """Path to the sandboxed Bob GLOBAL custom-instructions rules file.
+
+    Bob loads every ``~/.bob/rules/*.md`` into every session, globally and
+    mode-independent, as the user's custom instructions. The lite installer
+    owns ``00-evolve-lite.md`` entirely (always global, never a project file)."""
+    return sandbox_home / ".bob" / "rules" / "00-evolve-lite.md"
+
+
+@pytest.fixture
+def bob_audit_script(sandbox_home):
+    """Path to the sandboxed Bob GLOBAL recall-audit script.
+
+    EVOLVE.md tells the model to run ``python3 ~/.bob/evolve-lite/audit_recall.py``
+    after recall, so the lite installer drops the script once at that global
+    absolute path (matching the always-global rules file)."""
+    return sandbox_home / ".bob" / "evolve-lite" / "audit_recall.py"
+
+
+@pytest.fixture
+def bob_settings_file(sandbox_home):
+    """Path to the sandboxed Bob GLOBAL settings.json (the user's own config).
+
+    The lite installer merges a single scoped allow-rule for the recall-audit
+    command into its ``tools.allowed``; always global, like the rules file."""
+    return sandbox_home / ".bob" / "settings.json"
+
+
+@pytest.fixture
+def codex_audit_script(sandbox_home):
+    """Path to the sandboxed Codex GLOBAL recall-audit script.
+
+    The injected ~/.codex/AGENTS.md block tells the model to run
+    ``python3 ~/.codex/evolve-lite/audit_recall.py`` after recall, so the
+    installer drops the script once at that global absolute path."""
+    return sandbox_home / ".codex" / "evolve-lite" / "audit_recall.py"
+
+
+@pytest.fixture
+def claude_md_file(temp_project_dir):
+    """Path to the PER-REPO CLAUDE.md the Claude installer injects into.
+
+    Claude installs the plugin via marketplace (copies nothing to disk) and does
+    NOT auto-load an ambient EVOLVE.md, so the installer injects a single native
+    ``@.evolve/EVOLVE.md`` import pointer line into the repo's CLAUDE.md."""
+    return temp_project_dir / "CLAUDE.md"
+
+
+@pytest.fixture
+def claude_evolve_md(temp_project_dir):
+    """Path to the PER-REPO COPY of the thin EVOLVE.md (<repo>/.evolve/EVOLVE.md).
+
+    The CLAUDE.md ``@``-import points here (path resolves relative to CLAUDE.md,
+    i.e. the repo root)."""
+    return temp_project_dir / ".evolve" / "EVOLVE.md"
+
+
+@pytest.fixture
+def claude_audit_script(sandbox_home):
+    """Path to the sandboxed Claude GLOBAL recall-audit script.
+
+    The thin EVOLVE.md instructs running
+    ``~/.claude/evolve-lite/audit_recall.py`` after recall, so the installer
+    drops the script once at that global absolute path."""
+    return sandbox_home / ".claude" / "evolve-lite" / "audit_recall.py"
+
+
+@pytest.fixture
+def claude_adapt_script(sandbox_home):
+    """Path to the sandboxed Claude GLOBAL adapt-memory adapter script.
+
+    The adapt-memory skill invokes ``python3 ~/.claude/evolve-lite/adapt_memory.py``
+    (a stable, version-proof path that can be permission-allowlisted), so the
+    installer ships the script to that global absolute path alongside the audit
+    script."""
+    return sandbox_home / ".claude" / "evolve-lite" / "adapt_memory.py"
+
+
+@pytest.fixture
+def claude_adapt_lib(sandbox_home):
+    """Path to the sandboxed shared lib shipped beside the global adapt script.
+
+    adapt_memory.py imports ``entity_io`` from the shared lib, resolving it by
+    walking up its own ancestors for ``lib/evolve-lite/entity_io.py``; the
+    installer ships the lib here so that walk succeeds from the global path."""
+    return sandbox_home / ".claude" / "evolve-lite" / "lib" / "evolve-lite" / "entity_io.py"
+
+
+@pytest.fixture
+def claude_settings_file(temp_project_dir):
+    """Path to the PER-REPO project settings the Claude installer allowlists in.
+
+    Claude plugins cannot self-declare permissions, so the installer pre-authorizes
+    the evolve scripts and ``.evolve/`` writes by merging allow-rules into the
+    repo's ``<repo>/.claude/settings.json`` (idempotent; removed on uninstall)."""
+    return temp_project_dir / ".claude" / "settings.json"
+
+
 @pytest.fixture
 def temp_project_dir(tmp_path):
     """
@@ -226,6 +364,31 @@ class FileAssertions:
 
         assert start_sentinel in content, f"Start sentinel '{start_sentinel}' not found in {path}"
         assert end_sentinel in content, f"End sentinel '{end_sentinel}' not found in {path}"
+
+    @staticmethod
+    def assert_sentinel_block_count(path: Path, slug: str, expected: int):
+        """Assert the file contains exactly `expected` REAL sentinel blocks for `slug`.
+
+        A "real" block is a start marker anchored at the beginning of a line followed
+        by a matching end marker also anchored at the beginning of a line — the same
+        shape install.sh's inject_sentinel_block treats as a block. This deliberately
+        ignores a sentinel literal quoted mid-line inside unrelated user prose, so the
+        helper measures actual injected blocks (an idempotent installer leaves one).
+        """
+        import re
+
+        assert path.is_file(), f"File does not exist: {path}"
+        content = path.read_text()
+        start = f"# >>>evolve:{slug}<<<"
+        end = f"# <<<evolve:{slug}<<<"
+        block_re = re.compile(
+            r"^[ \t]*" + re.escape(start) + r".*?^[ \t]*" + re.escape(end) + r"[^\n]*$",
+            re.DOTALL | re.MULTILINE,
+        )
+        count = len(block_re.findall(content))
+        assert count == expected, (
+            f"Expected {expected} real sentinel block(s) for '{slug}' in {path}, found {count}.\nFile content:\n{content}"
+        )
 
     @staticmethod
     def assert_sentinel_block_not_exists(path: Path, slug: str):
@@ -644,7 +807,7 @@ def local_repo(tmp_path, git_env):
     # Seed one entity
     guideline = init / "guideline"
     guideline.mkdir()
-    (guideline / "guideline-one.md").write_text("---\ntype: guideline\n---\n\nAlways write tests.\n")
+    (guideline / "guideline-one.md").write_text("---\ntype: guideline\ntrigger: when adding coverage\n---\n\nAlways write tests.\n")
     subprocess.run(["git", "-C", str(init), "add", "."], check=True, capture_output=True, env=git_env)
     subprocess.run(
         ["git", "-C", str(init), "commit", "-m", "init"],

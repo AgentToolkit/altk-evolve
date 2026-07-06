@@ -13,7 +13,7 @@ _IS_WINDOWS = sys.platform == "win32"
 
 
 def _load_claude_config_module():
-    path = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/config.py"
+    path = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/evolve-lite/config.py"
     spec = importlib.util.spec_from_file_location("claude_evolve_lite_config_subscribe", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -217,8 +217,8 @@ class TestSubscribe:
         assert not dest.exists(), "Clone should be rolled back when config write fails"
 
     @pytest.mark.skipif(_IS_WINDOWS, reason="chmod not supported on Windows")
-    def test_rolls_back_clone_if_audit_write_fails(self, temp_project_dir, local_repo):
-        """If audit_append raises after a successful clone + config write, the clone is removed."""
+    def test_warns_when_audit_write_fails(self, temp_project_dir, local_repo):
+        """If audit_append raises after a successful clone, subscribe still succeeds with a warning."""
         evolve_dir = temp_project_dir / ".evolve"
         evolve_dir.mkdir(parents=True)
         # Pre-create a read-only audit.log so audit_append raises PermissionError
@@ -235,10 +235,10 @@ class TestSubscribe:
             )
         finally:
             audit_log.chmod(0o644)
-        assert result.returncode != 0
-        assert "failed to record subscription" in result.stderr
+        assert result.returncode == 0
+        assert "Warning: audit log could not be updated" in result.stderr
         dest = evolve_dir / "entities" / "subscribed" / "alice"
-        assert not dest.exists(), "Clone should be rolled back when audit write fails"
+        assert dest.exists(), "Clone should be kept even when audit write fails"
 
 
 class TestUnsubscribe:

@@ -47,25 +47,41 @@ class TestBobPreservation:
         bob_dir = temp_project_dir / ".bob"
         file_assertions.assert_all_bob_commands_installed(bob_dir)
 
-    def test_preserves_existing_custom_modes_yaml(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
-        """Install evolve when user has existing custom modes - they must be preserved."""
-        # Setup: Create user's custom mode
-        custom_modes_file = bob_fixtures.create_existing_custom_modes(temp_project_dir)
+    def test_preserves_existing_custom_modes_and_user_rules(
+        self, temp_project_dir, install_runner, bob_fixtures, file_assertions, bob_rules_file
+    ):
+        """Lite install must leave the user's custom_modes.yaml and unrelated rules untouched.
 
-        # Action: Install evolve
+        Lite no longer merges a mode into custom_modes.yaml, nor injects an
+        AGENTS.md import. The evolve always-on instructions live in Bob's GLOBAL
+        rules dir at ~/.bob/rules/00-evolve-lite.md. A pre-existing, unrelated
+        rules file (e.g. ~/.bob/rules/99-user.md) must be left intact, and no
+        AGENTS.md must be created.
+        """
+        # Setup: user's custom mode, plus a pre-existing unrelated global rules file.
+        custom_modes_file = bob_fixtures.create_existing_custom_modes(temp_project_dir)
+        original_modes_content = custom_modes_file.read_text()
+
+        user_rule = bob_rules_file.parent / "99-user.md"
+        user_rule.parent.mkdir(parents=True, exist_ok=True)
+        original_rule_content = "# My personal rules\n\nAlways prefer tabs.\n"
+        user_rule.write_text(original_rule_content)
+
+        # Action: Install evolve (lite is the default mode)
         install_runner.run("install", platform="bob")
 
-        # Assert: User's custom mode is still present
-        current_content = custom_modes_file.read_text()
-        assert "slug: my-mode" in current_content, "User's custom mode was removed!"
-        assert "My Custom Mode" in current_content
+        # Assert: User's custom_modes.yaml is byte-for-byte unchanged.
+        file_assertions.assert_file_unchanged(custom_modes_file, original_modes_content)
 
-        # Assert: Evolve mode is added with sentinels
-        file_assertions.assert_sentinel_block_exists(custom_modes_file, "evolve-lite")
-        assert "slug: evolve-lite" in current_content
+        # Assert: User's unrelated rules file is byte-for-byte unchanged.
+        file_assertions.assert_file_unchanged(user_rule, original_rule_content)
 
-        # Assert: No duplicate user modes
-        assert current_content.count("slug: my-mode") == 1
+        # Assert: The evolve instructions live in the global rules file, holding
+        # the full EVOLVE.md text; no AGENTS.md was created.
+        file_assertions.assert_file_exists(bob_rules_file)
+        assert "self-directed memory" in bob_rules_file.read_text()
+        file_assertions.assert_file_not_exists(temp_project_dir / "AGENTS.md")
+        file_assertions.assert_file_not_exists((temp_project_dir / ".bob") / "AGENTS.md")
 
     def test_preserves_existing_mcp_servers(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve full mode when user has existing MCP servers - they must be preserved."""
@@ -111,7 +127,7 @@ class TestBobPreservation:
         assert evolve_server["env"] == {"EVOLVE_PROFILE": "local"}
         assert evolve_server["metadata"] == {"managedBy": "user"}
 
-    def test_preserves_all_bob_content_together_lite(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
+    def test_preserves_all_bob_content_together_lite(self, temp_project_dir, install_runner, bob_fixtures, file_assertions, bob_rules_file):
         """Install evolve lite mode when user has all types of Bob content - all must be preserved."""
         # Setup: Create all types of user content
         custom_skill = bob_fixtures.create_existing_skill(temp_project_dir)
@@ -129,12 +145,19 @@ class TestBobPreservation:
         file_assertions.assert_file_unchanged(custom_skill / "SKILL.md", skill_content)
         file_assertions.assert_file_unchanged(custom_command, command_content)
 
+        # User's custom_modes.yaml is untouched by lite (it no longer merges modes).
         assert "slug: my-mode" in custom_modes.read_text()
 
-        # Assert: Evolve lite content is added
+        # Assert: Evolve lite content is added. Skills/commands/lib are copied, and the
+        # always-on instructions are wired via the GLOBAL rules file (not custom_modes.yaml).
         bob_dir = temp_project_dir / ".bob"
         file_assertions.assert_all_bob_skills_installed(bob_dir)
-        file_assertions.assert_sentinel_block_exists(custom_modes, "evolve-lite")
+        file_assertions.assert_all_bob_commands_installed(bob_dir)
+        file_assertions.assert_dir_exists(bob_dir / "lib" / "evolve-lite")
+        file_assertions.assert_file_exists(bob_rules_file)
+        # No AGENTS.md or per-project EVOLVE.md copy is created.
+        file_assertions.assert_file_not_exists(temp_project_dir / "AGENTS.md")
+        file_assertions.assert_file_not_exists(bob_dir / "EVOLVE.md")
 
     def test_preserves_all_bob_content_together_full(self, temp_project_dir, install_runner, bob_fixtures, file_assertions):
         """Install evolve full mode when user has all types of Bob content - all must be preserved."""
@@ -188,28 +211,44 @@ class TestCodexPreservation:
         evolve_plugins = [entry for entry in current_data["plugins"] if entry["name"] == "evolve-lite"]
         assert len(evolve_plugins) == 1, "Evolve plugin entry missing from marketplace.json"
 
-    def test_preserves_existing_hooks_and_plugin_files(self, temp_project_dir, install_runner, codex_fixtures, file_assertions):
-        """Install evolve when user already has hooks and plugins - they must be preserved."""
+    def test_preserves_existing_hooks_and_plugin_files(
+        self, temp_project_dir, install_runner, codex_fixtures, file_assertions, codex_agents_file
+    ):
+        """Install evolve when user already has hooks and plugins - they must be preserved.
+
+        Codex no longer registers any hooks; it drops a COPY of EVOLVE.md on disk
+        and injects a SINGLE managed pointer line into the (sandboxed)
+        ~/.codex/AGENTS.md. So the user's hooks.json must be left COMPLETELY
+        UNCHANGED (no Evolve sync/recall hook added), and the pointer line must
+        appear in AGENTS.md instead.
+        """
         custom_plugin = codex_fixtures.create_existing_plugin(temp_project_dir)
         plugin_json = custom_plugin / ".codex-plugin" / "plugin.json"
         original_plugin_content = plugin_json.read_text()
         hooks_file = codex_fixtures.create_existing_hooks(temp_project_dir)
+        original_hooks_content = hooks_file.read_text()
 
         install_runner.run("install", platform="codex")
 
+        # The user's plugin.json is untouched.
         file_assertions.assert_file_unchanged(plugin_json, original_plugin_content)
 
+        # The user's hooks.json is byte-for-byte unchanged: no Evolve hook is added.
+        file_assertions.assert_file_unchanged(hooks_file, original_hooks_content)
+
         current_hooks = json.loads(hooks_file.read_text())
+        # SessionStart count stays at the user's original (1) — no sync hook added.
         session_start_hooks = current_hooks["hooks"]["SessionStart"]
-        assert len(session_start_hooks) == 2, "Expected the user's SessionStart hook plus the Evolve sync hook."
+        assert len(session_start_hooks) == 1, "Codex install must not add a SessionStart hook anymore."
         assert any(
             any(hook.get("command") == "python3 ~/.codex/hooks/session_start.py" for hook in group.get("hooks", []))
             for group in session_start_hooks
         ), "User's SessionStart hook was removed!"
-        assert any(
-            any("plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py" in hook.get("command", "") for hook in group.get("hooks", []))
+        assert all(
+            "plugins/evolve-lite/skills/evolve-lite/sync/scripts/sync.py" not in hook.get("command", "")
             for group in session_start_hooks
-        ), "Evolve SessionStart hook was not added!"
+            for hook in group.get("hooks", [])
+        ), "Codex install must no longer add an Evolve SessionStart hook."
 
         prompt_hooks = current_hooks["hooks"]["UserPromptSubmit"]
         custom_prompt_hooks = [
@@ -219,17 +258,17 @@ class TestCodexPreservation:
             if hook.get("command") == "python3 ~/.codex/hooks/custom_prompt_memory.py"
         ]
         assert len(custom_prompt_hooks) == 1, "User's UserPromptSubmit hook was removed!"
-
-        evolve_hooks = [
-            group
+        assert all(
+            "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" not in hook.get("command", "")
             for group in prompt_hooks
-            if any(
-                "plugins/evolve-lite/skills/evolve-lite/recall/scripts/retrieve_entities.py" in hook.get("command", "")
-                for hook in group.get("hooks", [])
-            )
-        ]
-        assert len(evolve_hooks) == 1, "Evolve UserPromptSubmit hook was not added!"
-        assert evolve_hooks[0].get("matcher") == ""
+            for hook in group.get("hooks", [])
+        ), "Codex install must no longer add an Evolve UserPromptSubmit hook."
+
+        # The evolve always-on instructions now live behind a single managed
+        # pointer line in ~/.codex/AGENTS.md (sandboxed).
+        MANAGED_MARKER = "<!-- evolve-lite:managed -->"
+        marker_lines = [ln for ln in codex_agents_file.read_text().splitlines() if MANAGED_MARKER in ln]
+        assert len(marker_lines) == 1, f"Expected exactly one managed line, got {marker_lines!r}"
 
 
 @pytest.mark.platform_integrations
@@ -275,6 +314,7 @@ class TestMultiPlatformPreservation:
             for hook in group.get("hooks", [])
         )
 
-        # Assert: Evolve content is added everywhere
-        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-lite-learn")
+        # Assert: Evolve content is added everywhere (recall/learn are excluded
+        # from bob now, so check a skill bob still ships).
+        file_assertions.assert_dir_exists(temp_project_dir / ".bob" / "skills" / "evolve-lite-save")
         file_assertions.assert_dir_exists(temp_project_dir / "plugins" / "evolve-lite")

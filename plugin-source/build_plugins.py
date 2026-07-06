@@ -293,9 +293,19 @@ PLATFORMS: dict[str, dict[str, Any]] = {
             "forked_context": True,
             "user_skills_dir": "~/.claude/skills",
             "save_example_script_root": "${CLAUDE_PLUGIN_ROOT}/skills",
+            "audit_script": "~/.claude/evolve-lite/audit_recall.py",
+            "adapt_memory_script": "~/.claude/evolve-lite/adapt_memory.py",
         },
         "target_rewrites": [],
-        "target_excludes": [],
+        # On Claude, native auto-memory already owns recall + save, so the
+        # recall/learn skills are redundant. Worse, their "Must be used"
+        # descriptions made the agent auto-invoke recall every session (it
+        # fires, finds nothing, pure noise). Build them OUT of the Claude
+        # plugin only; codex/bob still ship recall + learn.
+        "target_excludes": [
+            r"^skills/evolve-lite/recall/",
+            r"^skills/evolve-lite/learn/",
+        ],
         "metadata_target": ".claude-plugin/plugin.json",
         "metadata_emit": _claude_plugin_json,
     },
@@ -304,6 +314,8 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "context": {
             "user_skills_dir": "~/.claw/skills",
             "save_example_script_root": "~/.claw/skills",
+            "audit_script": "~/.claw/evolve-lite/audit_recall.py",
+            "adapt_memory_script": "~/.claw/evolve-lite/adapt_memory.py",
         },
         "target_rewrites": [],
         "target_excludes": [],
@@ -316,9 +328,22 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "context": {
             "user_skills_dir": "plugins/evolve-lite/skills",
             "save_example_script_root": "plugins/evolve-lite/skills",
+            "audit_script": "~/.codex/evolve-lite/audit_recall.py",
+            "adapt_memory_script": "~/.codex/evolve-lite/adapt_memory.py",
         },
         "target_rewrites": [],
-        "target_excludes": [],
+        # The `doctor` skill diagnoses Claude's @import canary in
+        # ~/.claude transcripts; that mechanism doesn't exist on codex
+        # (codex uses an ~/.codex/AGENTS.md pointer), so exclude it.
+        #
+        # EVOLVE.md's injected first-action recall + direct entity-save
+        # instructions already drive the identical workflow on codex, so the
+        # recall/learn skills are redundant double-delivery — exclude them too.
+        "target_excludes": [
+            r"^skills/evolve-lite/doctor/",
+            r"^skills/evolve-lite/recall/",
+            r"^skills/evolve-lite/learn/",
+        ],
         "metadata_target": ".codex-plugin/plugin.json",
         "metadata_emit": _codex_plugin_json,
     },
@@ -327,12 +352,28 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "context": {
             "user_skills_dir": ".bob/skills",
             "save_example_script_root": ".bob/skills",
+            "audit_script": "~/.bob/evolve-lite/audit_recall.py",
+            "adapt_memory_script": "~/.bob/evolve-lite/adapt_memory.py",
         },
         # Bob has no plugin-namespace concept; skill folders are flat
         # under .bob/skills/. Collapse the source skills/evolve-lite/<name>/
         # layout to skills/evolve-lite-<name>/ for bob's render output.
         "target_rewrites": [(r"^skills/evolve-lite/([^/]+)/", r"skills/evolve-lite-\1/")],
-        "target_excludes": [],
+        # Exclude the Claude-only `doctor` skill (matches the source-side
+        # path, before the rewrite above flattens it to
+        # skills/evolve-lite-doctor/). Its @import-canary diagnostic is
+        # meaningless on bob, which has no ~/.claude transcript layout.
+        #
+        # EVOLVE.md's injected first-action recall + direct entity-save
+        # instructions already drive the identical workflow on bob, so the
+        # recall/learn skills are redundant double-delivery — exclude them too.
+        # _bob_command_targets() follows the excludes, so the recall/learn
+        # slash-command files drop out automatically.
+        "target_excludes": [
+            r"^skills/evolve-lite/doctor/",
+            r"^skills/evolve-lite/recall/",
+            r"^skills/evolve-lite/learn/",
+        ],
         # Bob has no plugin system, so no plugin.json is emitted. Bob's
         # commands/ directory is generated 1:1 from the skills walk by
         # _bob_command_targets(); no static command files exist in
@@ -341,6 +382,16 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "metadata_emit": None,
     },
 }
+
+
+# Rewrites applied to every platform's target paths, ahead of any
+# platform-specific target_rewrites. The shared lib ships flat in
+# plugin-source/lib/ but renders into lib/evolve-lite/ on every host, so
+# multiple plugins can share a host's lib/ directory without their
+# modules colliding (e.g. .bob/lib/evolve-lite/).
+SHARED_TARGET_REWRITES: list[tuple[str, str]] = [
+    (r"^lib/", r"lib/evolve-lite/"),
+]
 
 
 # Bob's slash-command surface: one .md file per skill, generated from the
@@ -382,10 +433,19 @@ def _bob_command_bytes(skill_dir: Path) -> bytes:
 
 def _bob_command_targets() -> list[tuple[Path, Path, bytes]]:
     """Triples of (skill_source_for_drift_label, target_rel_to_repo_root, content)
-    for every bob command — one per skill — derived from the skills walk."""
+    for every bob command — one per skill — derived from the skills walk.
+
+    Skills excluded by bob's `target_excludes` get no command file: a skill
+    that isn't rendered into bob's skills/ must not leave a dangling slash
+    command pointing at it (e.g. the Claude-only `doctor` skill)."""
     bob_root_rel = Path(PLATFORMS["bob"]["plugin_root"])
+    bob_excludes = [re.compile(pat) for pat in PLATFORMS["bob"].get("target_excludes", [])]
     out: list[tuple[Path, Path, bytes]] = []
     for skill_dir in _discover_skills():
+        # Match against the source-side path, mirroring PlatformConfig.excludes.
+        source_rel = f"skills/evolve-lite/{skill_dir.name}/"
+        if any(p.search(source_rel) for p in bob_excludes):
+            continue
         target_rel = bob_root_rel / "commands" / f"evolve-lite-{skill_dir.name}.md"
         out.append((skill_dir / "SKILL.md.j2", target_rel, _bob_command_bytes(skill_dir)))
     return out
@@ -439,7 +499,10 @@ class Manifest:
 def _platforms() -> dict[str, PlatformConfig]:
     out: dict[str, PlatformConfig] = {}
     for name, cfg in PLATFORMS.items():
-        rewrites = tuple(TargetRewrite(pattern=re.compile(pat), replacement=repl) for pat, repl in cfg.get("target_rewrites", []))
+        rewrites = tuple(
+            TargetRewrite(pattern=re.compile(pat), replacement=repl)
+            for pat, repl in (*SHARED_TARGET_REWRITES, *cfg.get("target_rewrites", []))
+        )
         excludes = tuple(re.compile(pat) for pat in cfg.get("target_excludes", []))
         metadata_target = cfg.get("metadata_target")
         out[name] = PlatformConfig(

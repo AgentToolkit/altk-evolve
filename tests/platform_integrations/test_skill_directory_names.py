@@ -18,9 +18,10 @@ class TestSkillDirectoryNames:
 
         # These are the skills that install.sh tries to copy
         expected_skills = [
-            "evolve-lite-learn",
-            "evolve-lite-recall",
             "evolve-lite-publish",
+            "evolve-lite-provenance",
+            "evolve-lite-save",
+            "evolve-lite-save-trajectory",
             "evolve-lite-subscribe",
             "evolve-lite-unsubscribe",
             "evolve-lite-sync",
@@ -99,9 +100,10 @@ class TestSkillDirectoryNames:
         # Verify all expected skills were installed
         bob_dir = temp_project_dir / ".bob"
         expected_skills = [
-            "evolve-lite-learn",
-            "evolve-lite-recall",
             "evolve-lite-publish",
+            "evolve-lite-provenance",
+            "evolve-lite-save",
+            "evolve-lite-save-trajectory",
             "evolve-lite-subscribe",
             "evolve-lite-unsubscribe",
             "evolve-lite-sync",

@@ -5,7 +5,7 @@ This module provides functionality to:
 1. Fetch agent trajectories from Phoenix's REST API
 2. Deduplicate already-processed trajectories
 3. Generate guidelines from new trajectories
-4. Store both trajectories and guidelines in the Evolve backend
+4. Store trajectories and guidelines in the Evolve backend
 """
 
 import json
@@ -132,8 +132,9 @@ class PhoenixSync:
         distinguish an LLM call — only genuine LLM spans carry prompt/message attributes or
         a model name.
         """
-        if span.get("span_kind") == "LLM":
-            return True
+        span_kind = span.get("span_kind")
+        if span_kind:
+            return bool(span_kind == "LLM")
         attrs = span.get("attributes") or {}
         if any(k.startswith("gen_ai.prompt.") for k in attrs):
             return True

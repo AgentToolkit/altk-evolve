@@ -108,3 +108,27 @@ ENV PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["codex-container-entrypoint"]
 CMD ["bash"]
+
+
+# Bob (IBM bobshell) target
+FROM base AS bob
+
+COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+# Install bobshell globally as root (the IBM installer runs `npm install -g`)
+RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash \
+    && command -v bob \
+    && bob --version
+
+WORKDIR /workspace
+
+USER sandbox
+
+ENV HOME="/home/sandbox"
+ENV PYTHONUNBUFFERED=1
+
+CMD ["bash"]
