@@ -1,0 +1,57 @@
+# Example CPEX plugin configuration for the altk_evolve memory hook seam.
+#
+# Point EvolveConfig at this file to enable plugins without touching code:
+#
+#     from altk_evolve.config.evolve import EvolveConfig
+#     from altk_evolve.config.hooks import HooksConfig
+#
+#     config = EvolveConfig(hooks=HooksConfig(enabled=True, plugins_yaml="examples/hooks_plugins.yaml"))
+#
+# The "edit YAML to change behavior" property: comment a plugin out (or set
+# `mode: disabled`) and restart — no code change needed. Jinja templating is
+# supported for values, e.g. `redaction_text: "{{ env.REDACTION_TEXT }}"`.
+#
+# Requires: pip install 'altk-evolve[hooks]'   (plus [pii] for the PII filter)
+
+plugins:
+  # Stamps canonical metadata on every write: copies task_id -> trace_id when
+  # only the former is present (MCP-saved trajectories), and adds created_at.
+  - name: metadata_normalizer
+    kind: altk_evolve.hooks.plugins.normalizer.MetadataNormalizerPlugin
+    description: Canonical metadata stamping on memory writes
+    hooks:
+      - memory_pre_write
+    mode: transform        # serial, chained, modifying, non-halting
+    priority: 40           # lower runs earlier
+    on_error: ignore
+    config:
+      stamp_trace_id: true
+      stamp_created_at: true
+
+  # Stamps last_accessed (ISO-8601 UTC) on entities returned by public reads.
+  - name: access_stamp
+    kind: altk_evolve.hooks.plugins.access_stamp.AccessStampPlugin
+    description: Access auditing on memory reads
+    hooks:
+      - memory_post_read
+    mode: fire_and_forget  # side-effect only; cannot modify or block the read
+    priority: 50
+    on_error: ignore
+
+  # Regex PII redaction on memory writes and LLM egress.
+  # Requires: pip install 'altk-evolve[pii]'
+  - name: pii_filter_memory
+    kind: altk_evolve.hooks.plugins.pii.PIIFilterMemoryPlugin
+    description: Regex PII masking on memory writes and LLM egress
+    hooks:
+      - memory_pre_write
+      - llm_pre_call
+    mode: transform
+    priority: 10           # redact before the normalizer sees content
+    on_error: ignore
+    config:
+      detect_email: true
+      detect_ssn: true
+      detect_phone: true
+      default_mask_strategy: redact
+      redaction_text: "[REDACTED]"
