@@ -17,37 +17,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "agent-consistency"
-version = "0.1.0"
-source = { editable = "../agent-consistency" }
-dependencies = [
-    { name = "anthropic" },
-    { name = "einops" },
-    { name = "httpx" },
-    { name = "ibm-watsonx-ai" },
-    { name = "openai" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "scikit-learn" },
-    { name = "sentence-transformers" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic" },
-    { name = "einops" },
-    { name = "httpx" },
-    { name = "ibm-watsonx-ai" },
-    { name = "openai" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "scikit-learn" },
-    { name = "sentence-transformers" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "aiofile"
 version = "3.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -218,8 +187,9 @@ build = [
     { name = "uv" },
 ]
 consistency = [
-    { name = "agent-consistency" },
+    { name = "pandas" },
     { name = "pyyaml" },
+    { name = "scipy" },
 ]
 examples = [
     { name = "openai" },
@@ -277,7 +247,6 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-consistency", marker = "extra == 'consistency'", editable = "../agent-consistency" },
     { name = "altk-evolve", extras = ["tracing"], marker = "extra == 'examples'" },
     { name = "arize-phoenix", specifier = ">=12.30.0" },
     { name = "fastmcp" },
@@ -290,12 +259,14 @@ requires-dist = [
     { name = "openinference-instrumentation-openai", marker = "extra == 'tracing'" },
     { name = "openinference-instrumentation-openai-agents", marker = "extra == 'tracing'" },
     { name = "openinference-instrumentation-smolagents", marker = "extra == 'tracing'" },
+    { name = "pandas", marker = "extra == 'consistency'" },
     { name = "pgvector", marker = "extra == 'pgvector'", specifier = ">=0.3" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
     { name = "pydantic" },
     { name = "pymilvus", marker = "platform_machine == 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
     { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
     { name = "pyyaml", marker = "extra == 'consistency'" },
+    { name = "scipy", marker = "extra == 'consistency'" },
     { name = "sentence-transformers" },
     { name = "smolagents", marker = "extra == 'examples'" },
     { name = "typer", specifier = ">=0.9.0" },
@@ -348,25 +319,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ee/67/531ea369ba64dcff5ec9c3402f9f51bf748cec26dde048a2f973a4eea7f5/annotated_types-0.7.0.tar.gz", hash = "sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89", size = 16081, upload-time = "2024-05-20T21:33:25.928Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl", hash = "sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53", size = 13643, upload-time = "2024-05-20T21:33:24.1Z" },
-]
-
-[[package]]
-name = "anthropic"
-version = "0.99.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "distro" },
-    { name = "docstring-parser" },
-    { name = "httpx" },
-    { name = "jiter" },
-    { name = "pydantic" },
-    { name = "sniffio" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/0d/c9/e8a3a1caeab575e80551b30b084096b5a430abc52739a526a1daaadd038c/anthropic-0.99.0.tar.gz", hash = "sha256:16f41e00f215ed2d193b146be3dd567c4319c32ed3af6c8725d68ba875257c1c", size = 727239, upload-time = "2026-05-05T16:03:07.986Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/84/d0917506744e1707cf55659a57f1e3ff952eda5636df0ffffe3e884b7c61/anthropic-0.99.0-py3-none-any.whl", hash = "sha256:c44469b746ab2ef19a4c52dcbdb98e17bc95c60bebdd18ec40d76d2d23592b49", size = 700564, upload-time = "2026-05-05T16:03:06.059Z" },
 ]
 
 [[package]]
@@ -1174,15 +1126,6 @@ wheels = [
 ]
 
 [[package]]
-name = "einops"
-version = "0.8.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/2c/77/850bef8d72ffb9219f0b1aac23fbc1bf7d038ee6ea666f331fa273031aa2/einops-0.8.2.tar.gz", hash = "sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827", size = 56261, upload-time = "2026-01-26T04:13:17.638Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl", hash = "sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193", size = 65638, upload-time = "2026-01-26T04:13:18.546Z" },
-]
-
-[[package]]
 name = "email-validator"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1741,59 +1684,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ibm-cos-sdk"
-version = "2.14.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "ibm-cos-sdk-core" },
-    { name = "ibm-cos-sdk-s3transfer" },
-    { name = "jmespath" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/98/b8/b99f17ece72d4bccd7e75539b9a294d0f73ace5c6c475d8f2631afd6f65b/ibm_cos_sdk-2.14.3.tar.gz", hash = "sha256:643b6f2aa1683adad7f432df23407d11ae5adb9d9ad01214115bee77dc64364a", size = 58831, upload-time = "2025-08-01T06:35:51.722Z" }
-
-[[package]]
-name = "ibm-cos-sdk-core"
-version = "2.14.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "jmespath" },
-    { name = "python-dateutil" },
-    { name = "requests" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7e/45/80c23aa1e13175a9deefe43cbf8e853a3d3bfc8dfa8b6d6fe83e5785fe21/ibm_cos_sdk_core-2.14.3.tar.gz", hash = "sha256:85dee7790c92e8db69bf39dae4c02cac211e3c1d81bb86e64fa2d1e929674623", size = 1103637, upload-time = "2025-08-01T06:35:41.645Z" }
-
-[[package]]
-name = "ibm-cos-sdk-s3transfer"
-version = "2.14.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "ibm-cos-sdk-core" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f3/ff/c9baf0997266d398ae08347951a2970e5e96ed6232ed0252f649f2b9a7eb/ibm_cos_sdk_s3transfer-2.14.3.tar.gz", hash = "sha256:2251ebfc4a46144401e431f4a5d9f04c262a0d6f95c88a8e71071da056e55f72", size = 139594, upload-time = "2025-08-01T06:35:46.403Z" }
-
-[[package]]
-name = "ibm-watsonx-ai"
-version = "1.5.10"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cachetools" },
-    { name = "certifi" },
-    { name = "httpx" },
-    { name = "ibm-cos-sdk" },
-    { name = "lomond" },
-    { name = "packaging" },
-    { name = "pandas" },
-    { name = "requests" },
-    { name = "tabulate" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e7/9c/241f54c65d1d21e2f91523f0b59b123c8e5cbe9b790945ca5149b577cf32/ibm_watsonx_ai-1.5.10.tar.gz", hash = "sha256:91eb5808044a9a443574a789a8482bbcc52b44a5c6cdf8e0999b5d05c9c9d36d", size = 728591, upload-time = "2026-04-21T11:13:07.756Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/f2/e28de56f0c9f56ad01f09765d8e6e74762a498d981d942fa4573c88c8b1a/ibm_watsonx_ai-1.5.10-py3-none-any.whl", hash = "sha256:cb0fc306a0beac1ccd4a787a0233da0a558bd088ac9b254f71fc283eb12b69c7", size = 1106432, upload-time = "2026-04-21T11:13:05.673Z" },
-]
-
-[[package]]
 name = "identify"
 version = "2.6.18"
 source = { registry = "https://pypi.org/simple" }
@@ -2285,18 +2175,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/29/75/1c537aa458426a9127a92bc2273787b2f987f4e5044e21f01f2eed5244fd/litellm-1.82.6.tar.gz", hash = "sha256:2aa1c2da21fe940c33613aa447119674a3ad4d2ad5eb064e4d5ce5ee42420136", size = 17414147, upload-time = "2026-03-22T06:36:00.452Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/6c/5327667e6dbe9e98cbfbd4261c8e91386a52e38f41419575854248bbab6a/litellm-1.82.6-py3-none-any.whl", hash = "sha256:164a3ef3e19f309e3cabc199bef3d2045212712fefdfa25fc7f75884a5b5b205", size = 15591595, upload-time = "2026-03-22T06:35:56.795Z" },
-]
-
-[[package]]
-name = "lomond"
-version = "0.3.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c0/9e/ef7813c910d4a893f2bc763ce9246269f55cc68db21dc1327e376d6a2d02/lomond-0.3.3.tar.gz", hash = "sha256:427936596b144b4ec387ead99aac1560b77c8a78107d3d49415d3abbe79acbd3", size = 28789, upload-time = "2018-09-21T15:17:43.297Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0f/b1/02eebed49c754b01b17de7705caa8c4ceecfb4f926cdafc220c863584360/lomond-0.3.3-py2.py3-none-any.whl", hash = "sha256:df1dd4dd7b802a12b71907ab1abb08b8ce9950195311207579379eb3b1553de7", size = 35512, upload-time = "2018-09-21T15:17:38.686Z" },
 ]
 
 [[package]]
