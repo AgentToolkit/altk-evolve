@@ -147,7 +147,7 @@ def extract_messages_from_span(span: dict) -> list[dict]:
             content = attrs.get(f"llm.output_messages.{i}.message.content")
             tool_call_keys = [k for k in attrs if k.startswith(f"llm.output_messages.{i}.message.tool_calls.")]
             if role and (content is not None or tool_call_keys):
-                msg: dict = {"index": i, "type": "completion", "role": role}
+                msg = {"index": i, "type": "completion", "role": role}
                 if content is not None:
                     msg["content"] = parse_content(content)
                 if tool_call_keys and role == "assistant":
