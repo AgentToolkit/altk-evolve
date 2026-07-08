@@ -7,58 +7,107 @@ description: Analyze saved trajectories and recall audit events offline to recor
 
 ## Overview
 
-This skill runs after one or more sessions have completed. It reads saved trajectories from `.evolve/trajectories/`, matches them to `recall` events in `.evolve/audit.log`, and records post-hoc `influence` events for recalled guidelines.
+This skill runs after one or more sessions have completed. It reads `recall`
+events from `.evolve/audit.log`, locates each session's trajectory, and records
+post-hoc `influence` events for the recalled guidelines.
 
-Use this skill when you want to compute usage provenance without coupling the work to the live learn step.
+The mechanical work — reading recall rows, skipping already-assessed pairs,
+resolving entity files, and locating trajectories — is done deterministically by
+`provenance.py candidates`. Your job is the judgment: read each candidate and
+decide whether the recalled guideline was `followed`, `contradicted`, or
+`not_applicable`, then persist that verdict.
+
+Use this skill when you want to compute usage provenance without coupling the
+work to the live learn step.
 
 ## Workflow
 
-### Step 1: Load Recall Events
+### Step 1: Get candidates
 
-Read `.evolve/audit.log` as JSONL. Find entries where `event == "recall"` and `entities` is a non-empty list.
+Run the candidate builder. It emits one JSON object per line (JSONL), one per
+unresolved `(session_id, entity)` recall pair:
 
-Skip any recall event that already has `influence` entries for the same `session_id` and entity ids. Do not write duplicate influence records.
+```bash
+python3 .bob/skills/evolve-lite-provenance/scripts/provenance.py candidates
+```
 
-### Step 2: Locate Saved Trajectories
+Each candidate looks like:
 
-List `.evolve/trajectories/` and match each recall event to a trajectory by `session_id`.
+```json
+{
+  "session_id": "<session-id>",
+  "entity_id": "<type>/<name>",
+  "entity_excerpt": "<frontmatter + content of the entity file>",
+  "trajectory_path": "/path/to/transcript.jsonl",
+  "trajectory_excerpt": "<head of the trajectory transcript>",
+  "missing": ["trajectory"]
+}
+```
 
-Matching strategy (in order):
-1. `claude-transcript_<session-id>.jsonl` - the stop-hook transcript dump; the session id is in the filename.
-2. `trajectory_<timestamp>_<session-id>.json` - written by the evolve-lite:save-trajectory skill when a session id is available. Match on the `<session-id>` slice of the filename.
-3. `trajectory_<timestamp>.json` - open the file and match its top-level `session_id` field against the recall event. Only fall back to this step when the filename alone does not identify the session.
+Notes:
 
-If none of the above yields a confident match for a recall event, skip it. Do not guess.
+- `entity_id` is the path relative to `.evolve/entities/` without the `.md`
+  suffix, e.g. `feedback/foo`, `guideline/bar`, or
+  `subscribed/alice/guideline/baz`.
+- Pairs that already have an `influence` row are skipped for you — the builder
+  reuses the same dedup rule used when influence rows are written. You will
+  never be handed a duplicate.
+- The trajectory locator checks `.evolve/trajectories/` first, then falls back
+  to the native Claude transcript at
+  `~/.claude/projects/<slug>/<session-id>.jsonl`. This means provenance works
+  even when no `.evolve/trajectories/` file was written.
+- If an entity file or trajectory cannot be found, the candidate is still
+  emitted with a `missing: [...]` field so the gap is visible. When the
+  trajectory is missing you usually cannot judge the pair — skip it (do not
+  guess), unless the entity content alone makes `not_applicable` certain.
 
-### Step 3: Read Recalled Entities
+### Step 2: Judge each candidate
 
-For each recalled entity id, open `.evolve/entities/<id>.md`. The id is a path relative to `.evolve/entities/` without the `.md` suffix, such as `guideline/foo` or `subscribed/alice/guideline/foo`.
+For each candidate, read `entity_excerpt` (and open `trajectory_path` for the
+full transcript if the excerpt is not enough). Compare the recalled guideline
+against the agent's actual actions in the trajectory and pick exactly one
+verdict:
 
-Read the entity content and trigger. Skip ids whose files are missing.
+- `followed` — the agent's actual actions are consistent with the guideline.
+- `contradicted` — the guideline applied, but the agent did the opposite or
+  repeated the avoidable dead end.
+- `not_applicable` — the guideline was recalled but did not apply to this
+  session.
 
-### Step 4: Assess Influence
+Keep `evidence` to one short sentence citing a concrete action, tool call, or
+absence in the trajectory. This judgment is yours — there is no heuristic
+fallback.
 
-Compare each recalled entity with the matched trajectory. Pick exactly one verdict:
+### Step 3: Record verdicts
 
-- `followed` - the agent's actual actions are consistent with the guideline.
-- `contradicted` - the guideline applied, but the agent did the opposite or repeated the avoidable dead end.
-- `not_applicable` - the guideline was recalled but did not apply to this session.
+Persist each verdict. Either pipe one verdict per call to `provenance.py
+record`:
 
-Keep `evidence` to one short sentence citing a concrete action, tool call, or absence in the trajectory.
+```bash
+echo '{
+  "session_id": "<session-id>",
+  "entity": "<type>/<name>",
+  "verdict": "followed",
+  "evidence": "Agent used the saved parser before trying shell fallbacks."
+}' | python3 .bob/skills/evolve-lite-provenance/scripts/provenance.py record
+```
 
-### Step 5: Write Influence Events
-
-Pipe one JSON payload per assessed session to the helper:
+…or, to batch many assessments for one session in a single call, pipe to the
+underlying writer directly:
 
 ```bash
 echo '{
   "session_id": "<session-id>",
   "assessments": [
-    {"entity": "guideline/<slug>", "verdict": "followed", "evidence": "Agent used the saved parser before trying shell fallbacks."}
+    {"entity": "feedback/foo", "verdict": "followed", "evidence": "Agent followed it."},
+    {"entity": "guideline/bar", "verdict": "not_applicable", "evidence": "Did not apply."}
   ]
 }' | python3 .bob/skills/evolve-lite-provenance/scripts/log_influence.py
 ```
 
-The `entity` value must match exactly what appeared in the recall event, including any `subscribed/<source>/` prefix.
+Both paths write the identical `influence` audit row and skip duplicates. The
+`entity` value must match the candidate's `entity_id` exactly, including any
+`subscribed/<source>/` prefix.
 
-It is valid to emit an empty `assessments` list when recall events exist but no recalled guideline can be assessed.
+It is valid to record nothing when recall events exist but no recalled guideline
+can be assessed (e.g. every candidate is missing its trajectory).

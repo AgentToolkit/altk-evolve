@@ -205,9 +205,14 @@ class TestBobCommandGeneration:
         return _plugin_root(manifest, "bob") / "commands"
 
     def test_one_command_per_skill(self, rendered_repo, build_module):
-        skill_names = sorted(d.name for d in build_module._discover_skills())
+        # Bob commands are 1:1 with the skills bob actually renders, which
+        # excludes skills filtered by bob's `target_excludes` (the Claude-only
+        # `doctor` skill). Derive the expected set from _bob_command_targets()
+        # so this stays in sync with the exclusion logic.
+        expected = sorted(target_rel.stem.removeprefix("evolve-lite-") for _, target_rel, _ in build_module._bob_command_targets())
         commands = sorted(p.stem.removeprefix("evolve-lite-") for p in self._bob_commands_dir(rendered_repo, build_module).glob("*.md"))
-        assert commands == skill_names, "bob commands are not 1:1 with skills"
+        assert commands == expected, "bob commands are not 1:1 with bob-rendered skills"
+        assert "doctor" not in commands, "Claude-only `doctor` skill must not produce a bob command"
 
     def test_command_body_references_dash_form(self, rendered_repo, build_module):
         for cmd_file in self._bob_commands_dir(rendered_repo, build_module).glob("*.md"):
@@ -217,9 +222,13 @@ class TestBobCommandGeneration:
             assert f"evolve-lite:{skill}" not in body, f"{cmd_file.name} body should not use the colon form (bob resolves by folder)"
 
     def test_command_description_comes_from_skill_frontmatter(self, rendered_repo, build_module):
-        for skill_dir in build_module._discover_skills():
-            description = build_module._read_skill_description(skill_dir)
-            cmd_file = self._bob_commands_dir(rendered_repo, build_module) / f"evolve-lite-{skill_dir.name}.md"
+        # Only skills bob actually renders get a command file; iterate the
+        # command targets (which honor bob's `target_excludes`) rather than
+        # every discovered skill, so the Claude-only `doctor` skill — which
+        # bob doesn't render — isn't expected to have a command.
+        for skill_src, target_rel, _ in build_module._bob_command_targets():
+            description = build_module._read_skill_description(skill_src.parent)
+            cmd_file = self._bob_commands_dir(rendered_repo, build_module) / target_rel.name
             assert f"description: {description}\n" in cmd_file.read_text()
 
     def test_command_frontmatter_has_no_name_field(self, rendered_repo, build_module):
@@ -244,8 +253,10 @@ class TestCheckDrift:
         assert rc == 0, f"check_drift returned {rc}. stderr:\n{captured.err}\nRun `just compile-plugins` and commit the result."
 
     def test_perturbed_template_is_detected_as_drift(self, rendered_repo, build_module, capsys):
-        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/learn/SKILL.md"
-        assert target.is_file(), "test prerequisite missing — claude learn/SKILL.md not rendered"
+        # `save` is a templated skill that still ships to Claude (recall/learn
+        # are excluded from the Claude plugin, so they can't be used here).
+        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/save/SKILL.md"
+        assert target.is_file(), "test prerequisite missing — claude save/SKILL.md not rendered"
         target.write_bytes(target.read_bytes() + b"\n# perturbation\n")
 
         rc = build_module.check_drift()
@@ -254,8 +265,10 @@ class TestCheckDrift:
         assert "drift:" in captured.err
 
     def test_perturbed_verbatim_file_is_detected_as_drift(self, rendered_repo, build_module, capsys):
-        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/learn/scripts/on_stop.py"
-        assert target.is_file(), "test prerequisite missing — claude learn/scripts/on_stop.py not rendered"
+        # adapt_memory.py is a verbatim (non-template) script that still ships
+        # to Claude; recall/learn are excluded from the Claude plugin.
+        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/adapt-memory/scripts/adapt_memory.py"
+        assert target.is_file(), "test prerequisite missing — claude adapt-memory/scripts/adapt_memory.py not rendered"
         target.write_bytes(target.read_bytes() + b"\n# perturbation\n")
 
         rc = build_module.check_drift()
@@ -265,8 +278,8 @@ class TestCheckDrift:
 
     def test_perturbed_bob_command_is_detected_as_drift(self, rendered_repo, build_module, capsys):
         """Bob commands are generated, not source-tracked — their drift is also caught."""
-        target = rendered_repo / "platform-integrations/bob/evolve-lite/commands/evolve-lite-learn.md"
-        assert target.is_file(), "test prerequisite missing — bob's evolve-lite-learn command not rendered"
+        target = rendered_repo / "platform-integrations/bob/evolve-lite/commands/evolve-lite-save.md"
+        assert target.is_file(), "test prerequisite missing — bob's evolve-lite-save command not rendered"
         target.write_bytes(target.read_bytes() + b"\n# perturbation\n")
 
         rc = build_module.check_drift()
@@ -275,7 +288,7 @@ class TestCheckDrift:
         assert "drift:" in captured.err
 
     def test_missing_rendered_file_is_detected(self, rendered_repo, build_module, capsys):
-        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/learn/SKILL.md"
+        target = rendered_repo / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/save/SKILL.md"
         assert target.is_file()
         target.unlink()
 
@@ -304,7 +317,7 @@ class TestCheckDrift:
 
     def test_orphan_in_nested_subdir_is_detected(self, rendered_repo, build_module, capsys):
         """The walk descends into subdirectories — orphans aren't only checked at the root."""
-        orphan = rendered_repo / "platform-integrations/codex/plugins/evolve-lite/skills/evolve-lite/learn/leftover.md"
+        orphan = rendered_repo / "platform-integrations/codex/plugins/evolve-lite/skills/evolve-lite/save/leftover.md"
         orphan.write_text("stale skill artifact\n")
 
         rc = build_module.check_drift()
@@ -312,6 +325,51 @@ class TestCheckDrift:
         assert rc == 1
         assert "orphan:" in captured.err
         assert "leftover.md" in captured.err
+
+
+@pytest.mark.platform_integrations
+@pytest.mark.unit
+class TestRecallLearnExcludedFromClaudeCodexBob:
+    """EVOLVE.md's injected first-action recall + direct entity-save
+    instructions drive the identical workflow on claude, codex, and bob, so
+    the recall/learn skills are redundant double-delivery. They're built OUT
+    of all three plugins. Only claw-code keeps them — its PreToolUse hook is a
+    live consumer of recall's retrieve_entities.py."""
+
+    def test_claude_excludes_recall_and_learn(self, rendered_repo, build_module):
+        manifest = build_module.load_manifest()
+        claude_root = _plugin_root(manifest, "claude")
+        for skill in ("recall", "learn"):
+            assert not (claude_root / "skills/evolve-lite" / skill).exists(), (
+                f"Claude plugin must not ship the `{skill}` skill (native memory owns it)"
+            )
+
+    def test_codex_excludes_recall_and_learn(self, rendered_repo, build_module):
+        manifest = build_module.load_manifest()
+        codex_root = _plugin_root(manifest, "codex")
+        for skill in ("recall", "learn"):
+            assert not (codex_root / "skills/evolve-lite" / skill).exists(), (
+                f"codex must not ship the `{skill}` skill — EVOLVE.md drives the workflow"
+            )
+
+    def test_bob_excludes_recall_and_learn_skills_and_commands(self, rendered_repo, build_module):
+        manifest = build_module.load_manifest()
+        bob_root = _plugin_root(manifest, "bob")
+        for skill in ("recall", "learn"):
+            assert not (bob_root / "skills" / f"evolve-lite-{skill}").exists(), (
+                f"bob must not ship the `{skill}` skill — EVOLVE.md drives the workflow"
+            )
+            assert not (bob_root / "commands" / f"evolve-lite-{skill}.md").exists(), (
+                f"bob must not emit the `{skill}` command file — skill is excluded"
+            )
+
+    def test_claw_code_still_ships_recall_and_learn(self, rendered_repo, build_module):
+        manifest = build_module.load_manifest()
+        claw_root = _plugin_root(manifest, "claw-code")
+        for skill in ("recall", "learn"):
+            assert (claw_root / "skills/evolve-lite" / skill / "SKILL.md").is_file(), (
+                f"claw-code must still ship the `{skill}` skill — its PreToolUse hook consumes it"
+            )
 
 
 @pytest.mark.platform_integrations
