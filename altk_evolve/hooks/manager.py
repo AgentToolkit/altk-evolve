@@ -277,11 +277,21 @@ def dispatch_memory_pre_metadata_patch(backend: BaseEntityBackend, namespace_id:
     return dict(modified.metadata_patch)
 
 
-def dispatch_memory_pre_delete(backend: BaseEntityBackend, namespace_id: str, entity_id: str) -> None:
-    """Fire memory_pre_delete (halting only — no payload transform applies)."""
+def dispatch_memory_pre_delete(backend: BaseEntityBackend, namespace_id: str, entity_id: str, metadata: dict | None = None) -> None:
+    """Fire memory_pre_delete (halting only — no payload transform applies).
+
+    ``metadata`` is the stored entity's metadata when the caller could resolve
+    it (``None`` otherwise) so policy plugins can key on fields like
+    ``legal_hold``.
+    """
     if not hooks_active(HookType.MEMORY_PRE_DELETE):
         return
-    payload = MemoryPreDeletePayload(namespace_id=namespace_id, entity_id=entity_id, backend_kind=type(backend).__name__)
+    payload = MemoryPreDeletePayload(
+        namespace_id=namespace_id,
+        entity_id=entity_id,
+        metadata=copy.deepcopy(metadata),
+        backend_kind=type(backend).__name__,
+    )
     _invoke(HookType.MEMORY_PRE_DELETE, payload, backend=backend)
 
 

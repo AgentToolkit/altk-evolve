@@ -41,7 +41,9 @@ class HookType(str, Enum):
     Write family (fired in the backend layer so no frontend can bypass them):
       - MEMORY_PRE_WRITE: before conflict resolution in ``update_entities``.
       - MEMORY_PRE_METADATA_PATCH: before ``update_entity_metadata`` applies a patch.
-      - MEMORY_PRE_DELETE: before ``delete_entity_by_id`` removes an entity.
+      - MEMORY_PRE_DELETE: before any entity delete — the public
+        ``delete_entity_by_id`` AND conflict-resolution DELETE verdicts
+        inside ``update_entities``.
       - MEMORY_PRE_NAMESPACE_DELETE: before ``delete_namespace`` drops a namespace.
 
     Read family (public API reads only; internal reads never fire it):
@@ -93,10 +95,20 @@ class MemoryPreMetadataPatchPayload(EvolveBasePayload):
 
 
 class MemoryPreDeletePayload(EvolveBasePayload):
-    """Entity about to be deleted via the public ``delete_entity_by_id``."""
+    """Entity about to be deleted.
+
+    Fires on BOTH delete paths: the public ``delete_entity_by_id`` and
+    conflict-resolution DELETE verdicts inside ``update_entities`` (all
+    routed through ``BaseEntityBackend._guarded_delete``).
+
+    ``metadata`` carries the stored entity's metadata when it could be
+    resolved (``None`` when the entity was not found), so policy plugins can
+    key on fields like ``legal_hold``.
+    """
 
     namespace_id: str = ""
     entity_id: str = ""
+    metadata: dict | None = None
 
 
 class MemoryPreNamespaceDeletePayload(EvolveBasePayload):

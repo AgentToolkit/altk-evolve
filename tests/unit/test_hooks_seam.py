@@ -1,15 +1,17 @@
 """Behavior of the memory hook seam with the CPEX framework installed.
 
 Covers: hook registration, choke-point dispatch on the filesystem backend,
-transform/halting semantics, the template-method no-bypass guarantee, the
-memory_post_read recursion guard, the sync bridge in both loop states, and
-the YAML + code-first configuration paths.
+transform/halting semantics, the unified delete path (public +
+conflict-resolution DELETE verdicts), the template-method no-bypass
+guarantee, the memory_post_read recursion guard, the sync bridge in both
+loop states, and the YAML + code-first configuration paths.
 
 Requires the optional cpex package (``uv sync --extra hooks``).
 """
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -342,6 +344,131 @@ def test_halting_delete_raises_and_preserves_entity(client: EvolveClient):
     assert client.get_entity_by_id("FORBIDDEN_ns", entity.id) is not None
 
 
+# ── unified delete path ──────────────────────────────────────────────
+#
+# Both delete initiators — the public delete_entity_by_id and LLM DELETE
+# verdicts from conflict resolution — route through _guarded_delete, so
+# memory_pre_delete fires (with the stored entity's metadata) on every
+# entity delete. Veto semantics differ per caller: the public path raises,
+# the conflict-resolution executor skips that delete and continues.
+
+
+class LegalHold(Plugin):
+    """Halting plugin: vetoes deletion of entities whose metadata sets legal_hold."""
+
+    def __init__(self):
+        super().__init__(_config("legal_hold", [HookType.MEMORY_PRE_DELETE.value], mode=PluginMode.SEQUENTIAL, priority=1))
+
+    async def memory_pre_delete(self, payload, context):
+        if (payload.metadata or {}).get("legal_hold"):
+            return PluginResult(
+                continue_processing=False,
+                violation=PluginViolation(
+                    reason="entity under legal hold", description="blocked by legal-hold policy", code="LEGAL_HOLD", details={}
+                ),
+            )
+        return PluginResult(continue_processing=True)
+
+
+def _delete_all_then_add(old_entities, new_entities):
+    """Fake resolve_conflicts: DELETE every stored entity, ADD every incoming one."""
+    updates = [EntityUpdate(id=e.id, type=e.type, content=e.content, event="DELETE", metadata=e.metadata) for e in old_entities]
+    updates += [EntityUpdate(id=e.id, type=e.type, content=e.content, event="ADD", metadata=e.metadata) for e in new_entities]
+    return updates
+
+
+@pytest.mark.unit
+def test_cr_delete_verdict_fires_pre_delete_with_stored_metadata(client: EvolveClient):
+    recorder = Recorder(hooks=[HookType.MEMORY_PRE_DELETE.value])
+    enable_hooks(recorder)
+    client.create_namespace("ns")
+    _write(client, "ns", "contract with acme", {"case": "c-1"})
+    stored = client.search_entities("ns", limit=1)[0]
+
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", _delete_all_then_add):
+        client.update_entities("ns", [Entity(content="contract", type="note")], enable_conflict_resolution=True)
+
+    calls = recorder.calls["memory_pre_delete"]
+    # Exactly once per deleted entity — the unified path never double-fires.
+    assert len(calls) == 1
+    assert calls[0].namespace_id == "ns"
+    assert calls[0].entity_id == stored.id
+    # Metadata comes from the conflict-resolution pre-read of the STORED entity.
+    assert calls[0].metadata == {"case": "c-1"}
+    # The delete applied: only the replacement remains.
+    assert [str(r.content) for r in client.search_entities("ns", limit=10)] == ["contract"]
+
+
+@pytest.mark.unit
+def test_legal_hold_veto_skips_cr_delete_but_rest_of_batch_applies(client: EvolveClient, caplog):
+    enable_hooks(LegalHold())
+    client.create_namespace("ns")
+    _write(client, "ns", "contract alpha", {"legal_hold": True})
+    _write(client, "ns", "contract beta")
+    held = client.search_entities("ns", query="alpha", limit=1)[0]
+    other = client.search_entities("ns", query="beta", limit=1)[0]
+
+    with (
+        patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", _delete_all_then_add),
+        caplog.at_level(logging.WARNING, logger="entities-db"),
+    ):
+        updates = client.update_entities("ns", [Entity(content="contract", type="note")], enable_conflict_resolution=True)
+
+    # The vetoed delete was skipped: the held entity survives alongside its replacement.
+    assert client.get_entity_by_id("ns", held.id) is not None
+    # The REST of the batch still applied: the non-held delete and the add.
+    assert client.get_entity_by_id("ns", other.id) is None
+    contents = {str(r.content) for r in client.search_entities("ns", limit=10)}
+    assert contents == {"contract alpha", "contract"}
+    # The skip is recorded on the returned EntityUpdate and a warning was logged.
+    skipped = [u for u in updates if u.id == held.id]
+    assert len(skipped) == 1
+    assert skipped[0].event == "NONE"
+    assert skipped[0].metadata["skipped_delete"]["code"] == "LEGAL_HOLD"
+    assert skipped[0].metadata["skipped_delete"]["plugin"] == "legal_hold"
+    assert "vetoed conflict-resolution DELETE" in caplog.text
+    assert held.id in caplog.text
+
+
+@pytest.mark.unit
+def test_legal_hold_on_external_delete_raises_and_preserves_entity(client: EvolveClient):
+    enable_hooks(LegalHold())
+    client.create_namespace("ns")
+    _write(client, "ns", "keep me", {"legal_hold": True})
+    _write(client, "ns", "expendable")
+    held = client.search_entities("ns", query="keep me", limit=1)[0]
+    other = client.search_entities("ns", query="expendable", limit=1)[0]
+
+    with pytest.raises(MemoryPolicyViolation, match=r"\[LEGAL_HOLD\] entity under legal hold"):
+        client.delete_entity_by_id("ns", held.id)
+
+    assert client.get_entity_by_id("ns", held.id) is not None
+    # An entity without the hold still deletes through the same guarded path.
+    client.delete_entity_by_id("ns", other.id)
+    assert client.get_entity_by_id("ns", other.id) is None
+
+
+@pytest.mark.unit
+def test_external_delete_payload_carries_fetched_metadata(client: EvolveClient):
+    from altk_evolve.schema.exceptions import EvolveException
+
+    recorder = Recorder(hooks=[HookType.MEMORY_PRE_DELETE.value])
+    enable_hooks(recorder)
+    client.create_namespace("ns")
+    _write(client, "ns", "x", {"case": "c-2"})
+    entity = client.search_entities("ns", limit=1)[0]
+
+    client.delete_entity_by_id("ns", entity.id)
+    assert len(recorder.calls["memory_pre_delete"]) == 1
+    assert recorder.calls["memory_pre_delete"][0].metadata == {"case": "c-2"}
+
+    # Nonexistent id: the hook still fires (metadata=None) and the impl's
+    # not-found error surfaces exactly as before.
+    with pytest.raises(EvolveException, match="not found"):
+        client.delete_entity_by_id("ns", "does-not-exist")
+    assert recorder.calls["memory_pre_delete"][1].metadata is None
+
+
 # ── payload immutability ─────────────────────────────────────────────
 
 
@@ -454,7 +581,7 @@ def test_backend_subclass_override_cannot_bypass_hooks(tmp_path: Path):
 
 @pytest.mark.unit
 def test_backends_do_not_override_public_template_methods():
-    template_methods = ("search_entities", "delete_entity_by_id", "delete_namespace", "update_entity_metadata")
+    template_methods = ("search_entities", "delete_entity_by_id", "_guarded_delete", "delete_namespace", "update_entity_metadata")
     backend_classes = [FilesystemEntityBackend]
     try:
         from altk_evolve.backend.milvus import MilvusEntityBackend
