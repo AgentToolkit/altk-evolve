@@ -145,8 +145,29 @@ def extract_messages_from_span(span: dict) -> list[dict]:
         for i in sorted(output_indices):
             role = attrs.get(f"llm.output_messages.{i}.message.role")
             content = attrs.get(f"llm.output_messages.{i}.message.content")
-            if role and content is not None:
-                messages.append({"index": i, "type": "completion", "role": role, "content": parse_content(content)})
+            tool_call_keys = [k for k in attrs if k.startswith(f"llm.output_messages.{i}.message.tool_calls.")]
+            if role and (content is not None or tool_call_keys):
+                msg: dict = {"index": i, "type": "completion", "role": role}
+                if content is not None:
+                    msg["content"] = parse_content(content)
+                if tool_call_keys and role == "assistant":
+                    tool_calls = []
+                    tool_call_indices = set()
+                    for key in tool_call_keys:
+                        parts = key.split(".")
+                        if len(parts) >= 6 and parts[5].isdigit():
+                            tool_call_indices.add(int(parts[5]))
+                    for tc_idx in sorted(tool_call_indices):
+                        tc_id = attrs.get(f"llm.output_messages.{i}.message.tool_calls.{tc_idx}.tool_call.id")
+                        tc_name = attrs.get(f"llm.output_messages.{i}.message.tool_calls.{tc_idx}.tool_call.function.name")
+                        tc_args = attrs.get(f"llm.output_messages.{i}.message.tool_calls.{tc_idx}.tool_call.function.arguments")
+                        if tc_id and tc_name:
+                            tool_calls.append(
+                                {"id": tc_id, "type": "function", "function": {"name": tc_name, "arguments": tc_args or "{}"}}
+                            )
+                    if tool_calls:
+                        msg["tool_calls"] = tool_calls
+                messages.append(msg)
 
     return messages
 
