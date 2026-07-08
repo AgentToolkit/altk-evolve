@@ -118,6 +118,47 @@ def slugify(text, max_length=60):
     return text or "entity"
 
 
+def claude_project_slug(path):
+    """Derive Claude's per-project directory name from an absolute path.
+
+    Claude names a project's ``~/.claude/projects/<slug>/`` directory by
+    replacing every non-alphanumeric character in the resolved absolute project
+    path with ``-``.
+
+    >>> claude_project_slug("/Users/x/evolve-smoke-test2")
+    '-Users-x-evolve-smoke-test2'
+
+    This is the single source of truth shared by doctor.py (transcript dir) and
+    adapt_memory.py (native memory dir).
+    """
+    return re.sub(r"[^A-Za-z0-9]", "-", str(Path(path).resolve()))
+
+
+def claude_memory_dir(path, home=None):
+    """Return the native Claude memory dir for the project rooted at *path*.
+
+    ``~/.claude/projects/<slug>/memory/`` where ``<slug>`` is
+    :func:`claude_project_slug` of *path*. *home* defaults to ``Path.home()``.
+    """
+    home = Path.home() if home is None else Path(home)
+    return home / ".claude" / "projects" / claude_project_slug(path) / "memory"
+
+
+def sanitize_type(text):
+    """Sanitize an entity *type* into a filesystem-safe subdirectory name.
+
+    Like :func:`slugify` but without truncation — a type is a short label,
+    not free-form content, and truncating it could silently merge distinct
+    types. Returns an empty string for input that contains no usable
+    characters, leaving the fallback decision to the caller.
+    """
+    if not isinstance(text, str):
+        return ""
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    return text.strip("-")
+
+
 def unique_filename(directory, slug):
     """Return a Path that doesn't collide with existing files in *directory*.
 
@@ -139,7 +180,7 @@ def unique_filename(directory, slug):
 # Markdown <-> dict conversion
 # ---------------------------------------------------------------------------
 
-_FRONTMATTER_KEYS = ("type", "trigger", "trajectory", "owner", "source", "visibility", "published_at")
+_FRONTMATTER_KEYS = ("type", "trigger", "trajectory", "owner", "source", "native_path", "visibility", "published_at")
 
 
 def entity_to_markdown(entity):
@@ -339,24 +380,35 @@ def load_all_entities(entities_dir):
     return entities
 
 
-def write_entity_file(directory, entity):
+def write_entity_file(directory, entity, filename=None, overwrite=False):
     """Write a single entity as a markdown file under *directory*.
 
     The file is placed in a ``{type}/`` subdirectory.  Uses atomic
     write (write to ``.tmp``, then ``os.rename``).
 
+    Args:
+        directory: Entities root directory.
+        entity: The entity dict to serialize.
+        filename: Optional explicit slug for the target file (without the
+            ``.md`` suffix). When omitted, the slug is derived from the
+            entity content (the historical default).
+        overwrite: When True, the entity is written to a deterministic
+            ``{type}/{filename}.md`` path, overwriting any existing file in
+            place (stable id, idempotent re-mirroring). When False (the
+            default), the historical collision-avoiding behavior is kept —
+            a ``-2``/``-3`` suffix is appended on collision.
+
     Returns:
         Path to the written file.
     """
-    _ALLOWED_TYPES = {"guideline", "preference"}
-    entity_type = entity.get("type", "guideline")
-    if not isinstance(entity_type, str) or entity_type not in _ALLOWED_TYPES:
-        entity_type = "guideline"
+    # Any non-empty type is accepted and used (sanitized) as the
+    # subdirectory. An empty/invalid type falls back to "guideline".
+    entity_type = sanitize_type(entity.get("type", "guideline")) or "guideline"
     entity["type"] = entity_type
     type_dir = Path(directory) / entity_type
     type_dir.mkdir(parents=True, exist_ok=True)
 
-    slug = slugify(entity.get("content", "entity"))
+    slug = slugify(filename) if filename else slugify(entity.get("content", "entity"))
     content = entity_to_markdown(entity)
 
     # Write to a unique temp file first (avoids predictable .tmp collisions)
@@ -366,6 +418,13 @@ def write_entity_file(directory, entity):
         os.write(fd, content.encode("utf-8"))
         os.close(fd)
         fd = None
+
+        if overwrite:
+            # Deterministic target: overwrite any existing file in place so
+            # the entity id is stable across re-mirroring.
+            target = type_dir / f"{slug}.md"
+            os.replace(tmp_path, target)
+            return target
 
         # Atomically claim the target using O_EXCL; retry on race
         while True:

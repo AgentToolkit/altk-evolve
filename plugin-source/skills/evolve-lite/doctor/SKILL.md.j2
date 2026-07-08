@@ -1,0 +1,51 @@
+{%- from "_macros.j2" import invoke with context -%}
+---
+name: {% if platform == "bob" %}evolve-lite:{% endif %}doctor
+description: Diagnose evolve health on Claude — verify the CLAUDE.md @import is actually loading the thin EVOLVE.md into sessions
+{% if platform == "claude" -%}
+context: fork
+{% endif -%}
+---
+
+# Doctor
+{% if platform == "claude" %}
+## Overview
+
+On Claude, evolve is delivered by a single `@.evolve/EVOLVE.md` import line in
+this repo's `./CLAUDE.md`. That import requires a one-time, per-project "allow
+external imports" approval. If you (or a teammate) declined it — even once, in a
+past session — Claude silently disables the import forever, the thin EVOLVE.md
+never loads, and evolve becomes a no-op with **no error**.
+
+This skill checks whether the import is actually reaching your sessions, by
+looking for a canary token that the installed EVOLVE.md expands into the session
+transcript when the import loads.
+
+## Required Action
+
+Run the doctor script from the repo root:
+
+```bash
+{{ invoke("doctor", "doctor.py") }}
+```
+
+It is read-only and always exits 0. Read the status code it prints:
+
+- **OK** — the import is loading; nothing to do.
+- **IMPORT_DISABLED** — the `@import` line is in `CLAUDE.md` but its content is
+  not reaching sessions (you likely declined the external-import approval).
+  Follow the remediation the script prints: purge the project approval, start a
+  new session, and **Allow** the import dialog.
+- **NOT_INSTALLED** — evolve isn't wired into this repo; re-run the installer.
+- **STALE_EVOLVE_MD** — the installed `.evolve/EVOLVE.md` predates the canary;
+  re-run the installer to refresh it.
+- **UNKNOWN** — no recent Claude transcripts for this project yet; open a
+  session, then re-run.
+
+Relay the status and any remediation to the user.
+{% else %}
+This skill diagnoses Claude's `@import` delivery of evolve's thin EVOLVE.md. It
+is specific to Claude (where evolve loads via a per-project import that can be
+silently declined) and is a **no-op on this platform** — here EVOLVE.md is
+always-on and there is no import-approval gate to check. Nothing to run.
+{% endif %}
