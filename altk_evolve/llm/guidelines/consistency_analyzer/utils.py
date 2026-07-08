@@ -187,10 +187,9 @@ def compute_weighted_sum_consistency(step_cns_list: list, field_consistencies: d
     for field in step_cns_list:
         consistency += field["consistency"] * field["weight"]
         # update field_consistencies with the rescaled weights
-        if isinstance(field["name"], list):  # handle unhashable list case
-            field["name"] = "-".join(field["name"])
-        if field["name"] in field_consistencies:
-            field_consistencies[field["name"]]["weight"] = field["weight"]
+        field_name = "-".join(field["name"]) if isinstance(field["name"], list) else field["name"]
+        if field_name in field_consistencies:
+            field_consistencies[field_name]["weight"] = field["weight"]
 
     logger.debug(f"+++ Processing weighted sum step consistencies: {step_cns_list}")
     return consistency, field_consistencies
