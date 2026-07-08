@@ -1,14 +1,45 @@
-"""Access stamp plugin: records ``last_accessed`` on entities returned by reads."""
+"""Access stamp plugin: records ``last_accessed`` on entities returned by reads.
+
+Core/shim split: the stamping decision + formatting logic lives in
+:func:`build_access_stamps`, a pure function with no cpex imports —
+importable and testable without the ``[hooks]`` extra. The cpex ``Plugin``
+subclass below is a thin shim that applies the returned patches through the
+live backend riding in ``GlobalContext.state``.
+"""
 
 from __future__ import annotations
 
 import datetime
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from altk_evolve.hooks.types import HAS_CPEX, HookType
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)
+
+
+def build_access_stamps(
+    entities: list[dict],
+    *,
+    now: Callable[[], datetime.datetime] = _utc_now,
+) -> list[tuple[str, dict]]:
+    """Return ``(entity_id, metadata_patch)`` pairs stamping ``last_accessed``.
+
+    - One shared ISO-8601 UTC timestamp per batch (all entities of a read get
+      the same stamp).
+    - Entities without a truthy ``id`` are skipped; ids are coerced to ``str``.
+    - Pure: the caller applies each patch (via the metadata-patch path).
+
+    ``now`` is an injectable clock, for deterministic tests.
+    """
+    stamp = now().isoformat()
+    return [(str(entity["id"]), {"last_accessed": stamp}) for entity in entities if entity.get("id")]
+
 
 if HAS_CPEX:
     from cpex.framework import Plugin
@@ -25,7 +56,7 @@ if HAS_CPEX:
         )
 
     class AccessStampPlugin(Plugin):
-        """Stamps ``last_accessed`` (ISO-8601 UTC) on entities returned by public reads.
+        """Thin cpex shim: applies :func:`build_access_stamps` patches on ``memory_post_read``.
 
         Runs in fire_and_forget mode: it cannot modify or block the read, only
         record the access via the metadata-patch path.
@@ -55,13 +86,9 @@ if HAS_CPEX:
                 logger.debug("AccessStampPlugin: no backend in hook context; skipping.")
                 return PluginResult(continue_processing=True)
 
-            stamp = datetime.datetime.now(datetime.UTC).isoformat()
-            for entity in payload.entities:
-                entity_id = entity.get("id")
-                if not entity_id:
-                    continue
+            for entity_id, patch in build_access_stamps(payload.entities):
                 try:
-                    backend.update_entity_metadata(payload.namespace_id, str(entity_id), {"last_accessed": stamp})
+                    backend.update_entity_metadata(payload.namespace_id, entity_id, patch)
                 except Exception:
                     logger.debug("AccessStampPlugin: failed to stamp entity %s.", entity_id, exc_info=True)
             return PluginResult(continue_processing=True)

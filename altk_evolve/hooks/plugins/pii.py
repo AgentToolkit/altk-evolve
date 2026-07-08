@@ -7,6 +7,11 @@ our custom hooks needs this thin aliasing subclass that exposes
 ``memory_pre_write`` and ``llm_pre_call`` and delegates to the native handler.
 
 Requires ``pip install 'altk-evolve[pii]'`` (cpex + cpex-pii-filter).
+
+Unlike ``normalizer``/``access_stamp`` this module has no engine-agnostic
+core: adapting cpex-pii-filter onto our hook types IS its domain logic, so
+the cpex coupling is the point (the redaction logic itself lives — and is
+tested — in the cpex-pii-filter package).
 """
 
 from __future__ import annotations

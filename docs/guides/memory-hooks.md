@@ -75,36 +75,57 @@ See [`examples/hooks_plugins.yaml`](https://github.com/AgentToolkit/altk-evolve/
 | `AccessStampPlugin` | `memory_post_read` | fire_and_forget | Stamps `last_accessed` (ISO-8601 UTC) on read entities via the metadata-patch path |
 | `PIIFilterMemoryPlugin` | `memory_pre_write`, `llm_pre_call` | transform | Regex PII redaction (aliases the native `cpex-pii-filter` plugin onto Evolve's hook types); requires `pip install 'altk-evolve[pii]'` |
 
+Normalizer and access stamp follow a core/shim split: their domain logic is a pure, cpex-free function (`normalize_entities`, `build_access_stamps`) at the top of the module — importable and tested without any extra — and the cpex `Plugin` class is a thin shim over it (see *Writing a plugin* below). The PII plugin is the deliberate exception: it is an adapter for the external `cpex-pii-filter` plugin, so the cpex coupling is its purpose.
+
 Read-cost note for `AccessStampPlugin`: fire-and-forget tasks are awaited before the sync bridge returns (their side effects would otherwise be lost with the closing event loop), so the stamp is **not** free for the reader — every public read pays one metadata write per returned entity before `search_entities` returns. Measured on the filesystem backend: ~3.7 ms vs ~0.1 ms for a 10-entity read; on milvus/postgres it adds N extra store round trips per read. Enable it only where access audit trails are worth that latency.
 
 ## Writing a plugin
 
-A plugin is a `cpex.framework.Plugin` subclass whose async method names match the hook-type strings it subscribes to:
+Use the **core/shim pattern** the in-tree plugins follow (the same shape `cpex-pii-filter` itself uses — a thin cpex layer over an independent core):
+
+1. **Pure core** — a plain function at module top level, no cpex imports, operating on plain data (lists of dicts in, changed data or `None` out). It stays importable and unit-testable without the `[hooks]` extra, so its tests are always-on CI coverage. Inject non-determinism (clocks, ids) as parameters.
+2. **Thin cpex shim** — a `cpex.framework.Plugin` subclass, defined under an `if HAS_CPEX:` guard, whose async method names match the hook-type strings it subscribes to. The shim only parses `self._config.config`, calls the core, and wraps the result in a `PluginResult`.
 
 ```python
-from cpex.framework import Plugin
-from cpex.framework.models import PluginConfig, PluginMode, PluginResult
+import datetime
+from altk_evolve.hooks.types import HAS_CPEX
 
 
-class TagWrites(Plugin):
-    def __init__(self, config: PluginConfig | None = None):
-        super().__init__(config or PluginConfig(
-            name="tag_writes",
-            kind="my_pkg.plugins.TagWrites",
-            hooks=["memory_pre_write"],
-            mode=PluginMode.TRANSFORM,
-        ))
+def tag_entities(entities: list[dict], *, tenant: str) -> list[dict] | None:
+    """Pure core: returns tagged copies, or None when nothing changed."""
+    if not entities:
+        return None
+    return [
+        {**e, "metadata": {**(e.get("metadata") or {}), "tenant": tenant}}
+        for e in entities
+    ]
 
-    async def memory_pre_write(self, payload, context):
-        entities = [
-            {**e, "metadata": {**(e.get("metadata") or {}), "tenant": "acme"}}
-            for e in payload.entities
-        ]
-        return PluginResult(
-            continue_processing=True,
-            modified_payload=payload.model_copy(update={"entities": entities}),
-        )
+
+if HAS_CPEX:
+    from cpex.framework import Plugin
+    from cpex.framework.models import PluginConfig, PluginMode, PluginResult
+
+    class TagWrites(Plugin):
+        def __init__(self, config: PluginConfig | None = None):
+            super().__init__(config or PluginConfig(
+                name="tag_writes",
+                kind="my_pkg.plugins.TagWrites",
+                hooks=["memory_pre_write"],
+                mode=PluginMode.TRANSFORM,
+            ))
+
+        async def memory_pre_write(self, payload, context):
+            cfg = self._config.config or {}
+            entities = tag_entities(payload.entities, tenant=cfg.get("tenant", "acme"))
+            if entities is None:
+                return PluginResult(continue_processing=True)
+            return PluginResult(
+                continue_processing=True,
+                modified_payload=payload.model_copy(update={"entities": entities}),
+            )
 ```
+
+See `altk_evolve/hooks/plugins/normalizer.py` (`normalize_entities`) and `access_stamp.py` (`build_access_stamps`) for shipped examples — their cores are importable without any extra installed. The one exception is `pii.py`: it is deliberately core-less, because adapting the external `cpex-pii-filter` plugin onto Evolve's hook types *is* its domain logic.
 
 Notes:
 
