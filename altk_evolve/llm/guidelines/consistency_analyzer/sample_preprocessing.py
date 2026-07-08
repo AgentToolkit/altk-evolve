@@ -217,12 +217,11 @@ def parse_json_response(response: str) -> dict:
         )
         try:
             parsed_response = json.loads(response)
-        except:
+        except (json.JSONDecodeError, ValueError):
             response = response.split("json")[-1].replace("```", "").strip()
             try:
                 parsed_response = json.loads(response)
-            except:
-                # logger.debug(f"+++ Exception: parse_response: could not load json")
+            except (json.JSONDecodeError, ValueError):
                 parsed_response = {}
 
     return parsed_response
@@ -508,7 +507,7 @@ def parse_react_response(response: str) -> dict:
 
     try:
         _ = json.loads(modified_action_input)
-    except BaseException:
+    except (json.JSONDecodeError, ValueError):
         item["parse_error_msg"] = (
             f"the Action Input is in json string format, the generated value of {action_input} is not a valid json string."
         )
