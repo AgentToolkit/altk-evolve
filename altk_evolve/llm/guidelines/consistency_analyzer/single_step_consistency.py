@@ -118,6 +118,8 @@ def check_sample_validity(step: dict, config: dict) -> tuple[bool, str]:
 
         # Check 4: alternates validation (if applicable)
         if "alternates" in metric_config:
+            if "parsed_response" not in step:
+                return False, f"Missing parsed_response for {step_name} with alternates config - consistency undefined"
             this_config = find_matching_alternate(metric_config["alternates"], flatten_response(step["parsed_response"]))
             if this_config == {}:
                 return (
@@ -175,7 +177,7 @@ def compute_step_consistency(trajectory: dict, config: dict) -> dict:
             samples = step["sampling"].get("parsed_samples", [])
 
             this_config = metric_config
-            if "alternates" in metric_config:
+            if "alternates" in metric_config and "parsed_response" in step:
                 this_config = find_matching_alternate(metric_config["alternates"], flatten_response(step["parsed_response"]))
 
             consistency, metadata = compute_json_step_consistency(
