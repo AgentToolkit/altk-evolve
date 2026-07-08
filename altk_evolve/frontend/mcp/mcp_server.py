@@ -532,48 +532,51 @@ def save_trajectory(
     # then merge before the single update_entities call.
     guideline_entities = []
 
-    if guidelines_mode in ("regular", "both"):
-        regular_results = generate_guidelines(messages)
-        guideline_entities += [
-            Entity(
-                type="guideline",
-                content=guideline.content,
-                metadata={
-                    **guideline_metadata_base,
-                    "task_description": result.task_description,
-                    "category": guideline.category,
-                    "rationale": guideline.rationale,
-                    "trigger": guideline.trigger,
-                    "implementation_steps": guideline.implementation_steps,
-                    "generation_method": "regular",
-                },
-            )
-            for result in regular_results
-            for guideline in result.guidelines
-        ]
+    try:
+        if guidelines_mode in ("regular", "both"):
+            regular_results = generate_guidelines(messages)
+            guideline_entities += [
+                Entity(
+                    type="guideline",
+                    content=guideline.content,
+                    metadata={
+                        **guideline_metadata_base,
+                        "task_description": result.task_description,
+                        "category": guideline.category,
+                        "rationale": guideline.rationale,
+                        "trigger": guideline.trigger,
+                        "implementation_steps": guideline.implementation_steps,
+                        "generation_method": "regular",
+                    },
+                )
+                for result in regular_results
+                for guideline in result.guidelines
+            ]
 
-    if guidelines_mode in ("consistency", "both"):
-        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+        if guidelines_mode in ("consistency", "both"):
+            from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
-        trajectory = {"messages": messages, "trace_id": task_id}
-        consistency_results = generate_consistency_guidelines(trajectory)
-        guideline_entities += [
-            Entity(
-                type="guideline",
-                content=guideline.content,
-                metadata={
-                    **guideline_metadata_base,
-                    "task_description": result.task_description,
-                    "category": guideline.category,
-                    "rationale": guideline.rationale,
-                    "trigger": guideline.trigger,
-                    "implementation_steps": guideline.implementation_steps,
-                    "generation_method": "consistency",
-                },
-            )
-            for result in consistency_results
-            for guideline in result.guidelines
-        ]
+            trajectory = {"messages": messages, "trace_id": task_id}
+            consistency_results = generate_consistency_guidelines(trajectory)
+            guideline_entities += [
+                Entity(
+                    type="guideline",
+                    content=guideline.content,
+                    metadata={
+                        **guideline_metadata_base,
+                        "task_description": result.task_description,
+                        "category": guideline.category,
+                        "rationale": guideline.rationale,
+                        "trigger": guideline.trigger,
+                        "implementation_steps": guideline.implementation_steps,
+                        "generation_method": "consistency",
+                    },
+                )
+                for result in consistency_results
+                for guideline in result.guidelines
+            ]
+    except Exception as e:
+        logger.warning(f"Guideline generation failed for task {task_id}, skipping: {e}")
     if guideline_entities:
         get_client().update_entities(
             namespace_id=resolved_ns,
