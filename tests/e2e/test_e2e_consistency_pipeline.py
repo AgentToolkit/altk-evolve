@@ -46,7 +46,7 @@ def _consistency_analyzer_available() -> bool:
     try:
         import importlib
 
-        importlib.import_module("consistency_analyzer.resampling")
+        importlib.import_module("altk_evolve.llm.guidelines.consistency_analyzer.resampling")
         return True
     except ImportError:
         return False
