@@ -12,6 +12,8 @@ Public surface:
   :func:`~altk_evolve.hooks.manager.shutdown_hooks`
 - :class:`~altk_evolve.hooks.manager.MemoryPolicyViolation`
 - ``dispatch_*`` helpers used at the backend / LLM choke points
+- :func:`~altk_evolve.hooks.types.engine_available` to probe whether a plugin
+  execution engine is installed
 
 Everything is a fast no-op unless ``EvolveConfig.hooks.enabled`` is True and
 the execution engine is installed (``pip install 'altk-evolve[hooks]'``).
@@ -31,7 +33,6 @@ from altk_evolve.hooks.manager import (
     shutdown_hooks,
 )
 from altk_evolve.hooks.types import (
-    HAS_CPEX,
     HookType,
     LLMPreCallPayload,
     MemoryPostReadPayload,
@@ -39,11 +40,11 @@ from altk_evolve.hooks.types import (
     MemoryPreMetadataPatchPayload,
     MemoryPreNamespaceDeletePayload,
     MemoryPreWritePayload,
+    engine_available,
     register_evolve_hooks,
 )
 
 __all__ = [
-    "HAS_CPEX",
     "HookType",
     "LLMPreCallPayload",
     "MemoryPolicyViolation",
@@ -58,6 +59,7 @@ __all__ = [
     "dispatch_memory_pre_metadata_patch",
     "dispatch_memory_pre_namespace_delete",
     "dispatch_memory_pre_write",
+    "engine_available",
     "get_plugin_manager",
     "hooks_active",
     "initialize_hooks",

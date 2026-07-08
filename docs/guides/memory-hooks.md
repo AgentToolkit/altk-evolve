@@ -43,11 +43,11 @@ Recursion safety: a `memory_post_read` plugin that patches metadata goes through
 A plugin's domain logic is a **pure core function** — that is the plugin; everything else is engine adaptation. The in-tree plugins all follow this core/shim pattern:
 
 1. **Pure core** — a plain function at module top level, no engine imports, operating on plain data (lists of dicts in, changed data or `None` out). It stays importable and unit-testable without any extra installed, so its tests are always-on CI coverage. Inject non-determinism (clocks, ids) as parameters.
-2. **Thin engine shim** — an adapter class that subscribes the core to hook types on the execution engine. The shim only parses its configuration, calls the core, and wraps the result in the engine's result type. For the shipped CPEX engine that means a `cpex.framework.Plugin` subclass, defined under an `if HAS_CPEX:` guard, whose async method names match the hook-type strings it subscribes to.
+2. **Thin engine shim** — an adapter class that subscribes the core to hook types on the execution engine. The shim only parses its configuration, calls the core, and wraps the result in the engine's result type. For the shipped CPEX engine that means a `cpex.framework.Plugin` subclass, defined under an `if engine_available():` guard, whose async method names match the hook-type strings it subscribes to.
 
 ```python
 import datetime
-from altk_evolve.hooks.types import HAS_CPEX
+from altk_evolve.hooks import engine_available
 
 
 def tag_entities(entities: list[dict], *, tenant: str) -> list[dict] | None:
@@ -60,7 +60,7 @@ def tag_entities(entities: list[dict], *, tenant: str) -> list[dict] | None:
     ]
 
 
-if HAS_CPEX:  # shim for the shipped CPEX engine
+if engine_available():  # shim for the shipped CPEX engine
     from cpex.framework import Plugin
     from cpex.framework.models import PluginConfig, PluginMode, PluginResult
 

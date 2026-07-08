@@ -36,6 +36,15 @@ except ImportError:
         model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
 
+def engine_available() -> bool:
+    """Whether a plugin execution engine is installed.
+
+    Currently true when the optional ``cpex`` package is importable
+    (``pip install 'altk-evolve[hooks]'``).
+    """
+    return HAS_CPEX
+
+
 class HookType(str, Enum):
     """All altk_evolve hook types.
 
