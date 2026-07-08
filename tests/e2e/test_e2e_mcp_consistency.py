@@ -25,36 +25,36 @@ pytestmark = pytest.mark.e2e
 
 # A short two-step trajectory for a simple math assistant.
 # Two assistant turns → two steps to resample, keeping LLM cost manageable.
-_MATH_AGENT_TRAJECTORY = json.dumps([
-    {
-        "role": "user",
-        "content": "What is the compound interest on $1000 at 5% annual rate for 3 years?",
-    },
-    {
-        "role": "assistant",
-        "content": (
-            "Using the compound interest formula A = P(1 + r)^t:\n"
-            "A = 1000 × (1.05)^3 = 1000 × 1.157625 = $1157.63\n"
-            "The interest earned is $157.63."
-        ),
-    },
-    {
-        "role": "user",
-        "content": "And at 7%?",
-    },
-    {
-        "role": "assistant",
-        "content": (
-            "At 7%: A = 1000 × (1.07)^3 = 1000 × 1.225043 = $1225.04\n"
-            "The interest earned would be $225.04."
-        ),
-    },
-])
+_MATH_AGENT_TRAJECTORY = json.dumps(
+    [
+        {
+            "role": "user",
+            "content": "What is the compound interest on $1000 at 5% annual rate for 3 years?",
+        },
+        {
+            "role": "assistant",
+            "content": (
+                "Using the compound interest formula A = P(1 + r)^t:\n"
+                "A = 1000 × (1.05)^3 = 1000 × 1.157625 = $1157.63\n"
+                "The interest earned is $157.63."
+            ),
+        },
+        {
+            "role": "user",
+            "content": "And at 7%?",
+        },
+        {
+            "role": "assistant",
+            "content": ("At 7%: A = 1000 × (1.07)^3 = 1000 × 1.225043 = $1225.04\nThe interest earned would be $225.04."),
+        },
+    ]
+)
 
 
 def _consistency_available() -> bool:
     try:
         import altk_evolve.llm.guidelines.consistency_analyzer.resampling  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -121,7 +121,6 @@ async def test_mcp_consistency_mode_tags_generation_method(mcp):
         assert g.metadata["generation_method"] == "consistency"
 
 
-
 @pytest.mark.e2e
 async def test_mcp_both_mode_stores_guidelines_from_each_pipeline(mcp):
     """EVOLVE_GUIDELINES_MODE=both stores guidelines from both pipelines."""
@@ -155,6 +154,4 @@ async def test_mcp_both_mode_stores_guidelines_from_each_pipeline(mcp):
         assert g.metadata.get("generation_method") in ("regular", "consistency"), (
             f"Unexpected generation_method: {g.metadata.get('generation_method')}"
         )
-    assert len(regular) + len(consistency) == len(guidelines), (
-        "Every guideline must carry a generation_method tag"
-    )
+    assert len(regular) + len(consistency) == len(guidelines), "Every guideline must carry a generation_method tag"

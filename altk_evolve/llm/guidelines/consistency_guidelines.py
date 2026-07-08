@@ -30,9 +30,7 @@ HIGH_UNCERTAINTY = 0.2
 LOW_UNCERTAINTY = 0.1
 SKIP_ON_NO_UNCERTAINTY = True
 
-_CONSISTENCY_GUIDELINES_TEMPLATE = Template(
-    (Path(__file__).parent / "prompts/generate_consistency_guidelines.jinja2").read_text()
-)
+_CONSISTENCY_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_consistency_guidelines.jinja2").read_text())
 
 
 def _strip_orphaned_tool_messages(messages: list[dict]) -> list[dict]:
@@ -177,7 +175,6 @@ def _can_segment_trajectory(messages: list[dict]) -> bool:
     return True
 
 
-
 def parse_consistency_score_card(score_card: dict) -> dict:
     step_uncertainties: dict[int, float] = {}
     for step in score_card.get("steps", []):
@@ -254,10 +251,7 @@ def format_trajectory_data(
 
 
 def _write_guidelines_debug(debug_dir: Path, trace_id: Any, results: list[GuidelineGenerationResult], suffix: str = "") -> None:
-    data = [
-        {"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]}
-        for r in results
-    ]
+    data = [{"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]} for r in results]
     (debug_dir / f"guidelines_{str(trace_id)[:8]}{suffix}.json").write_text(json.dumps(data, indent=2))
 
 
@@ -298,7 +292,6 @@ def _generate_guideline_result(
         constrained_decoding_supported=constrained_decoding_supported,
     )
 
-
     if constrained_decoding_supported:
         litellm.enable_json_schema_validation = True
         clean_response = (
@@ -325,9 +318,7 @@ def _generate_guideline_result(
         clean_response = clean_llm_response(raw)
 
     if not clean_response:
-        logger.warning(
-            f"LLM returned empty response for consistency guideline generation. Model: {llm_settings.guidelines_model}"
-        )
+        logger.warning(f"LLM returned empty response for consistency guideline generation. Model: {llm_settings.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
     try:
@@ -409,7 +400,6 @@ def generate_consistency_guidelines(
     trajectory_ir = transform_trajectory_to_IR(trajectory)
     logger.info(f"Created trajectory IR for {trajectory_ir.get('name', '')}")
 
-
     steps = trajectory_ir.get("steps", [])
     n_steps = len(steps)
     if n_steps == 0:
@@ -422,7 +412,6 @@ def generate_consistency_guidelines(
         model_name=model or llm_settings.guidelines_model,
         max_steps=config.get("max_steps", -1),
     )
-
 
     logger.info(f"Computing consistency score card for {trajectory_ir.get('name', '')}")
     score_card, trajectory_ir = analyze_consistency(trajectory=trajectory_ir, config=config)
@@ -442,6 +431,7 @@ def generate_consistency_guidelines(
     if n_steps >= 2 and _can_segment_trajectory(messages):
         try:
             from altk_evolve.llm.guidelines.segmentation import segment_trajectory
+
             subtasks = segment_trajectory(messages)
         except Exception as e:
             logger.warning(f"Segmentation failed, falling back to full trajectory: {e}")
@@ -452,9 +442,7 @@ def generate_consistency_guidelines(
         if 1 <= subtask.start_step <= subtask.end_step <= n_steps:
             valid_subtasks.append(subtask)
         else:
-            logger.debug(
-                f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})"
-            )
+            logger.debug(f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
 
     if len(valid_subtasks) >= 2:
         logger.info(f"Segmented trajectory into {len(valid_subtasks)} subtasks")

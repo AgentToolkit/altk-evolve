@@ -279,7 +279,10 @@ def test_save_trajectory_backward_compat_no_extra_params(mock_get_client):
 
 def _mock_guideline_result(content="Write clear code."):
     from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResult
-    g = Guideline(content=content, category="strategy", rationale="Clarity", trigger="code review", implementation_steps=["Review the diff"])
+
+    g = Guideline(
+        content=content, category="strategy", rationale="Clarity", trigger="code review", implementation_steps=["Review the diff"]
+    )
     return GuidelineGenerationResult(guidelines=[g], task_description="some task")
 
 
@@ -301,9 +304,11 @@ def test_save_trajectory_regular_mode_default(mock_get_client):
 
 def test_save_trajectory_consistency_mode_calls_consistency_pipeline(mock_get_client):
     """EVOLVE_GUIDELINES_MODE=consistency calls generate_consistency_guidelines, not generate_guidelines."""
-    with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular, \
-         patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency, \
-         patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "consistency"}):
+    with (
+        patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular,
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+        patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "consistency"}),
+    ):
         mock_consistency.return_value = [_mock_guideline_result("Use deterministic prompts.")]
         trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
 
@@ -320,9 +325,11 @@ def test_save_trajectory_consistency_mode_calls_consistency_pipeline(mock_get_cl
 
 def test_save_trajectory_both_mode_calls_both_pipelines(mock_get_client):
     """EVOLVE_GUIDELINES_MODE=both runs both pipelines and tags each entity with its generation_method."""
-    with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular, \
-         patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency, \
-         patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}):
+    with (
+        patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular,
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+        patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+    ):
         mock_regular.return_value = [_mock_guideline_result("Write tests.")]
         mock_consistency.return_value = [_mock_guideline_result("Reduce uncertainty.")]
         trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
@@ -340,9 +347,11 @@ def test_save_trajectory_both_mode_calls_both_pipelines(mock_get_client):
 
 def test_save_trajectory_both_mode_merges_into_single_update_entities_call(mock_get_client):
     """Both pipelines' entities are merged and sent in a single update_entities call."""
-    with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular, \
-         patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency, \
-         patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}):
+    with (
+        patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular,
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+        patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+    ):
         mock_regular.return_value = [_mock_guideline_result("Write tests.")]
         mock_consistency.return_value = [_mock_guideline_result("Reduce uncertainty.")]
         trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
@@ -353,7 +362,6 @@ def test_save_trajectory_both_mode_merges_into_single_update_entities_call(mock_
         assert mock_get_client.update_entities.call_count == 2
         guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
         assert guideline_call["enable_conflict_resolution"] is True
-
 
 
 # ---------------------------------------------------------------------------

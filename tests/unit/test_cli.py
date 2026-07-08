@@ -780,4 +780,3 @@ class TestSyncPhoenixMore:
             assert result.exit_code == 0
             MockSync.assert_called_once_with(phoenix_url="http://custom:9000", namespace_id="production", project="prod")
             mock_syncer.sync.assert_called_once_with(limit=500, include_errors=True)
-

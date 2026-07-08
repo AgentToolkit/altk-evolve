@@ -1136,6 +1136,7 @@ SAMPLE_TRAJECTORY = {
 
 def _make_guideline_result(content="Always test your code."):
     from altk_evolve.schema.guidelines import Guideline
+
     guideline = Guideline(
         content=content,
         category="strategy",
@@ -1164,9 +1165,11 @@ class TestProcessTrajectoryGuidelinesMode:
 
     def test_regular_mode_calls_only_generate_guidelines(self):
         sync, mock_client = self._make_sync()
-        with patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular, \
-             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency, \
-             patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "regular"}):
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "regular"}),
+        ):
             mock_regular.return_value = [_make_guideline_result()]
 
             sync._process_trajectory(SAMPLE_TRAJECTORY)
@@ -1176,8 +1179,10 @@ class TestProcessTrajectoryGuidelinesMode:
 
     def test_regular_mode_tags_entities_with_generation_method(self):
         sync, mock_client = self._make_sync()
-        with patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular, \
-             patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "regular"}):
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "regular"}),
+        ):
             mock_regular.return_value = [_make_guideline_result()]
 
             sync._process_trajectory(SAMPLE_TRAJECTORY)
@@ -1190,9 +1195,11 @@ class TestProcessTrajectoryGuidelinesMode:
 
     def test_consistency_mode_calls_only_generate_consistency_guidelines(self):
         sync, mock_client = self._make_sync()
-        with patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular, \
-             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency, \
-             patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "consistency"}):
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "consistency"}),
+        ):
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
 
             sync._process_trajectory(SAMPLE_TRAJECTORY)
@@ -1202,8 +1209,10 @@ class TestProcessTrajectoryGuidelinesMode:
 
     def test_consistency_mode_tags_entities_with_generation_method(self):
         sync, mock_client = self._make_sync()
-        with patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency, \
-             patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "consistency"}):
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "consistency"}),
+        ):
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
 
             sync._process_trajectory(SAMPLE_TRAJECTORY)
@@ -1216,9 +1225,11 @@ class TestProcessTrajectoryGuidelinesMode:
 
     def test_both_mode_calls_both_pipelines(self):
         sync, mock_client = self._make_sync()
-        with patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular, \
-             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency, \
-             patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}):
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+        ):
             mock_regular.return_value = [_make_guideline_result("Write tests.")]
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
 
@@ -1229,9 +1240,11 @@ class TestProcessTrajectoryGuidelinesMode:
 
     def test_both_mode_produces_entities_from_both_pipelines(self):
         sync, mock_client = self._make_sync()
-        with patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular, \
-             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency, \
-             patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}):
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+        ):
             mock_regular.return_value = [_make_guideline_result("Write tests.")]
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
 
@@ -1246,9 +1259,11 @@ class TestProcessTrajectoryGuidelinesMode:
 
     def test_both_mode_merges_into_single_update_entities_call(self):
         sync, mock_client = self._make_sync()
-        with patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular, \
-             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency, \
-             patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}):
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+        ):
             mock_regular.return_value = [_make_guideline_result("Write tests.")]
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
 

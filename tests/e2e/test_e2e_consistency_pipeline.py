@@ -138,14 +138,18 @@ except Exception as e:
     # --- Step 3: Consistency Sync ---
     print("\n--- Step 3: Running evolve sync phoenix (EVOLVE_GUIDELINES_MODE=consistency) ---")
     sync_command = [
-        "uv", "run", "evolve", "sync", "phoenix",
-        "--project", project_name,
+        "uv",
+        "run",
+        "evolve",
+        "sync",
+        "phoenix",
+        "--project",
+        project_name,
         "--include-errors",
-        "--limit", "500",
+        "--limit",
+        "500",
     ]
-    debug_dir = pytestconfig.getoption("--consistency-debug-dir") or str(
-        Path(__file__).parent.parent.parent / "consistency_debug"
-    )
+    debug_dir = pytestconfig.getoption("--consistency-debug-dir") or str(Path(__file__).parent.parent.parent / "consistency_debug")
     sync_env = os.environ.copy()
     sync_env["EVOLVE_GUIDELINES_MODE"] = "consistency"
     sync_env["EVOLVE_DEBUG_DIR"] = debug_dir
@@ -200,7 +204,7 @@ except Exception as e:
                     guidelines_found = True
                     print(f"Generated {count} consistency guidelines")
                 else:
-                    print(f"Generated 0 guidelines (trajectory consistent enough to skip)")
+                    print("Generated 0 guidelines (trajectory consistent enough to skip)")
                 break
     finally:
         if process.poll() is None:
@@ -212,16 +216,12 @@ except Exception as e:
 
     full_output = "".join(output_lines)
 
-    assert resampling_ran, (
-        f"Consistency analyzer resampling did not run for {agent_name}. "
-        f"Sync output:\n{full_output[-2000:]}"
-    )
+    assert resampling_ran, f"Consistency analyzer resampling did not run for {agent_name}. Sync output:\n{full_output[-2000:]}"
     # guidelines_found is True when count > 0; a count of 0 is also valid —
     # it means SKIP_ON_NO_UNCERTAINTY fired because the trajectory was
     # consistent enough to not warrant guideline generation.
     assert guidelines_found or re.search(r"generated 0 guidelines", full_output), (
-        f"Consistency sync did not complete for {agent_name}. "
-        f"Sync output:\n{full_output[-2000:]}"
+        f"Consistency sync did not complete for {agent_name}. Sync output:\n{full_output[-2000:]}"
     )
 
 
@@ -247,7 +247,7 @@ def test_e2e_both_mode_smolagents(phoenix_server, pytestconfig):
     project_name = f"verify-both-smol-{current_timestamp}"
 
     print("\n==================================================")
-    print(f" BOTH-MODE TEST: smolagents")
+    print(" BOTH-MODE TEST: smolagents")
     print(f" Script: {script_path}")
     print(f" Project: {project_name}")
     print("==================================================")
@@ -313,14 +313,18 @@ except Exception as e:
     # --- Step 3: Both-mode Sync ---
     print("\n--- Step 3: Running evolve sync phoenix (EVOLVE_GUIDELINES_MODE=both) ---")
     sync_command = [
-        "uv", "run", "evolve", "sync", "phoenix",
-        "--project", project_name,
+        "uv",
+        "run",
+        "evolve",
+        "sync",
+        "phoenix",
+        "--project",
+        project_name,
         "--include-errors",
-        "--limit", "500",
+        "--limit",
+        "500",
     ]
-    debug_dir = pytestconfig.getoption("--consistency-debug-dir") or str(
-        Path(__file__).parent.parent.parent / "consistency_debug"
-    )
+    debug_dir = pytestconfig.getoption("--consistency-debug-dir") or str(Path(__file__).parent.parent.parent / "consistency_debug")
     sync_env = os.environ.copy()
     sync_env["EVOLVE_GUIDELINES_MODE"] = "both"
     sync_env["EVOLVE_DEBUG_DIR"] = debug_dir
@@ -385,15 +389,6 @@ except Exception as e:
 
     full_output = "".join(output_lines)
 
-    assert resampling_ran, (
-        f"Consistency pipeline resampling did not run in 'both' mode. "
-        f"Sync output:\n{full_output[-2000:]}"
-    )
-    assert sync_completed, (
-        f"Sync did not complete in 'both' mode. "
-        f"Sync output:\n{full_output[-2000:]}"
-    )
-    assert total_guidelines > 0, (
-        f"Expected at least regular guidelines in 'both' mode, got 0. "
-        f"Sync output:\n{full_output[-2000:]}"
-    )
+    assert resampling_ran, f"Consistency pipeline resampling did not run in 'both' mode. Sync output:\n{full_output[-2000:]}"
+    assert sync_completed, f"Sync did not complete in 'both' mode. Sync output:\n{full_output[-2000:]}"
+    assert total_guidelines > 0, f"Expected at least regular guidelines in 'both' mode, got 0. Sync output:\n{full_output[-2000:]}"

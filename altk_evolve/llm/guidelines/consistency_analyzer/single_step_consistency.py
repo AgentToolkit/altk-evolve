@@ -19,11 +19,12 @@ from altk_evolve.llm.guidelines.consistency_analyzer.utils import (
     compute_weighted_sum_consistency,
     extract_field_values_from_responses,
     find_matching_alternate,
-    flatten_response
+    flatten_response,
 )
 
 # The minimal fraction of raw samples that we need parsed in order to compute consistency
 MIN_FRACTION = 0.5
+
 
 def compute_json_step_consistency(parsed_responses: list, metric_config: dict, min_samples: int) -> tuple[float, dict]:
     """
@@ -42,7 +43,7 @@ def compute_json_step_consistency(parsed_responses: list, metric_config: dict, m
     if "fields" not in metric_config:
         consistency, _ = get_consistency_by_metric(parsed_responses, metric_config["metric"])
         return consistency, {}
-    
+
     flat_responses = [flatten_response(r) for r in parsed_responses]
     field_consistencies = {}
     step_consistency_list = []
@@ -71,13 +72,11 @@ def compute_json_step_consistency(parsed_responses: list, metric_config: dict, m
 
     return consistency, {"field_consistencies": field_consistencies}
 
+
 def get_undefined_consistency() -> dict:
-    consistency = {
-        "step_consistency": -1,
-        "field_consistencies": {},
-        "metric": "undefined"
-        }
+    consistency = {"step_consistency": -1, "field_consistencies": {}, "metric": "undefined"}
     return consistency
+
 
 def check_sample_validity(step: dict, config: dict) -> tuple[bool, str]:
     """
@@ -107,7 +106,7 @@ def check_sample_validity(step: dict, config: dict) -> tuple[bool, str]:
     # Check 2: metric configuration exists
     metric_config = get_agent_config(step_name, config)
     if metric_config == {}:
-        return False, f'Cannot find metric configuration for agent {step_name} - consistency undefined'
+        return False, f"Cannot find metric configuration for agent {step_name} - consistency undefined"
 
     # Check 3: response type specific validations
     response_type = metric_config["response_type"]
@@ -121,26 +120,30 @@ def check_sample_validity(step: dict, config: dict) -> tuple[bool, str]:
         if "alternates" in metric_config:
             this_config = find_matching_alternate(metric_config["alternates"], flatten_response(step["parsed_response"]))
             if this_config == {}:
-                return False, f"Alternates: Could not find matching alternate config for {json.dumps(samples[0], indent=4)} - consistency undefined"
+                return (
+                    False,
+                    f"Alternates: Could not find matching alternate config for {json.dumps(samples[0], indent=4)} - consistency undefined",
+                )
 
     elif response_type in ["code", "text", "tool_calls"]:
         samples = step["sampling"].get("raw_samples", [])
         if samples == []:
-            return False, f'Missing samples for response type {response_type} in {step_name} - consistency undefined'
+            return False, f"Missing samples for response type {response_type} in {step_name} - consistency undefined"
 
     else:
-        return False, f'Cannot handle response type {response_type} in {step_name} - consistency undefined'
+        return False, f"Cannot handle response type {response_type} in {step_name} - consistency undefined"
 
     return True, ""
+
 
 def compute_step_consistency(trajectory: dict, config: dict) -> dict:
     """
     Compute step consistency for each step in a trajectory.
-    
+
     Args:
         trajectory: A trajectory dictionary containing steps
         config: Configuration dictionary with agent metric configs
-        
+
     Returns:
         The trajectory with consistency information added to each step
     """
@@ -176,14 +179,15 @@ def compute_step_consistency(trajectory: dict, config: dict) -> dict:
                 this_config = find_matching_alternate(metric_config["alternates"], flatten_response(step["parsed_response"]))
 
             consistency, metadata = compute_json_step_consistency(
-                samples, this_config,
+                samples,
+                this_config,
                 int(MIN_FRACTION * max_samples),
             )
             metric = "mixed" if "fields" in metric_config else metric_config.get("metric", "mixed")
 
         elif metric_config["response_type"] in ["code", "text"]:
             samples = step["sampling"].get("parsed_samples", [])
-            if samples == []:   # we don't have any parsed samples
+            if samples == []:  # we don't have any parsed samples
                 samples = step["sampling"].get("raw_samples", [])
             metric = metric_config["metric"]
             consistency, _ = get_consistency_by_metric(samples, metric)
@@ -191,13 +195,12 @@ def compute_step_consistency(trajectory: dict, config: dict) -> dict:
 
         else:
             # This should never happen as check_sample_validity already validates response_type
-            raise ValueError(f'Unexpected response type {metric_config["response_type"]} in {step["name"]}')
+            raise ValueError(f"Unexpected response type {metric_config['response_type']} in {step['name']}")
 
-        logger.debug(f'+++ Step consistency ({metric_config["response_type"]}/{metric}): {consistency}')
+        logger.debug(f"+++ Step consistency ({metric_config['response_type']}/{metric}): {consistency}")
         step["consistency"] = {
             "step_consistency": consistency,
             "field_consistencies": metadata.get("field_consistencies", {}),
             "metric": metric,
         }
     return trajectory
-

@@ -29,6 +29,7 @@ pytestmark = pytest.mark.e2e
 def _consistency_available() -> bool:
     try:
         import altk_evolve.llm.guidelines.consistency_analyzer.resampling  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -37,6 +38,7 @@ def _consistency_available() -> bool:
 def _smolagents_available() -> bool:
     try:
         import smolagents  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -93,7 +95,7 @@ def _run_smolagent_and_extract_messages() -> list[dict]:
         MessageRole.SYSTEM: "system",
         MessageRole.USER: "user",
         MessageRole.ASSISTANT: "assistant",
-        MessageRole.TOOL_RESPONSE: "user",       # observation → user message
+        MessageRole.TOOL_RESPONSE: "user",  # observation → user message
     }
 
     messages = []
@@ -105,9 +107,7 @@ def _run_smolagent_and_extract_messages() -> list[dict]:
         # smolagents content is either a plain str or a list of {"type": "text", "text": "..."}
         content = msg.content
         if isinstance(content, list):
-            content = "\n".join(
-                item.get("text", "") for item in content if isinstance(item, dict)
-            )
+            content = "\n".join(item.get("text", "") for item in content if isinstance(item, dict))
 
         if content:
             messages.append({"role": role, "content": content})
@@ -149,6 +149,7 @@ async def test_smolagent_mcp_consistency_pipeline(mcp):
     print(f"\n--- Step 2: Saving trajectory via MCP (task_id={task_id}) ---")
 
     import os
+
     os.environ["EVOLVE_DEBUG_DIR"] = str(debug_dir)
     os.environ["EVOLVE_GUIDELINES_MODE"] = "consistency"
     try:
@@ -175,8 +176,7 @@ async def test_smolagent_mcp_consistency_pipeline(mcp):
 
     guidelines_files = list(debug_dir.glob("guidelines_*.json"))
     assert guidelines_files, (
-        "No guidelines file written — consistency pipeline did not complete. "
-        f"Debug dir contents: {[f.name for f in all_files]}"
+        f"No guidelines file written — consistency pipeline did not complete. Debug dir contents: {[f.name for f in all_files]}"
     )
 
     # Print score cards for visibility

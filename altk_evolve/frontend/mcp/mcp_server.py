@@ -518,7 +518,6 @@ def save_trajectory(
         enable_conflict_resolution=False,
     )
 
-
     guideline_metadata_base: dict = {
         "source_task_id": task_id,
         "creation_mode": "auto-mcp",

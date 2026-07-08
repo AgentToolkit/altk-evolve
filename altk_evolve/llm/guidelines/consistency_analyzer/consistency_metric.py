@@ -19,23 +19,27 @@ import pandas as pd
 from scipy.stats import entropy
 
 from abc import ABC, abstractmethod
+
 # Module-level caching for sentence transformer models (populated on first use)
 sentence_transformer_model_small = None
 sentence_transformer_model_large = None
 
+
 def get_sentence_transformer_small(sentence_transformer_model_small):
     if sentence_transformer_model_small is None:
         from sentence_transformers import SentenceTransformer
+
         sentence_transformer_model_small = SentenceTransformer("all-MiniLM-L6-v2")
     return sentence_transformer_model_small
+
 
 def get_sentence_transformer_large(sentence_transformer_model_large):
     if sentence_transformer_model_large is None:
         from sentence_transformers import SentenceTransformer
-        sentence_transformer_model_large = SentenceTransformer(
-            "nomic-ai/CodeRankEmbed", trust_remote_code=True
-        )
+
+        sentence_transformer_model_large = SentenceTransformer("nomic-ai/CodeRankEmbed", trust_remote_code=True)
     return sentence_transformer_model_large
+
 
 def get_metric_instance(metric: str):
     """
@@ -69,6 +73,7 @@ def get_metric_instance(metric: str):
         return DamerauLevenshteinConsistencyMetric()
     else:
         raise ValueError(f"Metric {metric} not supported in get_metric_instance")
+
 
 def get_consistency_by_metric(
     samples: list,
@@ -127,6 +132,7 @@ def get_consistency_by_metric(
     else:
         logger.debug(f"++++ Metric {metric} not supported: consistency = -1")
         return -1.0, -1.0
+
 
 class ConsistencyMetric(ABC):
     """
@@ -192,6 +198,7 @@ class ConsistencyMetric(ABC):
         """
         pass
 
+
 class JaccardConsistencyMetric(ConsistencyMetric):
     """Jaccard similarity-based consistency metric for word-level comparison."""
 
@@ -205,10 +212,10 @@ class JaccardConsistencyMetric(ConsistencyMetric):
         sim_list = []
         # iterate through the pairs of samples
         for i, sample in enumerate(samples):
-            if i+1 >= len(samples):
+            if i + 1 >= len(samples):
                 break
-            for j in range(len(samples)-(i+1)):
-                sim_list.append(jaccard_similarity(sample, samples[i+1+j]))
+            for j in range(len(samples) - (i + 1)):
+                sim_list.append(jaccard_similarity(sample, samples[i + 1 + j]))
 
         # aggregate over all pairwise similarities
         mean_sim = st.mean(sim_list) if sim_list != [] else -1.0
@@ -230,6 +237,7 @@ class JaccardConsistencyMetric(ConsistencyMetric):
 
         return distances
 
+
 def jaccard_similarity(x: str, y: str) -> float:
     set1 = set(x.split())
     set2 = set(y.split())
@@ -239,6 +247,7 @@ def jaccard_similarity(x: str, y: str) -> float:
     if union == 0:
         return 1.0 if intersection == 0 else 0.0
     return intersection / union
+
 
 class DamerauLevenshteinConsistencyMetric(ConsistencyMetric):
     """Damerau-Levenshtein edit distance-based consistency metric."""
@@ -317,6 +326,7 @@ class DamerauLevenshteinConsistencyMetric(ConsistencyMetric):
 
         return distances
 
+
 def damerau_levenshtein_distance(a: str | list[str], b: str | list[str]) -> int:
     """
     Full (unrestricted) Damerau–Levenshtein distance on sequences of strings.
@@ -355,22 +365,23 @@ def damerau_levenshtein_distance(a: str | list[str], b: str | list[str]) -> int:
                 db = j
 
             H[i + 1][j + 1] = min(
-                H[i][j] + cost,       # substitution/match
-                H[i + 1][j] + 1,      # insertion
-                H[i][j + 1] + 1,      # deletion
+                H[i][j] + cost,  # substitution/match
+                H[i + 1][j] + 1,  # insertion
+                H[i][j + 1] + 1,  # deletion
                 # transposition accounting for gaps
-                H[i1][j1] + (i - i1 - 1) + 1 + (j - j1 - 1)
+                H[i1][j1] + (i - i1 - 1) + 1 + (j - j1 - 1),
             )
         da[a[i - 1]] = i
 
     return H[n + 1][m + 1]
+
 
 def get_sample_strings(samples: list, sep: str = "") -> list:
     # turn the list of samples into a list of strings
     str_samples = []
     for sample in samples:
         if isinstance(sample, list):
-        # create a string from the list contents
+            # create a string from the list contents
             str_sample = ""
             for elem in sample:
                 str_sample += sep + str(elem)
@@ -379,13 +390,14 @@ def get_sample_strings(samples: list, sep: str = "") -> list:
             str_samples.append(str(sample))
     return str_samples
 
+
 class CategoricalEntropyConsistencyMetric(ConsistencyMetric):
     """Entropy-based consistency metric for categorical data."""
 
     def get_consistency_and_distance(self, samples: list) -> tuple[float, float]:
         if len(samples) <= 1:
             return -1.0, -1.0
-        
+
         distance = self._get_distance(samples)
         return 1.0 - distance, distance
 
@@ -394,7 +406,7 @@ class CategoricalEntropyConsistencyMetric(ConsistencyMetric):
         # not enough samples were collected for this step
         if len(samples) <= 1:
             return step_consistency
-        
+
         return 1.0 - self._get_distance(samples)
 
     def _get_distance(self, samples: list) -> float:
@@ -412,7 +424,7 @@ class CategoricalEntropyConsistencyMetric(ConsistencyMetric):
             return 0.0
 
         normalized_entropy = val_entropy / max_entropy
-        if normalized_entropy > 1.0:   # correct anomalies from rounding errors
+        if normalized_entropy > 1.0:  # correct anomalies from rounding errors
             normalized_entropy = 1.0
 
         return normalized_entropy
@@ -431,6 +443,7 @@ class CategoricalEntropyConsistencyMetric(ConsistencyMetric):
             distances.append(0.0 if sample_str == chosen_str else 1.0)
 
         return distances
+
 
 class EmbeddingConsistencyMetric(ConsistencyMetric):
     """Sentence transformer embedding-based consistency metric."""
@@ -487,6 +500,7 @@ class EmbeddingConsistencyMetric(ConsistencyMetric):
 
         return distances
 
+
 class NumericFractionConsistencyMetric(ConsistencyMetric):
     """Numeric fraction-based consistency metric for numerical values."""
 
@@ -513,10 +527,10 @@ class NumericFractionConsistencyMetric(ConsistencyMetric):
         diff_list = []
         # iterate through the pairs of samples
         for i, sample in enumerate(samples):
-            if i+1 >= len(samples):
+            if i + 1 >= len(samples):
                 break
-            for j in range(len(samples)-(i+1)):
-                diff_list.append(abs(float(sample) - float(samples[i+1+j])))
+            for j in range(len(samples) - (i + 1)):
+                diff_list.append(abs(float(sample) - float(samples[i + 1 + j])))
 
         # aggregate over all pairwise differences
         return st.mean(diff_list) if diff_list != [] else -1.0

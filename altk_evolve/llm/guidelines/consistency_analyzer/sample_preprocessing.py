@@ -17,15 +17,14 @@ import re
 from altk_evolve.llm.guidelines.consistency_analyzer.utils import invert_list_of_dictionaries
 
 
-
 def get_agent_config(agent: str, config: dict) -> dict:
     """
     Find metric configuration for a specific agent.
-    
+
     Args:
         agent: Agent name
         config: Configuration dict with 'agents' list
-        
+
     Returns:
         Agent configuration dict, or empty dict if not found
     """
@@ -46,48 +45,46 @@ def parse_code_response(response: str) -> str:
         Cleaned code string
     """
     # remove everything preceding the python code
-    response = response[response.find("```"):]
+    response = response[response.find("```") :]
     # remove everything following the python code
-    response = response[:(response.rfind("```")+3)]
-    parsed_response = (response.strip()
-            .removeprefix("```python")
-            .removesuffix("```")
-            .strip())
+    response = response[: (response.rfind("```") + 3)]
+    parsed_response = response.strip().removeprefix("```python").removesuffix("```").strip()
 
     # Remove Python-style comments
     # Remove multi-line comments (""" or ''')
-    parsed_response = re.sub(r'"""[\s\S]*?"""', '', parsed_response)
-    parsed_response = re.sub(r"'''[\s\S]*?'''", '', parsed_response)
-    
+    parsed_response = re.sub(r'"""[\s\S]*?"""', "", parsed_response)
+    parsed_response = re.sub(r"'''[\s\S]*?'''", "", parsed_response)
+
     # Remove single-line comments (# ...)
-    lines = parsed_response.split('\n')
+    lines = parsed_response.split("\n")
     cleaned_lines = []
     for line in lines:
         # Find the position of # that's not inside a string
         in_string = False
         string_char = None
         comment_pos = -1
-        
+
         for i, char in enumerate(line):
-            if char in ['"', "'"] and (i == 0 or line[i-1] != '\\'):
+            if char in ['"', "'"] and (i == 0 or line[i - 1] != "\\"):
                 if not in_string:
                     in_string = True
                     string_char = char
                 elif char == string_char:
                     in_string = False
                     string_char = None
-            elif char == '#' and not in_string:
+            elif char == "#" and not in_string:
                 comment_pos = i
                 break
-        
+
         if comment_pos >= 0:
             cleaned_lines.append(line[:comment_pos].rstrip())
         else:
             cleaned_lines.append(line)
-    
-    parsed_response = '\n'.join(cleaned_lines)
+
+    parsed_response = "\n".join(cleaned_lines)
 
     return parsed_response
+
 
 def parse_tool_calls_response(response: list) -> dict:
     """
@@ -110,84 +107,81 @@ def parse_tool_calls_response(response: list) -> dict:
 def parse_thought_code_response(response: str) -> dict:
     """
     Parse response to extract thought and code portions.
-    
+
     This function extracts both the thought (non-code text preceding the Python code)
     and the code (Python code block) from a response string. The code extraction
     follows the same logic as parse_code_response.
-    
+
     Args:
         response: Raw response text containing thought and code
-        
+
     Returns:
         Dictionary with "thought" and "code" keys:
         - "thought": Text preceding the Python code block (empty string if none)
         - "code": Extracted and cleaned Python code (same as parse_code_response output)
     """
     result = {"thought": "", "code": ""}
-    
+
     # Check if there's a code block
     if "```" not in response:
         # No code block found - treat entire response as thought
         result["thought"] = response.strip()
         return result
-    
+
     # Find the start of the code block
     code_start = response.find("```")
-    
+
     # Extract thought: everything before the code block
     result["thought"] = response[:code_start].strip()
-    
+
     # Extract code using the same logic as parse_code_response
     code_portion = response[code_start:]
-    
+
     # Find the end of the code block
     code_end = code_portion.rfind("```")
     if code_end == -1:
         # Malformed code block - no closing ```
         result["code"] = ""
         return result
-    
+
     # Extract code between ``` markers
-    code_portion = code_portion[:(code_end + 3)]
-    parsed_code = (code_portion.strip()
-            .removeprefix("```python")
-            .removesuffix("```")
-            .strip())
-    
+    code_portion = code_portion[: (code_end + 3)]
+    parsed_code = code_portion.strip().removeprefix("```python").removesuffix("```").strip()
+
     # Remove Python-style comments (same as parse_code_response)
     # Remove multi-line comments (""" or ''')
-    parsed_code = re.sub(r'"""[\s\S]*?"""', '', parsed_code)
-    parsed_code = re.sub(r"'''[\s\S]*?'''", '', parsed_code)
-    
+    parsed_code = re.sub(r'"""[\s\S]*?"""', "", parsed_code)
+    parsed_code = re.sub(r"'''[\s\S]*?'''", "", parsed_code)
+
     # Remove single-line comments (# ...)
-    lines = parsed_code.split('\n')
+    lines = parsed_code.split("\n")
     cleaned_lines = []
     for line in lines:
         # Find the position of # that's not inside a string
         in_string = False
         string_char = None
         comment_pos = -1
-        
+
         for i, char in enumerate(line):
-            if char in ['"', "'"] and (i == 0 or line[i-1] != '\\'):
+            if char in ['"', "'"] and (i == 0 or line[i - 1] != "\\"):
                 if not in_string:
                     in_string = True
                     string_char = char
                 elif char == string_char:
                     in_string = False
                     string_char = None
-            elif char == '#' and not in_string:
+            elif char == "#" and not in_string:
                 comment_pos = i
                 break
-        
+
         if comment_pos >= 0:
             cleaned_lines.append(line[:comment_pos].rstrip())
         else:
             cleaned_lines.append(line)
-    
-    parsed_code = '\n'.join(cleaned_lines)
+
+    parsed_code = "\n".join(cleaned_lines)
     result["code"] = parsed_code
-    
+
     return result
 
 
@@ -205,20 +199,22 @@ def parse_json_response(response: str) -> dict:
         return {}
     try:
         parsed_response = json.loads(response)
-    except Exception as e:
+    except Exception:
         # isolate the json output
         # remove everything preceding the json output
         response = str(response)
-        response = response[response.find("```"):]
+        response = response[response.find("```") :]
         # remove everything following the json output
-        response = response[:(response.rfind("```")+3)]
-        response = (response.strip()
-                .removeprefix("```json")
-                .removeprefix("```Json")
-                .removeprefix("```JSON")
-                .removeprefix("```")
-                .removesuffix("```")
-                .strip())
+        response = response[: (response.rfind("```") + 3)]
+        response = (
+            response.strip()
+            .removeprefix("```json")
+            .removeprefix("```Json")
+            .removeprefix("```JSON")
+            .removeprefix("```")
+            .removesuffix("```")
+            .strip()
+        )
         try:
             parsed_response = json.loads(response)
         except:
@@ -226,19 +222,20 @@ def parse_json_response(response: str) -> dict:
             try:
                 parsed_response = json.loads(response)
             except:
-                #logger.debug(f"+++ Exception: parse_response: could not load json")
+                # logger.debug(f"+++ Exception: parse_response: could not load json")
                 parsed_response = {}
 
     return parsed_response
 
+
 def find_reverse(str_a: str, ch: str) -> int:
     """
     Find last occurrence of character in string.
-    
+
     Args:
         str_a: String to search
         ch: Character to find
-        
+
     Returns:
         Index of last occurrence, or -1 if not found
     """
@@ -251,11 +248,11 @@ def find_reverse(str_a: str, ch: str) -> int:
 def strip_end(a: str, b: str) -> str:
     """
     Remove all trailing occurrences of substring.
-    
+
     Args:
         a: String to modify
         b: Substring to remove from end
-        
+
     Returns:
         Modified string
     """
@@ -263,26 +260,29 @@ def strip_end(a: str, b: str) -> str:
         a = a[: len(a) - len(b)]
     return a
 
+
 def fix_fractions(json_str):
     """
     Replace fractions with decimal values in JSON string.
-    
+
     Args:
         json_str: JSON string potentially containing fractions
-        
+
     Returns:
         Modified string with fractions converted to decimals
     """
+
     def replacer(match):
-        numerator, denominator = match.group(0).split('/')
+        numerator, denominator = match.group(0).split("/")
         try:
             value = int(numerator) / int(denominator)
         except ZeroDivisionError:
-            value = float('nan')  # return NaN for division by zero
+            value = float("nan")  # return NaN for division by zero
         return str(value)
 
-    fixed = re.sub(r'\b\d+/\d+\b', replacer, json_str)
+    fixed = re.sub(r"\b\d+/\d+\b", replacer, json_str)
     return fixed
+
 
 def parse_react_aw_response(response: str) -> dict:
     """
@@ -298,70 +298,70 @@ def parse_react_aw_response(response: str) -> dict:
 
     # Track character positions in original response
     original_response = response
-    
+
     # Extract Python code block from response
     if "```python" not in response:
-        logger.debug(f"+++ Warning: No Python code block found in response")
+        logger.debug("+++ Warning: No Python code block found in response")
         return item
-    
+
     # Find the python code block in the original response
     code_start = original_response.find("```python")
     code_end = original_response.find("```", code_start + 9)
-    
+
     if code_end == -1:
-        logger.debug(f"+++ Warning: Python code block not properly closed in response ")
+        logger.debug("+++ Warning: Python code block not properly closed in response ")
         return item
-    
+
     # Extract the code content (skip "```python" which is 9 chars)
-    code_block = original_response[code_start + 9:code_end].strip()
-    
+    code_block = original_response[code_start + 9 : code_end].strip()
+
     # Parse the API call from the code
     # Look for patterns like: apis.api_docs.show_api_doc(...) or logger.debug(apis.api_docs.show_api_doc(...))
     # The code block may have multiple lines, so we need to find the line with the API call
-    
+
     # Find where "apis." starts in the original response
     # We need to account for the code block start position and any whitespace
     apis_search_start = code_start + 9  # After "```python"
     apis_pos_in_response = original_response.find("apis.", apis_search_start)
-    
+
     if apis_pos_in_response == -1:
-        logger.debug(f"+++ Warning: No API call found in response (no 'apis.' prefix) ")
+        logger.debug("+++ Warning: No API call found in response (no 'apis.' prefix) ")
         return item
-    
+
     # Find the line containing the API call in the code block
     # The API call might span multiple lines, so we need to find the complete call
-    
+
     # Find where "apis." starts in the code block
     apis_in_block_pos = code_block.find("apis.")
     if apis_in_block_pos == -1:
-        logger.debug(f"+++ Warning: No 'apis.' found in code block ")
+        logger.debug("+++ Warning: No 'apis.' found in code block ")
         return item
-    
+
     # Extract everything from "apis." onwards in the entire code block
     api_call_part = code_block[apis_in_block_pos:]
-    
+
     # Find the opening parenthesis in the API call
     paren_start_in_call = api_call_part.find("(")
     if paren_start_in_call == -1:
-        logger.debug(f"+++ Warning: No opening parenthesis found in API call")
+        logger.debug("+++ Warning: No opening parenthesis found in API call")
         return item
-    
+
     # Extract API name (everything before the opening parenthesis, removing 'apis.' prefix)
     api_full_name = api_call_part[:paren_start_in_call]
     api_name = api_full_name[5:]  # Remove 'apis.' prefix
-    
+
     # Extract parameters (everything between parentheses)
     # Need to find the matching closing parenthesis, handling nested parens and strings
     paren_count = 0
     paren_end_in_call = -1
     in_string = False
     string_char = None
-    
+
     for i in range(paren_start_in_call, len(api_call_part)):
         char = api_call_part[i]
-        
+
         # Handle string delimiters
-        if char in ['"', "'"] and (i == paren_start_in_call or api_call_part[i-1] != '\\'):
+        if char in ['"', "'"] and (i == paren_start_in_call or api_call_part[i - 1] != "\\"):
             if not in_string:
                 in_string = True
                 string_char = char
@@ -370,28 +370,26 @@ def parse_react_aw_response(response: str) -> dict:
                 string_char = None
         # Only count parentheses outside of strings
         elif not in_string:
-            if char == '(':
+            if char == "(":
                 paren_count += 1
-            elif char == ')':
+            elif char == ")":
                 paren_count -= 1
                 if paren_count == 0:
                     paren_end_in_call = i
                     break
-    
+
     if paren_end_in_call == -1:
-        logger.debug(f"+++ Warning: No matching closing parenthesis found in API call")
+        logger.debug("+++ Warning: No matching closing parenthesis found in API call")
         return item
-    
-    params_str = api_call_part[paren_start_in_call + 1:paren_end_in_call].strip()
-    # normalize the parameter string by removing white space and \n characters 
+
+    params_str = api_call_part[paren_start_in_call + 1 : paren_end_in_call].strip()
+    # normalize the parameter string by removing white space and \n characters
     params_str = params_str.replace(" ", "")
     params_str = params_str.replace("\n", "")
-
 
     item["API_name"] = api_name
     item["API_params"] = params_str
     return item
-
 
 
 def parse_react_response(response: str) -> dict:
@@ -432,9 +430,7 @@ def parse_react_response(response: str) -> dict:
         return item
 
     if response.count("Action Input:") > 1:
-        item["parse_error_msg"] = (
-            'Please use only one "Action Input:" in your response.'
-        )
+        item["parse_error_msg"] = 'Please use only one "Action Input:" in your response.'
         return item
 
     # Track character positions before splitting
@@ -449,10 +445,7 @@ def parse_react_response(response: str) -> dict:
 
     # get action
     if "Action:" not in action:
-        item["parse_error_msg"] = (
-            'Please specify the API name you would like to call via "Action:"'
-            " followed by the name. "
-        )
+        item["parse_error_msg"] = 'Please specify the API name you would like to call via "Action:" followed by the name. '
         return item
 
     if action.count("Action:") > 1:
@@ -464,7 +457,6 @@ def parse_react_response(response: str) -> dict:
         strip_end(thought.strip(), "\\n").strip(),
         strip_end(action.strip(), "\\n").strip(),
     )
-
 
     # Track thought position (may or may not have "Thought:" prefix)
     thought_pos = 0  # Default to beginning
@@ -485,22 +477,15 @@ def parse_react_response(response: str) -> dict:
     # get action input
     left_bracket_pos = action_input.find("{")
     if left_bracket_pos == -1:
-        item["parse_error_msg"] = (
-            "the Action Input is in json string format, and should begin" ' with "{"'
-        )
+        item["parse_error_msg"] = 'the Action Input is in json string format, and should begin with "{"'
         return item
     right_bracket_pos = find_reverse(action_input, "}")
     if right_bracket_pos == -1:
-        item["parse_error_msg"] = (
-            "the Action Input is in json string format, and should end with"
-            ' "}". Do NOT say anything else after "}"'
-        )
+        item["parse_error_msg"] = 'the Action Input is in json string format, and should end with "}". Do NOT say anything else after "}"'
         return item
 
     if left_bracket_pos >= right_bracket_pos:
-        item["parse_error_msg"] = (
-            "Your action input cannot be parsed as a json string. Please try" " again."
-        )
+        item["parse_error_msg"] = "Your action input cannot be parsed as a json string. Please try again."
         return item
 
     # keep only within {}
@@ -508,15 +493,11 @@ def parse_react_response(response: str) -> dict:
     action_input = "{" + action_input.strip("{}") + "}"
 
     if action_input.startswith("{{"):
-        item["parse_error_msg"] = (
-            "the Action Input is in json string format, and should begin with"
-            ' only one "{", not two or more.'
-        )
+        item["parse_error_msg"] = 'the Action Input is in json string format, and should begin with only one "{", not two or more.'
         return item
     if action_input.endswith("}}"):
         item["parse_error_msg"] = (
-            "the Action Input is in json string format, and should end with"
-            ' only one "}". Do NOT say anything else after "}"'
+            'the Action Input is in json string format, and should end with only one "}". Do NOT say anything else after "}"'
         )
         return item
 
@@ -542,40 +523,39 @@ def parse_react_response(response: str) -> dict:
     return item
 
 
-
-
-def inner_field_backfill(response, config:dict):
+def inner_field_backfill(response, config: dict):
     """
     Backfill missing fields in response according to config.
-    
+
     Args:
         response: Response dict to backfill
         config: Configuration dict with 'fields' list
-        
+
     Returns:
         Response with backfilled fields
     """
     if "fields" in config:
         # we are expecting a dictionary
         if not isinstance(response, dict):
-            response = {} 
+            response = {}
         for field in config["fields"]:
             if "backfill" not in field:
                 continue
             if isinstance(field["name"], str) and field["name"] not in response:
-                response[field["name"]] = field["backfill"] 
+                response[field["name"]] = field["backfill"]
     return response
+
 
 def field_backfill(response, config: dict):
     """
     Backfill missing field values according to config.
-    
+
     Handles both regular configs and alternate configs.
-    
+
     Args:
         response: Response dict to backfill
         config: Configuration dict
-        
+
     Returns:
         Response with backfilled fields
     """
@@ -591,10 +571,10 @@ def field_backfill(response, config: dict):
 def parsed_response_backfill(config: dict):
     """
     Create backfilled response for unparseable responses.
-    
+
     Args:
         config: Configuration dict with response_type and optional backfill
-        
+
     Returns:
         Backfilled response (dict for JSON/ReAct, string for code)
     """
@@ -614,15 +594,14 @@ def parsed_response_backfill(config: dict):
     return response
 
 
-
-def extract_parsed_responses_from_trajectory(trajectory:dict, config: dict)-> dict:
+def extract_parsed_responses_from_trajectory(trajectory: dict, config: dict) -> dict:
     """
     Extract and parse responses from all steps in a trajectory.
-    
+
     Args:
         trajectory: Trajectory dict with steps
         config: Configuration dict with agent configs
-        
+
     Returns:
         Trajectory with parsed_samples added to each step
     """
@@ -632,14 +611,16 @@ def extract_parsed_responses_from_trajectory(trajectory:dict, config: dict)-> di
         ms = config.get("max_samples", len(step["sampling"]["raw_samples"]))
         logger.debug(f"+++ Processing {ms} samples out of {len(step['sampling']['raw_samples'])} available samples")
         response_samples = step["sampling"]["raw_samples"][:ms]
-            
+
         agent_config = get_agent_config(step["name"], config)
         if agent_config == {}:
             logger.debug(f"+++ No configuration found for agent {step['name']}")
             continue
 
         if agent_config["response_type"] in ["text"]:
-            logger.debug(f"+++ Not parsing text responses for response type {agent_config['response_type']} in agent {agent_config['name']}")
+            logger.debug(
+                f"+++ Not parsing text responses for response type {agent_config['response_type']} in agent {agent_config['name']}"
+            )
         elif agent_config["response_type"] in ["code", "json", "react", "react_aw", "thought_code", "tool_calls"]:
             parsed_response_list = []
 
@@ -664,7 +645,9 @@ def extract_parsed_responses_from_trajectory(trajectory:dict, config: dict)-> di
                     parsed_response = field_backfill(parsed_response, agent_config)
 
                 if parsed_response == {} or parsed_response == "":
-                    logger.debug(f"+++ Could not parse response ({response[:50]}) for {step['name']} with response type {agent_config['response_type']}")
+                    logger.debug(
+                        f"+++ Could not parse response ({response[:50]}) for {step['name']} with response type {agent_config['response_type']}"
+                    )
                     continue
 
                 parsed_response_list.append(parsed_response)
@@ -695,6 +678,3 @@ def extract_parsed_responses_from_trajectory(trajectory:dict, config: dict)-> di
             logger.debug(f"+++ Cannot parse responses for response type {agent_config['response_type']}")
 
     return trajectory
-
-    
-

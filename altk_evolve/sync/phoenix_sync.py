@@ -831,8 +831,7 @@ class PhoenixSync:
                 os.makedirs(_debug_dir, exist_ok=True)
                 _trace_prefix = str(trajectory["trace_id"])[:8]
                 _guidelines_data = [
-                    {"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]}
-                    for r in regular_results
+                    {"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]} for r in regular_results
                 ]
                 with open(os.path.join(_debug_dir, f"guidelines_{_trace_prefix}_regular.json"), "w") as _f:
                     json.dump(_guidelines_data, _f, indent=2)

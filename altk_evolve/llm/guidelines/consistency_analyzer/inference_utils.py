@@ -17,7 +17,6 @@ from altk_evolve.config.llm import llm_settings
 MAX_NEW_TOKENS = 3000
 
 
-
 def get_response_sampling(
     prompt,
     model_id: str,
@@ -51,4 +50,3 @@ def get_response_sampling(
 
     response = completion(**kwargs)
     return response.choices
-

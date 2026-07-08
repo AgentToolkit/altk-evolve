@@ -1,13 +1,9 @@
-
 """Trajectory resampling: generate multiple LLM responses per step for consistency analysis."""
-
 
 import logging
 
 logger = logging.getLogger(__name__)
 from altk_evolve.llm.guidelines.consistency_analyzer.inference_utils import get_response_sampling
-
-
 
 
 def extract_raw_samples(choices: list) -> dict:
@@ -57,17 +53,16 @@ def resample_trajectory(
     logger.info(f"+++ Resampling trajectory ({trajectory.get('name', '')})")
     steps = trajectory["steps"] if max_steps == -1 else trajectory["steps"][:max_steps]
     for j, step in enumerate(steps):
-        
         if "sampling" in step:
             # don't sample again if there are already samples for this step
-            logger.debug(f"+++ Found samples - skipping trajectory resampling")
-            return(trajectory)
+            logger.debug("+++ Found samples - skipping trajectory resampling")
+            return trajectory
 
         if "llm_params" not in step:
             logger.debug("Skipping step %s — no llm_params", step["name"])
             continue
 
-        logger.info(f"+++ Resampling step: {step['name']} ({j+1}/{len(trajectory['steps'])})")
+        logger.info(f"+++ Resampling step: {step['name']} ({j + 1}/{len(trajectory['steps'])})")
 
         if "llm_params" in step:
             prompt = step["messages"]
@@ -81,8 +76,8 @@ def resample_trajectory(
                 samples=samples,
                 tools=tools,
             )
-        else: 
-            # this is the case when we are processing old format CUGA trajectories  
+        else:
+            # this is the case when we are processing old format CUGA trajectories
             prompt_item = step["prompts"][0]
             if prompt_item["role"] != "system":
                 logger.debug(f"+++ Cannot resample step {step['name']} - skipping")
@@ -92,7 +87,7 @@ def resample_trajectory(
             human_prompt_item = step["prompts"][1]
             if human_prompt_item["role"] == "human":
                 prompt = prompt + "\nHuman: " + human_prompt_item["value"]
-                #logger.debug(f"Prompt:\n{prompt[:(len(prompt_item["value"])+100)]}")
+                # logger.debug(f"Prompt:\n{prompt[:(len(prompt_item["value"])+100)]}")
 
             response_samples = get_response_sampling(
                 prompt=prompt,
@@ -103,13 +98,4 @@ def resample_trajectory(
 
         step["sampling"] = extract_raw_samples(response_samples)
 
-
     return trajectory
-
-
-
-
-
-
-
-

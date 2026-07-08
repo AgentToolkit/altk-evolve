@@ -5,10 +5,8 @@ import logging
 logger = logging.getLogger(__name__)
 from collections import defaultdict
 
-def extract_field_values_from_responses(
-    flat_responses: list[dict],
-    field: dict
-) -> list[str]:
+
+def extract_field_values_from_responses(flat_responses: list[dict], field: dict) -> list[str]:
     """
     Extract field values from flattened responses.
 
@@ -52,17 +50,18 @@ def extract_field_values_from_responses(
 
     return field_samples
 
+
 def find_matching_alternate(alternates: dict, parsed_actual: dict) -> dict:
     """
     Find the first alternate configuration that matches the actual parsed response.
-    
+
     A match occurs when all fields mentioned in the alternate config are present
     in the actual response.
-    
+
     Args:
         alternates: List of alternate configuration dictionaries
         parsed_actual: The actual parsed response dictionary
-        
+
     Returns:
         The matching alternate configuration, or empty dict if no match found
     """
@@ -86,6 +85,7 @@ def find_matching_alternate(alternates: dict, parsed_actual: dict) -> dict:
 
     return {}
 
+
 def invert_list_of_dictionaries(list_of_dicts):
     """
     Inverts a list of dictionaries into a dictionary of lists.
@@ -103,18 +103,19 @@ def invert_list_of_dictionaries(list_of_dicts):
             inverted_dict[key].append(value)
     return dict(inverted_dict)
 
-def flatten_response(d, parent_key='', sep='_'):
+
+def flatten_response(d, parent_key="", sep="_"):
     """
     Recursively flatten a nested dictionary structure.
-    
+
     Converts nested dictionaries into a flat dictionary with concatenated keys.
     Handles lists of dictionaries by inverting them into dictionaries of lists.
-    
+
     Args:
         d: Dictionary to flatten (or non-dict value to return as-is)
         parent_key: Prefix for keys (used in recursion)
         sep: Separator for concatenating keys (default: '_')
-        
+
     Returns:
         Flattened dictionary with concatenated keys
     """
@@ -133,10 +134,11 @@ def flatten_response(d, parent_key='', sep='_'):
                 # v is a list of dicts - invert it to a dict of lists
                 inverted_v = invert_list_of_dictionaries(v)
                 for in_k, in_v in inverted_v.items():
-                    items.append( (new_key + sep + in_k, in_v))
+                    items.append((new_key + sep + in_k, in_v))
         else:
             items.append((new_key, v))
     return dict(items)
+
 
 def rescale_weights(step_cns_list: list) -> list:
     """
@@ -151,10 +153,10 @@ def rescale_weights(step_cns_list: list) -> list:
     # first fix any anomalies such as missing or negative weights
     default_weight = 1 / len(step_cns_list)
     for field in step_cns_list:
-        if field["weight"] == -1:   # this happens when there was no weight in the config
+        if field["weight"] == -1:  # this happens when there was no weight in the config
             field["weight"] = default_weight
         elif field["weight"] < 0:
-            field["weight"] = 0     # treat invalid negative weights as 0 weight
+            field["weight"] = 0  # treat invalid negative weights as 0 weight
 
     total_weight = sum([field["weight"] for field in step_cns_list])
     if total_weight == 0:
@@ -168,6 +170,7 @@ def rescale_weights(step_cns_list: list) -> list:
             field["weight"] = field["weight"] * scale_factor
 
     return step_cns_list
+
 
 def compute_weighted_sum_consistency(step_cns_list: list, field_consistencies: dict) -> tuple[float, dict]:
     """

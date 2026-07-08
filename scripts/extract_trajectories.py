@@ -96,20 +96,20 @@ def extract_messages_from_span(span: dict) -> list[dict]:
         for i in sorted(input_indices):
             role = attrs.get(f"llm.input_messages.{i}.message.role")
             content = attrs.get(f"llm.input_messages.{i}.message.content")
-            
+
             # Check for tool calls (assistant messages may have tool_calls but no content)
             tool_call_keys = [k for k in attrs if k.startswith(f"llm.input_messages.{i}.message.tool_calls.")]
             tool_call_id = attrs.get(f"llm.input_messages.{i}.message.tool_call_id")
-            
+
             if role and (content is not None or tool_call_keys or tool_call_id):
                 msg = {"index": i, "type": "prompt", "role": role}
                 if content is not None:
                     msg["content"] = parse_content(content)
-                
+
                 # Extract tool_call_id for tool messages
                 if tool_call_id and role == "tool":
                     msg["tool_call_id"] = tool_call_id
-                
+
                 # Extract tool calls if present
                 if tool_call_keys and role == "assistant":
                     tool_calls = []
@@ -120,25 +120,20 @@ def extract_messages_from_span(span: dict) -> list[dict]:
                         if len(parts) >= 6 and parts[5].isdigit():
                             tc_idx = int(parts[5])
                             tool_call_indices.add(tc_idx)
-                    
+
                     for tc_idx in sorted(tool_call_indices):
                         tc_id = attrs.get(f"llm.input_messages.{i}.message.tool_calls.{tc_idx}.tool_call.id")
                         tc_name = attrs.get(f"llm.input_messages.{i}.message.tool_calls.{tc_idx}.tool_call.function.name")
                         tc_args = attrs.get(f"llm.input_messages.{i}.message.tool_calls.{tc_idx}.tool_call.function.arguments")
-                        
+
                         if tc_id and tc_name:
-                            tool_calls.append({
-                                "id": tc_id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc_name,
-                                    "arguments": tc_args or "{}"
-                                }
-                            })
-                    
+                            tool_calls.append(
+                                {"id": tc_id, "type": "function", "function": {"name": tc_name, "arguments": tc_args or "{}"}}
+                            )
+
                     if tool_calls:
                         msg["tool_calls"] = tool_calls
-                
+
                 messages.append(msg)
 
         output_indices = set()
@@ -493,7 +488,9 @@ def main():
 
     args = parser.parse_args()
 
-    trajectories = get_trajectories(base_url=args.url, limit=args.limit, include_errors=args.include_errors, clean=not args.no_clean, project=args.project)
+    trajectories = get_trajectories(
+        base_url=args.url, limit=args.limit, include_errors=args.include_errors, clean=not args.no_clean, project=args.project
+    )
 
     if args.trace_id:
         trajectories = [t for t in trajectories if t["trace_id"] == args.trace_id]

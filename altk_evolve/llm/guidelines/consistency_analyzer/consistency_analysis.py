@@ -17,12 +17,14 @@ def create_consistency_score_card(trajectory: dict) -> dict:
         step_consistency = step["consistency"].get("step_consistency", -1)
         step_uncertainty = -1 if step_consistency == -1 else 1.0 - step_consistency
         if step_uncertainty != -1:
-            steps.append({
-                "name": step.get("name", "None"),
-                "step_number": step.get("step_number", i),
-                "step_uncertainty": round(step_uncertainty, 4),
-                "metric": step["consistency"].get("metric", "Mixed"),
-            })
+            steps.append(
+                {
+                    "name": step.get("name", "None"),
+                    "step_number": step.get("step_number", i),
+                    "step_uncertainty": round(step_uncertainty, 4),
+                    "metric": step["consistency"].get("metric", "Mixed"),
+                }
+            )
     return {
         "task": trajectory.get("task", "Task instruction not provided"),
         "total_steps": len(trajectory["steps"]),
@@ -62,19 +64,19 @@ def analyze_consistency(trajectory: dict, config: dict) -> tuple[dict, dict]:
         >>> score_card, trajectory = analyze_consistency(trajectory, config)
         >>> logger.debug(f"Consistency: {score_card['aggregate_consistency']}")
     """
-    logger.info(f"\n+++ Step 1: Pre-processing to parse samples +++")
+    logger.info("\n+++ Step 1: Pre-processing to parse samples +++")
     # Pre-process the samples
     trajectory = extract_parsed_responses_from_trajectory(trajectory, config)
-    
-    logger.info(f"\n+++ Step 2: Compute step consistencies +++")
+
+    logger.info("\n+++ Step 2: Compute step consistencies +++")
     # Compute consistency metrics
     trajectory = compute_step_consistency(trajectory, config)
-    
-    logger.info(f"\n+++ Step 3: Compute aggregate trajectory consistency +++")
+
+    logger.info("\n+++ Step 3: Compute aggregate trajectory consistency +++")
     aggregator = ConsistencyAggregator(config)
     trajectory = aggregator.aggregate(trajectory)
 
-    logger.info(f"\n+++ Step 4: Create consistency score card +++")
+    logger.info("\n+++ Step 4: Create consistency score card +++")
     # Create consistency score card
     score_card = create_consistency_score_card(trajectory)
 

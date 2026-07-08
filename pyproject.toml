@@ -118,6 +118,11 @@ indent-width = 4
 # trajectories) is exploration artifact, not project source — don't lint it.
 extend-exclude = ["explorations/agent-wiki/wikis/"]
 
+[tool.ruff.lint.per-file-ignores]
+# Vendored consistency_analyzer modules: E402 (imports after sys.path insert in __init__.py),
+# E722 (bare except in original source), F841 (unused vars in original source).
+"altk_evolve/llm/guidelines/consistency_analyzer/*.py" = ["E402", "E722", "F841"]
+
 [tool.semantic_release]
 allow_zero_version = true
 major_on_zero = false

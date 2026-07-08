@@ -20,9 +20,7 @@ SAMPLE_TOOLS = [{"type": "function", "function": {"name": "add", "parameters": {
 
 class TestIsWellFormedToolCalls:
     def test_well_formed_list(self):
-        assert _is_well_formed_tool_calls(
-            [{"id": "1", "type": "function", "function": {"name": "add", "arguments": "{}"}}]
-        ) is True
+        assert _is_well_formed_tool_calls([{"id": "1", "type": "function", "function": {"name": "add", "arguments": "{}"}}]) is True
 
     def test_empty_list_is_not_well_formed(self):
         assert _is_well_formed_tool_calls([]) is False
@@ -185,10 +183,10 @@ class TestStripOrphanedToolMessages:
     def test_strips_only_orphaned_not_all_tool_messages(self):
         """Second tool message is valid (preceded by tool_calls); first is orphaned."""
         messages = [
-            {"role": "assistant", "content": "none"},          # no tool_calls
-            {"role": "tool", "content": "orphan"},             # orphaned → stripped
+            {"role": "assistant", "content": "none"},  # no tool_calls
+            {"role": "tool", "content": "orphan"},  # orphaned → stripped
             {"role": "assistant", "tool_calls": [{"id": "2", "function": {"name": "f"}}]},
-            {"role": "tool", "content": "valid"},              # valid → kept
+            {"role": "tool", "content": "valid"},  # valid → kept
         ]
         result = _strip_orphaned_tool_messages(messages)
         tool_messages = [m for m in result if m.get("role") == "tool"]
@@ -252,10 +250,13 @@ class TestCanSegmentTrajectory:
     def test_list_content_with_two_function_calls_is_not_safe(self):
         # parallel tool calls: 2 parse_openai steps, 1 IR step → mismatch
         messages = [
-            {"role": "assistant", "content": [
-                {"type": "function_call", "function": {"name": "add"}},
-                {"type": "function_call", "function": {"name": "multiply"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "function_call", "function": {"name": "add"}},
+                    {"type": "function_call", "function": {"name": "multiply"}},
+                ],
+            },
         ]
         assert _can_segment_trajectory(messages) is False
 
@@ -344,9 +345,7 @@ class TestFormatTrajectoryData:
         messages = [
             {
                 "role": "assistant",
-                "tool_calls": [
-                    {"function": {"name": "add", "arguments": '{"a": 2, "b": 3}'}}
-                ],
+                "tool_calls": [{"function": {"name": "add", "arguments": '{"a": 2, "b": 3}'}}],
             }
         ]
         result = format_trajectory_data(messages, {"step_uncertainties": {}})
@@ -409,21 +408,30 @@ class TestSegmentationGuard:
         return {
             "task": "test",
             "name": "Trajectory test",
-            "steps": [{"name": "AnyAgent_content", "step_number": 1,
-                        "raw_response": "answer", "raw_response_type": "content",
-                        "messages": [], "llm_params": {"model": None},
-                        "sampling": {"num_samples": 1, "raw_samples": ["answer"]}}],
+            "steps": [
+                {
+                    "name": "AnyAgent_content",
+                    "step_number": 1,
+                    "raw_response": "answer",
+                    "raw_response_type": "content",
+                    "messages": [],
+                    "llm_params": {"model": None},
+                    "sampling": {"num_samples": 1, "raw_samples": ["answer"]},
+                }
+            ],
         }
 
     def test_single_step_trajectory_skips_segmentation(self):
         from unittest.mock import MagicMock, patch
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
-        mock_segment = MagicMock(return_value=[
-            MagicMock(start_step=1, end_step=1, generalized_description="subtask A"),
-            MagicMock(start_step=1, end_step=1, generalized_description="subtask B"),
-            MagicMock(start_step=1, end_step=1, generalized_description="subtask C"),
-        ])
+        mock_segment = MagicMock(
+            return_value=[
+                MagicMock(start_step=1, end_step=1, generalized_description="subtask A"),
+                MagicMock(start_step=1, end_step=1, generalized_description="subtask B"),
+                MagicMock(start_step=1, end_step=1, generalized_description="subtask C"),
+            ]
+        )
         mock_score_card = {"steps": [], "aggregate_trajectory_uncertainty": 0.5}
         mock_sampled_ir = self._make_sampled_ir()
 
@@ -435,10 +443,12 @@ class TestSegmentationGuard:
             ],
         }
 
-        with patch("altk_evolve.llm.guidelines.consistency_guidelines.resample_trajectory") as mock_resample, \
-             patch("altk_evolve.llm.guidelines.consistency_guidelines.analyze_consistency") as mock_analyze, \
-             patch("altk_evolve.llm.guidelines.consistency_guidelines._generate_guideline_result") as mock_gen, \
-             patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", mock_segment):
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.resample_trajectory") as mock_resample,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.analyze_consistency") as mock_analyze,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines._generate_guideline_result") as mock_gen,
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", mock_segment),
+        ):
             mock_resample.return_value = mock_sampled_ir
             mock_analyze.return_value = (mock_score_card, mock_sampled_ir)
             mock_gen.return_value = MagicMock(guidelines=[])
