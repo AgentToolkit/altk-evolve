@@ -1,4 +1,9 @@
-"""Pluggable memory hook seam for altk_evolve (CPEX-compatible).
+"""General-purpose pluggable memory hook seam for altk_evolve.
+
+The seam (hook types, frozen payloads, dispatch points, veto semantics) and
+plugin cores are engine-agnostic; plugin execution is provided by an engine
+integration — currently the optional ``cpex`` package — behind the thin
+dispatch layer in :mod:`altk_evolve.hooks.manager`.
 
 Public surface:
 
@@ -9,7 +14,7 @@ Public surface:
 - ``dispatch_*`` helpers used at the backend / LLM choke points
 
 Everything is a fast no-op unless ``EvolveConfig.hooks.enabled`` is True and
-the optional ``cpex`` package is installed (``pip install 'altk-evolve[hooks]'``).
+the execution engine is installed (``pip install 'altk-evolve[hooks]'``).
 """
 
 from altk_evolve.hooks.manager import (

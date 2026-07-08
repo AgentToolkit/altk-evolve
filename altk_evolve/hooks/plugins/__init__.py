@@ -1,9 +1,9 @@
 """In-tree hook plugins shipped with altk_evolve.
 
-Each plugin follows a core/shim split: the domain logic is a pure, cpex-free
+Each plugin follows a core/shim split: the domain logic is a pure, engine-free
 function at the top of its module (importable and tested without any extra),
-and the cpex ``Plugin`` subclass is a thin shim that adapts it to the hook
-seam. Constructing a shim class without the optional ``cpex`` package
+and the cpex ``Plugin`` subclass is a thin shim that adapts it to the shipped
+CPEX execution engine. Constructing a shim class without the optional ``cpex`` package
 (``pip install 'altk-evolve[hooks]'``) raises ImportError; importing this
 package — and using the cores — always works.
 

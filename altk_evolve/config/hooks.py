@@ -6,11 +6,12 @@ from pydantic import BaseModel, Field
 
 
 class HookPluginSpec(BaseModel):
-    """Code-first equivalent of one entry in a CPEX ``plugins.yaml``.
+    """Code-first spec for one hook plugin (equivalent of one entry in the
+    execution engine's ``plugins.yaml``).
 
     Lets library users enable plugins programmatically without shipping a YAML
-    file: each spec is synthesized into a ``cpex`` ``PluginConfig`` and the
-    plugin class at ``kind`` is instantiated with it.
+    file: each spec is synthesized into a ``PluginConfig`` for the shipped
+    CPEX engine and the plugin class at ``kind`` is instantiated with it.
     """
 
     name: str = Field(description="Unique plugin name.")
@@ -29,14 +30,14 @@ class HooksConfig(BaseModel):
     """Hook seam configuration (``EvolveConfig.hooks``).
 
     ``enabled`` defaults to False, guaranteeing zero behavior change for
-    existing users. When True, the optional ``cpex`` package must be installed
-    (``pip install 'altk-evolve[hooks]'``).
+    existing users. When True, the execution engine — the optional ``cpex``
+    package — must be installed (``pip install 'altk-evolve[hooks]'``).
     """
 
     enabled: bool = Field(default=False, description="Master switch. False = the hook seam is a fast no-op.")
     plugins_yaml: str | None = Field(
         default=None,
-        description="Path to a CPEX plugins.yaml. Loaded by the CPEX PluginManager when set.",
+        description="Path to an engine plugins.yaml (CPEX format). Loaded by the CPEX PluginManager when set.",
     )
     plugins: list[HookPluginSpec] = Field(
         default_factory=list,

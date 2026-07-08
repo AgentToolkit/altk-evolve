@@ -1,6 +1,11 @@
-"""Thin invoke layer between altk_evolve choke points and the CPEX PluginManager.
+"""Thin execution-engine layer between the altk_evolve choke points and the
+plugin runner — currently the CPEX ``PluginManager``.
 
-Design (mirrors Mellea's plugin wrapper layer):
+This module is the only engine-specific layer of the hook seam: hook types,
+payload classes, and plugin cores do not depend on it, so swapping engines
+means reimplementing this dispatch layer, not the seam or the plugins.
+
+Design of the CPEX integration (mirrors Mellea's plugin wrapper layer):
 
 - Module-level singleton state (``_plugin_manager`` / ``_plugins_enabled``)
   with layered zero-overhead guards: a boolean check first, then

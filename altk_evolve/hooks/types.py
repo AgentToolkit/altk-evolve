@@ -1,10 +1,11 @@
 """Hook taxonomy for the altk_evolve memory hook seam.
 
-Defines the hook-type enum and the frozen payload classes that flow through
-the CPEX ``PluginManager`` when the optional ``cpex`` package is installed
-(``pip install 'altk-evolve[hooks]'``). Without cpex, the payload classes fall
-back to plain frozen pydantic models so this module stays importable and the
-seam remains a no-op.
+Defines the hook-type enum and the frozen payload classes. Both are
+engine-agnostic; when the optional ``cpex`` package — the shipped execution
+engine — is installed (``pip install 'altk-evolve[hooks]'``), the payloads
+subclass cpex's ``PluginPayload`` so they flow through its ``PluginManager``.
+Without cpex, the payload classes fall back to plain frozen pydantic models so
+this module stays importable and the seam remains a no-op.
 
 Payloads are immutable by design: plugins propose changes by returning a
 ``model_copy(update={...})`` via ``PluginResult.modified_payload``. Changes

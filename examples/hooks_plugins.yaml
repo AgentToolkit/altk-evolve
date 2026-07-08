@@ -1,4 +1,5 @@
-# Example CPEX plugin configuration for the altk_evolve memory hook seam.
+# Example plugin configuration for the altk_evolve memory hook seam, in the
+# YAML format of the shipped CPEX execution engine.
 #
 # Point EvolveConfig at this file to enable plugins without touching code:
 #
