@@ -135,6 +135,8 @@ async def test_smolagent_mcp_consistency_pipeline(mcp):
 
     debug_dir = Path(__file__).parent.parent.parent / "consistency_debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
+    for f in debug_dir.glob("guidelines_*.json"):
+        f.unlink()
 
     # --- Step 1: Run the agent ---
     print("\n--- Step 1: Running smolagents CodeAgent ---")
