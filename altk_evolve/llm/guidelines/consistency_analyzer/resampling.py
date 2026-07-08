@@ -54,9 +54,9 @@ def resample_trajectory(
     steps = trajectory["steps"] if max_steps == -1 else trajectory["steps"][:max_steps]
     for j, step in enumerate(steps):
         if "sampling" in step:
-            # don't sample again if there are already samples for this step
-            logger.debug("+++ Found samples - skipping trajectory resampling")
-            return trajectory
+            # already sampled; skip this step but continue processing later steps
+            logger.debug("+++ Found samples - skipping step resampling")
+            continue
 
         if "llm_params" not in step:
             logger.debug("Skipping step %s — no llm_params", step["name"])
@@ -64,37 +64,17 @@ def resample_trajectory(
 
         logger.info(f"+++ Resampling step: {step['name']} ({j + 1}/{len(trajectory['steps'])})")
 
-        if "llm_params" in step:
-            prompt = step["messages"]
-            model = step["llm_params"].get("model") or model_name
-            tools = step.get("tools", None)
+        prompt = step["messages"]
+        model = step["llm_params"].get("model") or model_name
+        tools = step.get("tools", None)
 
-            response_samples = get_response_sampling(
-                prompt=prompt,
-                model_id=model,
-                temperature=temperature,
-                samples=samples,
-                tools=tools,
-            )
-        else:
-            # this is the case when we are processing old format CUGA trajectories
-            prompt_item = step["prompts"][0]
-            if prompt_item["role"] != "system":
-                logger.debug(f"+++ Cannot resample step {step['name']} - skipping")
-                continue
-            prompt = prompt_item["value"]
-            # check whether we are dealing with the newer CUGA format
-            human_prompt_item = step["prompts"][1]
-            if human_prompt_item["role"] == "human":
-                prompt = prompt + "\nHuman: " + human_prompt_item["value"]
-                # logger.debug(f"Prompt:\n{prompt[:(len(prompt_item["value"])+100)]}")
-
-            response_samples = get_response_sampling(
-                prompt=prompt,
-                model_id=model_name,
-                temperature=temperature,
-                samples=samples,
-            )
+        response_samples = get_response_sampling(
+            prompt=prompt,
+            model_id=model,
+            temperature=temperature,
+            samples=samples,
+            tools=tools,
+        )
 
         step["sampling"] = extract_raw_samples(response_samples)
 
