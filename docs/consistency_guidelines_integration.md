@@ -52,7 +52,7 @@ Before resampling, a trajectory is converted to an IR via `transform_trajectory_
 - **`OpenAIAgent_tool_calls`** — assistant turns whose response is a `tool_calls` list, same condition.
 - **`AnyAgent_content`** — assistant text turns when no `tools` schema is present (e.g. smolagents `CodeAgent`, which describes tools in its system prompt rather than via the OpenAI protocol).
 
-The step name drives which metric config is applied. The defaults are in `altk_evolve/llm/guidelines/agent_config.yaml`:
+The step name drives which metric config is applied. The defaults are in `altk_evolve/llm/guidelines/consistency_analyzer/agent_config.yaml`:
 
 ```yaml
 aggregation: mean
@@ -91,15 +91,17 @@ Two constants in `consistency_guidelines.py` control which steps are surfaced to
 
 ---
 
-## The `guidelines_mode` parameter
+## The `EVOLVE_GUIDELINES_MODE` environment variable
 
-Both creation modes now accept a `guidelines_mode` string with three values:
+Both creation modes read a single environment variable to select which pipeline runs:
 
 | Value | Behaviour |
 |---|---|
 | `"regular"` (default) | Run `generate_guidelines` only |
 | `"consistency"` | Run `generate_consistency_guidelines` only |
 | `"both"` | Run both pipelines; store all results in one `update_entities` call |
+
+When `EVOLVE_GUIDELINES_MODE` is unset or empty, `"regular"` is used. An unrecognised value logs a warning and falls back to `"regular"`.
 
 ### `creation_mode` vs `generation_method`
 
@@ -117,26 +119,12 @@ This lets downstream consumers filter on either dimension independently.
 ### CLI
 
 ```
-evolve sync phoenix --guidelines-mode [regular|consistency|both]
-```
-
-`--debug-output-dir` writes IR, resampled IR, score card, and guidelines JSON artifacts for inspection; it is active whenever the consistency pipeline runs.
-
-### `PhoenixSync` constructor
-
-```python
-PhoenixSync(
-    phoenix_url=...,
-    namespace_id=...,
-    project=...,
-    guidelines_mode="regular",          # "regular" | "consistency" | "both"
-    consistency_debug_output_dir=None,
-)
+EVOLVE_GUIDELINES_MODE=consistency evolve sync phoenix ...
 ```
 
 ### Merge point
 
-Inside `_process_trajectory`, after trajectory extraction and storage, before the single `update_entities` call:
+Inside `_process_trajectory`, `guidelines_mode` is read from `EVOLVE_GUIDELINES_MODE` at call time, then:
 
 ```
 generate_guidelines(messages)             → regular entity list  (generation_method: "regular")
@@ -153,21 +141,11 @@ In single-mode (`"regular"` or `"consistency"`), only the relevant branch runs. 
 
 ## Integration: `auto-mcp` (MCP `save_trajectory` tool)
 
-### Tool signature additions
+### Tool signature
 
-```python
-save_trajectory(
-    trajectory_data: str,          # existing: JSON-encoded OpenAI messages list
-    task_id: str | None = None,    # existing
-    ...                            # existing params unchanged
-    guidelines_mode: str = "regular",   # NEW: "regular" | "consistency" | "both"
-    model: str | None = None,           # NEW: model the agent used (for resampling)
-)
-```
+The `save_trajectory` tool signature is unchanged. Pipeline selection is controlled by `EVOLVE_GUIDELINES_MODE` on the server process, not by a tool argument. Set it before starting the MCP server to enable consistency or both-mode guideline generation.
 
-`guidelines_mode` defaults to `"regular"`, preserving existing behaviour for all current callers.
-
-`model` is optional. The calling agent passes its own model name if known (e.g. `"gpt-4o"`). When absent, the consistency pipeline falls back to `llm_settings.guidelines_model` for resampling — the same model used by the guidelines LLM call itself. Without a `tools` schema (the MCP tool only receives raw messages), steps are classified as `AnyAgent_content`, which is correctly handled by `agent_config.yaml`.
+The consistency pipeline uses `llm_settings.guidelines_model` for resampling (configured via `EVOLVE_GUIDELINES_MODEL` or `EVOLVE_MODEL_NAME`). Without a `tools` schema (the MCP tool only receives raw messages), steps are classified as `AnyAgent_content`, which is correctly handled by `consistency_analyzer/agent_config.yaml`.
 
 ### Merge point
 
@@ -175,7 +153,20 @@ Same pattern as phoenix sync — entity lists are built per pipeline inside `sav
 
 ---
 
+## Debug artifacts
+
+`generate_consistency_guidelines` can write intermediate artifacts to disk for inspection: the trajectory IR, the resampled IR, the consistency score card, and the generated guidelines — all as JSON files. This is an internal development tool for the altk-evolve team and is not exposed in any consumer-facing interface.
+
+To enable it, set the environment variable:
+
+```
+EVOLVE_DEBUG_DIR=/path/to/dir
+```
+
+When set, artifacts are written automatically by `generate_consistency_guidelines` whenever it runs, regardless of which creation mode triggered it (`auto-phoenix` or `auto-mcp`). When the variable is unset (the default), no artifacts are written.
+
+---
+
 ## What is not yet supported
 
 - **`auto-mcp` with a `tools` schema**: The `save_trajectory` MCP tool receives raw messages only. Passing a `tools` schema is not yet supported, so tool-calling agents using the MCP path are always classified as `AnyAgent`. This is a known limitation for a future iteration.
-- **Server-level default for `guidelines_mode`**: Both modes require the caller to explicitly opt in to `"consistency"` or `"both"`. A server-level env var default is not yet implemented.

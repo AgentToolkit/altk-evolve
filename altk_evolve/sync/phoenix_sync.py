@@ -10,6 +10,7 @@ This module provides functionality to:
 
 import json
 import logging
+import os
 import urllib.request
 import warnings
 from dataclasses import dataclass
@@ -54,14 +55,10 @@ class PhoenixSync:
         phoenix_url: str | None = None,
         namespace_id: str | None = None,
         project: str | None = None,
-        guidelines_mode: str = "regular",
-        consistency_debug_output_dir: str | None = None,
     ):
         self.phoenix_url = phoenix_url or phoenix_settings.url
         self.project = project or phoenix_settings.project
         self.namespace_id = namespace_id or evolve_config.namespace_id
-        self.guidelines_mode = guidelines_mode
-        self.consistency_debug_output_dir = consistency_debug_output_dir
         self.client = EvolveClient()
 
     def _ensure_namespace(self):
@@ -822,8 +819,23 @@ class PhoenixSync:
             "creation_mode": "auto-phoenix",
         }
 
-        if self.guidelines_mode in ("regular", "both"):
+        guidelines_mode = os.environ.get("EVOLVE_GUIDELINES_MODE", "regular")
+        if guidelines_mode not in ("regular", "consistency", "both"):
+            logger.warning(f"Unrecognised EVOLVE_GUIDELINES_MODE value '{guidelines_mode}', defaulting to 'regular'")
+            guidelines_mode = "regular"
+
+        if guidelines_mode in ("regular", "both"):
             regular_results = generate_guidelines(trajectory["messages"])
+            _debug_dir = os.environ.get("EVOLVE_DEBUG_DIR")
+            if _debug_dir:
+                os.makedirs(_debug_dir, exist_ok=True)
+                _trace_prefix = str(trajectory["trace_id"])[:8]
+                _guidelines_data = [
+                    {"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]}
+                    for r in regular_results
+                ]
+                with open(os.path.join(_debug_dir, f"guidelines_{_trace_prefix}_regular.json"), "w") as _f:
+                    json.dump(_guidelines_data, _f, indent=2)
             guideline_entities += [
                 Entity(
                     type="guideline",
@@ -842,10 +854,10 @@ class PhoenixSync:
                 for guideline in result.guidelines
             ]
 
-        if self.guidelines_mode in ("consistency", "both"):
+        if guidelines_mode in ("consistency", "both"):
             from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
-            consistency_results = generate_consistency_guidelines(trajectory, debug_output_dir=self.consistency_debug_output_dir)
+            consistency_results = generate_consistency_guidelines(trajectory)
             guideline_entities += [
                 Entity(
                     type="guideline",

@@ -3,6 +3,7 @@
 import pytest
 
 from altk_evolve.llm.guidelines.consistency_guidelines import (
+    _can_segment_trajectory,
     _classify_step_response,
     _is_well_formed_tool_calls,
     _strip_orphaned_tool_messages,
@@ -227,6 +228,86 @@ class TestParseConsistencyScoreCard:
         assert result["task"] is None
 
 
+class TestCanSegmentTrajectory:
+    def test_non_empty_string_content_is_safe(self):
+        messages = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "Thought: let me solve this."},
+        ]
+        assert _can_segment_trajectory(messages) is True
+
+    def test_list_content_with_single_function_call_is_safe(self):
+        messages = [
+            {"role": "assistant", "content": [{"type": "function_call", "function": {"name": "add"}}]},
+        ]
+        assert _can_segment_trajectory(messages) is True
+
+    def test_tool_calls_key_is_not_safe(self):
+        # chat completions format: tool_calls key present, content null
+        messages = [
+            {"role": "assistant", "tool_calls": [{"function": {"name": "add"}}], "content": None},
+        ]
+        assert _can_segment_trajectory(messages) is False
+
+    def test_list_content_with_two_function_calls_is_not_safe(self):
+        # parallel tool calls: 2 parse_openai steps, 1 IR step → mismatch
+        messages = [
+            {"role": "assistant", "content": [
+                {"type": "function_call", "function": {"name": "add"}},
+                {"type": "function_call", "function": {"name": "multiply"}},
+            ]},
+        ]
+        assert _can_segment_trajectory(messages) is False
+
+    def test_list_content_with_zero_function_calls_is_not_safe(self):
+        # 0 parse_openai steps, 1 IR step → mismatch
+        messages = [
+            {"role": "assistant", "content": [{"type": "text", "text": "hello"}]},
+        ]
+        assert _can_segment_trajectory(messages) is False
+
+    def test_empty_string_content_is_not_safe(self):
+        # parse_openai skips empty strings; IR counts them
+        messages = [{"role": "assistant", "content": ""}]
+        assert _can_segment_trajectory(messages) is False
+
+    def test_whitespace_only_content_is_not_safe(self):
+        messages = [{"role": "assistant", "content": "   "}]
+        assert _can_segment_trajectory(messages) is False
+
+    def test_none_content_is_not_safe(self):
+        messages = [{"role": "assistant", "content": None}]
+        assert _can_segment_trajectory(messages) is False
+
+    def test_non_assistant_messages_are_ignored(self):
+        messages = [
+            {"role": "system", "content": None},
+            {"role": "user", "content": "What is 2+3?"},
+            {"role": "tool", "content": "5"},
+            {"role": "assistant", "content": "The answer is 5."},
+        ]
+        assert _can_segment_trajectory(messages) is True
+
+    def test_mixed_safe_messages_are_safe(self):
+        # string content step followed by single-function_call step
+        messages = [
+            {"role": "assistant", "content": "Thought: I will call add."},
+            {"role": "assistant", "content": [{"type": "function_call", "function": {"name": "add"}}]},
+        ]
+        assert _can_segment_trajectory(messages) is True
+
+    def test_one_unsafe_message_makes_whole_trajectory_unsafe(self):
+        messages = [
+            {"role": "assistant", "content": "Thought: I will call add."},
+            {"role": "assistant", "tool_calls": [{"function": {"name": "add"}}], "content": None},
+        ]
+        assert _can_segment_trajectory(messages) is False
+
+    def test_empty_messages_list_is_safe(self):
+        # no assistant messages → no violations → safe (vacuously true)
+        assert _can_segment_trajectory([]) is True
+
+
 class TestFormatTrajectoryData:
     def test_includes_assistant_steps(self):
         messages = [
@@ -278,3 +359,93 @@ class TestFormatTrajectoryData:
         result = format_trajectory_data(messages, {"step_uncertainties": {}})
         assert "..." in result
         assert len(result) < len(long_content)
+
+    def test_step_range_renders_only_steps_in_range(self):
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+            {"role": "assistant", "content": "step three"},
+        ]
+        result = format_trajectory_data(messages, {"step_uncertainties": {}}, step_range=(2, 3))
+        assert "step one" not in result
+        assert "step two" in result
+        assert "step three" in result
+
+    def test_step_range_single_step(self):
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+        ]
+        result = format_trajectory_data(messages, {"step_uncertainties": {}}, step_range=(1, 1))
+        assert "step one" in result
+        assert "step two" not in result
+
+    def test_step_range_filters_uncertainty_markers_to_range(self):
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+        ]
+        # step 1 has high uncertainty, step 2 does not — range covers only step 2
+        consistency_data = {"step_uncertainties": {1: 0.35, 2: 0.05}}
+        result = format_trajectory_data(messages, consistency_data, step_range=(2, 2))
+        assert "HIGH UNCERTAINTY" not in result
+        assert "step two" in result
+
+    def test_step_range_marks_uncertainty_within_range(self):
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+        ]
+        consistency_data = {"step_uncertainties": {1: 0.05, 2: 0.35}}
+        result = format_trajectory_data(messages, consistency_data, step_range=(2, 2))
+        assert "HIGH UNCERTAINTY" in result
+        assert "step two" in result
+
+
+class TestSegmentationGuard:
+    """Segmentation must not fire on single-step trajectories."""
+
+    def _make_sampled_ir(self):
+        return {
+            "task": "test",
+            "name": "Trajectory test",
+            "steps": [{"name": "AnyAgent_content", "step_number": 1,
+                        "raw_response": "answer", "raw_response_type": "content",
+                        "messages": [], "llm_params": {"model": None},
+                        "sampling": {"num_samples": 1, "raw_samples": ["answer"]}}],
+        }
+
+    def test_single_step_trajectory_skips_segmentation(self):
+        from unittest.mock import MagicMock, patch
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        mock_segment = MagicMock(return_value=[
+            MagicMock(start_step=1, end_step=1, generalized_description="subtask A"),
+            MagicMock(start_step=1, end_step=1, generalized_description="subtask B"),
+            MagicMock(start_step=1, end_step=1, generalized_description="subtask C"),
+        ])
+        mock_score_card = {"steps": [], "aggregate_trajectory_uncertainty": 0.5}
+        mock_sampled_ir = self._make_sampled_ir()
+
+        trajectory = {
+            "trace_id": "test-single",
+            "messages": [
+                {"role": "user", "content": "What is 2+2?"},
+                {"role": "assistant", "content": "The answer is 4."},
+            ],
+        }
+
+        with patch("altk_evolve.llm.guidelines.consistency_guidelines.resample_trajectory") as mock_resample, \
+             patch("altk_evolve.llm.guidelines.consistency_guidelines.analyze_consistency") as mock_analyze, \
+             patch("altk_evolve.llm.guidelines.consistency_guidelines._generate_guideline_result") as mock_gen, \
+             patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", mock_segment):
+            mock_resample.return_value = mock_sampled_ir
+            mock_analyze.return_value = (mock_score_card, mock_sampled_ir)
+            mock_gen.return_value = MagicMock(guidelines=[])
+            generate_consistency_guidelines(trajectory)
+            # segment_trajectory should never have been called for a 1-step trajectory
+            mock_segment.assert_not_called()
+            # _generate_guideline_result called once (full trajectory), not 3× (per fake subtask)
+            assert mock_gen.call_count == 1
+            _, kwargs = mock_gen.call_args
+            assert kwargs.get("step_range") is None

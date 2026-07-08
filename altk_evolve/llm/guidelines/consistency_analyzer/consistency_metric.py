@@ -516,7 +516,7 @@ class NumericFractionConsistencyMetric(ConsistencyMetric):
             if i+1 >= len(samples):
                 break
             for j in range(len(samples)-(i+1)):
-                diff_list.append(abs(float(sample) - float(samples[j])))
+                diff_list.append(abs(float(sample) - float(samples[i+1+j])))
 
         # aggregate over all pairwise differences
         return st.mean(diff_list) if diff_list != [] else -1.0

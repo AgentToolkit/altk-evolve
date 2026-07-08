@@ -5,6 +5,7 @@
 name: agent consistency configuration 
 aggregation: mean
 max_samples: 5
+max_steps: 15
 agents:
   - name: OpenAIAgent_content
     response_type: text

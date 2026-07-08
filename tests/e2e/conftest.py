@@ -71,7 +71,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--consistency-debug-dir",
         default=None,
-        help="Directory to write consistency analysis debug artifacts (IR, resampled IR, score card JSON files). Passed to `evolve sync phoenix --debug-output-dir` in consistency e2e tests.",
+        help="Directory to write consistency analysis debug artifacts (IR, resampled IR, score card JSON files). Sets EVOLVE_DEBUG_DIR for the subprocess in consistency e2e tests.",
     )
     parser.addoption(
         "--verbose-sync",

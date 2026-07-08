@@ -465,8 +465,6 @@ def save_trajectory(
     user_id: str | None = None,
     namespace_id: str | None = None,
     session_id: str | None = None,
-    guidelines_mode: str = "regular",
-    model: str | None = None,
 ) -> list[RecordedEntity]:
     """
     Save the full agent trajectory to the Entity DB and generate guidelines
@@ -478,9 +476,12 @@ def save_trajectory(
         user_id: Optional caller user ID. Attached as metadata to trajectory and guideline entities.
         namespace_id: Optional namespace override. Falls back to the configured default.
         session_id: Optional session/thread ID. Attached as metadata to trajectory and guideline entities.
-        guidelines_mode: Guideline generation mode: 'regular', 'consistency', or 'both'. Defaults to 'regular'.
-        model: Model name used by the agent (e.g. 'gpt-4o'). Required for accurate resampling in consistency mode.
     """
+    guidelines_mode = os.environ.get("EVOLVE_GUIDELINES_MODE", "regular")
+    if guidelines_mode not in ("regular", "consistency", "both"):
+        logger.warning(f"Unrecognised EVOLVE_GUIDELINES_MODE value '{guidelines_mode}', defaulting to 'regular'")
+        guidelines_mode = "regular"
+
     resolved_ns = _resolve_namespace(namespace_id)
     # Prefer explicit user_id; fall back to owner_id for backward compatibility
     effective_user_id = user_id or owner_id
@@ -555,7 +556,7 @@ def save_trajectory(
     if guidelines_mode in ("consistency", "both"):
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
-        trajectory = {"messages": messages, "trace_id": task_id, "model": model}
+        trajectory = {"messages": messages, "trace_id": task_id}
         consistency_results = generate_consistency_guidelines(trajectory)
         guideline_entities += [
             Entity(

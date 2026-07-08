@@ -419,29 +419,14 @@ def sync_phoenix(
     project: Annotated[Optional[str], typer.Option("--project", "-p", help="Phoenix project name")] = None,
     limit: Annotated[int, typer.Option(help="Maximum number of spans to fetch")] = 100,
     include_errors: Annotated[bool, typer.Option("--include-errors", help="Include failed/error spans")] = False,
-    guidelines_mode: Annotated[
-        str, typer.Option("--guidelines-mode", help="Guideline generation mode: 'regular', 'consistency', or 'both'.")
-    ] = "regular",
-    debug_output_dir: Annotated[
-        Optional[str],
-        typer.Option(
-            "--debug-output-dir",
-            help="Write consistency analysis intermediates (IR, resampled IR, score card) as JSON files to this directory. Used with 'consistency' or 'both' modes.",
-        ),
-    ] = None,
 ):
     """Sync trajectories from Arize Phoenix and generate guidelines."""
-    if guidelines_mode not in ("regular", "consistency", "both"):
-        raise typer.BadParameter(f"--guidelines-mode must be one of: regular, consistency, both (got '{guidelines_mode}')")
-
     from altk_evolve.sync.phoenix_sync import PhoenixSync
 
     syncer = PhoenixSync(
         phoenix_url=phoenix_url,
         namespace_id=namespace,
         project=project,
-        guidelines_mode=guidelines_mode,
-        consistency_debug_output_dir=debug_output_dir,
     )
 
     console.print("[bold]Syncing from Phoenix[/bold]")

@@ -71,7 +71,7 @@ def resample_trajectory(
 
         if "llm_params" in step:
             prompt = step["messages"]
-            model = step["llm_params"].get("model", model_name)
+            model = step["llm_params"].get("model") or model_name
             tools = step.get("tools", None)
 
             response_samples = get_response_sampling(

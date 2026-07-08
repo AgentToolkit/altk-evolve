@@ -12,6 +12,7 @@ Requirements:
 """
 
 import json
+import os
 import uuid
 
 import pytest
@@ -70,18 +71,20 @@ def _get_stored_guidelines(task_id: str) -> list:
 
 @pytest.mark.e2e
 async def test_mcp_regular_mode_tags_generation_method(mcp):
-    """save_trajectory with guidelines_mode='regular' stores guidelines tagged
-    generation_method='regular' and creation_mode='auto-mcp'."""
-    async with Client(transport=mcp) as client:
-        task_id = f"test-regular-{uuid.uuid4().hex[:8]}"
-        await client.call_tool_mcp(
-            "save_trajectory",
-            {
-                "trajectory_data": _MATH_AGENT_TRAJECTORY,
-                "task_id": task_id,
-                "guidelines_mode": "regular",
-            },
-        )
+    """EVOLVE_GUIDELINES_MODE=regular stores guidelines tagged generation_method='regular'."""
+    os.environ["EVOLVE_GUIDELINES_MODE"] = "regular"
+    try:
+        async with Client(transport=mcp) as client:
+            task_id = f"test-regular-{uuid.uuid4().hex[:8]}"
+            await client.call_tool_mcp(
+                "save_trajectory",
+                {
+                    "trajectory_data": _MATH_AGENT_TRAJECTORY,
+                    "task_id": task_id,
+                },
+            )
+    finally:
+        os.environ.pop("EVOLVE_GUIDELINES_MODE", None)
 
     guidelines = _get_stored_guidelines(task_id)
     assert len(guidelines) > 0, "Expected at least one regular guideline"
@@ -92,21 +95,23 @@ async def test_mcp_regular_mode_tags_generation_method(mcp):
 
 @pytest.mark.e2e
 async def test_mcp_consistency_mode_tags_generation_method(mcp):
-    """save_trajectory with guidelines_mode='consistency' stores guidelines tagged
-    generation_method='consistency'. Requires LLM credentials for resampling."""
+    """EVOLVE_GUIDELINES_MODE=consistency stores guidelines tagged generation_method='consistency'."""
     if not _consistency_available():
         pytest.skip("consistency extra not installed — run `uv sync --extra consistency`")
 
-    async with Client(transport=mcp) as client:
-        task_id = f"test-consistency-{uuid.uuid4().hex[:8]}"
-        await client.call_tool_mcp(
-            "save_trajectory",
-            {
-                "trajectory_data": _MATH_AGENT_TRAJECTORY,
-                "task_id": task_id,
-                "guidelines_mode": "consistency",
-            },
-        )
+    os.environ["EVOLVE_GUIDELINES_MODE"] = "consistency"
+    try:
+        async with Client(transport=mcp) as client:
+            task_id = f"test-consistency-{uuid.uuid4().hex[:8]}"
+            await client.call_tool_mcp(
+                "save_trajectory",
+                {
+                    "trajectory_data": _MATH_AGENT_TRAJECTORY,
+                    "task_id": task_id,
+                },
+            )
+    finally:
+        os.environ.pop("EVOLVE_GUIDELINES_MODE", None)
 
     guidelines = _get_stored_guidelines(task_id)
     # A consistent trajectory may legitimately produce 0 guidelines when
@@ -116,59 +121,26 @@ async def test_mcp_consistency_mode_tags_generation_method(mcp):
         assert g.metadata["generation_method"] == "consistency"
 
 
+
 @pytest.mark.e2e
-async def test_mcp_consistency_mode_model_param_is_forwarded(mcp):
-    """The model parameter reaches generate_consistency_guidelines via the trajectory dict."""
+async def test_mcp_both_mode_stores_guidelines_from_each_pipeline(mcp):
+    """EVOLVE_GUIDELINES_MODE=both stores guidelines from both pipelines."""
     if not _consistency_available():
         pytest.skip("consistency extra not installed — run `uv sync --extra consistency`")
 
-    from unittest.mock import patch
-
-    captured = {}
-
-    original_fn_path = (
-        "altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines"
-    )
-
-    def _capture(trajectory, **kwargs):
-        captured["model"] = trajectory.get("model")
-        captured["trace_id"] = trajectory.get("trace_id")
-        return []
-
-    with patch(original_fn_path, side_effect=_capture):
+    os.environ["EVOLVE_GUIDELINES_MODE"] = "both"
+    try:
         async with Client(transport=mcp) as client:
-            task_id = f"test-model-{uuid.uuid4().hex[:8]}"
+            task_id = f"test-both-{uuid.uuid4().hex[:8]}"
             await client.call_tool_mcp(
                 "save_trajectory",
                 {
                     "trajectory_data": _MATH_AGENT_TRAJECTORY,
                     "task_id": task_id,
-                    "guidelines_mode": "consistency",
-                    "model": "gpt-4o",
                 },
             )
-
-    assert captured.get("model") == "gpt-4o"
-    assert captured.get("trace_id") == task_id
-
-
-@pytest.mark.e2e
-async def test_mcp_both_mode_stores_guidelines_from_each_pipeline(mcp):
-    """save_trajectory with guidelines_mode='both' stores guidelines from the regular
-    pipeline and from the consistency pipeline, each tagged with its own generation_method."""
-    if not _consistency_available():
-        pytest.skip("consistency extra not installed — run `uv sync --extra consistency`")
-
-    async with Client(transport=mcp) as client:
-        task_id = f"test-both-{uuid.uuid4().hex[:8]}"
-        await client.call_tool_mcp(
-            "save_trajectory",
-            {
-                "trajectory_data": _MATH_AGENT_TRAJECTORY,
-                "task_id": task_id,
-                "guidelines_mode": "both",
-            },
-        )
+    finally:
+        os.environ.pop("EVOLVE_GUIDELINES_MODE", None)
 
     guidelines = _get_stored_guidelines(task_id)
 
