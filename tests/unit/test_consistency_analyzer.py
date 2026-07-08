@@ -818,6 +818,21 @@ class TestCheckSampleValidity:
         assert not valid
         assert "parsed" in msg
 
+    def test_tool_calls_validates_parsed_samples_not_raw(self):
+        # tool_calls computation uses parsed_samples; validation must check the same
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import check_sample_validity
+
+        config = {"agents": [{"name": "ToolAgent", "response_type": "tool_calls", "metric": "jaccard"}]}
+        # raw_samples present but parsed_samples absent → should be invalid
+        step = {"name": "ToolAgent", "sampling": {"raw_samples": [{"fn": "add"}], "num_samples": 1}}
+        valid, msg = check_sample_validity(step, config)
+        assert not valid
+        assert "parsed" in msg
+        # parsed_samples present → should be valid
+        step2 = {"name": "ToolAgent", "sampling": {"parsed_samples": [{"fn": "add"}], "num_samples": 1}}
+        valid2, _ = check_sample_validity(step2, config)
+        assert valid2
+
 
 class TestComputeStepConsistency:
     _CONFIG = {

@@ -111,7 +111,7 @@ def check_sample_validity(step: dict, config: dict) -> tuple[bool, str]:
     # Check 3: response type specific validations
     response_type = metric_config["response_type"]
 
-    if response_type in ["json", "react", "react_aw", "thought_code"]:
+    if response_type in ["json", "react", "react_aw", "thought_code", "tool_calls"]:
         samples = step["sampling"].get("parsed_samples", [])
         if samples == []:
             return False, f"Missing parsed responses for response type {response_type} in {step_name} - consistency undefined"
@@ -125,7 +125,7 @@ def check_sample_validity(step: dict, config: dict) -> tuple[bool, str]:
                     f"Alternates: Could not find matching alternate config for {json.dumps(samples[0], indent=4)} - consistency undefined",
                 )
 
-    elif response_type in ["code", "text", "tool_calls"]:
+    elif response_type in ["code", "text"]:
         samples = step["sampling"].get("raw_samples", [])
         if samples == []:
             return False, f"Missing samples for response type {response_type} in {step_name} - consistency undefined"
