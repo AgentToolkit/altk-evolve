@@ -71,6 +71,7 @@ dev = [
     "python-dotenv>=1.2.1",
     "python-semantic-release",
     "ruff",
+    "types-pyyaml>=6.0.12.20260518",
     "types-requests>=2.32.4.20260107",
 ]
 
@@ -198,5 +199,11 @@ module = [
     "local_mcp_server",
     "config",
     "audit",
+    "yaml",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Vendored consistency_analyzer modules: upstream type errors, not ours to fix.
+module = "altk_evolve.llm.guidelines.consistency_analyzer.*"
+ignore_errors = true

@@ -13,8 +13,6 @@ pytestmark = pytest.mark.unit
 
 
 class TestInvertListOfDictionaries:
-    from altk_evolve.llm.guidelines.consistency_analyzer.utils import invert_list_of_dictionaries
-
     def test_basic_inversion(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import invert_list_of_dictionaries
 
