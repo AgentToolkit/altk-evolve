@@ -465,6 +465,7 @@ def save_trajectory(
     user_id: str | None = None,
     namespace_id: str | None = None,
     session_id: str | None = None,
+    tools: str | None = None,
 ) -> list[RecordedEntity]:
     """
     Save the full agent trajectory to the Entity DB and generate guidelines
@@ -476,6 +477,8 @@ def save_trajectory(
         user_id: Optional caller user ID. Attached as metadata to trajectory and guideline entities.
         namespace_id: Optional namespace override. Falls back to the configured default.
         session_id: Optional session/thread ID. Attached as metadata to trajectory and guideline entities.
+        tools: Optional JSON-encoded OpenAI tools schema. When provided, passed to the consistency
+            pipeline so tool-calling steps are named and resampled correctly (OpenAIAgent vs AnyAgent).
     """
     guidelines_mode = os.environ.get("EVOLVE_GUIDELINES_MODE", "regular")
     if guidelines_mode not in ("regular", "consistency", "both"):
@@ -556,7 +559,11 @@ def save_trajectory(
         if guidelines_mode in ("consistency", "both"):
             from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
-            trajectory = {"messages": messages, "trace_id": task_id}
+            trajectory = {
+                "messages": messages,
+                "trace_id": task_id,
+                "tools": json.loads(tools) if tools else None,
+            }
             consistency_results = generate_consistency_guidelines(trajectory)
             guideline_entities += [
                 Entity(
