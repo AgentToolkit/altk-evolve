@@ -25,7 +25,8 @@ sentence_transformer_model_small = None
 sentence_transformer_model_large = None
 
 
-def get_sentence_transformer_small(sentence_transformer_model_small):
+def get_sentence_transformer_small():
+    global sentence_transformer_model_small
     if sentence_transformer_model_small is None:
         from sentence_transformers import SentenceTransformer
 
@@ -33,7 +34,8 @@ def get_sentence_transformer_small(sentence_transformer_model_small):
     return sentence_transformer_model_small
 
 
-def get_sentence_transformer_large(sentence_transformer_model_large):
+def get_sentence_transformer_large():
+    global sentence_transformer_model_large
     if sentence_transformer_model_large is None:
         from sentence_transformers import SentenceTransformer
 
@@ -62,10 +64,10 @@ def get_metric_instance(metric: str):
     elif metric == "numeric":
         return NumericFractionConsistencyMetric()
     elif metric == "sbert_small":
-        model = get_sentence_transformer_small(sentence_transformer_model_small)
+        model = get_sentence_transformer_small()
         return EmbeddingConsistencyMetric(model)
     elif metric == "sbert_large":
-        model = get_sentence_transformer_large(sentence_transformer_model_large)
+        model = get_sentence_transformer_large()
         return EmbeddingConsistencyMetric(model)
     elif metric == "cat_entropy":
         return CategoricalEntropyConsistencyMetric()
