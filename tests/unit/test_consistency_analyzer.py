@@ -482,25 +482,27 @@ class TestNumericFractionConsistencyMetric:
         from altk_evolve.llm.guidelines.consistency_analyzer.consistency_metric import NumericFractionConsistencyMetric
 
         m = NumericFractionConsistencyMetric()
-        # pairwise diff: |1 - 3| = 2, mean = 2
+        # pairwise diff: |1 - 3| = 2, normalized: 2 / (1 + 2) = 2/3
         cns, dist = m.get_consistency_and_distance([1.0, 3.0])
-        assert pytest.approx(dist) == 2.0
+        assert pytest.approx(dist) == 2.0 / 3.0
+        assert pytest.approx(cns) == 1.0 / 3.0
 
     def test_three_samples_mean_pairwise_distance(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.consistency_metric import NumericFractionConsistencyMetric
 
         m = NumericFractionConsistencyMetric()
-        # pairs: |1-3|=2, |1-5|=4, |3-5|=2 → mean = 8/3
+        # pairs: |1-3|=2, |1-5|=4, |3-5|=2 → raw mean = 8/3, normalized: (8/3) / (1 + 8/3) = 8/11
         cns, dist = m.get_consistency_and_distance([1.0, 3.0, 5.0])
-        assert pytest.approx(dist) == 8 / 3
+        assert pytest.approx(dist) == 8.0 / 11.0
 
     def test_distance_from_chosen(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.consistency_metric import NumericFractionConsistencyMetric
 
         m = NumericFractionConsistencyMetric()
+        # raw diff 0 → normalized 0; raw diff 2 → normalized 2/3
         distances = m.get_distance_from_chosen_trajectory([10.0, 12.0], 10.0)
         assert pytest.approx(distances[0]) == 0.0
-        assert pytest.approx(distances[1]) == 2.0
+        assert pytest.approx(distances[1]) == 2.0 / 3.0
 
 
 class TestCategoricalEntropyConsistencyMetric:

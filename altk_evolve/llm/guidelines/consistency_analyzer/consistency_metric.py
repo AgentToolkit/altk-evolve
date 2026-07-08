@@ -521,10 +521,12 @@ class NumericFractionConsistencyMetric(ConsistencyMetric):
 
     def _get_distance(self, samples: list) -> float:
         """
-        Compute mean of pairwise absolute differences between numeric samples.
+        Compute mean of pairwise absolute differences between numeric samples,
+        normalized to [0, 1) via d / (1 + d) so that consistency = 1 - distance
+        stays within [0, 1].
 
         Returns:
-            Mean distance, or -1.0 if no samples
+            Normalized mean distance in [0, 1), or -1.0 if no samples
         """
         diff_list = []
         # iterate through the pairs of samples
@@ -534,8 +536,10 @@ class NumericFractionConsistencyMetric(ConsistencyMetric):
             for j in range(len(samples) - (i + 1)):
                 diff_list.append(abs(float(sample) - float(samples[i + 1 + j])))
 
-        # aggregate over all pairwise differences
-        return st.mean(diff_list) if diff_list != [] else -1.0
+        if not diff_list:
+            return -1.0
+        raw = st.mean(diff_list)
+        return raw / (1.0 + raw)
 
     def get_distance_from_chosen_trajectory(self, samples: list, chosen, **kwargs) -> list:
         if not samples or chosen is None:
@@ -550,7 +554,8 @@ class NumericFractionConsistencyMetric(ConsistencyMetric):
         for sample in samples:
             try:
                 sample_val = float(sample)
-                distances.append(abs(sample_val - chosen_val))
+                raw = abs(sample_val - chosen_val)
+                distances.append(raw / (1.0 + raw))
             except (TypeError, ValueError):
                 # Skip invalid samples
                 distances.append(-1.0)
