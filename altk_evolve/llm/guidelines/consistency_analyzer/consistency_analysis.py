@@ -29,7 +29,11 @@ def create_consistency_score_card(trajectory: dict) -> dict:
         "task": trajectory.get("task", "Task instruction not provided"),
         "total_steps": len(trajectory["steps"]),
         "aggregation": trajectory["consistency"].get("aggregation", "None"),
-        "aggregate_trajectory_uncertainty": 1.0 - trajectory["consistency"].get("aggregate_step_consistency", -2),
+        "aggregate_trajectory_uncertainty": (
+            -1
+            if trajectory["consistency"].get("aggregate_step_consistency", -1) == -1
+            else 1.0 - trajectory["consistency"]["aggregate_step_consistency"]
+        ),
         "steps": steps,
     }
 

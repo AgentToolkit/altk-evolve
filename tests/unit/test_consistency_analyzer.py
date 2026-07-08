@@ -897,6 +897,23 @@ class TestCreateConsistencyScoreCard:
         card = create_consistency_score_card(traj)
         assert len(card["steps"]) == 1
 
+    def test_aggregate_uncertainty_sentinel_when_no_steps(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import create_consistency_score_card
+
+        # aggregator returns -1 for empty cns_list; uncertainty must also be -1, not 2.0
+        traj = self._make_trajectory([])
+        traj["consistency"]["aggregate_step_consistency"] = -1
+        card = create_consistency_score_card(traj)
+        assert card["aggregate_trajectory_uncertainty"] == -1
+
+    def test_aggregate_uncertainty_missing_key_returns_sentinel(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import create_consistency_score_card
+
+        traj = self._make_trajectory([0.8])
+        del traj["consistency"]["aggregate_step_consistency"]
+        card = create_consistency_score_card(traj)
+        assert card["aggregate_trajectory_uncertainty"] == -1
+
 
 class TestAnalyzeConsistency:
     """End-to-end test using a synthetic text-type trajectory (no LLM calls)."""
