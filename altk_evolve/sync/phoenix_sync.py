@@ -785,12 +785,16 @@ class PhoenixSync:
     def _process_trajectory(self, trajectory: dict) -> int:
         """Process a single trajectory: store it and generate guidelines.
 
+        The trajectory entity is written only after guideline generation succeeds,
+        so a generation failure leaves the trace unprocessed and eligible for retry.
+
         Returns the number of guidelines generated.
         """
-        # Store trajectory as a single entity with all messages
         messages = trajectory.get("messages", [])
-        if messages:
-            entity = Entity(
+
+        # Build trajectory entity but defer the write until after generation succeeds.
+        trajectory_entity = (
+            Entity(
                 type="trajectory",
                 content=json.dumps(messages),
                 metadata={
@@ -802,12 +806,9 @@ class PhoenixSync:
                     "usage": trajectory.get("usage"),
                 },
             )
-
-            self.client.update_entities(
-                namespace_id=self.namespace_id,
-                entities=[entity],
-                enable_conflict_resolution=False,
-            )
+            if messages
+            else None
+        )
 
         # Generate guidelines from the trajectory (returns one result per subtask).
         # Build entity lists per pipeline so each carries its own generation_method tag,
@@ -874,6 +875,14 @@ class PhoenixSync:
                 for result in consistency_results
                 for guideline in result.guidelines
             ]
+        # Write trajectory entity only after generation succeeded so a generation
+        # failure leaves the trace unprocessed and eligible for retry on the next run.
+        if trajectory_entity:
+            self.client.update_entities(
+                namespace_id=self.namespace_id,
+                entities=[trajectory_entity],
+                enable_conflict_resolution=False,
+            )
         if guideline_entities:
             self.client.update_entities(
                 namespace_id=self.namespace_id,
