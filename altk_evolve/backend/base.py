@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 
 from pydantic_settings import BaseSettings
 
+from altk_evolve.pii.redaction import NullRedactor, PIIRedactor
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
@@ -14,6 +15,11 @@ logger = logging.getLogger("entities-db")
 
 
 class BaseEntityBackend(ABC):
+    #: PII redactor applied to entity content at the update_entities choke-point
+    #: (issue #275). Defaults to a no-op; EvolveClient swaps in a configured
+    #: redactor when pii.enabled is set.
+    redactor: PIIRedactor = NullRedactor()
+
     def __init__(self, config: BaseSettings | None = None):
         pass
 
@@ -123,6 +129,15 @@ class BaseEntityBackend(ABC):
         entity_type = entities[0].type
         if not all(entity.type == entity_type for entity in entities):
             raise EvolveException("All entities must have the same type.")
+
+        # Redact PII before anything is persisted OR used as a conflict-search
+        # query (issue #275). Mutating in place ensures the redacted content
+        # flows through both the conflict-resolution and direct-add paths.
+        # NullRedactor (the default) is a no-op, so this is free when disabled.
+        for entity in entities:
+            entity.content = self.redactor.redact_value(entity.content)
+            if self.redactor.redact_metadata and entity.metadata:
+                entity.metadata = self.redactor.redact_value(entity.metadata)
 
         now = datetime.datetime.now(datetime.UTC)
         timestamp = int(now.timestamp())

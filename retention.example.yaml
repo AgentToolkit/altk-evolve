@@ -1,0 +1,27 @@
+# Example data-retention policy (issue #275).
+# Run with:  evolve retention run --policy retention.example.yaml            # dry run
+#            evolve retention run --policy retention.example.yaml --apply    # mutate
+#
+# Rules are evaluated top-to-bottom; the first matching rule wins per entity.
+# Each rule must set max_age_days and/or max_unused_days.
+rules:
+  # Flag guidelines older than 90 days for review (does not delete).
+  - name: stale-guidelines
+    entity_type: guideline
+    max_age_days: 90
+    action: flag
+
+  # Delete guidelines not recalled in 180 days (uses metadata.last_accessed,
+  # which EvolveClient.record_access stamps; falls back to created_at).
+  - name: unused-guidelines
+    entity_type: guideline
+    max_unused_days: 180
+    action: delete
+
+  # Delete sessions (trajectories) older than 365 days, and cascade-delete the
+  # memories derived from them (linked via provenance metadata.source_task_id).
+  - name: old-sessions
+    entity_type: trajectory
+    max_age_days: 365
+    action: delete
+    cascade_derived: true
