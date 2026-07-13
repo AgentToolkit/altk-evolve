@@ -1015,7 +1015,8 @@ class GitHubRepoCard extends HTMLElement {
     link.textContent = data.full_name;
     link.href = data.html_url;
     githubLink.href = data.html_url;
-    stars.href = `${data.html_url}/stargazers`;
+    // GitHub's /stargazers page 404s for logged-out users, so link to the repo home instead.
+    stars.href = data.html_url;
     forks.href = `${data.html_url}/forks`;
     contributorsEl.href = `${data.html_url}/graphs/contributors`;
     issues.href = `${data.html_url}/issues`;
