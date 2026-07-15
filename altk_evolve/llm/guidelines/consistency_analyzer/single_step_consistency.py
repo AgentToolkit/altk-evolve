@@ -50,10 +50,14 @@ def compute_json_step_consistency(parsed_responses: list, metric_config: dict, m
 
     for field in metric_config["fields"]:
         field_samples = extract_field_values_from_responses(flat_responses, field)
+        # Only count samples where the field was actually present (non-empty);
+        # empty strings mean the field was absent in that resample, and passing
+        # them to the metric skews results (e.g. jaccard treats "" as a match).
+        non_empty_samples = [s for s in field_samples if s]
         metric = field.get("metric", "None")
-        if field_samples and len(field_samples) > min_samples and metric != "None":
-            cns, _ = get_consistency_by_metric(field_samples, metric)
-            logger.debug(f"+++ Processing field {field}, {len(field_samples)} samples ----consistency ({metric}): {cns}")
+        if non_empty_samples and len(non_empty_samples) > min_samples and metric != "None":
+            cns, _ = get_consistency_by_metric(non_empty_samples, metric)
+            logger.debug(f"+++ Processing field {field}, {len(non_empty_samples)} samples ----consistency ({metric}): {cns}")
             field_name = field["name"] if isinstance(field["name"], str) else "-".join(field["name"])
             field_consistencies[field_name] = {
                 "consistency": cns,
@@ -63,7 +67,7 @@ def compute_json_step_consistency(parsed_responses: list, metric_config: dict, m
             if cns != -1:
                 step_consistency_list.append({"consistency": cns, "weight": field.get("weight", -1), "name": field_name})
         else:
-            logger.debug(f"+++ Processing field {field} --- found {len(field_samples)} samples - skipping")
+            logger.debug(f"+++ Processing field {field} --- found {len(non_empty_samples)} non-empty samples - skipping")
 
     if step_consistency_list:
         consistency, field_consistencies = compute_weighted_sum_consistency(step_consistency_list, field_consistencies)

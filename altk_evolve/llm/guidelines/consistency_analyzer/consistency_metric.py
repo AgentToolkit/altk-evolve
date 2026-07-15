@@ -247,7 +247,10 @@ def jaccard_similarity(x: str, y: str) -> float:
     union = len(set1.union(set2))
 
     if union == 0:
-        return 1.0 if intersection == 0 else 0.0
+        # Both strings are empty — the field was absent in all samples,
+        # which means maximum inconsistency (the original step had a value
+        # that no resample reproduced), not perfect consistency.
+        return 0.0
     return intersection / union
 
 

@@ -361,10 +361,12 @@ class TestJaccardSimilarity:
         result = jaccard_similarity("a b", "a c")
         assert pytest.approx(result) == 1 / 3
 
-    def test_both_empty_returns_one(self):
+    def test_both_empty_returns_zero(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.consistency_metric import jaccard_similarity
 
-        assert jaccard_similarity("", "") == 1.0
+        # Empty union means the field was absent in all samples — maximum
+        # inconsistency, not perfect consistency.
+        assert jaccard_similarity("", "") == 0.0
 
 
 class TestJaccardConsistencyMetric:
