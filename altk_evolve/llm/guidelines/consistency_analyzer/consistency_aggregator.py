@@ -89,7 +89,7 @@ def get_agg_fcn(mode: str) -> Callable:
     Get aggregation function by name.
 
     Args:
-        mode: Aggregation mode ('mean', 'rms', 'geo_mean', 'product', 'pmi')
+        mode: Aggregation mode ('mean', 'rms', 'geo_mean', 'product')
 
     Returns:
         Aggregation function
@@ -113,7 +113,7 @@ class ConsistencyAggregator:
     """
     Aggregates step-level consistency scores into trajectory-level scores.
 
-    Supports multiple aggregation modes: mean, RMS, geometric mean, product, and PMI.
+    Supports multiple aggregation modes: mean, RMS, geometric mean, and product.
     """
 
     def __init__(self, config: dict):
