@@ -257,9 +257,16 @@ def format_trajectory_data(
     return "\n".join(steps_text)
 
 
+def _safe_write_debug(path: Path, data: Any) -> None:
+    try:
+        path.write_text(json.dumps(data, indent=2))
+    except Exception as e:
+        logger.warning(f"Debug write failed (path={path}): {e} — production path unaffected")
+
+
 def _write_guidelines_debug(debug_dir: Path, trace_id: Any, results: list[GuidelineGenerationResult], suffix: str = "") -> None:
     data = [{"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]} for r in results]
-    (debug_dir / f"guidelines_{str(trace_id)[:8]}{suffix}.json").write_text(json.dumps(data, indent=2))
+    _safe_write_debug(debug_dir / f"guidelines_{str(trace_id)[:8]}{suffix}.json", data)
 
 
 def _generate_guideline_result(
@@ -390,8 +397,13 @@ def generate_consistency_guidelines(
     from altk_evolve.config.guidelines import guidelines_settings
     debug_dir = guidelines_settings.debug_dir
     if debug_dir:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        (debug_dir / f"trajectory_{str(trace_id)[:8]}.json").write_text(json.dumps(trajectory, indent=2))
+        try:
+            debug_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not create debug dir {debug_dir}: {e} — debug artifacts will be skipped")
+            debug_dir = None
+        else:
+            _safe_write_debug(debug_dir / f"trajectory_{str(trace_id)[:8]}.json", trajectory)
 
     supported_params = get_supported_openai_params(
         model=llm_settings.guidelines_model,
@@ -423,11 +435,11 @@ def generate_consistency_guidelines(
     logger.info(f"Computing consistency score card for {trajectory_ir.get('name', '')}")
     score_card, trajectory_ir = analyze_consistency(trajectory=trajectory_ir, config=config)
     if debug_dir:
-        (debug_dir / f"trajectory_ir_{str(trace_id)[:8]}_cns.json").write_text(json.dumps(trajectory_ir, indent=2))
+        _safe_write_debug(debug_dir / f"trajectory_ir_{str(trace_id)[:8]}_cns.json", trajectory_ir)
 
     consistency_data = parse_consistency_score_card(score_card)
     if debug_dir:
-        (debug_dir / f"consistency_score_card_{str(trace_id)[:8]}.json").write_text(json.dumps(score_card, indent=2))
+        _safe_write_debug(debug_dir / f"consistency_score_card_{str(trace_id)[:8]}.json", score_card)
 
     task_description = trajectory_ir["task"] or DEFAULT_TASK_DESCRIPTION
 
