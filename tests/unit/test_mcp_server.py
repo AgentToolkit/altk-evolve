@@ -307,7 +307,7 @@ def test_save_trajectory_consistency_mode_calls_consistency_pipeline(mock_get_cl
     with (
         patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular,
         patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
-        patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "consistency"}),
+        patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "consistency"),
     ):
         mock_consistency.return_value = [_mock_guideline_result("Use deterministic prompts.")]
         trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
@@ -328,7 +328,7 @@ def test_save_trajectory_both_mode_calls_both_pipelines(mock_get_client):
     with (
         patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular,
         patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
-        patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+        patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "both"),
     ):
         mock_regular.return_value = [_mock_guideline_result("Write tests.")]
         mock_consistency.return_value = [_mock_guideline_result("Reduce uncertainty.")]
@@ -350,7 +350,7 @@ def test_save_trajectory_both_mode_merges_into_single_update_entities_call(mock_
     with (
         patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular,
         patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
-        patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+        patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "both"),
     ):
         mock_regular.return_value = [_mock_guideline_result("Write tests.")]
         mock_consistency.return_value = [_mock_guideline_result("Reduce uncertainty.")]

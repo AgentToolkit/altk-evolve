@@ -387,8 +387,8 @@ def generate_consistency_guidelines(
     if not messages:
         raise EvolveException("generate_consistency_guidelines called with empty messages")
 
-    _debug_env = os.environ.get("EVOLVE_DEBUG_DIR")
-    debug_dir = Path(_debug_env) if _debug_env else None
+    from altk_evolve.config.guidelines import guidelines_settings
+    debug_dir = guidelines_settings.debug_dir
     if debug_dir:
         debug_dir.mkdir(parents=True, exist_ok=True)
         (debug_dir / f"trajectory_{str(trace_id)[:8]}.json").write_text(json.dumps(trajectory, indent=2))

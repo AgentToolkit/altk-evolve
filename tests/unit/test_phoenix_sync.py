@@ -1168,7 +1168,7 @@ class TestProcessTrajectoryGuidelinesMode:
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
-            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "regular"}),
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "regular"),
         ):
             mock_regular.return_value = [_make_guideline_result()]
 
@@ -1181,7 +1181,7 @@ class TestProcessTrajectoryGuidelinesMode:
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
-            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "regular"}),
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "regular"),
         ):
             mock_regular.return_value = [_make_guideline_result()]
 
@@ -1198,7 +1198,7 @@ class TestProcessTrajectoryGuidelinesMode:
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
-            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "consistency"}),
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "consistency"),
         ):
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
 
@@ -1211,7 +1211,7 @@ class TestProcessTrajectoryGuidelinesMode:
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
-            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "consistency"}),
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "consistency"),
         ):
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
 
@@ -1228,7 +1228,7 @@ class TestProcessTrajectoryGuidelinesMode:
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
-            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "both"),
         ):
             mock_regular.return_value = [_make_guideline_result("Write tests.")]
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
@@ -1243,7 +1243,7 @@ class TestProcessTrajectoryGuidelinesMode:
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
-            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "both"),
         ):
             mock_regular.return_value = [_make_guideline_result("Write tests.")]
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
@@ -1262,7 +1262,7 @@ class TestProcessTrajectoryGuidelinesMode:
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
-            patch.dict("os.environ", {"EVOLVE_GUIDELINES_MODE": "both"}),
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "both"),
         ):
             mock_regular.return_value = [_make_guideline_result("Write tests.")]
             mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]

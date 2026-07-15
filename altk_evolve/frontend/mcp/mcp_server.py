@@ -480,10 +480,8 @@ def save_trajectory(
         tools: Optional JSON-encoded OpenAI tools schema. When provided, passed to the consistency
             pipeline so tool-calling steps are named and resampled correctly (OpenAIAgent vs AnyAgent).
     """
-    guidelines_mode = os.environ.get("EVOLVE_GUIDELINES_MODE", "regular")
-    if guidelines_mode not in ("regular", "consistency", "both"):
-        logger.warning(f"Unrecognised EVOLVE_GUIDELINES_MODE value '{guidelines_mode}', defaulting to 'regular'")
-        guidelines_mode = "regular"
+    from altk_evolve.config.guidelines import guidelines_settings
+    guidelines_mode = guidelines_settings.guidelines_mode
 
     resolved_ns = _resolve_namespace(namespace_id)
     # Prefer explicit user_id; fall back to owner_id for backward compatibility

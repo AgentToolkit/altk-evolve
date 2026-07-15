@@ -820,21 +820,19 @@ class PhoenixSync:
             "creation_mode": "auto-phoenix",
         }
 
-        guidelines_mode = os.environ.get("EVOLVE_GUIDELINES_MODE", "regular")
-        if guidelines_mode not in ("regular", "consistency", "both"):
-            logger.warning(f"Unrecognised EVOLVE_GUIDELINES_MODE value '{guidelines_mode}', defaulting to 'regular'")
-            guidelines_mode = "regular"
+        from altk_evolve.config.guidelines import guidelines_settings
+        guidelines_mode = guidelines_settings.guidelines_mode
 
         if guidelines_mode in ("regular", "both"):
             regular_results = generate_guidelines(trajectory["messages"])
-            _debug_dir = os.environ.get("EVOLVE_DEBUG_DIR")
+            _debug_dir = guidelines_settings.debug_dir
             if _debug_dir:
                 os.makedirs(_debug_dir, exist_ok=True)
                 _trace_prefix = str(trajectory["trace_id"])[:8]
                 _guidelines_data = [
                     {"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]} for r in regular_results
                 ]
-                with open(os.path.join(_debug_dir, f"guidelines_{_trace_prefix}_regular.json"), "w") as _f:
+                with open(_debug_dir / f"guidelines_{_trace_prefix}_regular.json", "w") as _f:
                     json.dump(_guidelines_data, _f, indent=2)
             guideline_entities += [
                 Entity(
