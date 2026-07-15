@@ -466,17 +466,19 @@ class EmbeddingConsistencyMetric(ConsistencyMetric):
         embeddings = self.sentence_transformer_model.encode(samples)
 
         # returns a matrix of pairwise similarities
-        similarities = self.sentence_transformer_model.similarity(embeddings, embeddings)
+        similarities = np.asarray(self.sentence_transformer_model.similarity(embeddings, embeddings))
 
-        # extract the upper triangle and zero-out the lower triangle
-        upper_half = np.triu(np.asarray(similarities), k=1)
-        flattened_array = upper_half.flatten()
-        # remove the zeroes from the lower triangle
-        embedding_pairwise_similarities = flattened_array[flattened_array != 0]
-        # aggregate over all pairwise similarities
-        mean_embedding_similarity = np.mean(embedding_pairwise_similarities)
-
-        return mean_embedding_similarity.item()
+        # select upper-triangle pairs directly (avoids using 0 as a sentinel,
+        # which would discard legitimately zero similarities and bias the mean)
+        n = similarities.shape[0]
+        idx = np.triu_indices(n, k=1)
+        embedding_pairwise_similarities = similarities[idx]
+        if len(embedding_pairwise_similarities) == 0:
+            return 0.0
+        mean_embedding_similarity = float(np.mean(embedding_pairwise_similarities))
+        # cosine similarity is in [-1, 1]; clamp to [0, 1] so the aggregator
+        # never receives a negative value
+        return max(0.0, mean_embedding_similarity)
 
     def _get_distance(self, samples: list) -> float:
         return 1.0 - self._get_consistency(samples)
