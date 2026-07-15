@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
 from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
 
+from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.config.llm import llm_settings
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.guidelines import (
@@ -25,10 +26,6 @@ from altk_evolve.schema.guidelines import (
 from altk_evolve.utils.utils import clean_llm_response
 
 logger = logging.getLogger(__name__)
-
-HIGH_UNCERTAINTY = 0.2
-LOW_UNCERTAINTY = 0.1
-SKIP_ON_NO_UNCERTAINTY = True
 
 _CONSISTENCY_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_consistency_guidelines.jinja2").read_text())
 
@@ -204,11 +201,11 @@ def format_trajectory_data(
 
     TOP_N = 3
     top_steps = sorted(step_uncertainties.items(), key=lambda x: x[1], reverse=True)[:TOP_N]
-    high_uncertainty_steps = {step_num: score for step_num, score in top_steps if score >= HIGH_UNCERTAINTY}
+    high_uncertainty_steps = {step_num: score for step_num, score in top_steps if score >= guidelines_settings.high_uncertainty_threshold}
 
     if not high_uncertainty_steps and step_uncertainties:
         highest = max(step_uncertainties.items(), key=lambda x: x[1])
-        if highest[1] > LOW_UNCERTAINTY:
+        if highest[1] > guidelines_settings.low_uncertainty_threshold:
             high_uncertainty_steps = {highest[0]: highest[1]}
 
     MAX_STEPS = 50
@@ -282,20 +279,20 @@ def _generate_guideline_result(
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory).
 
-    Applies the SKIP_ON_NO_UNCERTAINTY check scoped to the given step_range, renders
+    Applies the skip_on_no_uncertainty check scoped to the given step_range, renders
     the prompt, calls the LLM, and parses the response. debug_suffix distinguishes
     per-segment artifacts (e.g. "_seg1") from full-trajectory artifacts ("").
     """
-    if SKIP_ON_NO_UNCERTAINTY:
+    if guidelines_settings.skip_on_no_uncertainty:
         step_uncertainties = consistency_data.get("step_uncertainties", {})
         if step_range:
             start, end = step_range
             step_uncertainties = {k: v for k, v in step_uncertainties.items() if start <= k <= end}
-        has_uncertain_steps = bool(step_uncertainties) and max(step_uncertainties.values()) > LOW_UNCERTAINTY
+        has_uncertain_steps = bool(step_uncertainties) and max(step_uncertainties.values()) > guidelines_settings.low_uncertainty_threshold
         if not has_uncertain_steps:
             logger.info(
                 f"Skipping guideline generation{' for segment' + debug_suffix if debug_suffix else ''}: "
-                f"no steps above LOW_UNCERTAINTY threshold ({LOW_UNCERTAINTY})"
+                f"no steps above low_uncertainty_threshold ({guidelines_settings.low_uncertainty_threshold})"
             )
             return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 

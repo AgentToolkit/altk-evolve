@@ -13,6 +13,9 @@ class GuidelinesSettings(BaseSettings):
 
     guidelines_mode: str = "regular"
     debug_dir: Optional[Path] = Field(default=None)
+    skip_on_no_uncertainty: bool = True
+    high_uncertainty_threshold: float = 0.2
+    low_uncertainty_threshold: float = 0.1
 
     @field_validator("guidelines_mode", mode="before")
     @classmethod
