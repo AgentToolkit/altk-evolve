@@ -97,7 +97,7 @@ exclude = ["explorations*"]
 include = ["altk_evolve*"]
 
 [tool.setuptools.package-data]
-altk_evolve = ["**/*.jinja2"]
+altk_evolve = ["**/*.jinja2", "**/*.yaml"]
 
 [tool.uv]
 package = true
