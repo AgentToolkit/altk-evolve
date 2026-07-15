@@ -54,10 +54,11 @@ def analyze_consistency(trajectory: dict, config: dict) -> tuple[dict, dict]:
 
     Returns:
         Tuple of (score_card, trajectory) where score_card is a dict containing:
-        - trajectory_name: Name of the trajectory
-        - task_score: Task success score (0.0 or 1.0)
-        - aggregate_consistency: Overall trajectory consistency
-        - step_consistencies: List of per-step consistency details
+        - task: Task instruction string from the trajectory
+        - total_steps: Total number of steps in the trajectory
+        - aggregation: Aggregation mode used (e.g. 'mean')
+        - aggregate_trajectory_uncertainty: Overall uncertainty score (1 - consistency), or -1 if unavailable
+        - steps: List of per-step dicts with keys name, step_number, step_uncertainty, metric
         and trajectory is the fully-annotated trajectory dict after all pipeline
         stages have been applied.
 
