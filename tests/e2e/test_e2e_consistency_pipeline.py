@@ -15,6 +15,7 @@ Requires:
 import datetime
 import os
 import re
+import select
 import subprocess
 import time
 from pathlib import Path
@@ -179,11 +180,16 @@ except Exception as e:
                 print(f"Timeout waiting for consistency sync ({timeout}s)")
                 break
 
+            ready, _, _ = select.select([process.stdout], [], [], 0.5)
+            if not ready:
+                if process.poll() is not None:
+                    break
+                continue
+
             line = process.stdout.readline()
             if not line:
                 if process.poll() is not None:
                     break
-                time.sleep(0.1)
                 continue
 
             output_lines.append(line)
@@ -355,11 +361,16 @@ except Exception as e:
                 print(f"Timeout waiting for sync ({timeout}s)")
                 break
 
+            ready, _, _ = select.select([process.stdout], [], [], 0.5)
+            if not ready:
+                if process.poll() is not None:
+                    break
+                continue
+
             line = process.stdout.readline()
             if not line:
                 if process.poll() is not None:
                     break
-                time.sleep(0.1)
                 continue
 
             output_lines.append(line)
