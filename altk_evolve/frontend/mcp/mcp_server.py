@@ -533,8 +533,8 @@ def save_trajectory(
     # then merge before the single update_entities call.
     guideline_entities = []
 
-    try:
-        if guidelines_mode in ("regular", "both"):
+    if guidelines_mode in ("regular", "both"):
+        try:
             regular_results = generate_guidelines(messages)
             guideline_entities += [
                 Entity(
@@ -553,8 +553,14 @@ def save_trajectory(
                 for result in regular_results
                 for guideline in result.guidelines
             ]
+        except Exception:
+            logger.error(
+                f"Regular guideline generation failed for task {task_id}, skipping",
+                exc_info=True,
+            )
 
-        if guidelines_mode in ("consistency", "both"):
+    if guidelines_mode in ("consistency", "both"):
+        try:
             from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
             trajectory = {
@@ -580,8 +586,11 @@ def save_trajectory(
                 for result in consistency_results
                 for guideline in result.guidelines
             ]
-    except Exception as e:
-        logger.warning(f"Guideline generation failed for task {task_id}, skipping: {e}")
+        except Exception:
+            logger.error(
+                f"Consistency guideline generation failed for task {task_id}, skipping",
+                exc_info=True,
+            )
     if guideline_entities:
         get_client().update_entities(
             namespace_id=resolved_ns,
