@@ -55,7 +55,7 @@ def compute_json_step_consistency(parsed_responses: list, metric_config: dict, m
         # them to the metric skews results (e.g. jaccard treats "" as a match).
         non_empty_samples = [s for s in field_samples if s]
         metric = field.get("metric", "None")
-        if non_empty_samples and len(non_empty_samples) > min_samples and metric != "None":
+        if non_empty_samples and len(non_empty_samples) >= min_samples and metric != "None":
             cns, _ = get_consistency_by_metric(non_empty_samples, metric)
             logger.debug(f"+++ Processing field {field}, {len(non_empty_samples)} samples ----consistency ({metric}): {cns}")
             field_name = field["name"] if isinstance(field["name"], str) else "-".join(field["name"])
