@@ -102,6 +102,20 @@ class TestSelectGuidelines:
         assert "d" not in {e.id for e in sel.retrieved}
         assert "f" in {e.id for e in sel.retrieved}
 
+    def test_dedup_drops_near_identical_candidate(self, mock_st):
+        self._model(mock_st)
+        # v1 and v2 have identical content (same embedding) -> dedup keeps one; email is distinct.
+        v1 = _make_entity("v1", "Venmo rule", task_description="a venmo task", support=1)
+        v2 = _make_entity("v2", "Venmo rule", task_description="another venmo task", support=1)
+        email = _make_entity("email", "Email rule", task_description="an email task", support=1)
+
+        sel = select_guidelines([v1, v2, email], "venmo payment", top_k=5, core_support=3, dedup_thresh=0.9, embedding_model="test")
+
+        retrieved_ids = {e.id for e in sel.retrieved}
+        assert len(retrieved_ids & {"v1", "v2"}) == 1  # exactly one of the duplicates survives
+        assert "email" in retrieved_ids
+        assert len(sel.retrieved) == 2
+
     def test_topk_zero_returns_core_only(self, mock_st):
         self._model(mock_st)
         core = _make_entity("c", "Email rule", task_description="email", support=3)
@@ -164,3 +178,59 @@ class TestClientSelectGuidelines:
 
         # success-evidence guideline dropped; failure + unknown kept.
         assert captured["ids"] == ["ok", "unknown"]
+
+    def test_select_guidelines_fetches_full_unlimited_pool(self):
+        """Guards against a silent cap: the candidate pool must not be limited to the
+        get_all_entities default (100), or retrieval would ignore most guidelines."""
+        from altk_evolve.frontend.client.evolve_client import EvolveClient
+
+        client = EvolveClient.__new__(EvolveClient)
+        client.backend = MagicMock()
+        client.config = MagicMock()
+        client.config.retrieval_top_k = 5
+        client.config.core_support = 3
+        client.config.min_support = 1
+        client.config.evidence_filter = "all"
+        client.config.retrieval_similarity_key = "source_task"
+        client.config.retrieval_near_core_thresh = 0.75
+        client.config.retrieval_dedup_thresh = 0.90
+
+        with patch.object(client, "get_all_entities", return_value=[]) as mock_get:
+            client.select_guidelines("ns", "some task")
+
+        mock_get.assert_called_once_with("ns", filters={"type": "guideline"}, limit=10000)
+
+
+@pytest.mark.unit
+class TestInjectionModeRouting:
+    """get_guidelines must honor EvolveConfig.injection_mode (default 'static')."""
+
+    def test_static_mode_uses_full_playbook_path(self):
+        import altk_evolve.config.evolve as cfg
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+
+        with (
+            patch.object(cfg.evolve_config, "injection_mode", "static"),
+            patch.object(mcp, "get_entities_logic", return_value="STATIC") as static_path,
+            patch.object(mcp, "get_relevant_guidelines", return_value="RETRIEVAL") as retrieval_path,
+        ):
+            out = mcp.get_guidelines("do a task")
+
+        assert out == "STATIC"
+        static_path.assert_called_once()
+        retrieval_path.assert_not_called()
+
+    def test_retrieval_mode_routes_through_dosage_path(self):
+        import altk_evolve.config.evolve as cfg
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+
+        with (
+            patch.object(cfg.evolve_config, "injection_mode", "retrieval"),
+            patch.object(mcp, "get_entities_logic", return_value="STATIC") as static_path,
+            patch.object(mcp, "get_relevant_guidelines", return_value="RETRIEVAL") as retrieval_path,
+        ):
+            out = mcp.get_guidelines("do a task")
+
+        assert out == "RETRIEVAL"
+        retrieval_path.assert_called_once()
+        static_path.assert_not_called()

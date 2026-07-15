@@ -80,9 +80,12 @@ def select_guidelines(
         task_query: The current task instruction to retrieve for.
         top_k: Maximum number of retrieved (non-core) guidelines.
         core_support: Guidelines with support >= this are always included.
-        min_support: Drop candidates with support < this (non-destructive sup2/sup3 filter).
+        min_support: Non-destructive sup2/sup3 floor applied to the whole pool *before* the
+            core/candidate split. Callers should keep ``min_support <= core_support`` (enforced
+            by ``EvolveConfig``) so the floor never drops a guideline that qualifies for the core.
         similarity_key: Retrieve by the source ``task_description`` (default) or by the
-            guideline text itself.
+            guideline text itself. For ``"source_task"``, a candidate lacking a
+            ``task_description`` falls back to being ranked by its own content.
         near_core_thresh: Drop a candidate whose content cosine to any core guideline is
             >= this (already covered by the core).
         dedup_thresh: Drop a candidate whose content cosine to an already-kept candidate is

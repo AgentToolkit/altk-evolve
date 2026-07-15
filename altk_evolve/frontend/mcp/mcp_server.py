@@ -305,12 +305,19 @@ def get_guidelines(
     Provide a task description and receive applicable best practices and guidelines.
     This tool is maintained for backward compatibility. Use 'get_entities' for more generic queries.
 
+    Honors ``EvolveConfig.injection_mode``: 'static' (default) returns the whole guideline set,
+    while 'retrieval' routes through the dosage-aware core + top-k path (see get_relevant_guidelines).
+
     Args:
         task: A description of the task you want guidelines for
         user_id: Optional caller user ID. Logged for attribution; does not filter results.
         namespace_id: Optional namespace override. Falls back to the configured default.
         session_id: Optional session/thread ID. Logged for attribution; does not filter results.
     """
+    from altk_evolve.config.evolve import evolve_config
+
+    if evolve_config.injection_mode == "retrieval":
+        return get_relevant_guidelines(task, user_id=user_id, namespace_id=namespace_id, session_id=session_id)
     return get_entities_logic(task, "guideline", user_id=user_id, namespace_id=namespace_id, session_id=session_id)
 
 
@@ -342,15 +349,17 @@ def get_relevant_guidelines(
     from altk_evolve.llm.guidelines.retrieval import format_selection
 
     resolved_ns = _resolve_namespace(namespace_id)
+    # Log only non-sensitive metadata at INFO; task is arbitrary user text (see save_trajectory).
     logger.info(
-        "get_relevant_guidelines for task=%s (namespace=%s, top_k=%s, core_support=%s, user_present=%s, session_present=%s)",
-        task,
+        "get_relevant_guidelines (namespace=%s, top_k=%s, core_support=%s, task_len=%s, user_present=%s, session_present=%s)",
         resolved_ns,
         top_k,
         core_support,
+        len(task),
         user_id is not None,
         session_id is not None,
     )
+    logger.debug("get_relevant_guidelines task=%s", task)
     client = get_client()
     try:
         selection = client.select_guidelines(resolved_ns, task, top_k=top_k, core_support=core_support)
@@ -358,6 +367,9 @@ def get_relevant_guidelines(
         _evict_namespace(resolved_ns)
         resolved_ns = _resolve_namespace(namespace_id)
         selection = client.select_guidelines(resolved_ns, task, top_k=top_k, core_support=core_support)
+    except ValueError as e:
+        logger.error("Retrieval unavailable for get_relevant_guidelines: %s", e)
+        return f"Guideline retrieval unavailable: {e}"
     return format_selection(selection)
 
 
