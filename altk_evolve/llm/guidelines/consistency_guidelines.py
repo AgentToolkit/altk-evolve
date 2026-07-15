@@ -393,6 +393,7 @@ def generate_consistency_guidelines(
         raise EvolveException("generate_consistency_guidelines called with empty messages")
 
     from altk_evolve.config.guidelines import guidelines_settings
+
     debug_dir = guidelines_settings.debug_dir
     if debug_dir:
         try:

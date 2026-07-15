@@ -540,6 +540,7 @@ def save_trajectory(
             pipeline so tool-calling steps are named and resampled correctly (OpenAIAgent vs AnyAgent).
     """
     from altk_evolve.config.guidelines import guidelines_settings
+
     guidelines_mode = guidelines_settings.guidelines_mode
 
     resolved_ns = _resolve_namespace(namespace_id)
