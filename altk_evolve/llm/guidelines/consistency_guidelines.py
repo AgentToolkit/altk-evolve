@@ -211,12 +211,15 @@ def format_trajectory_data(
         if highest[1] > LOW_UNCERTAINTY:
             high_uncertainty_steps = {highest[0]: highest[1]}
 
+    MAX_STEPS = 50
     steps_text: list[str] = []
     step_num = 0
     for step in messages:
         if step.get("role") != "assistant":
             continue
         step_num += 1
+        if step_num > MAX_STEPS:
+            break
 
         if step_range:
             if step_num > step_range[1]:
@@ -308,7 +311,7 @@ def _generate_guideline_result(
 
     if constrained_decoding_supported:
         litellm.enable_json_schema_validation = True
-        clean_response = (
+        raw = (
             completion(
                 model=llm_settings.guidelines_model,
                 messages=[{"role": "user", "content": prompt}],
@@ -329,7 +332,7 @@ def _generate_guideline_result(
             .choices[0]
             .message.content
         )
-        clean_response = clean_llm_response(raw)
+    clean_response = clean_llm_response(raw)
 
     if not clean_response:
         logger.warning(f"LLM returned empty response for consistency guideline generation. Model: {llm_settings.guidelines_model}")
@@ -414,7 +417,8 @@ def generate_consistency_guidelines(
         model=llm_settings.guidelines_model,
         custom_llm_provider=llm_settings.custom_llm_provider,
     )
-    constrained_decoding_supported = bool(supports_response_format and response_schema_enabled)
+    is_groq = llm_settings.custom_llm_provider == "groq" or llm_settings.guidelines_model.startswith("groq/")
+    constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
     trajectory_ir = transform_trajectory_to_IR(trajectory)
     logger.info(f"Created trajectory IR for {trajectory_ir.get('name', '')}")
