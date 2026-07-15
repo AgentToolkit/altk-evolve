@@ -820,6 +820,7 @@ class PhoenixSync:
                     "rationale": guideline.rationale,
                     "trigger": guideline.trigger,
                     "implementation_steps": guideline.implementation_steps,
+                    "support": 1,
                     "source_task_id": trajectory["trace_id"],
                     "source_span_id": trajectory["span_id"],
                     "task_description": result.task_description,

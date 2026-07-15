@@ -535,6 +535,7 @@ def save_trajectory(
                 "rationale": guideline.rationale,
                 "trigger": guideline.trigger,
                 "implementation_steps": guideline.implementation_steps,
+                "support": 1,
             },
         )
         for result in results

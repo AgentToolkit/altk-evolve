@@ -151,27 +151,42 @@ class EvolveClient:
             )
         return cluster_entities(entities, threshold=threshold)
 
-    def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None) -> ConsolidationResult:
+    def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None, mode: str | None = None) -> ConsolidationResult:
         """Cluster similar guidelines and combine each cluster into consolidated guidelines.
+
+        Consolidation is support-conserving: each consolidated guideline records how many
+        source guidelines it merges (``support``) and their merged ``evidence`` polarity,
+        and the total support is preserved (no advice is dropped).
 
         Args:
             namespace_id: Namespace to consolidate entities in.
             threshold: Cosine similarity threshold (0-1). Defaults to config value.
+            mode: Consolidation mode — ``"none"`` (skip), ``"lossless"`` (default) or
+                ``"lossy"`` (merge more aggressively). Defaults to ``config.consolidation_mode``.
 
         Returns:
-            ConsolidationResult with counts of clusters, guidelines before, and guidelines after.
+            ConsolidationResult with cluster/guideline counts and total support before/after.
         """
         from altk_evolve.llm.guidelines.clustering import combine_cluster
 
+        if mode is None:
+            mode = getattr(self.config, "consolidation_mode", "lossless")
+        if mode == "none":
+            logger.info("consolidation_mode='none'; skipping consolidation for namespace %s.", namespace_id)
+            return ConsolidationResult(clusters_found=0, guidelines_before=0, guidelines_after=0)
+
+        combine_mode = "lossy" if mode == "lossy" else "lossless"
         clusters = self.cluster_guidelines(namespace_id, threshold=threshold)
         clusters_found = 0
         guidelines_before = 0
         guidelines_after = 0
+        support_before = 0
+        support_after = 0
 
         for cluster in clusters:
             # Phase 1: combine + insert (skip cluster on failure)
             try:
-                consolidated_guidelines = combine_cluster(cluster)
+                consolidated_guidelines = combine_cluster(cluster, mode=combine_mode)
 
                 task_description = (cluster[0].metadata or {}).get("task_description", "")
                 new_entities = [
@@ -184,6 +199,8 @@ class EvolveClient:
                             "category": guideline.category,
                             "trigger": guideline.trigger,
                             "implementation_steps": guideline.implementation_steps,
+                            "support": guideline.support,
+                            "evidence": guideline.evidence,
                         },
                     )
                     for guideline in consolidated_guidelines
@@ -207,6 +224,8 @@ class EvolveClient:
             clusters_found += 1
             guidelines_before += len(cluster)
             guidelines_after += len(consolidated_guidelines)
+            support_before += sum(int((e.metadata or {}).get("support", 1) or 1) for e in cluster)
+            support_after += sum(g.support for g in consolidated_guidelines)
 
             # Phase 2: delete originals (log errors but don't roll back insert)
             for entity in cluster:
@@ -223,6 +242,8 @@ class EvolveClient:
             clusters_found=clusters_found,
             guidelines_before=guidelines_before,
             guidelines_after=guidelines_after,
+            support_before=support_before,
+            support_after=support_after,
         )
 
     # Convenience methods for common patterns
