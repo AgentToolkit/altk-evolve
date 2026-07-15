@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING, cast
 
 from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.evolve import EvolveConfig
@@ -7,7 +8,21 @@ from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
 from altk_evolve.schema.guidelines import ConsolidationResult
 
+if TYPE_CHECKING:
+    from altk_evolve.llm.guidelines.retrieval import GuidelineSelection, SimilarityKey
+
 logger = logging.getLogger(__name__)
+
+
+def _filter_by_evidence(entities: list[RecordedEntity], evidence_filter: str) -> list[RecordedEntity]:
+    """Keep guidelines matching an evidence polarity. Unknown evidence (None) is always kept."""
+    if evidence_filter == "success":
+        allowed = {"success", "both", None}
+    elif evidence_filter == "failure":
+        allowed = {"failure", "both", None}
+    else:  # "all"
+        return entities
+    return [e for e in entities if (e.metadata or {}).get("evidence") in allowed]
 
 
 class EvolveClient:
@@ -244,6 +259,61 @@ class EvolveClient:
             guidelines_after=guidelines_after,
             support_before=support_before,
             support_after=support_after,
+        )
+
+    def select_guidelines(
+        self,
+        namespace_id: str,
+        task_query: str,
+        top_k: int | None = None,
+        core_support: int | None = None,
+        min_support: int | None = None,
+        evidence_filter: str | None = None,
+        limit: int = 10000,
+    ) -> "GuidelineSelection":
+        """Select the always-on core plus the top-k task-relevant guidelines for a task.
+
+        This is the dosage-aware alternative to injecting the whole playbook: the core
+        (guidelines with support >= ``core_support``) is always returned, plus up to
+        ``top_k`` further guidelines whose source task is most similar to ``task_query``.
+        Unset arguments fall back to the corresponding ``config`` values.
+
+        Args:
+            namespace_id: Namespace to select guidelines from.
+            task_query: The current task instruction to retrieve for.
+            top_k: Max retrieved (non-core) guidelines. Defaults to ``config.retrieval_top_k``.
+            core_support: Support threshold for the always-on core. Defaults to config.
+            min_support: Non-destructive support floor on the candidate pool. Defaults to config.
+            evidence_filter: ``"all"`` / ``"success"`` / ``"failure"``. Defaults to config.
+            limit: Max guideline entities to fetch.
+
+        Returns:
+            A ``GuidelineSelection`` (core + retrieved).
+        """
+        from altk_evolve.llm.guidelines.retrieval import GuidelineSelection, select_guidelines
+
+        top_k = top_k if top_k is not None else getattr(self.config, "retrieval_top_k", 10)
+        core_support = core_support if core_support is not None else getattr(self.config, "core_support", 3)
+        min_support = min_support if min_support is not None else getattr(self.config, "min_support", 1)
+        evidence_filter = evidence_filter or getattr(self.config, "evidence_filter", "all")
+        similarity_key = getattr(self.config, "retrieval_similarity_key", "source_task")
+        near_core_thresh = getattr(self.config, "retrieval_near_core_thresh", 0.75)
+        dedup_thresh = getattr(self.config, "retrieval_dedup_thresh", 0.90)
+
+        entities = self.get_all_entities(namespace_id, filters={"type": "guideline"}, limit=limit)
+        entities = _filter_by_evidence(entities, str(evidence_filter))
+        if not entities:
+            return GuidelineSelection(core=[], retrieved=[])
+
+        return select_guidelines(
+            entities,
+            task_query,
+            top_k=int(top_k),
+            core_support=int(core_support),
+            min_support=int(min_support),
+            similarity_key=cast("SimilarityKey", similarity_key),
+            near_core_thresh=float(near_core_thresh),
+            dedup_thresh=float(dedup_thresh),
         )
 
     # Convenience methods for common patterns
