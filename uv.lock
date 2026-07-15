@@ -186,11 +186,6 @@ dependencies = [
 build = [
     { name = "uv" },
 ]
-consistency = [
-    { name = "pandas" },
-    { name = "pyyaml" },
-    { name = "scipy" },
-]
 examples = [
     { name = "openai" },
     { name = "openai-agents" },
@@ -260,21 +255,18 @@ requires-dist = [
     { name = "openinference-instrumentation-openai", marker = "extra == 'tracing'" },
     { name = "openinference-instrumentation-openai-agents", marker = "extra == 'tracing'" },
     { name = "openinference-instrumentation-smolagents", marker = "extra == 'tracing'" },
-    { name = "pandas", marker = "extra == 'consistency'" },
     { name = "pgvector", marker = "extra == 'pgvector'", specifier = ">=0.3" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
     { name = "pydantic" },
     { name = "pymilvus", marker = "platform_machine == 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
     { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
-    { name = "pyyaml", marker = "extra == 'consistency'" },
-    { name = "scipy", marker = "extra == 'consistency'" },
     { name = "sentence-transformers" },
     { name = "smolagents", marker = "extra == 'examples'" },
     { name = "typer", specifier = ">=0.9.0" },
     { name = "uv", marker = "extra == 'build'" },
     { name = "uvicorn" },
 ]
-provides-extras = ["build", "tracing", "milvus", "pgvector", "examples", "consistency"]
+provides-extras = ["build", "tracing", "milvus", "pgvector", "examples"]
 
 [package.metadata.requires-dev]
 dev = [
