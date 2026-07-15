@@ -224,16 +224,23 @@ def format_trajectory_data(
             if step_num < step_range[0]:
                 continue
 
-        if "tool_calls" in step:
+        if step.get("tool_calls"):
             step_type = "Agent tool calls"
             this_step_text = ""
             for call in step["tool_calls"]:
                 if this_step_text:
                     this_step_text += "\n"
-                args_raw = call["function"]["arguments"]
-                args_dict = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
-                args_string = ", ".join(f"{k}={repr(v)}" for k, v in args_dict.items())
-                this_step_text += f"- {call['function']['name']}({args_string})"
+                try:
+                    func = call["function"]
+                    args_raw = func["arguments"]
+                    args_dict = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+                    if isinstance(args_dict, dict):
+                        args_string = ", ".join(f"{k}={repr(v)}" for k, v in args_dict.items())
+                    else:
+                        args_string = repr(args_dict)
+                    this_step_text += f"- {func['name']}({args_string})"
+                except (KeyError, json.JSONDecodeError, TypeError):
+                    this_step_text += f"- {call.get('id', 'unknown_call')}"
         else:
             step_type = "Agent reasoning"
             content = step.get("content", "") or ""

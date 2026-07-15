@@ -400,6 +400,42 @@ class TestFormatTrajectoryData:
         assert "HIGH UNCERTAINTY" in result
         assert "step two" in result
 
+    def test_tool_calls_none_does_not_crash(self):
+        # Raw OpenAI message dumps always carry tool_calls: null
+        messages = [{"role": "assistant", "content": "hello", "tool_calls": None}]
+        result = format_trajectory_data(messages, {"step_uncertainties": {}})
+        assert "Agent reasoning" in result
+
+    def test_tool_calls_invalid_json_args_does_not_crash(self):
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [{"function": {"name": "run", "arguments": "ls -la"}}],
+            }
+        ]
+        result = format_trajectory_data(messages, {"step_uncertainties": {}})
+        assert "Agent tool calls" in result
+
+    def test_tool_calls_non_object_json_args_does_not_crash(self):
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [{"function": {"name": "run", "arguments": '"just_a_string"'}}],
+            }
+        ]
+        result = format_trajectory_data(messages, {"step_uncertainties": {}})
+        assert "Agent tool calls" in result
+
+    def test_tool_calls_missing_function_key_does_not_crash(self):
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [{"id": "call_1"}],
+            }
+        ]
+        result = format_trajectory_data(messages, {"step_uncertainties": {}})
+        assert "Agent tool calls" in result
+
 
 class TestSegmentationGuard:
     """Segmentation must not fire on single-step trajectories."""
