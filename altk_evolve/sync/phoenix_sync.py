@@ -818,6 +818,7 @@ class PhoenixSync:
             "source_task_id": trajectory["trace_id"],
             "source_span_id": trajectory["span_id"],
             "creation_mode": "auto-phoenix",
+            "support": 1,
         }
 
         from altk_evolve.config.guidelines import guidelines_settings

@@ -7,8 +7,9 @@ These guidelines came from tasks like:
 {% endfor %}
 
 # Existing Guidelines
+Each guideline is labelled with a 0-based index; refer to those indices in `source_indices`.
 {% for guideline in guidelines %}
-## Guideline {{ loop.index }}
+## Guideline {{ loop.index0 }}
 - **Content:** {{ guideline.content }}
 - **Rationale:** {{ guideline.rationale }}
 - **Category:** {{ guideline.category }}
@@ -18,14 +19,19 @@ These guidelines came from tasks like:
 {% endfor %}
 
 # Your Task
-Combine the above guidelines into a smaller set of HIGH-QUALITY, CONSOLIDATED, NON-REDUNDANT guidelines. Merge overlapping advice, remove duplicates, and preserve any unique insights.
+{% if merge_style == "aggressive" %}
+Combine the above guidelines into a SMALL set (aim for about {{ target_count }}) of HIGH-QUALITY, CONSOLIDATED guidelines. Merge liberally: group guidelines that address related actions or the same phase of work, even if the wording differs.
+{% else %}
+Combine the above guidelines LOSSLESSLY into a smaller set of HIGH-QUALITY, CONSOLIDATED, NON-REDUNDANT guidelines. Merge two guidelines ONLY when following one is equivalent to following the other (same action, same trigger); differences in wording or examples are fine to merge. If two guidelines address DIFFERENT actions, triggers, APIs, or edge cases, KEEP THEM SEPARATE — when in doubt, do not merge.
+{% endif %}
 
 **Things to Remember:**
-1. Each consolidated guideline should be self-contained, clear and actionable
-2. Preserve important nuances from different source guidelines. Preserve specific technical details (API names, parameter names, etc.)
-3. Use the most specific and helpful phrasing
-4. Remove guidelines that are too generic or obvious.
-5. Reduce the total count while retaining all valuable information
+1. Each consolidated guideline must be self-contained, clear and actionable.
+2. Preserve important nuances and specific technical details (API names, parameter names, etc.).
+3. Use the most specific and helpful phrasing (you may adopt the clearest source guideline's wording).
+4. Do NOT invent advice that is not present in the sources.
+5. For each consolidated guideline, set `source_indices` to the 0-based indices of the input guidelines it merges.
+6. Every input guideline index must appear in exactly one consolidated guideline's `source_indices`.
 
 {% if not constrained_decoding_supported %}
 **Output Format (JSON):**
@@ -37,7 +43,8 @@ Combine the above guidelines into a smaller set of HIGH-QUALITY, CONSOLIDATED, N
             "rationale": "Why this guideline helps",
             "category": "strategy|recovery|optimization",
             "trigger": "When to apply this guideline",
-            "implementation_steps": ["step 1", "step 2"]
+            "implementation_steps": ["step 1", "step 2"],
+            "source_indices": [0, 2]
         }
     ]
 }

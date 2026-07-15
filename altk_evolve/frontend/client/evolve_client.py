@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING, cast
 
 from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.evolve import EvolveConfig
@@ -7,7 +8,21 @@ from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
 from altk_evolve.schema.guidelines import ConsolidationResult
 
+if TYPE_CHECKING:
+    from altk_evolve.llm.guidelines.retrieval import GuidelineSelection, SimilarityKey
+
 logger = logging.getLogger(__name__)
+
+
+def _filter_by_evidence(entities: list[RecordedEntity], evidence_filter: str) -> list[RecordedEntity]:
+    """Keep guidelines matching an evidence polarity. Unknown evidence (None) is always kept."""
+    if evidence_filter == "success":
+        allowed = {"success", "both", None}
+    elif evidence_filter == "failure":
+        allowed = {"failure", "both", None}
+    else:  # "all"
+        return entities
+    return [e for e in entities if (e.metadata or {}).get("evidence") in allowed]
 
 
 class EvolveClient:
@@ -151,27 +166,42 @@ class EvolveClient:
             )
         return cluster_entities(entities, threshold=threshold)
 
-    def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None) -> ConsolidationResult:
+    def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None, mode: str | None = None) -> ConsolidationResult:
         """Cluster similar guidelines and combine each cluster into consolidated guidelines.
+
+        Consolidation is support-conserving: each consolidated guideline records how many
+        source guidelines it merges (``support``) and their merged ``evidence`` polarity,
+        and the total support is preserved (no advice is dropped).
 
         Args:
             namespace_id: Namespace to consolidate entities in.
             threshold: Cosine similarity threshold (0-1). Defaults to config value.
+            mode: Consolidation mode — ``"none"`` (skip), ``"lossless"`` (default) or
+                ``"lossy"`` (merge more aggressively). Defaults to ``config.consolidation_mode``.
 
         Returns:
-            ConsolidationResult with counts of clusters, guidelines before, and guidelines after.
+            ConsolidationResult with cluster/guideline counts and total support before/after.
         """
         from altk_evolve.llm.guidelines.clustering import combine_cluster
 
+        if mode is None:
+            mode = getattr(self.config, "consolidation_mode", "lossless")
+        if mode == "none":
+            logger.info("consolidation_mode='none'; skipping consolidation for namespace %s.", namespace_id)
+            return ConsolidationResult(clusters_found=0, guidelines_before=0, guidelines_after=0)
+
+        combine_mode = "lossy" if mode == "lossy" else "lossless"
         clusters = self.cluster_guidelines(namespace_id, threshold=threshold)
         clusters_found = 0
         guidelines_before = 0
         guidelines_after = 0
+        support_before = 0
+        support_after = 0
 
         for cluster in clusters:
             # Phase 1: combine + insert (skip cluster on failure)
             try:
-                consolidated_guidelines = combine_cluster(cluster)
+                consolidated_guidelines = combine_cluster(cluster, mode=combine_mode)
 
                 task_description = (cluster[0].metadata or {}).get("task_description", "")
                 new_entities = [
@@ -184,6 +214,8 @@ class EvolveClient:
                             "category": guideline.category,
                             "trigger": guideline.trigger,
                             "implementation_steps": guideline.implementation_steps,
+                            "support": guideline.support,
+                            "evidence": guideline.evidence,
                         },
                     )
                     for guideline in consolidated_guidelines
@@ -207,6 +239,8 @@ class EvolveClient:
             clusters_found += 1
             guidelines_before += len(cluster)
             guidelines_after += len(consolidated_guidelines)
+            support_before += sum(int((e.metadata or {}).get("support", 1) or 1) for e in cluster)
+            support_after += sum(g.support for g in consolidated_guidelines)
 
             # Phase 2: delete originals (log errors but don't roll back insert)
             for entity in cluster:
@@ -223,6 +257,63 @@ class EvolveClient:
             clusters_found=clusters_found,
             guidelines_before=guidelines_before,
             guidelines_after=guidelines_after,
+            support_before=support_before,
+            support_after=support_after,
+        )
+
+    def select_guidelines(
+        self,
+        namespace_id: str,
+        task_query: str,
+        top_k: int | None = None,
+        core_support: int | None = None,
+        min_support: int | None = None,
+        evidence_filter: str | None = None,
+        limit: int = 10000,
+    ) -> "GuidelineSelection":
+        """Select the always-on core plus the top-k task-relevant guidelines for a task.
+
+        This is the dosage-aware alternative to injecting the whole playbook: the core
+        (guidelines with support >= ``core_support``) is always returned, plus up to
+        ``top_k`` further guidelines whose source task is most similar to ``task_query``.
+        Unset arguments fall back to the corresponding ``config`` values.
+
+        Args:
+            namespace_id: Namespace to select guidelines from.
+            task_query: The current task instruction to retrieve for.
+            top_k: Max retrieved (non-core) guidelines. Defaults to ``config.retrieval_top_k``.
+            core_support: Support threshold for the always-on core. Defaults to config.
+            min_support: Non-destructive support floor on the candidate pool. Defaults to config.
+            evidence_filter: ``"all"`` / ``"success"`` / ``"failure"``. Defaults to config.
+            limit: Max guideline entities to fetch.
+
+        Returns:
+            A ``GuidelineSelection`` (core + retrieved).
+        """
+        from altk_evolve.llm.guidelines.retrieval import GuidelineSelection, select_guidelines
+
+        top_k = top_k if top_k is not None else getattr(self.config, "retrieval_top_k", 10)
+        core_support = core_support if core_support is not None else getattr(self.config, "core_support", 3)
+        min_support = min_support if min_support is not None else getattr(self.config, "min_support", 1)
+        evidence_filter = evidence_filter or getattr(self.config, "evidence_filter", "all")
+        similarity_key = getattr(self.config, "retrieval_similarity_key", "source_task")
+        near_core_thresh = getattr(self.config, "retrieval_near_core_thresh", 0.75)
+        dedup_thresh = getattr(self.config, "retrieval_dedup_thresh", 0.90)
+
+        entities = self.get_all_entities(namespace_id, filters={"type": "guideline"}, limit=limit)
+        entities = _filter_by_evidence(entities, str(evidence_filter))
+        if not entities:
+            return GuidelineSelection(core=[], retrieved=[])
+
+        return select_guidelines(
+            entities,
+            task_query,
+            top_k=int(top_k),
+            core_support=int(core_support),
+            min_support=int(min_support),
+            similarity_key=cast("SimilarityKey", similarity_key),
+            near_core_thresh=float(near_core_thresh),
+            dedup_thresh=float(dedup_thresh),
         )
 
     # Convenience methods for common patterns
