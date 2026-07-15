@@ -855,24 +855,30 @@ class PhoenixSync:
         if guidelines_mode in ("consistency", "both"):
             from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
-            consistency_results = generate_consistency_guidelines(trajectory)
-            guideline_entities += [
-                Entity(
-                    type="guideline",
-                    content=guideline.content,
-                    metadata={
-                        **base_metadata,
-                        "task_description": result.task_description,
-                        "category": guideline.category,
-                        "rationale": guideline.rationale,
-                        "trigger": guideline.trigger,
-                        "implementation_steps": guideline.implementation_steps,
-                        "generation_method": "consistency",
-                    },
+            try:
+                consistency_results = generate_consistency_guidelines(trajectory)
+                guideline_entities += [
+                    Entity(
+                        type="guideline",
+                        content=guideline.content,
+                        metadata={
+                            **base_metadata,
+                            "task_description": result.task_description,
+                            "category": guideline.category,
+                            "rationale": guideline.rationale,
+                            "trigger": guideline.trigger,
+                            "implementation_steps": guideline.implementation_steps,
+                            "generation_method": "consistency",
+                        },
+                    )
+                    for result in consistency_results
+                    for guideline in result.guidelines
+                ]
+            except Exception as e:
+                logger.warning(
+                    f"Consistency guideline generation failed for trace {trajectory['trace_id']}, "
+                    f"skipping consistency results (regular guidelines unaffected): {e}"
                 )
-                for result in consistency_results
-                for guideline in result.guidelines
-            ]
         # Write trajectory entity only after generation succeeded so a generation
         # failure leaves the trace unprocessed and eligible for retry on the next run.
         if trajectory_entity:
