@@ -278,8 +278,6 @@ def _generate_guideline_result(
     task_description: str,
     step_range: tuple[int, int] | None,
     constrained_decoding_supported: bool,
-    debug_dir: Path | None,
-    trace_id: Any,
     debug_suffix: str,
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory).
@@ -477,8 +475,6 @@ def generate_consistency_guidelines(
                 task_description=subtask.generalized_description,
                 step_range=(subtask.start_step, subtask.end_step),
                 constrained_decoding_supported=constrained_decoding_supported,
-                debug_dir=debug_dir,
-                trace_id=trace_id,
                 debug_suffix=f"_seg{i}",
             )
             results.append(result)
@@ -493,8 +489,6 @@ def generate_consistency_guidelines(
         task_description=task_description,
         step_range=None,
         constrained_decoding_supported=constrained_decoding_supported,
-        debug_dir=debug_dir,
-        trace_id=trace_id,
         debug_suffix="",
     )
     if debug_dir:
