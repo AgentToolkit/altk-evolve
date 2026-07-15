@@ -7,7 +7,7 @@ They use an in-process MCP server (the `mcp` fixture from conftest.py) with a
 real filesystem backend, so LLM credentials must be configured.
 
 Requirements:
-  - `uv sync --extra consistency`
+  - EVOLVE_MODEL_NAME or OPENAI_API_KEY in environment
   - EVOLVE_MODEL_NAME or OPENAI_API_KEY in environment
 """
 
@@ -97,7 +97,7 @@ async def test_mcp_regular_mode_tags_generation_method(mcp):
 async def test_mcp_consistency_mode_tags_generation_method(mcp):
     """EVOLVE_GUIDELINES_MODE=consistency stores guidelines tagged generation_method='consistency'."""
     if not _consistency_available():
-        pytest.skip("consistency extra not installed — run `uv sync --extra consistency`")
+        pytest.skip("consistency analyzer not available")
 
     os.environ["EVOLVE_GUIDELINES_MODE"] = "consistency"
     try:
@@ -125,7 +125,7 @@ async def test_mcp_consistency_mode_tags_generation_method(mcp):
 async def test_mcp_both_mode_stores_guidelines_from_each_pipeline(mcp):
     """EVOLVE_GUIDELINES_MODE=both stores guidelines from both pipelines."""
     if not _consistency_available():
-        pytest.skip("consistency extra not installed — run `uv sync --extra consistency`")
+        pytest.skip("consistency analyzer not available")
 
     os.environ["EVOLVE_GUIDELINES_MODE"] = "both"
     try:

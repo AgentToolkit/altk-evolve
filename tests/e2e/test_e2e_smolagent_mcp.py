@@ -9,7 +9,7 @@ guidelines_mode='consistency'. The test passes when:
     SKIP_ON_NO_UNCERTAINTY fired for a sufficiently consistent trajectory)
 
 Requires:
-  - uv sync --extra consistency --extra examples
+  - uv sync --extra examples
   - EVOLVE_MODEL_NAME or OPENAI_API_KEY for agent + resampling LLM calls
 """
 
@@ -131,7 +131,7 @@ async def test_smolagent_mcp_consistency_pipeline(mcp):
     if not _smolagents_available():
         pytest.skip("smolagents not installed — run `uv sync --extra examples`")
     if not _consistency_available():
-        pytest.skip("consistency extra not installed — run `uv sync --extra consistency`")
+        pytest.skip("consistency analyzer not available")
 
     debug_dir = Path(__file__).parent.parent.parent / "consistency_debug"
     debug_dir.mkdir(parents=True, exist_ok=True)

@@ -8,7 +8,7 @@ consistency sync path and verifies that:
 - at least one consistency guideline was generated (no silent failures)
 
 Requires:
-  - `uv sync --extra consistency --extra examples --extra tracing`
+  - `uv sync --extra examples --extra tracing`
   - `EVOLVE_MODEL_NAME` / `OPENAI_API_KEY` env vars for LLM calls
 """
 
@@ -64,7 +64,7 @@ def test_e2e_consistency_pipeline(agent_config, phoenix_server, pytestconfig):
        b. At least one consistency guideline was generated
     """
     if not _consistency_analyzer_available():
-        pytest.skip("agent-consistency not installed — run `uv sync --extra consistency`")
+        pytest.skip("consistency analyzer not available")
 
     agent_name = agent_config["name"]
     script_path = agent_config["script"]
@@ -240,7 +240,7 @@ def test_e2e_both_mode_smolagents(phoenix_server, pytestconfig):
           guidelines regardless of uncertainty level).
     """
     if not _consistency_analyzer_available():
-        pytest.skip("agent-consistency not installed — run `uv sync --extra consistency`")
+        pytest.skip("consistency analyzer not available")
 
     script_path = "examples/low_code/smolagents_demo.py"
     current_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

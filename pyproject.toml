@@ -43,12 +43,6 @@ examples = [
     "openai",
 ]
 
-consistency = [
-    "pyyaml",
-    "scipy",
-    "pandas",
-]
-
 [project.scripts]
 evolve = "altk_evolve.cli.cli:app"
 evolve-mcp = "altk_evolve.frontend.mcp.__main__:main"
