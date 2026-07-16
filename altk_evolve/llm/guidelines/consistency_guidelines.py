@@ -401,7 +401,8 @@ def generate_consistency_guidelines(
     logger.info(f"Loaded consistency configuration from {config_path}")
 
     messages = trajectory.get("messages", [])
-    model = trajectory.get("model")
+    raw_model = trajectory.get("model")
+    model = raw_model if raw_model and raw_model != "unknown" else None
     trace_id = trajectory.get("trace_id") or "unknown"
 
     if not messages:
