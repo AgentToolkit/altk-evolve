@@ -36,6 +36,7 @@ def resample_trajectory(
     model_name: str,
     temperature: float = 0.5,
     max_steps: int = -1,
+    custom_llm_provider: str | None = None,
 ) -> dict:
     """
     Resample a trajectory by generating multiple responses for each step.
@@ -65,7 +66,12 @@ def resample_trajectory(
         logger.info(f"+++ Resampling step: {step['name']} ({j + 1}/{len(trajectory['steps'])})")
 
         prompt = step["messages"]
-        model = step["llm_params"].get("model") or model_name
+        step_model = step["llm_params"].get("model")
+        model = step_model or model_name
+        # Only forward the configured provider when falling back to the configured
+        # model. For per-step models from the traced trajectory, let litellm infer
+        # the provider to avoid misrouting (e.g. a claude model to the openai endpoint).
+        provider = None if step_model else custom_llm_provider
         tools = step.get("tools", None)
 
         response_samples = get_response_sampling(
@@ -74,6 +80,7 @@ def resample_trajectory(
             temperature=temperature,
             samples=samples,
             tools=tools,
+            custom_llm_provider=provider,
         )
 
         step["sampling"] = extract_raw_samples(response_samples)

@@ -441,11 +441,13 @@ def generate_consistency_guidelines(
         raise EvolveException("generate_consistency_guidelines called on trajectory with no steps")
 
     logger.info("Resampling trajectory IR")
+    using_fallback_model = model is None
     trajectory_ir = resample_trajectory(
         trajectory=trajectory_ir,
         samples=config.get("max_samples", 10),
         model_name=model or llm_settings.guidelines_model,
         max_steps=config.get("max_steps", -1),
+        custom_llm_provider=llm_settings.custom_llm_provider if using_fallback_model else None,
     )
 
     logger.info(f"Computing consistency score card for {trajectory_ir.get('name', '')}")

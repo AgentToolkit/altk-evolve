@@ -26,6 +26,7 @@ def get_response_sampling(
     stop=None,
     logprobs: bool = False,
     tools: list | None = None,
+    custom_llm_provider: str | None = None,
 ) -> list:
     """Get multiple sampled responses via litellm.completion().
 
@@ -39,11 +40,9 @@ def get_response_sampling(
         temperature=temperature,
         max_tokens=max_token,
         n=samples,
-        # Do not forward custom_llm_provider from llm_settings here: model_id comes
-        # from the traced trajectory and may be from a different provider than the one
-        # configured for guideline generation. Let litellm infer the provider from the
-        # model name to avoid misrouting (e.g. sending a claude model to the openai endpoint).
     )
+    if custom_llm_provider:
+        kwargs["custom_llm_provider"] = custom_llm_provider
     if stop:
         kwargs["stop"] = stop
     if logprobs:
