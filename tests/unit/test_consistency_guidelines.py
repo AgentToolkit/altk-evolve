@@ -409,15 +409,17 @@ class TestFormatTrajectoryData:
         result = format_trajectory_data(messages, {"step_uncertainties": {}})
         assert "Agent reasoning" in result
 
-    def test_tool_calls_invalid_json_args_does_not_crash(self):
+    def test_tool_calls_invalid_json_args_preserves_name_and_raw_args(self):
         messages = [
             {
                 "role": "assistant",
-                "tool_calls": [{"function": {"name": "run", "arguments": "ls -la"}}],
+                "tool_calls": [{"function": {"name": "execute_sql", "arguments": "SELECT * FROM t WHERE"}}],
             }
         ]
         result = format_trajectory_data(messages, {"step_uncertainties": {}})
-        assert "Agent tool calls" in result
+        # Function name and raw args must both be preserved — not just the call id
+        assert "execute_sql" in result
+        assert "SELECT * FROM t WHERE" in result
 
     def test_tool_calls_non_object_json_args_does_not_crash(self):
         messages = [
@@ -427,7 +429,7 @@ class TestFormatTrajectoryData:
             }
         ]
         result = format_trajectory_data(messages, {"step_uncertainties": {}})
-        assert "Agent tool calls" in result
+        assert "run" in result
 
     def test_tool_calls_missing_function_key_does_not_crash(self):
         messages = [

@@ -244,13 +244,17 @@ def format_trajectory_data(
                 try:
                     func = call["function"]
                     args_raw = func["arguments"]
-                    args_dict = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
-                    if isinstance(args_dict, dict):
-                        args_string = ", ".join(f"{k}={repr(v)}" for k, v in args_dict.items())
-                    else:
-                        args_string = repr(args_dict)
+                    try:
+                        args_dict = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+                        if isinstance(args_dict, dict):
+                            args_string = ", ".join(f"{k}={repr(v)}" for k, v in args_dict.items())
+                        else:
+                            args_string = repr(args_dict)
+                    except (json.JSONDecodeError, TypeError):
+                        # Args aren't valid JSON — keep function name and emit raw args string
+                        args_string = str(args_raw)
                     this_step_text += f"- {func['name']}({args_string})"
-                except (KeyError, json.JSONDecodeError, TypeError):
+                except KeyError:
                     this_step_text += f"- {call.get('id', 'unknown_call')}"
         else:
             step_type = "Agent reasoning"
