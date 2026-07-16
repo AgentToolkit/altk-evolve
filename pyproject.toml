@@ -118,9 +118,11 @@ indent-width = 4
 extend-exclude = ["explorations/agent-wiki/wikis/"]
 
 [tool.ruff.lint.per-file-ignores]
-# Vendored consistency_analyzer modules: E402 (imports after sys.path insert in __init__.py),
-# E722 (bare except in original source), F841 (unused vars in original source).
-"altk_evolve/llm/guidelines/consistency_analyzer/*.py" = ["E402", "E722", "F841"]
+# Vendored consistency_analyzer modules: E402 because the vendored files place
+# logger = logging.getLogger(__name__) between standard-library and project imports,
+# a structural pattern we are not refactoring in this PR.
+"altk_evolve/llm/guidelines/consistency_analyzer/*.py" = ["E402"]
+
 
 [tool.semantic_release]
 allow_zero_version = true
@@ -202,6 +204,7 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# Vendored consistency_analyzer modules: upstream type errors, not ours to fix.
+# Vendored consistency_analyzer modules: structural type errors in the original code
+# (dynamic dict/str patterns, missing annotations) that we are not refactoring in this PR.
 module = "altk_evolve.llm.guidelines.consistency_analyzer.*"
 ignore_errors = true

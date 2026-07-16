@@ -403,11 +403,7 @@ def parse_react_response(response: str) -> dict:
     """
     item = {}
 
-    # Track character positions in original response
-    original_response = response
-
     if "Final Answer:" in response:
-        final_ans_pos = original_response.find("Final Answer:")
 
         temp = response.split("Final Answer:")
         response_part, final_ans = temp[0].strip(), temp[1].strip()
@@ -432,10 +428,6 @@ def parse_react_response(response: str) -> dict:
         item["parse_error_msg"] = 'Please use only one "Action Input:" in your response.'
         return item
 
-    # Track character positions before splitting
-    action_input_pos = original_response.find("Action Input:")
-    action_pos = original_response.find("Action:")
-
     action, action_input = response.split("Action Input:")
     action, action_input = (
         strip_end(action.strip(), "\\n").strip(),
@@ -457,15 +449,9 @@ def parse_react_response(response: str) -> dict:
         strip_end(action.strip(), "\\n").strip(),
     )
 
-    # Track thought position (may or may not have "Thought:" prefix)
-    thought_pos = 0  # Default to beginning
-    if "Thought:" in original_response:
-        thought_pos = original_response.find("Thought:")
-
     if "Thought:" not in thought:
         # auto-correct: treat everything as the thought
         item["thought"] = thought
-        thought_pos = 0  # Starts at beginning if no "Thought:" marker
     elif thought.count("Thought:") > 1:
         item["parse_error_msg"] = 'Please use only one "Thought:" in your response.'
         return item
