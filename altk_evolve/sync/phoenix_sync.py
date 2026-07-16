@@ -881,6 +881,8 @@ class PhoenixSync:
                     for guideline in result.guidelines
                 ]
             except Exception as e:
+                if guidelines_mode == "consistency":
+                    raise
                 logger.warning(
                     f"Consistency guideline generation failed for trace {trajectory['trace_id']}, "
                     f"skipping consistency results (regular guidelines unaffected): {e}"
