@@ -42,9 +42,7 @@ def resolve_conflicts(
                 elif update.event == "UPDATE":
                     old_meta = dict(old_entities_by_id[update.id].metadata) if update.id in old_entities_by_id else {}
                     incoming_methods = {
-                        e.metadata.get("generation_method")
-                        for e in unmatched_new_entities
-                        if e.metadata.get("generation_method")
+                        e.metadata.get("generation_method") for e in unmatched_new_entities if e.metadata.get("generation_method")
                     }
                     old_method = old_meta.get("generation_method")
                     all_methods = ({old_method} if old_method else set()) | incoming_methods

@@ -456,17 +456,19 @@ def test_resolve_conflicts_update_preserves_old_metadata(mock_completion):
         metadata={"generation_method": "regular", "category": "style"},
         created_at=datetime.now(),
     )
-    llm_response = json.dumps({
-        "entities": [
-            {
-                "id": "entity_1",
-                "type": "guideline",
-                "content": "Use type hints and docstrings in Python",
-                "event": "UPDATE",
-                "old_entity": "Use type hints in Python",
-            }
-        ]
-    })
+    llm_response = json.dumps(
+        {
+            "entities": [
+                {
+                    "id": "entity_1",
+                    "type": "guideline",
+                    "content": "Use type hints and docstrings in Python",
+                    "event": "UPDATE",
+                    "old_entity": "Use type hints in Python",
+                }
+            ]
+        }
+    )
     mock_response = Mock()
     mock_response.choices = [Mock()]
     mock_response.choices[0].message.content = llm_response
@@ -497,17 +499,19 @@ def test_resolve_conflicts_update_unions_generation_methods(mock_completion):
         metadata={"generation_method": "consistency", "category": "style"},
         created_at=datetime.now(),
     )
-    llm_response = json.dumps({
-        "entities": [
-            {
-                "id": "entity_1",
-                "type": "guideline",
-                "content": "Use type hints in Python",
-                "event": "UPDATE",
-                "old_entity": "Use type hints in Python",
-            }
-        ]
-    })
+    llm_response = json.dumps(
+        {
+            "entities": [
+                {
+                    "id": "entity_1",
+                    "type": "guideline",
+                    "content": "Use type hints in Python",
+                    "event": "UPDATE",
+                    "old_entity": "Use type hints in Python",
+                }
+            ]
+        }
+    )
     mock_response = Mock()
     mock_response.choices = [Mock()]
     mock_response.choices[0].message.content = llm_response

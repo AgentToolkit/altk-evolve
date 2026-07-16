@@ -404,7 +404,6 @@ def parse_react_response(response: str) -> dict:
     item = {}
 
     if "Final Answer:" in response:
-
         temp = response.split("Final Answer:")
         response_part, final_ans = temp[0].strip(), temp[1].strip()
         item["thought"] = response_part
