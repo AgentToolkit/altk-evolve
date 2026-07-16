@@ -87,9 +87,9 @@ class TestTransformTrajectoryToIR:
         assert step_names == ["OpenAIAgent_tool_calls", "OpenAIAgent_content"]
 
     def test_any_agent_naming_when_tools_absent(self):
-        """Trajectories without a real tools schema (e.g. smolagents' synthesized tool_calls
-        steps) get the generic AnyAgent prefix instead, since they can't be resampled the
-        same way as native tool-calling."""
+        """Trajectories without a real tools schema get the AnyAgent prefix for content steps.
+        AnyAgent_tool_calls steps are skipped because we lack the tools schema needed to
+        instruct the model to call tools — resampling without it would produce bogus results."""
         trajectory = {
             "trace_id": "trace_def67890",
             "model": "gpt-4o",
@@ -108,23 +108,26 @@ class TestTransformTrajectoryToIR:
         ir = transform_trajectory_to_IR(trajectory)
 
         step_names = [s["name"] for s in ir["steps"]]
-        assert step_names == ["AnyAgent_content", "AnyAgent_tool_calls"]
+        # AnyAgent_tool_calls is skipped — no tools schema means we can't faithfully resample
+        assert step_names == ["AnyAgent_content"]
 
-    def test_any_agent_other_for_degenerate_step(self):
+    def test_other_and_unscorable_steps_are_skipped(self):
+        """Steps classified as 'other' (malformed/degenerate) are excluded from the IR —
+        they cannot be meaningfully resampled, so creating a step for them would only
+        incur LLM cost and then be silently dropped by the scorer."""
         trajectory = {
             "trace_id": "trace_xyz11111",
             "model": "gpt-4o",
             "tools": None,
             "messages": [
                 {"role": "user", "content": "Do something"},
-                {"role": "assistant", "content": None},
+                {"role": "assistant", "content": None},  # degenerate → "other"
             ],
         }
 
         ir = transform_trajectory_to_IR(trajectory)
 
-        assert ir["steps"][0]["name"] == "AnyAgent_other"
-        assert ir["steps"][0]["raw_response_type"] == "other"
+        assert ir["steps"] == []
 
     def test_tool_calls_step_carries_tools_schema(self):
         trajectory = {

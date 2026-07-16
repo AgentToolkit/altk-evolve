@@ -118,6 +118,18 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
         if role == "assistant":
             raw_response_type, raw_response = _classify_step_response(msg)
 
+            # Skip steps that cannot be faithfully resampled or scored:
+            # 1. "other" steps are malformed/unrecognised — no meaningful resampling target.
+            # 2. tool_calls without an OpenAI tools schema (AnyAgent prefix) — we lack the
+            #    schema needed to instruct the model to call tools, so any resample would
+            #    produce bogus results.
+            if raw_response_type == "other":
+                current_messages.append(msg)
+                continue
+            if raw_response_type == "tool_calls" and step_name != "OpenAIAgent":
+                current_messages.append(msg)
+                continue
+
             step = {
                 "name": f"{step_name}_{raw_response_type}",
                 "step_number": step_number,
