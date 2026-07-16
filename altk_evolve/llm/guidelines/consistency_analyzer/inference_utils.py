@@ -56,12 +56,21 @@ def get_response_sampling(
         try:
             response = completion(**kwargs)
             choices = response.choices
+            if len(choices) < 2:
+                # Provider ignored n>1 — retrying won't help; raise so the caller can
+                # surface a real error rather than silently producing zero guidelines.
+                raise EvolveException(
+                    f"Requested n={samples} samples from {model_id} but got {len(choices)}. "
+                    "Provider does not support n>1; consistency scoring requires at least 2 samples."
+                )
             if len(choices) != samples:
                 logger.warning(
                     f"Requested n={samples} samples from {model_id} but got {len(choices)}. "
-                    "Provider may not support n>1 — consistency scores will be based on fewer samples."
+                    "Consistency scores will be based on fewer samples than configured."
                 )
             return choices
+        except EvolveException:
+            raise
         except Exception as e:
             last_error = e
             logger.debug(f"Resampling attempt {attempt + 1}/3 failed for {model_id}: {e}")
