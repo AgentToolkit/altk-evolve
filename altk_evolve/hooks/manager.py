@@ -81,6 +81,13 @@ _plugins_enabled: bool = False
 # read in the same context must not re-fire memory_post_read.
 _in_post_read: contextvars.ContextVar[bool] = contextvars.ContextVar("altk_evolve_in_post_read", default=False)
 
+# Re-entrancy guard for the WHOLE write family (pre_write, pre_metadata_patch,
+# pre_delete, pre_namespace_delete): a write-hook plugin that re-enters any
+# write API (e.g. a memory_pre_write plugin calling backend.update_entity_metadata)
+# must not re-dispatch a write hook and recurse infinitely. Propagated into the
+# sync-bridge worker thread via the copy_context() path in _run_sync.
+_in_write: contextvars.ContextVar[bool] = contextvars.ContextVar("altk_evolve_in_write", default=False)
+
 _CPEX_INSTALL_HINT = "Hooks require the CPEX plugin framework. Install it with: pip install 'altk-evolve[hooks]'"
 
 
@@ -302,14 +309,20 @@ def dispatch_memory_pre_write(backend: BaseEntityBackend, namespace_id: str, ent
     """Fire memory_pre_write; return the (possibly transformed) entity batch."""
     if not hooks_active(HookType.MEMORY_PRE_WRITE) or not entities:
         return entities
+    if _in_write.get():
+        return entities
     from altk_evolve.schema.core import Entity as EntityCls
 
-    payload = MemoryPreWritePayload(
-        namespace_id=namespace_id,
-        entities=copy.deepcopy([e.model_dump() for e in entities]),
-        backend_kind=type(backend).__name__,
-    )
-    modified = _invoke(HookType.MEMORY_PRE_WRITE, payload, backend=backend)
+    token = _in_write.set(True)
+    try:
+        payload = MemoryPreWritePayload(
+            namespace_id=namespace_id,
+            entities=copy.deepcopy([e.model_dump() for e in entities]),
+            backend_kind=type(backend).__name__,
+        )
+        modified = _invoke(HookType.MEMORY_PRE_WRITE, payload, backend=backend)
+    finally:
+        _in_write.reset(token)
     if modified is None:
         return entities
     return [EntityCls.model_validate(d) for d in modified.entities]
@@ -319,13 +332,19 @@ def dispatch_memory_pre_metadata_patch(backend: BaseEntityBackend, namespace_id:
     """Fire memory_pre_metadata_patch; return the (possibly transformed) patch."""
     if not hooks_active(HookType.MEMORY_PRE_METADATA_PATCH):
         return metadata_patch
-    payload = MemoryPreMetadataPatchPayload(
-        namespace_id=namespace_id,
-        entity_id=entity_id,
-        metadata_patch=copy.deepcopy(metadata_patch),
-        backend_kind=type(backend).__name__,
-    )
-    modified = _invoke(HookType.MEMORY_PRE_METADATA_PATCH, payload, backend=backend)
+    if _in_write.get():
+        return metadata_patch
+    token = _in_write.set(True)
+    try:
+        payload = MemoryPreMetadataPatchPayload(
+            namespace_id=namespace_id,
+            entity_id=entity_id,
+            metadata_patch=copy.deepcopy(metadata_patch),
+            backend_kind=type(backend).__name__,
+        )
+        modified = _invoke(HookType.MEMORY_PRE_METADATA_PATCH, payload, backend=backend)
+    finally:
+        _in_write.reset(token)
     if modified is None:
         return metadata_patch
     return dict(modified.metadata_patch)
@@ -340,21 +359,33 @@ def dispatch_memory_pre_delete(backend: BaseEntityBackend, namespace_id: str, en
     """
     if not hooks_active(HookType.MEMORY_PRE_DELETE):
         return
-    payload = MemoryPreDeletePayload(
-        namespace_id=namespace_id,
-        entity_id=entity_id,
-        metadata=copy.deepcopy(metadata),
-        backend_kind=type(backend).__name__,
-    )
-    _invoke(HookType.MEMORY_PRE_DELETE, payload, backend=backend)
+    if _in_write.get():
+        return
+    token = _in_write.set(True)
+    try:
+        payload = MemoryPreDeletePayload(
+            namespace_id=namespace_id,
+            entity_id=entity_id,
+            metadata=copy.deepcopy(metadata),
+            backend_kind=type(backend).__name__,
+        )
+        _invoke(HookType.MEMORY_PRE_DELETE, payload, backend=backend)
+    finally:
+        _in_write.reset(token)
 
 
 def dispatch_memory_pre_namespace_delete(backend: BaseEntityBackend, namespace_id: str) -> None:
     """Fire memory_pre_namespace_delete (halting only)."""
     if not hooks_active(HookType.MEMORY_PRE_NAMESPACE_DELETE):
         return
-    payload = MemoryPreNamespaceDeletePayload(namespace_id=namespace_id, backend_kind=type(backend).__name__)
-    _invoke(HookType.MEMORY_PRE_NAMESPACE_DELETE, payload, backend=backend)
+    if _in_write.get():
+        return
+    token = _in_write.set(True)
+    try:
+        payload = MemoryPreNamespaceDeletePayload(namespace_id=namespace_id, backend_kind=type(backend).__name__)
+        _invoke(HookType.MEMORY_PRE_NAMESPACE_DELETE, payload, backend=backend)
+    finally:
+        _in_write.reset(token)
 
 
 def dispatch_memory_post_read(

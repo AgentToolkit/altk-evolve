@@ -340,6 +340,81 @@ def test_post_read_recursion_guard(client: EvolveClient):
     assert len(recorder.calls["memory_post_read"]) == 1
 
 
+# ── write-hook re-entrancy: RLock + guard ─────────────────────────────
+
+
+class MetadataWriteback(Plugin):
+    """memory_pre_write plugin that patches an existing entity's metadata via a
+    re-entrant callback into the SAME backend (which holds its lock across the
+    triggering write)."""
+
+    def __init__(self, target_id: str):
+        super().__init__(_config("metadata_writeback", [HookType.MEMORY_PRE_WRITE.value], mode=PluginMode.SEQUENTIAL, priority=1))
+        self.target_id = target_id
+
+    async def memory_pre_write(self, payload, context):
+        backend = context.global_context.state["backend"]
+        backend.update_entity_metadata(payload.namespace_id, self.target_id, {"reindexed": True})
+        return PluginResult(continue_processing=True)
+
+
+@pytest.mark.unit
+def test_write_hook_reentrant_backend_callback_no_deadlock_and_persists(client: EvolveClient):
+    # A memory_pre_write plugin calling update_entity_metadata on the same
+    # backend used to self-deadlock on the non-reentrant lock. It must now
+    # complete (generous timeout so a regression fails instead of hanging CI)
+    # AND the callback's metadata change must persist alongside the write.
+    import concurrent.futures
+
+    client.create_namespace("ns")
+    _write(client, "ns", "first")
+    existing = client.search_entities("ns", limit=1)[0]
+
+    enable_hooks(MetadataWriteback(existing.id))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        ex.submit(_write, client, "ns", "second").result(timeout=15)
+
+    contents = {str(r.content) for r in client.search_entities("ns", limit=10)}
+    assert contents == {"first", "second"}
+    # The re-entrant metadata callback was persisted by the outer write.
+    reindexed = client.get_entity_by_id("ns", existing.id)
+    assert reindexed is not None and reindexed.metadata.get("reindexed") is True
+
+
+class NestedWriter(Plugin):
+    """memory_pre_write plugin that calls a write API (update_entity_metadata)
+    from inside the hook — the write-family guard must suppress re-dispatch."""
+
+    def __init__(self, target_id: str):
+        super().__init__(_config("nested_writer", [HookType.MEMORY_PRE_WRITE.value], mode=PluginMode.SEQUENTIAL, priority=1))
+        self.target_id = target_id
+
+    async def memory_pre_write(self, payload, context):
+        backend = context.global_context.state["backend"]
+        backend.update_entity_metadata(payload.namespace_id, self.target_id, {"nested": True})
+        return PluginResult(continue_processing=True)
+
+
+@pytest.mark.unit
+def test_write_family_reentrancy_guard(client: EvolveClient):
+    client.create_namespace("ns")
+    _write(client, "ns", "first")
+    existing = client.search_entities("ns", limit=1)[0]
+
+    recorder = Recorder(hooks=[HookType.MEMORY_PRE_WRITE.value, HookType.MEMORY_PRE_METADATA_PATCH.value])
+    enable_hooks(recorder, NestedWriter(existing.id))
+    _write(client, "ns", "second")
+
+    # pre_write fired once for the triggering write; the nested
+    # update_entity_metadata inside the hook did NOT re-fire a write hook.
+    assert len(recorder.calls["memory_pre_write"]) == 1
+    assert len(recorder.calls.get("memory_pre_metadata_patch", [])) == 0
+    # The guard skips the HOOK, not the write: the metadata change still landed.
+    updated = client.get_entity_by_id("ns", existing.id)
+    assert updated is not None and updated.metadata.get("nested") is True
+
+
 # ── halting semantics ────────────────────────────────────────────────
 
 
