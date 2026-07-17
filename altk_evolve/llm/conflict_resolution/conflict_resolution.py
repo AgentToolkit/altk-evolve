@@ -32,27 +32,13 @@ def resolve_conflicts(
             parsed = json.loads(response)
             entity_updates = [EntityUpdate.model_validate(event) for event in parsed["entities"]]
             old_entities_by_id = {entity.id: entity for entity in old_entities}
-            added_new_ids = {u.id for u in entity_updates if u.event == "ADD"}
-            # New entities not consumed by an ADD were merged into an UPDATE — carry
-            # their generation_method provenance forward into the updated entity.
-            unmatched_new_entities = [e for e in new_entities if e.id not in added_new_ids]
             for update in entity_updates:
                 if update.event == "ADD":
                     update.metadata = new_entities_by_id[update.id].metadata
                 elif update.event == "UPDATE":
-                    old_meta = dict(old_entities_by_id[update.id].metadata) if update.id in old_entities_by_id else {}
-                    incoming_methods = {
-                        e.metadata.get("generation_method") for e in unmatched_new_entities if e.metadata.get("generation_method")
-                    }
-                    old_method = old_meta.get("generation_method")
-                    all_methods = ({old_method} if old_method else set()) | incoming_methods
-                    merged = dict(old_meta)
-                    if len(all_methods) > 1:
-                        merged.pop("generation_method", None)
-                        merged["generation_methods"] = sorted(all_methods)
-                    elif all_methods:
-                        merged["generation_method"] = next(iter(all_methods))
-                    update.metadata = merged
+                    # Preserve the existing entity's metadata so an UPDATE never wipes
+                    # provenance fields (e.g. generation_method) that were stored on ADD.
+                    update.metadata = dict(old_entities_by_id[update.id].metadata) if update.id in old_entities_by_id else {}
 
             return entity_updates
         except Exception as e:

@@ -110,6 +110,35 @@ class TestTransformTrajectoryToIR:
         step_names = [s["name"] for s in ir["steps"]]
         # AnyAgent_tool_calls is skipped — no tools schema means we can't faithfully resample
         assert step_names == ["AnyAgent_content"]
+        # Positional numbering: content step is position 1, skipped tool_calls step
+        # consumes position 2 — so the scorable step retains step_number=1.
+        assert ir["steps"][0]["step_number"] == 1
+
+    def test_skipped_step_advances_step_number(self):
+        """A skipped step (AnyAgent_tool_calls) consumes its positional slot so that
+        the scorable step that follows gets the correct positional step_number.
+        This keeps IR step_numbers aligned with format_trajectory_data's positional
+        counting, preventing uncertainty markers from landing on the wrong step."""
+        trajectory = {
+            "trace_id": "trace_skip_test",
+            "model": "gpt-4o",
+            "tools": None,
+            "messages": [
+                {"role": "user", "content": "Pay rent"},
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "1", "type": "function", "function": {"name": "transfer", "arguments": "{}"}}],
+                },  # skipped (AnyAgent_tool_calls) — consumes position 1
+                {"role": "assistant", "content": "Rent has been paid successfully."},  # position 2
+            ],
+        }
+
+        ir = transform_trajectory_to_IR(trajectory)
+
+        assert [s["name"] for s in ir["steps"]] == ["AnyAgent_content"]
+        # The reasoning step follows the skipped tool_calls step, so it must be
+        # step_number=2, not 1 — matching format_trajectory_data's positional count.
+        assert ir["steps"][0]["step_number"] == 2
 
     def test_other_and_unscorable_steps_are_skipped(self):
         """Steps classified as 'other' (malformed/degenerate) are excluded from the IR —

@@ -97,7 +97,8 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
     prefix instead, since we can't assume the same resampling behavior is safe for them.
     """
     messages = trajectory.get("messages", [])
-    model = trajectory.get("model") or None
+    raw_model = trajectory.get("model")
+    model = raw_model if raw_model and raw_model != "unknown" else None
     tools = trajectory.get("tools")
     trace_id = trajectory.get("trace_id", "unknown")
     step_name = "OpenAIAgent" if tools else "AnyAgent"
@@ -109,7 +110,7 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
             break
 
     steps: list[dict] = []
-    step_number = 1
+    step_number = 0
     current_messages: list[dict] = []
 
     for msg in messages:
@@ -117,6 +118,11 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
 
         if role == "assistant":
             raw_response_type, raw_response = _classify_step_response(msg)
+
+            # Advance the positional counter for every assistant message so that
+            # step_number stays in sync with format_trajectory_data's positional
+            # counting and with segment_trajectory's indices.
+            step_number += 1
 
             # Skip steps that cannot be faithfully resampled or scored:
             # 1. "other" steps are malformed/unrecognised — no meaningful resampling target.
@@ -142,7 +148,6 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
                 step["tools"] = tools
 
             steps.append(step)
-            step_number += 1
 
         current_messages.append(msg)
 
@@ -436,9 +441,12 @@ def generate_consistency_guidelines(
     logger.info(f"Created trajectory IR for {trajectory_ir.get('name', '')}")
 
     steps = trajectory_ir.get("steps", [])
-    n_steps = len(steps)
-    if n_steps == 0:
+    n_scorable_steps = len(steps)
+    if n_scorable_steps == 0:
         raise EvolveException("generate_consistency_guidelines called on trajectory with no steps")
+    # Positional count of all assistant messages — used to validate segment_trajectory
+    # step ranges, which are 1-indexed over every assistant turn (including skipped ones).
+    n_positional_steps = sum(1 for msg in messages if msg.get("role") == "assistant")
 
     logger.info("Resampling trajectory IR")
     using_fallback_model = model is None
@@ -465,7 +473,7 @@ def generate_consistency_guidelines(
     # Only attempt when every assistant message's content field allows a 1:1 step index
     # mapping between segment_trajectory and transform_trajectory_to_IR.
     subtasks = []
-    if n_steps >= 2 and _can_segment_trajectory(messages):
+    if n_scorable_steps >= 2 and _can_segment_trajectory(messages):
         try:
             from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
@@ -476,10 +484,12 @@ def generate_consistency_guidelines(
 
     valid_subtasks = []
     for subtask in subtasks:
-        if 1 <= subtask.start_step <= subtask.end_step <= n_steps:
+        if 1 <= subtask.start_step <= subtask.end_step <= n_positional_steps:
             valid_subtasks.append(subtask)
         else:
-            logger.debug(f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
+            logger.debug(
+                f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_positional_steps={n_positional_steps})"
+            )
 
     if len(valid_subtasks) >= 2:
         logger.info(f"Segmented trajectory into {len(valid_subtasks)} subtasks")

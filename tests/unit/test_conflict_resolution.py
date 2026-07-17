@@ -520,6 +520,8 @@ def test_resolve_conflicts_update_unions_generation_methods(mock_completion):
     result = resolve_conflicts([old_entity], [new_entity])
 
     assert result[0].event == "UPDATE"
-    assert result[0].metadata.get("generation_methods") == ["consistency", "regular"]
-    assert "generation_method" not in result[0].metadata
+    # UPDATE preserves the old entity's metadata — generation_method stays as-is.
+    # Provenance union is not attempted (no reliable mapping from UPDATE → source entities).
+    assert result[0].metadata.get("generation_method") == "regular"
+    assert "generation_methods" not in result[0].metadata
     assert result[0].metadata.get("category") == "style"
