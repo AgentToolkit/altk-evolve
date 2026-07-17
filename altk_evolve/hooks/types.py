@@ -14,33 +14,39 @@ never flow back through mutation.
 
 from __future__ import annotations
 
+import importlib.util
 from enum import Enum
 from typing import Any
 
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-try:
-    from cpex.framework.hooks.registry import get_hook_registry
-    from cpex.framework.models import PluginPayload as _PayloadBase
-    from cpex.framework.models import PluginResult
+# Cheap availability probe: ``find_spec`` locates the top-level ``cpex`` package
+# WITHOUT importing ``cpex.framework`` — a ~400ms import that also pulls in
+# fastapi/mcp/prometheus. The heavy import is deferred to engine initialization
+# (``initialize_hooks``/``register_evolve_hooks``), so importing this module —
+# and any backend that imports the hook seam — stays cheap when hooks are off.
+HAS_CPEX = importlib.util.find_spec("cpex") is not None
 
-    HAS_CPEX = True
-except ImportError:
-    HAS_CPEX = False
 
-    from pydantic import BaseModel
+class _PayloadBase(BaseModel):
+    """Frozen, engine-agnostic base for hook payloads.
 
-    class _PayloadBase(BaseModel):  # type: ignore[no-redef]
-        """Frozen stand-in for ``cpex.framework.models.PluginPayload``."""
+    Structurally identical to ``cpex.framework.models.PluginPayload`` (a frozen
+    pydantic model), so payloads are importable and constructible WITHOUT cpex.
+    When the cpex engine initializes, ``bind_engine_payloads()`` rebuilds each
+    payload as a ``PluginPayload`` subclass (see ``active_payload_cls``); until
+    then the seam is a no-op and no payload is ever dispatched through cpex.
+    """
 
-        model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
 
 def engine_available() -> bool:
     """Whether a plugin execution engine is installed.
 
     Currently true when the optional ``cpex`` package is importable
-    (``pip install 'altk-evolve[hooks]'``).
+    (``pip install 'altk-evolve[hooks]'``). Uses a cheap ``find_spec`` probe
+    that does not trigger the heavy ``cpex.framework`` import.
     """
     return HAS_CPEX
 
@@ -71,7 +77,7 @@ class HookType(str, Enum):
     LLM_PRE_CALL = "llm_pre_call"
 
 
-class EvolveBasePayload(_PayloadBase):  # type: ignore[valid-type,misc]
+class EvolveBasePayload(_PayloadBase):
     """Frozen base for all altk_evolve hook payloads.
 
     ``backend_kind`` names the backend class handling the operation (empty for
@@ -164,15 +170,58 @@ HOOK_PAYLOADS: dict[HookType, type] = {
 }
 
 
+# Engine-backed payload classes, bound lazily when the cpex engine initializes.
+# cpex's PluginManager requires every dispatched payload to be a
+# ``PluginPayload`` instance (an isinstance check), but importing
+# ``PluginPayload`` at module load would defeat the deferred-import goal. So the
+# module-level payload classes stay plain frozen models (importable and
+# unit-testable without cpex) and gain a cpex-backed twin here — via multiple
+# inheritance, so the twin keeps every field/config AND satisfies
+# ``isinstance(payload, PluginPayload)``.
+_engine_payloads: dict[HookType, type] = {}
+
+
+def bind_engine_payloads() -> None:
+    """Bind the cpex-backed payload subclasses (idempotent; no-op without cpex).
+
+    Called from ``register_evolve_hooks`` during engine initialization — the
+    first point at which the heavy ``cpex.framework`` import is unavoidable.
+    """
+    if _engine_payloads or not HAS_CPEX:
+        return
+    from cpex.framework.models import PluginPayload
+
+    for hook_type, base_cls in HOOK_PAYLOADS.items():
+        _engine_payloads[hook_type] = type(
+            base_cls.__name__,
+            (PluginPayload, base_cls),
+            {"__module__": __name__, "__doc__": base_cls.__doc__},
+        )
+
+
+def active_payload_cls(hook_type: HookType) -> type:
+    """Payload class to construct at a dispatch site.
+
+    Returns the cpex-backed subclass once the engine has initialized, else the
+    plain frozen model. Dispatch only ever runs after ``initialize_hooks`` has
+    bound the engine payloads, so the plain fallback is never handed to cpex.
+    """
+    return _engine_payloads.get(hook_type, HOOK_PAYLOADS[hook_type])
+
+
 def register_evolve_hooks() -> None:
     """Register all altk_evolve hook types with the CPEX hook registry.
 
-    Idempotent: already-registered hook types are skipped. No-op when cpex is
-    not installed.
+    Binds the cpex-backed payload classes and registers them. Idempotent:
+    already-registered hook types are skipped. No-op when cpex is not installed.
     """
     if not HAS_CPEX:
         return
+    from cpex.framework.hooks.registry import get_hook_registry
+    from cpex.framework.models import PluginResult
+
+    bind_engine_payloads()
     registry: Any = get_hook_registry()
-    for hook_type, payload_cls in HOOK_PAYLOADS.items():
+    for hook_type in HOOK_PAYLOADS:
         if not registry.is_registered(hook_type.value):
-            registry.register_hook(hook_type.value, payload_cls, PluginResult)
+            registry.register_hook(hook_type.value, _engine_payloads[hook_type], PluginResult)

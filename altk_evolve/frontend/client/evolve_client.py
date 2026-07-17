@@ -42,20 +42,20 @@ class EvolveClient:
         else:
             raise NotImplementedError(f"Entity backend not implemented: {self.config.backend}")
 
-        # Initialize the memory hook seam (no-op unless config.hooks.enabled).
-        # WARNING: the CPEX PluginManager is a process-wide singleton, so the
-        # seam is process-global, not per-client:
+        # Initialize the memory hook seam. The CPEX PluginManager is a
+        # process-wide singleton, so the seam is process-global, not per-client:
         #   - Constructing another client with hooks.enabled=True resets the
-        #     manager and silently REPLACES this client's plugins (a PII
-        #     redaction plugin can be disabled by unrelated code building
-        #     its own client).
-        #   - A client with hooks.enabled=False does not reset the manager,
-        #     but still inherits whatever process-global hooks another
-        #     client enabled.
-        if self.config.hooks.enabled:
-            from altk_evolve.hooks.manager import initialize_hooks
+        #     manager and REPLACES this client's plugins (initialize_hooks warns
+        #     when the reset discards already-registered plugins, e.g. a PII
+        #     redaction plugin an earlier client relied on).
+        #   - A client with hooks.enabled=False shuts the seam DOWN, so it does
+        #     not inherit another client's process-global hooks — hence this is
+        #     called unconditionally (initialize_hooks(disabled) tears down and
+        #     returns None). The heavy cpex import stays deferred, so the
+        #     disabled path remains a cheap no-op.
+        from altk_evolve.hooks.manager import initialize_hooks
 
-            initialize_hooks(self.config.hooks)
+        initialize_hooks(self.config.hooks)
 
     def ready(self) -> bool:
         """Check if the backend is healthy."""

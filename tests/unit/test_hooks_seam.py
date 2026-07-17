@@ -182,6 +182,40 @@ def test_hooks_active_requires_a_subscriber():
     assert not hooks_active(HookType.MEMORY_POST_READ)
 
 
+# ── singleton lifecycle hygiene ──────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_reinit_warns_when_discarding_existing_plugins(caplog):
+    """A second initialize_hooks that resets a manager with already-registered
+    plugins must warn loudly (the reset can silently drop a compliance plugin)."""
+    enable_hooks(Recorder(hooks=[HookType.MEMORY_PRE_WRITE.value]))
+    with caplog.at_level(logging.WARNING, logger="altk_evolve.hooks.manager"):
+        initialize_hooks(HooksConfig(enabled=True))
+    assert any("discard" in r.message and "plugin" in r.message for r in caplog.records), caplog.records
+
+
+@pytest.mark.unit
+def test_first_init_does_not_warn(caplog):
+    """No warning on the initial init — nothing is being discarded."""
+    with caplog.at_level(logging.WARNING, logger="altk_evolve.hooks.manager"):
+        enable_hooks(Recorder(hooks=[HookType.MEMORY_PRE_WRITE.value]))
+    assert not any("discard" in r.message for r in caplog.records), caplog.records
+
+
+@pytest.mark.unit
+def test_disabled_client_after_enabled_leaves_hooks_inactive(tmp_path: Path):
+    """A client built with hooks.enabled=False after an enabled one must NOT
+    inherit the process-global plugins: disabling truly disables."""
+    enable_hooks(Recorder(hooks=[HookType.MEMORY_PRE_WRITE.value]))
+    assert hooks_active(HookType.MEMORY_PRE_WRITE)
+
+    # Constructing a disabled client runs initialize_hooks(enabled=False),
+    # which must shut the seam down.
+    EvolveClient(config=EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
+    assert not hooks_active(HookType.MEMORY_PRE_WRITE)
+
+
 # ── choke points (filesystem backend) ────────────────────────────────
 
 

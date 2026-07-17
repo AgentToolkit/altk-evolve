@@ -29,12 +29,19 @@ Design of the CPEX integration (mirrors Mellea's plugin wrapper layer):
 Singleton caveat — the seam is process-global, not per-client:
 
 - Constructing a second ``EvolveClient`` with ``hooks.enabled=True`` calls
-  ``PluginManager.reset()`` and silently REPLACES the first client's plugins.
-  For a compliance plugin (e.g. PII redaction) this means redaction can be
-  silently disabled by unrelated code constructing its own client.
-- A client constructed with ``hooks.enabled=False`` does not reset the
-  manager, but it still inherits whatever process-global hooks another client
-  enabled: its writes and reads flow through those plugins too.
+  ``PluginManager.reset()`` and REPLACES the first client's plugins. For a
+  compliance plugin (e.g. PII redaction) this means redaction can be disabled
+  by unrelated code constructing its own client — ``initialize_hooks`` emits a
+  loud ``logger.warning`` when a reset is about to discard already-registered
+  plugins, but the last enabled client still wins.
+- A client constructed with ``hooks.enabled=False`` calls ``shutdown_hooks()``
+  so it does NOT inherit another client's process-global plugins: disabling
+  truly disables.
+
+Deferred cpex import: ``cpex.framework`` is a ~400ms import (it pulls
+fastapi/mcp/prometheus), so it is imported lazily inside the functions that
+need it rather than at module load. Importing this module — and any backend
+that imports the hook seam — therefore stays cheap when hooks are disabled.
 """
 
 from __future__ import annotations
@@ -51,20 +58,16 @@ from typing import TYPE_CHECKING, Any
 from altk_evolve.hooks.types import (
     HAS_CPEX,
     HookType,
-    LLMPreCallPayload,
-    MemoryPostReadPayload,
-    MemoryPreDeletePayload,
-    MemoryPreMetadataPatchPayload,
-    MemoryPreNamespaceDeletePayload,
-    MemoryPreWritePayload,
+    active_payload_cls,
     register_evolve_hooks,
 )
 from altk_evolve.schema.exceptions import EvolveException
 
-if HAS_CPEX:
-    from cpex.framework.errors import PluginError, PluginViolationError
-    from cpex.framework.manager import PluginManager, PluginTimeoutError
-    from cpex.framework.models import GlobalContext, OnError, PluginConfig, PluginMode
+# NOTE: cpex.framework is NOT imported at module load — it is a ~400ms import
+# that also pulls fastapi/mcp/prometheus. Every symbol from it is imported
+# lazily inside the functions that need it, all of which are reached only after
+# hooks are enabled. This keeps ``import altk_evolve.backend.base`` (and every
+# backend) cheap when hooks are disabled — the default.
 
 if TYPE_CHECKING:
     from altk_evolve.backend.base import BaseEntityBackend
@@ -105,27 +108,43 @@ class MemoryPolicyViolation(EvolveException):
 
 # Raw cpex exceptions that can escape ``invoke_hook`` under on_error="fail":
 # a plugin crash (PluginError), a timeout (PluginTimeoutError), or an explicit
-# violation surfaced as an exception (PluginViolationError). Empty tuple when
-# cpex is absent so the ``except`` clause is inert on the no-op path.
-if HAS_CPEX:
-    _CPEX_PLUGIN_ERRORS: tuple[type[BaseException], ...] = (PluginError, PluginTimeoutError, PluginViolationError)
-else:
-    _CPEX_PLUGIN_ERRORS = ()
+# violation surfaced as an exception (PluginViolationError). Resolved lazily
+# (the ``except`` clause evaluates the expression at raise time) so the module
+# import never touches cpex.framework; empty tuple when cpex is absent, which
+# makes the ``except ()`` clause inert on the no-op path.
+_CPEX_PLUGIN_ERRORS_CACHE: tuple[type[BaseException], ...] | None = None
+
+
+def _cpex_plugin_errors() -> tuple[type[BaseException], ...]:
+    global _CPEX_PLUGIN_ERRORS_CACHE
+    if _CPEX_PLUGIN_ERRORS_CACHE is None:
+        if HAS_CPEX:
+            from cpex.framework.errors import PluginError, PluginViolationError
+            from cpex.framework.manager import PluginTimeoutError
+
+            _CPEX_PLUGIN_ERRORS_CACHE = (PluginError, PluginTimeoutError, PluginViolationError)
+        else:
+            _CPEX_PLUGIN_ERRORS_CACHE = ()
+    return _CPEX_PLUGIN_ERRORS_CACHE
 
 
 def _describe_cpex_error(exc: BaseException) -> tuple[str, str, str]:
     """Extract (plugin_name, reason, code) from an escaping cpex plugin error."""
-    if HAS_CPEX and isinstance(exc, PluginError):
-        return (getattr(exc.error, "plugin_name", "") or "", exc.error.message, "PLUGIN_ERROR")
-    if HAS_CPEX and isinstance(exc, PluginViolationError):
-        violation = exc.violation
-        return (
-            (violation.plugin_name or "") if violation else "",
-            (violation.reason if violation else None) or exc.message or "Blocked by plugin",
-            (violation.code or "") if violation else "",
-        )
-    if HAS_CPEX and isinstance(exc, PluginTimeoutError):
-        return ("", str(exc) or "Plugin timed out", "PLUGIN_TIMEOUT")
+    if HAS_CPEX:
+        from cpex.framework.errors import PluginError, PluginViolationError
+        from cpex.framework.manager import PluginTimeoutError
+
+        if isinstance(exc, PluginError):
+            return (getattr(exc.error, "plugin_name", "") or "", exc.error.message, "PLUGIN_ERROR")
+        if isinstance(exc, PluginViolationError):
+            violation = exc.violation
+            return (
+                (violation.plugin_name or "") if violation else "",
+                (violation.reason if violation else None) or exc.message or "Blocked by plugin",
+                (violation.code or "") if violation else "",
+            )
+        if isinstance(exc, PluginTimeoutError):
+            return ("", str(exc) or "Plugin timed out", "PLUGIN_TIMEOUT")
     return ("", str(exc) or "Plugin error", "PLUGIN_ERROR")
 
 
@@ -145,11 +164,30 @@ def initialize_hooks(config: HooksConfig) -> Any | None:
     global _plugin_manager, _plugins_enabled
 
     if not config.enabled:
+        # Disabling must truly disable: a prior enabled client left the
+        # process-global manager and _plugins_enabled flag set, which this
+        # client would otherwise inherit (its reads/writes flowing through
+        # another client's plugins). Tear that down before returning None.
+        shutdown_hooks()
         return None
     if not HAS_CPEX:
         raise ImportError(_CPEX_INSTALL_HINT)
 
+    from cpex.framework.manager import PluginManager
+
     register_evolve_hooks()
+    # The PluginManager is a process-global (Borg) singleton, so reset() here
+    # DISCARDS any plugins an earlier client registered. Warn loudly when that
+    # earlier setup had plugins — a silent wipe can drop a compliance plugin
+    # (e.g. PII redaction) that unrelated code was relying on. We warn rather
+    # than refuse, so legitimate re-initialization (e.g. between tests) works.
+    if _plugin_manager is not None and getattr(_plugin_manager, "plugin_count", 0) > 0:
+        logger.warning(
+            "Re-initializing altk_evolve hooks: PluginManager.reset() will discard %d already-registered "
+            "plugin(s) from a prior client (including any PII redaction / compliance plugins). The hook "
+            "seam is process-global, not per-client — the last enabled client's plugins win.",
+            _plugin_manager.plugin_count,
+        )
     PluginManager.reset()
     pm = PluginManager(config.plugins_yaml or "", timeout=config.plugin_timeout)
     _run_sync(pm.initialize())
@@ -178,6 +216,8 @@ def shutdown_hooks() -> None:
         except Exception:
             logger.warning("Error shutting down hook plugin manager.", exc_info=True)
         if HAS_CPEX:
+            from cpex.framework.manager import PluginManager
+
             PluginManager.reset()
     _plugin_manager = None
     _plugins_enabled = False
@@ -197,6 +237,8 @@ def hooks_active(hook_type: HookType) -> bool:
 
 def _register_spec(pm: Any, spec: Any) -> None:
     """Instantiate and register one code-first plugin spec (PluginConfig synthesis)."""
+    from cpex.framework.models import OnError, PluginConfig, PluginMode
+
     module_path, _, class_name = spec.kind.rpartition(".")
     plugin_cls = getattr(importlib.import_module(module_path), class_name)
     plugin_config = PluginConfig(
@@ -257,6 +299,8 @@ def _invoke(hook_type: HookType, payload: Any, backend: BaseEntityBackend | None
 
     Raises :class:`MemoryPolicyViolation` when a plugin halts the pipeline.
     """
+    from cpex.framework.models import GlobalContext
+
     state: dict[str, Any] = {}
     if backend is not None:
         state["backend"] = backend
@@ -265,7 +309,7 @@ def _invoke(hook_type: HookType, payload: Any, backend: BaseEntityBackend | None
 
     try:
         result = _run_sync(_ainvoke(hook_type, payload, global_context))
-    except _CPEX_PLUGIN_ERRORS as exc:
+    except _cpex_plugin_errors() as exc:
         # With on_error="fail" (the fail-closed default) cpex raises a raw
         # PluginError / PluginTimeoutError / PluginViolationError that isn't
         # part of this seam's contract. Re-raise as MemoryPolicyViolation so
@@ -315,7 +359,7 @@ def dispatch_memory_pre_write(backend: BaseEntityBackend, namespace_id: str, ent
 
     token = _in_write.set(True)
     try:
-        payload = MemoryPreWritePayload(
+        payload = active_payload_cls(HookType.MEMORY_PRE_WRITE)(
             namespace_id=namespace_id,
             entities=copy.deepcopy([e.model_dump() for e in entities]),
             backend_kind=type(backend).__name__,
@@ -336,7 +380,7 @@ def dispatch_memory_pre_metadata_patch(backend: BaseEntityBackend, namespace_id:
         return metadata_patch
     token = _in_write.set(True)
     try:
-        payload = MemoryPreMetadataPatchPayload(
+        payload = active_payload_cls(HookType.MEMORY_PRE_METADATA_PATCH)(
             namespace_id=namespace_id,
             entity_id=entity_id,
             metadata_patch=copy.deepcopy(metadata_patch),
@@ -363,7 +407,7 @@ def dispatch_memory_pre_delete(backend: BaseEntityBackend, namespace_id: str, en
         return
     token = _in_write.set(True)
     try:
-        payload = MemoryPreDeletePayload(
+        payload = active_payload_cls(HookType.MEMORY_PRE_DELETE)(
             namespace_id=namespace_id,
             entity_id=entity_id,
             metadata=copy.deepcopy(metadata),
@@ -382,7 +426,7 @@ def dispatch_memory_pre_namespace_delete(backend: BaseEntityBackend, namespace_i
         return
     token = _in_write.set(True)
     try:
-        payload = MemoryPreNamespaceDeletePayload(namespace_id=namespace_id, backend_kind=type(backend).__name__)
+        payload = active_payload_cls(HookType.MEMORY_PRE_NAMESPACE_DELETE)(namespace_id=namespace_id, backend_kind=type(backend).__name__)
         _invoke(HookType.MEMORY_PRE_NAMESPACE_DELETE, payload, backend=backend)
     finally:
         _in_write.reset(token)
@@ -408,7 +452,7 @@ def dispatch_memory_post_read(
 
     token = _in_post_read.set(True)
     try:
-        payload = MemoryPostReadPayload(
+        payload = active_payload_cls(HookType.MEMORY_POST_READ)(
             namespace_id=namespace_id,
             entities=copy.deepcopy([e.model_dump(mode="json") for e in entities]),
             query=query,
@@ -434,7 +478,7 @@ def dispatch_llm_pre_call(messages: list[dict], purpose: str, model: str | None 
     """Fire llm_pre_call just before a litellm completion; return the (possibly redacted) messages."""
     if not hooks_active(HookType.LLM_PRE_CALL):
         return messages
-    payload = LLMPreCallPayload(messages=copy.deepcopy(messages), purpose=purpose, model=model)
+    payload = active_payload_cls(HookType.LLM_PRE_CALL)(messages=copy.deepcopy(messages), purpose=purpose, model=model)
     modified = _invoke(HookType.LLM_PRE_CALL, payload)
     if modified is None:
         return messages
