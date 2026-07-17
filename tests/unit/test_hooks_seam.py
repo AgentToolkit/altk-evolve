@@ -329,6 +329,52 @@ def test_halting_write_raises_and_persists_nothing(client: EvolveClient):
     assert len(client.search_entities("ns", limit=10)) == 1
 
 
+class CrashingWriter(Plugin):
+    """Sequential plugin that raises on memory_pre_write (simulates a plugin crash)."""
+
+    def __init__(self):
+        super().__init__(_config("crashing_writer", [HookType.MEMORY_PRE_WRITE.value], mode=PluginMode.SEQUENTIAL, priority=1))
+
+    async def memory_pre_write(self, payload, context):
+        raise RuntimeError("boom")
+
+
+class CrashingReader(Plugin):
+    """Sequential plugin that raises on memory_post_read (simulates a plugin crash)."""
+
+    def __init__(self):
+        super().__init__(_config("crashing_reader", [HookType.MEMORY_POST_READ.value], mode=PluginMode.SEQUENTIAL, priority=1))
+
+    async def memory_post_read(self, payload, context):
+        raise RuntimeError("boom")
+
+
+@pytest.mark.unit
+def test_plugin_crash_fails_closed_as_memory_policy_violation(client: EvolveClient):
+    # on_error defaults to fail (fail-closed): a plugin that CRASHES on a write
+    # must halt the write and surface as MemoryPolicyViolation, never pass the
+    # data through — even though it didn't cleanly return continue_processing=False.
+    enable_hooks(CrashingWriter())
+    client.create_namespace("ns")
+
+    with pytest.raises(MemoryPolicyViolation):
+        _write(client, "ns", "some content")
+
+    assert client.search_entities("ns", limit=10) == []
+
+
+@pytest.mark.unit
+def test_post_read_plugin_crash_does_not_fail_the_read(client: EvolveClient):
+    # A crash in a post_read plugin (read-side) must NOT fail the read it rode
+    # in on: results come back untransformed.
+    enable_hooks(CrashingReader())
+    client.create_namespace("ns")
+    _write(client, "ns", "readable content")
+
+    results = client.search_entities("ns", limit=10)
+    assert [str(r.content) for r in results] == ["readable content"]
+
+
 @pytest.mark.unit
 def test_halting_delete_raises_and_preserves_entity(client: EvolveClient):
     enable_hooks(Halter([HookType.MEMORY_PRE_DELETE.value]))

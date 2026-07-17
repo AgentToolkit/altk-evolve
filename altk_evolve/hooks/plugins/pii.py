@@ -36,9 +36,16 @@ if _HAS_PII_FILTER:
             name="pii_filter_memory",
             kind="altk_evolve.hooks.plugins.pii.PIIFilterMemoryPlugin",
             hooks=[HookType.MEMORY_PRE_WRITE.value, HookType.LLM_PRE_CALL.value],
-            mode=PluginMode.TRANSFORM,
+            # SEQUENTIAL, not TRANSFORM: CPEX silently downgrades
+            # continue_processing=False -> True in TRANSFORM/AUDIT modes, so a
+            # redactor in transform mode can redact but can NEVER block. Only
+            # sequential preserves BOTH redaction-chaining and the ability to
+            # halt on unredactable PII.
+            mode=PluginMode.SEQUENTIAL,
             priority=10,
-            on_error=OnError.IGNORE,
+            # Fail-closed: if the PII filter crashes it must halt the operation,
+            # never pass unredacted content through.
+            on_error=OnError.FAIL,
             config={
                 "detect_email": True,
                 "detect_ssn": True,

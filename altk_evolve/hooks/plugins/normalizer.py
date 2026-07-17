@@ -66,7 +66,9 @@ if HAS_CPEX:
             hooks=[HookType.MEMORY_PRE_WRITE.value],
             mode=PluginMode.TRANSFORM,
             priority=40,
-            on_error=OnError.IGNORE,
+            # Fail-closed: a normalization crash halts the write rather than
+            # persisting un-normalized (and potentially non-compliant) metadata.
+            on_error=OnError.FAIL,
         )
 
     class MetadataNormalizerPlugin(Plugin):

@@ -62,7 +62,8 @@ from altk_evolve.hooks.types import (
 from altk_evolve.schema.exceptions import EvolveException
 
 if HAS_CPEX:
-    from cpex.framework.manager import PluginManager
+    from cpex.framework.errors import PluginError, PluginViolationError
+    from cpex.framework.manager import PluginManager, PluginTimeoutError
     from cpex.framework.models import GlobalContext, OnError, PluginConfig, PluginMode
 
 if TYPE_CHECKING:
@@ -93,6 +94,32 @@ class MemoryPolicyViolation(EvolveException):
         self.plugin_name = plugin_name
         detail = f"[{code}] " if code else ""
         super().__init__(f"Plugin blocked {hook_type}: {detail}{reason}")
+
+
+# Raw cpex exceptions that can escape ``invoke_hook`` under on_error="fail":
+# a plugin crash (PluginError), a timeout (PluginTimeoutError), or an explicit
+# violation surfaced as an exception (PluginViolationError). Empty tuple when
+# cpex is absent so the ``except`` clause is inert on the no-op path.
+if HAS_CPEX:
+    _CPEX_PLUGIN_ERRORS: tuple[type[BaseException], ...] = (PluginError, PluginTimeoutError, PluginViolationError)
+else:
+    _CPEX_PLUGIN_ERRORS = ()
+
+
+def _describe_cpex_error(exc: BaseException) -> tuple[str, str, str]:
+    """Extract (plugin_name, reason, code) from an escaping cpex plugin error."""
+    if HAS_CPEX and isinstance(exc, PluginError):
+        return (getattr(exc.error, "plugin_name", "") or "", exc.error.message, "PLUGIN_ERROR")
+    if HAS_CPEX and isinstance(exc, PluginViolationError):
+        violation = exc.violation
+        return (
+            (violation.plugin_name or "") if violation else "",
+            (violation.reason if violation else None) or exc.message or "Blocked by plugin",
+            (violation.code or "") if violation else "",
+        )
+    if HAS_CPEX and isinstance(exc, PluginTimeoutError):
+        return ("", str(exc) or "Plugin timed out", "PLUGIN_TIMEOUT")
+    return ("", str(exc) or "Plugin error", "PLUGIN_ERROR")
 
 
 # ── lifecycle ────────────────────────────────────────────────────────
@@ -132,6 +159,13 @@ def shutdown_hooks() -> None:
     global _plugin_manager, _plugins_enabled
 
     if _plugin_manager is not None:
+        try:
+            # Clear any runtime-disabled plugins so a transient on_error="disable"
+            # trip does not wedge a plugin out for the whole process across a
+            # shutdown/reinit cycle.
+            _run_sync(_plugin_manager.executor.reset_runtime_disabled())
+        except Exception:
+            logger.warning("Error resetting runtime-disabled plugins.", exc_info=True)
         try:
             _run_sync(_plugin_manager.shutdown())
         except Exception:
@@ -222,7 +256,22 @@ def _invoke(hook_type: HookType, payload: Any, backend: BaseEntityBackend | None
         state["backend_kind"] = type(backend).__name__
     global_context = GlobalContext(request_id=uuid.uuid4().hex, state=state)
 
-    result = _run_sync(_ainvoke(hook_type, payload, global_context))
+    try:
+        result = _run_sync(_ainvoke(hook_type, payload, global_context))
+    except _CPEX_PLUGIN_ERRORS as exc:
+        # With on_error="fail" (the fail-closed default) cpex raises a raw
+        # PluginError / PluginTimeoutError / PluginViolationError that isn't
+        # part of this seam's contract. Re-raise as MemoryPolicyViolation so
+        # the documented "halting raises MemoryPolicyViolation" contract holds
+        # for crashes/timeouts too — a compliance plugin that dies must fail
+        # closed, not pass data through. The original is preserved as __cause__.
+        plugin_name, reason, code = _describe_cpex_error(exc)
+        raise MemoryPolicyViolation(
+            hook_type=hook_type.value,
+            reason=reason,
+            code=code,
+            plugin_name=plugin_name,
+        ) from exc
 
     if result is not None and not result.continue_processing:
         violation = result.violation
@@ -335,7 +384,14 @@ def dispatch_memory_post_read(
             filters=filters or {},
             backend_kind=type(backend).__name__,
         )
-        modified = _invoke(HookType.MEMORY_POST_READ, payload, backend=backend)
+        try:
+            modified = _invoke(HookType.MEMORY_POST_READ, payload, backend=backend)
+        except MemoryPolicyViolation:
+            # post_read is a read-side transform; a plugin crash/halt here (e.g.
+            # the fire-and-forget access stamp) must NOT fail the read it rode
+            # in on. Only the write family and llm_pre_call surface violations.
+            logger.warning("A memory_post_read plugin failed; returning untransformed results.", exc_info=True)
+            return entities
         if modified is None:
             return entities
         return [RecordedEntityCls.model_validate(d) for d in modified.entities]

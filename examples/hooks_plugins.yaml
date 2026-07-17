@@ -24,7 +24,7 @@ plugins:
       - memory_pre_write
     mode: transform        # serial, chained, modifying, non-halting
     priority: 40           # lower runs earlier
-    on_error: ignore
+    on_error: fail         # fail-closed: a crash halts the write, never passes bad data through
     config:
       stamp_trace_id: true
       stamp_created_at: true
@@ -41,7 +41,7 @@ plugins:
       - memory_post_read
     mode: fire_and_forget  # side-effect only; cannot modify or block the read
     priority: 50
-    on_error: ignore
+    on_error: fail         # fail-closed default; the plugin still guards its own stamping so the read never fails
 
   # Regex PII redaction on memory writes and LLM egress.
   # Requires: pip install 'altk-evolve[pii]'
@@ -51,9 +51,12 @@ plugins:
     hooks:
       - memory_pre_write
       - llm_pre_call
-    mode: transform
+    # sequential, NOT transform: CPEX downgrades continue_processing=False->True
+    # in transform mode, so a redactor there can never block. sequential keeps
+    # both redaction-chaining and the ability to halt on unredactable PII.
+    mode: sequential
     priority: 10           # redact before the normalizer sees content
-    on_error: ignore
+    on_error: fail         # fail-closed: never pass unredacted content through
     config:
       detect_email: true
       detect_ssn: true

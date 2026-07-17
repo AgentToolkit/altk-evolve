@@ -52,7 +52,10 @@ if HAS_CPEX:
             hooks=[HookType.MEMORY_POST_READ.value],
             mode=PluginMode.FIRE_AND_FORGET,
             priority=50,
-            on_error=OnError.IGNORE,
+            # Fail-closed default for consistency with the other shipped
+            # plugins; the plugin body still guards its own stamping so a write
+            # failure only logs and never fails the read it rode in on.
+            on_error=OnError.FAIL,
         )
 
     class AccessStampPlugin(Plugin):

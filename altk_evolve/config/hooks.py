@@ -22,7 +22,10 @@ class HookPluginSpec(BaseModel):
         description="Execution mode. 'transform' chains payload modifications; 'sequential' may halt; 'fire_and_forget' is side-effect only.",
     )
     priority: int = Field(default=50, description="Lower runs earlier.")
-    on_error: Literal["fail", "ignore", "disable"] = Field(default="ignore", description="What to do when the plugin raises.")
+    # Fail-closed by default: a compliance plugin (e.g. PII redaction) that
+    # crashes or times out must halt the operation, not silently pass data
+    # through. Non-critical plugins can opt into "ignore" per spec.
+    on_error: Literal["fail", "ignore", "disable"] = Field(default="fail", description="What to do when the plugin raises.")
     config: dict = Field(default_factory=dict, description="Plugin-specific configuration, passed to the plugin constructor.")
 
 
