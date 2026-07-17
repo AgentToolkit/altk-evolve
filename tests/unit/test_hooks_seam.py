@@ -618,6 +618,63 @@ def test_external_delete_payload_carries_fetched_metadata(client: EvolveClient):
     assert recorder.calls["memory_pre_delete"][1].metadata is None
 
 
+# ── conflict-resolution UPDATE metadata durability ───────────────────
+
+
+@pytest.mark.unit
+def test_cr_update_verdict_preserves_plugin_metadata(client: EvolveClient):
+    """At enable_conflict_resolution=True, an UPDATE verdict must NOT wipe
+    plugin-written metadata: normalizer's trace_id/created_at (from the incoming
+    entity) and access-stamp's last_accessed (from the stored entity) must all
+    survive the UPDATE, which base._update_entity applies as a wholesale replace.
+    """
+    from altk_evolve.hooks.plugins.access_stamp import AccessStampPlugin
+    from altk_evolve.hooks.plugins.normalizer import MetadataNormalizerPlugin
+    from altk_evolve.llm.conflict_resolution import conflict_resolution
+
+    enable_hooks(MetadataNormalizerPlugin(), AccessStampPlugin())
+    client.create_namespace("ns")
+
+    # First write: normalizer stamps trace_id (from task_id) + created_at.
+    _write(client, "ns", "use type hints and docstrings in python", {"task_id": "t-1"})
+    stored = client.search_entities("ns", query="use type hints", limit=1)[0]
+    assert stored.metadata["trace_id"] == "t-1"
+    assert "created_at" in stored.metadata
+
+    # A public read makes access-stamp write last_accessed onto the stored entity.
+    stored = client.search_entities("ns", query="use type hints", limit=1)[0]
+    assert "last_accessed" in stored.metadata
+
+    # Second write UPDATEs the stored entity. Real resolve_conflicts runs (only
+    # the LLM completion is mocked) so the metadata-threading path is exercised.
+    verdict = json.dumps(
+        {
+            "entities": [
+                {
+                    "id": stored.id,
+                    "type": "note",
+                    "content": "use type hints",
+                    "event": "UPDATE",
+                    "old_entity": "use type hints and docstrings in python",
+                }
+            ]
+        }
+    )
+    response = Mock()
+    response.choices = [Mock(message=Mock(content=verdict))]
+    with patch.object(conflict_resolution, "completion", return_value=response):
+        client.update_entities(
+            "ns", [Entity(content="use type hints", type="note", metadata={"task_id": "t-2"})], enable_conflict_resolution=True
+        )
+
+    updated = client.get_entity_by_id("ns", stored.id)
+    assert updated is not None
+    # All three plugin-written keys survive the UPDATE.
+    assert updated.metadata.get("trace_id") == "t-2"  # from the incoming (normalized) entity
+    assert "created_at" in updated.metadata  # from the incoming (normalized) entity
+    assert "last_accessed" in updated.metadata  # stored-only stamp, preserved via merge
+
+
 # ── payload immutability ─────────────────────────────────────────────
 
 
