@@ -47,7 +47,13 @@ hooks = [
 # only want normalization/audit plugins don't pull the PII filter).
 pii = [
     "altk-evolve[hooks]",
-    "cpex-pii-filter>=0.3",
+    # Upper-bound the minor (mirrors cpex's <0.2): PIIFilterMemoryPlugin always
+    # receives a PluginConfig on the YAML/spec path (the `config or
+    # _default_config()` fallback is unreachable there — a PluginConfig is
+    # always truthy), so a defaults change in a 0.4 release would silently alter
+    # what gets redacted rather than surface as an error. Pin the minor and bump
+    # deliberately.
+    "cpex-pii-filter>=0.3,<0.4",
 ]
 
 examples = [

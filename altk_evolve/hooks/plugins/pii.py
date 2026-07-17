@@ -26,8 +26,17 @@ try:
     from cpex_pii_filter.pii_filter import PIIFilterPlugin as _PIIFilterPlugin
 
     _HAS_PII_FILTER = True
-except ImportError:
-    _HAS_PII_FILTER = False
+except ImportError as exc:
+    # Only treat a MISSING optional dependency (cpex or cpex-pii-filter) as
+    # "PII filter unavailable, fall back to the stub". An ImportError raised by
+    # an unrelated BROKEN transitive dependency (installed but failing to
+    # import) must propagate — masking it as "install 'altk-evolve[pii]'" would
+    # hide a real bug and silently disable a compliance plugin.
+    _missing = exc.name or ""
+    if _missing == "cpex" or _missing.startswith("cpex.") or _missing == "cpex_pii_filter" or _missing.startswith("cpex_pii_filter."):
+        _HAS_PII_FILTER = False
+    else:
+        raise
 
 if _HAS_PII_FILTER:
 

@@ -202,7 +202,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
         self._save_namespace_data(namespace_id, self._active_data)
         self._active_data = None
 
-    def patch_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
+    def _patch_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
         """Override to load namespace data, call _update_entity, then persist.
 
         Re-entrant path: when called from inside an in-flight update_entities

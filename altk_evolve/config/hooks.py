@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class HookPluginSpec(BaseModel):
@@ -27,6 +27,20 @@ class HookPluginSpec(BaseModel):
     # through. Non-critical plugins can opt into "ignore" per spec.
     on_error: Literal["fail", "ignore", "disable"] = Field(default="fail", description="What to do when the plugin raises.")
     config: dict = Field(default_factory=dict, description="Plugin-specific configuration, passed to the plugin constructor.")
+
+    @field_validator("kind")
+    @classmethod
+    def _kind_is_dotted_path(cls, value: str) -> str:
+        """``kind`` is imported as ``module.rpartition('.') -> (module, Class)``.
+
+        A bare name (no ``.``) yields an empty module path and a confusing
+        ImportError deep inside ``_register_spec``, so reject it up front with a
+        clear message.
+        """
+        module_path, dot, class_name = value.rpartition(".")
+        if not dot or not module_path or not class_name:
+            raise ValueError(f"kind must be a dotted 'module.Class' import path, got {value!r}")
+        return value
 
 
 class HooksConfig(BaseModel):

@@ -253,7 +253,7 @@ requires-dist = [
     { name = "altk-evolve", extras = ["tracing"], marker = "extra == 'examples'" },
     { name = "arize-phoenix", specifier = ">=12.30.0" },
     { name = "cpex", marker = "extra == 'hooks'", specifier = ">=0.1.0,<0.2" },
-    { name = "cpex-pii-filter", marker = "extra == 'pii'", specifier = ">=0.3" },
+    { name = "cpex-pii-filter", marker = "extra == 'pii'", specifier = ">=0.3,<0.4" },
     { name = "fastmcp" },
     { name = "jinja2" },
     { name = "litellm", specifier = ">=1.84.0" },

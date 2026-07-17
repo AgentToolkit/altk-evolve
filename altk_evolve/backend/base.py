@@ -161,9 +161,10 @@ class BaseEntityBackend(ABC):
         """Hook called after all entity mutations are complete. No-op by default."""
         pass
 
-    def patch_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
+    def _patch_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
         """Update an existing entity in-place (fetch-merge-write helper).
 
+        Internal (protected): reached only from ``_update_entity_metadata_impl``.
         Backends that require pre-loaded state before calling _update_entity
         (e.g. filesystem) must override this method.
         """
@@ -192,7 +193,7 @@ class BaseEntityBackend(ABC):
         return transformed[0] if transformed else entity
 
     def _update_entity_metadata_impl(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
-        """Default implementation: fetch (internal read), merge, patch_entity.
+        """Default implementation: fetch (internal read), merge, _patch_entity.
 
         DB-backed backends should override with a native atomic update. Uses
         ``_search_entities_impl`` so this internal read never fires
@@ -209,7 +210,7 @@ class BaseEntityBackend(ABC):
         entity = results[0]
         merged = {**(entity.metadata or {}), **metadata_patch}
         timestamp = int(entity.created_at.timestamp())
-        self.patch_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged)
+        self._patch_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged)
         return RecordedEntity(**{**entity.model_dump(), "metadata": merged})
 
     def update_entities(
