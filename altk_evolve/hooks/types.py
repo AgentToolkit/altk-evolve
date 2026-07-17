@@ -68,9 +68,13 @@ class HookType(str, Enum):
     Write family (fired in the backend layer so no frontend can bypass them):
       - MEMORY_PRE_WRITE: before conflict resolution in ``update_entities``.
       - MEMORY_PRE_METADATA_PATCH: before ``update_entity_metadata`` applies a patch.
-      - MEMORY_PRE_DELETE: before any entity delete — the public
-        ``delete_entity_by_id`` AND conflict-resolution DELETE verdicts
-        inside ``update_entities``.
+      - MEMORY_PRE_DELETE: before an entity delete issued through the backend's
+        per-entity delete path — the public ``delete_entity_by_id`` AND
+        conflict-resolution DELETE verdicts inside ``update_entities``. It does
+        NOT fire per entity when a whole namespace is dropped via
+        ``delete_namespace`` (that fan-out would need an unbounded scan); a
+        legal-hold plugin that must protect entities from a namespace delete
+        should subscribe to MEMORY_PRE_NAMESPACE_DELETE instead.
       - MEMORY_PRE_NAMESPACE_DELETE: before ``delete_namespace`` drops a namespace.
 
     Read family (public API reads only; internal reads never fire it):
