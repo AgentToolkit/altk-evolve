@@ -882,6 +882,31 @@ def test_backends_do_not_override_public_template_methods():
             assert method not in vars(backend_cls), f"{backend_cls.__name__}.{method} bypasses the hook template method"
 
 
+@pytest.mark.unit
+def test_filesystem_update_entities_override_delegates_to_super(client: EvolveClient):
+    """FilesystemEntityBackend.update_entities LEGITIMATELY overrides the write
+    template method (to wrap it in a lock with loaded data), so it cannot be on
+    the no-bypass list above. Guard the bypass a different way: assert the
+    override delegates to BaseEntityBackend.update_entities exactly once, so
+    memory_pre_write (dispatched inside the base template) fires exactly once
+    through it. A future edit that stops calling super() would silently skip the
+    write hooks — this fire-count assertion fails if that happens.
+    """
+    from altk_evolve.backend.base import BaseEntityBackend
+
+    recorder = Recorder(hooks=[HookType.MEMORY_PRE_WRITE.value])
+    enable_hooks(recorder)
+    client.create_namespace("ns")
+
+    base_update = BaseEntityBackend.update_entities
+    with patch.object(BaseEntityBackend, "update_entities", autospec=True, side_effect=base_update) as spy:
+        _write(client, "ns", "hello world")
+
+    assert spy.call_count == 1, "override must delegate to super().update_entities exactly once"
+    assert len(recorder.calls["memory_pre_write"]) == 1
+    assert client.search_entities("ns", limit=10)[0].content == "hello world"
+
+
 # ── llm_pre_call ─────────────────────────────────────────────────────
 
 
@@ -904,6 +929,86 @@ def test_llm_pre_call_fires_at_fact_extraction_call_site():
 
     sent = mock_completion.call_args.kwargs["messages"]
     assert sent[0]["content"].startswith("[tagged:fact_extraction] ")
+
+
+def _tagged_recorded_entity(entity_id: str, content: str):
+    from datetime import datetime
+
+    from altk_evolve.schema.core import RecordedEntity
+
+    return RecordedEntity(
+        id=entity_id,
+        type="guideline",
+        content=content,
+        metadata={"task_description": "do a task", "rationale": "r", "category": "strategy", "trigger": "t"},
+        created_at=datetime(2025, 1, 1),
+    )
+
+
+@pytest.mark.unit
+def test_llm_pre_call_fires_at_guideline_generation_call_site():
+    from altk_evolve.llm.guidelines import guidelines
+
+    enable_hooks(MessageTagger())
+    response = Mock()
+    response.choices = [Mock(message=Mock(content=json.dumps({"guidelines": []})))]
+    with patch.object(guidelines, "completion", return_value=response) as mock_completion:
+        guidelines._generate_guidelines_for_segment(
+            task_description="t", trajectory_slice="s", num_steps=1, constrained_decoding_supported=False
+        )
+
+    sent = mock_completion.call_args.kwargs["messages"]
+    assert sent[0]["content"].startswith("[tagged:guideline_generation] ")
+
+
+@pytest.mark.unit
+def test_llm_pre_call_fires_at_guideline_combination_call_site():
+    from altk_evolve.llm.guidelines import clustering
+
+    enable_hooks(MessageTagger())
+    response = Mock()
+    response.choices = [Mock(message=Mock(content=json.dumps({"guidelines": []})))]
+    with (
+        patch.object(clustering, "completion", return_value=response) as mock_completion,
+        patch.object(clustering, "get_supported_openai_params", return_value=[]),
+        patch.object(clustering, "supports_response_schema", return_value=False),
+    ):
+        clustering.combine_cluster([_tagged_recorded_entity("1", "a"), _tagged_recorded_entity("2", "b")])
+
+    sent = mock_completion.call_args.kwargs["messages"]
+    assert sent[0]["content"].startswith("[tagged:guideline_combination] ")
+
+
+@pytest.mark.unit
+def test_llm_pre_call_fires_at_segmentation_call_site():
+    from altk_evolve.llm.guidelines import segmentation
+
+    enable_hooks(MessageTagger())
+    response = Mock()
+    response.choices = [Mock(message=Mock(content=json.dumps({"subtasks": []})))]
+    with (
+        patch.object(segmentation, "completion", return_value=response) as mock_completion,
+        patch.object(segmentation, "get_supported_openai_params", return_value=[]),
+        patch.object(segmentation, "supports_response_schema", return_value=False),
+    ):
+        segmentation.segment_trajectory([{"role": "user", "content": "do"}, {"role": "assistant", "content": "done"}])
+
+    sent = mock_completion.call_args.kwargs["messages"]
+    assert sent[0]["content"].startswith("[tagged:segmentation] ")
+
+
+@pytest.mark.unit
+def test_llm_pre_call_fires_at_conflict_resolution_call_site():
+    from altk_evolve.llm.conflict_resolution import conflict_resolution
+
+    enable_hooks(MessageTagger())
+    response = Mock()
+    response.choices = [Mock(message=Mock(content=json.dumps({"entities": []})))]
+    with patch.object(conflict_resolution, "completion", return_value=response) as mock_completion:
+        conflict_resolution.resolve_conflicts([_tagged_recorded_entity("1", "a")], [_tagged_recorded_entity("2", "b")])
+
+    sent = mock_completion.call_args.kwargs["messages"]
+    assert sent[0]["content"].startswith("[tagged:conflict_resolution] ")
 
 
 # ── configuration paths ──────────────────────────────────────────────

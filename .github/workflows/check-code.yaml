@@ -103,6 +103,29 @@ jobs:
     - name: Verify platform-integrations matches a fresh render of plugin-source
       run: uv run python plugin-source/build_plugins.py check
 
+  run-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12']
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      # Runs the suite with all extras installed (uv sync --all-extras in the
+      # composite action), so the cpex-guarded hook tests actually gate PRs.
+      - uses: ./.github/actions/run-tests
+
   ui-tests:
     runs-on: ubuntu-latest
     steps:
