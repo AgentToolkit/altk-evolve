@@ -241,6 +241,31 @@ def test_pre_metadata_patch_fires_and_can_transform(client: EvolveClient):
 
 
 @pytest.mark.unit
+def test_metadata_patch_return_is_run_through_post_read(client: EvolveClient):
+    # The entity returned by update_entity_metadata carries full content and is
+    # echoed to callers (MCP publish/unpublish). A redacting post_read plugin
+    # must transform that return value too, not just public search results.
+    class RedactContent(Plugin):
+        def __init__(self):
+            super().__init__(_config("redact_content", [HookType.MEMORY_POST_READ.value]))
+
+        async def memory_post_read(self, payload, context):
+            entities = [{**e, "content": "[REDACTED]"} for e in payload.entities]
+            return PluginResult(continue_processing=True, modified_payload=payload.model_copy(update={"entities": entities}))
+
+    enable_hooks(RedactContent())
+    client.create_namespace("ns")
+    _write(client, "ns", "sensitive content")
+    entity = client.search_entities("ns", limit=1)[0]
+    assert entity.content == "[REDACTED]"
+
+    updated = client.patch_entity_metadata("ns", entity.id, {"visibility": "public"})
+    # The returned entity's content is redacted, not the raw stored value.
+    assert updated.content == "[REDACTED]"
+    assert updated.metadata["visibility"] == "public"
+
+
+@pytest.mark.unit
 def test_pre_delete_and_pre_namespace_delete_fire(client: EvolveClient):
     recorder = Recorder()
     enable_hooks(recorder)
@@ -285,9 +310,12 @@ def test_internal_reads_do_not_fire_post_read(client: EvolveClient):
     entity = client.search_entities("ns", limit=1)[0]
     assert len(recorder.calls.get("memory_post_read", [])) == 1
 
-    # The metadata-patch read-before-merge is internal: no post_read.
+    # The metadata-patch read-BEFORE-merge is internal (no post_read), but the
+    # RETURNED entity (which carries full content and is echoed to callers) is
+    # run through post_read — so a patch adds exactly one post_read: for the
+    # return value, not the internal read-before-merge.
     client.patch_entity_metadata("ns", entity.id, {"k": "v"})
-    assert len(recorder.calls.get("memory_post_read", [])) == 1
+    assert len(recorder.calls.get("memory_post_read", [])) == 2
 
     # The conflict-resolution pre-read inside update_entities is internal too.
     def fake_resolve_conflicts(old_entities, new_entities):
@@ -295,7 +323,7 @@ def test_internal_reads_do_not_fire_post_read(client: EvolveClient):
 
     with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", fake_resolve_conflicts):
         client.update_entities("ns", [Entity(content="y", type="note")], enable_conflict_resolution=True)
-    assert len(recorder.calls.get("memory_post_read", [])) == 1
+    assert len(recorder.calls.get("memory_post_read", [])) == 2
 
 
 @pytest.mark.unit
@@ -557,6 +585,45 @@ def test_same_mutation_returned_via_modified_payload_applies(client: EvolveClien
     assert stored.content == "MUTATED"
 
 
+@pytest.mark.unit
+def test_shipped_plugins_return_modified_payload_and_never_mutate_in_place():
+    """CONTRACT: plugins MUST return modified_payload; in-place mutation is
+    unsupported and can leak across a plugin chain.
+
+    The construction-time deep-copy protects the caller's objects, but it does
+    NOT isolate plugins from each other: if plugin A mutates the payload in
+    place, plugin B in the same chain sees A's mutation baked into its own copy
+    (a "deep-copy the returned payload" fix does not help — A's mutation is
+    already in B's input). The only supported channel is the modified_payload
+    return value. This test locks in that BOTH shipped write plugins honor it,
+    so a future edit that switches one to in-place mutation fails CI.
+    """
+    from altk_evolve.hooks.plugins.normalizer import MetadataNormalizerPlugin
+    from altk_evolve.hooks.plugins.pii import PIIFilterMemoryPlugin
+    from altk_evolve.hooks.types import MemoryPreWritePayload
+
+    class _Ctx:
+        class _GC:
+            state: dict = {}
+
+        global_context = _GC()
+
+    # Normalizer: task_id -> trace_id triggers a change.
+    norm_input = [{"content": "x", "type": "note", "metadata": {"task_id": "t1"}}]
+    norm_payload = MemoryPreWritePayload(namespace_id="ns", entities=[dict(e) for e in norm_input])
+    norm_result = asyncio.run(MetadataNormalizerPlugin().memory_pre_write(norm_payload, _Ctx()))
+    assert norm_result.modified_payload is not None, "normalizer must communicate changes via modified_payload"
+    assert norm_payload.entities == norm_input, "normalizer must NOT mutate its input payload in place"
+    assert norm_result.modified_payload.entities[0]["metadata"]["trace_id"] == "t1"
+
+    # PII filter: an email triggers redaction.
+    pii_input = [{"content": "reach me at a@b.com", "type": "note", "metadata": {}}]
+    pii_payload = MemoryPreWritePayload(namespace_id="ns", entities=[dict(e) for e in pii_input])
+    pii_result = asyncio.run(PIIFilterMemoryPlugin().memory_pre_write(pii_payload, _Ctx()))
+    assert pii_result.modified_payload is not None, "pii filter must communicate changes via modified_payload"
+    assert pii_payload.entities == pii_input, "pii filter must NOT mutate its input payload in place"
+
+
 # ── sync bridge ──────────────────────────────────────────────────────
 
 
@@ -619,7 +686,9 @@ def test_backend_subclass_override_cannot_bypass_hooks(tmp_path: Path):
     backend.delete_namespace("ns")
 
     assert len(recorder.calls["memory_pre_write"]) == 1
-    assert len(recorder.calls["memory_post_read"]) == 1
+    # Two post_reads: the public search plus the entity returned by
+    # update_entity_metadata (now run through post_read).
+    assert len(recorder.calls["memory_post_read"]) == 2
     assert len(recorder.calls["memory_pre_metadata_patch"]) == 1
     assert len(recorder.calls["memory_pre_delete"]) == 1
     assert len(recorder.calls["memory_pre_namespace_delete"]) == 1

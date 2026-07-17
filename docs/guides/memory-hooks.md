@@ -88,7 +88,7 @@ See `altk_evolve/hooks/plugins/normalizer.py` (`normalize_entities`) and `access
 
 Notes:
 
-- Payloads are frozen — always `model_copy`, never mutate.
+- **Immutability contract — plugins MUST return `modified_payload`; mutating the payload in place is unsupported and can leak across a plugin chain.** Payloads are frozen (`model_copy`, never mutate), and payload contents are deep-copied once at dispatch to protect the *caller's* objects — but that copy does **not** isolate plugins from each other. If plugin A mutates its payload in place, plugin B later in the same chain receives A's mutation baked into B's input. The reviewer-suggested "deep-copy the returned payload" does **not** fix this (A's mutation is already in B's copy before B runs) — returning `modified_payload` is the only supported mechanism, and an in-place mutation that isn't returned is discarded.
 - To **block** an operation, return `PluginResult(continue_processing=False, violation=PluginViolation(...))`; the caller gets a `MemoryPolicyViolation`.
 - Plugins that need to call back into the store (like `AccessStampPlugin`) can grab the live backend from `context.global_context.state["backend"]`.
 

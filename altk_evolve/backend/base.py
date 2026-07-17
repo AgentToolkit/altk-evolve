@@ -175,9 +175,21 @@ class BaseEntityBackend(ABC):
         Template method: fires memory_pre_metadata_patch (which may transform
         or block the patch) and delegates to ``_update_entity_metadata_impl``.
         Do not override — override _update_entity_metadata_impl.
+
+        The impl returns a full RecordedEntity WITH content, which callers echo
+        back to the caller (e.g. MCP publish/unpublish -> the MCP client). Run
+        that return value through memory_post_read so it never leaks an
+        unredacted view that a public read would have transformed. This is the
+        backend layer, so it covers filesystem, postgres (RETURNING) and milvus
+        (query) alike. The internal read-before-merge inside the impl still uses
+        ``_search_entities_impl`` (no post_read); only the RETURN value is
+        transformed. The ``_in_post_read`` guard stops the access-stamp plugin
+        (which calls back into update_entity_metadata) from recursing here.
         """
         metadata_patch = dispatch_memory_pre_metadata_patch(self, namespace_id, entity_id, metadata_patch)
-        return self._update_entity_metadata_impl(namespace_id, entity_id, metadata_patch)
+        entity = self._update_entity_metadata_impl(namespace_id, entity_id, metadata_patch)
+        transformed = dispatch_memory_post_read(self, namespace_id, [entity])
+        return transformed[0] if transformed else entity
 
     def _update_entity_metadata_impl(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
         """Default implementation: fetch (internal read), merge, patch_entity.
