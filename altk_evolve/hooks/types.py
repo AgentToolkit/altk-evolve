@@ -20,12 +20,23 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+
 # Cheap availability probe: ``find_spec`` locates the top-level ``cpex`` package
 # WITHOUT importing ``cpex.framework`` — a ~400ms import that also pulls in
 # fastapi/mcp/prometheus. The heavy import is deferred to engine initialization
 # (``initialize_hooks``/``register_evolve_hooks``), so importing this module —
 # and any backend that imports the hook seam — stays cheap when hooks are off.
-HAS_CPEX = importlib.util.find_spec("cpex") is not None
+def _cpex_installed() -> bool:
+    # find_spec may raise (ImportError from a hostile/blocking finder,
+    # ModuleNotFoundError/ValueError on some edge cases) rather than return
+    # None; any failure to locate cpex means "not installed".
+    try:
+        return importlib.util.find_spec("cpex") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+HAS_CPEX = _cpex_installed()
 
 
 class _PayloadBase(BaseModel):

@@ -31,9 +31,13 @@ except ImportError as exc:
     # "PII filter unavailable, fall back to the stub". An ImportError raised by
     # an unrelated BROKEN transitive dependency (installed but failing to
     # import) must propagate — masking it as "install 'altk-evolve[pii]'" would
-    # hide a real bug and silently disable a compliance plugin.
+    # hide a real bug and silently disable a compliance plugin. A broken
+    # transitive always names the offending module (exc.name), so re-raise those
+    # and fall back only for cpex/cpex_pii_filter (or an indeterminate name,
+    # which the try block can only produce from the cpex import chain itself).
     _missing = exc.name or ""
-    if _missing == "cpex" or _missing.startswith("cpex.") or _missing == "cpex_pii_filter" or _missing.startswith("cpex_pii_filter."):
+    _is_cpex_dep = _missing in ("", "cpex", "cpex_pii_filter") or _missing.startswith("cpex.") or _missing.startswith("cpex_pii_filter.")
+    if _is_cpex_dep:
         _HAS_PII_FILTER = False
     else:
         raise
