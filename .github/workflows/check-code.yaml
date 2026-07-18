@@ -105,14 +105,22 @@ jobs:
 
   run-tests:
     runs-on: ubuntu-latest
+    # This job runs PR-authored test code (pull_request trigger). It must stay
+    # credential-free so a malicious PR cannot exfiltrate secrets or the
+    # checkout token. The cpex-guarded hook tests mock `completion` and need no
+    # real key; live/e2e tests are deselected by the pytest `addopts`
+    # (`-m 'not llm and not e2e'`) the composite action inherits. Credentialed
+    # coverage lives in release-github.yaml's own run-tests job.
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         python-version: ['3.12']
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
