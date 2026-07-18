@@ -161,7 +161,12 @@ def test_cores_usable_and_stubs_raise_with_cpex_blocked():
         class BlockCpex:
             def find_spec(self, name, path=None, target=None):
                 if name == "cpex" or name.startswith(("cpex.", "cpex_")):
-                    raise ImportError(f"{name} blocked for this test")
+                    # Raise a properly-named ModuleNotFoundError to faithfully
+                    # simulate a genuinely-absent optional dependency. pii.py's
+                    # import guard falls back to its stub only for a
+                    # ModuleNotFoundError naming cpex/cpex_pii_filter; a
+                    # name-less ImportError would (correctly) propagate.
+                    raise ModuleNotFoundError(f"{name} blocked for this test", name=name)
                 return None
 
         sys.meta_path.insert(0, BlockCpex())

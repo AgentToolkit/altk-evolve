@@ -27,16 +27,22 @@ try:
 
     _HAS_PII_FILTER = True
 except ImportError as exc:
-    # Only treat a MISSING optional dependency (cpex or cpex-pii-filter) as
-    # "PII filter unavailable, fall back to the stub". An ImportError raised by
-    # an unrelated BROKEN transitive dependency (installed but failing to
-    # import) must propagate — masking it as "install 'altk-evolve[pii]'" would
-    # hide a real bug and silently disable a compliance plugin. A broken
-    # transitive always names the offending module (exc.name), so re-raise those
-    # and fall back only for cpex/cpex_pii_filter (or an indeterminate name,
-    # which the try block can only produce from the cpex import chain itself).
-    _missing = exc.name or ""
-    _is_cpex_dep = _missing in ("", "cpex", "cpex_pii_filter") or _missing.startswith("cpex.") or _missing.startswith("cpex_pii_filter.")
+    # Fall back to the stub ONLY when the optional dependency itself (cpex or
+    # cpex-pii-filter, or a submodule of either) is genuinely MISSING. Anything
+    # else must propagate:
+    #   * A name-less ImportError (``exc.name is None``) is NOT a missing
+    #     optional dep — it typically comes from a broken import inside an
+    #     installed package (e.g. ``from x import y`` where ``y`` is gone), and
+    #     masking it as "install 'altk-evolve[pii]'" would hide a real bug and
+    #     silently disable a compliance plugin.
+    #   * An ImportError naming an unrelated module means a broken transitive,
+    #     which must also surface.
+    # We therefore require a ``ModuleNotFoundError`` whose missing module is
+    # cpex / cpex_pii_filter (or a submodule) before falling back.
+    _missing = exc.name if isinstance(exc, ModuleNotFoundError) else None
+    _is_cpex_dep = _missing is not None and (
+        _missing in ("cpex", "cpex_pii_filter") or _missing.startswith("cpex.") or _missing.startswith("cpex_pii_filter.")
+    )
     if _is_cpex_dep:
         _HAS_PII_FILTER = False
     else:
