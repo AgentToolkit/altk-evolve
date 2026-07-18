@@ -10,6 +10,7 @@ Requires the optional cpex package (``uv sync --extra hooks``).
 """
 
 import asyncio
+import copy
 import json
 import logging
 from pathlib import Path
@@ -398,7 +399,13 @@ def test_write_hook_reentrant_backend_callback_no_deadlock_and_persists(client: 
     # backend used to self-deadlock on the non-reentrant lock. It must now
     # complete (generous timeout so a regression fails instead of hanging CI)
     # AND the callback's metadata change must persist alongside the write.
-    import concurrent.futures
+    #
+    # Run the write in a DAEMON thread joined with a timeout: on a regression
+    # the join returns without the worker finishing and we assert-fail within
+    # ~15s. A daemon thread also can't block interpreter/pytest exit, unlike a
+    # ThreadPoolExecutor whose `with` __exit__ (or atexit join) would hang
+    # forever on the deadlocked worker.
+    import threading
 
     client.create_namespace("ns")
     _write(client, "ns", "first")
@@ -406,8 +413,23 @@ def test_write_hook_reentrant_backend_callback_no_deadlock_and_persists(client: 
 
     enable_hooks(MetadataWriteback(existing.id))
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-        ex.submit(_write, client, "ns", "second").result(timeout=15)
+    done = threading.Event()
+    errors: list[BaseException] = []
+
+    def _run_write() -> None:
+        try:
+            _write(client, "ns", "second")
+        except BaseException as exc:  # noqa: BLE001 - re-raised on the main thread below
+            errors.append(exc)
+        finally:
+            done.set()
+
+    worker = threading.Thread(target=_run_write, name="reentrant-write", daemon=True)
+    worker.start()
+    completed = done.wait(timeout=15)
+    assert completed, "re-entrant write-hook callback deadlocked (did not complete within 15s)"
+    if errors:
+        raise errors[0]
 
     contents = {str(r.content) for r in client.search_entities("ns", limit=10)}
     assert contents == {"first", "second"}
@@ -775,16 +797,20 @@ def test_shipped_plugins_return_modified_payload_and_never_mutate_in_place():
         global_context = _GC()
 
     # Normalizer: task_id -> trace_id triggers a change.
+    # deepcopy so the `norm_input` reference is fully independent of the
+    # payload — a shared nested `metadata` dict would let an in-place mutation
+    # change BOTH and the equality assertion below would pass spuriously.
     norm_input = [{"content": "x", "type": "note", "metadata": {"task_id": "t1"}}]
-    norm_payload = MemoryPreWritePayload(namespace_id="ns", entities=[dict(e) for e in norm_input])
+    norm_payload = MemoryPreWritePayload(namespace_id="ns", entities=copy.deepcopy(norm_input))
     norm_result = asyncio.run(MetadataNormalizerPlugin().memory_pre_write(norm_payload, _Ctx()))
     assert norm_result.modified_payload is not None, "normalizer must communicate changes via modified_payload"
     assert norm_payload.entities == norm_input, "normalizer must NOT mutate its input payload in place"
     assert norm_result.modified_payload.entities[0]["metadata"]["trace_id"] == "t1"
 
-    # PII filter: an email triggers redaction.
+    # PII filter: an email triggers redaction. deepcopy for the same
+    # shared-nested-dict reason as the normalizer case above.
     pii_input = [{"content": "reach me at a@b.com", "type": "note", "metadata": {}}]
-    pii_payload = MemoryPreWritePayload(namespace_id="ns", entities=[dict(e) for e in pii_input])
+    pii_payload = MemoryPreWritePayload(namespace_id="ns", entities=copy.deepcopy(pii_input))
     pii_result = asyncio.run(PIIFilterMemoryPlugin().memory_pre_write(pii_payload, _Ctx()))
     assert pii_result.modified_payload is not None, "pii filter must communicate changes via modified_payload"
     assert pii_payload.entities == pii_input, "pii filter must NOT mutate its input payload in place"
