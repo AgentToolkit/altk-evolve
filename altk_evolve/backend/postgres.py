@@ -233,7 +233,7 @@ class PostgresEntityBackend(BaseEntityBackend):
                 namespaces.append(namespace)
             return namespaces
 
-    def delete_namespace(self, namespace_id: str):
+    def _delete_namespace_impl(self, namespace_id: str):
         """Delete a namespace and its table."""
         table = self._table_name(namespace_id)
         with self.conn.cursor() as cur:
@@ -275,9 +275,9 @@ class PostgresEntityBackend(BaseEntityBackend):
             )
 
     def _delete_entity(self, namespace_id: str, entity_id: str) -> None:
-        self.delete_entity_by_id(namespace_id=namespace_id, entity_id=entity_id)
+        self._delete_entity_by_id_impl(namespace_id=namespace_id, entity_id=entity_id)
 
-    def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+    def _update_entity_metadata_impl(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
         try:
             entity_id_int = int(entity_id)
         except ValueError:
@@ -298,7 +298,7 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     # ── search / delete ──────────────────────────────────────────────
 
-    def search_entities(
+    def _search_entities_impl(
         self,
         namespace_id: str,
         query: str | None = None,
@@ -360,7 +360,7 @@ class PostgresEntityBackend(BaseEntityBackend):
             results: list[RecordedEntity] = cur.fetchall()
             return results
 
-    def delete_entity_by_id(self, namespace_id: str, entity_id: str):
+    def _delete_entity_by_id_impl(self, namespace_id: str, entity_id: str):
         try:
             entity_id_int = int(entity_id)
         except ValueError:

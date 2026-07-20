@@ -155,7 +155,7 @@ def test_update_entities(milvus_backend: MilvusEntityBackend, monkeypatch):
     entity_update = EntityUpdate(id="12345", type="Test entity content", content="fact", event="ADD")
 
     # No potential conflicts to resolve
-    def search_entities(self, namespace_id, query, filters=None, limit=10):
+    def _search_entities_impl(self, namespace_id, query, filters=None, limit=10):
         return []
 
     def insert(collection_name, data):
@@ -167,7 +167,7 @@ def test_update_entities(milvus_backend: MilvusEntityBackend, monkeypatch):
     monkeypatch.setattr(milvus_backend.milvus, "has_collection", always_has_collection)
     monkeypatch.setattr(milvus_backend.milvus, "insert", insert)
     monkeypatch.setattr(milvus_backend.embedding_model, "encode", arbitrary_embedding)
-    monkeypatch.setattr(milvus_backend, "search_entities", search_entities.__get__(milvus_backend, MilvusEntityBackend))
+    monkeypatch.setattr(milvus_backend, "_search_entities_impl", _search_entities_impl.__get__(milvus_backend, MilvusEntityBackend))
 
     with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts):
         entities = [Entity(type=entity_update.type, content=entity_update.content, metadata={"key": "value"})]

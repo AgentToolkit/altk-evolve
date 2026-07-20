@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 
 from pydantic import Field, ValidationError
 
@@ -39,7 +39,11 @@ class FilesystemEntityBackend(BaseEntityBackend):
         self.config = config or filesystem_settings
         self.data_dir = Path(self.config.data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self._lock = Lock()
+        # Re-entrant: write hooks dispatch while update_entities holds this lock,
+        # and the seam hands the live backend to plugins, so a plugin calling
+        # back into a lock-taking backend method (e.g. update_entity_metadata)
+        # must not self-deadlock.
+        self._lock = RLock()
         # Holds the loaded namespace data during update_entities so hooks can access it.
         self._active_data: FilesystemNamespace | None = None
 
@@ -152,7 +156,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
                     break
         return namespaces
 
-    def delete_namespace(self, namespace_id: str):
+    def _delete_namespace_impl(self, namespace_id: str):
         """Delete a namespace and all its entities."""
         file_path = self._namespace_file(namespace_id)
         with self._lock:
@@ -198,10 +202,22 @@ class FilesystemEntityBackend(BaseEntityBackend):
         self._save_namespace_data(namespace_id, self._active_data)
         self._active_data = None
 
-    def patch_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
-        """Override to load namespace data, call _update_entity, then persist."""
+    def _patch_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
+        """Override to load namespace data, call _update_entity, then persist.
+
+        Re-entrant path: when called from inside an in-flight update_entities
+        (e.g. a memory_pre_write plugin calling back into update_entity_metadata),
+        ``_active_data`` is already loaded and the OUTER op owns persistence.
+        RLock alone is insufficient here — doing our own _load/_save would clobber
+        the outer op's in-flight ``_active_data``. So mutate the active data in
+        place and let the outer ``_post_update`` persist it. Only when
+        ``_active_data`` is None (a normal standalone call) do we load/lock/save.
+        """
         if not entity_id:
             raise ValueError(f"entity_id must be a non-empty string, got {entity_id!r}")
+        if self._active_data is not None:
+            self._update_entity(namespace_id, entity_id, entity_type, content_str, timestamp, metadata)
+            return
         with self._lock:
             self._active_data = self._load_namespace_data(namespace_id)
             try:
@@ -220,7 +236,14 @@ class FilesystemEntityBackend(BaseEntityBackend):
         """Override to wrap the base template in a lock with loaded data."""
         with self._lock:
             self._active_data = self._load_namespace_data(namespace_id)
-            return super().update_entities(namespace_id, entities, enable_conflict_resolution)
+            try:
+                return super().update_entities(namespace_id, entities, enable_conflict_resolution)
+            finally:
+                # Clear in-flight state even if a write hook halts the batch
+                # (raises): _post_update runs only on the success path, so
+                # without this a halted write leaves stale _active_data for the
+                # next operation on this backend.
+                self._active_data = None
 
     # ── search ───────────────────────────────────────────────────────
 
@@ -283,7 +306,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
             for ent in results
         ]
 
-    def search_entities(
+    def _search_entities_impl(
         self,
         namespace_id: str,
         query: str | None = None,
@@ -298,7 +321,7 @@ class FilesystemEntityBackend(BaseEntityBackend):
             data = self._load_namespace_data(namespace_id)
             return self._search_entities_internal(data, query, filters, limit)
 
-    def delete_entity_by_id(self, namespace_id: str, entity_id: str):
+    def _delete_entity_by_id_impl(self, namespace_id: str, entity_id: str):
         """Delete a specific entity by its ID."""
         with self._lock:
             data = self._load_namespace_data(namespace_id)

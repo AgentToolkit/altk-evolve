@@ -16,6 +16,7 @@ from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_
 
 from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.config.llm import llm_settings
+from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.guidelines import (
     DEFAULT_TASK_DESCRIPTION,
@@ -331,12 +332,18 @@ def _generate_guideline_result(
         constrained_decoding_supported=constrained_decoding_supported,
     )
 
+    # Hoisted above the constrained/unconstrained branch so BOTH egress paths send
+    # the same redacted messages and the hook fires exactly once per generation.
+    llm_messages = dispatch_llm_pre_call(
+        [{"role": "user", "content": prompt}], purpose="consistency_guidelines", model=llm_settings.guidelines_model
+    )
+
     if constrained_decoding_supported:
         litellm.enable_json_schema_validation = True
         raw = (
             completion(
                 model=llm_settings.guidelines_model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
                 custom_llm_provider=llm_settings.custom_llm_provider,
             )
@@ -348,7 +355,7 @@ def _generate_guideline_result(
         raw = (
             completion(
                 model=llm_settings.guidelines_model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=llm_messages,
                 custom_llm_provider=llm_settings.custom_llm_provider,
             )
             .choices[0]

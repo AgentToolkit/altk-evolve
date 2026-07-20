@@ -10,6 +10,7 @@ import logging
 
 from litellm import completion
 
+from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.exceptions import EvolveException
 
 logger = logging.getLogger(__name__)
@@ -34,9 +35,12 @@ def get_response_sampling(
     resampling.py (handles both the .message.tool_calls and .message.content paths).
     """
     messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
+    # Dispatched once, OUTSIDE the retry loop below, so every retry re-sends the
+    # same redacted messages rather than re-leaking the raw trajectory.
+    llm_messages = dispatch_llm_pre_call(messages, purpose="consistency_resampling", model=model_id)
     kwargs: dict = dict(
         model=model_id,
-        messages=messages,
+        messages=llm_messages,
         temperature=temperature,
         max_tokens=max_token,
         n=samples,

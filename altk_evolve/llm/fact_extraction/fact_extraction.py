@@ -8,6 +8,7 @@ from litellm import completion
 from pydantic import BaseModel
 
 from altk_evolve.config.llm import llm_settings
+from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.llm.fact_extraction.categorization import CategoryManager
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.utils.utils import clean_llm_response
@@ -58,12 +59,15 @@ def extract_facts_from_messages(messages: list[dict], use_categorization: bool |
         use_categorization = True
 
     prompt = _build_prompt(messages, use_categorization=use_categorization)
+    llm_messages = dispatch_llm_pre_call(
+        [{"role": "user", "content": prompt}], purpose="fact_extraction", model=llm_settings.fact_extraction_model
+    )
     last_error = None
     for _ in range(3):
         try:
             response = completion(
                 model=llm_settings.fact_extraction_model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=llm_messages,
                 custom_llm_provider=llm_settings.custom_llm_provider,
             )
             content = response.choices[0].message.content or ""  # type: ignore[union-attr]

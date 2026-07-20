@@ -103,25 +103,40 @@ jobs:
     - name: Verify platform-integrations matches a fresh render of plugin-source
       run: uv run python plugin-source/build_plugins.py check
 
-  unit-tests:
+  # Supersedes main's `unit-tests` job (added in #289): this runs the full
+  # suite with all extras installed, a strict superset of `pytest tests/unit/`,
+  # and does so credential-free. Adding main's job back would only duplicate
+  # coverage with a credentialed checkout.
+  run-tests:
     runs-on: ubuntu-latest
+    # This job runs PR-authored test code (pull_request trigger). It must stay
+    # credential-free so a malicious PR cannot exfiltrate secrets or the
+    # checkout token. The cpex-guarded hook tests mock `completion` and need no
+    # real key; live/e2e tests are deselected by the pytest `addopts`
+    # (`-m 'not llm and not e2e'`) the composite action inherits. Credentialed
+    # coverage lives in release-github.yaml's own run-tests job.
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         python-version: ['3.12']
     steps:
-    - uses: actions/checkout@v5
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install uv
-      uses: astral-sh/setup-uv@v6
-      with:
-        enable-cache: true
-        python-version: ${{ matrix.python-version }}
-    - name: Run unit tests
-      run: uv run pytest tests/unit/ --ignore=tests/unit/test_milvus_backend.py -q
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      # Runs the suite with all extras installed (uv sync --all-extras in the
+      # composite action), so the cpex-guarded hook tests actually gate PRs.
+      - uses: ./.github/actions/run-tests
 
   ui-tests:
     runs-on: ubuntu-latest

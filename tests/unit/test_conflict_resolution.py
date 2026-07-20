@@ -290,7 +290,11 @@ def test_resolve_conflicts_event_types(
     assert result[0].old_entity == "Always use type hints in Python"
     assert "docstrings" in result[0].content
     assert result[1].event == "NONE"
-    # UPDATE must preserve the old entity's metadata (entity_1's metadata)
+    # UPDATE must preserve the old entity's metadata (entity_1's metadata), and
+    # now threads metadata through instead of wiping it to {} (which used to
+    # destroy plugin-written metadata on the base._update_entity replace).
+    # Here the LLM's rephrased content matches no incoming entity, so it falls
+    # back to preserving the STORED entity's metadata.
     assert result[0].metadata == {"source": "code_review", "priority": "high"}
 
     # Test DELETE operation
