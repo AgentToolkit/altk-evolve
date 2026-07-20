@@ -1,0 +1,35 @@
+# Example data-retention policy (issue #275). See docs/guides/retention.md.
+#
+# Dry run:  evolve retention run --policy examples/retention.example.yaml
+# Enforce:  evolve retention run --policy examples/retention.example.yaml --apply
+#
+# Rules are evaluated top-to-bottom; the first matching rule wins per entity,
+# so put narrow rules first. Each rule must set max_age_days and/or
+# max_unused_days.
+rules:
+  # Flag guidelines older than 90 days for review. Flagging is non-destructive:
+  # it writes retention_flagged_at / retention_reason / retention_rule into the
+  # entity's metadata and leaves the content alone.
+  - name: stale-guidelines
+    entity_type: guideline
+    max_age_days: 90
+    action: flag
+
+  # Delete guidelines not read in 180 days. This reads metadata.last_accessed,
+  # which AccessStampPlugin stamps on every public read (or which you stamp
+  # explicitly via EvolveClient.record_access). WITHOUT one of those enabled
+  # there is no recall signal and this rule silently degrades into an age rule
+  # — the dry-run report says so in its warnings.
+  - name: unused-guidelines
+    entity_type: guideline
+    max_unused_days: 180
+    action: delete
+
+  # Delete sessions (trajectories) older than a year, and cascade-delete the
+  # memories derived from them (linked by metadata.source_task_id == the
+  # session's trace_id).
+  - name: old-sessions
+    entity_type: trajectory
+    max_age_days: 365
+    action: delete
+    cascade_derived: true

@@ -101,7 +101,7 @@ Notes:
 | `AccessStampPlugin` | `memory_post_read` | fire_and_forget | Stamps `last_accessed` (ISO-8601 UTC) on read entities via the metadata-patch path |
 | `PIIFilterMemoryPlugin` | `memory_pre_write`, `llm_pre_call` | transform | Regex PII redaction (adapts the external `cpex-pii-filter` plugin onto Evolve's hook types); requires `pip install 'altk-evolve[pii]'` |
 
-Read-cost note for `AccessStampPlugin`: fire-and-forget tasks are awaited before the sync bridge returns (see [The CPEX engine](#the-cpex-engine)), so the stamp is **not** free for the reader — every public read pays one metadata write per returned entity before `search_entities` returns. Measured on the filesystem backend: ~3.7 ms vs ~0.1 ms for a 10-entity read; on milvus/postgres it adds N extra store round trips per read. Enable it only where access audit trails are worth that latency.
+Read-cost note for `AccessStampPlugin`: fire-and-forget tasks are awaited before the sync bridge returns (see [The CPEX engine](#the-cpex-engine)), so the stamp is **not** free for the reader — every public read pays one metadata write per returned entity before `search_entities` returns. Measured on the filesystem backend: ~3.7 ms vs ~0.1 ms for a 10-entity read; on milvus/postgres it adds N extra store round trips per read. Enable it only where access audit trails are worth that latency. Its stamp is what makes `max_unused_days` retention rules meaningful — `EvolveClient.record_access` is the explicit equivalent for callers not running hooks, and both share the same `build_access_stamps` core. See [Data Retention](retention.md).
 
 ## The CPEX engine
 
@@ -151,6 +151,6 @@ See [`examples/hooks_plugins.yaml`](https://github.com/AgentToolkit/altk-evolve/
 ## Deferred
 
 - READI / semantic recall filtering plugins (separate branch).
-- Lifecycle / retention policy hooks.
+- Lifecycle / retention policy *hooks*. Data retention itself now ships as a policy-driven sweep rather than a hook — see [Data Retention](retention.md), which consumes `AccessStampPlugin`'s `last_accessed` stamp and `MetadataNormalizerPlugin`'s `trace_id` normalization.
 - A first-class PII configuration surface on `EvolveConfig` (today PII is configured through the plugin's own `config` block).
 - Additional execution engines: only the CPEX integration exists today; the seam is engine-agnostic, but running plugins currently requires cpex.

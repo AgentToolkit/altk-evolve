@@ -62,6 +62,29 @@ evolve entities show my_namespace 12345
 evolve entities delete my_namespace 12345
 ```
 
+### Data Retention
+
+```bash
+# Dry run: report what the policy would flag or delete (nothing is mutated)
+evolve retention run --policy retention.yaml
+
+# Sweep a specific namespace
+evolve retention run --policy retention.yaml my_namespace
+
+# Enforce the policy
+evolve retention run --policy retention.yaml my_namespace --apply
+```
+
+**Options:**
+- `--policy, -p`: Path to a retention policy file (YAML or JSON). Required.
+- `--apply`: Actually flag/delete. Without it the run is a dry run.
+- Positional namespace argument defaults to the configured `namespace_id`.
+
+The report lists every action with its reason (`age`, `unused`, `cascade:<trace_id>`),
+the rule that decided it, and the evidence behind it. See the
+[Data Retention guide](../guides/retention.md) for the policy format and the
+`AccessStampPlugin` dependency of `max_unused_days` rules.
+
 ### Skill Management
 
 ```bash
