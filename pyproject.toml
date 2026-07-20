@@ -60,6 +60,29 @@ pii = [
     "cpex-pii-filter>=0.3,<0.4",
 ]
 
+# Semantic (NER-based) PII redaction plugin for the hook seam, backed by IBM
+# READI (``readi-privacy``, import name ``risk_assessment``). Separate from
+# [pii] because it drags in spaCy/transformers and downloads model weights —
+# regex redaction stays dependency-light for deployments that only need it.
+readi = [
+    "altk-evolve[hooks]",
+    # Upper-bound the minor, mirroring [hooks]/[pii]: READI's extractor and
+    # DetectionType APIs (READIAnalyzer, SpacyEntityExtractor, ...) are what
+    # this plugin's core is written against, and a 0.2 release could reshape
+    # them silently rather than surface as an error.
+    "readi-privacy>=0.1.6,<0.2",
+    # READI's default English pipeline is the curated-transformer spaCy model
+    # en_core_web_trf, whose factories live in this package; without it the
+    # model loads with a bare "can't find factory" error.
+    "spacy-curated-transformers>=0.2,<3",
+]
+
+# Benchmarking the redactors against external labeled corpora
+# (examples/pii_benchmark.py --dataset). Not needed at runtime.
+bench = [
+    "datasets>=2.14",
+]
+
 examples = [
     "altk-evolve[tracing]",
     "smolagents",
@@ -210,6 +233,9 @@ exclude = [
 module = [
     "cpex.*",
     "cpex_pii_filter.*",
+    # IBM READI ships no py.typed marker; Presidio is an optional transitive of it.
+    "risk_assessment.*",
+    "presidio_analyzer.*",
     "pymilvus.*",
     "smolagents.*",
     "milvus_lite.*",
