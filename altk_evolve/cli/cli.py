@@ -24,12 +24,14 @@ entities_app = typer.Typer(help="Entity management commands")
 sync_app = typer.Typer(help="Sync commands")
 skills_app = typer.Typer(help="Skill management commands")
 viz_app = typer.Typer(help="Visualization commands")
+retention_app = typer.Typer(help="Data retention commands")
 
 app.add_typer(namespaces_app, name="namespaces")
 app.add_typer(entities_app, name="entities")
 app.add_typer(sync_app, name="sync")
 app.add_typer(skills_app, name="skills")
 app.add_typer(viz_app, name="viz")
+app.add_typer(retention_app, name="retention")
 
 console = Console()
 
@@ -37,6 +39,73 @@ console = Console()
 def get_client() -> EvolveClient:
     """Get a EvolveClient instance."""
     return EvolveClient()
+
+
+# =============================================================================
+# Retention Commands
+# =============================================================================
+
+
+@retention_app.command("run")
+def run_retention(
+    policy_file: Annotated[str, typer.Option("--policy", "-p", help="Path to a retention policy file (YAML or JSON).")],
+    namespace: Annotated[Optional[str], typer.Argument(help="Namespace to sweep. Defaults to the configured namespace.")] = None,
+    apply: Annotated[bool, typer.Option("--apply", help="Actually flag/delete. Without this flag the run is a dry run.")] = False,
+):
+    """Apply a data-retention policy to a namespace.
+
+    Dry run by default - pass --apply to mutate. Reports what was (or would be)
+    flagged or deleted, why, and which rule decided it - including memories
+    cascade-deleted via session provenance.
+    """
+    from altk_evolve.retention import RetentionEngine, RetentionPolicy
+
+    client = get_client()
+    namespace_id = namespace or client.config.namespace_id
+
+    try:
+        policy = RetentionPolicy.from_file(policy_file)
+    except FileNotFoundError:
+        console.print(f"[red]Policy file not found:[/red] {policy_file}")
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]Failed to load policy:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if not policy.rules:
+        console.print(f"[yellow]Policy {policy_file} has no rules; nothing to do.[/yellow]")
+        return
+
+    report = RetentionEngine(client).apply(namespace_id, policy, dry_run=not apply)
+
+    mode = "[yellow]DRY RUN[/yellow]" if report.dry_run else "[green]APPLIED[/green]"
+    console.print(f"Retention {mode} on namespace [cyan]{namespace_id}[/cyan] - {report.summary()}")
+
+    if report.flagged or report.deleted:
+        table = Table(title="Retention actions")
+        table.add_column("Action", style="bold")
+        table.add_column("Entity ID", style="cyan")
+        table.add_column("Type")
+        table.add_column("Reason", style="dim")
+        table.add_column("Rule", style="dim")
+        table.add_column("Why", style="dim")
+        for item in [*report.deleted, *report.flagged]:
+            verb = "[red]delete[/red]" if item.action == "delete" else "[yellow]flag[/yellow]"
+            table.add_row(verb, item.entity_id, item.entity_type, item.reason, item.rule, item.detail)
+        console.print(table)
+    else:
+        console.print("[dim]No entities matched any rule.[/dim]")
+
+    for warning in report.warnings:
+        console.print(f"[yellow]warning:[/yellow] {warning}")
+    for err in report.errors:
+        console.print(f"[red]error:[/red] {err}")
+
+    if report.dry_run and (report.flagged or report.deleted):
+        console.print("[dim]Dry run - nothing was changed. Re-run with --apply to enforce.[/dim]")
+
+    if report.errors:
+        raise typer.Exit(1)
 
 
 # =============================================================================
