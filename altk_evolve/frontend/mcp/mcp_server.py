@@ -305,13 +305,72 @@ def get_guidelines(
     Provide a task description and receive applicable best practices and guidelines.
     This tool is maintained for backward compatibility. Use 'get_entities' for more generic queries.
 
+    Honors ``EvolveConfig.injection_mode``: 'static' (default) returns the whole guideline set,
+    while 'retrieval' routes through the dosage-aware core + top-k path (see get_relevant_guidelines).
+
     Args:
         task: A description of the task you want guidelines for
         user_id: Optional caller user ID. Logged for attribution; does not filter results.
         namespace_id: Optional namespace override. Falls back to the configured default.
         session_id: Optional session/thread ID. Logged for attribution; does not filter results.
     """
+    from altk_evolve.config.evolve import evolve_config
+
+    if evolve_config.injection_mode == "retrieval":
+        return get_relevant_guidelines(task, user_id=user_id, namespace_id=namespace_id, session_id=session_id)
     return get_entities_logic(task, "guideline", user_id=user_id, namespace_id=namespace_id, session_id=session_id)
+
+
+@mcp.tool()
+def get_relevant_guidelines(
+    task: str,
+    top_k: int | None = None,
+    core_support: int | None = None,
+    namespace_id: str | None = None,
+    user_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
+    """
+    Get a dosage-aware set of guidelines for a task: an always-on core plus the top-k
+    guidelines most relevant to this task (retrieved by similarity to the tasks they were
+    learned from).
+
+    Prefer this over 'get_guidelines'/'get_entities' for weaker models, where injecting the
+    whole playbook can hurt and a small, targeted set helps.
+
+    Args:
+        task: A description of the task you want guidelines for.
+        top_k: Max task-specific guidelines to add beyond the core. Defaults to config.
+        core_support: Support threshold for the always-on core. Defaults to config.
+        namespace_id: Optional namespace override. Falls back to the configured default.
+        user_id: Optional caller user ID. Logged for attribution; does not filter results.
+        session_id: Optional session/thread ID. Logged for attribution; does not filter results.
+    """
+    from altk_evolve.llm.guidelines.retrieval import format_selection
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    # Log only non-sensitive metadata at INFO; task is arbitrary user text (see save_trajectory).
+    logger.info(
+        "get_relevant_guidelines (namespace=%s, top_k=%s, core_support=%s, task_len=%s, user_present=%s, session_present=%s)",
+        resolved_ns,
+        top_k,
+        core_support,
+        len(task),
+        user_id is not None,
+        session_id is not None,
+    )
+    logger.debug("get_relevant_guidelines task=%s", task)
+    client = get_client()
+    try:
+        selection = client.select_guidelines(resolved_ns, task, top_k=top_k, core_support=core_support)
+    except NamespaceNotFoundException:
+        _evict_namespace(resolved_ns)
+        resolved_ns = _resolve_namespace(namespace_id)
+        selection = client.select_guidelines(resolved_ns, task, top_k=top_k, core_support=core_support)
+    except ValueError as e:
+        logger.error("Retrieval unavailable for get_relevant_guidelines: %s", e)
+        return f"Guideline retrieval unavailable: {e}"
+    return format_selection(selection)
 
 
 def _empty_store_user_facts_response(user_id: str) -> str:
@@ -465,6 +524,7 @@ def save_trajectory(
     user_id: str | None = None,
     namespace_id: str | None = None,
     session_id: str | None = None,
+    tools: str | None = None,
 ) -> list[RecordedEntity]:
     """
     Save the full agent trajectory to the Entity DB and generate guidelines
@@ -476,7 +536,13 @@ def save_trajectory(
         user_id: Optional caller user ID. Attached as metadata to trajectory and guideline entities.
         namespace_id: Optional namespace override. Falls back to the configured default.
         session_id: Optional session/thread ID. Attached as metadata to trajectory and guideline entities.
+        tools: Optional JSON-encoded OpenAI tools schema. When provided, passed to the consistency
+            pipeline so tool-calling steps are named and resampled correctly (OpenAIAgent vs AnyAgent).
     """
+    from altk_evolve.config.guidelines import guidelines_settings
+
+    guidelines_mode = guidelines_settings.guidelines_mode
+
     resolved_ns = _resolve_namespace(namespace_id)
     # Prefer explicit user_id; fall back to owner_id for backward compatibility
     effective_user_id = user_id or owner_id
@@ -512,7 +578,6 @@ def save_trajectory(
         entities=entities,
         enable_conflict_resolution=False,
     )
-    results = generate_guidelines(messages)
 
     guideline_metadata_base: dict = {
         "source_task_id": task_id,
@@ -524,22 +589,70 @@ def save_trajectory(
     if session_id:
         guideline_metadata_base["session_id"] = session_id
 
-    guideline_entities = [
-        Entity(
-            type="guideline",
-            content=guideline.content,
-            metadata={
-                **guideline_metadata_base,
-                "task_description": result.task_description,
-                "category": guideline.category,
-                "rationale": guideline.rationale,
-                "trigger": guideline.trigger,
-                "implementation_steps": guideline.implementation_steps,
-            },
-        )
-        for result in results
-        for guideline in result.guidelines
-    ]
+    # Build entity lists per pipeline so each carries its own generation_method tag,
+    # then merge before the single update_entities call.
+    guideline_entities = []
+
+    if guidelines_mode in ("regular", "both"):
+        try:
+            regular_results = generate_guidelines(messages)
+            guideline_entities += [
+                Entity(
+                    type="guideline",
+                    content=guideline.content,
+                    metadata={
+                        **guideline_metadata_base,
+                        "task_description": result.task_description,
+                        "category": guideline.category,
+                        "rationale": guideline.rationale,
+                        "trigger": guideline.trigger,
+                        "implementation_steps": guideline.implementation_steps,
+                        "generation_method": "regular",
+                        "support": 1,
+                    },
+                )
+                for result in regular_results
+                for guideline in result.guidelines
+            ]
+        except Exception:
+            logger.error(
+                f"Regular guideline generation failed for task {task_id}, skipping",
+                exc_info=True,
+            )
+
+    if guidelines_mode in ("consistency", "both"):
+        try:
+            from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+            trajectory = {
+                "messages": messages,
+                "trace_id": task_id,
+                "tools": json.loads(tools) if tools else None,
+            }
+            consistency_results = generate_consistency_guidelines(trajectory)
+            guideline_entities += [
+                Entity(
+                    type="guideline",
+                    content=guideline.content,
+                    metadata={
+                        **guideline_metadata_base,
+                        "task_description": result.task_description,
+                        "category": guideline.category,
+                        "rationale": guideline.rationale,
+                        "trigger": guideline.trigger,
+                        "implementation_steps": guideline.implementation_steps,
+                        "generation_method": "consistency",
+                        "support": 1,
+                    },
+                )
+                for result in consistency_results
+                for guideline in result.guidelines
+            ]
+        except Exception:
+            logger.error(
+                f"Consistency guideline generation failed for task {task_id}, skipping",
+                exc_info=True,
+            )
     if guideline_entities:
         get_client().update_entities(
             namespace_id=resolved_ns,

@@ -407,6 +407,41 @@ def consolidate_entities(
         raise typer.Exit(1)
 
 
+@entities_app.command("select")
+def select_entities(
+    namespace: Annotated[str, typer.Argument(help="Namespace to select guidelines from")],
+    task: Annotated[str, typer.Option("--task", "-q", help="Task instruction to retrieve guidelines for")],
+    top_k: Annotated[Optional[int], typer.Option("--top-k", "-k", help="Max task-specific guidelines beyond the core")] = None,
+    core_support: Annotated[Optional[int], typer.Option("--core-support", "-c", help="Support threshold for the always-on core")] = None,
+):
+    """Select an always-on core plus the top-k task-relevant guidelines (dosage-aware retrieval)."""
+    client = get_client()
+
+    try:
+        selection = client.select_guidelines(namespace, task, top_k=top_k, core_support=core_support)
+    except NamespaceNotFoundException:
+        console.print(f"[red]Namespace '{namespace}' not found.[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]Retrieval unavailable:[/red] {e}")
+        console.print("[yellow]Configure the embedding model/backend before selecting guidelines.[/yellow]")
+        raise typer.Exit(1)
+
+    if not selection.all:
+        console.print("[yellow]No guidelines found for this task.[/yellow]")
+        return
+
+    console.print(f"[bold]Core ({len(selection.core)}):[/bold]")
+    for entity in selection.core:
+        console.print(f"  • {entity.content}")
+    console.print(f"\n[bold]Retrieved ({len(selection.retrieved)}):[/bold]")
+    for entity in selection.retrieved:
+        console.print(f"  • {entity.content}")
+    console.print(
+        f"\n[dim]Total: {len(selection.all)} guidelines ({len(selection.core)} core + {len(selection.retrieved)} retrieved)[/dim]"
+    )
+
+
 # =============================================================================
 # Sync Commands
 # =============================================================================
@@ -419,9 +454,20 @@ def sync_phoenix(
     project: Annotated[Optional[str], typer.Option("--project", "-p", help="Phoenix project name")] = None,
     limit: Annotated[int, typer.Option(help="Maximum number of spans to fetch")] = 100,
     include_errors: Annotated[bool, typer.Option("--include-errors", help="Include failed/error spans")] = False,
+    guidelines_mode: Annotated[
+        Optional[str],
+        typer.Option("--guidelines-mode", help="Guideline generation mode: regular, consistency, or both"),
+    ] = None,
 ):
     """Sync trajectories from Arize Phoenix and generate guidelines."""
+    from altk_evolve.config.guidelines import guidelines_settings
     from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    if guidelines_mode is not None:
+        if guidelines_mode not in ("regular", "consistency", "both"):
+            console.print(f"[red]Invalid --guidelines-mode '{guidelines_mode}'. Choose: regular, consistency, both.[/red]")
+            raise typer.Exit(1)
+        guidelines_settings.guidelines_mode = guidelines_mode
 
     syncer = PhoenixSync(
         phoenix_url=phoenix_url,
@@ -434,6 +480,7 @@ def sync_phoenix(
     console.print(f"  Project: {syncer.project}")
     console.print(f"  Namespace: {syncer.namespace_id}")
     console.print(f"  Limit: {limit}")
+    console.print(f"  Guidelines mode: {guidelines_settings.guidelines_mode}")
     console.print()
 
     try:

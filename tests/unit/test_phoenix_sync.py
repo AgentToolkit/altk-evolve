@@ -1114,3 +1114,162 @@ class TestBuildTrajectoryForTrace:
         }
 
         assert phoenix_sync._build_trajectory_for_trace("trace_1", [tool_span]) is None
+
+
+# =============================================================================
+# _process_trajectory guidelines_mode Tests
+# =============================================================================
+
+SAMPLE_TRAJECTORY = {
+    "trace_id": "trace_abc12345",
+    "span_id": "span_abc12345",
+    "model": "gpt-4o",
+    "timestamp": "2024-01-15T10:00:00Z",
+    "messages": [
+        {"role": "user", "content": "What is 2+3?"},
+        {"role": "assistant", "content": "The answer is 5."},
+    ],
+    "tools": None,
+    "usage": None,
+}
+
+
+def _make_guideline_result(content="Always test your code."):
+    from altk_evolve.schema.guidelines import Guideline
+
+    guideline = Guideline(
+        content=content,
+        category="strategy",
+        rationale="Catches bugs early",
+        trigger="writing code",
+        implementation_steps=["Write a test first"],
+    )
+    return GuidelineGenerationResult(guidelines=[guideline], task_description="Add 2+3")
+
+
+@pytest.mark.unit
+class TestProcessTrajectoryGuidelinesMode:
+    """Tests for the EVOLVE_GUIDELINES_MODE dispatch in _process_trajectory."""
+
+    def _make_sync(self):
+        with patch("altk_evolve.sync.phoenix_sync.EvolveClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            sync = PhoenixSync(
+                phoenix_url="http://test-phoenix:6006",
+                namespace_id="test_namespace",
+                project="test_project",
+            )
+            sync.client = mock_client
+            return sync, mock_client
+
+    def test_regular_mode_calls_only_generate_guidelines(self):
+        sync, mock_client = self._make_sync()
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "regular"),
+        ):
+            mock_regular.return_value = [_make_guideline_result()]
+
+            sync._process_trajectory(SAMPLE_TRAJECTORY)
+
+            mock_regular.assert_called_once()
+            mock_consistency.assert_not_called()
+
+    def test_regular_mode_tags_entities_with_generation_method(self):
+        sync, mock_client = self._make_sync()
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "regular"),
+        ):
+            mock_regular.return_value = [_make_guideline_result()]
+
+            sync._process_trajectory(SAMPLE_TRAJECTORY)
+
+            guideline_call = mock_client.update_entities.call_args_list[-1][1]
+            entities = guideline_call["entities"]
+            assert len(entities) == 1
+            assert entities[0].metadata["generation_method"] == "regular"
+            assert entities[0].metadata["creation_mode"] == "auto-phoenix"
+
+    def test_consistency_mode_calls_only_generate_consistency_guidelines(self):
+        sync, mock_client = self._make_sync()
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "consistency"),
+        ):
+            mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
+
+            sync._process_trajectory(SAMPLE_TRAJECTORY)
+
+            mock_regular.assert_not_called()
+            mock_consistency.assert_called_once()
+
+    def test_consistency_mode_tags_entities_with_generation_method(self):
+        sync, mock_client = self._make_sync()
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "consistency"),
+        ):
+            mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
+
+            sync._process_trajectory(SAMPLE_TRAJECTORY)
+
+            guideline_call = mock_client.update_entities.call_args_list[-1][1]
+            entities = guideline_call["entities"]
+            assert len(entities) == 1
+            assert entities[0].metadata["generation_method"] == "consistency"
+            assert entities[0].metadata["creation_mode"] == "auto-phoenix"
+
+    def test_both_mode_calls_both_pipelines(self):
+        sync, mock_client = self._make_sync()
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "both"),
+        ):
+            mock_regular.return_value = [_make_guideline_result("Write tests.")]
+            mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
+
+            sync._process_trajectory(SAMPLE_TRAJECTORY)
+
+            mock_regular.assert_called_once()
+            mock_consistency.assert_called_once()
+
+    def test_both_mode_produces_entities_from_both_pipelines(self):
+        sync, mock_client = self._make_sync()
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "both"),
+        ):
+            mock_regular.return_value = [_make_guideline_result("Write tests.")]
+            mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
+
+            count = sync._process_trajectory(SAMPLE_TRAJECTORY)
+
+            assert count == 2
+            guideline_call = mock_client.update_entities.call_args_list[-1][1]
+            entities = guideline_call["entities"]
+            assert len(entities) == 2
+            methods = {e.metadata["generation_method"] for e in entities}
+            assert methods == {"regular", "consistency"}
+
+    def test_both_mode_merges_into_single_update_entities_call(self):
+        sync, mock_client = self._make_sync()
+        with (
+            patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+            patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "both"),
+        ):
+            mock_regular.return_value = [_make_guideline_result("Write tests.")]
+            mock_consistency.return_value = [_make_guideline_result("Use deterministic prompts.")]
+
+            sync._process_trajectory(SAMPLE_TRAJECTORY)
+
+            # update_entities is called twice total: once for trajectory storage, once for all guidelines
+            assert mock_client.update_entities.call_count == 2
+            guideline_call = mock_client.update_entities.call_args_list[-1][1]
+            assert guideline_call["enable_conflict_resolution"] is True
