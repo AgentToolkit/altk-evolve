@@ -4,12 +4,7 @@ import re
 import os
 import datetime
 import pytest
-import urllib.request
-import urllib.error
 
-# Configuration
-# Use a session-scope timestamp or generate per test?
-# Per-test ensures no collisions even if run in parallel (though these should satisfy sequential)
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 AGENTS_TO_TEST = [
@@ -18,78 +13,6 @@ AGENTS_TO_TEST = [
     {"name": "manual_phoenix", "script": "examples/low_code/manual_phoenix_demo.py", "project_prefix": "verify-manual"},
     {"name": "simple_openai", "script": "examples/low_code/simple_openai.py", "project_prefix": "verify-simple-openai"},
 ]
-
-
-@pytest.fixture(scope="session", autouse=True)
-def phoenix_server():
-    """Ensure a Phoenix server is running before executing E2E tests, and shut it down afterward."""
-    # 1. Check if it's already running locally
-    otlp_ready = False
-    for _ in range(2):
-        try:
-            req = urllib.request.Request("http://localhost:6006/v1/traces", method="POST")
-            urllib.request.urlopen(req, timeout=1)
-            otlp_ready = True
-            break
-        except urllib.error.HTTPError:
-            # A valid HTTPError (405, 400) means the receiver is bound and responding
-            otlp_ready = True
-            break
-        except (urllib.error.URLError, ConnectionError):
-            time.sleep(1)
-
-    if otlp_ready:
-        print("\nPhoenix is already running on port 6006.")
-        yield "http://localhost:6006"
-        return
-
-    import sys
-
-    print("\nStarting local Phoenix server for E2E tests...")
-
-    env = os.environ.copy()
-    env["PHOENIX_PORT"] = "6006"
-
-    # Start it using the current python executable to avoid 'uv run' overhead
-    # We use run_in_thread=True and a sleepy while loop because run_in_thread=False
-    # can crash the fastAPI uvicorn startup in some MacOS environments.
-    script = "import phoenix as px; import time; px.launch_app(run_in_thread=True); import sys; sys.stdout.flush(); time.sleep(86400)"
-
-    proc = subprocess.Popen([sys.executable, "-c", script], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-
-    # Poll until the server is responsive
-    max_retries = 30
-    for _ in range(max_retries):
-        try:
-            # specifically poll the OTLP endpoint
-            req = urllib.request.Request("http://localhost:6006/v1/traces", method="POST")
-            urllib.request.urlopen(req, timeout=1)
-            print("Phoenix server is up and running.")
-            break
-        except urllib.error.HTTPError:
-            # A valid HTTPError (405, 400) means the endpoint is bound and responding
-            print("Phoenix server is up and running.")
-            break
-        except Exception:
-            # Also check if process crashed early
-            if proc.poll() is not None:
-                stderr_output = proc.stderr.read() if proc.stderr else "Unknown error"
-                pytest.fail(f"Phoenix server process crashed unexpectedly: {stderr_output}")
-            time.sleep(1)
-    else:
-        proc.terminate()
-        stderr_output = proc.stderr.read() if proc.stderr else "Unknown error"
-        pytest.fail(f"Failed to start local Phoenix server within 30 seconds. Stderr: {stderr_output}")
-
-    yield "http://localhost:6006"
-
-    # Cleanup: shut down Phoenix when tests are done
-    print("\nShutting down local Phoenix server...")
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
 
 
 @pytest.mark.e2e

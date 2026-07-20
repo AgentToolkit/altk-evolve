@@ -3,6 +3,7 @@
 .idea
 *.pyc
 *.egg-info
+consistency_debug/
 *.db*
 .DS_Store
 __pycache__

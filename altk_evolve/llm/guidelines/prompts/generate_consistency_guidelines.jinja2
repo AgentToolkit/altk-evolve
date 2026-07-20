@@ -1,0 +1,38 @@
+You are analyzing an AI agent's execution trajectory to generate actionable guidelines that improve the agent's consistency and performance on similar tasks in the future. 
+
+# Uncertainty Scores
+The agent trajectory below includes uncertainty scores for steps where the agent was uncertain.  Uncertainty scores are for your use only and they range from 0 (no uncertainty and high consistency across multiple runs) to 1 (highest uncertainty and no consistency across multiple runs). Steps with HIGH uncertainty scores indicate areas where the agent behavior was uncertain and inconsistent across multiple runs.
+
+# Your task
+First, carefully analyze the trajectory step-by-step. Focus especially on steps with high uncertainty. Take note of both successful strategies used as well as what went wrong and how flawed or incomplete reasoning might have contributed to these failures.
+Then, based on your analysis, generate actionable and relevant guidelines for the agent to improve performance and consistent behavior in the future by either reinforcing successful behavior or preventing observed mistakes.  
+
+# Agent Trajectory  (Steps marked with ⚠️ have HIGH UNCERTAINTY scores)
+Task: {{task_instruction}}
+{{trajectory_summary}}
+
+# Important Instructions:
+1. Only generate guidelines if they are truly needed, relevant, and generalizable to similar tasks.
+2. Don't refer to uncertainty scores in the guidelines as the agent does not have access to the scores. 
+3. **CRITICAL**: Avoid overfitting guidelines to specific data values: always ask yourselve whether a guideline would work with different data values
+4. Look for patterns in how the agent handled API discovery, API parameter usage, authentication, pagination, problem structure, error handling
+5. Don't generate guidelines if success seems coincidental rather than due to sound strategy, the approach would fail with slightly different data, or you cannot explain WHY the approach would work in general cases. 
+
+{% if not constrained_decoding_supported %}
+**Output Format (JSON):**
+```json
+{
+    "guidelines": [
+        {
+            "content": "Clear, actionable guidelines for consistency",
+            "rationale": "Why this guideline improves consistency",
+            "category": "strategy|recovery|optimization",
+            "trigger": "When to apply this guideline",
+            "implementation_steps": ["step 1", "step 2"]
+        }
+    ]
+}
+```
+
+Generate guidelines now. Return ONLY the JSON, no other text.
+{% endif %}

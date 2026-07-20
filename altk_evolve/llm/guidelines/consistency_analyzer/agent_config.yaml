@@ -1,0 +1,24 @@
+# Default consistency-analyzer config for OpenAI Agent trajectories.
+# Step names produced by transform_trajectory_to_IR() are "OpenAIAgent_content"
+# (assistant text turns) and "OpenAIAgent_tool_calls" (assistant tool-call turns).
+# Users can override by passing config_path= to generate_consistency_guidelines().
+name: agent consistency configuration 
+aggregation: mean
+max_samples: 5
+max_steps: 15
+agents:
+  - name: OpenAIAgent_content
+    response_type: text
+    metric: sbert_small #jaccard
+  - name: OpenAIAgent_tool_calls
+    response_type: tool_calls
+    fields:
+      - name: function_name
+        metric: jaccard 
+      - name: function_arguments
+        metric: jaccard 
+  - name: AnyAgent_content
+    response_type: text
+    metric: sbert_small #jaccard
+ #   response_type: tool_calls
+ #   metric: jaccard

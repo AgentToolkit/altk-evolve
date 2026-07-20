@@ -31,9 +31,14 @@ def resolve_conflicts(
             response = clean_llm_response(response)
             parsed = json.loads(response)
             entity_updates = [EntityUpdate.model_validate(event) for event in parsed["entities"]]
+            old_entities_by_id = {entity.id: entity for entity in old_entities}
             for update in entity_updates:
                 if update.event == "ADD":
                     update.metadata = new_entities_by_id[update.id].metadata
+                elif update.event == "UPDATE":
+                    # Preserve the existing entity's metadata so an UPDATE never wipes
+                    # provenance fields (e.g. generation_method) that were stored on ADD.
+                    update.metadata = dict(old_entities_by_id[update.id].metadata) if update.id in old_entities_by_id else {}
 
             return entity_updates
         except Exception as e:

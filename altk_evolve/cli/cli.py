@@ -454,9 +454,20 @@ def sync_phoenix(
     project: Annotated[Optional[str], typer.Option("--project", "-p", help="Phoenix project name")] = None,
     limit: Annotated[int, typer.Option(help="Maximum number of spans to fetch")] = 100,
     include_errors: Annotated[bool, typer.Option("--include-errors", help="Include failed/error spans")] = False,
+    guidelines_mode: Annotated[
+        Optional[str],
+        typer.Option("--guidelines-mode", help="Guideline generation mode: regular, consistency, or both"),
+    ] = None,
 ):
     """Sync trajectories from Arize Phoenix and generate guidelines."""
+    from altk_evolve.config.guidelines import guidelines_settings
     from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    if guidelines_mode is not None:
+        if guidelines_mode not in ("regular", "consistency", "both"):
+            console.print(f"[red]Invalid --guidelines-mode '{guidelines_mode}'. Choose: regular, consistency, both.[/red]")
+            raise typer.Exit(1)
+        guidelines_settings.guidelines_mode = guidelines_mode
 
     syncer = PhoenixSync(
         phoenix_url=phoenix_url,
@@ -469,6 +480,7 @@ def sync_phoenix(
     console.print(f"  Project: {syncer.project}")
     console.print(f"  Namespace: {syncer.namespace_id}")
     console.print(f"  Limit: {limit}")
+    console.print(f"  Guidelines mode: {guidelines_settings.guidelines_mode}")
     console.print()
 
     try:
