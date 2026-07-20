@@ -1037,6 +1037,63 @@ def test_llm_pre_call_fires_at_conflict_resolution_call_site():
     assert sent[0]["content"].startswith("[tagged:conflict_resolution] ")
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize("constrained_decoding_supported", [False, True])
+def test_llm_pre_call_fires_at_consistency_guidelines_call_site(constrained_decoding_supported):
+    """#289's consistency generator egresses the trajectory; both the constrained
+    and unconstrained decoding branches must send dispatched messages."""
+    from altk_evolve.llm.guidelines import consistency_guidelines
+
+    enable_hooks(MessageTagger())
+    response = Mock()
+    response.choices = [Mock(message=Mock(content=json.dumps({"guidelines": []})))]
+    with patch.object(consistency_guidelines, "completion", return_value=response) as mock_completion:
+        consistency_guidelines._generate_guideline_result(
+            messages=[{"role": "user", "content": "do"}, {"role": "assistant", "content": "done"}],
+            consistency_data={"step_uncertainties": {0: 1.0}},
+            task_description="t",
+            step_range=None,
+            constrained_decoding_supported=constrained_decoding_supported,
+            debug_suffix="",
+        )
+
+    sent = mock_completion.call_args.kwargs["messages"]
+    assert sent[0]["content"].startswith("[tagged:consistency_guidelines] ")
+
+
+@pytest.mark.unit
+def test_llm_pre_call_fires_at_consistency_resampling_call_site():
+    """#289's resampler re-sends the raw trajectory to the model n times."""
+    from altk_evolve.llm.guidelines.consistency_analyzer import inference_utils
+
+    enable_hooks(MessageTagger())
+    response = Mock()
+    response.choices = [Mock(), Mock()]
+    with patch.object(inference_utils, "completion", return_value=response) as mock_completion:
+        inference_utils.get_response_sampling(prompt="secret trajectory", model_id="m", temperature=1.0, samples=2)
+
+    sent = mock_completion.call_args.kwargs["messages"]
+    assert sent[0]["content"].startswith("[tagged:consistency_resampling] ")
+
+
+@pytest.mark.unit
+def test_llm_pre_call_hoisted_outside_consistency_resampling_retries():
+    """Dispatch must happen once, outside the retry loop, so retries reuse the
+    redacted messages instead of re-leaking (and re-tagging) the raw prompt."""
+    from altk_evolve.llm.guidelines.consistency_analyzer import inference_utils
+
+    enable_hooks(MessageTagger())
+    ok = Mock()
+    ok.choices = [Mock(), Mock()]
+    with patch.object(inference_utils, "completion", side_effect=[RuntimeError("boom"), ok]) as mock_completion:
+        inference_utils.get_response_sampling(prompt="secret trajectory", model_id="m", temperature=1.0, samples=2)
+
+    assert mock_completion.call_count == 2
+    for call in mock_completion.call_args_list:
+        sent = call.kwargs["messages"]
+        assert sent[0]["content"] == "[tagged:consistency_resampling] secret trajectory"
+
+
 # ── configuration paths ──────────────────────────────────────────────
 
 

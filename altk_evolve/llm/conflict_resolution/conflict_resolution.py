@@ -11,6 +11,13 @@ from litellm import completion
 from pathlib import Path
 
 
+# Metadata keys that record how the STORED entity was originally created and so
+# must survive an UPDATE unchanged, even when the incoming entity carries a
+# different value. Per-write stamps (trace_id, last_accessed) are deliberately
+# NOT listed: those should refresh to the incoming write's normalized values.
+_STICKY_STORED_METADATA_KEYS = ("generation_method",)
+
+
 def resolve_conflicts(
     old_entities: list[RecordedEntity], new_entities: list[RecordedEntity], custom_update_entities_prompt: str | None = None
 ) -> list[EntityUpdate]:
@@ -61,7 +68,14 @@ def resolve_conflicts(
                     stored_metadata = (stored.metadata or {}) if stored is not None else {}
                     source = new_entities_by_content.get(serialize_content(update.content))
                     incoming_metadata = (source.metadata or {}) if source is not None else {}
-                    update.metadata = {**stored_metadata, **incoming_metadata}
+                    merged = {**stored_metadata, **incoming_metadata}
+                    # Sticky ADD-time provenance (#289): generation_method records HOW the
+                    # stored entity was originally produced, so unlike per-write stamps
+                    # (trace_id) it must not be overwritten by the incoming entity.
+                    for sticky_key in _STICKY_STORED_METADATA_KEYS:
+                        if sticky_key in stored_metadata:
+                            merged[sticky_key] = stored_metadata[sticky_key]
+                    update.metadata = merged
 
             return entity_updates
         except Exception as e:

@@ -10,6 +10,7 @@ This module provides functionality to:
 
 import json
 import logging
+import os
 import urllib.request
 import warnings
 from dataclasses import dataclass
@@ -784,12 +785,16 @@ class PhoenixSync:
     def _process_trajectory(self, trajectory: dict) -> int:
         """Process a single trajectory: store it and generate guidelines.
 
+        The trajectory entity is written only after guideline generation succeeds,
+        so a generation failure leaves the trace unprocessed and eligible for retry.
+
         Returns the number of guidelines generated.
         """
-        # Store trajectory as a single entity with all messages
         messages = trajectory.get("messages", [])
-        if messages:
-            entity = Entity(
+
+        # Build trajectory entity but defer the write until after generation succeeds.
+        trajectory_entity = (
+            Entity(
                 type="trajectory",
                 content=json.dumps(messages),
                 metadata={
@@ -801,35 +806,95 @@ class PhoenixSync:
                     "usage": trajectory.get("usage"),
                 },
             )
+            if messages
+            else None
+        )
 
+        # Generate guidelines from the trajectory (returns one result per subtask).
+        # Build entity lists per pipeline so each carries its own generation_method tag,
+        # then merge before the single update_entities call.
+        guideline_entities = []
+        base_metadata = {
+            "source_task_id": trajectory["trace_id"],
+            "source_span_id": trajectory["span_id"],
+            "creation_mode": "auto-phoenix",
+            "support": 1,
+        }
+
+        from altk_evolve.config.guidelines import guidelines_settings
+
+        guidelines_mode = guidelines_settings.guidelines_mode
+
+        if guidelines_mode in ("regular", "both"):
+            regular_results = generate_guidelines(trajectory["messages"])
+            _debug_dir = guidelines_settings.debug_dir
+            if _debug_dir:
+                try:
+                    os.makedirs(_debug_dir, exist_ok=True)
+                    _trace_prefix = str(trajectory["trace_id"])[:8]
+                    _guidelines_data = [
+                        {"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]}
+                        for r in regular_results
+                    ]
+                    with open(_debug_dir / f"guidelines_{_trace_prefix}_regular.json", "w") as _f:
+                        json.dump(_guidelines_data, _f, indent=2)
+                except Exception as e:
+                    logger.warning(f"Debug write failed for trace {trajectory['trace_id']}: {e} — production path unaffected")
+            guideline_entities += [
+                Entity(
+                    type="guideline",
+                    content=guideline.content,
+                    metadata={
+                        **base_metadata,
+                        "task_description": result.task_description,
+                        "category": guideline.category,
+                        "rationale": guideline.rationale,
+                        "trigger": guideline.trigger,
+                        "implementation_steps": guideline.implementation_steps,
+                        "generation_method": "regular",
+                    },
+                )
+                for result in regular_results
+                for guideline in result.guidelines
+            ]
+
+        if guidelines_mode in ("consistency", "both"):
+            from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+            try:
+                consistency_results = generate_consistency_guidelines(trajectory)
+                guideline_entities += [
+                    Entity(
+                        type="guideline",
+                        content=guideline.content,
+                        metadata={
+                            **base_metadata,
+                            "task_description": result.task_description,
+                            "category": guideline.category,
+                            "rationale": guideline.rationale,
+                            "trigger": guideline.trigger,
+                            "implementation_steps": guideline.implementation_steps,
+                            "generation_method": "consistency",
+                        },
+                    )
+                    for result in consistency_results
+                    for guideline in result.guidelines
+                ]
+            except Exception as e:
+                if guidelines_mode == "consistency":
+                    raise
+                logger.warning(
+                    f"Consistency guideline generation failed for trace {trajectory['trace_id']}, "
+                    f"skipping consistency results (regular guidelines unaffected): {e}"
+                )
+        # Write trajectory entity only after generation succeeded so a generation
+        # failure leaves the trace unprocessed and eligible for retry on the next run.
+        if trajectory_entity:
             self.client.update_entities(
                 namespace_id=self.namespace_id,
-                entities=[entity],
+                entities=[trajectory_entity],
                 enable_conflict_resolution=False,
             )
-
-        # Generate guidelines from the trajectory (returns one result per subtask)
-        results = generate_guidelines(trajectory["messages"])
-
-        guideline_entities = [
-            Entity(
-                type="guideline",
-                content=guideline.content,
-                metadata={
-                    "category": guideline.category,
-                    "rationale": guideline.rationale,
-                    "trigger": guideline.trigger,
-                    "implementation_steps": guideline.implementation_steps,
-                    "support": 1,
-                    "source_task_id": trajectory["trace_id"],
-                    "source_span_id": trajectory["span_id"],
-                    "task_description": result.task_description,
-                    "creation_mode": "auto-phoenix",
-                },
-            )
-            for result in results
-            for guideline in result.guidelines
-        ]
         if guideline_entities:
             self.client.update_entities(
                 namespace_id=self.namespace_id,
@@ -837,7 +902,7 @@ class PhoenixSync:
                 enable_conflict_resolution=True,
             )
 
-        return sum(len(r.guidelines) for r in results)
+        return len(guideline_entities)
 
     def sync(
         self,

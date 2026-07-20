@@ -103,6 +103,10 @@ jobs:
     - name: Verify platform-integrations matches a fresh render of plugin-source
       run: uv run python plugin-source/build_plugins.py check
 
+  # Supersedes main's `unit-tests` job (added in #289): this runs the full
+  # suite with all extras installed, a strict superset of `pytest tests/unit/`,
+  # and does so credential-free. Adding main's job back would only duplicate
+  # coverage with a credentialed checkout.
   run-tests:
     runs-on: ubuntu-latest
     # This job runs PR-authored test code (pull_request trigger). It must stay

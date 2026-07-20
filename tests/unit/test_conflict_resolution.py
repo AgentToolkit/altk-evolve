@@ -290,8 +290,9 @@ def test_resolve_conflicts_event_types(
     assert result[0].old_entity == "Always use type hints in Python"
     assert "docstrings" in result[0].content
     assert result[1].event == "NONE"
-    # UPDATE now threads metadata through instead of wiping it to {} (which used
-    # to destroy plugin-written metadata on the base._update_entity replace).
+    # UPDATE must preserve the old entity's metadata (entity_1's metadata), and
+    # now threads metadata through instead of wiping it to {} (which used to
+    # destroy plugin-written metadata on the base._update_entity replace).
     # Here the LLM's rephrased content matches no incoming entity, so it falls
     # back to preserving the STORED entity's metadata.
     assert result[0].metadata == {"source": "code_review", "priority": "high"}
@@ -439,3 +440,92 @@ def test_resolve_conflicts_edge_cases(
     assert "model" in call_args[1]
     assert "messages" in call_args[1]
     assert "custom_llm_provider" in call_args[1]
+
+
+@pytest.mark.unit
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
+def test_resolve_conflicts_update_preserves_old_metadata(mock_completion):
+    """UPDATE carries forward the old entity's metadata so provenance is not lost."""
+    old_entity = RecordedEntity(
+        id="entity_1",
+        type="guideline",
+        content="Use type hints in Python",
+        metadata={"generation_method": "regular", "category": "style"},
+        created_at=datetime.now(),
+    )
+    new_entity = RecordedEntity(
+        id="new_entity_1",
+        type="guideline",
+        content="Use type hints and docstrings in Python",
+        metadata={"generation_method": "regular", "category": "style"},
+        created_at=datetime.now(),
+    )
+    llm_response = json.dumps(
+        {
+            "entities": [
+                {
+                    "id": "entity_1",
+                    "type": "guideline",
+                    "content": "Use type hints and docstrings in Python",
+                    "event": "UPDATE",
+                    "old_entity": "Use type hints in Python",
+                }
+            ]
+        }
+    )
+    mock_response = Mock()
+    mock_response.choices = [Mock()]
+    mock_response.choices[0].message.content = llm_response
+    mock_completion.return_value = mock_response
+
+    result = resolve_conflicts([old_entity], [new_entity])
+
+    assert result[0].event == "UPDATE"
+    assert result[0].metadata.get("generation_method") == "regular"
+    assert result[0].metadata.get("category") == "style"
+
+
+@pytest.mark.unit
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
+def test_resolve_conflicts_update_unions_generation_methods(mock_completion):
+    """When old entity has generation_method=regular and incoming has consistency, UPDATE unions them."""
+    old_entity = RecordedEntity(
+        id="entity_1",
+        type="guideline",
+        content="Use type hints in Python",
+        metadata={"generation_method": "regular", "category": "style"},
+        created_at=datetime.now(),
+    )
+    new_entity = RecordedEntity(
+        id="new_entity_1",
+        type="guideline",
+        content="Use type hints in Python",
+        metadata={"generation_method": "consistency", "category": "style"},
+        created_at=datetime.now(),
+    )
+    llm_response = json.dumps(
+        {
+            "entities": [
+                {
+                    "id": "entity_1",
+                    "type": "guideline",
+                    "content": "Use type hints in Python",
+                    "event": "UPDATE",
+                    "old_entity": "Use type hints in Python",
+                }
+            ]
+        }
+    )
+    mock_response = Mock()
+    mock_response.choices = [Mock()]
+    mock_response.choices[0].message.content = llm_response
+    mock_completion.return_value = mock_response
+
+    result = resolve_conflicts([old_entity], [new_entity])
+
+    assert result[0].event == "UPDATE"
+    # UPDATE preserves the old entity's metadata — generation_method stays as-is.
+    # Provenance union is not attempted (no reliable mapping from UPDATE → source entities).
+    assert result[0].metadata.get("generation_method") == "regular"
+    assert "generation_methods" not in result[0].metadata
+    assert result[0].metadata.get("category") == "style"
