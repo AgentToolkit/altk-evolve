@@ -167,6 +167,37 @@ class TestExtractMessagesFromSpan:
         assert messages[0]["index"] == 0
         assert messages[1]["index"] == 5
 
+    def test_extract_no_duplication_when_input_value_and_indexed_keys_coexist(self, phoenix_sync):
+        """Real OpenInference LLM spans often carry both input.value and indexed
+        llm.input_messages.* keys simultaneously. The input side must use only the
+        indexed path when indexed keys are present — not both — to avoid duplicating
+        the prompt messages in the extracted trajectory."""
+        span = {
+            "attributes": {
+                # Non-indexed input (input.value with messages JSON)
+                "input.value": '{"messages": [{"role": "system", "content": "You are helpful."}, {"role": "user", "content": "What is 10*2?"}]}',
+                # Indexed input (same data, the Phoenix REST API also expands it flat)
+                "llm.input_messages.0.message.role": "system",
+                "llm.input_messages.0.message.content": "You are helpful.",
+                "llm.input_messages.1.message.role": "user",
+                "llm.input_messages.1.message.content": "What is 10*2?",
+                # Indexed output
+                "llm.output_messages.0.message.role": "assistant",
+                "llm.output_messages.0.message.content": "20",
+            }
+        }
+        messages = phoenix_sync._extract_messages_from_span(span)
+
+        prompts = [m for m in messages if m["type"] == "prompt"]
+        completions = [m for m in messages if m["type"] == "completion"]
+
+        assert len(prompts) == 2, f"Expected 2 prompt messages, got {len(prompts)}: {prompts}"
+        assert len(completions) == 1
+        assert prompts[0]["role"] == "system"
+        assert prompts[1]["role"] == "user"
+        assert completions[0]["role"] == "assistant"
+        assert completions[0]["content"] == "20"
+
 
 # =============================================================================
 # _convert_to_openai_format() Tests
@@ -454,9 +485,9 @@ class TestSync:
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
 
-        # Mock that this span was already processed
+        # Mock that this trace was already processed
         mock_entity = MagicMock()
-        mock_entity.metadata = {"span_id": "already_processed"}
+        mock_entity.metadata = {"span_id": "already_processed", "trace_id": "t1"}
         phoenix_sync.client.search_entities.return_value = [mock_entity]
 
         result = phoenix_sync.sync(limit=10)
@@ -639,9 +670,9 @@ class TestSync:
         mock_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_response
 
-        # old_span was already processed
+        # trace t2 was already processed
         mock_entity = MagicMock()
-        mock_entity.metadata = {"span_id": "old_span"}
+        mock_entity.metadata = {"span_id": "old_span", "trace_id": "t2"}
         phoenix_sync.client.search_entities.return_value = [mock_entity]
         # Create mock Guideline object with required attributes
         mock_guideline = MagicMock()
@@ -764,3 +795,322 @@ class TestGetProcessedSpanIds:
         result = phoenix_sync._get_processed_span_ids()
 
         assert result == set()
+
+
+# =============================================================================
+# _get_processed_trace_ids() Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestGetProcessedTraceIds:
+    """Tests for _get_processed_trace_ids method."""
+
+    def test_get_processed_trace_ids_empty(self, phoenix_sync):
+        """Test getting processed trace IDs when none exist."""
+        phoenix_sync.client.search_entities.return_value = []
+
+        result = phoenix_sync._get_processed_trace_ids()
+
+        assert result == set()
+
+    def test_get_processed_trace_ids_with_entities(self, phoenix_sync):
+        """Test getting processed trace IDs from existing entities."""
+        entity1 = MagicMock()
+        entity1.metadata = {"trace_id": "trace_1"}
+        entity2 = MagicMock()
+        entity2.metadata = {"trace_id": "trace_2"}
+        entity3 = MagicMock()
+        entity3.metadata = None  # No metadata
+
+        phoenix_sync.client.search_entities.return_value = [entity1, entity2, entity3]
+
+        result = phoenix_sync._get_processed_trace_ids()
+
+        assert result == {"trace_1", "trace_2"}
+
+    def test_get_processed_trace_ids_namespace_not_found(self, phoenix_sync):
+        """Test that missing namespace returns empty set."""
+        from altk_evolve.schema.exceptions import NamespaceNotFoundException
+
+        phoenix_sync.client.search_entities.side_effect = NamespaceNotFoundException()
+
+        result = phoenix_sync._get_processed_trace_ids()
+
+        assert result == set()
+
+
+# =============================================================================
+# _extract_tools_from_span() Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestExtractToolsFromSpan:
+    """Tests for _extract_tools_from_span, covering all three attribute conventions."""
+
+    def test_extracts_from_invocation_parameters(self, phoenix_sync):
+        """LiteLLM GenAI convention: llm.invocation_parameters is a JSON dict with a 'tools' key."""
+        tools = [{"type": "function", "function": {"name": "add"}}]
+        span = {
+            "attributes": {
+                "llm.invocation_parameters": json.dumps({"model": "gpt-4o", "tools": tools}),
+            }
+        }
+
+        result = phoenix_sync._extract_tools_from_span(span)
+
+        assert result == tools
+
+    def test_extracts_from_llm_tools_flat_json_schema(self, phoenix_sync):
+        """OpenInference flat convention: llm.tools is a JSON list of {"tool.json_schema": "..."}."""
+        schema = {"type": "function", "function": {"name": "multiply"}}
+        span = {
+            "attributes": {
+                "llm.tools": json.dumps([{"tool.json_schema": json.dumps(schema)}]),
+            }
+        }
+
+        result = phoenix_sync._extract_tools_from_span(span)
+
+        assert result == [schema]
+
+    def test_extracts_from_indexed_llm_tools_json_schema(self, phoenix_sync):
+        """Indexed Phoenix REST API convention: llm.tools.{i}.tool.json_schema."""
+        schema = {"type": "function", "function": {"name": "add"}}
+        span = {
+            "attributes": {
+                "llm.tools.0.tool.json_schema": json.dumps(schema),
+            }
+        }
+
+        result = phoenix_sync._extract_tools_from_span(span)
+
+        assert result == [schema]
+
+    def test_indexed_falls_back_to_name_description_without_json_schema(self, phoenix_sync):
+        """Indexed convention without a json_schema key: build the tool from name/description."""
+        span = {
+            "attributes": {
+                "llm.tools.0.tool.name": "add",
+                "llm.tools.0.tool.description": "Add two numbers.",
+            }
+        }
+
+        result = phoenix_sync._extract_tools_from_span(span)
+
+        assert result == [
+            {
+                "type": "function",
+                "function": {
+                    "name": "add",
+                    "description": "Add two numbers.",
+                },
+            }
+        ]
+
+    def test_returns_none_when_no_tools_present(self, phoenix_sync):
+        span = {"attributes": {"gen_ai.prompt.0.role": "user"}}
+
+        assert phoenix_sync._extract_tools_from_span(span) is None
+
+
+# =============================================================================
+# _convert_openinference_tool_calls() Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestConvertOpeninferenceToolCalls:
+    """Tests for _convert_openinference_tool_calls."""
+
+    def test_converts_openinference_format_to_openai(self, phoenix_sync):
+        tool_calls = [
+            {
+                "tool_call.id": "call_1",
+                "tool_call.function.name": "add",
+                "tool_call.function.arguments": '{"a": 1, "b": 2}',
+            }
+        ]
+
+        result = phoenix_sync._convert_openinference_tool_calls(tool_calls)
+
+        assert result == [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "add", "arguments": '{"a": 1, "b": 2}'},
+            }
+        ]
+
+    def test_serializes_non_string_arguments(self, phoenix_sync):
+        tool_calls = [
+            {
+                "tool_call.id": "call_1",
+                "tool_call.function.name": "add",
+                "tool_call.function.arguments": {"a": 1, "b": 2},
+            }
+        ]
+
+        result = phoenix_sync._convert_openinference_tool_calls(tool_calls)
+
+        assert result[0]["function"]["arguments"] == json.dumps({"a": 1, "b": 2})
+
+    def test_passes_through_already_openai_format(self, phoenix_sync):
+        """A tool call already in OpenAI format (has id/function, no OpenInference keys) passes through."""
+        tool_calls = [{"id": "call_1", "type": "function", "function": {"name": "add", "arguments": "{}"}}]
+
+        result = phoenix_sync._convert_openinference_tool_calls(tool_calls)
+
+        assert result == tool_calls
+
+    def test_skips_non_dict_entries(self, phoenix_sync):
+        result = phoenix_sync._convert_openinference_tool_calls(["not a dict", 42])
+
+        assert result == []
+
+    def test_skips_unrecognized_dict_entries(self, phoenix_sync):
+        """A dict with neither OpenInference keys nor id/function is dropped."""
+        result = phoenix_sync._convert_openinference_tool_calls([{"unrelated": "data"}])
+
+        assert result == []
+
+
+# =============================================================================
+# Span classification (_is_llm_span) Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestSpanClassification:
+    """Tests for _is_llm_span."""
+
+    def test_is_llm_span_via_span_kind(self, phoenix_sync):
+        span = {"span_kind": "LLM", "attributes": {}}
+        assert phoenix_sync._is_llm_span(span) is True
+
+    def test_is_llm_span_via_attribute_fallback(self, phoenix_sync):
+        span = {"attributes": {"gen_ai.prompt.0.role": "user"}}
+        assert phoenix_sync._is_llm_span(span) is True
+
+    def test_is_llm_span_false_for_tool_span(self, phoenix_sync):
+        span = {"span_kind": "TOOL", "attributes": {"tool.name": "add", "input.value": "{}"}}
+        assert phoenix_sync._is_llm_span(span) is False
+
+    def test_is_llm_span_false_for_chain_span(self, phoenix_sync):
+        span = {"span_kind": "CHAIN", "attributes": {"input.value": "{}", "output.value": "35"}}
+        assert phoenix_sync._is_llm_span(span) is False
+
+
+# =============================================================================
+# _dedupe_nested_llm_spans() Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestDedupeNestedLlmSpans:
+    """Tests for collapsing multi-layer LLM instrumentation to the innermost span."""
+
+    def test_collapses_nested_chain_to_innermost(self, phoenix_sync):
+        # outer -> middle -> inner, mirroring smolagents' LiteLLMModel.generate ->
+        # completion -> ChatCompletion wrapping of one logical call.
+        outer = {"context": {"span_id": "outer"}, "parent_id": None}
+        middle = {"context": {"span_id": "middle"}, "parent_id": "outer"}
+        inner = {"context": {"span_id": "inner"}, "parent_id": "middle"}
+        parent_of = {"outer": None, "middle": "outer", "inner": "middle"}
+
+        result = phoenix_sync._dedupe_nested_llm_spans([outer, middle, inner], parent_of)
+
+        assert [phoenix_sync._span_id(s) for s in result] == ["inner"]
+
+    def test_keeps_unrelated_llm_spans(self, phoenix_sync):
+        # Two genuinely separate LLM calls in a sequential loop — neither wraps the other.
+        call_1 = {"context": {"span_id": "call_1"}, "parent_id": None}
+        call_2 = {"context": {"span_id": "call_2"}, "parent_id": None}
+        parent_of = {"call_1": None, "call_2": None}
+
+        result = phoenix_sync._dedupe_nested_llm_spans([call_1, call_2], parent_of)
+
+        assert {phoenix_sync._span_id(s) for s in result} == {"call_1", "call_2"}
+
+
+# =============================================================================
+# _build_trajectory_for_trace() Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestBuildTrajectoryForTrace:
+    """Tests for the per-trace single-span extraction."""
+
+    def test_picks_latest_llm_span_and_extracts_it(self, phoenix_sync):
+        """Two genuine sequential LLM calls — the later one (with the full accumulated
+        history as its own input) is the one extracted; no merge across spans."""
+        call_1 = {
+            "context": {"trace_id": "trace_1", "span_id": "call_1"},
+            "parent_id": None,
+            "start_time": "2024-01-15T10:00:00Z",
+            "attributes": {
+                "llm.model_name": "test-model",
+                "gen_ai.prompt.0.role": "user",
+                "gen_ai.prompt.0.content": "Hi",
+                "gen_ai.completion.0.role": "assistant",
+                "gen_ai.completion.0.content": "partial",
+            },
+        }
+        call_2 = {
+            "context": {"trace_id": "trace_1", "span_id": "call_2"},
+            "parent_id": None,
+            "start_time": "2024-01-15T10:00:05Z",
+            "attributes": {
+                "llm.model_name": "test-model",
+                "gen_ai.prompt.0.role": "user",
+                "gen_ai.prompt.0.content": "Hi",
+                "gen_ai.prompt.1.role": "assistant",
+                "gen_ai.prompt.1.content": "partial",
+                "gen_ai.completion.0.role": "assistant",
+                "gen_ai.completion.0.content": "final answer",
+            },
+        }
+
+        trajectory = phoenix_sync._build_trajectory_for_trace("trace_1", [call_1, call_2])
+
+        assert trajectory is not None
+        assert trajectory["span_id"] == "call_2"
+        assert trajectory["messages"][-1]["content"] == "final answer"
+
+    def test_collapses_nested_instrumentation_layers(self, phoenix_sync):
+        """A single logical call wrapped by multiple instrumentation layers — only the
+        innermost (most complete) span should be extracted."""
+        outer = {
+            "context": {"trace_id": "trace_1", "span_id": "outer"},
+            "parent_id": None,
+            "start_time": "2024-01-15T10:00:00Z",
+            "attributes": {"llm.model_name": "test-model"},
+        }
+        inner = {
+            "context": {"trace_id": "trace_1", "span_id": "inner"},
+            "parent_id": "outer",
+            "start_time": "2024-01-15T10:00:01Z",
+            "attributes": {
+                "llm.model_name": "test-model",
+                "gen_ai.prompt.0.role": "user",
+                "gen_ai.prompt.0.content": "Hi",
+                "gen_ai.completion.0.role": "assistant",
+                "gen_ai.completion.0.content": "Hello!",
+            },
+        }
+
+        trajectory = phoenix_sync._build_trajectory_for_trace("trace_1", [outer, inner])
+
+        assert trajectory["span_id"] == "inner"
+
+    def test_returns_none_without_any_llm_span(self, phoenix_sync):
+        tool_span = {
+            "context": {"trace_id": "trace_1", "span_id": "tool_a"},
+            "parent_id": None,
+            "start_time": "2024-01-15T10:00:02Z",
+            "attributes": {"tool.name": "a", "input.value": "{}", "output.value": "1"},
+        }
+
+        assert phoenix_sync._build_trajectory_for_trace("trace_1", [tool_span]) is None
