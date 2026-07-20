@@ -1,5 +1,24 @@
 # Compliance PoC — PII redaction & data retention (issue #275)
 
+> **Status — pinned proof-of-concept, not a merge candidate.**
+>
+> - This branch is kept as-is for presentation. It is deliberately **not**
+>   rebased or merged onto `main`.
+> - Since it was built, the PII integration has been **re-architected onto a
+>   general-purpose memory hook seam**, which is now merged to `main`
+>   ([PR #287](https://github.com/AgentToolkit/altk-evolve/pull/287),
+>   [`docs/guides/memory-hooks.md`](https://github.com/AgentToolkit/altk-evolve/blob/main/docs/guides/memory-hooks.md)). That design
+>   places hook points at the backend read/write choke points and before every
+>   LLM call, with plugins configured via YAML — rather than the direct
+>   detector imports this branch uses. Feedback from the CPEX and READI
+>   maintainers drove the change.
+> - **The measured effectiveness results below remain valid.** They measure
+>   detector and model behaviour (regex vs semantic, English vs Japanese,
+>   language-matched models), which is independent of how the detectors are
+>   wired into the write path.
+> - Retention and semantic (READI) redaction are being landed on `main` as
+>   separate follow-up PRs.
+
 A proof-of-concept for the two enterprise asks in
 [issue #275](https://github.com/AgentToolkit/altk-evolve/issues/275):
 
