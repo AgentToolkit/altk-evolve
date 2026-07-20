@@ -4,6 +4,7 @@ Requires the optional cpex package (``uv sync --extra hooks``); the PII tests
 additionally require cpex-pii-filter (``--extra pii``).
 """
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -163,3 +164,125 @@ def test_plugin_stubs_raise_without_cpex(monkeypatch):
         pytest.skip("cpex-pii-filter installed; stub not active")
     with pytest.raises(ImportError, match=r"altk-evolve\[pii\]"):
         pii_module.PIIFilterMemoryPlugin()
+
+
+# ── ReadiSemanticPIIPlugin ───────────────────────────────────────────
+
+
+class _StubContext:
+    """Minimal plugin context: these plugins only ever read global state."""
+
+    class _GC:
+        state: dict = {}
+
+    global_context = _GC()
+
+
+def _pii_plugin():
+    from altk_evolve.hooks.plugins.pii import PIIFilterMemoryPlugin
+
+    return PIIFilterMemoryPlugin()
+
+
+def fake_name_detector(text: str):
+    """Stand-in for READI: finds one fixed 'name' so the shim is testable fast.
+
+    Loading a real transformer NER pipeline costs a ~460MB download and seconds
+    per test; the detection engine is covered by READI itself and by
+    ``examples/pii_benchmark.py``. What these tests must pin is the *shim*:
+    config parsing, hook wiring and the modified_payload contract.
+    """
+    start = text.find("Dana Whitfield")
+    return [(start, start + len("Dana Whitfield"))] if start != -1 else []
+
+
+@pytest.mark.unit
+def test_readi_shim_redacts_names_regex_cannot(tmp_path: Path):
+    """The point of the semantic plugin: a NAME the regex filter leaves untouched."""
+    pytest.importorskip("cpex_pii_filter")
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import MemoryPreWritePayload
+
+    text = "Dana Whitfield can be reached at dana@example.com"
+    payload = MemoryPreWritePayload(namespace_id="ns", entities=[{"content": text, "type": "note"}])
+
+    regex_plugin = _pii_plugin()
+    regex_out = asyncio.run(regex_plugin.memory_pre_write(payload, _StubContext()))
+    assert "Dana Whitfield" in regex_out.modified_payload.entities[0]["content"]  # regex has no NER
+
+    readi_plugin = ReadiSemanticPIIPlugin()
+    readi_plugin._detector = fake_name_detector
+    readi_out = asyncio.run(readi_plugin.memory_pre_write(payload, _StubContext()))
+    assert readi_out.modified_payload.entities[0]["content"] == "[REDACTED] can be reached at dana@example.com"
+
+
+@pytest.mark.unit
+def test_readi_shim_redacts_llm_egress():
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import LLMPreCallPayload
+
+    plugin = ReadiSemanticPIIPlugin()
+    plugin._detector = fake_name_detector
+    payload = LLMPreCallPayload(messages=[{"role": "user", "content": "summarize Dana Whitfield's notes"}], purpose="test")
+    result = asyncio.run(plugin.llm_pre_call(payload, _StubContext()))
+    assert result.modified_payload.messages == [{"role": "user", "content": "summarize [REDACTED]'s notes"}]
+
+
+@pytest.mark.unit
+def test_readi_shim_reads_config_keys():
+    """YAML config drives the mask and the metadata opt-in — no code change needed."""
+    from cpex.framework.models import PluginConfig
+
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import MemoryPreWritePayload
+
+    plugin = ReadiSemanticPIIPlugin(
+        PluginConfig(
+            name="readi_semantic_pii",
+            kind="altk_evolve.hooks.plugins.readi.ReadiSemanticPIIPlugin",
+            hooks=["memory_pre_write"],
+            config={"redaction_text": "<PERSON>", "redact_metadata": True},
+        )
+    )
+    plugin._detector = fake_name_detector
+    payload = MemoryPreWritePayload(
+        namespace_id="ns",
+        entities=[{"content": "hi Dana Whitfield", "metadata": {"author": "Dana Whitfield"}}],
+    )
+    entity = asyncio.run(plugin.memory_pre_write(payload, _StubContext())).modified_payload.entities[0]
+    assert entity["content"] == "hi <PERSON>"
+    assert entity["metadata"] == {"author": "<PERSON>"}
+
+
+@pytest.mark.unit
+def test_readi_default_config_can_block_and_fails_closed():
+    """Mode/on_error are load-bearing, not cosmetic (see docs/guides/memory-hooks.md).
+
+    CPEX downgrades continue_processing=False -> True in transform/audit mode,
+    so a redactor that must be able to halt has to register `sequential`; and a
+    compliance plugin must fail closed so a crashing NER model never silently
+    passes PII through.
+    """
+    from cpex.framework.models import OnError, PluginMode
+
+    from altk_evolve.hooks.plugins.readi import _default_config
+
+    config = _default_config()
+    assert config.mode == PluginMode.SEQUENTIAL
+    assert config.on_error == OnError.FAIL
+    assert set(config.hooks) == {"memory_pre_write", "llm_pre_call"}
+
+
+@pytest.mark.unit
+def test_readi_shim_stub_raises_without_readi():
+    """Without the [readi] extra the shim degrades with a named install hint."""
+    import importlib.util
+
+    if importlib.util.find_spec("risk_assessment") is not None:
+        pytest.skip("readi-privacy installed; the degradation path is not active")
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import LLMPreCallPayload
+
+    plugin = ReadiSemanticPIIPlugin()  # construction is cheap; READI loads lazily
+    with pytest.raises(ImportError, match=r"altk-evolve\[readi\]"):
+        asyncio.run(plugin.llm_pre_call(LLMPreCallPayload(messages=[{"role": "user", "content": "x"}]), _StubContext()))

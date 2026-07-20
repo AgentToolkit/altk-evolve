@@ -815,6 +815,20 @@ def test_shipped_plugins_return_modified_payload_and_never_mutate_in_place():
     assert pii_result.modified_payload is not None, "pii filter must communicate changes via modified_payload"
     assert pii_payload.entities == pii_input, "pii filter must NOT mutate its input payload in place"
 
+    # READI semantic filter: same contract. Detection is stubbed (a real NER
+    # model load is a ~460MB download and irrelevant to the contract) — what is
+    # under test is that the shim copies rather than mutates.
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+
+    readi_plugin = ReadiSemanticPIIPlugin()
+    readi_plugin._detector = lambda text: [(0, 4)] if text.startswith("Dana") else []
+    readi_input = [{"content": "Dana signed the contract", "type": "note", "metadata": {}}]
+    readi_payload = MemoryPreWritePayload(namespace_id="ns", entities=copy.deepcopy(readi_input))
+    readi_result = asyncio.run(readi_plugin.memory_pre_write(readi_payload, _Ctx()))
+    assert readi_result.modified_payload is not None, "readi filter must communicate changes via modified_payload"
+    assert readi_payload.entities == readi_input, "readi filter must NOT mutate its input payload in place"
+    assert readi_result.modified_payload.entities[0]["content"] == "[REDACTED] signed the contract"
+
 
 # ── sync bridge ──────────────────────────────────────────────────────
 
