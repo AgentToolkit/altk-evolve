@@ -159,7 +159,14 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
 
 
 def _can_segment_trajectory(messages: list[dict]) -> bool:
-    """True iff segment_trajectory step indices map 1:1 to IR step numbers.
+    """True iff segment_trajectory's step indices stay positionally aligned with
+    transform_trajectory_to_IR's step numbering.
+
+    transform_trajectory_to_IR skips emitting an IR step for some assistant
+    messages (e.g. "other"-classified ones), but it still advances step_number
+    positionally for every assistant message, matching segment_trajectory's
+    indexing. This guard checks that segment_trajectory won't classify any
+    assistant message in a way that breaks that shared positional count.
 
     Safe when every assistant message has either:
     - a non-empty string content field, or
