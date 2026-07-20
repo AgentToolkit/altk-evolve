@@ -63,3 +63,42 @@ plugins:
       detect_phone: true
       default_mask_strategy: redact
       redaction_text: "[REDACTED]"
+
+  # ── regex -> semantic: the seam's selling point ────────────────────
+  #
+  # The regex filter above has NO NER: measured on 200 ai4privacy rows it hits
+  # recall 0.13 (precision 1.00) overall and 0.00 on firstname/lastname — it
+  # catches identifiers, not people. Semantic (NER) redaction via IBM READI
+  # reaches 0.48 recall at precision 1.00, with names at 0.92-1.00.
+  #
+  # Switching is a YAML edit, not a code change: comment out `pii_filter_memory`
+  # above and uncomment `readi_semantic_pii` below (or run both — they chain,
+  # regex for structured identifiers plus NER for names). Costs: NER is
+  # CPU-heavy next to a Rust regex pass, and the first call downloads model
+  # weights (~460MB for en_core_web_trf).
+  #
+  # Requires: pip install 'altk-evolve[readi]'
+  #
+  # - name: readi_semantic_pii
+  #   kind: altk_evolve.hooks.plugins.readi.ReadiSemanticPIIPlugin
+  #   description: Semantic (NER) PII masking on memory writes and LLM egress
+  #   hooks:
+  #     - memory_pre_write
+  #     - llm_pre_call
+  #   mode: sequential     # same reason as above: transform mode can never block
+  #   priority: 10
+  #   on_error: fail       # fail-closed: a crashing NER model must not pass PII through
+  #   config:
+  #     # default | spacy | hf | presidio.
+  #     #   default  -> READI's own PII pipeline (spaCy en_core_web_trf). English.
+  #     #   spacy    -> any spaCy pipeline; the multilingual path. Set readi_model.
+  #     #   hf       -> any HF pipeline("ner") model id. Set readi_model.
+  #     #   presidio -> Microsoft Presidio (READI hardcodes language="en"; see docs).
+  #     readi_extractor: default
+  #     # A LANGUAGE-MATCHED model is decisive: on Japanese, overall recall goes
+  #     # 0.15 (English model) -> 0.92 (ja_core_news_trf).
+  #     # readi_extractor: spacy
+  #     # readi_model: ja_core_news_trf
+  #     # readi_language: ja
+  #     redaction_text: "[REDACTED]"
+  #     redact_metadata: false   # metadata often holds ids/paths redaction would corrupt

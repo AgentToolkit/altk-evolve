@@ -84,7 +84,7 @@ if engine_available():  # shim for the shipped CPEX engine
             )
 ```
 
-See `altk_evolve/hooks/plugins/normalizer.py` (`normalize_entities`) and `access_stamp.py` (`build_access_stamps`) for shipped examples — their cores are importable without any extra installed. The one exception is `pii.py`: it is deliberately core-less, because adapting the external `cpex-pii-filter` plugin onto Evolve's hook types *is* its domain logic.
+See `altk_evolve/hooks/plugins/normalizer.py` (`normalize_entities`), `access_stamp.py` (`build_access_stamps`) and `readi.py` (`redact_spans` / `redact_entities` / `redact_messages`, with detection injected as a `SpanDetector` so the core is testable against a two-line fake) for shipped examples — their cores are importable without any extra installed. The one exception is `pii.py`: it is deliberately core-less, because adapting the external `cpex-pii-filter` plugin onto Evolve's hook types *is* its domain logic.
 
 Notes:
 
@@ -99,7 +99,10 @@ Notes:
 |---|---|---|---|
 | `MetadataNormalizerPlugin` | `memory_pre_write` | transform | Copies `task_id` → `trace_id` when only the former is present (MCP-saved trajectories vs Phoenix-synced ones) and stamps `created_at` |
 | `AccessStampPlugin` | `memory_post_read` | fire_and_forget | Stamps `last_accessed` (ISO-8601 UTC) on read entities via the metadata-patch path |
-| `PIIFilterMemoryPlugin` | `memory_pre_write`, `llm_pre_call` | transform | Regex PII redaction (adapts the external `cpex-pii-filter` plugin onto Evolve's hook types); requires `pip install 'altk-evolve[pii]'` |
+| `PIIFilterMemoryPlugin` | `memory_pre_write`, `llm_pre_call` | sequential | Regex PII redaction (adapts the external `cpex-pii-filter` plugin onto Evolve's hook types); requires `pip install 'altk-evolve[pii]'` |
+| `ReadiSemanticPIIPlugin` | `memory_pre_write`, `llm_pre_call` | sequential | Semantic (NER) PII redaction via IBM READI — catches **names**, locations and organizations that regex cannot; requires `pip install 'altk-evolve[readi]'` |
+
+**Regex vs semantic PII.** These two are alternatives (or a chain), and swapping between them is a YAML edit rather than a code change. It matters: measured on 200 rows of `ai4privacy/pii-masking-200k`, the regex plugin scores 0.13 overall span recall at precision 1.00 and **0.00 on first/last names**, while the semantic plugin scores 0.48 recall at precision 1.00 with names at 0.92-1.00. NER is correspondingly much slower and pulls model weights (~460MB). See the [PII redaction guide](pii-redaction.md) for the full numbers, model-choice guidance (language-matched spaCy pipelines), cost/latency trade-offs and limitations, and `examples/pii_benchmark.py` for the harness that produced them.
 
 Read-cost note for `AccessStampPlugin`: fire-and-forget tasks are awaited before the sync bridge returns (see [The CPEX engine](#the-cpex-engine)), so the stamp is **not** free for the reader — every public read pays one metadata write per returned entity before `search_entities` returns. Measured on the filesystem backend: ~3.7 ms vs ~0.1 ms for a 10-entity read; on milvus/postgres it adds N extra store round trips per read. Enable it only where access audit trails are worth that latency.
 
@@ -112,7 +115,7 @@ Plugins need an execution engine to run. The engine layer is deliberately thin �
 - **Fail-closed by default.** `on_error` defaults to `fail`: a plugin that crashes or times out halts the operation (a memory-write/`llm_pre_call` crash surfaces as `MemoryPolicyViolation`), rather than silently passing data through — the right default for a compliance plugin (e.g. PII redaction), but it trades availability for safety. A non-critical plugin (e.g. best-effort access auditing) can opt into `on_error="ignore"` so its failures don't block the operation. (A crash in a `memory_post_read` plugin never fails the read it rode in on — that hook is read-side transform-only and logs a warning instead.)
 - **Sync bridge.** CPEX's `invoke_hook` is async-only; Evolve's call sites are sync. The seam uses `asyncio.run` when no event loop is running and a dedicated thread when one is. Fire-and-forget plugin tasks are awaited before the bridge returns so their side effects are never lost with the closing loop.
 - **Singleton caveat.** CPEX's `PluginManager` is a process-wide (Borg) singleton — the hook seam is process-global, not per-client. Two sharp edges follow: (a) constructing a second `EvolveClient` with `hooks.enabled=True` calls `PluginManager.reset()` and silently **replaces** the first client's plugins — for a compliance plugin (e.g. PII redaction) this means redaction can be silently disabled by unrelated code constructing its own client; (b) a client constructed with `enabled=False` does not reset the manager, but it still inherits whatever process-global hooks another client enabled — its operations flow through those plugins too. Per-instance isolation (CPEX's `TenantPluginManager`) is deferred until a real use case needs it. In tests, call `altk_evolve.hooks.shutdown_hooks()` between cases.
-- **PII adapter.** `PIIFilterMemoryPlugin` aliases the native `cpex-pii-filter` plugin onto Evolve's hook types; it needs the separate `[pii]` extra (cpex + cpex-pii-filter).
+- **PII adapter.** `PIIFilterMemoryPlugin` aliases the native `cpex-pii-filter` plugin onto Evolve's hook types; it needs the separate `[pii]` extra (cpex + cpex-pii-filter). `ReadiSemanticPIIPlugin` is a plain core/shim plugin (no cpex plugin to adapt) and needs the `[readi]` extra.
 
 ## Enabling hooks
 
@@ -150,7 +153,6 @@ See [`examples/hooks_plugins.yaml`](https://github.com/AgentToolkit/altk-evolve/
 
 ## Deferred
 
-- READI / semantic recall filtering plugins (separate branch).
 - Lifecycle / retention policy hooks.
 - A first-class PII configuration surface on `EvolveConfig` (today PII is configured through the plugin's own `config` block).
 - Additional execution engines: only the CPEX integration exists today; the seam is engine-agnostic, but running plugins currently requires cpex.
