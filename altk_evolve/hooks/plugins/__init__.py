@@ -16,16 +16,34 @@ package — and using the cores — always works.
   regex PII redaction; additionally requires ``pip install 'altk-evolve[pii]'``.
   Deliberately core-less: it is an adapter for the external cpex-pii-filter
   plugin, so the cpex coupling is its purpose.
+- :class:`ReadiSemanticPIIPlugin` (memory_pre_write + llm_pre_call, sequential):
+  semantic (NER) PII redaction via IBM READI — catches names/locations/orgs
+  that regex cannot; cores :func:`redact_entities` / :func:`redact_messages` /
+  :func:`redact_spans`. Additionally requires ``pip install 'altk-evolve[readi]'``.
 """
 
 from altk_evolve.hooks.plugins.access_stamp import AccessStampPlugin, build_access_stamps
 from altk_evolve.hooks.plugins.normalizer import MetadataNormalizerPlugin, normalize_entities
 from altk_evolve.hooks.plugins.pii import PIIFilterMemoryPlugin
+from altk_evolve.hooks.plugins.readi import (
+    ReadiSemanticPIIPlugin,
+    build_readi_detector,
+    redact_entities,
+    redact_messages,
+    redact_spans,
+    redact_text,
+)
 
 __all__ = [
     "AccessStampPlugin",
     "MetadataNormalizerPlugin",
     "PIIFilterMemoryPlugin",
+    "ReadiSemanticPIIPlugin",
     "build_access_stamps",
+    "build_readi_detector",
     "normalize_entities",
+    "redact_entities",
+    "redact_messages",
+    "redact_spans",
+    "redact_text",
 ]
