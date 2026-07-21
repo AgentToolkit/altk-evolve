@@ -56,7 +56,7 @@ def _backdate(data_dir: str, namespace: str, ages_days: dict[str, int]) -> None:
 def _print_report(report) -> None:
     if not report.deleted and not report.flagged:
         print("    (nothing matched)")
-    for item in [*report.deleted, *report.flagged]:
+    for item in [*report.deleted, *report.flagged, *report.skipped]:
         print(f"    {item.action.upper():<7} {item.entity_id:<3} {item.entity_type:<10} reason={item.reason:<12} rule={item.rule}")
         print(f"            why: {item.detail}")
     for warning in report.warnings:

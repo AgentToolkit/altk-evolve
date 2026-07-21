@@ -108,18 +108,73 @@ def test_unused_uses_last_accessed_when_present():
     assert report.warnings == []
 
 
-def test_unused_without_access_stamp_falls_back_to_created_at_and_says_so():
-    """The PoC silently used created_at here. Now the fallback is reported."""
+def test_unused_delete_without_access_stamp_skips_by_default_and_reports_it():
+    """FIX 2: an unused DELETE on a never-stamped entity must not silently
+    destroy it. The fail-safe default (on_missing_access_signal='skip') spares
+    it, records it in report.skipped, and still emits the degraded-signal warning."""
     client = FakeClient([_entity("1", created_days_ago=60)])
     policy = RetentionPolicy(rules=[RetentionRule(name="idle", max_unused_days=30, action="delete")])
 
     report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=True)
 
+    assert report.deleted == []  # not deleted on the created_at fallback
+    assert [i.entity_id for i in report.skipped] == ["1"]
+    skip_detail = report.skipped[0].detail
+    assert "on_missing_access_signal=skip" in skip_detail
+    assert "created_at" in skip_detail and "AccessStampPlugin" in skip_detail
+    assert len(report.warnings) == 1
+    assert "1 of 1 entities carry no metadata.last_accessed" in report.warnings[0]
+
+
+def test_unused_delete_without_stamp_deletes_when_opted_in():
+    """on_missing_access_signal='delete' restores the explicit opt-in behaviour."""
+    client = FakeClient([_entity("1", created_days_ago=60)])
+    policy = RetentionPolicy(rules=[RetentionRule(name="idle", max_unused_days=30, action="delete", on_missing_access_signal="delete")])
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=True)
+
     assert [i.entity_id for i in report.deleted] == ["1"]
+    assert report.skipped == []
     detail = report.deleted[0].detail
     assert "created_at" in detail and "AccessStampPlugin" in detail
     assert len(report.warnings) == 1
-    assert "1 of 1 entities carry no metadata.last_accessed" in report.warnings[0]
+
+
+def test_unused_delete_without_stamp_downgrades_to_flag_when_configured():
+    """on_missing_access_signal='flag' turns the destructive action into a flag."""
+    client = FakeClient([_entity("1", created_days_ago=60)])
+    policy = RetentionPolicy(rules=[RetentionRule(name="idle", max_unused_days=30, action="delete", on_missing_access_signal="flag")])
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
+
+    assert report.deleted == []
+    assert [i.entity_id for i in report.flagged] == ["1"]
+    assert "downgraded delete->flag" in report.flagged[0].detail
+    assert client.store["1"].metadata["retention_reason"] == "unused"
+
+
+def test_unused_delete_with_real_stamp_deletes_normally_regardless_of_missing_signal_knob():
+    """A real last_accessed stamp is unaffected by on_missing_access_signal."""
+    stamped = _entity("1", created_days_ago=300, metadata={"last_accessed": (NOW - datetime.timedelta(days=60)).isoformat()})
+    client = FakeClient([stamped])
+    policy = RetentionPolicy(rules=[RetentionRule(name="idle", max_unused_days=30, action="delete")])  # skip default
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
+
+    assert [i.entity_id for i in report.deleted] == ["1"]
+    assert report.skipped == []
+
+
+def test_flag_rule_flags_never_stamped_entity_even_with_default_skip():
+    """skip only bites deletes — a flag action is not data loss, so a flag rule
+    flags a never-stamped entity as usual under the default."""
+    client = FakeClient([_entity("1", created_days_ago=60)])
+    policy = RetentionPolicy(rules=[RetentionRule(name="idle", max_unused_days=30, action="flag")])
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
+
+    assert [i.entity_id for i in report.flagged] == ["1"]
+    assert report.skipped == []
 
 
 def test_no_degraded_signal_warning_without_an_unused_rule():
@@ -277,6 +332,78 @@ def test_cascade_off_leaves_derived_memories():
     assert "g1" in client.store
 
 
+def test_empty_trace_id_does_not_cascade_unrelated_entities():
+    """FIX 1: an empty-string trace_id must not bucket every no-provenance
+    entity together and cascade-delete them."""
+    trajectory = _entity("traj", type="trajectory", created_days_ago=400, metadata={"trace_id": ""})
+    # two unrelated guidelines that happen to carry an empty/absent source link
+    a = _entity("g1", type="guideline", created_days_ago=1, metadata={"source_task_id": ""})
+    b = _entity("g2", type="guideline", created_days_ago=1, metadata={})
+    client = FakeClient([trajectory, a, b])
+    policy = RetentionPolicy(
+        rules=[RetentionRule(name="old-sessions", entity_type="trajectory", max_age_days=365, action="delete", cascade_derived=True)]
+    )
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
+
+    # only the trajectory itself ages out; nothing cascades off the empty trace
+    assert {i.entity_id for i in report.deleted} == {"traj"}
+    assert "g1" in client.store
+    assert "g2" in client.store
+
+
+def test_cascade_does_not_match_across_types_on_empty_values():
+    """An empty source_task_id must never join a cascade bucket even if the
+    session's trace id is also falsy."""
+    trajectory = _entity("traj", type="trajectory", created_days_ago=400, metadata={"task_id": ""})
+    derived = _entity("g1", type="guideline", created_days_ago=1, metadata={"source_task_id": ""})
+    client = FakeClient([trajectory, derived])
+    policy = RetentionPolicy(
+        rules=[RetentionRule(name="old-sessions", entity_type="trajectory", max_age_days=365, action="delete", cascade_derived=True)]
+    )
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
+
+    assert {i.entity_id for i in report.deleted} == {"traj"}
+    assert "g1" in client.store
+
+
+def test_cascade_matches_int_trace_id_against_str_source_task_id():
+    """FIX 1: coercion is consistent — an int trace_id matches a str
+    source_task_id of the same non-empty value."""
+    trajectory = _entity("traj", type="trajectory", created_days_ago=400, metadata={"trace_id": 1})
+    derived = _entity("g1", type="guideline", created_days_ago=1, metadata={"source_task_id": "1"})
+    client = FakeClient([trajectory, derived])
+    policy = RetentionPolicy(
+        rules=[RetentionRule(name="old-sessions", entity_type="trajectory", max_age_days=365, action="delete", cascade_derived=True)]
+    )
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
+
+    assert {i.entity_id for i in report.deleted} == {"traj", "g1"}
+    assert next(i for i in report.deleted if i.entity_id == "g1").reason == "cascade:1"
+
+
+def test_scan_limit_boundary_emits_warning():
+    """FIX 3: when the fetch returns exactly the limit, warn that entities
+    beyond it were not evaluated."""
+    client = FakeClient([_entity(str(i), created_days_ago=400) for i in range(3)])
+    policy = RetentionPolicy(rules=[RetentionRule(name="old", max_age_days=90, action="delete")])
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=True, scan_limit=3)
+
+    assert any("fetch limit of 3" in w for w in report.warnings)
+
+
+def test_scan_limit_under_boundary_emits_no_warning():
+    client = FakeClient([_entity(str(i), created_days_ago=400) for i in range(2)])
+    policy = RetentionPolicy(rules=[RetentionRule(name="old", max_age_days=90, action="delete")])
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=True, scan_limit=100)
+
+    assert not any("fetch limit" in w for w in report.warnings)
+
+
 def test_cascade_delete_supersedes_a_flag_from_an_earlier_rule():
     trajectory = _entity("traj", type="trajectory", created_days_ago=400, metadata={"trace_id": "T1"})
     derived = _entity("g1", type="guideline", created_days_ago=200, metadata={"source_task_id": "T1"})
@@ -329,7 +456,9 @@ def test_record_access_makes_the_unused_rule_meaningful():
     client = FakeClient([old_but_used, old_and_idle])
     # Simulate what record_access / AccessStampPlugin write.
     client.patch_entity_metadata("ns", "1", {"last_accessed": (NOW - datetime.timedelta(days=1)).isoformat()})
-    policy = RetentionPolicy(rules=[RetentionRule(name="idle", max_unused_days=90, action="delete")])
+    # opt into deleting on the created_at fallback so the never-stamped "2" is
+    # the one this test exercises (the fail-safe default would merely skip it).
+    policy = RetentionPolicy(rules=[RetentionRule(name="idle", max_unused_days=90, action="delete", on_missing_access_signal="delete")])
 
     report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
 
@@ -346,6 +475,34 @@ def test_record_access_skips_failures_without_raising(tmp_path):
     client.ensure_namespace("ns")
 
     client.record_access("ns", ["does-not-exist"])  # must not raise
+
+
+def test_real_store_dry_run_mutates_nothing(tmp_path):
+    """FIX 5: the primary safety guarantee, against a real filesystem backend.
+
+    Seed an old entity, run apply(dry_run=True), and assert it still exists and
+    no retention_* metadata was written to it."""
+    from altk_evolve.backend.filesystem import FilesystemSettings
+    from altk_evolve.config.evolve import EvolveConfig
+    from altk_evolve.frontend.client.evolve_client import EvolveClient
+    from altk_evolve.schema.core import Entity
+
+    client = EvolveClient(EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
+    client.ensure_namespace("ns")
+    client.update_entities("ns", [Entity(content="an old guideline", type="guideline")], enable_conflict_resolution=False)
+    entity = client.get_all_entities("ns")[0]
+    policy = RetentionPolicy(rules=[RetentionRule(name="old", max_age_days=90, action="delete")])
+    # evaluate as-of far in the future so the just-created entity is well past 90d.
+    future = entity.created_at + datetime.timedelta(days=500)
+
+    report = RetentionEngine(client).apply("ns", policy, now=future, dry_run=True)
+
+    # dry run would delete it, but must not have
+    assert [i.entity_id for i in report.deleted] == [entity.id]
+    survivors = client.get_all_entities("ns")
+    assert [e.id for e in survivors] == [entity.id]  # still there
+    meta = survivors[0].metadata or {}
+    assert "retention_flagged_at" not in meta and "retention_reason" not in meta
 
 
 # ── policy schema ─────────────────────────────────────────────────────
@@ -392,4 +549,8 @@ def test_shipped_example_policy_is_valid():
 
     example = Path(__file__).resolve().parents[2] / "examples" / "retention.example.yaml"
     policy = RetentionPolicy.from_file(example)
-    assert [r.name for r in policy.rules] == ["stale-guidelines", "unused-guidelines", "old-sessions"]
+    # DELETE rule ordered before the FLAG rule so it is reachable (first-match).
+    assert [r.name for r in policy.rules] == ["unused-guidelines", "stale-guidelines", "old-sessions"]
+    unused = policy.rules[0]
+    assert unused.action == "delete"
+    assert unused.on_missing_access_signal == "skip"  # fail-safe default, explicit in the example

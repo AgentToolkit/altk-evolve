@@ -59,6 +59,16 @@ class RetentionRule(BaseModel):
         ),
     )
     action: RetentionAction = Field(default="flag", description="What to do with matched entities.")
+    on_missing_access_signal: Literal["skip", "flag", "delete"] = Field(
+        default="skip",
+        description=(
+            "What a delete rule does when an 'unused' match has NO real metadata.last_accessed stamp "
+            "(disuse fell back to created_at). 'skip' (default, fail-safe) spares the entity and reports it; "
+            "'flag' downgrades the delete to a non-destructive flag; 'delete' deletes on the created_at "
+            "fallback (the original behaviour). Only affects unused-driven deletes on unstamped entities; "
+            "age matches and stamped entities are unaffected."
+        ),
+    )
     cascade_derived: bool = Field(
         default=False,
         description="On delete of a session entity, also delete the entities derived from it (via provenance metadata).",

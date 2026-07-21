@@ -96,6 +96,17 @@ def run_retention(
     else:
         console.print("[dim]No entities matched any rule.[/dim]")
 
+    if report.skipped:
+        skipped_table = Table(title="Skipped (degraded signal — not acted on)")
+        skipped_table.add_column("Entity ID", style="cyan")
+        skipped_table.add_column("Type")
+        skipped_table.add_column("Reason", style="dim")
+        skipped_table.add_column("Rule", style="dim")
+        skipped_table.add_column("Why", style="dim")
+        for item in report.skipped:
+            skipped_table.add_row(item.entity_id, item.entity_type, item.reason, item.rule, item.detail)
+        console.print(skipped_table)
+
     for warning in report.warnings:
         console.print(f"[yellow]warning:[/yellow] {warning}")
     for err in report.errors:
