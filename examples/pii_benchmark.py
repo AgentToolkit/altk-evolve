@@ -272,6 +272,12 @@ def score(records: list[dict], detect) -> dict:
                 fp += 1
 
         # Value-level leak: does any gold PII literal survive the actual redaction?
+        # NOTE: this is a LOWER BOUND on leaks. It only counts a record leaked when
+        # the *full* literal survives verbatim; a partial redaction (part of a
+        # multi-token value masked, the rest left in the text) no longer contains
+        # the whole literal, so it is NOT counted here even though PII leaked. The
+        # span-level FN count above is the tighter signal; treat this rate as a
+        # floor, not the true leak rate.
         redacted = redact_spans(text, det_spans)
         if any(g["value"] in redacted for g in gold):
             record_leaked = True
