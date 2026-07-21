@@ -21,7 +21,7 @@ Rather than baking each concern in, Evolve defines one extension seam with backe
 - **Backend-layer choke points.** Write/read hooks fire inside `BaseEntityBackend` template methods, so no frontend (client, MCP server, CLI, Phoenix sync) can bypass them. Backends override protected `_*_impl` methods only; the public methods own hook dispatch.
 - **Frozen payloads.** Each hook type carries an immutable pydantic payload. Plugins never mutate a payload in place; a transform proposes a replacement copy, transforms chain, and the final payload flows back to the call site. This is enforced, not just convention: mutable payload contents are deep-copied at dispatch, and an in-place mutation that isn't returned as a replacement payload is discarded.
 - **Halting raises, never drops.** A plugin that halts the pipeline raises `altk_evolve.hooks.MemoryPolicyViolation` — a blocked write is an error the caller sees, not a silent no-op. (One deliberate exception: a vetoed conflict-resolution DELETE verdict skips that delete and lets the rest of the batch proceed — see *Unified delete semantics* below.)
-- **Fast no-op by default.** `hooks.enabled` defaults to False; every hook site is then a fast no-op (a boolean check), and behavior is byte-for-byte identical to previous releases.
+- **Always live; behavior is which plugins you configure.** There is no master switch. With **no plugins** configured (empty config and nothing auto-discovered) every hook site is a fast no-op (a boolean check) that requires no execution engine and imports no `cpex` — byte-for-byte identical to a plugin-free install. With **plugins configured but the engine missing**, initialization fails **closed** with a clear error rather than silently no-opping a compliance plugin (see [The CPEX engine](#the-cpex-engine)).
 
 ### Hook taxonomy
 
@@ -110,16 +110,38 @@ Read-cost note for `AccessStampPlugin`: fire-and-forget tasks are awaited before
 
 Plugins need an execution engine to run. The engine layer is deliberately thin — one dispatch/manager module (`altk_evolve/hooks/manager.py`) between the choke points and the plugin runner. Hook types, payload classes, and plugin cores do not depend on it; swapping engines means reimplementing that dispatch layer, not rewriting plugins or the seam. The engine integration shipped today is **CPEX**, whose plugin manager provides plugin discovery, chaining, priorities, execution modes, and YAML configuration; the integration follows the intended-usage pattern the framework was designed for (a thin wrapper layer per host application). Everything in this section is specific to the CPEX path.
 
-- **Optional dependency.** `cpex` pulls heavy transitive dependencies (fastapi, mcp, prometheus), so it lives behind an extra: `pip install 'altk-evolve[hooks]'`. Without it — or with `hooks.enabled=False`, the default — every hook site is a fast no-op. Enabling hooks without cpex installed raises `ImportError` with the install hint.
+- **Optional dependency, fail-closed when configured.** `cpex` pulls heavy transitive dependencies (fastapi, mcp, prometheus), so it lives behind an extra: `pip install 'altk-evolve[hooks]'`. With **no plugins** configured every hook site is a fast no-op and cpex is never imported. Configuring a plugin **without** cpex installed raises `ImportError` with the install hint (fail-closed — configured plugins never silently degrade to a no-op). A configured plugin whose own detector lib is missing (e.g. READI without `[pii-semantic]`, or the regex filter without `[pii-regex]`) also surfaces its extra-naming `ImportError` at initialization, not lazily on the first write.
 - **Execution modes and priorities.** Each plugin registers with a CPEX execution mode — `transform` (serial, chained, modifying, non-halting), `sequential` (may halt), `fire_and_forget` (side-effect only), `audit`, `concurrent`, `disabled` — a `priority` (lower runs earlier), and an `on_error` policy (`fail` / `ignore` / `disable`).
 - **Fail-closed by default.** `on_error` defaults to `fail`: a plugin that crashes or times out halts the operation (a memory-write/`llm_pre_call` crash surfaces as `MemoryPolicyViolation`), rather than silently passing data through — the right default for a compliance plugin (e.g. PII redaction), but it trades availability for safety. A non-critical plugin (e.g. best-effort access auditing) can opt into `on_error="ignore"` so its failures don't block the operation. (A crash in a `memory_post_read` plugin never fails the read it rode in on — that hook is read-side transform-only and logs a warning instead.)
 - **Sync bridge.** CPEX's `invoke_hook` is async-only; Evolve's call sites are sync. The seam uses `asyncio.run` when no event loop is running and a dedicated thread when one is. Fire-and-forget plugin tasks are awaited before the bridge returns so their side effects are never lost with the closing loop.
-- **Singleton caveat.** CPEX's `PluginManager` is a process-wide (Borg) singleton — the hook seam is process-global, not per-client. Two sharp edges follow: (a) constructing a second `EvolveClient` with `hooks.enabled=True` calls `PluginManager.reset()` and silently **replaces** the first client's plugins — for a compliance plugin (e.g. PII redaction) this means redaction can be silently disabled by unrelated code constructing its own client; (b) a client constructed with `enabled=False` does not reset the manager, but it still inherits whatever process-global hooks another client enabled — its operations flow through those plugins too. Per-instance isolation (CPEX's `TenantPluginManager`) is deferred until a real use case needs it. In tests, call `altk_evolve.hooks.shutdown_hooks()` between cases.
+- **Singleton caveat.** CPEX's `PluginManager` is a process-wide (Borg) singleton — the hook seam is process-global, not per-client. Two sharp edges follow: (a) constructing a second `EvolveClient` whose config resolves plugins calls `PluginManager.reset()` and silently **replaces** the first client's plugins — for a compliance plugin (e.g. PII redaction) this means redaction can be silently disabled by unrelated code constructing its own client; (b) a client that resolves **no** plugins calls `shutdown_hooks()`, so it does not inherit another client's process-global plugins — no configured plugins truly means a no-op. Per-instance isolation (CPEX's `TenantPluginManager`) is deferred until a real use case needs it. In tests, call `altk_evolve.hooks.shutdown_hooks()` between cases.
 - **PII adapter.** `PIIFilterMemoryPlugin` aliases the native `cpex-pii-filter` plugin onto Evolve's hook types; it needs the separate `[pii-regex]` extra (cpex + cpex-pii-filter; `[pii]` is a back-compat alias for it). `ReadiSemanticPIIPlugin` is a plain core/shim plugin (no cpex plugin to adapt) and needs the `[pii-semantic]` extra.
 
-## Enabling hooks
+## Configuring plugins
 
-Hooks are configured on `EvolveConfig.hooks` and initialized by `EvolveClient`:
+The seam is always live; you turn behavior on by **configuring plugins**. There is no enable flag — a `HooksConfig` that resolves no plugins is a zero-cost no-op, and any configured plugin activates the seam (and requires the `[hooks]` engine, else init fails closed).
+
+### Turnkey: `evolve hooks init`
+
+The fastest path scaffolds a project-local config:
+
+```console
+$ evolve hooks init            # writes ./evolve.hooks.yaml
+```
+
+The scaffolded file ships the **READI semantic PII plugin active** and the **regex PII plugin commented out** (both `mode: sequential`, `on_error: fail`), with comments explaining each method and how to switch. Evolve **auto-discovers** it — no further wiring. Install the engine + detector to make it live: `pip install 'altk-evolve[pii-semantic]'` (see the [PII redaction guide](pii-redaction.md), including the macOS/MPS caveat).
+
+### Auto-discovery search order
+
+When `HooksConfig.plugins_yaml` is not set explicitly and no code-first `plugins` are given, Evolve searches for a default hooks config file and loads the **first** that exists:
+
+1. `$EVOLVE_HOOKS_CONFIG` — an explicit path (an env override always wins).
+2. `./evolve.hooks.yaml` — project-local, relative to the current working directory.
+3. `~/.config/evolve/hooks.yaml` (or `$XDG_CONFIG_HOME/evolve/hooks.yaml`) — a per-user config.
+
+An explicit `plugins_yaml` (or any code-first `plugins`) **overrides** discovery. Discovery finding nothing → no plugins → no-op.
+
+### In code
 
 ```python
 from altk_evolve.config.evolve import EvolveConfig
@@ -128,7 +150,6 @@ from altk_evolve.frontend.client.evolve_client import EvolveClient
 
 config = EvolveConfig(
     hooks=HooksConfig(
-        enabled=True,
         # Either point at an engine plugins.yaml (CPEX format)...
         plugins_yaml="examples/hooks_plugins.yaml",
         # ...or declare plugins in code (both may be combined):
@@ -146,6 +167,8 @@ client = EvolveClient(config)
 ```
 
 See [`examples/hooks_plugins.yaml`](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/hooks_plugins.yaml) for the YAML form and [`examples/hooks_demo.py`](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/hooks_demo.py) for a runnable end-to-end demo.
+
+> **Deprecated:** the old `HooksConfig(enabled=...)` master switch has been removed. Passing `enabled=` is accepted for back-compat but ignored (it emits a `DeprecationWarning`) — behavior now depends solely on which plugins you configure.
 
 ## Known limitations
 

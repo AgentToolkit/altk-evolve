@@ -1,12 +1,22 @@
 # Example plugin configuration for the altk_evolve memory hook seam, in the
 # YAML format of the shipped CPEX execution engine.
 #
-# Point EvolveConfig at this file to enable plugins without touching code:
+# This is the full, annotated reference of every shipped plugin. For a turnkey
+# PII setup, prefer `evolve hooks init` — it scaffolds ./evolve.hooks.yaml
+# (auto-discovered) with the READI semantic plugin active and the regex plugin
+# commented out.
+#
+# Point EvolveConfig at this file to configure plugins without touching code:
 #
 #     from altk_evolve.config.evolve import EvolveConfig
 #     from altk_evolve.config.hooks import HooksConfig
 #
-#     config = EvolveConfig(hooks=HooksConfig(enabled=True, plugins_yaml="examples/hooks_plugins.yaml"))
+#     config = EvolveConfig(hooks=HooksConfig(plugins_yaml="examples/hooks_plugins.yaml"))
+#
+# The hook seam is always live; behavior is decided by which plugins are
+# configured here (no separate on/off switch). Evolve also AUTO-DISCOVERS a
+# default config file when `plugins_yaml` is unset:
+#     $EVOLVE_HOOKS_CONFIG -> ./evolve.hooks.yaml -> ~/.config/evolve/hooks.yaml
 #
 # The "edit YAML to change behavior" property: comment a plugin out (or set
 # `mode: disabled`) and restart — no code change needed. Jinja templating is

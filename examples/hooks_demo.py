@@ -63,11 +63,12 @@ def main() -> None:
             )
         )
 
-    # Equivalent YAML-driven setup: HooksConfig(enabled=True, plugins_yaml="examples/hooks_plugins.yaml")
+    # Equivalent YAML-driven setup: HooksConfig(plugins_yaml="examples/hooks_plugins.yaml").
+    # The seam is always live; configuring these plugins is what activates it.
     config = EvolveConfig(
         backend="filesystem",
         settings=FilesystemSettings(data_dir=tempfile.mkdtemp(prefix="evolve_hooks_demo_")),
-        hooks=HooksConfig(enabled=True, plugins=plugins),
+        hooks=HooksConfig(plugins=plugins),
     )
     client = EvolveClient(config)
     client.create_namespace("demo")
