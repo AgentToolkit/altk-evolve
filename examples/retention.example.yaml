@@ -3,27 +3,40 @@
 # Dry run:  evolve retention run --policy examples/retention.example.yaml
 # Enforce:  evolve retention run --policy examples/retention.example.yaml --apply
 #
-# Rules are evaluated top-to-bottom; the first matching rule wins per entity,
-# so put narrow rules first. Each rule must set max_age_days and/or
-# max_unused_days.
+# Rules are evaluated top-to-bottom; the FIRST matching rule wins per entity, so
+# order is escalation, not accumulation. Put the more aggressive / longer-
+# threshold rule FIRST so it isn't shadowed by a broader earlier rule. Each rule
+# must set max_age_days and/or max_unused_days.
 rules:
-  # Flag guidelines older than 90 days for review. Flagging is non-destructive:
-  # it writes retention_flagged_at / retention_reason / retention_rule into the
-  # entity's metadata and leaves the content alone.
-  - name: stale-guidelines
-    entity_type: guideline
-    max_age_days: 90
-    action: flag
-
-  # Delete guidelines not read in 180 days. This reads metadata.last_accessed,
-  # which AccessStampPlugin stamps on every public read (or which you stamp
-  # explicitly via EvolveClient.record_access). WITHOUT one of those enabled
-  # there is no recall signal and this rule silently degrades into an age rule
-  # — the dry-run report says so in its warnings.
+  # Delete guidelines not read in 180 days. This must come BEFORE the 90-day
+  # flag rule below: any guideline unused for 180 days is necessarily >90 days
+  # old, so if the flag rule were first it would always match first and this
+  # delete could never fire (first-match-wins shadowing).
+  #
+  # The "unused" signal is metadata.last_accessed, stamped by AccessStampPlugin
+  # on every public read (or explicitly via EvolveClient.record_access). WITHOUT
+  # one of those enabled there is no recall signal. on_missing_access_signal
+  # controls what this delete does when an entity carries no stamp:
+  #   skip   (default, fail-safe) — do not delete; report it as skipped
+  #   flag   — downgrade the delete to a non-destructive flag
+  #   delete — delete on the created_at fallback (explicit opt-in)
+  # We keep the safe default explicit here: an unstamped guideline is spared,
+  # not silently deleted from its creation date.
   - name: unused-guidelines
     entity_type: guideline
     max_unused_days: 180
     action: delete
+    on_missing_access_signal: skip
+
+  # Flag guidelines older than 90 days for review. Reached by any guideline that
+  # did NOT match the delete rule above (i.e. read within the last 180 days but
+  # created more than 90 days ago). Flagging is non-destructive: it writes
+  # retention_flagged_at / retention_reason / retention_rule into the entity's
+  # metadata and leaves the content alone.
+  - name: stale-guidelines
+    entity_type: guideline
+    max_age_days: 90
+    action: flag
 
   # Delete sessions (trajectories) older than a year, and cascade-delete the
   # memories derived from them (linked by metadata.source_task_id == the

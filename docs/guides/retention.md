@@ -32,15 +32,16 @@ A policy is an ordered list of rules, in YAML or JSON:
 
 ```yaml
 rules:
-  - name: stale-guidelines
-    entity_type: guideline
-    max_age_days: 90
-    action: flag
-
   - name: unused-guidelines
     entity_type: guideline
     max_unused_days: 180
     action: delete
+    on_missing_access_signal: skip
+
+  - name: stale-guidelines
+    entity_type: guideline
+    max_age_days: 90
+    action: flag
 
   - name: old-sessions
     entity_type: trajectory
@@ -56,11 +57,30 @@ rules:
 | `max_age_days` | Match entities whose `created_at` is older than this. |
 | `max_unused_days` | Match entities not read in this many days (see [The unused signal](#the-unused-signal)). |
 | `action` | `flag` (default) or `delete`. |
+| `on_missing_access_signal` | For a `delete` rule: what to do when an `unused` match has no real `last_accessed` stamp. `skip` (default), `flag`, or `delete` — see [When the unused signal is missing](#when-the-unused-signal-is-missing). |
 | `cascade_derived` | On a `delete` of a session entity, also delete the memories derived from it. |
 
 Every rule must set `max_age_days` and/or `max_unused_days` — a rule with no threshold is a config error, not a match-everything rule.
 
 **Rules are evaluated top-to-bottom and the first match wins per entity**, so put narrow rules first. One exception, deliberately: a cascade `delete` supersedes a `flag` an earlier rule had already assigned to the same entity. Delete always wins over flag; otherwise the first writer wins.
+
+### First-match shadowing
+
+Because the first matching rule wins and never re-evaluates, an earlier broad rule can **shadow** a later one so it can never fire. The classic trap is ordering a short-threshold `flag` before a long-threshold `delete` on the same type:
+
+```yaml
+# WRONG — the delete is unreachable
+- name: stale-guidelines
+  entity_type: guideline
+  max_age_days: 90        # any 180-day-unused guideline is also >90 days old…
+  action: flag
+- name: unused-guidelines
+  entity_type: guideline
+  max_unused_days: 180    # …so this rule never wins: the flag above always matches first
+  action: delete
+```
+
+Any guideline unused for 180 days is necessarily more than 90 days old, so the `flag` rule always matches it first and the `delete` never runs. Order is **escalation, not accumulation**: put the more aggressive / longer-threshold rule first, so the safety-net `flag` catches only what the `delete` didn't. `examples/retention.example.yaml` ships the corrected ordering.
 
 ## Flag vs delete
 
@@ -102,6 +122,20 @@ AccessStampPlugin (or call EvolveClient.record_access) for a real recall signal.
 ```
 
 This is a change from the original prototype, where the fallback was silent and — because nothing called `record_access` — universal.
+
+### When the unused signal is missing
+
+Falling back to `created_at` is only *reporting* the degraded signal — it does not decide whether to act on it. That decision is a per-rule knob, `on_missing_access_signal`, which applies **only to `delete` rules matching on `unused` where the entity has no real `last_accessed` stamp**:
+
+| Value | Behaviour on an unstamped `unused` delete match |
+|---|---|
+| `skip` | **Default, fail-safe.** Do not act. The entity is recorded in `report.skipped` (and shown in the CLI's "Skipped" table) with the reason, so you can see what was spared. |
+| `flag` | Downgrade the delete to a non-destructive `flag`. |
+| `delete` | Delete on the `created_at` fallback — the original behaviour, now an explicit opt-in. |
+
+The default is `skip` because a `delete` rule whose signal is silently off (no `AccessStampPlugin`, no `record_access`) would otherwise delete every matched entity from its creation date — data loss with the safety mechanism disabled. `skip` **only bites deletes**: a `flag` rule still flags a never-stamped entity (that is not data loss), an entity *with* a real stamp is unaffected, and an `age`-driven match is unaffected (age from `created_at` is a legitimate signal). Turn a rule up to `delete` once you have confirmed access stamping is on, or to `flag` to build a review queue instead.
+
+The plugin-side skill exposes the same field with the same default, keyed off the recall audit log instead of `metadata.last_accessed`.
 
 ## The session cascade
 
@@ -149,7 +183,7 @@ In scope: private entities under `.evolve/entities/` and session files under `.e
 
 ## Operational notes
 
-- The engine scans up to `RetentionEngine.FETCH_LIMIT` (100,000) entities per namespace in one call, and holds them in memory to build the provenance index. Very large namespaces will want batching; that is not implemented.
+- The engine scans up to a fetch limit — `RetentionEngine.FETCH_LIMIT` (100,000) by default, overridable per call via the `scan_limit` argument to `apply()` / `evaluate()` — and holds the entities in memory to build the provenance index. When a scan comes back holding exactly the limit, the report carries a `warnings` entry saying entities beyond it were not evaluated (and so not cascaded); raise `scan_limit` or batch the namespace. Very large namespaces will want batching; that is not implemented.
 - One failing entity does not abort the sweep — the failure is logged and recorded in `report.errors`, and the remaining entities are processed. The CLI exits non-zero when `errors` is non-empty.
 - Naive `created_at` values are treated as UTC.
 - Retention is not a hook: it is a periodic sweep you schedule. There is no automatic expiry on write or read.
