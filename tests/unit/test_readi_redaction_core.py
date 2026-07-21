@@ -85,6 +85,24 @@ def test_redact_spans_clamps_out_of_range_offsets():
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("spans", [[(10, 20)], [(-5, -2)], [(99, 100)]])
+def test_redact_spans_fully_out_of_range_span_is_a_noop(spans):
+    """REGRESSION: a span entirely outside the text must NOT inject a mask.
+
+    Zero-width spans were dropped BEFORE clamping, so a span like (10, 20) on a
+    6-char string clamped to (6, 6) and spliced as an INSERTION —
+    `redact_spans("abcdef", [(10, 20)])` returned "abcdef[REDACTED]". Clamp then
+    drop, and it is a genuine no-op (preserving the None-unchanged contract).
+    """
+    assert redact_spans("abcdef", spans) == "abcdef"
+
+
+@pytest.mark.unit
+def test_redact_spans_mixed_real_and_out_of_range_redacts_only_the_real_span():
+    assert redact_spans("abcdef", [(0, 3), (10, 20)]) == "[REDACTED]def"
+
+
+@pytest.mark.unit
 def test_redact_spans_empty_text():
     assert redact_spans("", [(0, 3)]) == ""
 

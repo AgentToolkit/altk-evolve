@@ -75,7 +75,11 @@ def redact_spans(text: str, spans: Iterable[tuple[int, int]], *, mask: str = DEF
     """
     if not text:
         return text
-    clamped = sorted((max(0, min(int(s), len(text))), max(0, min(int(e), len(text)))) for s, e in spans if int(e) > int(s))
+    # Clamp FIRST, then drop zero-width. Filtering `e > s` before clamping lets a
+    # fully-out-of-range span (e.g. (10, 20) on a 6-char string) clamp to (6, 6)
+    # and splice as a spurious INSERTION of `mask`; dropping zero-width spans
+    # *after* clamping keeps such spans a genuine no-op (None-unchanged contract).
+    clamped = sorted((cs, ce) for cs, ce in ((max(0, min(int(s), len(text))), max(0, min(int(e), len(text)))) for s, e in spans) if cs < ce)
     if not clamped:
         return text
     merged: list[tuple[int, int]] = []
