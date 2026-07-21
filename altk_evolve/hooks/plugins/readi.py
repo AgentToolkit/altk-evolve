@@ -101,18 +101,30 @@ def redact_text(text: str, detect: SpanDetector, *, mask: str = DEFAULT_REDACTIO
     return redact_spans(text, detect(text), mask=mask)
 
 
-def _redact_value(value: Any, detect: SpanDetector, *, mask: str) -> Any:
+#: Message / tool_call keys that carry identity or routing, not free text. When
+#: walking a whole chat message (see :func:`redact_messages`) these are passed
+#: through verbatim at every nesting depth so a detector false-positive can never
+#: rewrite a ``role``, an id, a tool-call ``type`` (``"function"``), or a
+#: function ``name`` — only the text-bearing leaves (``content``, and
+#: ``tool_calls[].function.arguments``) are redacted.
+MESSAGE_STRUCTURAL_KEYS = frozenset({"role", "id", "type", "name", "tool_call_id"})
+
+
+def _redact_value(value: Any, detect: SpanDetector, *, mask: str, skip: frozenset[str] = frozenset()) -> Any:
     """Recursively redact string leaves of a ``str | list | dict`` value.
 
     An entity's ``content`` may be any of these; non-string scalars (ints,
-    bools, None) pass through so structure survives redaction.
+    bools, None) pass through so structure survives redaction. Keys in ``skip``
+    are copied through untouched at any depth (used to protect structural
+    message fields like ``role``/ids from redaction); ``skip`` is empty by
+    default, so entity/metadata redaction is unaffected.
     """
     if isinstance(value, str):
         return redact_text(value, detect, mask=mask)
     if isinstance(value, list):
-        return [_redact_value(v, detect, mask=mask) for v in value]
+        return [_redact_value(v, detect, mask=mask, skip=skip) for v in value]
     if isinstance(value, dict):
-        return {k: _redact_value(v, detect, mask=mask) for k, v in value.items()}
+        return {k: (v if k in skip else _redact_value(v, detect, mask=mask, skip=skip)) for k, v in value.items()}
     return value
 
 
@@ -157,18 +169,26 @@ def redact_messages(
 ) -> list[dict] | None:
     """Return redacted copies of chat ``messages``, or ``None`` when unchanged.
 
-    Only the ``content`` field is touched (``role``, ``tool_calls``, ... are
-    structural). Pure; inputs are never mutated.
+    Redacts ALL text-bearing parts of each message, not just ``content``:
+    critically ``tool_calls[].function.arguments`` (typically a JSON string of
+    the model's tool inputs), which otherwise re-sends unredacted PII to the LLM
+    on every turn — a real egress leak, and a parity gap versus the regex plugin
+    which redacts the whole payload. The message is walked with
+    :data:`MESSAGE_STRUCTURAL_KEYS` skipped, so ids/roles/types/function-names
+    are preserved while every free-text leaf is masked. The tool-call
+    ``arguments`` string is redacted as raw text, which is safe because
+    :func:`redact_text` only rewrites detector-flagged substrings (the PII
+    *values*), leaving the surrounding JSON intact.
+
+    Pure; inputs are never mutated (``_redact_value`` rebuilds dicts/lists).
     """
     changed = False
     out: list[dict] = []
     for message in messages:
-        content = _redact_value(message.get("content"), detect, mask=mask)
-        if content != message.get("content"):
-            out.append({**message, "content": content})
+        redacted = _redact_value(message, detect, mask=mask, skip=MESSAGE_STRUCTURAL_KEYS)
+        out.append(redacted)
+        if redacted != message:
             changed = True
-        else:
-            out.append(dict(message))
     return out if changed else None
 
 

@@ -237,6 +237,54 @@ def test_redact_messages_tolerates_non_string_content():
     assert result[1]["content"] is None
 
 
+@pytest.mark.unit
+def test_redact_messages_redacts_pii_in_tool_call_arguments():
+    """REGRESSION (egress leak): PII in tool_calls[].function.arguments was
+    re-sent to the LLM every turn because only `content` was walked. The raw
+    arguments string is redacted; ids/role/type/function-name stay intact.
+    """
+    message = {
+        "role": "assistant",
+        "id": "msg_1",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_abc",
+                "type": "function",
+                "function": {"name": "send_email", "arguments": '{"to": "Dana", "body": "hi"}'},
+            }
+        ],
+    }
+    result = redact_messages([message], fake_detector("Dana"))
+    assert result is not None
+    call = result[0]["tool_calls"][0]
+    assert "Dana" not in call["function"]["arguments"]
+    assert call["function"]["arguments"] == '{"to": "[REDACTED]", "body": "hi"}'
+    # Structural fields are never rewritten.
+    assert result[0]["role"] == "assistant"
+    assert result[0]["id"] == "msg_1"
+    assert call["id"] == "call_abc"
+    assert call["type"] == "function"
+    assert call["function"]["name"] == "send_email"
+
+
+@pytest.mark.unit
+def test_redact_messages_does_not_mutate_input_with_tool_calls():
+    message = {"role": "assistant", "tool_calls": [{"id": "c1", "function": {"name": "f", "arguments": "Dana"}}]}
+    result = redact_messages([message], fake_detector("Dana"))
+    assert result is not None
+    assert message["tool_calls"][0]["function"]["arguments"] == "Dana"  # input untouched
+    assert result[0]["tool_calls"][0]["function"]["arguments"] == "[REDACTED]"
+
+
+@pytest.mark.unit
+def test_redact_messages_returns_none_when_only_structural_fields_present():
+    # A message with PII only in a structural key (a function name here) must be
+    # left unchanged — structural fields are never redacted.
+    messages = [{"role": "assistant", "tool_calls": [{"id": "Dana", "type": "function", "function": {"name": "Dana"}}]}]
+    assert redact_messages(messages, fake_detector("Dana")) is None
+
+
 # ── build_readi_detector ─────────────────────────────────────────────
 
 
