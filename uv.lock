@@ -237,7 +237,11 @@ pii = [
     { name = "cpex" },
     { name = "cpex-pii-filter" },
 ]
-readi = [
+pii-regex = [
+    { name = "cpex" },
+    { name = "cpex-pii-filter" },
+]
+pii-semantic = [
     { name = "cpex" },
     { name = "readi-privacy" },
     { name = "spacy-curated-transformers" },
@@ -280,12 +284,13 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "altk-evolve", extras = ["hooks"], marker = "extra == 'pii'" },
-    { name = "altk-evolve", extras = ["hooks"], marker = "extra == 'readi'" },
+    { name = "altk-evolve", extras = ["hooks"], marker = "extra == 'pii-regex'" },
+    { name = "altk-evolve", extras = ["hooks"], marker = "extra == 'pii-semantic'" },
+    { name = "altk-evolve", extras = ["pii-regex"], marker = "extra == 'pii'" },
     { name = "altk-evolve", extras = ["tracing"], marker = "extra == 'examples'" },
     { name = "arize-phoenix", specifier = ">=12.30.0" },
     { name = "cpex", marker = "extra == 'hooks'", specifier = ">=0.1.0,<0.2" },
-    { name = "cpex-pii-filter", marker = "extra == 'pii'", specifier = ">=0.3,<0.4" },
+    { name = "cpex-pii-filter", marker = "extra == 'pii-regex'", specifier = ">=0.3,<0.4" },
     { name = "datasets", marker = "extra == 'bench'", specifier = ">=2.14" },
     { name = "fastmcp" },
     { name = "jinja2" },
@@ -305,16 +310,16 @@ requires-dist = [
     { name = "pymilvus", marker = "platform_machine == 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
     { name = "pymilvus", extras = ["milvus-lite"], marker = "platform_machine != 'aarch64' and extra == 'milvus'", specifier = ">=2.6.2" },
     { name = "pyyaml" },
-    { name = "readi-privacy", marker = "extra == 'readi'", specifier = ">=0.1.6,<0.2" },
+    { name = "readi-privacy", marker = "extra == 'pii-semantic'", specifier = ">=0.1.6,<0.2" },
     { name = "scipy" },
     { name = "sentence-transformers" },
     { name = "smolagents", marker = "extra == 'examples'" },
-    { name = "spacy-curated-transformers", marker = "extra == 'readi'", specifier = ">=0.2,<3" },
+    { name = "spacy-curated-transformers", marker = "extra == 'pii-semantic'", specifier = ">=0.2,<3" },
     { name = "typer", specifier = ">=0.9.0" },
     { name = "uv", marker = "extra == 'build'" },
     { name = "uvicorn" },
 ]
-provides-extras = ["build", "tracing", "milvus", "pgvector", "hooks", "pii", "readi", "bench", "examples"]
+provides-extras = ["build", "tracing", "milvus", "pgvector", "hooks", "pii-regex", "pii", "pii-semantic", "bench", "examples"]
 
 [package.metadata.requires-dev]
 dev = [

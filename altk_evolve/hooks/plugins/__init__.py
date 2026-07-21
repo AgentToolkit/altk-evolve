@@ -13,13 +13,16 @@ package — and using the cores — always works.
 - :class:`AccessStampPlugin` (memory_post_read, fire_and_forget): stamps
   ``last_accessed`` on read entities; core :func:`build_access_stamps`.
 - :class:`PIIFilterMemoryPlugin` (memory_pre_write + llm_pre_call, transform):
-  regex PII redaction; additionally requires ``pip install 'altk-evolve[pii]'``.
+  regex PII redaction (the ``[pii-regex]`` method); additionally requires
+  ``pip install 'altk-evolve[pii-regex]'`` (``[pii]`` is a back-compat alias).
   Deliberately core-less: it is an adapter for the external cpex-pii-filter
   plugin, so the cpex coupling is its purpose.
 - :class:`ReadiSemanticPIIPlugin` (memory_pre_write + llm_pre_call, sequential):
-  semantic (NER) PII redaction via IBM READI — catches names/locations/orgs
-  that regex cannot; cores :func:`redact_entities` / :func:`redact_messages` /
-  :func:`redact_spans`. Additionally requires ``pip install 'altk-evolve[readi]'``.
+  semantic (NER) PII redaction via IBM READI — the ``[pii-semantic]`` method,
+  catching names/locations/orgs that regex cannot; cores
+  :func:`redact_entities` / :func:`redact_messages` / :func:`redact_spans`.
+  Additionally requires ``pip install 'altk-evolve[pii-semantic]'``. Running both
+  methods is the recommended defence-in-depth default.
 """
 
 from altk_evolve.hooks.plugins.access_stamp import AccessStampPlugin, build_access_stamps

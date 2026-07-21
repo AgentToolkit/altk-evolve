@@ -47,9 +47,16 @@ hooks = [
     "cpex>=0.1.0,<0.2",
 ]
 
-# PII redaction plugin for the hook seam (separate from [hooks] so users who
-# only want normalization/audit plugins don't pull the PII filter).
-pii = [
+# PII redaction is offered as two *methods*, each its own extra: regex (this
+# one, lightweight/deterministic) and semantic (NER, below). Both are PII
+# redaction; the name says the method, not "PII vs not-PII". Running BOTH is the
+# recommended defence-in-depth default — regex for structured identifiers,
+# semantic for names/entities.
+#
+# `[pii-regex]`: the regex method (cpex-pii-filter's Rust engine). Separate from
+# [hooks] so users who only want normalization/audit plugins don't pull the PII
+# filter.
+pii-regex = [
     "altk-evolve[hooks]",
     # Upper-bound the minor (mirrors cpex's <0.2): PIIFilterMemoryPlugin always
     # receives a PluginConfig on the YAML/spec path (the `config or
@@ -60,13 +67,24 @@ pii = [
     "cpex-pii-filter>=0.3,<0.4",
 ]
 
-# Semantic (NER-based) PII redaction plugin for the hook seam, backed by IBM
-# READI (``readi-privacy``, import name ``risk_assessment``). Separate from
-# [pii] because it drags in spaCy/transformers and downloads model weights —
-# regex redaction stays dependency-light for deployments that only need it.
-readi = [
+# Backward-compatible alias. `[pii]` historically meant the regex method, so it
+# maps to `[pii-regex]` and keeps existing `altk-evolve[pii]` installs working
+# with the same lightweight, deterministic behaviour. It deliberately does NOT
+# pull the heavy semantic deps — that would turn a previously ~small install
+# into a multi-hundred-MB spaCy/transformers download for existing users. For
+# semantic redaction, install `[pii-semantic]` explicitly.
+pii = [
+    "altk-evolve[pii-regex]",
+]
+
+# `[pii-semantic]`: the semantic (NER) method, backed by IBM READI
+# (``readi-privacy``, import name ``risk_assessment``). The more powerful method
+# — it catches names/locations/organizations regex cannot — but it drags in
+# spaCy/transformers and downloads model weights, so it is a separate extra from
+# `[pii-regex]`, which stays dependency-light for deployments that only need it.
+pii-semantic = [
     "altk-evolve[hooks]",
-    # Upper-bound the minor, mirroring [hooks]/[pii]: READI's extractor and
+    # Upper-bound the minor, mirroring [hooks]/[pii-regex]: READI's extractor and
     # DetectionType APIs (READIAnalyzer, SpacyEntityExtractor, ...) are what
     # this plugin's core is written against, and a 0.2 release could reshape
     # them silently rather than surface as an error.

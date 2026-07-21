@@ -2,7 +2,7 @@
 
 Detection is injected (the ``SpanDetector`` protocol), so the splice/merge
 logic that decides what actually gets masked is always-on CI coverage: none of
-these tests need the ``[hooks]`` or ``[readi]`` extras. The cpex shim and a
+these tests need the ``[hooks]`` or ``[pii-semantic]`` extras. The cpex shim and a
 real NER model are exercised separately in ``test_hooks_plugins.py``.
 """
 
@@ -165,10 +165,21 @@ def test_redact_entities_does_not_mutate_input():
 
 
 @pytest.mark.unit
-def test_redact_entities_leaves_metadata_alone_by_default():
-    result = redact_entities([{"content": "Dana", "metadata": {"owner": "Dana"}}], fake_detector("Dana"))
+def test_redact_entities_redacts_metadata_by_default():
+    # Default is redact_metadata=True, matching the regex plugin (which round-
+    # trips the whole entity through cpex-pii-filter and so redacts metadata
+    # unconditionally). Shipping opposite defaults would be a silent parity gap.
+    result = redact_entities([{"content": "x", "metadata": {"owner": "Dana"}}], fake_detector("Dana"))
     assert result is not None
-    assert result[0]["metadata"] == {"owner": "Dana"}  # opt-in only
+    assert result[0]["metadata"] == {"owner": "[REDACTED]"}
+
+
+@pytest.mark.unit
+def test_redact_entities_can_opt_out_of_metadata_redaction():
+    # Opt-out for deployments that key on ids/paths redaction would corrupt.
+    result = redact_entities([{"content": "Dana", "metadata": {"owner": "Dana"}}], fake_detector("Dana"), redact_metadata=False)
+    assert result is not None
+    assert result[0]["metadata"] == {"owner": "Dana"}
 
 
 @pytest.mark.unit
@@ -299,7 +310,7 @@ def test_build_readi_detector_rejects_unknown_extractor():
 def test_build_readi_detector_without_readi_names_the_extra():
     if importlib.util.find_spec("risk_assessment") is not None:
         pytest.skip("readi-privacy installed; the degradation path is not active")
-    with pytest.raises(ImportError, match=r"altk-evolve\[readi\]"):
+    with pytest.raises(ImportError, match=r"altk-evolve\[pii-semantic\]"):
         build_readi_detector()
 
 
@@ -373,14 +384,14 @@ def test_core_usable_and_shim_stub_raises_with_cpex_blocked():
         try:
             ReadiSemanticPIIPlugin()
         except ImportError as exc:
-            assert "altk-evolve[readi]" in str(exc), str(exc)
+            assert "altk-evolve[pii-semantic]" in str(exc), str(exc)
         else:
             raise AssertionError("ReadiSemanticPIIPlugin stub did not raise")
 
         try:
             build_readi_detector()
         except ImportError as exc:
-            assert "altk-evolve[readi]" in str(exc), str(exc)
+            assert "altk-evolve[pii-semantic]" in str(exc), str(exc)
         else:
             raise AssertionError("build_readi_detector did not raise without READI")
         """

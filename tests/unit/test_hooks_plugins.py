@@ -1,7 +1,7 @@
 """Behavior of the in-tree hook plugins (normalizer, access stamp, PII filter).
 
 Requires the optional cpex package (``uv sync --extra hooks``); the PII tests
-additionally require cpex-pii-filter (``--extra pii``).
+additionally require cpex-pii-filter (``--extra pii-regex``).
 """
 
 import asyncio
@@ -162,7 +162,7 @@ def test_plugin_stubs_raise_without_cpex(monkeypatch):
 
     if pii_module._HAS_PII_FILTER:
         pytest.skip("cpex-pii-filter installed; stub not active")
-    with pytest.raises(ImportError, match=r"altk-evolve\[pii\]"):
+    with pytest.raises(ImportError, match=r"altk-evolve\[pii-regex\]"):
         pii_module.PIIFilterMemoryPlugin()
 
 
@@ -255,6 +255,46 @@ def test_readi_shim_reads_config_keys():
 
 
 @pytest.mark.unit
+def test_readi_shim_redacts_metadata_by_default():
+    """Default (no config) redacts metadata, matching the regex plugin's behaviour."""
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import MemoryPreWritePayload
+
+    plugin = ReadiSemanticPIIPlugin()
+    plugin._detector = fake_name_detector
+    payload = MemoryPreWritePayload(
+        namespace_id="ns",
+        entities=[{"content": "note", "metadata": {"author": "Dana Whitfield"}}],
+    )
+    entity = asyncio.run(plugin.memory_pre_write(payload, _StubContext())).modified_payload.entities[0]
+    assert entity["metadata"] == {"author": "[REDACTED]"}
+
+
+@pytest.mark.unit
+def test_readi_shim_redacts_pii_in_tool_call_arguments():
+    """Egress-leak regression at the shim level: tool_call arguments are redacted."""
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import LLMPreCallPayload
+
+    plugin = ReadiSemanticPIIPlugin()
+    plugin._detector = fake_name_detector
+    payload = LLMPreCallPayload(
+        messages=[
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "save", "arguments": '{"who": "Dana Whitfield"}'}}],
+            }
+        ],
+        purpose="test",
+    )
+    result = asyncio.run(plugin.llm_pre_call(payload, _StubContext()))
+    call = result.modified_payload.messages[0]["tool_calls"][0]
+    assert "Dana Whitfield" not in call["function"]["arguments"]
+    assert call["function"]["name"] == "save"
+
+
+@pytest.mark.unit
 def test_readi_default_config_can_block_and_fails_closed():
     """Mode/on_error are load-bearing, not cosmetic (see docs/guides/memory-hooks.md).
 
@@ -275,7 +315,7 @@ def test_readi_default_config_can_block_and_fails_closed():
 
 @pytest.mark.unit
 def test_readi_shim_stub_raises_without_readi():
-    """Without the [readi] extra the shim degrades with a named install hint."""
+    """Without the [pii-semantic] extra the shim degrades with a named install hint."""
     import importlib.util
 
     if importlib.util.find_spec("risk_assessment") is not None:
@@ -284,5 +324,5 @@ def test_readi_shim_stub_raises_without_readi():
     from altk_evolve.hooks.types import LLMPreCallPayload
 
     plugin = ReadiSemanticPIIPlugin()  # construction is cheap; READI loads lazily
-    with pytest.raises(ImportError, match=r"altk-evolve\[readi\]"):
+    with pytest.raises(ImportError, match=r"altk-evolve\[pii-semantic\]"):
         asyncio.run(plugin.llm_pre_call(LLMPreCallPayload(messages=[{"role": "user", "content": "x"}]), _StubContext()))

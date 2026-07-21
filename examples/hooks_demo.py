@@ -8,7 +8,7 @@ Shows:
      egress (skipped when cpex-pii-filter is not installed).
 
 Run:
-    uv sync --extra hooks --extra pii
+    uv sync --extra hooks --extra pii-regex
     uv run --no-sync python examples/hooks_demo.py
 """
 

@@ -31,7 +31,9 @@ the PoC). The splice here therefore indexes ``str`` directly, and
 ``tests/unit/test_readi_redaction_core.py`` pins that with a multibyte
 regression test: a byte-offset detector would mis-splice Japanese text.
 
-Requires ``pip install 'altk-evolve[readi]'``.
+Requires ``pip install 'altk-evolve[pii-semantic]'`` (the semantic PII method;
+the regex method is ``[pii-regex]``, and running both is the recommended
+defence-in-depth default).
 """
 
 from __future__ import annotations
@@ -133,13 +135,18 @@ def redact_entities(
     detect: SpanDetector,
     *,
     mask: str = DEFAULT_REDACTION_TEXT,
-    redact_metadata: bool = False,
+    redact_metadata: bool = True,
 ) -> list[dict] | None:
     """Return redacted copies of ``entities``, or ``None`` when nothing changed.
 
-    ``content`` is always redacted; ``metadata`` values only when
-    ``redact_metadata`` is set (metadata often holds ids/paths that redaction
-    would corrupt, so it is opt-in).
+    ``content`` is always redacted; ``metadata`` values when ``redact_metadata``
+    is set — **default True, to match the shipped regex plugin**, which round-
+    trips the whole entity through cpex-pii-filter and so redacts metadata
+    unconditionally. Shipping the two PII plugins with opposite metadata defaults
+    would be a silent parity gap, and the fail-safe default for a redactor is to
+    mask more. It is an opt-*out* (``redact_metadata=False``): metadata can hold
+    ids/paths/trace keys that redaction would corrupt, so a deployment that keys
+    on those can turn it off deliberately.
 
     Pure: input dicts are never mutated — the seam's plugin contract requires
     changes to travel back as a replacement payload, never in-place.
@@ -227,7 +234,7 @@ def build_readi_detector(
     if extractor not in EXTRACTORS:
         raise ValueError(f"Unknown readi extractor {extractor!r} (expected one of {', '.join(EXTRACTORS)})")
 
-    # Cheap import; validates the [readi] extra without loading model weights.
+    # Cheap import; validates the [pii-semantic] extra without loading model weights.
     # Narrow guard: only a genuinely-absent READI package gets the install hint.
     # A name-less ImportError, or one naming an unrelated module, means a broken
     # install rather than a missing extra and must surface as-is — masking it
@@ -236,7 +243,9 @@ def build_readi_detector(
         from risk_assessment.readi.analyzer import READIAnalyzer
     except ModuleNotFoundError as exc:
         if exc.name == "risk_assessment" or (exc.name or "").startswith("risk_assessment."):
-            raise ImportError("Semantic PII redaction requires IBM READI. Install it with: pip install 'altk-evolve[readi]'") from exc
+            raise ImportError(
+                "Semantic PII redaction requires IBM READI. Install it with: pip install 'altk-evolve[pii-semantic]'"
+            ) from exc
         raise
 
     def _build_extractor() -> Any:
@@ -330,7 +339,8 @@ if HAS_CPEX:
           - ``readi_language``: language code for the spacy/presidio engine
           - ``readi_detection_type``: READI ``DetectionType`` for ``default``
           - ``redaction_text``: mask string (default ``[REDACTED]``)
-          - ``redact_metadata``: also redact entity metadata values (default False)
+          - ``redact_metadata``: also redact entity metadata values (default True,
+            matching the regex plugin; set False to preserve ids/paths in metadata)
         """
 
         def __init__(self, config: PluginConfig | None = None) -> None:
@@ -369,7 +379,7 @@ if HAS_CPEX:
                     payload.entities,
                     self._detect(),
                     mask=cfg.get("redaction_text", DEFAULT_REDACTION_TEXT),
-                    redact_metadata=bool(cfg.get("redact_metadata", False)),
+                    redact_metadata=bool(cfg.get("redact_metadata", True)),
                 ),
             )
 
@@ -384,12 +394,12 @@ if HAS_CPEX:
 else:
 
     class ReadiSemanticPIIPlugin:  # type: ignore[no-redef]
-        """Stub — install 'altk-evolve[readi]' for semantic PII redaction support."""
+        """Stub — install 'altk-evolve[pii-semantic]' for semantic PII redaction support."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             raise ImportError(
                 "ReadiSemanticPIIPlugin requires the CPEX plugin framework and IBM READI. "
-                "Install them with: pip install 'altk-evolve[readi]'"
+                "Install them with: pip install 'altk-evolve[pii-semantic]'"
             )
 
 

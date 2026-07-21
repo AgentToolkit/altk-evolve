@@ -25,15 +25,15 @@ Against a real corpus instead:
   * --dataset-format wikiann                 a WikiANN-style tokens+BIO NER set.
   * --data PATH                              a local JSONL of {text, spans:[...]}.
 
-Run (synthetic, both backends):
-    uv run --extra pii --extra readi python examples/pii_benchmark.py --mode both
+Run (synthetic, both methods):
+    uv run --extra pii-regex --extra pii-semantic python examples/pii_benchmark.py --mode both
 
 Run (real corpus, small slice — the full 43k rows takes hours):
-    uv run --extra pii --extra readi --extra bench python examples/pii_benchmark.py \\
+    uv run --extra pii-regex --extra pii-semantic --extra bench python examples/pii_benchmark.py \\
         --dataset ai4privacy/pii-masking-200k --limit 200 --mode both
 
 Run (Japanese, language-matched spaCy pipeline):
-    uv run --extra readi --extra bench python examples/pii_benchmark.py \\
+    uv run --extra pii-semantic --extra bench python examples/pii_benchmark.py \\
         --dataset ai4privacy/pii-masking-openpii-1.5m --language ja --limit 200 \\
         --mode semantic --readi-extractor spacy --readi-model ja_core_news_trf
 """
@@ -115,7 +115,7 @@ def byte_spans_to_char_spans(text: str, spans: Iterable[tuple[int, int]]) -> lis
 
 
 def build_regex_detector(entities: list[str] | None = None, custom_patterns: list[dict] | None = None):
-    """A SpanDetector backed by cpex-pii-filter's Rust regex engine ([pii] extra)."""
+    """A SpanDetector backed by cpex-pii-filter's Rust regex engine ([pii-regex] extra)."""
     from cpex_pii_filter import PIIDetectorRust
 
     options: dict = {f"detect_{e}": True for e in (entities or REGEX_ENTITIES)}
@@ -335,10 +335,12 @@ def main() -> int:
     want_semantic = args.mode in ("semantic", "both")
 
     if want_regex and importlib.util.find_spec("cpex_pii_filter") is None:
-        print("regex mode needs the [pii] extra. Try: uv run --extra pii python examples/pii_benchmark.py")
+        print("regex mode needs the [pii-regex] extra. Try: uv run --extra pii-regex python examples/pii_benchmark.py")
         return 1
     if want_semantic and importlib.util.find_spec("risk_assessment") is None:
-        print("semantic mode needs the [readi] extra. Try: uv run --extra readi python examples/pii_benchmark.py --mode semantic")
+        print(
+            "semantic mode needs the [pii-semantic] extra. Try: uv run --extra pii-semantic python examples/pii_benchmark.py --mode semantic"
+        )
         return 1
 
     if args.dataset and args.dataset_format == "wikiann":
