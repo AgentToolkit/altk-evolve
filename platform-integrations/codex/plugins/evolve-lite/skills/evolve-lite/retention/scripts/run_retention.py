@@ -76,6 +76,10 @@ def main():
     if not report["deleted"] and not report["flagged"]:
         print("  (no memories matched any rule)")
 
+    for action in report.get("skipped", []):
+        print(f"  SKIP   {action['id']}  reason={action['reason']}  rule={action['rule']}")
+        print(f"         why: {action['detail']}")
+
     for warning in report["warnings"]:
         print(f"  WARNING  {warning}")
     for err in report["errors"]:

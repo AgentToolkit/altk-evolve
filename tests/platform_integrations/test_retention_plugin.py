@@ -116,18 +116,73 @@ def test_unused_uses_recall_audit_when_present(evolve_dir):
     assert report["flagged"][0]["reason"] == "unused"
 
 
-def test_unused_falls_back_to_mtime_when_never_recalled_and_says_so(evolve_dir):
+def test_unused_delete_without_recall_skips_by_default_and_reports_it(evolve_dir):
+    """FIX 2: an unused DELETE on a never-recalled entity must not silently
+    unlink it. The fail-safe default spares it, reports it as skipped, and still
+    emits the degraded-signal warning."""
     never_recalled = _write_entity(evolve_dir, "forgotten", days_old=60)
     rules = _rules({"name": "idle", "max_unused_days": 30, "action": "delete"})
 
     report = retention.run(evolve_dir, rules, dry_run=False, now=NOW)
 
-    assert [a["id"] for a in report["deleted"]] == ["guideline/forgotten"]
-    assert not never_recalled.exists()
-    # the degraded signal is reported, not silently substituted
-    assert "file mtime" in report["deleted"][0]["detail"]
+    assert report["deleted"] == []
+    assert never_recalled.exists()  # spared
+    assert [a["id"] for a in report["skipped"]] == ["guideline/forgotten"]
+    assert "on_missing_access_signal=skip" in report["skipped"][0]["detail"]
     assert len(report["warnings"]) == 1
     assert "no recall row" in report["warnings"][0]
+
+
+def test_unused_delete_without_recall_deletes_when_opted_in(evolve_dir):
+    """on_missing_access_signal='delete' restores the mtime-fallback delete."""
+    never_recalled = _write_entity(evolve_dir, "forgotten", days_old=60)
+    rules = _rules({"name": "idle", "max_unused_days": 30, "action": "delete", "on_missing_access_signal": "delete"})
+
+    report = retention.run(evolve_dir, rules, dry_run=False, now=NOW)
+
+    assert [a["id"] for a in report["deleted"]] == ["guideline/forgotten"]
+    assert not never_recalled.exists()
+    assert "file mtime" in report["deleted"][0]["detail"]
+    assert report["skipped"] == []
+
+
+def test_unused_delete_without_recall_downgrades_to_flag_when_configured(evolve_dir):
+    """on_missing_access_signal='flag' turns the delete into a flag."""
+    entity = _write_entity(evolve_dir, "forgotten", days_old=60)
+    rules = _rules({"name": "idle", "max_unused_days": 30, "action": "delete", "on_missing_access_signal": "flag"})
+
+    report = retention.run(evolve_dir, rules, dry_run=False, now=NOW)
+
+    assert report["deleted"] == []
+    assert [a["id"] for a in report["flagged"]] == ["guideline/forgotten"]
+    assert "downgraded delete->flag" in report["flagged"][0]["detail"]
+    assert "retention_reason: unused" in entity.read_text(encoding="utf-8")
+
+
+def test_unused_delete_with_recall_deletes_normally_under_default_skip(evolve_dir):
+    """A recorded recall (idle past the threshold) is a real signal — the
+    default skip does not spare it."""
+    entity = _write_entity(evolve_dir, "idle", days_old=300)
+    _recall(evolve_dir, "guideline/idle", days_ago=60)
+    rules = _rules({"name": "idle", "max_unused_days": 30, "action": "delete"})  # skip default
+
+    report = retention.run(evolve_dir, rules, dry_run=False, now=NOW)
+
+    assert [a["id"] for a in report["deleted"]] == ["guideline/idle"]
+    assert not entity.exists()
+    assert report["skipped"] == []
+
+
+def test_flag_rule_flags_never_recalled_entity_under_default_skip(evolve_dir):
+    """skip only bites deletes — a flag rule flags a never-recalled entity."""
+    entity = _write_entity(evolve_dir, "forgotten", days_old=60)
+    rules = _rules({"name": "idle", "max_unused_days": 30, "action": "flag"})
+
+    report = retention.run(evolve_dir, rules, dry_run=False, now=NOW)
+
+    assert [a["id"] for a in report["flagged"]] == ["guideline/forgotten"]
+    assert report["skipped"] == []
+    assert "retention_flagged_at" in entity.read_text(encoding="utf-8")
 
 
 def test_no_degraded_signal_warning_without_an_unused_rule(evolve_dir):
@@ -200,6 +255,24 @@ def test_cascade_is_inert_without_a_trajectory_frontmatter_link(evolve_dir):
     assert unlinked.exists()
 
 
+def test_empty_trajectory_link_does_not_cascade(evolve_dir):
+    """FIX 1 (plugin): an empty ``trajectory:`` frontmatter value is not a real
+    provenance link and must never join a cascade bucket."""
+    session = _write_trajectory(evolve_dir, "trajectory_2025-05-01T00-00-00_T1.json", days_old=400)
+    # frontmatter carries a literal `trajectory:` line with an empty value
+    type_dir = evolve_dir / "entities" / "guideline"
+    type_dir.mkdir(parents=True, exist_ok=True)
+    empty_link = type_dir / "empty-link.md"
+    empty_link.write_text("---\ntype: guideline\ntrajectory: \n---\n\ncontent\n", encoding="utf-8")
+    _set_age(empty_link, 1)
+    rules = _rules({"name": "old-sessions", "entity_type": "trajectory", "max_age_days": 365, "action": "delete", "cascade_derived": True})
+
+    report = retention.run(evolve_dir, rules, dry_run=False, now=NOW)
+
+    assert {a["id"] for a in report["deleted"]} == {f"trajectories/{session.name}"}
+    assert empty_link.exists()
+
+
 def test_cascade_off_leaves_derived_memories(evolve_dir):
     session = _write_trajectory(evolve_dir, "trajectory_2025-05-01T00-00-00_T1.json", days_old=400)
     derived = _write_entity(evolve_dir, "derived", days_old=1, trajectory=f".evolve/trajectories/{session.name}")
@@ -266,6 +339,16 @@ def test_rule_requires_a_threshold():
 def test_rule_rejects_unknown_action():
     with pytest.raises(ValueError, match="action"):
         retention.validate_rules([{"name": "bad", "max_age_days": 30, "action": "purge"}])
+
+
+def test_rule_rejects_unknown_missing_signal_policy():
+    with pytest.raises(ValueError, match="on_missing_access_signal"):
+        retention.validate_rules([{"name": "bad", "max_unused_days": 30, "action": "delete", "on_missing_access_signal": "nuke"}])
+
+
+def test_rule_defaults_missing_signal_to_skip():
+    rules = retention.validate_rules([{"name": "r", "max_unused_days": 30, "action": "delete"}])
+    assert rules[0]["on_missing_access_signal"] == "skip"
 
 
 def test_load_rules_from_config_yaml_block():

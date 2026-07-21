@@ -75,6 +75,13 @@ from pathlib import Path
 
 VALID_ACTIONS = ("flag", "delete")
 
+#: What a delete rule does when an "unused" match has no recorded recall (disuse
+#: fell back to file mtime). Mirrors the package's RetentionRule field of the
+#: same name. "skip" (default, fail-safe) spares the entity and reports it;
+#: "flag" downgrades the delete to a non-destructive flag; "delete" deletes on
+#: the mtime fallback (the original behaviour).
+VALID_MISSING_SIGNAL = ("skip", "flag", "delete")
+
 #: How the trajectory tree is typed in rules (matches the package's
 #: ``entity_type: trajectory`` convention).
 TRAJECTORY_TYPE = "trajectory"
@@ -109,6 +116,7 @@ def validate_rules(raw_rules):
             "max_age_days": _coerce_days(raw.get("max_age_days"), name, "max_age_days"),
             "max_unused_days": _coerce_days(raw.get("max_unused_days"), name, "max_unused_days"),
             "action": raw.get("action", "flag"),
+            "on_missing_access_signal": raw.get("on_missing_access_signal", "skip"),
             "cascade_derived": bool(raw.get("cascade_derived", False)),
         }
         entity_type = raw.get("entity_type")
@@ -120,6 +128,11 @@ def validate_rules(raw_rules):
             raise ValueError(f"retention rule {name!r} must set max_age_days and/or max_unused_days")
         if rule["action"] not in VALID_ACTIONS:
             raise ValueError(f"retention rule {name!r}: action must be one of {VALID_ACTIONS}, got {rule['action']!r}")
+        if rule["on_missing_access_signal"] not in VALID_MISSING_SIGNAL:
+            raise ValueError(
+                f"retention rule {name!r}: on_missing_access_signal must be one of {VALID_MISSING_SIGNAL}, "
+                f"got {rule['on_missing_access_signal']!r}"
+            )
         rules.append(rule)
     return rules
 
@@ -302,16 +315,19 @@ NO_RECALL_SIGNAL_HINT = (
 
 
 def _match(item, rule, now, last_access):
-    """Return ``(reason, detail)`` if *rule* matches *item*, else None.
+    """Return ``(reason, detail, degraded)`` if *rule* matches *item*, else None.
 
     ``reason`` is 'age' or 'unused'; ``detail`` is the human-readable why,
-    including which signal was used and whether it fell back.
+    including which signal was used and whether it fell back. ``degraded`` is
+    True only for an 'unused' match whose disuse was measured from file mtime
+    because no recall row existed — ``on_missing_access_signal`` governs whether
+    such a match may still delete.
     """
     if rule["entity_type"] is not None and item["type"] != rule["entity_type"]:
         return None
     age_days = (now - item["mtime"]).total_seconds() / 86400.0
     if rule["max_age_days"] is not None and age_days > rule["max_age_days"]:
-        return "age", "modified {:.1f}d ago > max_age_days={} (from file mtime)".format(age_days, rule["max_age_days"])
+        return "age", "modified {:.1f}d ago > max_age_days={} (from file mtime)".format(age_days, rule["max_age_days"]), False
     if rule["max_unused_days"] is not None:
         recorded = last_access.get(item["id"])
         last = recorded or item["mtime"]
@@ -319,11 +335,11 @@ def _match(item, rule, now, last_access):
         if unused_days > rule["max_unused_days"]:
             detail = "not recalled for {:.1f}d > max_unused_days={}".format(unused_days, rule["max_unused_days"])
             detail += " (from the recall audit log)" if recorded else " — " + NO_RECALL_SIGNAL_HINT
-            return "unused", detail
+            return "unused", detail, not recorded
     return None
 
 
-def evaluate(evolve_dir, rules, now=None, warnings=None):
+def evaluate(evolve_dir, rules, now=None, warnings=None, skipped=None):
     """Compute the actions the rules imply, without mutating anything.
 
     Returns a list of ``{id, type, action, reason, rule, detail, path}`` dicts.
@@ -332,7 +348,9 @@ def evaluate(evolve_dir, rules, now=None, warnings=None):
     ``trajectory:`` frontmatter links back to it.
 
     When *warnings* is a list, non-fatal caveats about the run (e.g. a degraded
-    "unused" signal) are appended to it.
+    "unused" signal) are appended to it. When *skipped* is a list, items a
+    delete rule matched on a degraded signal but was spared under
+    ``on_missing_access_signal: skip`` are appended to it.
     """
     now = _utc(now) if now else datetime.datetime.now(datetime.timezone.utc)
     items = scan_store(evolve_dir)
@@ -373,14 +391,40 @@ def evaluate(evolve_dir, rules, now=None, warnings=None):
         for rule in rules:
             hit = _match(item, rule, now, last_access)
             if hit is not None:
-                matched = (rule, hit[0], hit[1])
+                matched = (rule, hit[0], hit[1], hit[2])
                 break
         if matched is None:
             continue
-        rule, reason, detail = matched
-        record(item, rule["action"], reason, rule["name"], detail)
+        rule, reason, detail, degraded = matched
 
-        if rule["action"] == "delete" and rule["cascade_derived"] and item["type"] == TRAJECTORY_TYPE:
+        action = rule["action"]
+        # A degraded "unused" match (no recall row, disuse from file mtime) only
+        # reaches a destructive action when the rule opts in. Default "skip"
+        # spares it; "flag" downgrades the delete; "delete" keeps the old
+        # behaviour. Only bites deletes — a flag action is not data loss.
+        if degraded and rule["action"] == "delete":
+            choice = rule["on_missing_access_signal"]
+            if choice == "skip":
+                if skipped is not None:
+                    skipped.append(
+                        {
+                            "id": item["id"],
+                            "type": item["type"],
+                            "action": "skip",
+                            "reason": reason,
+                            "rule": rule["name"],
+                            "detail": "matched but not deleted: {}; on_missing_access_signal=skip".format(detail),
+                            "path": item["path"],
+                        }
+                    )
+                continue
+            if choice == "flag":
+                action = "flag"
+                detail += "; downgraded delete->flag (on_missing_access_signal=flag)"
+
+        record(item, action, reason, rule["name"], detail)
+
+        if action == "delete" and rule["cascade_derived"] and item["type"] == TRAJECTORY_TYPE:
             for derived in derived_by_name.get(item["path"].name, []):
                 if derived["id"] == item["id"]:
                     continue
@@ -439,17 +483,24 @@ def _flag_entity_file(path, flagged_at, reason, rule_name):
     os.utime(path, (st.st_atime, st.st_mtime))
 
 
-def apply_actions(evolve_dir, actions, dry_run=True, now=None, warnings=None):
+def apply_actions(evolve_dir, actions, dry_run=True, now=None, warnings=None, skipped=None):
     """Apply (or, on dry run, merely report) a list of evaluated actions.
 
-    Returns ``{dry_run, flagged, deleted, errors, warnings}`` where
-    flagged/deleted hold the action dicts and errors/warnings hold strings.
+    Returns ``{dry_run, flagged, deleted, skipped, errors, warnings}`` where
+    flagged/deleted/skipped hold action dicts and errors/warnings hold strings.
     Non-dry-run actions each append an ``event: "retention"`` row to the audit
     log.
     """
     now = _utc(now) if now else datetime.datetime.now(datetime.timezone.utc)
     flagged_at = now.isoformat()
-    report = {"dry_run": dry_run, "flagged": [], "deleted": [], "errors": [], "warnings": list(warnings or [])}
+    report = {
+        "dry_run": dry_run,
+        "flagged": [],
+        "deleted": [],
+        "skipped": list(skipped or []),
+        "errors": [],
+        "warnings": list(warnings or []),
+    }
 
     for action in actions:
         try:
@@ -488,13 +539,17 @@ def _audit(evolve_dir, action):
 def run(evolve_dir, rules, dry_run=True, now=None):
     """Evaluate the rules against the store and apply (or dry-run) the result."""
     warnings = []
-    actions = evaluate(evolve_dir, rules, now=now, warnings=warnings)
-    return apply_actions(evolve_dir, actions, dry_run=dry_run, now=now, warnings=warnings)
+    skipped = []
+    actions = evaluate(evolve_dir, rules, now=now, warnings=warnings, skipped=skipped)
+    return apply_actions(evolve_dir, actions, dry_run=dry_run, now=now, warnings=warnings, skipped=skipped)
 
 
 def summary(report):
     verb = "would flag/delete" if report["dry_run"] else "flagged/deleted"
-    return f"{verb}: {len(report['flagged'])} flagged, {len(report['deleted'])} deleted, {len(report['errors'])} errors"
+    out = f"{verb}: {len(report['flagged'])} flagged, {len(report['deleted'])} deleted, {len(report['errors'])} errors"
+    if report.get("skipped"):
+        out += f", {len(report['skipped'])} skipped (degraded signal)"
+    return out
 
 
 if __name__ == "__main__":
@@ -504,11 +559,13 @@ if __name__ == "__main__":
 
     rules = validate_rules([{"name": "r", "max_age_days": 30}])
     assert rules[0]["action"] == "flag"  # default
+    assert rules[0]["on_missing_access_signal"] == "skip"  # fail-safe default
     assert rules[0]["max_age_days"] == 30.0
 
     for bad in (
         [{"name": "r"}],  # no threshold
         [{"name": "r", "max_age_days": 30, "action": "purge"}],  # bad action
+        [{"name": "r", "max_age_days": 30, "on_missing_access_signal": "nuke"}],  # bad signal policy
         [{"max_age_days": 30}],  # no name
         [{"name": "r", "max_age_days": "soon"}],  # non-numeric
     ):
