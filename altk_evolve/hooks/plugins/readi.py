@@ -351,6 +351,14 @@ if HAS_CPEX:
         def _cfg(self) -> dict:
             return self._config.config or {}
 
+        def startup_validate(self) -> None:
+            """Build the detector at engine init so a missing ``[pii-semantic]``
+            extra fails CLOSED here (with the extra-naming ImportError) rather
+            than lazily on the first write. Model weights still load on first
+            use — ``build_readi_detector`` only validates that READI imports,
+            it does not download weights."""
+            self._detect()
+
         def _detect(self) -> SpanDetector:
             """Build the READI detector once, on first use (weights load lazily)."""
             if self._detector is None:

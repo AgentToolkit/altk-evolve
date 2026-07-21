@@ -48,7 +48,10 @@ PII_SPEC = HookPluginSpec(
 
 
 @pytest.fixture(autouse=True)
-def clean_hook_state():
+def clean_hook_state(monkeypatch):
+    # Explicit specs always override discovery, but keep the tests hermetic
+    # against a stray ./evolve.hooks.yaml or ~/.config/evolve/hooks.yaml.
+    monkeypatch.setattr("altk_evolve.hooks.manager.discover_hooks_config_path", lambda: None)
     shutdown_hooks()
     yield
     shutdown_hooks()
@@ -58,7 +61,7 @@ def make_client(tmp_path: Path, *specs: HookPluginSpec) -> EvolveClient:
     config = EvolveConfig(
         backend="filesystem",
         settings=FilesystemSettings(data_dir=str(tmp_path)),
-        hooks=HooksConfig(enabled=True, plugins=list(specs)),
+        hooks=HooksConfig(plugins=list(specs)),
     )
     return EvolveClient(config)
 

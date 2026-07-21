@@ -10,8 +10,8 @@ Design of the CPEX integration (mirrors Mellea's plugin wrapper layer):
 - Module-level singleton state (``_plugin_manager`` / ``_plugins_enabled``)
   with layered zero-overhead guards: a boolean check first, then
   ``has_hooks_for(hook_type)``, and only then payload construction.
-- ``cpex`` is optional. Without it (or with ``hooks.enabled=False``, the
-  default) every dispatch function returns its input untouched.
+- ``cpex`` is optional. When no plugins are configured every dispatch function
+  returns its input untouched and cpex is never imported.
 - Payload contents are deep-copied at dispatch: pydantic ``frozen=True`` only
   guards attribute assignment, so a plugin could otherwise mutate the shared
   entity dicts / message dicts in place. Plugins receive copies, and changes
@@ -28,15 +28,15 @@ Design of the CPEX integration (mirrors Mellea's plugin wrapper layer):
 
 Singleton caveat — the seam is process-global, not per-client:
 
-- Constructing a second ``EvolveClient`` with ``hooks.enabled=True`` calls
+- Constructing a second ``EvolveClient`` whose config resolves plugins calls
   ``PluginManager.reset()`` and REPLACES the first client's plugins. For a
   compliance plugin (e.g. PII redaction) this means redaction can be disabled
   by unrelated code constructing its own client — ``initialize_hooks`` emits a
   loud ``logger.warning`` when a reset is about to discard already-registered
-  plugins, but the last enabled client still wins.
-- A client constructed with ``hooks.enabled=False`` calls ``shutdown_hooks()``
-  so it does NOT inherit another client's process-global plugins: disabling
-  truly disables.
+  plugins, but the last configured client still wins.
+- A client that resolves NO plugins calls ``shutdown_hooks()`` so it does NOT
+  inherit another client's process-global plugins: no configured plugins truly
+  means a no-op.
 
 Deferred cpex import: ``cpex.framework`` is a ~400ms import (it pulls
 fastapi/mcp/prometheus), so it is imported lazily inside the functions that
@@ -55,6 +55,7 @@ import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
+from altk_evolve.config.hooks import discover_hooks_config_path
 from altk_evolve.hooks.types import (
     HAS_CPEX,
     HookType,
@@ -66,8 +67,8 @@ from altk_evolve.schema.exceptions import EvolveException
 # NOTE: cpex.framework is NOT imported at module load — it is a ~400ms import
 # that also pulls fastapi/mcp/prometheus. Every symbol from it is imported
 # lazily inside the functions that need it, all of which are reached only after
-# hooks are enabled. This keeps ``import altk_evolve.backend.base`` (and every
-# backend) cheap when hooks are disabled — the default.
+# plugins are configured. This keeps ``import altk_evolve.backend.base`` (and
+# every backend) cheap when no plugins are configured — the no-op path.
 
 if TYPE_CHECKING:
     from altk_evolve.backend.base import BaseEntityBackend
@@ -154,24 +155,52 @@ def _describe_cpex_error(exc: BaseException) -> tuple[str, str, str]:
 def initialize_hooks(config: HooksConfig) -> Any | None:
     """Initialize the CPEX PluginManager from a :class:`HooksConfig`.
 
-    Loads ``plugins_yaml`` (when set) through CPEX's own YAML loader and then
-    registers any code-first ``plugins`` specs programmatically. Returns the
-    manager, or ``None`` when ``config.enabled`` is False.
+    The hook seam is **always live** — there is no enable/disable switch.
+    Behavior is decided entirely by which plugins resolve:
 
-    Raises ImportError when hooks were explicitly enabled but cpex is missing:
-    misconfiguration must not silently disable a compliance plugin.
+    - **No plugins resolved** (empty ``plugins_yaml`` + empty code-first
+      ``plugins`` + nothing auto-discovered) → the seam stays a zero-cost no-op.
+      ``cpex`` is NOT required and is not imported; any prior client's
+      process-global plugins are torn down; returns ``None``.
+    - **Plugins ARE configured but the engine isn't importable** → raises
+      ``ImportError`` (``pip install 'altk-evolve[hooks]'``). Configured plugins
+      must never silently no-op — that is the fail-open bug this guards against.
+    - **A configured plugin's detector lib is missing** (e.g. READI without
+      ``[pii-semantic]``, or the regex filter without ``[pii-regex]``) → the
+      plugin's own ImportError is surfaced at init (fail-closed), not deferred
+      to the first write.
+
+    When ``plugins_yaml`` is unset it is auto-discovered via
+    :func:`~altk_evolve.config.hooks.discover_hooks_config_path`. An explicit
+    ``plugins_yaml`` or any code-first ``plugins`` overrides discovery.
     """
-    global _plugin_manager, _plugins_enabled
+    yaml_path = config.plugins_yaml if config.plugins_yaml else discover_hooks_config_path()
+    has_plugins = bool(yaml_path) or bool(config.plugins)
 
-    if not config.enabled:
-        # Disabling must truly disable: a prior enabled client left the
-        # process-global manager and _plugins_enabled flag set, which this
-        # client would otherwise inherit (its reads/writes flowing through
-        # another client's plugins). Tear that down before returning None.
+    if not has_plugins:
+        # No plugins resolved: the seam is a no-op. Do NOT touch cpex (preserve
+        # the deferred-import guarantee). Tear down any prior client's
+        # process-global plugins so a "no plugins" client does not inherit them.
         shutdown_hooks()
         return None
+
+    # Plugins ARE configured. Fail CLOSED if the engine is missing: never let a
+    # configured compliance plugin silently degrade to a no-op.
     if not HAS_CPEX:
         raise ImportError(_CPEX_INSTALL_HINT)
+
+    return _initialize_manager(yaml_path or "", config.plugins, config.plugin_timeout)
+
+
+def _initialize_manager(plugins_yaml: str, specs: list[Any], timeout: int) -> Any:
+    """Build and install the process-global PluginManager (cpex required).
+
+    Loads ``plugins_yaml`` through CPEX's YAML loader, registers code-first
+    ``specs``, then eagerly validates every plugin's dependencies so a missing
+    detector lib fails at startup rather than on the first write. Leaves the
+    module guards OFF if anything raises.
+    """
+    global _plugin_manager, _plugins_enabled
 
     from cpex.framework.manager import PluginManager
 
@@ -185,18 +214,45 @@ def initialize_hooks(config: HooksConfig) -> Any | None:
         logger.warning(
             "Re-initializing altk_evolve hooks: PluginManager.reset() will discard %d already-registered "
             "plugin(s) from a prior client (including any PII redaction / compliance plugins). The hook "
-            "seam is process-global, not per-client — the last enabled client's plugins win.",
+            "seam is process-global, not per-client — the last configured client's plugins win.",
             _plugin_manager.plugin_count,
         )
     PluginManager.reset()
-    pm = PluginManager(config.plugins_yaml or "", timeout=config.plugin_timeout)
-    _run_sync(pm.initialize())
-    for spec in config.plugins:
-        _register_spec(pm, spec)
+    try:
+        pm = PluginManager(plugins_yaml or "", timeout=timeout)
+        _run_sync(pm.initialize())
+        for spec in specs:
+            _register_spec(pm, spec)
+        # Fail-closed at STARTUP: surface a configured plugin's missing detector
+        # lib (its ImportError naming the extra) now, not lazily on first write.
+        _validate_plugin_dependencies(pm)
+    except Exception:
+        # A failed init must leave the guards OFF (and the singleton clean) so
+        # the seam does not half-activate.
+        _plugin_manager = None
+        _plugins_enabled = False
+        PluginManager.reset()
+        raise
     _plugin_manager = pm
     _plugins_enabled = True
     logger.info("altk_evolve hooks initialized (%d plugins).", pm.plugin_count)
     return pm
+
+
+def _validate_plugin_dependencies(pm: Any) -> None:
+    """Eagerly trip any configured plugin's missing-dependency ImportError.
+
+    Plugin stubs raise a clear ``ImportError`` naming the extra from their
+    constructor, so a plugin instantiated at all already validated itself. Some
+    plugins (e.g. READI) instantiate cheaply and only import their heavy
+    detector lib lazily; those expose ``startup_validate()`` which we call here
+    so the extra-naming error surfaces at engine init, not on the first write.
+    """
+    for ref in pm._registry.get_all_plugins():
+        plugin = getattr(ref, "plugin", None)
+        validate = getattr(plugin, "startup_validate", None)
+        if callable(validate):
+            validate()
 
 
 def shutdown_hooks() -> None:
@@ -229,7 +285,7 @@ def get_plugin_manager() -> Any | None:
 
 
 def hooks_active(hook_type: HookType) -> bool:
-    """Fast guard: hooks enabled AND at least one plugin subscribes to ``hook_type``."""
+    """Fast guard: the engine is live AND at least one plugin subscribes to ``hook_type``."""
     if not _plugins_enabled or _plugin_manager is None:
         return False
     return bool(_plugin_manager.has_hooks_for(hook_type.value))

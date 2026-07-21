@@ -15,8 +15,11 @@ Public surface:
 - :func:`~altk_evolve.hooks.types.engine_available` to probe whether a plugin
   execution engine is installed
 
-Everything is a fast no-op unless ``EvolveConfig.hooks.enabled`` is True and
-the execution engine is installed (``pip install 'altk-evolve[hooks]'``).
+The seam is always live; everything is a fast no-op until at least one plugin
+is configured (via ``EvolveConfig.hooks`` or an auto-discovered
+``evolve.hooks.yaml``). Once plugins ARE configured, the execution engine must
+be installed (``pip install 'altk-evolve[hooks]'``) or initialization fails
+closed.
 """
 
 from altk_evolve.hooks.manager import (

@@ -31,9 +31,9 @@ from altk_evolve.config.hooks import HookPluginSpec, HooksConfig
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.hooks.manager import (
     MemoryPolicyViolation,
+    _initialize_manager,
     dispatch_llm_pre_call,
     hooks_active,
-    initialize_hooks,
     shutdown_hooks,
 )
 from altk_evolve.hooks.types import HookType, register_evolve_hooks
@@ -141,7 +141,11 @@ class MessageTagger(Plugin):
 
 
 @pytest.fixture(autouse=True)
-def clean_hook_state():
+def clean_hook_state(monkeypatch):
+    # Neutralize config auto-discovery so a stray ./evolve.hooks.yaml or a dev's
+    # ~/.config/evolve/hooks.yaml can't pollute these tests: they drive the seam
+    # explicitly, so "no plugins" must resolve to a no-op regardless of host.
+    monkeypatch.setattr("altk_evolve.hooks.manager.discover_hooks_config_path", lambda: None)
     shutdown_hooks()
     yield
     shutdown_hooks()
@@ -153,7 +157,11 @@ def client(tmp_path: Path) -> EvolveClient:
 
 
 def enable_hooks(*plugins: Plugin, specs: list[HookPluginSpec] | None = None, plugins_yaml: str | None = None):
-    pm = initialize_hooks(HooksConfig(enabled=True, plugins=specs or [], plugins_yaml=plugins_yaml))
+    # Bare test-double plugin instances (the ``*plugins``) are registered
+    # directly into the manager, so we bring the engine up unconditionally via
+    # the internal builder — the public initialize_hooks would no-op when the
+    # config resolves no plugins on its own.
+    pm = _initialize_manager(plugins_yaml or "", specs or [], 30)
     assert pm is not None
     for plugin in plugins:
         pm._registry.register(plugin)
@@ -192,7 +200,9 @@ def test_reinit_warns_when_discarding_existing_plugins(caplog):
     plugins must warn loudly (the reset can silently drop a compliance plugin)."""
     enable_hooks(Recorder(hooks=[HookType.MEMORY_PRE_WRITE.value]))
     with caplog.at_level(logging.WARNING, logger="altk_evolve.hooks.manager"):
-        initialize_hooks(HooksConfig(enabled=True))
+        # A second engine build resets the singleton and discards the prior
+        # plugin — it must warn loudly.
+        _initialize_manager("", [], 30)
     assert any("discard" in r.message and "plugin" in r.message for r in caplog.records), caplog.records
 
 
@@ -206,13 +216,13 @@ def test_first_init_does_not_warn(caplog):
 
 @pytest.mark.unit
 def test_disabled_client_after_enabled_leaves_hooks_inactive(tmp_path: Path):
-    """A client built with hooks.enabled=False after an enabled one must NOT
-    inherit the process-global plugins: disabling truly disables."""
+    """A client that resolves NO plugins, built after one that had plugins, must
+    NOT inherit the process-global plugins: no plugins truly means a no-op."""
     enable_hooks(Recorder(hooks=[HookType.MEMORY_PRE_WRITE.value]))
     assert hooks_active(HookType.MEMORY_PRE_WRITE)
 
-    # Constructing a disabled client runs initialize_hooks(enabled=False),
-    # which must shut the seam down.
+    # Constructing a no-plugin client runs initialize_hooks with no resolved
+    # plugins, which must shut the seam down.
     EvolveClient(config=EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
     assert not hooks_active(HookType.MEMORY_PRE_WRITE)
 
@@ -1117,7 +1127,6 @@ def test_code_first_plugin_config(tmp_path: Path):
         backend="filesystem",
         settings=FilesystemSettings(data_dir=str(tmp_path)),
         hooks=HooksConfig(
-            enabled=True,
             plugins=[
                 HookPluginSpec(
                     name="metadata_normalizer",
@@ -1153,7 +1162,7 @@ plugins:
     config = EvolveConfig(
         backend="filesystem",
         settings=FilesystemSettings(data_dir=str(tmp_path / "data")),
-        hooks=HooksConfig(enabled=True, plugins_yaml=str(plugins_yaml)),
+        hooks=HooksConfig(plugins_yaml=str(plugins_yaml)),
     )
     client = EvolveClient(config)
     client.create_namespace("ns")
