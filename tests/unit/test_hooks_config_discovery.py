@@ -147,6 +147,49 @@ def test_explicit_plugins_yaml_overrides_discovery(tmp_path: Path, monkeypatch):
     assert hooks_active(HookType.MEMORY_PRE_WRITE)
 
 
+@requires_cpex
+@pytest.mark.unit
+def test_code_first_plugins_suppress_discovery(tmp_path: Path, monkeypatch):
+    """Code-first ``plugins`` (no ``plugins_yaml``) must override discovery:
+    ``discover_hooks_config_path`` is never consulted and a stray discoverable
+    file's plugins are NOT merged — only the code-first plugin is registered."""
+    # A stray discoverable file that, if consulted, would register a DIFFERENTLY
+    # named plugin — its presence lets us prove it was neither read nor merged.
+    stray = tmp_path / DEFAULT_HOOKS_CONFIG_FILENAME
+    stray.write_text(
+        "plugins:\n"
+        "  - name: stray_from_discovery\n"
+        "    kind: altk_evolve.hooks.plugins.normalizer.MetadataNormalizerPlugin\n"
+        "    hooks: [memory_pre_write]\n"
+        "    mode: transform\n"
+    )
+    monkeypatch.setenv(HOOKS_CONFIG_ENV_VAR, str(stray))
+
+    # Spy: flip a flag (and still return the stray path) if discovery is
+    # consulted at all — the fix must make this unreachable.
+    called = False
+
+    def _spy():
+        nonlocal called
+        called = True
+        return str(stray)
+
+    monkeypatch.setattr(hooks_manager, "discover_hooks_config_path", _spy)
+
+    spec = HookPluginSpec(
+        name="code_first_normalizer",
+        kind="altk_evolve.hooks.plugins.normalizer.MetadataNormalizerPlugin",
+        hooks=[HookType.MEMORY_PRE_WRITE.value],
+        mode="transform",
+    )
+    pm = initialize_hooks(HooksConfig(plugins=[spec]))
+    assert pm is not None
+    assert not called, "discover_hooks_config_path was consulted despite code-first plugins"
+    # Only the code-first plugin is registered; the stray file was not merged.
+    registered = {ref.name for ref in pm._registry.get_all_plugins()}
+    assert registered == {"code_first_normalizer"}, registered
+
+
 @pytest.mark.unit
 def test_discovery_nothing_found_is_noop(monkeypatch):
     monkeypatch.setattr(hooks_manager, "discover_hooks_config_path", lambda: None)

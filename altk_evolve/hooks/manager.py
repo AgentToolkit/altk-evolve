@@ -174,7 +174,9 @@ def initialize_hooks(config: HooksConfig) -> Any | None:
     :func:`~altk_evolve.config.hooks.discover_hooks_config_path`. An explicit
     ``plugins_yaml`` or any code-first ``plugins`` overrides discovery.
     """
-    yaml_path = config.plugins_yaml if config.plugins_yaml else discover_hooks_config_path()
+    yaml_path = config.plugins_yaml
+    if not yaml_path and not config.plugins:
+        yaml_path = discover_hooks_config_path()
     has_plugins = bool(yaml_path) or bool(config.plugins)
 
     if not has_plugins:
