@@ -93,16 +93,22 @@ Because deletes go through the client's public API, they flow through the `memor
 
 `RetentionEngine.apply()` defaults to `dry_run=True`, and the CLI requires an explicit `--apply`. A dry run reads the namespace, computes every decision, and mutates nothing; the returned `RetentionReport` is identical in shape to an enforced one, with `dry_run=True`.
 
-Each `RetentionItem` carries five things: `entity_id`, `entity_type`, `action`, `reason` (`age` / `unused` / `cascade:<trace_id>`) and `rule` — plus `detail`, a human-readable *why* that names the numbers the decision was made on:
+Each `RetentionItem` carries five things: `entity_id`, `entity_type`, `action`, `reason` (`age` / `unused` / `cascade:<trace_id>`) and `rule` — plus `detail`, a human-readable *why* that names the numbers the decision was made on. Here is a real dry run of the [example policy above](#policy-format) over a small namespace — an old session, a memory derived from it, a stale-but-recently-read guideline, and an ancient never-recalled guideline:
 
 ```
-DELETE  5   trajectory  reason=age         rule=old-sessions
+DELETE  4   trajectory reason=age          rule=old-sessions
         why: created 400.0d ago > max_age_days=365
-DELETE  4   guideline   reason=cascade:T1  rule=old-sessions
-        why: derived from session 5 (metadata.source_task_id == T1), which this rule deletes
-FLAG    1   guideline   reason=unused      rule=unused-guidelines
-        why: not read for 200.0d > max_unused_days=90 — no metadata.last_accessed on this entity, …
+DELETE  3   guideline  reason=cascade:T1   rule=old-sessions
+        why: derived from session 4 (metadata.source_task_id == T1), which this rule deletes
+FLAG    1   guideline  reason=age          rule=stale-guidelines
+        why: created 200.0d ago > max_age_days=90
+SKIP    2   guideline  reason=unused       rule=unused-guidelines
+        why: matched but not deleted: not read for 400.0d > max_unused_days=180 — no metadata.last_accessed
+             on this entity, so disuse was measured from created_at; …; on_missing_access_signal=skip
+warning: 3 of 4 entities carry no metadata.last_accessed, so their disuse was measured from created_at …
 ```
+
+Note the last two lines. The stale guideline is **flagged** by the `age` rule (`stale-guidelines`), not by the delete rule. The ancient never-recalled guideline *matches* the `unused-guidelines` **delete** rule, but because it carries no `last_accessed` stamp its disuse was only inferred from `created_at`, so the rule's default `on_missing_access_signal: skip` **spares** it — it lands in `report.skipped` (the "Skipped" table), never deleted and never flagged. See [When the unused signal is missing](#when-the-unused-signal-is-missing).
 
 Read the dry run before you apply. That is the whole point of it.
 
