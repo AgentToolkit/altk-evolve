@@ -384,6 +384,29 @@ def test_cascade_matches_int_trace_id_against_str_source_task_id():
     assert next(i for i in report.deleted if i.entity_id == "g1").reason == "cascade:1"
 
 
+def test_cascade_only_fires_for_trajectory_typed_deletes():
+    """A cascade_derived delete of a NON-trajectory entity must not fan out
+    along source_task_id. A rule with entity_type=None + cascade_derived=True
+    that matches a non-trajectory carrier (here a guideline holding a trace_id)
+    would otherwise mass-delete every entity linked by source_task_id."""
+    # A non-trajectory entity that happens to carry a trace/task id ...
+    carrier = _entity("carrier", type="guideline", created_days_ago=400, metadata={"trace_id": "T1", "task_id": "T1"})
+    # ... and unrelated entities linked to that id via source_task_id.
+    linked_a = _entity("g1", type="guideline", created_days_ago=1, metadata={"source_task_id": "T1"})
+    linked_b = _entity("n1", type="note", created_days_ago=1, metadata={"source_task_id": "T1"})
+    client = FakeClient([carrier, linked_a, linked_b])
+    # entity_type=None matches any type; cascade_derived is on.
+    policy = RetentionPolicy(rules=[RetentionRule(name="broad", entity_type=None, max_age_days=365, action="delete", cascade_derived=True)])
+
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
+
+    # Only the carrier (which aged out) is deleted; nothing cascades because it
+    # is not a trajectory.
+    assert {i.entity_id for i in report.deleted} == {"carrier"}
+    assert "g1" in client.store
+    assert "n1" in client.store
+
+
 def test_scan_limit_boundary_emits_warning():
     """FIX 3: when the fetch returns exactly the limit, warn that entities
     beyond it were not evaluated."""

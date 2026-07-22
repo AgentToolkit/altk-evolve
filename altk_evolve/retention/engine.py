@@ -110,6 +110,12 @@ class RetentionEngine:
     TRACE_KEYS = ("trace_id", "task_id")
     #: Derived-entity metadata key linking back to a session's trace id.
     SOURCE_KEY = "source_task_id"
+    #: Entity type whose deletion may cascade to derived entities. Only a
+    #: trajectory (session) owns a provenance tree; a cascade_derived delete of
+    #: any other entity type must NOT fan out along source_task_id, or a rule
+    #: with entity_type=None matching a non-trajectory carrier would mass-delete
+    #: everything sharing its trace id. Matches the plugin side's TRAJECTORY_TYPE.
+    TRAJECTORY_TYPE = "trajectory"
     #: How many entities to scan per namespace.
     FETCH_LIMIT = 100_000
 
@@ -274,7 +280,7 @@ class RetentionEngine:
 
             record(RetentionItem(e.id, e.type, action, reason, rule.name, detail))
 
-            if action == "delete" and rule.cascade_derived:
+            if action == "delete" and rule.cascade_derived and e.type == self.TRAJECTORY_TYPE:
                 trace = self._trace_id(e)
                 if not trace:
                     continue
