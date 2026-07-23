@@ -83,6 +83,8 @@ nav:
     - Phoenix Sync: guides/phoenix-sync.md
     - Extract Trajectories: guides/extract-trajectories.md
     - Low-Code Tracing: guides/low-code-tracing.md
+    - Memory Hooks: guides/memory-hooks.md
+    - Data Retention: guides/retention.md
   - Reference:
     - CLI: reference/cli.md
     - Policies: reference/policies.md
