@@ -31,9 +31,9 @@ from altk_evolve.config.hooks import HookPluginSpec, HooksConfig
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.hooks.manager import (
     MemoryPolicyViolation,
+    _initialize_manager,
     dispatch_llm_pre_call,
     hooks_active,
-    initialize_hooks,
     shutdown_hooks,
 )
 from altk_evolve.hooks.types import HookType, register_evolve_hooks
@@ -141,7 +141,11 @@ class MessageTagger(Plugin):
 
 
 @pytest.fixture(autouse=True)
-def clean_hook_state():
+def clean_hook_state(monkeypatch):
+    # Neutralize config auto-discovery so a stray ./evolve.hooks.yaml or a dev's
+    # ~/.config/evolve/hooks.yaml can't pollute these tests: they drive the seam
+    # explicitly, so "no plugins" must resolve to a no-op regardless of host.
+    monkeypatch.setattr("altk_evolve.hooks.manager.discover_hooks_config_path", lambda: None)
     shutdown_hooks()
     yield
     shutdown_hooks()
@@ -153,7 +157,11 @@ def client(tmp_path: Path) -> EvolveClient:
 
 
 def enable_hooks(*plugins: Plugin, specs: list[HookPluginSpec] | None = None, plugins_yaml: str | None = None):
-    pm = initialize_hooks(HooksConfig(enabled=True, plugins=specs or [], plugins_yaml=plugins_yaml))
+    # Bare test-double plugin instances (the ``*plugins``) are registered
+    # directly into the manager, so we bring the engine up unconditionally via
+    # the internal builder — the public initialize_hooks would no-op when the
+    # config resolves no plugins on its own.
+    pm = _initialize_manager(plugins_yaml or "", specs or [], 30)
     assert pm is not None
     for plugin in plugins:
         pm._registry.register(plugin)
@@ -192,7 +200,9 @@ def test_reinit_warns_when_discarding_existing_plugins(caplog):
     plugins must warn loudly (the reset can silently drop a compliance plugin)."""
     enable_hooks(Recorder(hooks=[HookType.MEMORY_PRE_WRITE.value]))
     with caplog.at_level(logging.WARNING, logger="altk_evolve.hooks.manager"):
-        initialize_hooks(HooksConfig(enabled=True))
+        # A second engine build resets the singleton and discards the prior
+        # plugin — it must warn loudly.
+        _initialize_manager("", [], 30)
     assert any("discard" in r.message and "plugin" in r.message for r in caplog.records), caplog.records
 
 
@@ -206,13 +216,13 @@ def test_first_init_does_not_warn(caplog):
 
 @pytest.mark.unit
 def test_disabled_client_after_enabled_leaves_hooks_inactive(tmp_path: Path):
-    """A client built with hooks.enabled=False after an enabled one must NOT
-    inherit the process-global plugins: disabling truly disables."""
+    """A client that resolves NO plugins, built after one that had plugins, must
+    NOT inherit the process-global plugins: no plugins truly means a no-op."""
     enable_hooks(Recorder(hooks=[HookType.MEMORY_PRE_WRITE.value]))
     assert hooks_active(HookType.MEMORY_PRE_WRITE)
 
-    # Constructing a disabled client runs initialize_hooks(enabled=False),
-    # which must shut the seam down.
+    # Constructing a no-plugin client runs initialize_hooks with no resolved
+    # plugins, which must shut the seam down.
     EvolveClient(config=EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
     assert not hooks_active(HookType.MEMORY_PRE_WRITE)
 
@@ -684,11 +694,26 @@ def test_cr_update_verdict_preserves_plugin_metadata(client: EvolveClient):
     entity) and access-stamp's last_accessed (from the stored entity) must all
     survive the UPDATE, which base._update_entity applies as a wholesale replace.
     """
-    from altk_evolve.hooks.plugins.access_stamp import AccessStampPlugin
-    from altk_evolve.hooks.plugins.normalizer import MetadataNormalizerPlugin
     from altk_evolve.llm.conflict_resolution import conflict_resolution
 
-    enable_hooks(MetadataNormalizerPlugin(), AccessStampPlugin())
+    # Native plugins can't be registered as bare cpex Plugin instances; drive
+    # them through specs so the manager adapts them.
+    enable_hooks(
+        specs=[
+            HookPluginSpec(
+                name="metadata_normalizer",
+                kind="altk_evolve.hooks.plugins.normalizer.MetadataNormalizerPlugin",
+                hooks=[HookType.MEMORY_PRE_WRITE.value],
+                mode="transform",
+            ),
+            HookPluginSpec(
+                name="access_stamp",
+                kind="altk_evolve.hooks.plugins.access_stamp.AccessStampPlugin",
+                hooks=[HookType.MEMORY_POST_READ.value],
+                mode="fire_and_forget",
+            ),
+        ]
+    )
     client.create_namespace("ns")
 
     # First write: normalizer stamps trace_id (from task_id) + created_at.
@@ -786,34 +811,52 @@ def test_shipped_plugins_return_modified_payload_and_never_mutate_in_place():
     return value. This test locks in that BOTH shipped write plugins honor it,
     so a future edit that switches one to in-place mutation fails CI.
     """
+    from altk_evolve.hooks.plugin import HookContext
     from altk_evolve.hooks.plugins.normalizer import MetadataNormalizerPlugin
     from altk_evolve.hooks.plugins.pii import PIIFilterMemoryPlugin
     from altk_evolve.hooks.types import MemoryPreWritePayload
 
     class _Ctx:
+        """cpex-style context for the raw cpex pii plugin."""
+
         class _GC:
             state: dict = {}
 
         global_context = _GC()
 
-    # Normalizer: task_id -> trace_id triggers a change.
-    # deepcopy so the `norm_input` reference is fully independent of the
-    # payload — a shared nested `metadata` dict would let an in-place mutation
-    # change BOTH and the equality assertion below would pass spuriously.
+    # Normalizer (NATIVE: sync, returns a replacement payload or None):
+    # task_id -> trace_id triggers a change. deepcopy so the `norm_input`
+    # reference is fully independent of the payload — a shared nested `metadata`
+    # dict would let an in-place mutation change BOTH and the equality assertion
+    # below would pass spuriously.
     norm_input = [{"content": "x", "type": "note", "metadata": {"task_id": "t1"}}]
     norm_payload = MemoryPreWritePayload(namespace_id="ns", entities=copy.deepcopy(norm_input))
-    norm_result = asyncio.run(MetadataNormalizerPlugin().memory_pre_write(norm_payload, _Ctx()))
-    assert norm_result.modified_payload is not None, "normalizer must communicate changes via modified_payload"
+    norm_result = MetadataNormalizerPlugin().memory_pre_write(norm_payload, HookContext())
+    assert norm_result is not None, "normalizer must communicate changes via a replacement payload"
     assert norm_payload.entities == norm_input, "normalizer must NOT mutate its input payload in place"
-    assert norm_result.modified_payload.entities[0]["metadata"]["trace_id"] == "t1"
+    assert norm_result.entities[0]["metadata"]["trace_id"] == "t1"
 
-    # PII filter: an email triggers redaction. deepcopy for the same
-    # shared-nested-dict reason as the normalizer case above.
+    # PII filter (RAW CPEX: async, returns PluginResult): an email triggers
+    # redaction. deepcopy for the same shared-nested-dict reason as above.
     pii_input = [{"content": "reach me at a@b.com", "type": "note", "metadata": {}}]
     pii_payload = MemoryPreWritePayload(namespace_id="ns", entities=copy.deepcopy(pii_input))
     pii_result = asyncio.run(PIIFilterMemoryPlugin().memory_pre_write(pii_payload, _Ctx()))
     assert pii_result.modified_payload is not None, "pii filter must communicate changes via modified_payload"
     assert pii_payload.entities == pii_input, "pii filter must NOT mutate its input payload in place"
+
+    # READI semantic filter (NATIVE): same contract. Detection is stubbed (a
+    # real NER model load is a ~460MB download and irrelevant to the contract) —
+    # what is under test is that the plugin copies rather than mutates.
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+
+    readi_plugin = ReadiSemanticPIIPlugin()
+    readi_plugin._detector = lambda text: [(0, 4)] if text.startswith("Dana") else []
+    readi_input = [{"content": "Dana signed the contract", "type": "note", "metadata": {}}]
+    readi_payload = MemoryPreWritePayload(namespace_id="ns", entities=copy.deepcopy(readi_input))
+    readi_result = readi_plugin.memory_pre_write(readi_payload, HookContext())
+    assert readi_result is not None, "readi filter must communicate changes via a replacement payload"
+    assert readi_payload.entities == readi_input, "readi filter must NOT mutate its input payload in place"
+    assert readi_result.entities[0]["content"] == "[REDACTED] signed the contract"
 
 
 # ── sync bridge ──────────────────────────────────────────────────────
@@ -1103,7 +1146,6 @@ def test_code_first_plugin_config(tmp_path: Path):
         backend="filesystem",
         settings=FilesystemSettings(data_dir=str(tmp_path)),
         hooks=HooksConfig(
-            enabled=True,
             plugins=[
                 HookPluginSpec(
                     name="metadata_normalizer",
@@ -1139,7 +1181,7 @@ plugins:
     config = EvolveConfig(
         backend="filesystem",
         settings=FilesystemSettings(data_dir=str(tmp_path / "data")),
-        hooks=HooksConfig(enabled=True, plugins_yaml=str(plugins_yaml)),
+        hooks=HooksConfig(plugins_yaml=str(plugins_yaml)),
     )
     client = EvolveClient(config)
     client.create_namespace("ns")

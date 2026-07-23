@@ -1,8 +1,62 @@
 """Configuration models for the memory hook seam."""
 
+from __future__ import annotations
+
+import os
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+#: Basename of the project-local hooks config auto-discovered from the cwd.
+DEFAULT_HOOKS_CONFIG_FILENAME = "evolve.hooks.yaml"
+#: Environment variable that, when set, points at an explicit hooks config path.
+HOOKS_CONFIG_ENV_VAR = "EVOLVE_HOOKS_CONFIG"
+
+
+def discover_hooks_config_path(
+    *,
+    env: Mapping[str, str] | None = None,
+    cwd: Path | None = None,
+    user_config_dir: Path | None = None,
+) -> str | None:
+    """Locate a default hooks config file, searching (first hit wins):
+
+    1. ``$EVOLVE_HOOKS_CONFIG`` — an explicit path (an env override always wins).
+    2. ``./evolve.hooks.yaml`` — project-local, relative to ``cwd``.
+    3. ``<user_config_dir>/evolve/hooks.yaml`` — a per-user config, where
+       ``user_config_dir`` defaults to ``$XDG_CONFIG_HOME`` or ``~/.config``.
+
+    Returns the first existing path as a string, or ``None`` when nothing is
+    found (the seam then stays a zero-cost no-op). Every input is injectable so
+    tests can exercise discovery without touching the real home directory.
+
+    Note on the env var: an explicit path set via ``$EVOLVE_HOOKS_CONFIG`` is
+    returned even if the file does not exist, so a typo surfaces as a clear
+    "file not found" at engine init rather than silently falling through to a
+    lower-priority location.
+    """
+    env = os.environ if env is None else env
+    cwd = Path.cwd() if cwd is None else cwd
+
+    explicit = env.get(HOOKS_CONFIG_ENV_VAR)
+    if explicit:
+        # Explicit path wins unconditionally — do not fall through on a typo.
+        return explicit
+
+    project_local = cwd / DEFAULT_HOOKS_CONFIG_FILENAME
+    if project_local.is_file():
+        return str(project_local)
+
+    if user_config_dir is None:
+        xdg = env.get("XDG_CONFIG_HOME")
+        user_config_dir = Path(xdg) if xdg else Path.home() / ".config"
+    user_config = user_config_dir / "evolve" / "hooks.yaml"
+    if user_config.is_file():
+        return str(user_config)
+
+    return None
 
 
 class HookPluginSpec(BaseModel):
@@ -46,12 +100,23 @@ class HookPluginSpec(BaseModel):
 class HooksConfig(BaseModel):
     """Hook seam configuration (``EvolveConfig.hooks``).
 
-    ``enabled`` defaults to False, guaranteeing zero behavior change for
-    existing users. When True, the execution engine — the optional ``cpex``
-    package — must be installed (``pip install 'altk-evolve[hooks]'``).
+    The hook seam is **always live** — there is no master switch. Behavior is
+    determined entirely by which plugins are configured:
+
+    - **No plugins** (empty ``plugins_yaml`` + empty code-first ``plugins`` +
+      nothing auto-discovered) → the seam is a zero-cost no-op that requires no
+      execution engine; importing a backend pulls no ``cpex``.
+    - **Plugins configured but the engine is missing** → engine initialization
+      fails **closed** with a clear error (``pip install 'altk-evolve[hooks]'``),
+      never a silent no-op.
+
+    When ``plugins_yaml`` is not set explicitly, a default config file is
+    auto-discovered via :func:`discover_hooks_config_path` (``$EVOLVE_HOOKS_CONFIG``
+    → ``./evolve.hooks.yaml`` → ``~/.config/evolve/hooks.yaml``). Scaffold one
+    with ``evolve hooks init``. An explicit ``plugins_yaml`` (or code-first
+    ``plugins``) always overrides discovery.
     """
 
-    enabled: bool = Field(default=False, description="Master switch. False = the hook seam is a fast no-op.")
     plugins_yaml: str | None = Field(
         default=None,
         description="Path to an engine plugins.yaml (CPEX format). Loaded by the CPEX PluginManager when set.",

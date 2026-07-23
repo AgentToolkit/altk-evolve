@@ -147,12 +147,14 @@ def test_access_stamps_empty_batch():
 
 
 @pytest.mark.unit
-def test_cores_usable_and_stubs_raise_with_cpex_blocked():
-    """The cores must import and work in a process where cpex cannot be imported.
+def test_native_plugins_usable_with_cpex_blocked():
+    """The native plugins AND their cores must import, construct, and run in a
+    process where cpex cannot be imported — that is the whole point of the
+    native contract (no cpex import).
 
     cpex may already be imported in this test process, so the blocker runs in a
     subprocess: a meta_path finder rejects any ``cpex*`` import before
-    altk_evolve is loaded.
+    altk_evolve is loaded. A plugin that imported cpex would raise here.
     """
     code = textwrap.dedent(
         """
@@ -161,31 +163,30 @@ def test_cores_usable_and_stubs_raise_with_cpex_blocked():
         class BlockCpex:
             def find_spec(self, name, path=None, target=None):
                 if name == "cpex" or name.startswith(("cpex.", "cpex_")):
-                    # Raise a properly-named ModuleNotFoundError to faithfully
-                    # simulate a genuinely-absent optional dependency. pii.py's
-                    # import guard falls back to its stub only for a
-                    # ModuleNotFoundError naming cpex/cpex_pii_filter; a
-                    # name-less ImportError would (correctly) propagate.
                     raise ModuleNotFoundError(f"{name} blocked for this test", name=name)
                 return None
 
         sys.meta_path.insert(0, BlockCpex())
 
+        from altk_evolve.hooks.plugin import HookContext
         from altk_evolve.hooks.plugins.access_stamp import AccessStampPlugin, build_access_stamps
         from altk_evolve.hooks.plugins.normalizer import MetadataNormalizerPlugin, normalize_entities
-        from altk_evolve.hooks.types import HAS_CPEX
+        from altk_evolve.hooks.types import HAS_CPEX, MemoryPreWritePayload
 
         assert not HAS_CPEX
+        assert "cpex" not in sys.modules, "importing the native plugins pulled cpex"
+
+        # Cores work.
         assert normalize_entities([{"metadata": {"task_id": "t"}}])[0]["metadata"]["trace_id"] == "t"
         assert build_access_stamps([{"id": "e1"}])[0][0] == "e1"
 
-        for stub in (MetadataNormalizerPlugin, AccessStampPlugin):
-            try:
-                stub()
-            except ImportError as exc:
-                assert "altk-evolve[hooks]" in str(exc), str(exc)
-            else:
-                raise AssertionError(f"{stub.__name__} stub did not raise")
+        # Native plugins construct AND run without cpex.
+        AccessStampPlugin()
+        payload = MemoryPreWritePayload(namespace_id="ns", entities=[{"content": "x", "metadata": {"task_id": "t"}}])
+        out = MetadataNormalizerPlugin().memory_pre_write(payload, HookContext())
+        assert out.entities[0]["metadata"]["trace_id"] == "t"
+
+        assert "cpex" not in sys.modules, "running a native plugin pulled cpex"
         """
     )
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)

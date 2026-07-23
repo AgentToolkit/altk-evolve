@@ -151,7 +151,7 @@ Derived entities are deleted **regardless of their own age** — that is the poi
 
 There used to be a convention split here: the MCP server's `save_trajectory` wrote `metadata.task_id` while Phoenix sync wrote `metadata.trace_id`, and the cascade keyed on `trace_id` — so MCP-saved sessions silently never cascaded. Two things now fix that:
 
-1. **`MetadataNormalizerPlugin`** (hook seam) copies `task_id` → `trace_id` on `memory_pre_write`, making `trace_id` canonical for everything written through a backend with hooks enabled.
+1. **`MetadataNormalizerPlugin`** (hook seam) copies `task_id` → `trace_id` on `memory_pre_write`, making `trace_id` canonical for everything written while the plugin is configured. The hook seam is always live, so once `MetadataNormalizerPlugin` is in your plugin list every backend write flows through it.
 2. The engine additionally **falls back to `task_id`** when reading a session's trace id, so sessions written *before* the normalizer existed still cascade. `trace_id` wins when both are present.
 
 Both paths are covered by tests in `tests/unit/test_retention.py`.
