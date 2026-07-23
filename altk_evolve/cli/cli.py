@@ -758,11 +758,12 @@ def hooks_init(
     console.print(f"[green]Wrote hooks config:[/green] {path}")
     console.print("[dim]Evolve auto-discovers ./evolve.hooks.yaml — no further wiring needed.[/dim]\n")
     console.print("[bold]READI semantic PII redaction is enabled by default.[/bold] Install it with:")
-    # markup=False so the "[pii-semantic]" extra is printed literally, not eaten
-    # as rich markup.
-    console.print("  pip install 'altk-evolve[pii-semantic]'", markup=False)
+    # markup=False so the "[pii-semantic]" extra is not parsed as rich markup, and
+    # highlight=False so rich's bracket *highlighter* does not split the extra with
+    # ANSI color codes under a TTY — the extras must render literally everywhere.
+    console.print("  pip install 'altk-evolve[pii-semantic]'", markup=False, highlight=False)
     console.print("[dim](the NER model downloads on first use, ~460MB for en_core_web_trf)[/dim]\n")
-    console.print(hooks_init_platform_note(platform.system()), style="yellow", markup=False)
+    console.print(hooks_init_platform_note(platform.system()), style="yellow", markup=False, highlight=False)
 
 
 if __name__ == "__main__":
