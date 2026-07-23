@@ -50,17 +50,11 @@ SECRETS_SPEC = HookPluginSpec(
     name="secrets_filter_memory",
     kind="altk_evolve.hooks.plugins.secrets.SecretsFilterMemoryPlugin",
     hooks=["memory_pre_write", "llm_pre_call"],
-    mode="transform",
+    mode="sequential",
     priority=10,
-    config={
-        "enabled": {
-            "aws_access_key_id": True,
-            "github_token": True,
-        },
-        "redact": True,
-        "redaction_text": "[REDACTED]",
-        "block_on_detection": False,
-    },
+    # Empty config on purpose: the plugin merges defaults, so the structured
+    # detectors (aws_access_key_id, github_token, ...) are ON with no toggles.
+    config={},
 )
 
 
@@ -235,13 +229,50 @@ def test_secrets_plugin_leaves_non_secret_untouched(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_secrets_plugin_stub_raises_without_cpex():
+def test_secrets_plugin_is_native_not_raw_cpex():
+    """Routing guard: secrets is a NATIVE plugin (wrapped by the seam's native
+    adapter in `_register_spec`), NOT a raw-cpex plugin like pii — so it must
+    NOT subclass cpex's `Plugin`. If it did, the manager would register it
+    directly on the raw-cpex path instead of through the native adapter."""
+    from cpex.framework import Plugin as CpexPlugin
+
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    assert not issubclass(SecretsFilterMemoryPlugin, CpexPlugin)
+
+
+@pytest.mark.unit
+def test_secrets_plugin_fails_closed_at_init_without_extra(tmp_path: Path, monkeypatch):
+    """A missing [secrets] extra fails CLOSED at engine init (via startup_validate),
+    naming the extra — not lazily on the first write. Simulated by making the
+    lazy scanner build raise, then registering the plugin through the seam:
+    initialization must surface the extra-naming ImportError."""
     import altk_evolve.hooks.plugins.secrets as secrets_module
 
-    if secrets_module._HAS_SECRETS_DETECTION:
-        pytest.skip("cpex-secrets-detection installed; stub not active")
+    def _raise() -> None:
+        raise ImportError(
+            "Structured secrets redaction requires cpex-secrets-detection. Install it with: pip install 'altk-evolve[secrets]'"
+        )
+
+    monkeypatch.setattr(secrets_module, "build_secrets_scanner", _raise)
     with pytest.raises(ImportError, match=r"altk-evolve\[secrets\]"):
-        secrets_module.SecretsFilterMemoryPlugin()
+        make_client(tmp_path, SECRETS_SPEC)
+
+
+@pytest.mark.unit
+def test_secrets_plugin_raises_without_cpex_secrets_detection():
+    """Without the [secrets] extra the plugin's lazy scanner import fails with a
+    named install hint. Construction is cheap (the Rust core loads lazily); the
+    extra-naming ImportError trips on `startup_validate` (engine init)."""
+    import importlib.util
+
+    if importlib.util.find_spec("cpex_secrets_detection") is not None:
+        pytest.skip("cpex-secrets-detection installed; the degradation path is not active")
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    plugin = SecretsFilterMemoryPlugin()  # construction is cheap; scanner loads lazily
+    with pytest.raises(ImportError, match=r"altk-evolve\[secrets\]"):
+        plugin.startup_validate()
 
 
 # ── ReadiSemanticPIIPlugin ───────────────────────────────────────────

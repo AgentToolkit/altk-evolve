@@ -98,17 +98,19 @@ pii-semantic = [
 # `[secrets]`: structured secrets detection (cpex-secrets-detection's Rust
 # engine). A third redaction *method*, orthogonal to the two PII methods above:
 # it catches credentials/tokens (AWS keys, GitHub/Slack tokens, private-key
-# blocks, ...) that neither the regex nor the semantic PII path targets. Like
-# `[pii-regex]` it is a **raw cpex** plugin adapting an external cpex plugin onto
-# Evolve's hook types, so it depends on cpex-secrets-detection (which itself
-# pins cpex>=0.1.0,<0.2 via [hooks]).
+# blocks, ...) that neither the regex nor the semantic PII path targets. Unlike
+# `[pii-regex]` (a raw-cpex plugin reusing cpex-pii-filter's cpex `Plugin`),
+# secrets is a NATIVE plugin that wraps cpex-secrets-detection's framework-free
+# Rust core directly (its packaged cpex/mcpgateway plugin is unusable here) — the
+# same shape as the READI plugin. The `[hooks]` line still pulls cpex because the
+# hook engine needs it to execute (cpex-secrets-detection also pins cpex).
 secrets = [
     "altk-evolve[hooks]",
     # Upper-bound the minor (mirrors cpex's <0.2 and [pii-regex]'s cpex-pii-filter
-    # pin): SecretsFilterMemoryPlugin always receives a PluginConfig on the
-    # YAML/spec path, so a defaults change in a future minor would silently alter
-    # what gets redacted rather than surface as an error. Pin the minor and bump
-    # deliberately.
+    # pin): the plugin's DEFAULT_ENABLED map is written against this package's
+    # detector keys, so a defaults/schema change in a future minor could silently
+    # alter what gets redacted rather than surface as an error. Pin the minor and
+    # bump deliberately.
     "cpex-secrets-detection>=0.1,<0.2",
 ]
 

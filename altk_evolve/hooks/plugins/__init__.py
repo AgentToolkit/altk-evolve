@@ -28,9 +28,10 @@ detector lib (e.g. READI for semantic PII) does.
 - :class:`SecretsFilterMemoryPlugin` (memory_pre_write + llm_pre_call, sequential):
   structured **secrets** redaction (credentials/tokens: AWS keys, GitHub/Slack
   tokens, private-key blocks) — a third method, orthogonal to the two PII ones;
-  additionally requires ``pip install 'altk-evolve[secrets]'``. The second
-  **raw cpex** plugin: it adapts the external cpex-secrets-detection redactor
-  onto Evolve's hook types, so (like ``pii``) the cpex coupling is its purpose.
+  additionally requires ``pip install 'altk-evolve[secrets]'``. Native: like
+  ``readi`` wraps IBM READI, it wraps cpex-secrets-detection's framework-free
+  Rust core (``py_scan_container``) directly — the packaged cpex plugin is
+  mcpgateway-bound and unusable, so ``pii`` stays the ONE raw-cpex plugin.
 """
 
 from altk_evolve.hooks.plugins.access_stamp import AccessStampPlugin, build_access_stamps
