@@ -16,6 +16,7 @@ from altk_evolve.config.filesystem import FilesystemSettings
 from altk_evolve.config.hooks import HookPluginSpec, HooksConfig
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.hooks.manager import dispatch_llm_pre_call, shutdown_hooks
+from altk_evolve.hooks.plugin import HookContext
 from altk_evolve.schema.core import Entity
 
 NORMALIZER_SPEC = HookPluginSpec(
@@ -173,7 +174,7 @@ def test_plugin_stubs_raise_without_cpex(monkeypatch):
 
 
 class _StubContext:
-    """Minimal plugin context: these plugins only ever read global state."""
+    """Minimal cpex-style plugin context for the raw cpex pii plugin."""
 
     class _GC:
         state: dict = {}
@@ -200,8 +201,13 @@ def fake_name_detector(text: str):
 
 
 @pytest.mark.unit
-def test_readi_shim_redacts_names_regex_cannot(tmp_path: Path):
-    """The point of the semantic plugin: a NAME the regex filter leaves untouched."""
+def test_readi_native_redacts_names_regex_cannot(tmp_path: Path):
+    """The point of the semantic plugin: a NAME the regex filter leaves untouched.
+
+    The regex plugin is a RAW CPEX plugin (async, PluginResult); the semantic
+    plugin is a NATIVE plugin (sync, returns a plain payload) — this test proves
+    both flavors work side by side.
+    """
     pytest.importorskip("cpex_pii_filter")
     from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
     from altk_evolve.hooks.types import MemoryPreWritePayload
@@ -209,56 +215,48 @@ def test_readi_shim_redacts_names_regex_cannot(tmp_path: Path):
     text = "Dana Whitfield can be reached at dana@example.com"
     payload = MemoryPreWritePayload(namespace_id="ns", entities=[{"content": text, "type": "note"}])
 
-    regex_plugin = _pii_plugin()
+    regex_plugin = _pii_plugin()  # raw cpex plugin: async, returns PluginResult
     regex_out = asyncio.run(regex_plugin.memory_pre_write(payload, _StubContext()))
     assert "Dana Whitfield" in regex_out.modified_payload.entities[0]["content"]  # regex has no NER
 
-    readi_plugin = ReadiSemanticPIIPlugin()
+    readi_plugin = ReadiSemanticPIIPlugin()  # native plugin: sync, returns a plain payload
     readi_plugin._detector = fake_name_detector
-    readi_out = asyncio.run(readi_plugin.memory_pre_write(payload, _StubContext()))
-    assert readi_out.modified_payload.entities[0]["content"] == "[REDACTED] can be reached at dana@example.com"
+    readi_out = readi_plugin.memory_pre_write(payload, HookContext())
+    assert readi_out is not None
+    assert readi_out.entities[0]["content"] == "[REDACTED] can be reached at dana@example.com"
 
 
 @pytest.mark.unit
-def test_readi_shim_redacts_llm_egress():
+def test_readi_native_redacts_llm_egress():
     from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
     from altk_evolve.hooks.types import LLMPreCallPayload
 
     plugin = ReadiSemanticPIIPlugin()
     plugin._detector = fake_name_detector
     payload = LLMPreCallPayload(messages=[{"role": "user", "content": "summarize Dana Whitfield's notes"}], purpose="test")
-    result = asyncio.run(plugin.llm_pre_call(payload, _StubContext()))
-    assert result.modified_payload.messages == [{"role": "user", "content": "summarize [REDACTED]'s notes"}]
+    result = plugin.llm_pre_call(payload, HookContext())
+    assert result.messages == [{"role": "user", "content": "summarize [REDACTED]'s notes"}]
 
 
 @pytest.mark.unit
-def test_readi_shim_reads_config_keys():
-    """YAML config drives the mask and the metadata opt-in — no code change needed."""
-    from cpex.framework.models import PluginConfig
-
+def test_readi_native_reads_config_keys():
+    """The plain config dict drives the mask and the metadata opt-in — no code change needed."""
     from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
     from altk_evolve.hooks.types import MemoryPreWritePayload
 
-    plugin = ReadiSemanticPIIPlugin(
-        PluginConfig(
-            name="readi_semantic_pii",
-            kind="altk_evolve.hooks.plugins.readi.ReadiSemanticPIIPlugin",
-            hooks=["memory_pre_write"],
-            config={"redaction_text": "<PERSON>", "redact_metadata": True},
-        )
-    )
+    plugin = ReadiSemanticPIIPlugin({"redaction_text": "<PERSON>", "redact_metadata": True})
     plugin._detector = fake_name_detector
     payload = MemoryPreWritePayload(
         namespace_id="ns",
         entities=[{"content": "hi Dana Whitfield", "metadata": {"author": "Dana Whitfield"}}],
     )
-    entity = asyncio.run(plugin.memory_pre_write(payload, _StubContext())).modified_payload.entities[0]
+    entity = plugin.memory_pre_write(payload, HookContext()).entities[0]
     assert entity["content"] == "hi <PERSON>"
     assert entity["metadata"] == {"author": "<PERSON>"}
 
 
 @pytest.mark.unit
-def test_readi_shim_redacts_metadata_by_default():
+def test_readi_native_redacts_metadata_by_default():
     """Default (no config) redacts metadata, matching the regex plugin's behaviour."""
     from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
     from altk_evolve.hooks.types import MemoryPreWritePayload
@@ -269,13 +267,13 @@ def test_readi_shim_redacts_metadata_by_default():
         namespace_id="ns",
         entities=[{"content": "note", "metadata": {"author": "Dana Whitfield"}}],
     )
-    entity = asyncio.run(plugin.memory_pre_write(payload, _StubContext())).modified_payload.entities[0]
+    entity = plugin.memory_pre_write(payload, HookContext()).entities[0]
     assert entity["metadata"] == {"author": "[REDACTED]"}
 
 
 @pytest.mark.unit
-def test_readi_shim_redacts_pii_in_tool_call_arguments():
-    """Egress-leak regression at the shim level: tool_call arguments are redacted."""
+def test_readi_native_redacts_pii_in_tool_call_arguments():
+    """Egress-leak regression at the plugin level: tool_call arguments are redacted."""
     from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
     from altk_evolve.hooks.types import LLMPreCallPayload
 
@@ -291,34 +289,41 @@ def test_readi_shim_redacts_pii_in_tool_call_arguments():
         ],
         purpose="test",
     )
-    result = asyncio.run(plugin.llm_pre_call(payload, _StubContext()))
-    call = result.modified_payload.messages[0]["tool_calls"][0]
+    result = plugin.llm_pre_call(payload, HookContext())
+    call = result.messages[0]["tool_calls"][0]
     assert "Dana Whitfield" not in call["function"]["arguments"]
     assert call["function"]["name"] == "save"
 
 
 @pytest.mark.unit
-def test_readi_default_config_can_block_and_fails_closed():
+def test_readi_scaffold_yaml_can_block_and_fails_closed():
     """Mode/on_error are load-bearing, not cosmetic (see docs/guides/memory-hooks.md).
 
-    CPEX downgrades continue_processing=False -> True in transform/audit mode,
-    so a redactor that must be able to halt has to register `sequential`; and a
-    compliance plugin must fail closed so a crashing NER model never silently
-    passes PII through.
+    They now live in the scaffold YAML / HookPluginSpec, not a cpex
+    ``_default_config`` on the plugin. CPEX downgrades continue_processing=False
+    -> True in transform/audit mode, so a redactor that must be able to halt has
+    to register `sequential`; and a compliance plugin must fail closed so a
+    crashing NER model never silently passes PII through. Pin the shipped
+    scaffold's READI entry sets both.
     """
-    from cpex.framework.models import OnError, PluginMode
+    from pathlib import Path as _Path
 
-    from altk_evolve.hooks.plugins.readi import _default_config
+    import yaml as _yaml
 
-    config = _default_config()
-    assert config.mode == PluginMode.SEQUENTIAL
-    assert config.on_error == OnError.FAIL
-    assert set(config.hooks) == {"memory_pre_write", "llm_pre_call"}
+    template = _Path(__file__).resolve().parents[2] / "altk_evolve" / "cli" / "templates" / "hooks.yaml"
+    entries = _yaml.safe_load(template.read_text())["plugins"]
+    readi = next(e for e in entries if e["name"] == "readi_semantic_pii")
+    assert readi["mode"] == "sequential"
+    assert readi["on_error"] == "fail"
+    assert set(readi["hooks"]) == {"memory_pre_write", "llm_pre_call"}
 
 
 @pytest.mark.unit
-def test_readi_shim_stub_raises_without_readi():
-    """Without the [pii-semantic] extra the shim degrades with a named install hint."""
+def test_readi_native_raises_without_readi():
+    """Without the [pii-semantic] extra the plugin fails with a named install hint.
+
+    Construction is cheap (READI loads lazily); the extra-naming ImportError
+    trips on first detection (or ``startup_validate`` at engine init)."""
     import importlib.util
 
     if importlib.util.find_spec("risk_assessment") is not None:
@@ -328,4 +333,4 @@ def test_readi_shim_stub_raises_without_readi():
 
     plugin = ReadiSemanticPIIPlugin()  # construction is cheap; READI loads lazily
     with pytest.raises(ImportError, match=r"altk-evolve\[pii-semantic\]"):
-        asyncio.run(plugin.llm_pre_call(LLMPreCallPayload(messages=[{"role": "user", "content": "x"}]), _StubContext()))
+        plugin.llm_pre_call(LLMPreCallPayload(messages=[{"role": "user", "content": "x"}]), HookContext())

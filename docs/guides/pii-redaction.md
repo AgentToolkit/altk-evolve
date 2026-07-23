@@ -111,6 +111,8 @@ redact_text("Dana Whitfield emailed dana@example.com", detect)
 
 `build_readi_detector` returns a `SpanDetector` — `text -> iterable of (start, end)` character spans. Anything matching that shape works, so a different NER engine plugs in without touching the redaction logic. `redact_entities` / `redact_messages` apply it to hook payloads; all of them return copies and never mutate their input, per the seam's plugin contract.
 
+`ReadiSemanticPIIPlugin` itself is a **native** hook plugin (see [memory-hooks.md](memory-hooks.md#writing-a-plugin)) — it imports no cpex, subclasses `HookPluginBase`, and returns `payload.replace(...)`; the execution engine sits behind an adapter it never sees. Only its detector needs the `[pii-semantic]` extra, surfaced fail-closed at engine init via `startup_validate`.
+
 ## Benchmarking
 
 `examples/pii_benchmark.py` scores any `SpanDetector` against a labeled gold set (synthetic by default; `--dataset` streams an ai4privacy- or WikiANN-style HF corpus with the `[bench]` extra) and reports recall, precision, F1, per-entity recall, and a record-level leak rate.

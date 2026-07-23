@@ -1,22 +1,24 @@
 """In-tree hook plugins shipped with altk_evolve.
 
-Each plugin follows a core/shim split: the domain logic is a pure, engine-free
-function at the top of its module (importable and tested without any extra),
-and the cpex ``Plugin`` subclass is a thin shim that adapts it to the shipped
-CPEX execution engine. Constructing a shim class without the optional ``cpex`` package
-(``pip install 'altk-evolve[hooks]'``) raises ImportError; importing this
-package — and using the cores — always works.
+Most plugins are **native** hook plugins (see
+:mod:`altk_evolve.hooks.plugin`): the domain logic is a pure, engine-free
+function at the top of the module, and the plugin class subclasses
+``HookPluginBase`` (no cpex import) — the execution engine sits behind an
+adapter in :mod:`altk_evolve.hooks.manager`. Importing this package — and using
+the cores or the native plugins — needs no extra installed; only a plugin's own
+detector lib (e.g. READI for semantic PII) does.
 
 - :class:`MetadataNormalizerPlugin` (memory_pre_write, transform): stamps
   canonical metadata (``trace_id``, ``created_at``); core
-  :func:`normalize_entities`.
+  :func:`normalize_entities`. Native.
 - :class:`AccessStampPlugin` (memory_post_read, fire_and_forget): stamps
-  ``last_accessed`` on read entities; core :func:`build_access_stamps`.
-- :class:`PIIFilterMemoryPlugin` (memory_pre_write + llm_pre_call, transform):
+  ``last_accessed`` on read entities; core :func:`build_access_stamps`. Native.
+- :class:`PIIFilterMemoryPlugin` (memory_pre_write + llm_pre_call, sequential):
   regex PII redaction (the ``[pii-regex]`` method); additionally requires
   ``pip install 'altk-evolve[pii-regex]'`` (``[pii]`` is a back-compat alias).
-  Deliberately core-less: it is an adapter for the external cpex-pii-filter
-  plugin, so the cpex coupling is its purpose.
+  The one **raw cpex** plugin (proving dual support): it adapts the external
+  cpex-pii-filter ``Plugin`` onto Evolve's hook types, so the cpex coupling is
+  its purpose.
 - :class:`ReadiSemanticPIIPlugin` (memory_pre_write + llm_pre_call, sequential):
   semantic (NER) PII redaction via IBM READI — the ``[pii-semantic]`` method,
   catching names/locations/orgs that regex cannot; cores

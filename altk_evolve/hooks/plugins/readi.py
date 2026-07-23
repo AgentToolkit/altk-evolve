@@ -20,9 +20,9 @@ Core/shim split (see ``docs/guides/memory-hooks.md``):
   the splice logic is unit-testable with a fake detector and no extras
   installed. :func:`build_readi_detector` is the (lazy, READI-importing)
   factory that produces a real detector.
-* **Shim** — :class:`ReadiSemanticPIIPlugin` under the ``HAS_CPEX`` guard:
-  parses ``self._config.config``, calls the core, returns ``PluginResult``
-  with a ``modified_payload``.
+* **Plugin** — :class:`ReadiSemanticPIIPlugin`, a **native** hook plugin (no
+  cpex import): reads its plain ``config`` dict, calls the core, and returns a
+  replacement payload (or ``None`` when nothing changed).
 
 Offsets are **character** offsets throughout. READI's extractors report char
 offsets natively (unlike cpex-pii-filter, whose Rust engine reports *byte*
@@ -42,7 +42,7 @@ import threading
 from collections.abc import Iterable, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from altk_evolve.hooks.types import HAS_CPEX, HookType
+from altk_evolve.hooks.plugin import HookContext, HookPluginBase
 
 DEFAULT_REDACTION_TEXT = "[REDACTED]"
 DEFAULT_EXTRACTOR = "default"
@@ -308,107 +308,71 @@ def build_readi_detector(
     return detect
 
 
-if HAS_CPEX:
-    from cpex.framework import Plugin
-    from cpex.framework.models import OnError, PluginConfig, PluginMode, PluginResult
+class ReadiSemanticPIIPlugin(HookPluginBase):
+    """Native plugin: READI semantic redaction on writes and LLM egress.
 
-    def _default_config() -> PluginConfig:
-        return PluginConfig(
-            name="readi_semantic_pii",
-            kind="altk_evolve.hooks.plugins.readi.ReadiSemanticPIIPlugin",
-            hooks=[HookType.MEMORY_PRE_WRITE.value, HookType.LLM_PRE_CALL.value],
-            # SEQUENTIAL, not TRANSFORM — same reason as the regex plugin: CPEX
-            # silently downgrades continue_processing=False -> True in
-            # TRANSFORM/AUDIT modes, so a redactor registered there can redact
-            # but can NEVER block. Only sequential keeps both.
-            mode=PluginMode.SEQUENTIAL,
-            # Same slot as the regex filter: redact before the normalizer runs.
-            priority=10,
-            # Fail-closed: a crashing or timing-out NER model must halt the
-            # operation, never silently pass unredacted content through.
-            on_error=OnError.FAIL,
-            config={"redaction_text": DEFAULT_REDACTION_TEXT},
+    No cpex import — a native :class:`~altk_evolve.hooks.plugin.HookPluginBase`.
+    READI itself is imported lazily inside :func:`build_readi_detector`, so
+    constructing the plugin is cheap and a missing ``[pii-semantic]`` extra
+    fails CLOSED at engine init via :meth:`startup_validate` (not lazily on the
+    first write).
+
+    Config keys (all optional):
+      - ``readi_extractor``: ``default`` | ``spacy`` | ``hf`` | ``presidio``
+      - ``readi_model``: spaCy pipeline name or HF ``pipeline("ner")`` id
+      - ``readi_language``: language code for the spacy/presidio engine
+      - ``readi_detection_type``: READI ``DetectionType`` for ``default``
+      - ``redaction_text``: mask string (default ``[REDACTED]``)
+      - ``redact_metadata``: also redact entity metadata values (default True,
+        matching the regex plugin; set False to preserve ids/paths in metadata)
+
+    Registered ``mode: sequential`` + ``on_error: fail`` (see the scaffold YAML /
+    docs): sequential so it can BLOCK, not just redact (cpex downgrades
+    ``continue_processing=False`` in transform/audit mode), and fail-closed so a
+    crashing/timing-out NER model halts the operation rather than passing
+    unredacted content through.
+    """
+
+    def __init__(self, config: dict | None = None) -> None:
+        super().__init__(config)
+        self._detector: SpanDetector | None = None
+
+    def startup_validate(self) -> None:
+        """Build the detector at engine init so a missing ``[pii-semantic]``
+        extra fails CLOSED here (with the extra-naming ImportError) rather
+        than lazily on the first write. Model weights still load on first
+        use — ``build_readi_detector`` only validates that READI imports,
+        it does not download weights."""
+        self._detect()
+
+    def _detect(self) -> SpanDetector:
+        """Build the READI detector once, on first use (weights load lazily)."""
+        if self._detector is None:
+            cfg = self.config
+            self._detector = build_readi_detector(
+                extractor=str(cfg.get("readi_extractor") or DEFAULT_EXTRACTOR).strip().lower(),
+                model=cfg.get("readi_model"),
+                language=str(cfg.get("readi_language") or "en"),
+                detection_type=str(cfg.get("readi_detection_type") or "PII"),
+            )
+        return self._detector
+
+    def memory_pre_write(self, payload: Any, context: HookContext) -> Any | None:
+        cfg = self.config
+        redacted = redact_entities(
+            payload.entities,
+            self._detect(),
+            mask=cfg.get("redaction_text", DEFAULT_REDACTION_TEXT),
+            redact_metadata=bool(cfg.get("redact_metadata", True)),
         )
+        # Contract: changes travel back as a replacement payload; the input
+        # payload is never mutated in place.
+        return None if redacted is None else payload.replace(entities=redacted)
 
-    class ReadiSemanticPIIPlugin(Plugin):
-        """Thin cpex shim: READI semantic redaction on writes and LLM egress.
-
-        Config keys (all optional):
-          - ``readi_extractor``: ``default`` | ``spacy`` | ``hf`` | ``presidio``
-          - ``readi_model``: spaCy pipeline name or HF ``pipeline("ner")`` id
-          - ``readi_language``: language code for the spacy/presidio engine
-          - ``readi_detection_type``: READI ``DetectionType`` for ``default``
-          - ``redaction_text``: mask string (default ``[REDACTED]``)
-          - ``redact_metadata``: also redact entity metadata values (default True,
-            matching the regex plugin; set False to preserve ids/paths in metadata)
-        """
-
-        def __init__(self, config: PluginConfig | None = None) -> None:
-            super().__init__(config or _default_config())
-            self._detector: SpanDetector | None = None
-
-        @property
-        def _cfg(self) -> dict:
-            return self._config.config or {}
-
-        def startup_validate(self) -> None:
-            """Build the detector at engine init so a missing ``[pii-semantic]``
-            extra fails CLOSED here (with the extra-naming ImportError) rather
-            than lazily on the first write. Model weights still load on first
-            use — ``build_readi_detector`` only validates that READI imports,
-            it does not download weights."""
-            self._detect()
-
-        def _detect(self) -> SpanDetector:
-            """Build the READI detector once, on first use (weights load lazily)."""
-            if self._detector is None:
-                cfg = self._cfg
-                self._detector = build_readi_detector(
-                    extractor=str(cfg.get("readi_extractor") or DEFAULT_EXTRACTOR).strip().lower(),
-                    model=cfg.get("readi_model"),
-                    language=str(cfg.get("readi_language") or "en"),
-                    detection_type=str(cfg.get("readi_detection_type") or "PII"),
-                )
-            return self._detector
-
-        def _result(self, payload: Any, field: str, value: list[dict] | None) -> Any:
-            if value is None:
-                return PluginResult(continue_processing=True)
-            # Contract: changes travel back as a replacement payload; the input
-            # payload is never mutated in place.
-            return PluginResult(continue_processing=True, modified_payload=payload.model_copy(update={field: value}))
-
-        async def memory_pre_write(self, payload: Any, context: Any) -> Any:
-            cfg = self._cfg
-            return self._result(
-                payload,
-                "entities",
-                redact_entities(
-                    payload.entities,
-                    self._detect(),
-                    mask=cfg.get("redaction_text", DEFAULT_REDACTION_TEXT),
-                    redact_metadata=bool(cfg.get("redact_metadata", True)),
-                ),
-            )
-
-        async def llm_pre_call(self, payload: Any, context: Any) -> Any:
-            cfg = self._cfg
-            return self._result(
-                payload,
-                "messages",
-                redact_messages(payload.messages, self._detect(), mask=cfg.get("redaction_text", DEFAULT_REDACTION_TEXT)),
-            )
-
-else:
-
-    class ReadiSemanticPIIPlugin:  # type: ignore[no-redef]
-        """Stub — install 'altk-evolve[pii-semantic]' for semantic PII redaction support."""
-
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError(
-                "ReadiSemanticPIIPlugin requires the CPEX plugin framework and IBM READI. "
-                "Install them with: pip install 'altk-evolve[pii-semantic]'"
-            )
+    def llm_pre_call(self, payload: Any, context: HookContext) -> Any | None:
+        cfg = self.config
+        redacted = redact_messages(payload.messages, self._detect(), mask=cfg.get("redaction_text", DEFAULT_REDACTION_TEXT))
+        return None if redacted is None else payload.replace(messages=redacted)
 
 
 __all__ = [

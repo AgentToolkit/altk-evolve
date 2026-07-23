@@ -353,8 +353,11 @@ def test_benchmark_byte_span_conversion_is_identity_on_ascii():
 
 
 @pytest.mark.unit
-def test_core_usable_and_shim_stub_raises_with_cpex_blocked():
-    """The core must import and work where neither cpex nor READI can be imported."""
+def test_core_usable_and_native_plugin_fails_closed_with_cpex_blocked():
+    """The core AND the native plugin must import where neither cpex nor READI
+    can be imported (the native plugin imports no cpex). Construction is cheap;
+    the missing-[pii-semantic] ImportError trips on detection / startup_validate.
+    """
     code = textwrap.dedent(
         """
         import sys
@@ -378,15 +381,21 @@ def test_core_usable_and_shim_stub_raises_with_cpex_blocked():
         from altk_evolve.hooks.types import HAS_CPEX
 
         assert not HAS_CPEX
+        assert "cpex" not in sys.modules, "importing the native READI plugin pulled cpex"
         assert redact_spans("Dana here", [(0, 4)]) == "[REDACTED] here"
         assert redact_entities([{"content": "Dana"}], lambda t: [(0, 4)])[0]["content"] == "[REDACTED]"
 
+        # Construction is cheap and cpex-free (READI loads lazily).
+        plugin = ReadiSemanticPIIPlugin()
+        assert "cpex" not in sys.modules
+
+        # startup_validate fails CLOSED naming the [pii-semantic] extra.
         try:
-            ReadiSemanticPIIPlugin()
+            plugin.startup_validate()
         except ImportError as exc:
             assert "altk-evolve[pii-semantic]" in str(exc), str(exc)
         else:
-            raise AssertionError("ReadiSemanticPIIPlugin stub did not raise")
+            raise AssertionError("ReadiSemanticPIIPlugin.startup_validate did not raise without READI")
 
         try:
             build_readi_detector()

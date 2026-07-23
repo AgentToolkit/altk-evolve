@@ -194,17 +194,47 @@ def initialize_hooks(config: HooksConfig) -> Any | None:
     return _initialize_manager(yaml_path or "", config.plugins, config.plugin_timeout)
 
 
+def _parse_plugins_yaml(yaml_path: str) -> list[Any]:
+    """Parse a hooks ``plugins.yaml`` into ``HookPluginSpec``s ourselves.
+
+    altk_evolve owns config parsing now — cpex is only the executor. We do NOT
+    hand the YAML to cpex's loader (which would instantiate every ``kind`` as a
+    cpex plugin and break native plugins). Uses ``yaml`` only, so this stays off
+    the cpex import path. Unknown keys (e.g. ``description``) are dropped
+    cleanly; ``$EVOLVE_HOOKS_CONFIG`` typos surface here as a clear read error.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    from altk_evolve.config.hooks import HookPluginSpec
+
+    data = yaml.safe_load(Path(yaml_path).read_text()) or {}
+    entries = data.get("plugins", []) or []
+    specs: list[Any] = []
+    for entry in entries:
+        specs.append(HookPluginSpec(**{k: entry[k] for k in HookPluginSpec.model_fields if k in entry}))
+    return specs
+
+
 def _initialize_manager(plugins_yaml: str, specs: list[Any], timeout: int) -> Any:
     """Build and install the process-global PluginManager (cpex required).
 
-    Loads ``plugins_yaml`` through CPEX's YAML loader, registers code-first
-    ``specs``, then eagerly validates every plugin's dependencies so a missing
-    detector lib fails at startup rather than on the first write. Leaves the
-    module guards OFF if anything raises.
+    Parses ``plugins_yaml`` into specs ourselves, concatenates the code-first
+    ``specs``, then registers EVERY spec through :func:`_register_spec` — the
+    single controlled instantiation point that adapts native plugins and
+    registers raw cpex plugins directly. cpex loads NOTHING from YAML (we build
+    ``PluginManager("")``). Finally eagerly validates every plugin's
+    dependencies so a missing detector lib fails at startup rather than on the
+    first write. Leaves the module guards OFF if anything raises.
     """
     global _plugin_manager, _plugins_enabled
 
     from cpex.framework.manager import PluginManager
+
+    # altk_evolve owns YAML parsing; cpex only executes. YAML-derived specs run
+    # first, then code-first specs (both flow through the same registration).
+    all_specs = (_parse_plugins_yaml(plugins_yaml) if plugins_yaml else []) + list(specs)
 
     register_evolve_hooks()
     # The PluginManager is a process-global (Borg) singleton, so reset() here
@@ -221,9 +251,11 @@ def _initialize_manager(plugins_yaml: str, specs: list[Any], timeout: int) -> An
         )
     PluginManager.reset()
     try:
-        pm = PluginManager(plugins_yaml or "", timeout=timeout)
+        # Empty path: cpex loads no plugins from YAML — we register every spec
+        # (native + raw cpex) ourselves via _register_spec.
+        pm = PluginManager("", timeout=timeout)
         _run_sync(pm.initialize())
-        for spec in specs:
+        for spec in all_specs:
             _register_spec(pm, spec)
         # Fail-closed at STARTUP: surface a configured plugin's missing detector
         # lib (its ImportError naming the extra) now, not lazily on first write.
@@ -294,12 +326,27 @@ def hooks_active(hook_type: HookType) -> bool:
 
 
 def _register_spec(pm: Any, spec: Any) -> None:
-    """Instantiate and register one code-first plugin spec (PluginConfig synthesis)."""
+    """Instantiate and register ONE plugin spec — native or raw cpex.
+
+    The single controlled instantiation point for both plugin flavors:
+
+    - A cpex ``Plugin`` subclass (e.g. the regex ``pii`` plugin, which wraps
+      ``cpex-pii-filter``) is instantiated with a synthesized ``PluginConfig``
+      and registered directly — the raw cpex path, unchanged.
+    - Anything else is a NATIVE plugin: instantiated with the plain
+      ``spec.config`` dict (never a cpex ``PluginConfig``) and wrapped in a cpex
+      ``Plugin`` adapter. A native plugin imports no cpex.
+
+    Fail-closed: a native plugin whose missing-extra stub raises ``ImportError``
+    from its constructor (e.g. ``pii`` without the extra, whose stub is a plain
+    class → native path) trips here, at init.
+    """
+    from cpex.framework import Plugin as _CpexPlugin
     from cpex.framework.models import OnError, PluginConfig, PluginMode
 
     module_path, _, class_name = spec.kind.rpartition(".")
     plugin_cls = getattr(importlib.import_module(module_path), class_name)
-    plugin_config = PluginConfig(
+    cpex_config = PluginConfig(
         name=spec.name,
         kind=spec.kind,
         hooks=list(spec.hooks),
@@ -308,8 +355,130 @@ def _register_spec(pm: Any, spec: Any) -> None:
         on_error=OnError(spec.on_error),
         config=dict(spec.config),
     )
-    pm._registry.register(plugin_cls(plugin_config))
-    logger.debug("Registered code-first hook plugin: %s (%s)", spec.name, spec.kind)
+    if isinstance(plugin_cls, type) and issubclass(plugin_cls, _CpexPlugin):
+        pm._registry.register(plugin_cls(cpex_config))
+        logger.debug("Registered raw cpex hook plugin: %s (%s)", spec.name, spec.kind)
+    else:
+        native = plugin_cls(spec.config or {})  # native: plain config dict; missing-extra stub raises here
+        pm._registry.register(_build_native_adapter(native, cpex_config))
+        logger.debug("Registered native hook plugin (adapted): %s (%s)", spec.name, spec.kind)
+
+
+# Cache the adapter class so it is built once (on first native registration),
+# not per spec. Built lazily to keep cpex.framework off the module import path.
+_NATIVE_ADAPTER_CLS: Any | None = None
+
+
+def _native_adapter_cls() -> Any:
+    """Build (once) and return the cpex ``Plugin`` subclass that wraps a native plugin."""
+    global _NATIVE_ADAPTER_CLS
+    if _NATIVE_ADAPTER_CLS is not None:
+        return _NATIVE_ADAPTER_CLS
+
+    from cpex.framework import Plugin
+    from cpex.framework.models import PluginResult
+
+    from altk_evolve.hooks.plugin import HookContext
+    from altk_evolve.hooks.types import HOOK_PAYLOADS, active_payload_cls
+
+    class _NativePluginAdapter(Plugin):
+        """cpex ``Plugin`` wrapping a native plugin.
+
+        Exposes one async method per :class:`HookType`; cpex only wires those
+        named in ``cpex_config.hooks``. Each method converts the cpex payload to
+        the plain payload, calls the native (sync) method, and wraps the result.
+
+        Invariants preserved:
+
+        - **Fail-closed** — a native raise propagates through cpex ``on_error``
+          and surfaces as ``MemoryPolicyViolation`` (unchanged).
+        - **No in-place leak** — ``model_dump()``/``model_validate`` create fresh
+          dicts for the native call; ``None`` → cpex falls back to the caller's
+          original payload.
+        - **Native never sees a cpex type** — plain payload in, plain payload
+          out; ``HookContext`` is ours.
+        - Deliberately defines no ``invoke_hook`` (else cpex treats it as an
+          external/MCP plugin).
+        """
+
+        def __init__(self, native: Any, cpex_config: Any) -> None:
+            super().__init__(cpex_config)
+            self._native = native
+
+        def startup_validate(self) -> None:
+            # Forwarded so _validate_plugin_dependencies trips a native plugin's
+            # missing-detector ImportError at init (fail-closed).
+            validate = getattr(self._native, "startup_validate", None)
+            if callable(validate):
+                validate()
+
+        async def _run(self, hook_type: HookType, cpex_payload: Any, context: Any) -> Any:
+            method = getattr(self._native, hook_type.value, None)
+            if method is None:
+                return PluginResult(continue_processing=True)
+            plain_cls: Any = HOOK_PAYLOADS[hook_type]
+            # Read each declared field via getattr, NOT model_dump(): cpex wraps
+            # mutable fields (entities/messages) in a CopyOnWriteList in some
+            # execution modes (fire_and_forget), and model_dump() returns the
+            # stale pydantic default ([]) for those rather than the live value.
+            # model_validate then coerces into a fresh plain payload; a native
+            # in-place mutation that isn't returned is still discarded (the
+            # manager falls back to the caller's original on None).
+            plain = plain_cls.model_validate({f: _to_plain(getattr(cpex_payload, f)) for f in plain_cls.model_fields})
+            gc = getattr(context, "global_context", None)
+            state = dict(getattr(gc, "state", None) or {})
+            hook_ctx = HookContext(
+                backend=state.get("backend"),
+                state=state,
+                request_id=getattr(gc, "request_id", "") if gc else "",
+            )
+            out = method(plain, hook_ctx)  # native, sync; raises to halt (propagates -> on_error)
+            if out is None:
+                return PluginResult(continue_processing=True)
+            engine_cls: Any = active_payload_cls(hook_type)
+            return PluginResult(continue_processing=True, modified_payload=engine_cls.model_validate(out.model_dump()))
+
+        async def memory_pre_write(self, payload: Any, context: Any) -> Any:
+            return await self._run(HookType.MEMORY_PRE_WRITE, payload, context)
+
+        async def memory_pre_metadata_patch(self, payload: Any, context: Any) -> Any:
+            return await self._run(HookType.MEMORY_PRE_METADATA_PATCH, payload, context)
+
+        async def memory_pre_delete(self, payload: Any, context: Any) -> Any:
+            return await self._run(HookType.MEMORY_PRE_DELETE, payload, context)
+
+        async def memory_pre_namespace_delete(self, payload: Any, context: Any) -> Any:
+            return await self._run(HookType.MEMORY_PRE_NAMESPACE_DELETE, payload, context)
+
+        async def memory_post_read(self, payload: Any, context: Any) -> Any:
+            return await self._run(HookType.MEMORY_POST_READ, payload, context)
+
+        async def llm_pre_call(self, payload: Any, context: Any) -> Any:
+            return await self._run(HookType.LLM_PRE_CALL, payload, context)
+
+    _NATIVE_ADAPTER_CLS = _NativePluginAdapter
+    return _NATIVE_ADAPTER_CLS
+
+
+def _build_native_adapter(native: Any, cpex_config: Any) -> Any:
+    """Wrap a native plugin in a cpex ``Plugin`` adapter instance."""
+    return _native_adapter_cls()(native, cpex_config)
+
+
+def _to_plain(value: Any) -> Any:
+    """Recursively materialize cpex copy-on-write containers into plain Python.
+
+    cpex wraps a payload's mutable fields (entities/messages, and nested
+    dicts/lists) in copy-on-write ``list``/``dict`` subclasses whose backing
+    storage is empty until iterated — so pydantic ``model_validate`` reads them
+    as empty. Rebuilding via iteration forces materialization AND yields fresh
+    dicts/lists, isolating the native call from the engine payload.
+    """
+    if isinstance(value, dict):
+        return {k: _to_plain(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_to_plain(v) for v in value]
+    return value
 
 
 # ── sync bridge ──────────────────────────────────────────────────────
