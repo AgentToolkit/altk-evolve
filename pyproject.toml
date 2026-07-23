@@ -265,6 +265,7 @@ module = [
     "local_mcp_server",
     "config",
     "audit",
+    "retention",
     "yaml",
 ]
 ignore_missing_imports = true

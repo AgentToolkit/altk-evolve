@@ -104,7 +104,7 @@ Notes:
 
 **Two PII methods, run both.** Regex and semantic are two detection *methods*, not competing choices — the recommended default is to run **both** (regex for structured identifiers, semantic for names/entities), and enabling or disabling either is a YAML edit rather than a code change. It matters: measured on 200 rows of `ai4privacy/pii-masking-200k`, the regex method scores 0.13 overall span recall at precision 1.00 and **0.00 on first/last names**, while the semantic method scores 0.48 recall at precision 1.00 with names at 0.92-1.00 — the semantic method is the more powerful one, at the cost of being much slower and pulling model weights (~460MB). See the [PII redaction guide](pii-redaction.md) for the full numbers, model-choice guidance (language-matched spaCy pipelines), cost/latency trade-offs and limitations, and `examples/pii_benchmark.py` for the harness that produced them.
 
-Read-cost note for `AccessStampPlugin`: fire-and-forget tasks are awaited before the sync bridge returns (see [The CPEX engine](#the-cpex-engine)), so the stamp is **not** free for the reader — every public read pays one metadata write per returned entity before `search_entities` returns. Measured on the filesystem backend: ~3.7 ms vs ~0.1 ms for a 10-entity read; on milvus/postgres it adds N extra store round trips per read. Enable it only where access audit trails are worth that latency.
+Read-cost note for `AccessStampPlugin`: fire-and-forget tasks are awaited before the sync bridge returns (see [The CPEX engine](#the-cpex-engine)), so the stamp is **not** free for the reader — every public read pays one metadata write per returned entity before `search_entities` returns. Measured on the filesystem backend: ~3.7 ms vs ~0.1 ms for a 10-entity read; on milvus/postgres it adds N extra store round trips per read. Enable it only where access audit trails are worth that latency. Its stamp is what makes `max_unused_days` retention rules meaningful — `EvolveClient.record_access` is the explicit equivalent for callers not running hooks, and both share the same `build_access_stamps` core. See [Data Retention](retention.md).
 
 ## The CPEX engine
 
@@ -176,6 +176,7 @@ See [`examples/hooks_plugins.yaml`](https://github.com/AgentToolkit/altk-evolve/
 
 ## Deferred
 
-- Lifecycle / retention policy hooks.
+- READI / semantic recall filtering plugins (separate branch).
+- Lifecycle / retention policy *hooks*. Data retention itself now ships as a policy-driven sweep rather than a hook — see [Data Retention](retention.md), which consumes `AccessStampPlugin`'s `last_accessed` stamp and `MetadataNormalizerPlugin`'s `trace_id` normalization.
 - A first-class PII configuration surface on `EvolveConfig` (today PII is configured through the plugin's own `config` block).
 - Additional execution engines: only the CPEX integration exists today; the seam is engine-agnostic, but running plugins currently requires cpex.

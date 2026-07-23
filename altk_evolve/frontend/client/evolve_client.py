@@ -1,3 +1,4 @@
+import datetime
 import logging
 from typing import TYPE_CHECKING, cast
 
@@ -125,6 +126,36 @@ class EvolveClient:
     def patch_entity_metadata(self, namespace_id: str, entity_id: str, metadata_updates: dict) -> RecordedEntity:
         """Merge metadata_updates into an entity without touching content or ID."""
         return self.backend.update_entity_metadata(namespace_id, entity_id, metadata_updates)
+
+    def record_access(self, namespace_id: str, entity_ids: list[str], when: datetime.datetime | None = None) -> None:
+        """Stamp ``metadata.last_accessed`` (ISO-8601 UTC) on the given entities.
+
+        This is the *explicit* half of the access-stamping story and the signal
+        the retention engine's ``max_unused_days`` rules read (issue #275).
+
+        Relationship to ``AccessStampPlugin``: the plugin is the automatic path
+        — with hooks enabled it stamps every entity returned by a public read,
+        on ``memory_post_read``. ``record_access`` is the manual path, for
+        callers that do not run hooks or that want to record a *use* that was
+        not a store read (for example, a memory recalled from a cache and
+        actually acted on). Both funnel through the same core,
+        :func:`~altk_evolve.hooks.plugins.access_stamp.build_access_stamps`, so
+        the key and timestamp format are identical and one batch shares one
+        stamp; enabling both is harmless (last writer wins).
+
+        Failures on individual ids are logged and skipped rather than raised —
+        recording an access must never break the flow it rode in on.
+        """
+        # Imported here (not at module scope) to keep the client import cheap;
+        # build_access_stamps is a pure function with no cpex dependency.
+        from altk_evolve.hooks.plugins.access_stamp import build_access_stamps
+
+        moment = when if when is not None else datetime.datetime.now(datetime.UTC)
+        for entity_id, patch in build_access_stamps([{"id": eid} for eid in entity_ids], now=lambda: moment):
+            try:
+                self.patch_entity_metadata(namespace_id, entity_id, patch)
+            except Exception:
+                logger.warning("record_access: failed to stamp entity %s", entity_id, exc_info=True)
 
     def get_public_entities(
         self,
