@@ -202,6 +202,16 @@ def _parse_plugins_yaml(yaml_path: str) -> list[Any]:
     cpex plugin and break native plugins). Uses ``yaml`` only, so this stays off
     the cpex import path. Unknown keys (e.g. ``description``) are dropped
     cleanly; ``$EVOLVE_HOOKS_CONFIG`` typos surface here as a clear read error.
+
+    Mode default: an entry that OMITS ``mode`` defaults to ``sequential``, NOT
+    ``HookPluginSpec``'s ``transform`` default. This preserves the behavior of
+    cpex's former YAML loader (``PluginConfig.mode`` defaults to sequential) and
+    is the fail-closed choice: cpex silently downgrades a block
+    (``continue_processing=False``) to a pass-through in ``transform``/``audit``
+    mode, so a mode-less blocking compliance plugin declared in YAML would
+    otherwise fail OPEN. ``sequential`` preserves both payload chaining and the
+    ability to halt. (Code-first ``HookPluginSpec`` still defaults to
+    ``transform`` — unchanged — so this only affects YAML-declared plugins.)
     """
     from pathlib import Path
 
@@ -213,7 +223,9 @@ def _parse_plugins_yaml(yaml_path: str) -> list[Any]:
     entries = data.get("plugins", []) or []
     specs: list[Any] = []
     for entry in entries:
-        specs.append(HookPluginSpec(**{k: entry[k] for k in HookPluginSpec.model_fields if k in entry}))
+        fields = {k: entry[k] for k in HookPluginSpec.model_fields if k in entry}
+        fields.setdefault("mode", "sequential")
+        specs.append(HookPluginSpec(**fields))
     return specs
 
 

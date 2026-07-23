@@ -185,6 +185,37 @@ def test_discovery_nothing_found_is_noop(monkeypatch):
     assert not hooks_active(HookType.MEMORY_PRE_WRITE)
 
 
+# ── YAML mode default is fail-closed (sequential), matching cpex's old loader ──
+
+
+@pytest.mark.unit
+def test_yaml_omitted_mode_defaults_to_sequential(tmp_path: Path):
+    """A YAML plugin entry that omits ``mode`` must default to ``sequential``,
+    NOT ``HookPluginSpec``'s ``transform`` default.
+
+    Parity + fail-closed: cpex's former YAML loader defaulted an omitted mode to
+    sequential, and in ``transform`` mode cpex silently downgrades a block
+    (``continue_processing=False``) to a pass-through — so a mode-less blocking
+    compliance plugin declared in YAML would fail OPEN. An explicit ``mode`` is
+    always honored.
+    """
+    cfg = tmp_path / DEFAULT_HOOKS_CONFIG_FILENAME
+    cfg.write_text(
+        "plugins:\n"
+        "  - name: no_mode\n"
+        "    kind: my_pkg.plugins.Blocker\n"
+        "    hooks: [memory_pre_write]\n"
+        "  - name: explicit_transform\n"
+        "    kind: my_pkg.plugins.Tagger\n"
+        "    hooks: [memory_pre_write]\n"
+        "    mode: transform\n"
+    )
+    specs = hooks_manager._parse_plugins_yaml(str(cfg))
+    by_name = {s.name: s for s in specs}
+    assert by_name["no_mode"].mode == "sequential"
+    assert by_name["explicit_transform"].mode == "transform"
+
+
 # ── fail-closed on missing detector lib ──────────────────────────────
 
 
