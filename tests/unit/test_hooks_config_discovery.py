@@ -1,15 +1,14 @@
-"""Always-on hook seam: config auto-discovery, the deprecated ``enabled``
-field, fail-closed engine/detector errors, and the ``evolve hooks init`` CLI.
+"""Always-on hook seam: config auto-discovery, fail-closed engine/detector
+errors, and the ``evolve hooks init`` CLI.
 
-The discovery + deprecation tests need no optional deps. The tests that build
-the engine or exercise READI/regex ``skip`` unless cpex is installed.
+The discovery tests need no optional deps. The tests that build the engine or
+exercise READI/regex ``skip`` unless cpex is installed.
 """
 
 from __future__ import annotations
 
 import subprocess
 import sys
-import warnings
 from pathlib import Path
 
 import pytest
@@ -40,28 +39,17 @@ def clean_hook_state():
     shutdown_hooks()
 
 
-# ── deprecated ``enabled`` field ─────────────────────────────────────
+# ── removed ``enabled`` field ────────────────────────────────────────
 
 
 @pytest.mark.unit
-def test_enabled_is_deprecated_and_ignored():
-    """Passing the removed ``enabled`` field warns but does not crash or change
-    behavior — the field is popped, config is otherwise normal."""
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        config = HooksConfig(enabled=False, plugins_yaml="x.yaml")
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught), caught
+def test_enabled_field_is_gone_and_silently_ignored():
+    """``enabled`` no longer exists on HooksConfig. Passing it is silently
+    dropped (pydantic ``extra='ignore'`` default) — no error, no warning, no
+    attribute — and the rest of the config is unaffected."""
+    config = HooksConfig(enabled=False, plugins_yaml="x.yaml")
     assert not hasattr(config, "enabled")
-    # The rest of the config is unaffected.
     assert config.plugins_yaml == "x.yaml"
-
-
-@pytest.mark.unit
-def test_config_without_enabled_does_not_warn():
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        HooksConfig(plugins_yaml="x.yaml")
-    assert not any(issubclass(w.category, DeprecationWarning) for w in caught), caught
 
 
 # ── config auto-discovery ────────────────────────────────────────────

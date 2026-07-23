@@ -168,8 +168,6 @@ client = EvolveClient(config)
 
 See [`examples/hooks_plugins.yaml`](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/hooks_plugins.yaml) for the YAML form and [`examples/hooks_demo.py`](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/hooks_demo.py) for a runnable end-to-end demo.
 
-> **Deprecated:** the old `HooksConfig(enabled=...)` master switch has been removed. Passing `enabled=` is accepted for back-compat but ignored (it emits a `DeprecationWarning`) — behavior now depends solely on which plugins you configure.
-
 ## Known limitations
 
 - **`delete_namespace` does not fan out to `memory_pre_delete`.** Dropping a namespace fires **only** `memory_pre_namespace_delete`, never a per-entity `memory_pre_delete` for the entities inside it (fanning out would require an unbounded scan of the namespace). Consequence: a legal-hold plugin that vetoes deletes on `memory_pre_delete` does **not** protect entities removed by a namespace delete — they are dropped wholesale. A policy that must guard against that has to subscribe to `memory_pre_namespace_delete` and veto (or scope) the whole-namespace delete itself.

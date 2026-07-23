@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import os
-import warnings
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 #: Basename of the project-local hooks config auto-discovered from the cwd.
 DEFAULT_HOOKS_CONFIG_FILENAME = "evolve.hooks.yaml"
@@ -127,26 +126,3 @@ class HooksConfig(BaseModel):
         description="Code-first plugin specs, registered in addition to any plugins_yaml entries.",
     )
     plugin_timeout: int = Field(default=30, description="Maximum execution time per plugin invocation, in seconds.")
-
-    @model_validator(mode="before")
-    @classmethod
-    def _drop_deprecated_enabled(cls, data: Any) -> Any:
-        """Accept and ignore the removed ``enabled`` master switch.
-
-        Hooks are always live now; behavior is decided purely by which plugins
-        are configured. A caller (or persisted config) that still passes
-        ``enabled=`` must not hard-crash, so we pop the field and emit a
-        ``DeprecationWarning``. It has NO effect on behavior — a stale
-        ``enabled=False`` no longer disables a configured plugin.
-        """
-        if isinstance(data, Mapping) and "enabled" in data:
-            data = dict(data)
-            data.pop("enabled")
-            warnings.warn(
-                "HooksConfig.enabled is deprecated and ignored: the hook seam is always live. "
-                "Behavior is determined solely by which plugins you configure (none = zero-cost no-op). "
-                "Remove 'enabled' from your HooksConfig.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return data
