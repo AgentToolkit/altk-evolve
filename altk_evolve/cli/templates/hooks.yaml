@@ -77,3 +77,41 @@ plugins:
   #     detect_phone: true
   #     default_mask_strategy: redact
   #     redaction_text: "[REDACTED]"
+
+  # ── Structured secrets — COMMENTED OUT (a third, orthogonal method) ──────
+  # Requires: pip install 'altk-evolve[secrets]'   (cpex-secrets-detection)
+  #
+  # Catches CREDENTIALS/TOKENS the PII methods above do not target (AWS keys,
+  # GitHub/Slack tokens, Stripe secrets, private-key blocks). Regex-based, no
+  # verification — like the regex PII method, treat it as a high-precision floor,
+  # not proof of absence. Enable alongside a PII method; it chains the same way.
+  #
+  # - name: secrets_filter_memory
+  #   kind: altk_evolve.hooks.plugins.secrets.SecretsFilterMemoryPlugin
+  #   description: Structured secrets (credential/token) masking on memory writes and LLM egress
+  #   hooks:
+  #     - memory_pre_write
+  #     - llm_pre_call
+  #   mode: sequential     # same reason as above: transform mode can never block
+  #   priority: 10         # redact before any normalizer sees content
+  #   on_error: fail       # fail-closed: never pass content with secrets through
+  #   config:
+  #     redact: true
+  #     redaction_text: "[REDACTED]"
+  #     block_on_detection: false   # we redact-and-continue; set true (+redact:false) to hard-block
+  #     enabled:
+  #       # Structured / high-precision detectors — ON.
+  #       aws_access_key_id: true
+  #       aws_secret_access_key: true
+  #       google_api_key: true
+  #       github_token: true
+  #       stripe_secret_key: true
+  #       slack_token: true
+  #       private_key_block: true
+  #       # Entropy / heuristic detectors — present but OFF: on a memory corpus
+  #       # they OVER-REDACT (legit base64 blobs, hex digests, hashes, JWT-shaped
+  #       # ids), so they are opt-in only. Uncomment deliberately.
+  #       # generic_api_key_assignment: true
+  #       # jwt_like: true
+  #       # hex_secret_32: true
+  #       # base64_24: true

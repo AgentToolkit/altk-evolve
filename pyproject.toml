@@ -95,6 +95,23 @@ pii-semantic = [
     "spacy-curated-transformers>=0.2,<3",
 ]
 
+# `[secrets]`: structured secrets detection (cpex-secrets-detection's Rust
+# engine). A third redaction *method*, orthogonal to the two PII methods above:
+# it catches credentials/tokens (AWS keys, GitHub/Slack tokens, private-key
+# blocks, ...) that neither the regex nor the semantic PII path targets. Like
+# `[pii-regex]` it is a **raw cpex** plugin adapting an external cpex plugin onto
+# Evolve's hook types, so it depends on cpex-secrets-detection (which itself
+# pins cpex>=0.1.0,<0.2 via [hooks]).
+secrets = [
+    "altk-evolve[hooks]",
+    # Upper-bound the minor (mirrors cpex's <0.2 and [pii-regex]'s cpex-pii-filter
+    # pin): SecretsFilterMemoryPlugin always receives a PluginConfig on the
+    # YAML/spec path, so a defaults change in a future minor would silently alter
+    # what gets redacted rather than surface as an error. Pin the minor and bump
+    # deliberately.
+    "cpex-secrets-detection>=0.1,<0.2",
+]
+
 # Benchmarking the redactors against external labeled corpora
 # (examples/pii_benchmark.py --dataset). Not needed at runtime.
 bench = [
@@ -251,6 +268,7 @@ exclude = [
 module = [
     "cpex.*",
     "cpex_pii_filter.*",
+    "cpex_secrets_detection.*",
     # IBM READI ships no py.typed marker; Presidio is an optional transitive of it.
     "risk_assessment.*",
     "presidio_analyzer.*",

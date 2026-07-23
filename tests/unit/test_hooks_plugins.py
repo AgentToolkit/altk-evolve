@@ -46,6 +46,22 @@ PII_SPEC = HookPluginSpec(
         "redaction_text": "[REDACTED]",
     },
 )
+SECRETS_SPEC = HookPluginSpec(
+    name="secrets_filter_memory",
+    kind="altk_evolve.hooks.plugins.secrets.SecretsFilterMemoryPlugin",
+    hooks=["memory_pre_write", "llm_pre_call"],
+    mode="transform",
+    priority=10,
+    config={
+        "enabled": {
+            "aws_access_key_id": True,
+            "github_token": True,
+        },
+        "redact": True,
+        "redaction_text": "[REDACTED]",
+        "block_on_detection": False,
+    },
+)
 
 
 @pytest.fixture(autouse=True)
@@ -168,6 +184,64 @@ def test_plugin_stubs_raise_without_cpex(monkeypatch):
         pytest.skip("cpex-pii-filter installed; stub not active")
     with pytest.raises(ImportError, match=r"altk-evolve\[pii-regex\]"):
         pii_module.PIIFilterMemoryPlugin()
+
+
+# ── SecretsFilterMemoryPlugin ────────────────────────────────────────
+
+# Clearly-fake but shape-valid credentials. `# pragma: allowlist secret` keeps
+# this repo's own detect-secrets pre-commit hook from tripping on the fixtures.
+_FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"  # pragma: allowlist secret
+_FAKE_GH_TOKEN = "ghp_16C7e42F292c6912E7710c838347Ae178B4a"  # pragma: allowlist secret
+
+
+@pytest.mark.unit
+def test_secrets_plugin_redacts_writes(tmp_path: Path):
+    pytest.importorskip("cpex_secrets_detection")
+    client = make_client(tmp_path, SECRETS_SPEC)
+    client.create_namespace("ns")
+    client.update_entities(
+        "ns",
+        [Entity(content=f"aws {_FAKE_AWS_KEY} gh {_FAKE_GH_TOKEN} plus a normal note", type="note")],
+        enable_conflict_resolution=False,
+    )
+
+    stored = client.search_entities("ns", limit=1)[0]
+    assert stored.content == "aws [REDACTED] gh [REDACTED] plus a normal note"
+
+
+@pytest.mark.unit
+def test_secrets_plugin_redacts_llm_egress(tmp_path: Path):
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+
+    messages = dispatch_llm_pre_call(
+        [{"role": "user", "content": f"deploy with {_FAKE_AWS_KEY} and {_FAKE_GH_TOKEN}"}],
+        purpose="test",
+    )
+    assert messages == [{"role": "user", "content": "deploy with [REDACTED] and [REDACTED]"}]
+
+
+@pytest.mark.unit
+def test_secrets_plugin_leaves_non_secret_untouched(tmp_path: Path):
+    pytest.importorskip("cpex_secrets_detection")
+    client = make_client(tmp_path, SECRETS_SPEC)
+    client.create_namespace("ns")
+    # A 32-char hex digest is NOT a secret with the entropy detectors off.
+    benign = "digest deadbeefdeadbeefdeadbeefdeadbeef and just plain words"
+    client.update_entities("ns", [Entity(content=benign, type="note")], enable_conflict_resolution=False)
+
+    stored = client.search_entities("ns", limit=1)[0]
+    assert stored.content == benign
+
+
+@pytest.mark.unit
+def test_secrets_plugin_stub_raises_without_cpex():
+    import altk_evolve.hooks.plugins.secrets as secrets_module
+
+    if secrets_module._HAS_SECRETS_DETECTION:
+        pytest.skip("cpex-secrets-detection installed; stub not active")
+    with pytest.raises(ImportError, match=r"altk-evolve\[secrets\]"):
+        secrets_module.SecretsFilterMemoryPlugin()
 
 
 # ── ReadiSemanticPIIPlugin ───────────────────────────────────────────

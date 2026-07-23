@@ -246,6 +246,10 @@ pii-semantic = [
     { name = "readi-privacy" },
     { name = "spacy-curated-transformers" },
 ]
+secrets = [
+    { name = "cpex" },
+    { name = "cpex-secrets-detection" },
+]
 tracing = [
     { name = "openinference-instrumentation-litellm" },
     { name = "openinference-instrumentation-openai" },
@@ -286,11 +290,13 @@ docs = [
 requires-dist = [
     { name = "altk-evolve", extras = ["hooks"], marker = "extra == 'pii-regex'" },
     { name = "altk-evolve", extras = ["hooks"], marker = "extra == 'pii-semantic'" },
+    { name = "altk-evolve", extras = ["hooks"], marker = "extra == 'secrets'" },
     { name = "altk-evolve", extras = ["pii-regex"], marker = "extra == 'pii'" },
     { name = "altk-evolve", extras = ["tracing"], marker = "extra == 'examples'" },
     { name = "arize-phoenix", specifier = ">=12.30.0" },
     { name = "cpex", marker = "extra == 'hooks'", specifier = ">=0.1.0,<0.2" },
     { name = "cpex-pii-filter", marker = "extra == 'pii-regex'", specifier = ">=0.3,<0.4" },
+    { name = "cpex-secrets-detection", marker = "extra == 'secrets'", specifier = ">=0.1,<0.2" },
     { name = "datasets", marker = "extra == 'bench'", specifier = ">=2.14" },
     { name = "fastmcp" },
     { name = "jinja2" },
@@ -319,7 +325,7 @@ requires-dist = [
     { name = "uv", marker = "extra == 'build'" },
     { name = "uvicorn" },
 ]
-provides-extras = ["build", "tracing", "milvus", "pgvector", "hooks", "pii-regex", "pii", "pii-semantic", "bench", "examples"]
+provides-extras = ["build", "tracing", "milvus", "pgvector", "hooks", "pii-regex", "pii", "pii-semantic", "secrets", "bench", "examples"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1193,6 +1199,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1b/16/021e8105d82939fc7bbcaf33ba434f46ff6a0fe10a1f1ee8a4b28bed357f/cpex_pii_filter-0.3.6-cp311-abi3-manylinux_2_34_s390x.whl", hash = "sha256:b1e75e56174d405ba3e052097e1f5720a589d5f1a654a15a66b86b6b27129052", size = 923192, upload-time = "2026-07-07T14:30:31.499Z" },
     { url = "https://files.pythonhosted.org/packages/b9/57/448969151152285e40c8834f6987a5db3084ea17af0868fedfd8e9275102/cpex_pii_filter-0.3.6-cp311-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:e3c602ce2bafaa01888d78b5dbb1bd78f78d280d3d7104292551510221fdf881", size = 888910, upload-time = "2026-07-07T14:30:32.897Z" },
     { url = "https://files.pythonhosted.org/packages/fa/f8/a99a4bcff07df0466b06b49cf6d17b627c9b5a06654f6b5d4c43f04e4901/cpex_pii_filter-0.3.6-cp311-abi3-win_amd64.whl", hash = "sha256:0c3d11f1eb306ec96cf6e6daf1bec9c0973d43527153ab60e76c8ee4ee8cdeb8", size = 817009, upload-time = "2026-07-07T14:30:34.319Z" },
+]
+
+[[package]]
+name = "cpex-secrets-detection"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/e6/9bbedb5e2ebe74cf78124b6de710600d4b0fb15bd8b23c663833a4d9132f/cpex_secrets_detection-0.1.0.tar.gz", hash = "sha256:d2a12762f80bba8b4d4afbafb0850a9fa337b3a478a98a96d7ba2266913a1025", size = 31884, upload-time = "2026-04-09T14:03:15.81Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/4d/e0a749db3bb40634a509363290167f14931631551f29d25fc93b4a5253f6/cpex_secrets_detection-0.1.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:55287a02d8ec4a31bdf5aa9d4e46dc93572b42a0090ead42664779fe67bc2940", size = 716178, upload-time = "2026-04-09T14:03:07.019Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/c2/2e62e95f31d1585a534ffff26227b79137ad0da6bfc02d4a6ee5666206ac/cpex_secrets_detection-0.1.0-cp311-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:bad46b1602b8c476604edbe4eb42101fd5564de2395d9a6595dbba54eb7ad222", size = 759669, upload-time = "2026-04-09T14:03:08.735Z" },
+    { url = "https://files.pythonhosted.org/packages/49/a7/ca20b6dfd91c7af810b10e91573e69f31dbe0737c6cbfb259b15a527e487/cpex_secrets_detection-0.1.0-cp311-abi3-manylinux_2_34_ppc64le.whl", hash = "sha256:2527cc33f28eb4449d092e2434855b2a95309f11de48de57b148123af1d4b118", size = 836068, upload-time = "2026-04-09T14:03:10.084Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/34/1c14de69e7dd68c5638fb5ca0734a4ebc7bccc98ec4ff9390b03f8fd4185/cpex_secrets_detection-0.1.0-cp311-abi3-manylinux_2_34_s390x.whl", hash = "sha256:edf9ff439b28f43543c5a12b23b34c33cf7c408b1aba9733f146eb6347b201d5", size = 856437, upload-time = "2026-04-09T14:03:11.769Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/b0/0b348d27b4eda710d0e5d9ce41e7d1e47c106d5e54e547df64487410105a/cpex_secrets_detection-0.1.0-cp311-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:4572a70bd0dd192c4acd7515ae793b0d81a31f58f9510e7218ee75539ee1baac", size = 815021, upload-time = "2026-04-09T14:03:13.128Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/65/3e68f346860c14d66b551937955364920b42260597af17275de3d3786220/cpex_secrets_detection-0.1.0-cp311-abi3-win_amd64.whl", hash = "sha256:f1046587fffa4af2b1b4b0fba60f95f0a0a1988064c7f838261a28433b71ceb6", size = 735923, upload-time = "2026-04-09T14:03:14.452Z" },
 ]
 
 [[package]]

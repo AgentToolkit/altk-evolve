@@ -9,6 +9,18 @@ Evolve redacts PII at the [memory hook seam](memory-hooks.md): before entities a
 
 Both extras are PII redaction; the name states the *method*, not "PII vs not-PII". `[pii]` remains as a backward-compatible alias for `[pii-regex]` so existing installs keep working with the same lightweight behaviour — it does **not** pull the heavy semantic dependencies.
 
+## A third method: structured secrets
+
+Beyond the two *PII* methods, Evolve ships a third redaction method aimed at a different class of data — machine **credentials and tokens**, not personal data:
+
+| Method | Plugin | Engine | Catches | Extra |
+|---|---|---|---|---|
+| Structured secrets | `SecretsFilterMemoryPlugin` | `cpex-secrets-detection` (Rust regex) | AWS keys, Google API keys, GitHub/Slack tokens, Stripe secrets, private-key blocks | `[secrets]` |
+
+It runs on the same two hooks (`memory_pre_write`, `llm_pre_call`), redacts to `[REDACTED]`, and **composes with** a PII method rather than replacing it — an agent's memory can leak both a person's name and a live API key, and the two methods target different things. Like the regex PII method it is **regex with no verification** (it never calls the issuer to confirm a token is live), so it is a high-precision floor, not proof of absence.
+
+**Default posture — structured on, entropy opt-in.** The high-precision detectors that key off a *known credential shape* (the ones in the table above) are ON by default. The broad entropy/heuristic detectors — `generic_api_key_assignment`, `jwt_like`, `hex_secret_32`, `base64_24` — are **OFF** by default and opt-in: a memory corpus is full of legitimate high-entropy strings (base64 blobs, hex digests, content hashes, JWT-shaped ids), so those detectors **over-redact** memory content and would corrupt it. Enable them only for a corpus you know is free of such strings. See the `secrets` block in the scaffolded `evolve.hooks.yaml` for the toggles.
+
 ## Why semantic redaction exists
 
 Regex redaction is excellent at what it does and blind to everything else. Measured with `examples/pii_benchmark.py` on 200 rows of `ai4privacy/pii-masking-200k` (English):
