@@ -58,17 +58,20 @@ class EvolveClient:
         else:
             raise NotImplementedError(f"Entity backend not implemented: {self.config.backend}")
 
-        # Initialize the memory hook seam. The CPEX PluginManager is a
-        # process-wide singleton, so the seam is process-global, not per-client:
-        #   - Constructing another client with hooks.enabled=True resets the
+        # Initialize the memory hook seam. The seam is ALWAYS live — there is no
+        # enable/disable switch; behavior is decided by which plugins resolve
+        # (config + auto-discovered evolve.hooks.yaml). The CPEX PluginManager is
+        # a process-wide singleton, so the seam is process-global, not per-client:
+        #   - Constructing another client that resolves plugins resets the
         #     manager and REPLACES this client's plugins (initialize_hooks warns
         #     when the reset discards already-registered plugins, e.g. a PII
         #     redaction plugin an earlier client relied on).
-        #   - A client with hooks.enabled=False shuts the seam DOWN, so it does
+        #   - A client that resolves NO plugins shuts the seam DOWN, so it does
         #     not inherit another client's process-global hooks — hence this is
-        #     called unconditionally (initialize_hooks(disabled) tears down and
-        #     returns None). The heavy cpex import stays deferred, so the
-        #     disabled path remains a cheap no-op.
+        #     called unconditionally (initialize_hooks(no plugins) tears down and
+        #     returns None). The heavy cpex import stays deferred, so the no-op
+        #     path remains cheap. A configured-but-engine-missing setup instead
+        #     raises here (fail-closed), never a silent no-op.
         from altk_evolve.hooks.manager import initialize_hooks
 
         initialize_hooks(self.config.hooks)

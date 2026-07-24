@@ -51,6 +51,16 @@ class _PayloadBase(BaseModel):
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
+    def replace(self, **changes: Any) -> _PayloadBase:
+        """Return a copy with fields replaced (contract: return, never mutate).
+
+        The supported channel for a native plugin to propose a change:
+        ``return payload.replace(entities=redacted)``. Never mutate a payload
+        (or its nested contents) in place — that is discarded and can leak
+        across the plugin chain.
+        """
+        return self.model_copy(update=changes)
+
 
 def engine_available() -> bool:
     """Whether a plugin execution engine is installed.

@@ -6,7 +6,10 @@ CPEX discovers handlers by method name == hook-type string, so attaching it to
 our custom hooks needs this thin aliasing subclass that exposes
 ``memory_pre_write`` and ``llm_pre_call`` and delegates to the native handler.
 
-Requires ``pip install 'altk-evolve[pii]'`` (cpex + cpex-pii-filter).
+Requires ``pip install 'altk-evolve[pii-regex]'`` (cpex + cpex-pii-filter). This
+is the regex PII method; ``[pii-semantic]`` is the NER method, and running both
+is the recommended defence-in-depth default. ``[pii]`` remains a backward-compat
+alias for ``[pii-regex]``.
 
 Unlike ``normalizer``/``access_stamp`` this module has no engine-agnostic
 core: adapting cpex-pii-filter onto our hook types IS its domain logic, so
@@ -33,7 +36,7 @@ except ImportError as exc:
     #   * A name-less ImportError (``exc.name is None``) is NOT a missing
     #     optional dep — it typically comes from a broken import inside an
     #     installed package (e.g. ``from x import y`` where ``y`` is gone), and
-    #     masking it as "install 'altk-evolve[pii]'" would hide a real bug and
+    #     masking it as "install 'altk-evolve[pii-regex]'" would hide a real bug and
     #     silently disable a compliance plugin.
     #   * An ImportError naming an unrelated module means a broken transitive,
     #     which must also surface.
@@ -109,7 +112,9 @@ if _HAS_PII_FILTER:
 else:
 
     class PIIFilterMemoryPlugin:  # type: ignore[no-redef]
-        """Stub — install 'altk-evolve[pii]' for PII redaction support."""
+        """Stub — install 'altk-evolve[pii-regex]' for PII redaction support."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise ImportError("PIIFilterMemoryPlugin requires cpex and cpex-pii-filter. Install them with: pip install 'altk-evolve[pii]'")
+            raise ImportError(
+                "PIIFilterMemoryPlugin requires cpex and cpex-pii-filter. Install them with: pip install 'altk-evolve[pii-regex]'"
+            )

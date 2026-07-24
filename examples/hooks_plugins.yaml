@@ -1,18 +1,30 @@
 # Example plugin configuration for the altk_evolve memory hook seam, in the
 # YAML format of the shipped CPEX execution engine.
 #
-# Point EvolveConfig at this file to enable plugins without touching code:
+# This is the full, annotated reference of every shipped plugin. For a turnkey
+# PII setup, prefer `evolve hooks init` — it scaffolds ./evolve.hooks.yaml
+# (auto-discovered) with the READI semantic plugin active and the regex plugin
+# commented out.
+#
+# Point EvolveConfig at this file to configure plugins without touching code:
 #
 #     from altk_evolve.config.evolve import EvolveConfig
 #     from altk_evolve.config.hooks import HooksConfig
 #
-#     config = EvolveConfig(hooks=HooksConfig(enabled=True, plugins_yaml="examples/hooks_plugins.yaml"))
+#     config = EvolveConfig(hooks=HooksConfig(plugins_yaml="examples/hooks_plugins.yaml"))
+#
+# The hook seam is always live; behavior is decided by which plugins are
+# configured here (no separate on/off switch). Evolve also AUTO-DISCOVERS a
+# default config file when `plugins_yaml` is unset:
+#     $EVOLVE_HOOKS_CONFIG -> ./evolve.hooks.yaml -> ~/.config/evolve/hooks.yaml
 #
 # The "edit YAML to change behavior" property: comment a plugin out (or set
 # `mode: disabled`) and restart — no code change needed. Jinja templating is
 # supported for values, e.g. `redaction_text: "{{ env.REDACTION_TEXT }}"`.
 #
-# Requires: pip install 'altk-evolve[hooks]'   (plus [pii] for the PII filter)
+# Requires: pip install 'altk-evolve[hooks]'   (plus [pii-regex] for the regex
+# PII method and/or [pii-semantic] for the semantic one; running both is the
+# recommended defence-in-depth default)
 
 plugins:
   # Stamps canonical metadata on every write: copies task_id -> trace_id when
@@ -43,8 +55,8 @@ plugins:
     priority: 50
     on_error: fail         # fail-closed default; the plugin still guards its own stamping so the read never fails
 
-  # Regex PII redaction on memory writes and LLM egress.
-  # Requires: pip install 'altk-evolve[pii]'
+  # Regex PII method on memory writes and LLM egress.
+  # Requires: pip install 'altk-evolve[pii-regex]'  ([pii] is a back-compat alias)
   - name: pii_filter_memory
     kind: altk_evolve.hooks.plugins.pii.PIIFilterMemoryPlugin
     description: Regex PII masking on memory writes and LLM egress
@@ -63,3 +75,45 @@ plugins:
       detect_phone: true
       default_mask_strategy: redact
       redaction_text: "[REDACTED]"
+
+  # ── the semantic PII method: run it ALONGSIDE the regex one ────────
+  #
+  # The regex filter above has NO NER: measured on 200 ai4privacy rows it hits
+  # recall 0.13 (precision 1.00) overall and 0.00 on firstname/lastname — it
+  # catches identifiers, not people. The semantic (NER) method via IBM READI
+  # reaches 0.48 recall at precision 1.00, with names at 0.92-1.00.
+  #
+  # These are two PII-detection methods, not either/or: the recommended
+  # defence-in-depth default is to run BOTH (they chain — regex for structured
+  # identifiers plus NER for names). Enabling either is a YAML edit, not a code
+  # change: just uncomment `readi_semantic_pii` below and leave the regex block
+  # above enabled. Costs: NER is CPU-heavy next to a Rust regex pass, and the
+  # first call downloads model weights (~460MB for en_core_web_trf).
+  #
+  # Requires: pip install 'altk-evolve[pii-semantic]'
+  #
+  # - name: readi_semantic_pii
+  #   kind: altk_evolve.hooks.plugins.readi.ReadiSemanticPIIPlugin
+  #   description: Semantic (NER) PII masking on memory writes and LLM egress
+  #   hooks:
+  #     - memory_pre_write
+  #     - llm_pre_call
+  #   mode: sequential     # same reason as above: transform mode can never block
+  #   priority: 10
+  #   on_error: fail       # fail-closed: a crashing NER model must not pass PII through
+  #   config:
+  #     # default | spacy | hf | presidio.
+  #     #   default  -> READI's own PII pipeline (spaCy en_core_web_trf). English.
+  #     #   spacy    -> any spaCy pipeline; the multilingual path. Set readi_model.
+  #     #   hf       -> any HF pipeline("ner") model id. Set readi_model.
+  #     #   presidio -> Microsoft Presidio (READI hardcodes language="en"; see docs).
+  #     readi_extractor: default
+  #     # A LANGUAGE-MATCHED model is decisive: on Japanese, overall recall goes
+  #     # 0.15 (English model) -> 0.92 (ja_core_news_trf).
+  #     # readi_extractor: spacy
+  #     # readi_model: ja_core_news_trf
+  #     # readi_language: ja
+  #     redaction_text: "[REDACTED]"
+  #     # defaults to true (matches the regex method). Set false only if your
+  #     # metadata holds ids/paths/trace keys that redaction would corrupt.
+  #     redact_metadata: true
