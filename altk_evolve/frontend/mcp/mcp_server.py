@@ -669,12 +669,14 @@ def run_retention(
     scan_limit: int | None = None,
     run_id: str | None = None,
     namespace_id: str | None = None,
+    metadata_filters: str | None = None,
 ) -> str:
     """Evaluate or apply a retention policy and return a structured report.
 
     ``as_of`` exists for deterministic audits and demonstrations. Applied
     deletes still flow through ``memory_pre_delete``, so legal-hold plugins can
-    veto individual entities without aborting the run.
+    veto individual entities without aborting the run. ``metadata_filters`` is
+    a JSON object of metadata key/value pairs used to scope shared namespaces.
     """
     from pydantic import ValidationError
 
@@ -684,6 +686,8 @@ def run_retention(
         parsed_policy = _parse_metadata(policy)
         normalized_policy = RetentionPolicy.from_mapping(parsed_policy)
         now = _parse_datetime(as_of, field_name="as_of")
+        metadata_filter_values = _parse_metadata(metadata_filters) if metadata_filters else None
+        backend_filters = {f"metadata.{key}": value for key, value in metadata_filter_values.items()} if metadata_filter_values else None
     except (ValueError, ValidationError) as exc:
         errors: list[dict[str, Any]] = (
             [dict(error) for error in exc.errors()] if isinstance(exc, ValidationError) else [{"message": str(exc)}]
@@ -703,6 +707,7 @@ def run_retention(
         now=now,
         dry_run=dry_run,
         scan_limit=scan_limit,
+        filters=backend_filters,
     )
     snapshots = {entity.id: entity for entity in engine.last_scanned_entities}
     completed_at = datetime.datetime.now(datetime.UTC)
@@ -715,6 +720,7 @@ def run_retention(
             "as_of": (now or completed_at).isoformat(),
             "dry_run": report.dry_run,
             "policy": normalized_policy.model_dump(mode="json"),
+            "metadata_filters": metadata_filter_values,
             "summary": report.summary(),
             "flagged": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.flagged],
             "deleted": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.deleted],
@@ -1127,6 +1133,7 @@ def create_entity(
     owner_id: str | None = None,
     visibility: str = "private",
     namespace_id: str | None = None,
+    created_at: str | None = None,
 ) -> str:
     """
     Create a single entity in the namespace.
@@ -1139,12 +1146,23 @@ def create_entity(
         owner_id: Optional user ID to record as the owner of this entity
         visibility: Visibility of the entity — 'private' (default) or 'public'
         namespace_id: Optional namespace override. Falls back to the configured default.
+        created_at: Optional ISO-8601 timestamp for administrative fixture/import data.
 
     Returns:
         JSON string with the entity update details (ADD/UPDATE/DELETE/NONE) and entity ID
     """
     logger.info(f"Creating entity of type: {entity_type} (namespace override: {namespace_id})")
     try:
+        parsed_created_at = None
+        if created_at:
+            from datetime import UTC, datetime
+
+            try:
+                parsed_created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except ValueError:
+                return json.dumps({"error": "Invalid created_at", "message": "created_at must be ISO-8601"})
+            if parsed_created_at.tzinfo is None:
+                parsed_created_at = parsed_created_at.replace(tzinfo=UTC)
         if visibility not in ("private", "public"):
             return json.dumps({"error": f"Invalid visibility '{visibility}': must be 'private' or 'public'"})
         if visibility == "public" and not owner_id:
@@ -1179,7 +1197,7 @@ def create_entity(
 
         entity = Entity(type=entity_type, content=content, metadata=metadata_dict)
 
-        updates, _ = _persist_entities(
+        updates, resolved_ns = _persist_entities(
             namespace_id=namespace_id,
             entities=[entity],
             enable_conflict_resolution=enable_conflict_resolution,
@@ -1187,8 +1205,26 @@ def create_entity(
 
         if updates:
             update = updates[0]
+            if parsed_created_at and update.event == "ADD":
+                readback = get_client().set_entity_created_at(namespace_id=resolved_ns, entity_id=update.id, created_at=parsed_created_at)
+                return json.dumps(
+                    {
+                        "event": update.event,
+                        "id": readback.id,
+                        "type": readback.type,
+                        "content": readback.content,
+                        "metadata": readback.metadata,
+                        "created_at": readback.created_at.isoformat(),
+                    }
+                )
             return json.dumps(
-                {"event": update.event, "id": update.id, "type": update.type, "content": update.content, "metadata": update.metadata}
+                {
+                    "event": update.event,
+                    "id": update.id,
+                    "type": update.type,
+                    "content": update.content,
+                    "metadata": update.metadata,
+                }
             )
         else:
             return json.dumps({"error": "Entity creation failed"})

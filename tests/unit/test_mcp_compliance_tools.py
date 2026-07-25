@@ -251,11 +251,18 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
             as_of=NOW.isoformat(),
             run_id="run-1",
             namespace_id="tenant-a",
+            metadata_filters=json.dumps({"agent_id": "agent-a"}),
         )
     )
 
     deleted = result["deleted"][0]
     assert result["run_id"] == "run-1"
+    assert result["metadata_filters"] == {"agent_id": "agent-a"}
+    client.scan_entities.assert_called_once_with(
+        "tenant-a",
+        filters={"metadata.agent_id": "agent-a"},
+        limit=100_000,
+    )
     assert deleted["entity_id"] == "old-session"
     assert deleted["outcome"] == "deleted"
     assert deleted["session_id"] == "thread-9"

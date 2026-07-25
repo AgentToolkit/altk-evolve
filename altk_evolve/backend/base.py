@@ -82,6 +82,29 @@ class BaseEntityBackend(ABC):
         """Read entities for administrative work without firing read hooks."""
         return self._search_entities_impl(namespace_id, query=None, filters=filters, limit=limit)
 
+    def set_entity_created_at(self, namespace_id: str, entity_id: str, created_at: datetime.datetime) -> RecordedEntity:
+        """Set an imported entity's persisted creation time without a public-read hook.
+
+        This is intentionally an administrative import operation. It uses the
+        backend's normal patch/persist path without firing public-read hooks.
+        """
+        entities = self.scan_entities(namespace_id, filters={"id": entity_id}, limit=1)
+        if not entities:
+            raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
+        entity = entities[0]
+        self._patch_entity(
+            namespace_id,
+            entity_id,
+            entity.type,
+            serialize_content(entity.content),
+            int(created_at.timestamp()),
+            dict(entity.metadata or {}),
+        )
+        updated = self.scan_entities(namespace_id, filters={"id": entity_id}, limit=1)
+        if not updated:
+            raise EvolveException(f"Entity '{entity_id}' disappeared after timestamp update")
+        return updated[0]
+
     @abstractmethod
     def _search_entities_impl(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10

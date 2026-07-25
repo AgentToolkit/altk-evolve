@@ -195,6 +195,7 @@ class RetentionEngine:
         warnings: list[str] | None = None,
         skipped: list[RetentionItem] | None = None,
         scan_limit: int | None = None,
+        filters: dict | None = None,
     ) -> list[RetentionItem]:
         """Compute the actions a policy implies, without mutating anything.
 
@@ -207,12 +208,14 @@ class RetentionEngine:
         *scan_limit* caps how many entities are fetched from the namespace in
         one call; it defaults to :attr:`FETCH_LIMIT`. When the fetch returns
         exactly the limit a warning is emitted, since entities beyond it were
-        not evaluated (and therefore not cascaded).
+        not evaluated (and therefore not cascaded). *filters* are forwarded to
+        the administrative scan so a shared namespace can be scoped by owner,
+        agent, or other metadata.
         """
         now = _as_aware(now) if now else datetime.datetime.now(datetime.UTC)
         limit = self.FETCH_LIMIT if scan_limit is None else scan_limit
         scan = getattr(self.client, "scan_entities", None) or self.client.get_all_entities
-        entities = scan(namespace_id, limit=limit)
+        entities = scan(namespace_id, filters=filters, limit=limit)
         self.last_scanned_entities = entities
         if warnings is not None and len(entities) >= limit:
             warnings.append(
@@ -241,6 +244,8 @@ class RetentionEngine:
             existing = actions.get(item.entity_id)
             if existing is not None and (existing.action == "delete" or item.action == "flag"):
                 return
+            if item.action == "delete" and skipped is not None:
+                skipped[:] = [entry for entry in skipped if entry.entity_id != item.entity_id]
             actions[item.entity_id] = item
 
         unstamped = 0
@@ -265,6 +270,9 @@ class RetentionEngine:
             if degraded and rule.action == "delete":
                 choice = rule.on_missing_access_signal
                 if choice == "skip":
+                    existing = actions.get(e.id)
+                    if existing is not None and existing.action == "delete":
+                        continue
                     if skipped is not None:
                         skipped.append(
                             RetentionItem(
@@ -319,13 +327,15 @@ class RetentionEngine:
         now: datetime.datetime | None = None,
         dry_run: bool = True,
         scan_limit: int | None = None,
+        filters: dict | None = None,
     ) -> RetentionReport:
         """Evaluate and — unless *dry_run* — flag/delete the matched entities.
 
         Dry run is the default: nothing is mutated and the report describes what
         *would* happen. *scan_limit* caps how many entities are fetched per
         namespace (defaults to :attr:`FETCH_LIMIT`); a boundary hit is surfaced
-        in ``report.warnings``.
+        in ``report.warnings``. *filters* use the backend's structured filter
+        syntax and constrain both direct matches and cascade candidates.
         """
         now = _as_aware(now) if now else datetime.datetime.now(datetime.UTC)
         report = RetentionReport(dry_run=dry_run)
@@ -336,6 +346,7 @@ class RetentionEngine:
             warnings=report.warnings,
             skipped=report.skipped,
             scan_limit=scan_limit,
+            filters=filters,
         )
         flagged_at = now.isoformat()
 
