@@ -497,6 +497,7 @@ def list_entities(
     matched = [entity for entity in candidates if matches(entity)]
     matched.sort(key=lambda entity: (entity.created_at, entity.id), reverse=True)
     page = matched[offset : offset + page_size]
+    consumed = len(page)
     if record_access and page:
         transformed_page = []
         for entity in page:
@@ -504,7 +505,7 @@ def list_entities(
             if transformed is not None:
                 transformed_page.append(transformed)
         page = _record_entity_access(client, resolved_ns, transformed_page)
-    next_offset = offset + len(page)
+    next_offset = offset + consumed
     facets: dict[str, int] = {}
     for entity in matched:
         facets[entity.type] = facets.get(entity.type, 0) + 1
@@ -531,16 +532,16 @@ def get_entity(
     """Return one structured entity, optionally recording a user-facing read."""
     resolved_ns = _resolve_namespace(namespace_id)
     client = get_client()
-    if record_access:
-        entity = client.get_entity_by_id(resolved_ns, entity_id)
-    else:
-        matches = client.scan_entities(resolved_ns, filters={"id": entity_id}, limit=1)
-        entity = matches[0] if matches else None
+    matches = client.scan_entities(resolved_ns, filters={"id": entity_id}, limit=1)
+    entity = matches[0] if matches else None
     if entity is None:
         return _json_response({"error": f"Entity {entity_id} not found"})
     if not _entity_owned_by(entity, user_id):
         return _json_response({"error": "Permission denied: caller is not the owner of this entity"})
     if record_access:
+        refreshed = client.get_entity_by_id(resolved_ns, entity_id)
+        if refreshed is not None:
+            entity = refreshed
         entity = _record_entity_access(client, resolved_ns, [entity])[0]
     return _json_response(_entity_payload(entity))
 
@@ -602,7 +603,7 @@ def record_access(
             allowed.append(entity_id)
 
     moment = moment or datetime.datetime.now(datetime.UTC)
-    updated = client.record_access(resolved_ns, allowed, when=moment)
+    updated = client.record_access(resolved_ns, allowed, when=moment) if allowed else []
     return _json_response(
         {
             "updated_ids": updated,
@@ -694,22 +695,16 @@ def run_retention(
 
     resolved_ns = _resolve_namespace(namespace_id)
     client = get_client()
-    effective_scan_limit = scan_limit or RetentionEngine.FETCH_LIMIT
-    snapshots = {
-        entity.id: entity
-        for entity in client.scan_entities(
-            resolved_ns,
-            limit=effective_scan_limit,
-        )
-    }
     started_at = datetime.datetime.now(datetime.UTC)
-    report = RetentionEngine(client).apply(
+    engine = RetentionEngine(client)
+    report = engine.apply(
         resolved_ns,
         normalized_policy,
         now=now,
         dry_run=dry_run,
         scan_limit=scan_limit,
     )
+    snapshots = {entity.id: entity for entity in engine.last_scanned_entities}
     completed_at = datetime.datetime.now(datetime.UTC)
     return _json_response(
         {
@@ -754,7 +749,12 @@ def _configured_hook_plugins() -> list[dict[str, Any]]:
         yaml_path = discover_hooks_config_path()
     if yaml_path:
         loaded = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8")) or {}
-        specs = list(loaded.get("plugins", []) or []) + specs
+        if not isinstance(loaded, dict):
+            raise ValueError(f"hooks config {yaml_path} must hold a mapping with a 'plugins' list")
+        yaml_specs = loaded.get("plugins", []) or []
+        if not isinstance(yaml_specs, list) or any(not isinstance(spec, dict) for spec in yaml_specs):
+            raise ValueError(f"hooks config {yaml_path} must contain a 'plugins' list of mappings")
+        specs = yaml_specs + specs
     return specs
 
 
@@ -788,7 +788,7 @@ def get_compliance_status(namespace_id: str | None = None) -> str:
                 ),
                 "hooks": hooks,
                 "enabled": enabled,
-                "healthy": bool(manager is not None and enabled),
+                "healthy": bool(manager is not None and enabled and all(manager.has_hooks_for(hook) for hook in hooks)),
             }
         )
 
@@ -798,16 +798,20 @@ def get_compliance_status(namespace_id: str | None = None) -> str:
         package_version = "unknown"
 
     hook_coverage = {hook.value: hooks_active(hook) for hook in HookType}
-    healthy = client.ready() and all(not plugin["enabled"] or plugin["healthy"] for plugin in plugins)
+    hook_engine_available = engine_available()
+    retention_available = (callable(getattr(client, "scan_entities", None)) or callable(getattr(client, "get_all_entities", None))) and all(
+        callable(getattr(client, method, None)) for method in ("patch_entity_metadata", "delete_entity_by_id")
+    )
+    healthy = client.ready() and retention_available and all(not plugin["enabled"] or plugin["healthy"] for plugin in plugins)
     return _json_response(
         {
             "healthy": healthy,
             "evolve_version": package_version,
             "backend": evolve_config.backend,
             "namespace_id": resolved_ns,
-            "retention_available": True,
+            "retention_available": retention_available,
             "hooks_enabled": manager is not None,
-            "hook_engine_available": engine_available(),
+            "hook_engine_available": hook_engine_available,
             "hook_coverage": hook_coverage,
             "plugins": plugins,
         }

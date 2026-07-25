@@ -13,7 +13,6 @@ from altk_evolve.frontend.mcp.mcp_server import (
     run_retention,
     validate_retention_policy,
 )
-from altk_evolve.retention import RetentionItem, RetentionReport
 from altk_evolve.schema.core import RecordedEntity
 
 pytestmark = pytest.mark.unit
@@ -99,6 +98,22 @@ def test_list_entities_can_record_user_facing_access(client):
     assert client.record_access.call_args.kwargs["when"].tzinfo is datetime.UTC
 
 
+def test_list_entities_cursor_counts_scanned_rows_when_access_read_disappears(client):
+    entities = [
+        _entity("new", created_days_ago=1),
+        _entity("old", created_days_ago=2),
+    ]
+    client.scan_entities.return_value = entities
+    client.get_entity_by_id.side_effect = [None, entities[1]]
+    client.record_access.return_value = ["old"]
+
+    result = json.loads(list_entities(limit=1, record_access=True, namespace_id="tenant-a"))
+
+    assert result["items"] == []
+    assert result["next_cursor"] is not None
+    assert json.loads(list_entities(cursor=result["next_cursor"], limit=1, namespace_id="tenant-a"))["items"][0]["id"] == "old"
+
+
 @pytest.mark.parametrize("metadata", [{"owner_id": "user-1"}, {}])
 def test_get_entity_enforces_attributed_owner(client, metadata):
     client.scan_entities.return_value = [_entity("one", metadata=metadata)]
@@ -113,6 +128,16 @@ def test_get_entity_enforces_attributed_owner(client, metadata):
     )
 
     assert denied["error"].startswith("Permission denied")
+
+
+def test_get_entity_denies_non_owner_before_access_stamping(client):
+    client.scan_entities.return_value = [_entity("one", metadata={"owner_id": "user-1"})]
+
+    denied = json.loads(get_entity("one", user_id="user-2", namespace_id="tenant-a"))
+
+    assert denied["error"].startswith("Permission denied")
+    client.get_entity_by_id.assert_not_called()
+    client.record_access.assert_not_called()
 
 
 def test_patch_entity_metadata_routes_through_client_hook_seam(client):
@@ -153,6 +178,16 @@ def test_record_access_reports_updated_denied_and_missing_ids(client):
     assert result["denied_ids"] == ["denied"]
     assert result["missing_ids"] == ["missing"]
     client.record_access.assert_called_once_with("tenant-a", ["owned"], when=NOW)
+
+
+def test_record_access_skips_backend_write_when_every_id_is_denied_or_missing(client):
+    denied = _entity("denied", metadata={"user_id": "user-2"})
+    client.scan_entities.side_effect = [[denied], []]
+
+    result = json.loads(record_access(["denied", "missing"], user_id="user-1", namespace_id="tenant-a"))
+
+    assert result["updated_ids"] == []
+    client.record_access.assert_not_called()
 
 
 def test_validate_retention_policy_normalizes_valid_policy():
@@ -197,42 +232,27 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
         },
     )
     client.scan_entities.return_value = [entity]
-    report = RetentionReport(
-        dry_run=False,
-        deleted=[
-            RetentionItem(
-                entity_id="old-session",
-                entity_type="trajectory",
-                action="delete",
-                reason="age",
-                rule="old-sessions",
-                detail="created 400d ago",
-            )
-        ],
-    )
-
-    with patch("altk_evolve.retention.RetentionEngine.apply", return_value=report) as apply:
-        result = json.loads(
-            run_retention(
-                policy=json.dumps(
-                    {
-                        "rules": [
-                            {
-                                "name": "old-sessions",
-                                "entity_type": "trajectory",
-                                "max_age_days": 365,
-                                "action": "delete",
-                                "cascade_derived": True,
-                            }
-                        ]
-                    }
-                ),
-                dry_run=False,
-                as_of=NOW.isoformat(),
-                run_id="run-1",
-                namespace_id="tenant-a",
-            )
+    result = json.loads(
+        run_retention(
+            policy=json.dumps(
+                {
+                    "rules": [
+                        {
+                            "name": "old-sessions",
+                            "entity_type": "trajectory",
+                            "max_age_days": 365,
+                            "action": "delete",
+                            "cascade_derived": True,
+                        }
+                    ]
+                }
+            ),
+            dry_run=False,
+            as_of=NOW.isoformat(),
+            run_id="run-1",
+            namespace_id="tenant-a",
         )
+    )
 
     deleted = result["deleted"][0]
     assert result["run_id"] == "run-1"
@@ -240,7 +260,6 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
     assert deleted["outcome"] == "deleted"
     assert deleted["session_id"] == "thread-9"
     assert deleted["content_preview"] == "Memory old-session"
-    apply.assert_called_once()
 
 
 def test_get_compliance_status_reports_configured_plugin_health(client):
@@ -267,3 +286,40 @@ def test_get_compliance_status_reports_configured_plugin_health(client):
     assert result["retention_available"] is True
     assert result["plugins"][0]["protection_class"] == "access"
     assert result["plugins"][0]["healthy"] is True
+
+
+def test_get_compliance_status_marks_unregistered_plugin_unhealthy(client):
+    client.ready.return_value = True
+    manager = MagicMock()
+    manager.has_hooks_for.return_value = False
+    specs = [
+        {
+            "name": "legal-hold",
+            "kind": "example.LegalHoldPlugin",
+            "hooks": ["memory_pre_delete"],
+            "mode": "sequential",
+        }
+    ]
+
+    with (
+        patch("altk_evolve.frontend.mcp.mcp_server._configured_hook_plugins", return_value=specs),
+        patch("altk_evolve.hooks.manager.get_plugin_manager", return_value=manager),
+        patch("altk_evolve.hooks.manager.hooks_active", return_value=False),
+        patch("altk_evolve.hooks.types.engine_available", return_value=True),
+        patch("altk_evolve.frontend.mcp.mcp_server.version", return_value="1.1.5"),
+    ):
+        result = json.loads(get_compliance_status(namespace_id="tenant-a"))
+
+    assert result["healthy"] is False
+    assert result["plugins"][0]["healthy"] is False
+
+
+def test_get_compliance_status_handles_non_mapping_hooks_config(client, tmp_path):
+    config_path = tmp_path / "hooks.yaml"
+    config_path.write_text("- malformed\n", encoding="utf-8")
+
+    with patch("altk_evolve.frontend.mcp.mcp_server.evolve_config.hooks.plugins_yaml", str(config_path)):
+        result = json.loads(get_compliance_status(namespace_id="tenant-a"))
+
+    assert result["healthy"] is False
+    assert "Unable to read hook configuration" in result["error"]

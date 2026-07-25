@@ -89,6 +89,21 @@ def test_retention_prefers_non_access_administrative_scan():
     assert client.read_calls == 0
 
 
+def test_retention_scan_does_not_require_get_all_entities():
+    class ScanOnlyClient:
+        def scan_entities(self, namespace_id, filters=None, limit=100):
+            return [_entity("1", created_days_ago=100)]
+
+        def patch_entity_metadata(self, namespace_id, entity_id, metadata_patch):
+            pass
+
+    policy = RetentionPolicy(rules=[RetentionRule(name="stale", max_age_days=90, action="flag")])
+
+    report = RetentionEngine(ScanOnlyClient()).apply("ns", policy, now=NOW, dry_run=True)
+
+    assert len(report.flagged) == 1
+
+
 def test_age_delete_removes_old_entities():
     client = FakeClient([_entity("1", created_days_ago=400)])
     policy = RetentionPolicy(rules=[RetentionRule(name="old", max_age_days=365, action="delete")])

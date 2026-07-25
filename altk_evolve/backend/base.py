@@ -78,6 +78,10 @@ class BaseEntityBackend(ABC):
         results = self._search_entities_impl(namespace_id, query, filters, limit)
         return dispatch_memory_post_read(self, namespace_id, results, query=query, filters=filters)
 
+    def scan_entities(self, namespace_id: str, filters: dict | None = None, limit: int = 100) -> list[RecordedEntity]:
+        """Read entities for administrative work without firing read hooks."""
+        return self._search_entities_impl(namespace_id, query=None, filters=filters, limit=limit)
+
     @abstractmethod
     def _search_entities_impl(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
