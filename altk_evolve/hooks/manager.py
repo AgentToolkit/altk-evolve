@@ -388,9 +388,9 @@ def _native_adapter_cls() -> Any:
         return _NATIVE_ADAPTER_CLS
 
     from cpex.framework import Plugin
-    from cpex.framework.models import PluginResult
+    from cpex.framework.models import PluginResult, PluginViolation
 
-    from altk_evolve.hooks.plugin import HookContext
+    from altk_evolve.hooks.plugin import HookContext, HookPolicyViolation
     from altk_evolve.hooks.types import HOOK_PAYLOADS, active_payload_cls
 
     class _NativePluginAdapter(Plugin):
@@ -444,7 +444,18 @@ def _native_adapter_cls() -> Any:
                 state=state,
                 request_id=getattr(gc, "request_id", "") if gc else "",
             )
-            out = method(plain, hook_ctx)  # native, sync; raises to halt (propagates -> on_error)
+            try:
+                out = method(plain, hook_ctx)
+            except HookPolicyViolation as violation:
+                return PluginResult(
+                    continue_processing=False,
+                    violation=PluginViolation(
+                        reason=violation.reason,
+                        description=violation.reason,
+                        code=violation.code,
+                        details=violation.details,
+                    ),
+                )
             if out is None:
                 return PluginResult(continue_processing=True)
             engine_cls: Any = active_payload_cls(hook_type)

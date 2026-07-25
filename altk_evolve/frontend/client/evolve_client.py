@@ -125,6 +125,10 @@ class EvolveClient:
         """
         return self.backend.scan_entities(namespace_id, filters=filters, limit=limit)
 
+    def set_entity_created_at(self, namespace_id: str, entity_id: str, created_at: datetime.datetime) -> RecordedEntity:
+        """Administratively stamp an imported entity and persist the result."""
+        return self.backend.set_entity_created_at(namespace_id, entity_id, created_at)
+
     def delete_entity_by_id(self, namespace_id: str, entity_id: str) -> None:
         """Delete a specific entity by its ID."""
         self.backend.delete_entity_by_id(namespace_id, entity_id)
