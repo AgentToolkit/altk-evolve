@@ -119,11 +119,11 @@ class EvolveClient:
 
         Retention and inventory scans are not user recalls and must not refresh
         ``metadata.last_accessed`` through ``memory_post_read``. This method
-        intentionally uses the backend's internal read seam, so callers must
+        intentionally uses the backend's administrative scan seam, so callers must
         not use it for ordinary memory retrieval where read transforms and
         access auditing are expected.
         """
-        return self.backend._search_entities_impl(namespace_id, query=None, filters=filters, limit=limit)
+        return self.backend.scan_entities(namespace_id, filters=filters, limit=limit)
 
     def delete_entity_by_id(self, namespace_id: str, entity_id: str) -> None:
         """Delete a specific entity by its ID."""
@@ -270,7 +270,7 @@ class EvolveClient:
         # llm_pre_call; the write-back still fires memory_pre_write and the
         # deletes still fire memory_pre_delete.
         limit = 10000
-        entities = self.backend._search_entities_impl(namespace_id, query=None, filters={"type": "guideline"}, limit=limit)
+        entities = self.backend.scan_entities(namespace_id, filters={"type": "guideline"}, limit=limit)
         if len(entities) >= limit:
             logger.warning(
                 "Fetched %d entities (hit limit=%d); consolidation may be incomplete. Consider increasing the limit.",

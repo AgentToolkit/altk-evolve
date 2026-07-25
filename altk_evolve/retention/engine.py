@@ -121,6 +121,7 @@ class RetentionEngine:
 
     def __init__(self, client: Any) -> None:
         self.client = client
+        self.last_scanned_entities: list[RecordedEntity] = []
 
     # ── signal helpers ────────────────────────────────────────────────
 
@@ -210,8 +211,9 @@ class RetentionEngine:
         """
         now = _as_aware(now) if now else datetime.datetime.now(datetime.UTC)
         limit = self.FETCH_LIMIT if scan_limit is None else scan_limit
-        scan = getattr(self.client, "scan_entities", self.client.get_all_entities)
+        scan = getattr(self.client, "scan_entities", None) or self.client.get_all_entities
         entities = scan(namespace_id, limit=limit)
+        self.last_scanned_entities = entities
         if warnings is not None and len(entities) >= limit:
             warnings.append(
                 f"scan hit the fetch limit of {limit} entities in namespace {namespace_id!r}; entities beyond it "
