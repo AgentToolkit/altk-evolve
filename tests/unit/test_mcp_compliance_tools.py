@@ -86,13 +86,17 @@ def test_list_entities_can_record_user_facing_access(client):
     entity = _entity("one", metadata={"user_id": "user-1"})
     client.scan_entities.return_value = [entity]
     client.get_entity_by_id.return_value = entity
+    client.record_access.return_value = ["one"]
 
     result = json.loads(list_entities(user_id="user-1", record_access=True, namespace_id="tenant-a"))
 
     assert result["items"][0]["id"] == "one"
+    assert result["items"][0]["metadata"]["last_accessed"]
     client.scan_entities.assert_called_once_with("tenant-a", limit=100_000)
     client.get_entity_by_id.assert_called_once_with("tenant-a", "one")
-    client.record_access.assert_called_once_with("tenant-a", ["one"])
+    client.record_access.assert_called_once()
+    assert client.record_access.call_args.args == ("tenant-a", ["one"])
+    assert client.record_access.call_args.kwargs["when"].tzinfo is datetime.UTC
 
 
 @pytest.mark.parametrize("metadata", [{"owner_id": "user-1"}, {}])

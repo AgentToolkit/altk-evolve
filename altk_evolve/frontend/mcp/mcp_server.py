@@ -300,6 +300,18 @@ def _entity_owned_by(entity: RecordedEntity, user_id: str | None) -> bool:
     return user_id in attributed_ids
 
 
+def _record_entity_access(client: EvolveClient, namespace_id: str, entities: list[RecordedEntity]) -> list[RecordedEntity]:
+    if not entities:
+        return entities
+    moment = datetime.datetime.now(datetime.UTC)
+    updated_ids = set(client.record_access(namespace_id, [entity.id for entity in entities], when=moment))
+    stamp = moment.isoformat()
+    return [
+        entity.model_copy(update={"metadata": {**(entity.metadata or {}), "last_accessed": stamp}}) if entity.id in updated_ids else entity
+        for entity in entities
+    ]
+
+
 def _persist_entities(
     namespace_id: str | None,
     entities: list[Entity],
@@ -491,8 +503,7 @@ def list_entities(
             transformed = client.get_entity_by_id(resolved_ns, entity.id)
             if transformed is not None:
                 transformed_page.append(transformed)
-        page = transformed_page
-        client.record_access(resolved_ns, [entity.id for entity in page])
+        page = _record_entity_access(client, resolved_ns, transformed_page)
     next_offset = offset + len(page)
     facets: dict[str, int] = {}
     for entity in matched:
@@ -530,7 +541,7 @@ def get_entity(
     if not _entity_owned_by(entity, user_id):
         return _json_response({"error": "Permission denied: caller is not the owner of this entity"})
     if record_access:
-        client.record_access(resolved_ns, [entity.id])
+        entity = _record_entity_access(client, resolved_ns, [entity])[0]
     return _json_response(_entity_payload(entity))
 
 
