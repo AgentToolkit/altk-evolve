@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from altk_evolve.frontend.mcp.mcp_server import (
+    delete_entity,
     get_compliance_status,
     get_entity,
     list_entities,
@@ -140,6 +141,27 @@ def test_get_entity_denies_non_owner_before_access_stamping(client):
     client.record_access.assert_not_called()
 
 
+def test_get_entity_enforces_agent_scope(client):
+    client.scan_entities.return_value = [
+        _entity(
+            "one",
+            metadata={"owner_id": "user-1", "agent_id": "agent-a"},
+        )
+    ]
+
+    denied = json.loads(
+        get_entity(
+            "one",
+            user_id="user-1",
+            agent_id="agent-b",
+            record_access=False,
+            namespace_id="tenant-a",
+        )
+    )
+
+    assert denied["error"].startswith("Permission denied")
+
+
 def test_patch_entity_metadata_routes_through_client_hook_seam(client):
     original = _entity("one", metadata={"owner_id": "user-1"})
     updated = original.model_copy(update={"metadata": {"owner_id": "user-1", "legal_hold": True}})
@@ -157,6 +179,28 @@ def test_patch_entity_metadata_routes_through_client_hook_seam(client):
 
     assert result["metadata"]["legal_hold"] is True
     client.patch_entity_metadata.assert_called_once_with("tenant-a", "one", {"legal_hold": True})
+
+
+def test_patch_entity_metadata_enforces_agent_scope(client):
+    client.scan_entities.return_value = [
+        _entity(
+            "one",
+            metadata={"owner_id": "user-1", "agent_id": "agent-a"},
+        )
+    ]
+
+    denied = json.loads(
+        patch_entity_metadata(
+            "one",
+            json.dumps({"title": "Changed"}),
+            user_id="user-1",
+            agent_id="agent-b",
+            namespace_id="tenant-a",
+        )
+    )
+
+    assert denied["error"].startswith("Permission denied")
+    client.patch_entity_metadata.assert_not_called()
 
 
 def test_record_access_reports_updated_denied_and_missing_ids(client):
@@ -188,6 +232,46 @@ def test_record_access_skips_backend_write_when_every_id_is_denied_or_missing(cl
 
     assert result["updated_ids"] == []
     client.record_access.assert_not_called()
+
+
+def test_record_access_enforces_agent_scope(client):
+    other_agent = _entity(
+        "other-agent",
+        metadata={"user_id": "user-1", "agent_id": "agent-a"},
+    )
+    client.scan_entities.return_value = [other_agent]
+
+    result = json.loads(
+        record_access(
+            ["other-agent"],
+            user_id="user-1",
+            agent_id="agent-b",
+            namespace_id="tenant-a",
+        )
+    )
+
+    assert result["denied_ids"] == ["other-agent"]
+    client.record_access.assert_not_called()
+
+
+def test_delete_entity_enforces_user_and_agent_scope(client):
+    entity = _entity(
+        "one",
+        metadata={"owner_id": "user-1", "agent_id": "agent-a"},
+    )
+    client.get_entity_by_id.return_value = entity
+
+    denied = json.loads(
+        delete_entity(
+            "one",
+            user_id="user-1",
+            agent_id="agent-b",
+            namespace_id="tenant-a",
+        )
+    )
+
+    assert denied["error"].startswith("Permission denied")
+    client.delete_entity_by_id.assert_not_called()
 
 
 def test_validate_retention_policy_normalizes_valid_policy():
