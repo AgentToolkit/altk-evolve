@@ -292,12 +292,19 @@ def _parse_datetime(value: str | None, *, field_name: str) -> datetime.datetime 
     return parsed
 
 
-def _entity_owned_by(entity: RecordedEntity, user_id: str | None) -> bool:
-    if user_id is None:
-        return True
+def _entity_owned_by(
+    entity: RecordedEntity,
+    user_id: str | None,
+    agent_id: str | None = None,
+) -> bool:
     metadata = entity.metadata or {}
-    attributed_ids = {str(value) for value in (metadata.get("owner_id"), metadata.get("user_id")) if value}
-    return user_id in attributed_ids
+    if user_id is not None:
+        attributed_ids = {str(value) for value in (metadata.get("owner_id"), metadata.get("user_id")) if value}
+        if user_id not in attributed_ids:
+            return False
+    if agent_id is not None and str(metadata.get("agent_id") or "") != agent_id:
+        return False
+    return True
 
 
 def _record_entity_access(client: EvolveClient, namespace_id: str, entities: list[RecordedEntity]) -> list[RecordedEntity]:
@@ -526,6 +533,7 @@ def list_entities(
 def get_entity(
     entity_id: str,
     user_id: str | None = None,
+    agent_id: str | None = None,
     record_access: bool = True,
     namespace_id: str | None = None,
 ) -> str:
@@ -536,7 +544,7 @@ def get_entity(
     entity = matches[0] if matches else None
     if entity is None:
         return _json_response({"error": f"Entity {entity_id} not found"})
-    if not _entity_owned_by(entity, user_id):
+    if not _entity_owned_by(entity, user_id, agent_id):
         return _json_response({"error": "Permission denied: caller is not the owner of this entity"})
     if record_access:
         refreshed = client.get_entity_by_id(resolved_ns, entity_id)
@@ -551,6 +559,7 @@ def patch_entity_metadata(
     entity_id: str,
     metadata_patch: str,
     user_id: str | None = None,
+    agent_id: str | None = None,
     namespace_id: str | None = None,
 ) -> str:
     """Merge metadata into an owned entity through the memory hook seam."""
@@ -565,7 +574,7 @@ def patch_entity_metadata(
     entity = matches[0] if matches else None
     if entity is None:
         return _json_response({"error": f"Entity {entity_id} not found"})
-    if not _entity_owned_by(entity, user_id):
+    if not _entity_owned_by(entity, user_id, agent_id):
         return _json_response({"error": "Permission denied: caller is not the owner of this entity"})
     try:
         updated = client.patch_entity_metadata(resolved_ns, entity_id, patch)
@@ -579,6 +588,7 @@ def record_access(
     entity_ids: list[str],
     accessed_at: str | None = None,
     user_id: str | None = None,
+    agent_id: str | None = None,
     namespace_id: str | None = None,
 ) -> str:
     """Explicitly stamp memories as used without requiring a retrieval query."""
@@ -597,7 +607,7 @@ def record_access(
         entity = matches[0] if matches else None
         if entity is None:
             missing.append(entity_id)
-        elif not _entity_owned_by(entity, user_id):
+        elif not _entity_owned_by(entity, user_id, agent_id):
             denied.append(entity_id)
         else:
             allowed.append(entity_id)
@@ -1320,7 +1330,12 @@ def unpublish_entity(entity_id: str, user_id: str | None = None, namespace_id: s
 
 
 @mcp.tool()
-def delete_entity(entity_id: str, user_id: str | None = None, namespace_id: str | None = None) -> str:
+def delete_entity(
+    entity_id: str,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    namespace_id: str | None = None,
+) -> str:
     """
     Delete a specific entity by its ID.
 
@@ -1340,8 +1355,7 @@ def delete_entity(entity_id: str, user_id: str | None = None, namespace_id: str 
         if entity is None:
             return json.dumps({"success": False, "error": f"Entity {entity_id} not found"})
 
-        existing_owner = (entity.metadata or {}).get("owner_id")
-        if existing_owner is not None and user_id != existing_owner:
+        if not _entity_owned_by(entity, user_id, agent_id):
             logger.info(f"Delete denied for entity={entity_id} namespace={resolved_ns}: caller is not owner")
             return json.dumps({"error": "Permission denied: caller is not the owner of this entity"})
 
