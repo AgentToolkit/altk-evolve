@@ -65,6 +65,30 @@ def test_age_flag_marks_old_entities_without_deleting():
     assert "retention_flagged_at" not in client.store["2"].metadata
 
 
+def test_retention_prefers_non_access_administrative_scan():
+    class ScanAwareClient(FakeClient):
+        def __init__(self, entities):
+            super().__init__(entities)
+            self.scan_calls = 0
+            self.read_calls = 0
+
+        def scan_entities(self, namespace_id, filters=None, limit=100):
+            self.scan_calls += 1
+            return list(self.store.values())
+
+        def get_all_entities(self, namespace_id, filters=None, limit=100):
+            self.read_calls += 1
+            return list(self.store.values())
+
+    client = ScanAwareClient([_entity("1", created_days_ago=100)])
+    policy = RetentionPolicy(rules=[RetentionRule(name="stale", max_age_days=90, action="flag")])
+
+    RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=True)
+
+    assert client.scan_calls == 1
+    assert client.read_calls == 0
+
+
 def test_age_delete_removes_old_entities():
     client = FakeClient([_entity("1", created_days_ago=400)])
     policy = RetentionPolicy(rules=[RetentionRule(name="old", max_age_days=365, action="delete")])

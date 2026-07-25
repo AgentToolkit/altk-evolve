@@ -108,6 +108,14 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 **Available tools:**
 - `get_entities(task: str, entity_type: str = "guideline", include_public: bool = False)`: Get relevant entities for a specific task. Set `include_public=True` to merge in public entities from all other namespaces; those results are annotated with `[public: {owner_id}]`.
 - `get_guidelines(task: str)`: Get relevant guidelines for a specific task (backward compatibility alias for `get_entities`).
+- `get_relevant_guidelines(task: str, top_k: int | None, core_support: int | None)`: Retrieve the always-on guideline core plus a task-relevant dosage.
+- `list_entities(...)`: Return structured, filtered, cursor-paginated entity inventory for user and administrative UIs.
+- `get_entity(entity_id: str, user_id: str | None, record_access: bool = True)`: Return one structured entity, enforcing ownership when a caller ID is supplied.
+- `patch_entity_metadata(entity_id: str, metadata_patch: str, user_id: str | None)`: Merge JSON metadata through the memory hook seam.
+- `record_access(entity_ids: list[str], accessed_at: str | None)`: Explicitly stamp the retention engine's `last_accessed` signal.
+- `validate_retention_policy(policy: str)`: Validate and normalize a JSON retention policy without scanning data.
+- `run_retention(policy: str, dry_run: bool = True, as_of: str | None, scan_limit: int | None)`: Dry-run or apply retention and return a structured, entity-linked report.
+- `get_compliance_status()`: Report backend health, retention availability, hook coverage, and configured plugin health.
 - `save_trajectory(trajectory_data: str, task_id: str | None, owner_id: str | None)`: Save a conversation trajectory and generate new guidelines.
 - `create_entity(content: str, entity_type: str, metadata: str | None, enable_conflict_resolution: bool, owner_id: str | None, visibility: str = "private")`: Create a single entity. Pass `visibility="public"` and `owner_id` to make it immediately discoverable by other namespaces.
 - `publish_entity(entity_id: str, user_id: str | None)`: Make an entity publicly visible to all namespaces. Records the caller as owner and stamps `published_at`.

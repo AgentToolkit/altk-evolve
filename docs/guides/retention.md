@@ -24,6 +24,20 @@ for item in [*report.deleted, *report.flagged]:
     print(item.action, item.entity_id, item.reason, "—", item.detail)
 ```
 
+Or through the MCP server:
+
+```text
+validate_retention_policy(policy='{"rules":[...]}')
+run_retention(policy='{"rules":[...]}')                    # dry run
+run_retention(policy='{"rules":[...]}', dry_run=false)     # enforce
+```
+
+The MCP report includes the retention item plus a pre-action entity snapshot
+(`content_preview`, attribution metadata, and session/provenance identifiers),
+so an audit UI can still explain an applied deletion after the entity is gone.
+`as_of` is an optional ISO-8601 clock override for deterministic audits and
+demonstrations.
+
 [`examples/retention_demo.py`](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/retention_demo.py) is a runnable end-to-end walkthrough.
 
 ## Policy format
@@ -118,6 +132,7 @@ Read the dry run before you apply. That is the whole point of it.
 
 - **`AccessStampPlugin`** (shipped with the [hook seam](memory-hooks.md)) stamps `last_accessed` on every entity returned by a public `search_entities`, via `memory_post_read`. This is the automatic path, and **enabling it is what makes an unused rule mean anything**. Note its cost: fire-and-forget tasks are awaited before the read returns, so every public read pays one metadata write per returned entity (~3.7 ms vs ~0.1 ms for a 10-entity filesystem read).
 - **`EvolveClient.record_access(namespace_id, entity_ids)`** is the explicit path, for callers that do not run hooks, or that want to record a *use* that was not a store read — a memory pulled from a cache and actually acted on, say. It goes through the same core function as the plugin (`build_access_stamps`), so the key, the format, and the one-stamp-per-batch behaviour are identical. Running both is harmless.
+- **The MCP `record_access` tool** exposes that explicit path to remote integrations. The MCP `list_entities` tool defaults to an administrative scan that does not stamp access; set `record_access=true` when the list is a genuine user-facing recall.
 
 **If neither is in play, the signal does not exist.** The engine then falls back to `created_at` — and says so, rather than quietly pretending it measured disuse. Every affected item's `detail` names the fallback, and the report carries a run-level warning:
 
@@ -193,6 +208,7 @@ In scope: private entities under `.evolve/entities/` and session files under `.e
 - One failing entity does not abort the sweep — the failure is logged and recorded in `report.errors`, and the remaining entities are processed. The CLI exits non-zero when `errors` is non-empty.
 - Naive `created_at` values are treated as UTC.
 - Retention is not a hook: it is a periodic sweep you schedule. There is no automatic expiry on write or read.
+- Retention and administrative inventory use the client's non-access scan path, so a compliance sweep does not refresh every entity's `last_accessed` timestamp.
 
 ## Known limitations
 

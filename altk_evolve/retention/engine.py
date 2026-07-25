@@ -210,7 +210,8 @@ class RetentionEngine:
         """
         now = _as_aware(now) if now else datetime.datetime.now(datetime.UTC)
         limit = self.FETCH_LIMIT if scan_limit is None else scan_limit
-        entities = self.client.get_all_entities(namespace_id, limit=limit)
+        scan = getattr(self.client, "scan_entities", self.client.get_all_entities)
+        entities = scan(namespace_id, limit=limit)
         if warnings is not None and len(entities) >= limit:
             warnings.append(
                 f"scan hit the fetch limit of {limit} entities in namespace {namespace_id!r}; entities beyond it "
