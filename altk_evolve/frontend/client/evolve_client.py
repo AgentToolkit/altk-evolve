@@ -114,6 +114,21 @@ class EvolveClient:
         """Get all entities from a namespace."""
         return self.search_entities(namespace_id, query=None, filters=filters, limit=limit)
 
+    def scan_entities(self, namespace_id: str, filters: dict | None = None, limit: int = 100) -> list[RecordedEntity]:
+        """Read entities for an administrative scan without recording access.
+
+        Retention and inventory scans are not user recalls and must not refresh
+        ``metadata.last_accessed`` through ``memory_post_read``. This method
+        intentionally uses the backend's administrative scan seam, so callers must
+        not use it for ordinary memory retrieval where read transforms and
+        access auditing are expected.
+        """
+        return self.backend.scan_entities(namespace_id, filters=filters, limit=limit)
+
+    def set_entity_created_at(self, namespace_id: str, entity_id: str, created_at: datetime.datetime) -> RecordedEntity:
+        """Administratively stamp an imported entity and persist the result."""
+        return self.backend.set_entity_created_at(namespace_id, entity_id, created_at)
+
     def delete_entity_by_id(self, namespace_id: str, entity_id: str) -> None:
         """Delete a specific entity by its ID."""
         self.backend.delete_entity_by_id(namespace_id, entity_id)
@@ -127,7 +142,7 @@ class EvolveClient:
         """Merge metadata_updates into an entity without touching content or ID."""
         return self.backend.update_entity_metadata(namespace_id, entity_id, metadata_updates)
 
-    def record_access(self, namespace_id: str, entity_ids: list[str], when: datetime.datetime | None = None) -> None:
+    def record_access(self, namespace_id: str, entity_ids: list[str], when: datetime.datetime | None = None) -> list[str]:
         """Stamp ``metadata.last_accessed`` (ISO-8601 UTC) on the given entities.
 
         This is the *explicit* half of the access-stamping story and the signal
@@ -145,17 +160,22 @@ class EvolveClient:
 
         Failures on individual ids are logged and skipped rather than raised —
         recording an access must never break the flow it rode in on.
+
+        Returns the IDs that were stamped successfully.
         """
         # Imported here (not at module scope) to keep the client import cheap;
         # build_access_stamps is a pure function with no cpex dependency.
         from altk_evolve.hooks.plugins.access_stamp import build_access_stamps
 
         moment = when if when is not None else datetime.datetime.now(datetime.UTC)
+        updated_ids: list[str] = []
         for entity_id, patch in build_access_stamps([{"id": eid} for eid in entity_ids], now=lambda: moment):
             try:
                 self.patch_entity_metadata(namespace_id, entity_id, patch)
+                updated_ids.append(entity_id)
             except Exception:
                 logger.warning("record_access: failed to stamp entity %s", entity_id, exc_info=True)
+        return updated_ids
 
     def get_public_entities(
         self,
@@ -254,7 +274,7 @@ class EvolveClient:
         # llm_pre_call; the write-back still fires memory_pre_write and the
         # deletes still fire memory_pre_delete.
         limit = 10000
-        entities = self.backend._search_entities_impl(namespace_id, query=None, filters={"type": "guideline"}, limit=limit)
+        entities = self.backend.scan_entities(namespace_id, filters={"type": "guideline"}, limit=limit)
         if len(entities) >= limit:
             logger.warning(
                 "Fetched %d entities (hit limit=%d); consolidation may be incomplete. Consider increasing the limit.",

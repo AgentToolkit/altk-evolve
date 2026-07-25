@@ -55,6 +55,16 @@ plugins:
     priority: 50
     on_error: fail         # fail-closed default; the plugin still guards its own stamping so the read never fails
 
+  # Refuses deletion while stored metadata has legal_hold: true.
+  - name: legal_hold
+    kind: altk_evolve.hooks.plugins.legal_hold.LegalHoldMemoryPlugin
+    description: Delete veto for records under legal hold
+    hooks:
+      - memory_pre_delete
+    mode: sequential
+    priority: 5
+    on_error: fail
+
   # Regex PII method on memory writes and LLM egress.
   # Requires: pip install 'altk-evolve[pii-regex]'  ([pii] is a back-compat alias)
   - name: pii_filter_memory

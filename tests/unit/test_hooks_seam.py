@@ -664,6 +664,33 @@ def test_legal_hold_on_external_delete_raises_and_preserves_entity(client: Evolv
 
 
 @pytest.mark.unit
+def test_shipped_legal_hold_plugin_blocks_delete_with_stable_code(client: EvolveClient):
+    enable_hooks(
+        specs=[
+            HookPluginSpec(
+                name="legal_hold",
+                kind="altk_evolve.hooks.plugins.legal_hold.LegalHoldMemoryPlugin",
+                hooks=[HookType.MEMORY_PRE_DELETE.value],
+                mode="sequential",
+                priority=5,
+                on_error="fail",
+            )
+        ]
+    )
+    client.create_namespace("ns")
+    _write(client, "ns", "keep me", {"legal_hold": True})
+    entity = client.search_entities("ns", limit=1)[0]
+
+    with pytest.raises(
+        MemoryPolicyViolation,
+        match=r"\[LEGAL_HOLD\] entity is under legal hold",
+    ):
+        client.delete_entity_by_id("ns", entity.id)
+
+    assert client.get_entity_by_id("ns", entity.id) is not None
+
+
+@pytest.mark.unit
 def test_external_delete_payload_carries_fetched_metadata(client: EvolveClient):
     from altk_evolve.schema.exceptions import EvolveException
 

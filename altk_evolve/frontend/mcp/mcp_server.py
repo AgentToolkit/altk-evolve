@@ -4,13 +4,19 @@ Evolve MCP Server
 This server provides a tool to get task-relevant guidelines.
 """
 
+import base64
+import datetime
 import json
 import logging
 import threading
 import uuid
 import os
+from dataclasses import asdict
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import Any
 
+import yaml
 from fastmcp import FastMCP
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -237,6 +243,82 @@ def _parse_metadata(metadata: str | None) -> dict[str, Any]:
     return parsed
 
 
+def _json_response(payload: Any) -> str:
+    """Serialize MCP responses consistently, including datetimes and errors."""
+    return json.dumps(payload, default=str)
+
+
+def _entity_payload(entity: RecordedEntity, *, include_content: bool = True) -> dict[str, Any]:
+    content = entity.content
+    preview_source = content if isinstance(content, str) else _json_response(content)
+    payload: dict[str, Any] = {
+        "id": entity.id,
+        "type": entity.type,
+        "content_preview": preview_source[:240],
+        "created_at": entity.created_at.isoformat(),
+        "metadata": entity.metadata or {},
+    }
+    if include_content:
+        payload["content"] = content
+    return payload
+
+
+def _encode_cursor(offset: int) -> str:
+    return base64.urlsafe_b64encode(str(offset).encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str | None) -> int:
+    if not cursor:
+        return 0
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        offset = int(base64.urlsafe_b64decode(padded).decode())
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError("cursor is invalid") from exc
+    if offset < 0:
+        raise ValueError("cursor is invalid")
+    return offset
+
+
+def _parse_datetime(value: str | None, *, field_name: str) -> datetime.datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO-8601 datetime") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.UTC)
+    return parsed
+
+
+def _entity_owned_by(
+    entity: RecordedEntity,
+    user_id: str | None,
+    agent_id: str | None = None,
+) -> bool:
+    metadata = entity.metadata or {}
+    if user_id is not None:
+        attributed_ids = {str(value) for value in (metadata.get("owner_id"), metadata.get("user_id")) if value}
+        if user_id not in attributed_ids:
+            return False
+    if agent_id is not None and str(metadata.get("agent_id") or "") != agent_id:
+        return False
+    return True
+
+
+def _record_entity_access(client: EvolveClient, namespace_id: str, entities: list[RecordedEntity]) -> list[RecordedEntity]:
+    if not entities:
+        return entities
+    moment = datetime.datetime.now(datetime.UTC)
+    updated_ids = set(client.record_access(namespace_id, [entity.id for entity in entities], when=moment))
+    stamp = moment.isoformat()
+    return [
+        entity.model_copy(update={"metadata": {**(entity.metadata or {}), "last_accessed": stamp}}) if entity.id in updated_ids else entity
+        for entity in entities
+    ]
+
+
 def _persist_entities(
     namespace_id: str | None,
     entities: list[Entity],
@@ -371,6 +453,385 @@ def get_relevant_guidelines(
         logger.error("Retrieval unavailable for get_relevant_guidelines: %s", e)
         return f"Guideline retrieval unavailable: {e}"
     return format_selection(selection)
+
+
+@mcp.tool()
+def list_entities(
+    entity_types: list[str] | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    session_id: str | None = None,
+    metadata_filters: str | None = None,
+    cursor: str | None = None,
+    limit: int = 50,
+    include_content: bool = False,
+    record_access: bool = False,
+    namespace_id: str | None = None,
+) -> str:
+    """Return a structured, paginated entity inventory.
+
+    This is the UI/admin counterpart to ``get_entities``, whose prose response
+    is intentionally optimized for prompt injection. Administrative scans do
+    not count as memory use by default; set ``record_access=True`` for a
+    user-facing read that should refresh ``metadata.last_accessed``.
+    """
+    try:
+        filters = _parse_metadata(metadata_filters)
+        offset = _decode_cursor(cursor)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    page_size = max(1, min(limit, 200))
+    scan_limit = 100_000
+    client = get_client()
+    candidates = client.scan_entities(resolved_ns, limit=scan_limit)
+
+    wanted_types = set(entity_types or [])
+
+    def matches(entity: RecordedEntity) -> bool:
+        metadata = entity.metadata or {}
+        if wanted_types and entity.type not in wanted_types:
+            return False
+        if user_id and user_id not in {metadata.get("user_id"), metadata.get("owner_id")}:
+            return False
+        if agent_id and metadata.get("agent_id") != agent_id:
+            return False
+        if session_id and session_id not in {metadata.get("session_id"), metadata.get("thread_id")}:
+            return False
+        return all(metadata.get(key) == value for key, value in filters.items())
+
+    matched = [entity for entity in candidates if matches(entity)]
+    matched.sort(key=lambda entity: (entity.created_at, entity.id), reverse=True)
+    page = matched[offset : offset + page_size]
+    consumed = len(page)
+    if record_access and page:
+        transformed_page = []
+        for entity in page:
+            transformed = client.get_entity_by_id(resolved_ns, entity.id)
+            if transformed is not None:
+                transformed_page.append(transformed)
+        page = _record_entity_access(client, resolved_ns, transformed_page)
+    next_offset = offset + consumed
+    facets: dict[str, int] = {}
+    for entity in matched:
+        facets[entity.type] = facets.get(entity.type, 0) + 1
+
+    return _json_response(
+        {
+            "items": [_entity_payload(entity, include_content=include_content) for entity in page],
+            "next_cursor": _encode_cursor(next_offset) if next_offset < len(matched) else None,
+            "total": len(matched),
+            "facets": {"entity_types": facets},
+            "truncated": len(candidates) >= scan_limit,
+            "namespace_id": resolved_ns,
+        }
+    )
+
+
+@mcp.tool()
+def get_entity(
+    entity_id: str,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    record_access: bool = True,
+    namespace_id: str | None = None,
+) -> str:
+    """Return one structured entity, optionally recording a user-facing read."""
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    matches = client.scan_entities(resolved_ns, filters={"id": entity_id}, limit=1)
+    entity = matches[0] if matches else None
+    if entity is None:
+        return _json_response({"error": f"Entity {entity_id} not found"})
+    if not _entity_owned_by(entity, user_id, agent_id):
+        return _json_response({"error": "Permission denied: caller is not the owner of this entity"})
+    if record_access:
+        refreshed = client.get_entity_by_id(resolved_ns, entity_id)
+        if refreshed is not None:
+            entity = refreshed
+        entity = _record_entity_access(client, resolved_ns, [entity])[0]
+    return _json_response(_entity_payload(entity))
+
+
+@mcp.tool()
+def patch_entity_metadata(
+    entity_id: str,
+    metadata_patch: str,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    namespace_id: str | None = None,
+) -> str:
+    """Merge metadata into an owned entity through the memory hook seam."""
+    try:
+        patch = _parse_metadata(metadata_patch)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    matches = client.scan_entities(resolved_ns, filters={"id": entity_id}, limit=1)
+    entity = matches[0] if matches else None
+    if entity is None:
+        return _json_response({"error": f"Entity {entity_id} not found"})
+    if not _entity_owned_by(entity, user_id, agent_id):
+        return _json_response({"error": "Permission denied: caller is not the owner of this entity"})
+    try:
+        updated = client.patch_entity_metadata(resolved_ns, entity_id, patch)
+        return _json_response(_entity_payload(updated))
+    except EvolveException as exc:
+        return _json_response({"error": str(exc)})
+
+
+@mcp.tool()
+def record_access(
+    entity_ids: list[str],
+    accessed_at: str | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    namespace_id: str | None = None,
+) -> str:
+    """Explicitly stamp memories as used without requiring a retrieval query."""
+    try:
+        moment = _parse_datetime(accessed_at, field_name="accessed_at")
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    allowed: list[str] = []
+    denied: list[str] = []
+    missing: list[str] = []
+    for entity_id in dict.fromkeys(entity_ids):
+        matches = client.scan_entities(resolved_ns, filters={"id": entity_id}, limit=1)
+        entity = matches[0] if matches else None
+        if entity is None:
+            missing.append(entity_id)
+        elif not _entity_owned_by(entity, user_id, agent_id):
+            denied.append(entity_id)
+        else:
+            allowed.append(entity_id)
+
+    moment = moment or datetime.datetime.now(datetime.UTC)
+    updated = client.record_access(resolved_ns, allowed, when=moment) if allowed else []
+    return _json_response(
+        {
+            "updated_ids": updated,
+            "denied_ids": denied,
+            "missing_ids": missing,
+            "accessed_at": moment.isoformat(),
+            "namespace_id": resolved_ns,
+        }
+    )
+
+
+def _retention_item_payload(item: Any, entity: RecordedEntity | None, *, dry_run: bool) -> dict[str, Any]:
+    payload = asdict(item)
+    applied_outcomes = {"flag": "flagged", "delete": "deleted", "skip": "skipped"}
+    payload["outcome"] = f"would_{item.action}" if dry_run else applied_outcomes.get(item.action, item.action)
+    if entity is not None:
+        snapshot = _entity_payload(entity, include_content=False)
+        metadata = entity.metadata or {}
+        payload.update(
+            {
+                "created_at": snapshot["created_at"],
+                "content_preview": snapshot["content_preview"],
+                "metadata": metadata,
+                "user_id": metadata.get("user_id") or metadata.get("owner_id"),
+                "agent_id": metadata.get("agent_id"),
+                "session_id": metadata.get("session_id") or metadata.get("thread_id"),
+                "source_task_id": metadata.get("source_task_id"),
+            }
+        )
+    return payload
+
+
+@mcp.tool()
+def validate_retention_policy(policy: str) -> str:
+    """Validate and normalize a JSON retention policy without scanning data."""
+    from pydantic import ValidationError
+
+    from altk_evolve.retention import RetentionPolicy
+
+    try:
+        parsed = _parse_metadata(policy)
+        normalized = RetentionPolicy.from_mapping(parsed)
+    except (ValueError, ValidationError) as exc:
+        errors: list[dict[str, Any]] = (
+            [dict(error) for error in exc.errors()] if isinstance(exc, ValidationError) else [{"message": str(exc)}]
+        )
+        return _json_response({"valid": False, "normalized_policy": None, "errors": errors, "warnings": []})
+    return _json_response(
+        {
+            "valid": True,
+            "normalized_policy": normalized.model_dump(mode="json"),
+            "errors": [],
+            "warnings": [],
+        }
+    )
+
+
+@mcp.tool()
+def run_retention(
+    policy: str,
+    dry_run: bool = True,
+    as_of: str | None = None,
+    scan_limit: int | None = None,
+    run_id: str | None = None,
+    namespace_id: str | None = None,
+    metadata_filters: str | None = None,
+) -> str:
+    """Evaluate or apply a retention policy and return a structured report.
+
+    ``as_of`` exists for deterministic audits and demonstrations. Applied
+    deletes still flow through ``memory_pre_delete``, so legal-hold plugins can
+    veto individual entities without aborting the run. ``metadata_filters`` is
+    a JSON object of metadata key/value pairs used to scope shared namespaces.
+    """
+    from pydantic import ValidationError
+
+    from altk_evolve.retention import RetentionEngine, RetentionPolicy
+
+    try:
+        parsed_policy = _parse_metadata(policy)
+        normalized_policy = RetentionPolicy.from_mapping(parsed_policy)
+        now = _parse_datetime(as_of, field_name="as_of")
+        metadata_filter_values = _parse_metadata(metadata_filters) if metadata_filters else None
+        backend_filters = {f"metadata.{key}": value for key, value in metadata_filter_values.items()} if metadata_filter_values else None
+    except (ValueError, ValidationError) as exc:
+        errors: list[dict[str, Any]] = (
+            [dict(error) for error in exc.errors()] if isinstance(exc, ValidationError) else [{"message": str(exc)}]
+        )
+        return _json_response({"error": "Invalid retention request", "details": errors})
+
+    if scan_limit is not None and scan_limit <= 0:
+        return _json_response({"error": "scan_limit must be greater than zero"})
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    started_at = datetime.datetime.now(datetime.UTC)
+    engine = RetentionEngine(client)
+    report = engine.apply(
+        resolved_ns,
+        normalized_policy,
+        now=now,
+        dry_run=dry_run,
+        scan_limit=scan_limit,
+        filters=backend_filters,
+    )
+    snapshots = {entity.id: entity for entity in engine.last_scanned_entities}
+    completed_at = datetime.datetime.now(datetime.UTC)
+    return _json_response(
+        {
+            "run_id": run_id or str(uuid.uuid4()),
+            "namespace_id": resolved_ns,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "as_of": (now or completed_at).isoformat(),
+            "dry_run": report.dry_run,
+            "policy": normalized_policy.model_dump(mode="json"),
+            "metadata_filters": metadata_filter_values,
+            "summary": report.summary(),
+            "flagged": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.flagged],
+            "deleted": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.deleted],
+            "skipped": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.skipped],
+            "errors": report.errors,
+            "warnings": report.warnings,
+        }
+    )
+
+
+def _protection_class(name: str, kind: str, hooks: list[str]) -> str:
+    searchable = f"{name} {kind}".lower()
+    if "secret" in searchable:
+        return "secrets"
+    if "pii" in searchable or "readi" in searchable:
+        return "pii"
+    if "access" in searchable:
+        return "access"
+    if "normalizer" in searchable or "provenance" in searchable:
+        return "provenance"
+    if "memory_pre_delete" in hooks:
+        return "deletion_protection"
+    return "memory_policy"
+
+
+def _configured_hook_plugins() -> list[dict[str, Any]]:
+    from altk_evolve.config.hooks import discover_hooks_config_path
+
+    specs = [spec.model_dump(mode="json") for spec in evolve_config.hooks.plugins]
+    yaml_path = evolve_config.hooks.plugins_yaml
+    if not yaml_path and not specs:
+        yaml_path = discover_hooks_config_path()
+    if yaml_path:
+        loaded = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8")) or {}
+        if not isinstance(loaded, dict):
+            raise ValueError(f"hooks config {yaml_path} must hold a mapping with a 'plugins' list")
+        yaml_specs = loaded.get("plugins", []) or []
+        if not isinstance(yaml_specs, list) or any(not isinstance(spec, dict) for spec in yaml_specs):
+            raise ValueError(f"hooks config {yaml_path} must contain a 'plugins' list of mappings")
+        specs = yaml_specs + specs
+    return specs
+
+
+@mcp.tool()
+def get_compliance_status(namespace_id: str | None = None) -> str:
+    """Report Evolve backend, retention, and configured memory-hook health."""
+    from altk_evolve.hooks.manager import get_plugin_manager, hooks_active
+    from altk_evolve.hooks.types import HookType, engine_available
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    manager = get_plugin_manager()
+    try:
+        specs = _configured_hook_plugins()
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        return _json_response({"healthy": False, "error": f"Unable to read hook configuration: {exc}"})
+
+    plugins = []
+    for spec in specs:
+        hooks = list(spec.get("hooks", []) or [])
+        mode = str(spec.get("mode", "sequential"))
+        enabled = mode != "disabled"
+        plugins.append(
+            {
+                "name": str(spec.get("name") or spec.get("kind") or "unnamed"),
+                "kind": str(spec.get("kind") or ""),
+                "protection_class": _protection_class(
+                    str(spec.get("name") or ""),
+                    str(spec.get("kind") or ""),
+                    hooks,
+                ),
+                "hooks": hooks,
+                "enabled": enabled,
+                "healthy": bool(manager is not None and enabled and all(manager.has_hooks_for(hook) for hook in hooks)),
+            }
+        )
+
+    try:
+        package_version = version("altk-evolve")
+    except PackageNotFoundError:
+        package_version = "unknown"
+
+    hook_coverage = {hook.value: hooks_active(hook) for hook in HookType}
+    hook_engine_available = engine_available()
+    retention_available = (callable(getattr(client, "scan_entities", None)) or callable(getattr(client, "get_all_entities", None))) and all(
+        callable(getattr(client, method, None)) for method in ("patch_entity_metadata", "delete_entity_by_id")
+    )
+    healthy = client.ready() and retention_available and all(not plugin["enabled"] or plugin["healthy"] for plugin in plugins)
+    return _json_response(
+        {
+            "healthy": healthy,
+            "evolve_version": package_version,
+            "backend": evolve_config.backend,
+            "namespace_id": resolved_ns,
+            "retention_available": retention_available,
+            "hooks_enabled": manager is not None,
+            "hook_engine_available": hook_engine_available,
+            "hook_coverage": hook_coverage,
+            "plugins": plugins,
+        }
+    )
 
 
 def _empty_store_user_facts_response(user_id: str) -> str:
@@ -682,6 +1143,7 @@ def create_entity(
     owner_id: str | None = None,
     visibility: str = "private",
     namespace_id: str | None = None,
+    created_at: str | None = None,
 ) -> str:
     """
     Create a single entity in the namespace.
@@ -694,12 +1156,23 @@ def create_entity(
         owner_id: Optional user ID to record as the owner of this entity
         visibility: Visibility of the entity — 'private' (default) or 'public'
         namespace_id: Optional namespace override. Falls back to the configured default.
+        created_at: Optional ISO-8601 timestamp for administrative fixture/import data.
 
     Returns:
         JSON string with the entity update details (ADD/UPDATE/DELETE/NONE) and entity ID
     """
     logger.info(f"Creating entity of type: {entity_type} (namespace override: {namespace_id})")
     try:
+        parsed_created_at = None
+        if created_at:
+            from datetime import UTC, datetime
+
+            try:
+                parsed_created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except ValueError:
+                return json.dumps({"error": "Invalid created_at", "message": "created_at must be ISO-8601"})
+            if parsed_created_at.tzinfo is None:
+                parsed_created_at = parsed_created_at.replace(tzinfo=UTC)
         if visibility not in ("private", "public"):
             return json.dumps({"error": f"Invalid visibility '{visibility}': must be 'private' or 'public'"})
         if visibility == "public" and not owner_id:
@@ -734,7 +1207,7 @@ def create_entity(
 
         entity = Entity(type=entity_type, content=content, metadata=metadata_dict)
 
-        updates, _ = _persist_entities(
+        updates, resolved_ns = _persist_entities(
             namespace_id=namespace_id,
             entities=[entity],
             enable_conflict_resolution=enable_conflict_resolution,
@@ -742,8 +1215,26 @@ def create_entity(
 
         if updates:
             update = updates[0]
+            if parsed_created_at and update.event == "ADD":
+                readback = get_client().set_entity_created_at(namespace_id=resolved_ns, entity_id=update.id, created_at=parsed_created_at)
+                return json.dumps(
+                    {
+                        "event": update.event,
+                        "id": readback.id,
+                        "type": readback.type,
+                        "content": readback.content,
+                        "metadata": readback.metadata,
+                        "created_at": readback.created_at.isoformat(),
+                    }
+                )
             return json.dumps(
-                {"event": update.event, "id": update.id, "type": update.type, "content": update.content, "metadata": update.metadata}
+                {
+                    "event": update.event,
+                    "id": update.id,
+                    "type": update.type,
+                    "content": update.content,
+                    "metadata": update.metadata,
+                }
             )
         else:
             return json.dumps({"error": "Entity creation failed"})
@@ -839,7 +1330,12 @@ def unpublish_entity(entity_id: str, user_id: str | None = None, namespace_id: s
 
 
 @mcp.tool()
-def delete_entity(entity_id: str, user_id: str | None = None, namespace_id: str | None = None) -> str:
+def delete_entity(
+    entity_id: str,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    namespace_id: str | None = None,
+) -> str:
     """
     Delete a specific entity by its ID.
 
@@ -859,8 +1355,7 @@ def delete_entity(entity_id: str, user_id: str | None = None, namespace_id: str 
         if entity is None:
             return json.dumps({"success": False, "error": f"Entity {entity_id} not found"})
 
-        existing_owner = (entity.metadata or {}).get("owner_id")
-        if existing_owner is not None and user_id != existing_owner:
+        if not _entity_owned_by(entity, user_id, agent_id):
             logger.info(f"Delete denied for entity={entity_id} namespace={resolved_ns}: caller is not owner")
             return json.dumps({"error": "Permission denied: caller is not the owner of this entity"})
 
