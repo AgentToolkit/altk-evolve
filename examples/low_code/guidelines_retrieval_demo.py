@@ -78,7 +78,7 @@ def main():
         result = agent.run(args.task)
         print(f"Result: {result}")
     except Exception as e:  # noqa: BLE001
-        print(f"Error running agent: {e}")
+        raise SystemExit(f"Error running agent: {e}") from e
 
 
 if __name__ == "__main__":
