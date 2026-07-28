@@ -2,6 +2,8 @@
 
 Sync agent trajectories from Arize Phoenix to Evolve and automatically generate guidelines.
 
+This guide assumes traces are already reaching Phoenix — see [Low-Code Tracing](low-code-tracing.md) to instrument your agent first. For choosing *how* guidelines get generated (regular vs. consistency), see [Enabling Guidelines](guidelines.md).
+
 ## Overview
 
 The Phoenix sync module:
@@ -44,13 +46,17 @@ uv run evolve sync phoenix \
   --limit 500 \
   --include-errors
 
+# Generate consistency guidelines instead of regular ones
+uv run evolve sync phoenix --guidelines-mode consistency
+
 # Full options
 uv run evolve sync phoenix \
   --url http://localhost:6006 \
   --namespace production \
   --project my_project \
   --limit 200 \
-  --include-errors
+  --include-errors \
+  --guidelines-mode both
 ```
 
 ### CLI Options
@@ -62,6 +68,7 @@ uv run evolve sync phoenix \
 | `--project` | `-p` | Phoenix project name |
 | `--limit` | | Max spans to fetch (default: 100) |
 | `--include-errors` | | Include failed/error spans |
+| `--guidelines-mode` | | Guideline generation mode: `regular`, `consistency`, or `both` — see [Enabling Guidelines](guidelines.md) |
 
 ### Python API
 
