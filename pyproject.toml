@@ -111,7 +111,7 @@ secrets = [
     # detector keys, so a defaults/schema change in a future minor could silently
     # alter what gets redacted rather than surface as an error. Pin the minor and
     # bump deliberately.
-    "cpex-secrets-detection>=0.1,<0.2",
+    "cpex-secrets-detection>=0.1,<0.4",
 ]
 
 # Benchmarking the redactors against external labeled corpora
