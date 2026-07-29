@@ -13,10 +13,10 @@
         <link rel="canonical" href="https://agenttoolkit.github.io/evolve/guides/low-code-tracing/">
       
       
-        <link rel="prev" href="../extract-trajectories/">
+        <link rel="prev" href="../guidelines/">
       
       
-        <link rel="next" href="../../reference/cli/">
+        <link rel="next" href="../phoenix-sync/">
       
       
         
@@ -565,6 +565,8 @@
       
         
       
+        
+      
     
     
     
@@ -703,6 +705,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/guidelines-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Starter Example (Evolving Agent Loop)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -720,6 +750,12 @@
   
     
     
+      
+        
+      
+        
+      
+        
       
         
       
@@ -812,42 +848,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../phoenix-sync/" class="md-nav__link">
+      <a href="../guidelines/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Phoenix Sync
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../extract-trajectories/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Extract Trajectories
+    Enabling Guidelines
   
 
     
@@ -1050,10 +1058,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#5-verify-generated-tips" class="md-nav__link">
+  <a href="#5-verify-generated-guidelines" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Verify Generated Tips
+        5. Verify Generated Guidelines
       
     </span>
   </a>
@@ -1061,10 +1069,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#6-understanding-tip-provenance-metadata" class="md-nav__link">
+  <a href="#6-understanding-guideline-provenance-metadata" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Understanding Tip Provenance (Metadata)
+        6. Understanding Guideline Provenance (Metadata)
       
     </span>
   </a>
@@ -1152,6 +1160,118 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../phoenix-sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phoenix Sync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extract-trajectories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extract Trajectories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../memory-hooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Hooks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../retention/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Retention
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1685,10 +1805,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#5-verify-generated-tips" class="md-nav__link">
+  <a href="#5-verify-generated-guidelines" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Verify Generated Tips
+        5. Verify Generated Guidelines
       
     </span>
   </a>
@@ -1696,10 +1816,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#6-understanding-tip-provenance-metadata" class="md-nav__link">
+  <a href="#6-understanding-guideline-provenance-metadata" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Understanding Tip Provenance (Metadata)
+        6. Understanding Guideline Provenance (Metadata)
       
     </span>
   </a>
@@ -1876,7 +1996,7 @@
 
     subgraph Sync["evolve sync phoenix"]
         S1["Fetch Traces"]
-        S2["Generate Tips"]
+        S2["Generate Guidelines"]
         S3["Store in DB"]
     end
 
@@ -1910,7 +2030,7 @@
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_TRACING_ENDPOINT</span><span class="o">=</span>http://localhost:6006/v1/traces<span class="w">  </span><span class="c1"># Optional</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># For Evolve example scripts only (e.g. examples/low_code/smolagents_demo.py):</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_EXAMPLE_AGENT_MODEL</span><span class="o">=</span><span class="s2">&quot;Azure/gpt-4.1&quot;</span><span class="w"> </span><span class="c1"># Overrides default tips model for agent execution</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_EXAMPLE_AGENT_MODEL</span><span class="o">=</span><span class="s2">&quot;Azure/gpt-4.1&quot;</span><span class="w"> </span><span class="c1"># Overrides default guidelines model for agent execution</span>
 </code></pre></div></p>
 <blockquote>
 <p><strong>Note</strong>: Auto-patching will skip if existing tracing is detected. Use <code>enable_tracing(force=True)</code> to override.</p>
@@ -2011,17 +2131,18 @@
 <h3 id="4-sync-to-evolve">4. Sync to Evolve<a class="headerlink" href="#4-sync-to-evolve" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">cd</span><span class="w"> </span>evolve_repo
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nv">EVOLVE_TIPS_MODEL</span><span class="o">=</span><span class="s2">&quot;gpt-4&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nv">EVOLVE_GUIDELINES_MODEL</span><span class="o">=</span><span class="s2">&quot;gpt-4&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span>--project<span class="w"> </span>test-agent<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span>--include-errors
 </code></pre></div>
-<h3 id="5-verify-generated-tips">5. Verify Generated Tips<a class="headerlink" href="#5-verify-generated-tips" title="Permanent link">&para;</a></h3>
+<p>See the <a href="../phoenix-sync/">Phoenix Sync</a> guide for the full set of sync options, and <a href="../guidelines/">Enabling Guidelines</a> for choosing between regular, consistency, or both guideline generation modes.</p>
+<h3 id="5-verify-generated-guidelines">5. Verify Generated Guidelines<a class="headerlink" href="#5-verify-generated-guidelines" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>entities<span class="w"> </span>list<span class="w"> </span>evolve<span class="w"> </span>--type<span class="w"> </span>guideline
 </code></pre></div>
-<h3 id="6-understanding-tip-provenance-metadata">6. Understanding Tip Provenance (Metadata)<a class="headerlink" href="#6-understanding-tip-provenance-metadata" title="Permanent link">&para;</a></h3>
-<p>When Evolve generates tips from traced trajectories (or from explicit <code>save_trajectory</code> calls), it automatically injects provenance metadata into the resulting <code>guideline</code> entities. This helps you track exactly <em>where</em> a tip came from and <em>how</em> it was created.</p>
+<h3 id="6-understanding-guideline-provenance-metadata">6. Understanding Guideline Provenance (Metadata)<a class="headerlink" href="#6-understanding-guideline-provenance-metadata" title="Permanent link">&para;</a></h3>
+<p>When Evolve generates guidelines from traced trajectories (or from explicit <code>save_trajectory</code> calls), it automatically injects provenance metadata into the resulting <code>guideline</code> entities. This helps you track exactly <em>where</em> a guideline came from and <em>how</em> it was created.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;guideline&quot;</span><span class="p">,</span>
 <a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Always verify the record exists before updating.&quot;</span><span class="p">,</span>
@@ -2034,17 +2155,17 @@
 <a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="p">}</span>
 </code></pre></div>
 <ul>
-<li><strong><code>creation_mode</code></strong>: Describes the origin of the tip.<ul>
+<li><strong><code>creation_mode</code></strong>: Describes the origin of the guideline.<ul>
 <li><code>"auto-phoenix"</code>: Auto-generated from observability traces via <code>evolve sync phoenix</code>.</li>
 <li><code>"auto-mcp"</code>: Auto-generated when an agent directly calls the Evolve <code>save_trajectory</code> MCP tool.</li>
 <li><code>"manual"</code>: Explicitly created by a human or agent (e.g., via the <code>create_entity</code> MCP tool).</li>
 </ul>
 </li>
-<li><strong><code>source_task_id</code></strong>: The originating trace ID (for Phoenix) or task ID (for MCP), linking the tip back to the specific execution that inspired it.</li>
+<li><strong><code>source_task_id</code></strong>: The originating trace ID (for Phoenix) or task ID (for MCP), linking the guideline back to the specific execution that inspired it.</li>
 </ul>
 <hr />
 <h2 id="end-to-end-verification">End-to-End Verification<a class="headerlink" href="#end-to-end-verification" title="Permanent link">&para;</a></h2>
-<p>Evolve includes a comprehensive E2E verification suite to ensure that tracing and tip generation work correctly across all supported agents.</p>
+<p>Evolve includes a comprehensive E2E verification suite to ensure that tracing and guideline generation work correctly across all supported agents.</p>
 <h3 id="running-the-e2e-pipeline">Running the E2E Pipeline<a class="headerlink" href="#running-the-e2e-pipeline" title="Permanent link">&para;</a></h3>
 <p>You can run the full regression suite using <code>pytest</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-m<span class="w"> </span>e2e<span class="w"> </span>--run-e2e<span class="w"> </span>-s
@@ -2061,8 +2182,8 @@
 <p>The pipeline performs the following for each agent:
 1.  <strong>Executes the Agent</strong>: Run the agent script (e.g., <code>smolagents_demo.py</code>) with auto-instrumentation enabled.
 2.  <strong>Verifies Traces</strong>: Checks the Phoenix server for the existence of traces in a unique, timestamped project.
-3.  <strong>Generates Tips</strong>: Runs <code>evolve sync</code> on the generated traces to verify that tips are successfully created from the agent's execution.</p>
-<p>This ensures the entire "Agent -&gt; Traces -&gt; Tips" loop is functional.</p>
+3.  <strong>Generates Guidelines</strong>: Runs <code>evolve sync</code> on the generated traces to verify that guidelines are successfully created from the agent's execution.</p>
+<p>This ensures the entire "Agent -&gt; Traces -&gt; Guidelines" loop is functional.</p>
 <hr />
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <table>
@@ -2143,7 +2264,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../extract-trajectories/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Extract Trajectories">
+          <a href="../guidelines/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Enabling Guidelines">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2153,20 +2274,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Extract Trajectories
+                Enabling Guidelines
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../reference/cli/" class="md-footer__link md-footer__link--next" aria-label="Next: CLI">
+          <a href="../phoenix-sync/" class="md-footer__link md-footer__link--next" aria-label="Next: Phoenix Sync">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                CLI
+                Phoenix Sync
               </div>
             </div>
             <div class="md-footer__button md-icon">

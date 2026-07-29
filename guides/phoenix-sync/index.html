@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://agenttoolkit.github.io/evolve/guides/phoenix-sync/">
       
       
-        <link rel="prev" href="../configuration/">
+        <link rel="prev" href="../low-code-tracing/">
       
       
         <link rel="next" href="../extract-trajectories/">
@@ -565,6 +565,8 @@
       
         
       
+        
+      
     
     
     
@@ -703,6 +705,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/guidelines-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Starter Example (Evolving Agent Loop)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -720,6 +750,12 @@
   
     
     
+      
+        
+      
+        
+      
+        
       
         
       
@@ -792,6 +828,62 @@
     
   
     Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enabling Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../low-code-tracing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Low-Code Tracing
   
 
     
@@ -1017,10 +1109,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#4-tip-generation" class="md-nav__link">
+  <a href="#4-guideline-generation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Tip Generation
+        4. Guideline Generation
       
     </span>
   </a>
@@ -1128,10 +1220,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tips-not-generating" class="md-nav__link">
+  <a href="#guidelines-not-generating" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tips not generating
+        Guidelines not generating
       
     </span>
   </a>
@@ -1187,14 +1279,42 @@
   
   
     <li class="md-nav__item">
-      <a href="../low-code-tracing/" class="md-nav__link">
+      <a href="../memory-hooks/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Low-Code Tracing
+    Memory Hooks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../retention/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Retention
   
 
     
@@ -1759,10 +1879,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#4-tip-generation" class="md-nav__link">
+  <a href="#4-guideline-generation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Tip Generation
+        4. Guideline Generation
       
     </span>
   </a>
@@ -1870,10 +1990,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tips-not-generating" class="md-nav__link">
+  <a href="#guidelines-not-generating" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tips not generating
+        Guidelines not generating
       
     </span>
   </a>
@@ -1954,14 +2074,15 @@
 
 
 <h1 id="phoenix-sync">Phoenix Sync<a class="headerlink" href="#phoenix-sync" title="Permanent link">&para;</a></h1>
-<p>Sync agent trajectories from Arize Phoenix to Evolve and automatically generate tips/guidelines.</p>
+<p>Sync agent trajectories from Arize Phoenix to Evolve and automatically generate guidelines.</p>
+<p>This guide assumes traces are already reaching Phoenix — see <a href="../low-code-tracing/">Low-Code Tracing</a> to instrument your agent first. For choosing <em>how</em> guidelines get generated (regular vs. consistency), see <a href="../guidelines/">Enabling Guidelines</a>.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>The Phoenix sync module:
 1. Fetches agent trajectories from Phoenix's REST API
 2. Deduplicates already-processed trajectories (by <code>span_id</code>)
 3. Converts messages to OpenAI format
-4. Generates tips/guidelines using LLM
-5. Stores both trajectories and tips in Evolve</p>
+4. Generates guidelines using LLM
+5. Stores both trajectories and guidelines in Evolve</p>
 <h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
 <p>No additional dependencies required - uses only stdlib for Phoenix API calls.</p>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
@@ -2012,13 +2133,17 @@
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span>--limit<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span>--include-errors
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># Full options</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span>--url<span class="w"> </span>http://localhost:6006<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span>--namespace<span class="w"> </span>production<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span>--project<span class="w"> </span>my_project<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span>--limit<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">  </span>--include-errors
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># Generate consistency guidelines instead of regular ones</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--guidelines-mode<span class="w"> </span>consistency
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1"># Full options</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span>--url<span class="w"> </span>http://localhost:6006<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">  </span>--namespace<span class="w"> </span>production<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span>--project<span class="w"> </span>my_project<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span>--limit<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">  </span>--include-errors<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">  </span>--guidelines-mode<span class="w"> </span>both
 </code></pre></div>
 <h3 id="cli-options">CLI Options<a class="headerlink" href="#cli-options" title="Permanent link">&para;</a></h3>
 <table>
@@ -2055,6 +2180,11 @@
 <td></td>
 <td>Include failed/error spans</td>
 </tr>
+<tr>
+<td><code>--guidelines-mode</code></td>
+<td></td>
+<td>Guideline generation mode: <code>regular</code>, <code>consistency</code>, or <code>both</code> — see <a href="../guidelines/">Enabling Guidelines</a></td>
+</tr>
 </tbody>
 </table>
 <h3 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h3>
@@ -2072,7 +2202,7 @@
 <a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processed: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">processed</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 <a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Skipped: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">skipped</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Tips generated: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">tips_generated</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Guidelines generated: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">guidelines_generated</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 <a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Errors: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">errors</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
@@ -2088,12 +2218,12 @@
 - Tool use blocks → <code>tool_calls</code> array
 - Tool results → separate <code>tool</code> role messages
 - Thinking blocks → preserved in <code>thinking</code> field</p>
-<h3 id="4-tip-generation">4. Tip Generation<a class="headerlink" href="#4-tip-generation" title="Permanent link">&para;</a></h3>
-<p>The <code>generate_tips()</code> function analyzes the trajectory and produces actionable guidelines using an LLM.</p>
+<h3 id="4-guideline-generation">4. Guideline Generation<a class="headerlink" href="#4-guideline-generation" title="Permanent link">&para;</a></h3>
+<p>The <code>generate_guidelines()</code> function analyzes the trajectory and produces actionable guidelines using an LLM.</p>
 <h3 id="5-storage">5. Storage<a class="headerlink" href="#5-storage" title="Permanent link">&para;</a></h3>
 <p>Two entity types are stored:
 - <code>trajectory</code> - Individual messages with metadata (trace_id, span_id, model, role)
-- <code>guideline</code> - Generated tips with conflict resolution enabled</p>
+- <code>guideline</code> - Generated guidelines with conflict resolution enabled</p>
 <h2 id="data-flow">Data Flow<a class="headerlink" href="#data-flow" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>┌─────────────┐      fetch      ┌───────────────────┐
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>│   Phoenix   │ ───────────────→│   PhoenixSync     │
@@ -2103,16 +2233,16 @@
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>                    ┌─────────────────────┼─────────────────────┐
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>                    │                     │                     │
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>                    ▼                     ▼                     ▼
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>            ┌───────────────┐    ┌───────────────┐    ┌───────────────┐
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>            │  Deduplicate  │    │   Convert to  │    │   Generate    │
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>            │  (by span_id) │    │ OpenAI format │    │     Tips      │
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>            └───────────────┘    └───────────────┘    └───────┬───────┘
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>                                                              │
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>                                                              ▼
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>                                                    ┌───────────────┐
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>                                                    │    Evolve     │
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>                                                    │   Backend     │
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>                                                    └───────────────┘
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>            ┌────────────────┐    ┌────────────────┐    ┌────────────────┐
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>            │  Deduplicate   │    │   Convert to   │    │   Generate     │
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>            │  (by span_id)  │    │ OpenAI format  │    │   Guidelines   │
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>            └────────────────┘    └────────────────┘    └────────┬───────┘
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>                                                                  │
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>                                                                  ▼
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>                                                        ┌───────────────┐
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>                                                        │    Evolve     │
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>                                                        │   Backend     │
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>                                                        └───────────────┘
 </code></pre></div>
 <h2 id="running-on-a-schedule">Running on a Schedule<a class="headerlink" href="#running-on-a-schedule" title="Permanent link">&para;</a></h2>
 <h3 id="cron">Cron<a class="headerlink" href="#cron" title="Permanent link">&para;</a></h3>
@@ -2153,7 +2283,7 @@
 <li>Verify spans contain <code>gen_ai.prompt.*</code> attributes</li>
 <li>Use <code>--include-errors</code> to include failed spans</li>
 </ul>
-<h3 id="tips-not-generating">Tips not generating<a class="headerlink" href="#tips-not-generating" title="Permanent link">&para;</a></h3>
+<h3 id="guidelines-not-generating">Guidelines not generating<a class="headerlink" href="#guidelines-not-generating" title="Permanent link">&para;</a></h3>
 <p>Ensure LLM API key is configured:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-...
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># or for other providers</span>
@@ -2198,7 +2328,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../configuration/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Configuration">
+          <a href="../low-code-tracing/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Low-Code Tracing">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2208,7 +2338,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Configuration
+                Low-Code Tracing
               </div>
             </div>
           </a>

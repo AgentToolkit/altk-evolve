@@ -16,7 +16,7 @@
         <link rel="prev" href="../phoenix-sync/">
       
       
-        <link rel="next" href="../low-code-tracing/">
+        <link rel="next" href="../memory-hooks/">
       
       
         
@@ -565,6 +565,8 @@
       
         
       
+        
+      
     
     
     
@@ -703,6 +705,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/guidelines-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Starter Example (Evolving Agent Loop)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -720,6 +750,12 @@
   
     
     
+      
+        
+      
+        
+      
+        
       
         
       
@@ -792,6 +828,62 @@
     
   
     Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enabling Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../low-code-tracing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Low-Code Tracing
   
 
     
@@ -1109,14 +1201,42 @@
   
   
     <li class="md-nav__item">
-      <a href="../low-code-tracing/" class="md-nav__link">
+      <a href="../memory-hooks/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Low-Code Tracing
+    Memory Hooks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../retention/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Retention
   
 
     
@@ -1799,6 +1919,7 @@
 
 <h1 id="extract-trajectories-from-arize-phoenix">Extract Trajectories from Arize Phoenix<a class="headerlink" href="#extract-trajectories-from-arize-phoenix" title="Permanent link">&para;</a></h1>
 <p>A Python utility at <code>scripts/extract_trajectories.py</code> for extracting agent trajectories from Arize Phoenix traces and converting them to OpenAI chat completion message format.</p>
+<p>This is a standalone export/debugging tool — it prints trajectories to stdout or a file and does not talk to Evolve or generate guidelines. To pull trajectories into Evolve <em>and</em> generate guidelines from them, use <a href="../phoenix-sync/">Phoenix Sync</a> instead.</p>
 <h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Fetches spans from Phoenix's REST API with pagination support</li>
@@ -2087,13 +2208,13 @@
         
         
           
-          <a href="../low-code-tracing/" class="md-footer__link md-footer__link--next" aria-label="Next: Low-Code Tracing">
+          <a href="../memory-hooks/" class="md-footer__link md-footer__link--next" aria-label="Next: Memory Hooks">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Low-Code Tracing
+                Memory Hooks
               </div>
             </div>
             <div class="md-footer__button md-icon">

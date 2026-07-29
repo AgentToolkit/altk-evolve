@@ -1,0 +1,2268 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Evolve is a component in the Agent Lifecycle Toolkit (ALTK) that gives agent builders the ability to iteratively improve their agents by learning from previous trajectories.">
+      
+      
+      
+        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/guides/memory-hooks/">
+      
+      
+        <link rel="prev" href="../extract-trajectories/">
+      
+      
+        <link rel="next" href="../retention/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo-32x32.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Memory Hooks - Agent Lifecycle Toolkit (ALTK)</title>
+      
+    
+    
+
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+<style>
+  github-repo-card {
+    max-width: 800px;
+    --ghrc-radius-lg: .1rem;
+    --ghrc-border: var(--md-primary-fg-color);
+    --ghrc-border-width: .1rem;
+  }
+</style>
+
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+  
+
+
+  
+  
+
+<script id="__analytics">function __md_analytics(){function e(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],e("js",new Date),e("config",""),document.addEventListener("DOMContentLoaded",(function(){document.forms.search&&document.forms.search.query.addEventListener("blur",(function(){this.value&&e("event","search",{search_term:this.value})}));document$.subscribe((function(){var t=document.forms.feedback;if(void 0!==t)for(var a of t.querySelectorAll("[type=submit]"))a.addEventListener("click",(function(a){a.preventDefault();var n=document.location.pathname,d=this.getAttribute("data-md-value");e("event","feedback",{page:n,data:d}),t.firstElementChild.disabled=!0;var r=t.querySelector(".md-feedback__note [data-md-value='"+d+"']");r&&(r.hidden=!1)})),t.hidden=!1})),location$.subscribe((function(t){e("config","",{page_path:t.pathname})}))}));var t=document.createElement("script");t.async=!0,t.src="https://www.googletagmanager.com/gtag/js?id=",document.getElementById("__analytics").insertAdjacentElement("afterEnd",t)}</script>
+  
+    <script>if("undefined"!=typeof __md_analytics){var consent=__md_get("__consent");consent&&consent.analytics&&__md_analytics()}</script>
+  
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#memory-hooks" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Agent Lifecycle Toolkit (ALTK)" class="md-header__button md-logo" aria-label="Agent Lifecycle Toolkit (ALTK)" data-md-component="logo">
+      
+  <img src="../../assets/logo-512x512.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agent Lifecycle Toolkit (ALTK)
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Memory Hooks
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/AgentToolkit/altk-evolve" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AgentToolkit/altk-evolve
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+
+
+<nav class="project-nav" aria-label="Project navigation">
+  <div class="project-nav__inner md-grid">
+    
+    <a href="https://agenttoolkit.github.io/altk-main/"
+       class="project-nav__item"
+       target="_self" rel="noopener noreferrer"
+       aria-current="false">
+      
+      ALTK
+    </a>
+    
+    <a href="https://agenttoolkit.github.io/altk-evolve/"
+       class="project-nav__item project-nav__item--active"
+       
+       aria-current="page">
+      
+      Evolve
+    </a>
+    
+  </div>
+</nav>
+
+
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../installation/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../configuration/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/cli/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integrations/claude/evolve-lite/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Integrations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../results/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Results
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operations/docker-testing/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Operations
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Agent Lifecycle Toolkit (ALTK)" class="md-nav__button md-logo" aria-label="Agent Lifecycle Toolkit (ALTK)" data-md-component="logo">
+      
+  <img src="../../assets/logo-512x512.png" alt="logo">
+
+    </a>
+    Agent Lifecycle Toolkit (ALTK)
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/AgentToolkit/altk-evolve" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AgentToolkit/altk-evolve
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../tutorials/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/hello_world/bob/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Starter Example (IBM Bob)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/hello_world/claude/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Starter Example (Claude Code)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/hello_world/codex/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Starter Example (Codex)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/guidelines-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Starter Example (Evolving Agent Loop)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enabling Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../low-code-tracing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Low-Code Tracing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../phoenix-sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phoenix Sync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extract-trajectories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extract Trajectories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Hooks
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Hooks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#motivation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Motivation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-seam" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The seam
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The seam">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hook-taxonomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hook taxonomy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-a-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a plugin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shipped-plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shipped plugins
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-execution-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The execution engine
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuring-plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuring plugins
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuring plugins">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#turnkey-evolve-hooks-init" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Turnkey: evolve hooks init
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-discovery-search-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-discovery search order
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../retention/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Retention
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/policies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/claude/evolve-lite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evolve Lite (Claude Code)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../results/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Results
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Results
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/docker-testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#motivation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Motivation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-seam" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The seam
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The seam">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hook-taxonomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hook taxonomy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writing-a-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a plugin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shipped-plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shipped plugins
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-execution-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The execution engine
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuring-plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuring plugins
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuring plugins">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#turnkey-evolve-hooks-init" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Turnkey: evolve hooks init
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-discovery-search-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-discovery search order
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  <span class="md-ellipsis">
+    Home
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../configuration/" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Guides
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="memory-hooks">Memory Hooks<a class="headerlink" href="#memory-hooks" title="Permanent link">&para;</a></h1>
+<p><code>altk_evolve</code> exposes a general-purpose, pluggable hook seam around every memory operation and every LLM egress point. Plugins can normalize metadata, redact PII, audit access, filter recall results, or block operations entirely — without any change to Evolve's core code paths.</p>
+<p>The seam — hook types, frozen payloads, dispatch points, veto semantics — is engine-agnostic, and <strong>so are the plugins</strong>: a plugin is an ordinary object with one method per hook it serves, importing nothing from any execution engine (see <a href="#writing-a-plugin">Writing a plugin</a>). Executing plugins requires an engine — a deliberately thin dispatch layer Evolve keeps swappable, hidden behind an adapter. The engine shipped today is the <a href="https://pypi.org/project/cpex/">CPEX plugin framework</a>, but a plugin never sees it; everything CPEX-specific is scoped to <a href="#the-execution-engine">The execution engine</a>. Raw CPEX plugins are <strong>also</strong> supported (the regex PII plugin is one), so both native and engine-native plugins coexist.</p>
+<h2 id="motivation">Motivation<a class="headerlink" href="#motivation" title="Permanent link">&para;</a></h2>
+<p>Evolve's memory store sits between agents and durable state. Any cross-cutting memory policy wants to intercept that boundary:</p>
+<ul>
+<li><strong>Compliance</strong> — redact PII before it is persisted or sent to an LLM.</li>
+<li><strong>Normalization</strong> — stamp canonical metadata (e.g. <code>trace_id</code>, <code>created_at</code>) so downstream consumers can rely on it.</li>
+<li><strong>Access auditing</strong> — record when memories were last recalled.</li>
+<li><strong>Recall filtering</strong> — drop or transform results before they reach the caller.</li>
+<li><strong>Quality gates / cost controls</strong> — reject low-value writes, cap or reshape LLM traffic.</li>
+</ul>
+<p>Rather than baking each concern in, Evolve defines one extension seam with backend-layer choke points; any such policy plugs in as a hook plugin.</p>
+<h2 id="the-seam">The seam<a class="headerlink" href="#the-seam" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Backend-layer choke points.</strong> Write/read hooks fire inside <code>BaseEntityBackend</code> template methods, so no frontend (client, MCP server, CLI, Phoenix sync) can bypass them. Backends override protected <code>_*_impl</code> methods only; the public methods own hook dispatch.</li>
+<li><strong>Frozen payloads.</strong> Each hook type carries an immutable pydantic payload. Plugins never mutate a payload in place; a transform proposes a replacement copy, transforms chain, and the final payload flows back to the call site. This is enforced, not just convention: mutable payload contents are deep-copied at dispatch, and an in-place mutation that isn't returned as a replacement payload is discarded.</li>
+<li><strong>Halting raises, never drops.</strong> A plugin that halts the pipeline raises <code>altk_evolve.hooks.MemoryPolicyViolation</code> — a blocked write is an error the caller sees, not a silent no-op. (One deliberate exception: a vetoed conflict-resolution DELETE verdict skips that delete and lets the rest of the batch proceed — see <em>Unified delete semantics</em> below.)</li>
+<li><strong>Always live; behavior is which plugins you configure.</strong> There is no master switch. With <strong>no plugins</strong> configured (empty config and nothing auto-discovered) every hook site is a fast no-op (a boolean check) that requires no execution engine and imports no <code>cpex</code> — byte-for-byte identical to a plugin-free install. With <strong>plugins configured but the engine missing</strong>, initialization fails <strong>closed</strong> with a clear error rather than silently no-opping a compliance plugin (see <a href="#the-execution-engine">The execution engine</a>).</li>
+</ul>
+<h3 id="hook-taxonomy">Hook taxonomy<a class="headerlink" href="#hook-taxonomy" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Hook type</th>
+<th>Fires</th>
+<th>Semantics</th>
+<th>Payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>memory_pre_write</code></td>
+<td>In <code>update_entities</code>, after namespace validation, <strong>before</strong> conflict resolution (so transforms run before content reaches an LLM)</td>
+<td>transform / halt</td>
+<td><code>namespace_id</code>, <code>entities</code> (content + metadata dicts)</td>
+</tr>
+<tr>
+<td><code>memory_pre_metadata_patch</code></td>
+<td>Before <code>update_entity_metadata</code> merges a patch</td>
+<td>transform / halt</td>
+<td><code>namespace_id</code>, <code>entity_id</code>, <code>metadata_patch</code></td>
+</tr>
+<tr>
+<td><code>memory_pre_delete</code></td>
+<td>Before <strong>every</strong> entity delete — the public <code>delete_entity_by_id</code> and conflict-resolution DELETE verdicts inside <code>update_entities</code></td>
+<td>halt</td>
+<td><code>namespace_id</code>, <code>entity_id</code>, <code>metadata</code> (the stored entity's metadata; <code>None</code> if the entity was not found)</td>
+</tr>
+<tr>
+<td><code>memory_pre_namespace_delete</code></td>
+<td>Before <code>delete_namespace</code></td>
+<td>halt</td>
+<td><code>namespace_id</code></td>
+</tr>
+<tr>
+<td><code>memory_post_read</code></td>
+<td>On public <code>search_entities</code> results only — internal reads (conflict-resolution pre-reads, the metadata-patch read-before-merge) never fire it</td>
+<td>transform (filter/redact) / observe</td>
+<td><code>namespace_id</code>, <code>entities</code>, <code>query</code>, <code>filters</code></td>
+</tr>
+<tr>
+<td><code>llm_pre_call</code></td>
+<td>Immediately before every litellm <code>completion</code> (fact extraction, guidelines, segmentation, clustering, conflict resolution)</td>
+<td>transform (redact) / halt</td>
+<td><code>messages</code>, <code>purpose</code> (call-site tag), <code>model</code></td>
+</tr>
+</tbody>
+</table>
+<p>Recursion safety: a <code>memory_post_read</code> plugin that patches metadata goes through <code>update_entity_metadata</code>, whose read-before-merge uses the internal <code>_search_entities_impl</code> seam — plus a context-local guard suppresses nested <code>memory_post_read</code> dispatch.</p>
+<p><strong>Unified delete semantics.</strong> Both delete initiators — the public <code>delete_entity_by_id</code> and LLM-issued DELETE verdicts from conflict resolution — route through a single guarded path (<code>BaseEntityBackend._guarded_delete</code>), so it is structurally impossible to delete an entity through the backend abstraction without <code>memory_pre_delete</code> firing. The payload carries the stored entity's <code>metadata</code> (fetched via the internal read seam on the public path; taken from the conflict-resolution pre-read on the verdict path), so policy plugins can key on fields like <code>legal_hold: true</code>. Veto behavior differs per caller: on <code>delete_entity_by_id</code> a halting plugin raises <code>MemoryPolicyViolation</code> to the caller; on a conflict-resolution DELETE verdict the veto skips <em>that</em> delete (the stored entity survives alongside its replacement), logs a warning, records the skip on the returned <code>EntityUpdate</code> (<code>event="NONE"</code> plus a <code>skipped_delete</code> metadata entry), and the rest of the batch still applies — a legal hold must not abort the whole write.</p>
+<h2 id="writing-a-plugin">Writing a plugin<a class="headerlink" href="#writing-a-plugin" title="Permanent link">&para;</a></h2>
+<p>A plugin is a plain object with <strong>one method per hook it serves</strong>, named exactly for the hook-type string. It imports nothing from any execution engine — only <code>altk_evolve.hooks.plugin</code> (for the optional base and the <code>HookContext</code>) and, at runtime, the frozen payloads. Subclass <code>HookPluginBase</code> (which supplies config storage and no-op hook defaults) or just satisfy the <code>HookPlugin</code> <code>Protocol</code>.</p>
+<p>Each method is <strong>synchronous</strong>, takes <code>(self, payload, context)</code>, and:</p>
+<ul>
+<li>returns <code>None</code> → the payload is unchanged;</li>
+<li>returns <code>payload.replace(field=new_value)</code> → the returned payload replaces the input (transforms chain);</li>
+<li><strong>raises → the operation halts, fail-closed</strong> (on a write / <code>llm_pre_call</code> hook the caller gets a <code>MemoryPolicyViolation</code> and nothing is stored or sent).</li>
+</ul>
+<p><code>mode</code> / <code>priority</code> / <code>on_error</code> are engine-level knobs set where the plugin is <em>configured</em> (the YAML entry or the <code>HookPluginSpec</code>), never read by the plugin. The per-plugin <code>config</code> it receives is the plain <code>spec.config</code> dict.</p>
+<p>Keep the domain logic in a <strong>pure core function</strong> where it helps testability (inject clocks/ids, and a detector for redactors), then have the plugin method call it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">altk_evolve.hooks.plugin</span><span class="w"> </span><span class="kn">import</span> <span class="n">HookContext</span><span class="p">,</span> <span class="n">HookPluginBase</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">tag_entities</span><span class="p">(</span><span class="n">entities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span> <span class="o">*</span><span class="p">,</span> <span class="n">tenant</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Pure core: returns tagged copies, or None when nothing changed.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">entities</span><span class="p">:</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="k">return</span> <span class="kc">None</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="k">return</span> <span class="p">[</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        <span class="p">{</span><span class="o">**</span><span class="n">e</span><span class="p">,</span> <span class="s2">&quot;metadata&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">**</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;metadata&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}),</span> <span class="s2">&quot;tenant&quot;</span><span class="p">:</span> <span class="n">tenant</span><span class="p">}}</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">entities</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="p">]</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="k">class</span><span class="w"> </span><span class="nc">TagWrites</span><span class="p">(</span><span class="n">HookPluginBase</span><span class="p">):</span>  <span class="c1"># a native plugin — no engine import</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">memory_pre_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">HookContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>        <span class="n">entities</span> <span class="o">=</span> <span class="n">tag_entities</span><span class="p">(</span><span class="n">payload</span><span class="o">.</span><span class="n">entities</span><span class="p">,</span> <span class="n">tenant</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tenant&quot;</span><span class="p">,</span> <span class="s2">&quot;acme&quot;</span><span class="p">))</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>        <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">entities</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">payload</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">entities</span><span class="o">=</span><span class="n">entities</span><span class="p">)</span>
+</code></pre></div>
+<p>Reference it by <code>kind</code> in <code>evolve.hooks.yaml</code> (or a code-first <code>HookPluginSpec</code>) — the engine adapter wires it up:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">plugins</span><span class="p">:</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tag_writes</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my_pkg.plugins.TagWrites</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">hooks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">memory_pre_write</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">transform</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tenant</span><span class="p">:</span><span class="w"> </span><span class="nv">acme</span><span class="p p-Indicator">}</span>
+</code></pre></div>
+<p>See <code>altk_evolve/hooks/plugins/normalizer.py</code> (<code>normalize_entities</code>), <code>access_stamp.py</code> (<code>build_access_stamps</code>), <code>readi.py</code> (<code>redact_spans</code> / <code>redact_entities</code> / <code>redact_messages</code>, with detection injected as a <code>SpanDetector</code> so the core is testable against a two-line fake) and <code>secrets.py</code> (wraps <code>cpex-secrets-detection</code>'s framework-free Rust core, imported lazily) for shipped native examples — importable and runnable with no engine installed. <code>pii.py</code> is the single deliberate exception: it is a <strong>raw CPEX plugin</strong> (see <a href="#the-execution-engine">The execution engine</a>), because <code>cpex-pii-filter</code> ships a genuine cpex <code>Plugin</code> and adapting it onto Evolve's hook types <em>is</em> that plugin's domain logic — proving both plugin flavors are supported.</p>
+<p>Notes:</p>
+<ul>
+<li><strong>Immutability contract — a plugin proposes changes by RETURNING <code>payload.replace(...)</code>; mutating the payload in place is unsupported and can leak across a plugin chain.</strong> Payloads are frozen, and payload contents are deep-copied at dispatch to protect the <em>caller's</em> objects — but that copy does <strong>not</strong> isolate plugins from each other. If plugin A mutates its payload in place, plugin B later in the same chain receives A's mutation baked into B's input. Returning a replacement is the only supported mechanism, and an in-place mutation that isn't returned is discarded.</li>
+<li>To <strong>block</strong> an operation, <strong>raise</strong> from the plugin method (the caller gets a <code>MemoryPolicyViolation</code>). <strong>A plugin that must be able to halt a write has to be configured in <code>sequential</code> mode.</strong> The engine silently downgrades a block to a pass-through in <code>transform</code> (and <code>audit</code>) mode, so a <code>transform</code> plugin can redact or reshape but can <strong>never</strong> block — only <code>sequential</code> preserves <em>both</em> payload chaining and the ability to halt. This is why the shipped redaction plugins are configured <code>sequential</code> (so they can halt on unredactable PII), not <code>transform</code>.</li>
+<li>Plugins that need to call back into the store (like <code>AccessStampPlugin</code>) grab the live backend from <code>context.backend</code>.</li>
+<li><strong>A plugin on a write hook (<code>memory_pre_write</code> / <code>memory_pre_delete</code> / <code>memory_pre_metadata_patch</code>) may call back for a metadata patch, but must not re-invoke <code>update_entities</code>.</strong> <code>update_entity_metadata</code> is reentrant-safe from inside a write hook (RLock plus active-data reuse), so a write-hook plugin can patch metadata on the side. A nested <code>update_entities</code> is not: it reloads and nulls the active namespace buffer the outer write is still building, so the outer write is silently dropped. The write-family re-entrancy guard stops it from recursing infinitely, but does not save the outer write — do metadata work through the patch path, never a nested full write.</li>
+</ul>
+<h2 id="shipped-plugins">Shipped plugins<a class="headerlink" href="#shipped-plugins" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Plugin</th>
+<th>Hooks</th>
+<th>Mode</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MetadataNormalizerPlugin</code> (native)</td>
+<td><code>memory_pre_write</code></td>
+<td>transform</td>
+<td>Copies <code>task_id</code> → <code>trace_id</code> when only the former is present (MCP-saved trajectories vs Phoenix-synced ones) and stamps <code>created_at</code></td>
+</tr>
+<tr>
+<td><code>AccessStampPlugin</code> (native)</td>
+<td><code>memory_post_read</code></td>
+<td>fire_and_forget</td>
+<td>Stamps <code>last_accessed</code> (ISO-8601 UTC) on read entities via the metadata-patch path</td>
+</tr>
+<tr>
+<td><code>PIIFilterMemoryPlugin</code> (<strong>raw CPEX</strong>)</td>
+<td><code>memory_pre_write</code>, <code>llm_pre_call</code></td>
+<td>sequential</td>
+<td>Regex PII method (adapts the external <code>cpex-pii-filter</code> plugin onto Evolve's hook types); requires <code>pip install 'altk-evolve[pii-regex]'</code></td>
+</tr>
+<tr>
+<td><code>ReadiSemanticPIIPlugin</code> (native)</td>
+<td><code>memory_pre_write</code>, <code>llm_pre_call</code></td>
+<td>sequential</td>
+<td>Semantic (NER) PII method via IBM READI — catches <strong>names</strong>, locations and organizations that regex cannot; requires <code>pip install 'altk-evolve[pii-semantic]'</code></td>
+</tr>
+<tr>
+<td><code>SecretsFilterMemoryPlugin</code> (native)</td>
+<td><code>memory_pre_write</code>, <code>llm_pre_call</code></td>
+<td>sequential</td>
+<td>Structured <strong>secrets</strong> method (native plugin wrapping <code>cpex-secrets-detection</code>'s Rust core) — catches <strong>credentials/tokens</strong> (AWS keys, GitHub/Slack tokens, Stripe secrets, private-key blocks) that neither PII method targets; requires <code>pip install 'altk-evolve[secrets]'</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>A third method, orthogonal to PII: structured secrets.</strong> <code>SecretsFilterMemoryPlugin</code> is a <em>third</em> redaction method that targets a different class of data — machine credentials/tokens, not personal data — so it composes with (does not replace) a PII method and chains the same way. It is regex-based with <strong>no verification</strong> (it never calls the issuer to confirm a token is live), so like the regex PII method treat it as a high-precision floor, not proof of absence. By default the <strong>structured / high-precision</strong> detectors are ON (AWS keys, Google API keys, GitHub/Slack tokens, Stripe secrets, private-key blocks) and the <strong>entropy / JWT-heuristic</strong> detectors (<code>generic_api_key_assignment</code>, <code>jwt_like</code>, <code>hex_secret_32</code>, <code>base64_24</code>) are OFF — those over-redact a <em>memory corpus</em>, which legitimately contains base64 blobs, hex digests, hashes and JWT-shaped ids, so they are opt-in. Unlike <code>PIIFilterMemoryPlugin</code> (a raw-cpex plugin reusing <code>cpex-pii-filter</code>'s cpex <code>Plugin</code>), it is a <strong>native</strong> plugin: the packaged <code>cpex-secrets-detection</code> plugin targets <em>mcpgateway</em>'s framework and its hook methods are unusable outside that host, so the only reusable surface is the redactor's framework-free Rust core (<code>py_scan_container</code>) — which is a library, not a cpex plugin. So Evolve wraps that core directly in a native <code>HookPluginBase</code>, exactly as <code>ReadiSemanticPIIPlugin</code> wraps IBM READI. See the source docstring for the full rationale.</p>
+<p><strong>Two PII methods, run both.</strong> Regex and semantic are two detection <em>methods</em>, not competing choices — the recommended default is to run <strong>both</strong> (regex for structured identifiers, semantic for names/entities), and enabling or disabling either is a YAML edit rather than a code change. It matters: measured on 200 rows of <code>ai4privacy/pii-masking-200k</code>, the regex method scores 0.13 overall span recall at precision 1.00 and <strong>0.00 on first/last names</strong>, while the semantic method scores 0.48 recall at precision 1.00 with names at 0.92-1.00 — the semantic method is the more powerful one, at the cost of being much slower and pulling model weights (~460MB). See the <a href="../pii-redaction/">PII redaction guide</a> for the full numbers, model-choice guidance (language-matched spaCy pipelines), cost/latency trade-offs and limitations, and <code>examples/pii_benchmark.py</code> for the harness that produced them.</p>
+<p>Read-cost note for <code>AccessStampPlugin</code>: fire-and-forget tasks are awaited before the sync bridge returns (see <a href="#the-execution-engine">The execution engine</a>), so the stamp is <strong>not</strong> free for the reader — every public read pays one metadata write per returned entity before <code>search_entities</code> returns. Measured on the filesystem backend: ~3.7 ms vs ~0.1 ms for a 10-entity read; on milvus/postgres it adds N extra store round trips per read. Enable it only where access audit trails are worth that latency. Its stamp is what makes <code>max_unused_days</code> retention rules meaningful — <code>EvolveClient.record_access</code> is the explicit equivalent for callers not running hooks, and both share the same <code>build_access_stamps</code> core. See <a href="../retention/">Data Retention</a>.</p>
+<h2 id="the-execution-engine">The execution engine<a class="headerlink" href="#the-execution-engine" title="Permanent link">&para;</a></h2>
+<p>Plugins need an execution engine to run. The engine layer is deliberately thin — one dispatch/manager module (<code>altk_evolve/hooks/manager.py</code>) between the choke points and the plugin runner. Hook types, payload classes, and plugins do not depend on it; swapping engines means reimplementing that dispatch layer, not rewriting plugins or the seam. The engine shipped today is <strong>CPEX</strong>, whose plugin manager provides chaining, priorities, execution modes, and the runner. A native plugin never touches CPEX: the manager owns YAML parsing itself and wraps each native plugin in a CPEX <code>Plugin</code> <strong>adapter</strong> (plain payload in, plain payload out — the engine type never reaches the plugin). A raw CPEX plugin (the regex <code>PIIFilterMemoryPlugin</code>) is registered directly, so both flavors coexist. Everything in this section is specific to the CPEX path.</p>
+<ul>
+<li><strong>Optional dependency, fail-closed when configured.</strong> <code>cpex</code> pulls heavy transitive dependencies (fastapi, mcp, prometheus), so it lives behind an extra: <code>pip install 'altk-evolve[hooks]'</code>. With <strong>no plugins</strong> configured every hook site is a fast no-op and cpex is never imported. Configuring a plugin <strong>without</strong> cpex installed raises <code>ImportError</code> with the install hint (fail-closed — configured plugins never silently degrade to a no-op). A configured plugin whose own detector lib is missing (e.g. READI without <code>[pii-semantic]</code>, or the regex filter without <code>[pii-regex]</code>) also surfaces its extra-naming <code>ImportError</code> at initialization, not lazily on the first write.</li>
+<li><strong>Execution modes and priorities.</strong> Each plugin registers with a CPEX execution mode — <code>transform</code> (serial, chained, modifying, non-halting), <code>sequential</code> (may halt), <code>fire_and_forget</code> (side-effect only), <code>audit</code>, <code>concurrent</code>, <code>disabled</code> — a <code>priority</code> (lower runs earlier), and an <code>on_error</code> policy (<code>fail</code> / <code>ignore</code> / <code>disable</code>).</li>
+<li><strong>Fail-closed by default.</strong> <code>on_error</code> defaults to <code>fail</code>: a plugin that crashes or times out halts the operation (a memory-write/<code>llm_pre_call</code> crash surfaces as <code>MemoryPolicyViolation</code>), rather than silently passing data through — the right default for a compliance plugin (e.g. PII redaction), but it trades availability for safety. A non-critical plugin (e.g. best-effort access auditing) can opt into <code>on_error="ignore"</code> so its failures don't block the operation. (A crash in a <code>memory_post_read</code> plugin never fails the read it rode in on — that hook is read-side transform-only and logs a warning instead.)</li>
+<li><strong>Sync bridge.</strong> CPEX's <code>invoke_hook</code> is async-only; Evolve's call sites are sync. The seam uses <code>asyncio.run</code> when no event loop is running and a dedicated thread when one is. Fire-and-forget plugin tasks are awaited before the bridge returns so their side effects are never lost with the closing loop.</li>
+<li><strong>Singleton caveat.</strong> CPEX's <code>PluginManager</code> is a process-wide (Borg) singleton — the hook seam is process-global, not per-client. Two sharp edges follow: (a) constructing a second <code>EvolveClient</code> whose config resolves plugins calls <code>PluginManager.reset()</code> and silently <strong>replaces</strong> the first client's plugins — for a compliance plugin (e.g. PII redaction) this means redaction can be silently disabled by unrelated code constructing its own client; (b) a client that resolves <strong>no</strong> plugins calls <code>shutdown_hooks()</code>, so it does not inherit another client's process-global plugins — no configured plugins truly means a no-op. Per-instance isolation (CPEX's <code>TenantPluginManager</code>) is deferred until a real use case needs it. In tests, call <code>altk_evolve.hooks.shutdown_hooks()</code> between cases.</li>
+<li><strong>Native vs raw CPEX.</strong> Native plugins (normalizer, access stamp, READI, secrets) import no cpex and run through the adapter. <code>PIIFilterMemoryPlugin</code> is the <strong>one raw CPEX</strong> plugin: it subclasses <code>cpex-pii-filter</code>'s <code>Plugin</code> to alias it onto Evolve's hook types, so it is registered directly (no adapter), and needs the <code>[pii-regex]</code> extra (cpex + cpex-pii-filter; <code>[pii]</code> is a back-compat alias). <code>ReadiSemanticPIIPlugin</code> (needs <code>[pii-semantic]</code>) and <code>SecretsFilterMemoryPlugin</code> (needs <code>[secrets]</code>) are native: each wraps a detector <em>library</em> lazily. Secrets is native because <code>cpex-secrets-detection</code> does <strong>not</strong> ship a reusable cpex plugin — its <code>SecretsDetectionPlugin</code> targets <em>mcpgateway</em>'s <code>Plugin</code> (a different framework — cpex forks it) and its hook methods are mcpgateway-bound; the only reusable surface is a framework-free Rust function (<code>py_scan_container</code>), a library, which the native plugin wraps directly (the same shape as READI wrapping IBM READI).</li>
+</ul>
+<h2 id="configuring-plugins">Configuring plugins<a class="headerlink" href="#configuring-plugins" title="Permanent link">&para;</a></h2>
+<p>The seam is always live; you turn behavior on by <strong>configuring plugins</strong>. There is no enable flag — a <code>HooksConfig</code> that resolves no plugins is a zero-cost no-op, and any configured plugin activates the seam (and requires the <code>[hooks]</code> engine, else init fails closed).</p>
+<h3 id="turnkey-evolve-hooks-init">Turnkey: <code>evolve hooks init</code><a class="headerlink" href="#turnkey-evolve-hooks-init" title="Permanent link">&para;</a></h3>
+<p>The fastest path scaffolds a project-local config:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="gp">$ </span>evolve<span class="w"> </span>hooks<span class="w"> </span>init<span class="w">            </span><span class="c1"># writes ./evolve.hooks.yaml</span>
+</code></pre></div>
+<p>The scaffolded file ships the <strong>READI semantic PII plugin active</strong> and the <strong>regex PII plugin commented out</strong> (both <code>mode: sequential</code>, <code>on_error: fail</code>), with comments explaining each method and how to switch. Evolve <strong>auto-discovers</strong> it — no further wiring. Install the engine + detector to make it live: <code>pip install 'altk-evolve[pii-semantic]'</code> (see the <a href="../pii-redaction/">PII redaction guide</a>, including the macOS/MPS caveat).</p>
+<h3 id="auto-discovery-search-order">Auto-discovery search order<a class="headerlink" href="#auto-discovery-search-order" title="Permanent link">&para;</a></h3>
+<p>When <code>HooksConfig.plugins_yaml</code> is not set explicitly and no code-first <code>plugins</code> are given, Evolve searches for a default hooks config file and loads the <strong>first</strong> that exists:</p>
+<ol>
+<li><code>$EVOLVE_HOOKS_CONFIG</code> — an explicit path (an env override always wins).</li>
+<li><code>./evolve.hooks.yaml</code> — project-local, relative to the current working directory.</li>
+<li><code>~/.config/evolve/hooks.yaml</code> (or <code>$XDG_CONFIG_HOME/evolve/hooks.yaml</code>) — a per-user config.</li>
+</ol>
+<p>An explicit <code>plugins_yaml</code> (or any code-first <code>plugins</code>) <strong>overrides</strong> discovery. Discovery finding nothing → no plugins → no-op.</p>
+<h3 id="in-code">In code<a class="headerlink" href="#in-code" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">altk_evolve.config.evolve</span><span class="w"> </span><span class="kn">import</span> <span class="n">EvolveConfig</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">altk_evolve.config.hooks</span><span class="w"> </span><span class="kn">import</span> <span class="n">HookPluginSpec</span><span class="p">,</span> <span class="n">HooksConfig</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">altk_evolve.frontend.client.evolve_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">EvolveClient</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">config</span> <span class="o">=</span> <span class="n">EvolveConfig</span><span class="p">(</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">hooks</span><span class="o">=</span><span class="n">HooksConfig</span><span class="p">(</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="c1"># Either point at an engine plugins.yaml (CPEX format)...</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        <span class="n">plugins_yaml</span><span class="o">=</span><span class="s2">&quot;examples/hooks_plugins.yaml&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="c1"># ...or declare plugins in code (both may be combined):</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>        <span class="n">plugins</span><span class="o">=</span><span class="p">[</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>            <span class="n">HookPluginSpec</span><span class="p">(</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>                <span class="n">name</span><span class="o">=</span><span class="s2">&quot;metadata_normalizer&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>                <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;altk_evolve.hooks.plugins.normalizer.MetadataNormalizerPlugin&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>                <span class="n">hooks</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;memory_pre_write&quot;</span><span class="p">],</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>                <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;transform&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>            <span class="p">),</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>        <span class="p">],</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>    <span class="p">)</span>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="p">)</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="n">client</span> <span class="o">=</span> <span class="n">EvolveClient</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+</code></pre></div>
+<p>See <a href="https://github.com/AgentToolkit/altk-evolve/blob/main/examples/hooks_plugins.yaml"><code>examples/hooks_plugins.yaml</code></a> for the YAML form and <a href="https://github.com/AgentToolkit/altk-evolve/blob/main/examples/hooks_demo.py"><code>examples/hooks_demo.py</code></a> for a runnable end-to-end demo.</p>
+<h2 id="known-limitations">Known limitations<a class="headerlink" href="#known-limitations" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong><code>delete_namespace</code> does not fan out to <code>memory_pre_delete</code>.</strong> Dropping a namespace fires <strong>only</strong> <code>memory_pre_namespace_delete</code>, never a per-entity <code>memory_pre_delete</code> for the entities inside it (fanning out would require an unbounded scan of the namespace). Consequence: a legal-hold plugin that vetoes deletes on <code>memory_pre_delete</code> does <strong>not</strong> protect entities removed by a namespace delete — they are dropped wholesale. A policy that must guard against that has to subscribe to <code>memory_pre_namespace_delete</code> and veto (or scope) the whole-namespace delete itself.</li>
+</ul>
+<h2 id="deferred">Deferred<a class="headerlink" href="#deferred" title="Permanent link">&para;</a></h2>
+<ul>
+<li>READI / semantic recall filtering plugins (separate branch).</li>
+<li>Lifecycle / retention policy <em>hooks</em>. Data retention itself now ships as a policy-driven sweep rather than a hook — see <a href="../retention/">Data Retention</a>, which consumes <code>AccessStampPlugin</code>'s <code>last_accessed</code> stamp and <code>MetadataNormalizerPlugin</code>'s <code>trace_id</code> normalization.</li>
+<li>A first-class PII configuration surface on <code>EvolveConfig</code> (today PII is configured through the plugin's own <code>config</code> block).</li>
+<li>Additional execution engines: only the CPEX integration exists today; the seam is engine-agnostic, but running plugins currently requires cpex.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../extract-trajectories/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Extract Trajectories">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Extract Trajectories
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../retention/" class="md-footer__link md-footer__link--next" aria-label="Next: Data Retention">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Data Retention
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 Agent Lifecycle Toolkit (ALTK) project – <a href="#__consent">Change cookie settings</a>
+
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/AgentToolkit/altk-evolve" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M202.1 328.7c0 20.9-10.9 55.1-36.7 55.1s-36.7-34.2-36.7-55.1 10.9-55.1 36.7-55.1 36.7 34.2 36.7 55.1M496 278.2c0 31.9-3.2 65.7-17.5 95-37.9 76.6-142.1 74.8-216.7 74.8-75.8 0-186.2 2.7-225.6-74.8-14.6-29-20.2-63.1-20.2-95 0-41.9 13.9-81.5 41.5-113.6-5.2-15.8-7.7-32.4-7.7-48.8 0-21.5 4.9-32.3 14.6-51.8 45.3 0 74.3 9 108.8 36 29-6.9 58.8-10 88.7-10 27 0 54.2 2.9 80.4 9.2 34-26.7 63-35.2 107.8-35.2 9.8 19.5 14.6 30.3 14.6 51.8 0 16.4-2.6 32.7-7.7 48.2 27.5 32.4 39 72.3 39 114.2m-64.3 50.5c0-43.9-26.7-82.6-73.5-82.6-18.9 0-37 3.4-56 6-14.9 2.3-29.8 3.2-45.1 3.2-15.2 0-30.1-.9-45.1-3.2-18.7-2.6-37-6-56-6-46.8 0-73.5 38.7-73.5 82.6 0 87.8 80.4 101.3 150.4 101.3h48.2c70.3 0 150.6-13.4 150.6-101.3m-82.6-55.1c-25.8 0-36.7 34.2-36.7 55.1s10.9 55.1 36.7 55.1 36.7-34.2 36.7-55.1-10.9-55.1-36.7-55.1"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+      <div class="md-consent" data-md-component="consent" id="__consent" hidden>
+        <div class="md-consent__overlay"></div>
+        <aside class="md-consent__inner">
+          <form class="md-consent__form md-grid md-typeset" name="consent">
+            
+
+
+  
+
+
+<h4>Cookie consent</h4>
+<p>We use cookies to recognize your repeated visits and preferences, as well as to measure the effectiveness of our documentation and whether users find what they're searching for. With your consent, you're helping us to make our documentation better.</p>
+<input class="md-toggle" type="checkbox" id="__settings" >
+<div class="md-consent__settings">
+  <ul class="task-list">
+    
+    
+      
+        
+  
+  
+    
+    
+  
+  <li class="task-list-item">
+    <label class="task-list-control">
+      <input type="checkbox" name="analytics" checked>
+      <span class="task-list-indicator"></span>
+      Google Analytics
+    </label>
+  </li>
+
+      
+    
+    
+      
+        
+  
+  
+    
+    
+  
+  <li class="task-list-item">
+    <label class="task-list-control">
+      <input type="checkbox" name="github" checked>
+      <span class="task-list-indicator"></span>
+      GitHub
+    </label>
+  </li>
+
+      
+    
+    
+  </ul>
+</div>
+<div class="md-consent__controls">
+  
+    
+      <button class="md-button md-button--primary">Accept</button>
+    
+    
+    
+  
+    
+    
+    
+      <label class="md-button" for="__settings">Manage settings</label>
+    
+  
+</div>
+          </form>
+        </aside>
+      </div>
+      <script>var consent=__md_get("__consent");if(consent)for(var input of document.forms.consent.elements)input.name&&(input.checked=consent[input.name]||!1);else"file:"!==location.protocol&&setTimeout((function(){document.querySelector("[data-md-component=consent]").hidden=!1}),250);var form=document.forms.consent;for(var action of["submit","reset"])form.addEventListener(action,(function(e){if(e.preventDefault(),"reset"===e.type)for(var n of document.forms.consent.elements)n.name&&(n.checked=!1);__md_set("__consent",Object.fromEntries(Array.from(new FormData(form).keys()).map((function(e){return[e,!0]})))),location.hash="",location.reload()}))</script>
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tabs.link", "content.code.annotate", "content.code.copy", "content.tooltips", "announce.dismiss", "navigation.footer", "navigation.tabs", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+<script src="../../components/github-repo-card.js"></script>
+<script>
+  (function () {
+    function syncTheme() {
+      const scheme = document.body.getAttribute("data-md-color-scheme");
+      const theme = scheme === "slate" ? "dark" : "light";
+      document.querySelectorAll("github-repo-card").forEach(function (card) {
+        card.setAttribute("theme", theme);
+      });
+    }
+
+    // Set on initial load
+    syncTheme();
+
+    // Re-sync whenever MkDocs changes the color scheme (palette toggle)
+    new MutationObserver(syncTheme).observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-md-color-scheme"],
+    });
+  })();
+</script>
+
+  </body>
+</html>
