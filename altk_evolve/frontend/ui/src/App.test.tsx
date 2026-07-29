@@ -33,7 +33,7 @@ describe('App routing', () => {
             if (url === '/api/dashboard') return respond(dashboardData);
             if (url === '/api/namespaces') return respond(namespaces);
             if (url.startsWith('/api/namespaces/alpha-ns/entities')) return respond(entities);
-            return respond([]);
+            throw new Error(`Unexpected fetch in App test: ${url}`);
         });
     });
 
