@@ -205,6 +205,8 @@ uv run evolve sync phoenix \
     --include-errors
 ```
 
+See the [Phoenix Sync](phoenix-sync.md) guide for the full set of sync options, and [Enabling Guidelines](guidelines.md) for choosing between regular, consistency, or both guideline generation modes.
+
 ### 5. Verify Generated Guidelines
 
 ```bash

@@ -78,11 +78,13 @@ nav:
     - Starter Example (IBM Bob): examples/hello_world/bob.md
     - Starter Example (Claude Code): examples/hello_world/claude.md
     - Starter Example (Codex): examples/hello_world/codex.md
+    - Starter Example (Evolving Agent Loop): tutorials/guidelines-loop.md
   - Guides:
     - Configuration: guides/configuration.md
+    - Enabling Guidelines: guides/guidelines.md
+    - Low-Code Tracing: guides/low-code-tracing.md
     - Phoenix Sync: guides/phoenix-sync.md
     - Extract Trajectories: guides/extract-trajectories.md
-    - Low-Code Tracing: guides/low-code-tracing.md
     - Memory Hooks: guides/memory-hooks.md
     - Data Retention: guides/retention.md
   - Reference:
