@@ -9,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 class GuidelinesSettings(BaseSettings):
+    """Guideline-generation settings, read from `EVOLVE_`-prefixed environment variables."""
+
     model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
 
     guidelines_mode: str = "standard"
@@ -18,6 +20,7 @@ class GuidelinesSettings(BaseSettings):
     @field_validator("guidelines_mode", mode="before")
     @classmethod
     def coerce_invalid_mode(cls, v: str) -> str:
+        """Fall back to 'standard' when EVOLVE_GUIDELINES_MODE is set to an unrecognized value."""
         if v not in ("standard", "consistency", "all"):
             logger.warning(f"Unrecognised EVOLVE_GUIDELINES_MODE value '{v}', defaulting to 'standard'")
             return "standard"
@@ -26,6 +29,7 @@ class GuidelinesSettings(BaseSettings):
     @field_validator("consistency_method", mode="before")
     @classmethod
     def coerce_invalid_consistency_method(cls, v: str) -> str:
+        """Fall back to 'fast' when EVOLVE_CONSISTENCY_METHOD is set to an unrecognized value."""
         if v not in ("accurate", "fast"):
             logger.warning(f"Unrecognised EVOLVE_CONSISTENCY_METHOD value '{v}', defaulting to 'fast'")
             return "fast"

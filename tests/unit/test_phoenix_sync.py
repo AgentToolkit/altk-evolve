@@ -1164,6 +1164,7 @@ class TestProcessTrajectoryGuidelinesMode:
             return sync, mock_client
 
     def test_standard_mode_calls_only_generate_guidelines(self):
+        """guidelines_mode='standard' calls generate_guidelines, not the consistency pipeline."""
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
@@ -1178,6 +1179,7 @@ class TestProcessTrajectoryGuidelinesMode:
             mock_consistency.assert_not_called()
 
     def test_standard_mode_tags_entities_with_generation_method(self):
+        """Standard-pipeline entities are tagged generation_method='standard'."""
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
@@ -1194,6 +1196,8 @@ class TestProcessTrajectoryGuidelinesMode:
             assert entities[0].metadata["creation_mode"] == "auto-phoenix"
 
     def test_consistency_mode_calls_only_generate_consistency_guidelines(self):
+        """guidelines_mode='consistency' (accurate method) calls generate_consistency_guidelines,
+        not generate_guidelines. Method pinned explicitly since fast is now the default."""
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
@@ -1209,6 +1213,7 @@ class TestProcessTrajectoryGuidelinesMode:
             mock_consistency.assert_called_once()
 
     def test_consistency_mode_tags_entities_with_generation_method(self):
+        """Accurate-method entities are tagged generation_method='consistency'."""
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
@@ -1226,6 +1231,8 @@ class TestProcessTrajectoryGuidelinesMode:
             assert entities[0].metadata["creation_mode"] == "auto-phoenix"
 
     def test_all_mode_calls_both_pipelines(self):
+        """guidelines_mode='all' (accurate method) calls both generate_guidelines and
+        generate_consistency_guidelines. Method pinned explicitly since fast is now the default."""
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
@@ -1242,6 +1249,7 @@ class TestProcessTrajectoryGuidelinesMode:
             mock_consistency.assert_called_once()
 
     def test_all_mode_produces_entities_from_both_pipelines(self):
+        """'all' mode (accurate method) stores entities tagged 'standard' and 'consistency'."""
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.sync.phoenix_sync.generate_guidelines") as mock_regular,
@@ -1285,6 +1293,8 @@ class TestProcessTrajectoryGuidelinesMode:
             assert guideline_call["enable_conflict_resolution"] is True
 
     def test_consistency_fast_method_calls_fast_pipeline_not_accurate(self):
+        """consistency_method='fast' calls generate_consistency_guidelines_fast, not the
+        accurate/resampling pipeline."""
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_accurate,
@@ -1300,6 +1310,7 @@ class TestProcessTrajectoryGuidelinesMode:
             mock_accurate.assert_not_called()
 
     def test_consistency_fast_method_tags_entities_with_generation_method(self):
+        """Fast-method entities are tagged generation_method='consistency-fast'."""
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines_fast") as mock_fast,
@@ -1317,6 +1328,7 @@ class TestProcessTrajectoryGuidelinesMode:
             assert entities[0].metadata["creation_mode"] == "auto-phoenix"
 
     def test_consistency_fast_is_still_the_default_method(self):
+        """Without consistency_method set, 'consistency' mode uses the fast (LLM self-judged) pipeline."""
         sync, mock_client = self._make_sync()
         with (
             patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_accurate,

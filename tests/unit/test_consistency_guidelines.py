@@ -342,6 +342,8 @@ class TestCanSegmentTrajectory:
 
 
 class TestFormatTrajectoryData:
+    """Tests for format_trajectory_data's step rendering and uncertainty markers."""
+
     def test_includes_assistant_steps(self):
         messages = [
             {"role": "user", "content": "What is 2+3?"},
@@ -423,6 +425,7 @@ class TestFormatTrajectoryData:
         assert "step two" in result
 
     def test_step_range_marks_uncertainty_within_range(self):
+        """Uncertainty markers still apply correctly to steps kept by a step_range filter."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
@@ -446,6 +449,7 @@ class TestFormatTrajectoryData:
         assert "HIGH UNCERTAINTY" not in result
 
     def test_no_marker_when_nothing_clears_low_threshold(self):
+        """No ⚠️ marker at all when every step's uncertainty stays below the low threshold."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
@@ -515,6 +519,8 @@ class TestSegmentationGuard:
         }
 
     def test_single_step_trajectory_skips_segmentation(self):
+        """A trajectory with too few scorable steps falls back to full-trajectory generation
+        instead of segmenting, even if the segmenter itself returns subtasks."""
         from unittest.mock import MagicMock, patch
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
@@ -558,6 +564,7 @@ class TestGenerateConsistencyGuidelinesFast:
     """The fast consistency pipeline must never resample or score externally."""
 
     def _mock_completion_response(self, payload: dict):
+        """Build a MagicMock litellm completion response whose message content is `payload` as JSON."""
         from unittest.mock import MagicMock
 
         response = MagicMock()
@@ -566,6 +573,7 @@ class TestGenerateConsistencyGuidelinesFast:
         return response
 
     def test_fast_pipeline_never_resamples_or_analyzes_consistency(self, monkeypatch):
+        """The fast pipeline calls the LLM once and never touches resample_trajectory/analyze_consistency."""
         from unittest.mock import patch
 
         from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
@@ -610,6 +618,8 @@ class TestGenerateConsistencyGuidelinesFast:
             assert results[0].guidelines[0].content == "Double-check arithmetic before answering."
 
     def test_fast_pipeline_prompt_asks_llm_to_self_judge_confidence(self, monkeypatch):
+        """The rendered prompt asks the LLM to judge step confidence itself, with no
+        resampling-derived uncertainty markers (those belong to the accurate pipeline only)."""
         from unittest.mock import patch
 
         from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module

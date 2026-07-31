@@ -229,6 +229,9 @@ def format_trajectory_data(
     step_range: tuple[int, int] | None = None,
     config: Optional[dict] = None,
 ) -> str:
+    """Render assistant steps (optionally scoped to step_range) into the text block the
+    accurate-method prompt embeds, marking each step ⚠️ HIGH/ELEVATED UNCERTAINTY per the
+    high/low thresholds in config (falling back to the DEFAULT_* module constants)."""
     config = config or {}
     high_uncertainty_threshold = config.get("high_uncertainty_threshold", DEFAULT_HIGH_UNCERTAINTY_THRESHOLD)
     low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
@@ -308,6 +311,8 @@ def format_trajectory_data(
 
 
 def _safe_write_debug(path: Path, data: Any) -> None:
+    """Best-effort JSON debug write — logs and swallows any failure so the production path
+    (guideline generation) is never affected by a debug-artifact write error."""
     try:
         path.write_text(json.dumps(data, indent=2))
     except Exception as e:
