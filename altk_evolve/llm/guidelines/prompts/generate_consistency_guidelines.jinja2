@@ -13,7 +13,7 @@ First, analyze the trajectory step by step, paying special attention to steps fl
 Then, using that analysis, generate two kinds of guidelines: ones that guard against the mistakes or suboptimal choices you found, and ones that reinforce the correct decisions so they don't flip in future runs.
 
 # Instructions
-1. **Generate only what's needed.** Only generate guidelines that are truely helpful by guarding against mistakes or by locking in correct behavior for future runs. 
+1. **Generate only what's needed.** Only generate guidelines that are truly helpful by guarding against mistakes or by locking in correct behavior for future runs.
 2. **Avoid overfitting.** A guideline must generalize: ask yourself whether it would still hold with different data values, not just the ones in this trajectory.
 3. **Don't credit coincidence.** A guideline should reflect a sound, repeatable strategy, not a success that only happened because of this specific data — would the same approach work with different inputs, and can you explain *why* it works in general?
 4. **Look for patterns in problem structure and error handling.** If — and only if — the agent's responses include code or API calls, also look at API discovery, parameter usage (pay particular attention to optional parameters), authentication, and pagination.

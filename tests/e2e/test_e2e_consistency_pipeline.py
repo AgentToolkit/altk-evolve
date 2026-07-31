@@ -421,7 +421,12 @@ except Exception as e:
                 resampling_ran = True
                 print(f"[sync] UNEXPECTED resampling log line: {stripped}")
 
-            if "RateLimitError" in stripped or "Budget has been exceeded" in stripped:
+            if (
+                "RateLimitError" in stripped
+                or "Budget has been exceeded" in stripped
+                or "called on trajectory with no steps" in stripped
+                or "called with empty messages" in stripped
+            ):
                 llm_error_occurred = True
 
             match = re.search(r"generated (\d+) guidelines", stripped)

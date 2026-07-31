@@ -46,7 +46,7 @@ uv run evolve sync phoenix --guidelines-mode consistency
 
 | Method | How it estimates uncertainty | Cost |
 |---|---|---|
-| `fast` (default) | Asks the guideline-generation LLM to judge each step's stability itself, in the same call that produces guidelines — no resampling | Same as `standard` mode: one LLM call per trajectory |
+| `fast` (default) | Asks the guideline-generation LLM to judge each step's stability itself, in the same call that produces guidelines — no resampling | Same as `standard` mode: one LLM call per generated subtask, or one for the whole trajectory when it isn't segmented |
 | `accurate` | Resamples each decision step multiple times and measures how much the outcome varies across resamples | Several extra LLM calls per trajectory |
 
 ```bash
