@@ -432,6 +432,29 @@ class TestFormatTrajectoryData:
         assert "HIGH UNCERTAINTY" in result
         assert "step two" in result
 
+    def test_marks_elevated_not_high_when_below_high_threshold(self):
+        """A score that only clears the low threshold (not the high one) must be
+        labeled ELEVATED, not HIGH — the label must never claim a threshold that
+        wasn't actually met (default high=0.2, low=0.1)."""
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+        ]
+        consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.1029}}
+        result = format_trajectory_data(messages, consistency_data)
+        assert "ELEVATED UNCERTAINTY: 0.1029" in result
+        assert "HIGH UNCERTAINTY" not in result
+
+    def test_no_marker_when_nothing_clears_low_threshold(self):
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+        ]
+        consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.05}}
+        result = format_trajectory_data(messages, consistency_data)
+        assert "HIGH UNCERTAINTY" not in result
+        assert "ELEVATED UNCERTAINTY" not in result
+
     def test_tool_calls_none_does_not_crash(self):
         # Raw OpenAI message dumps always carry tool_calls: null
         messages = [{"role": "assistant", "content": "hello", "tool_calls": None}]
@@ -529,3 +552,89 @@ class TestSegmentationGuard:
             assert mock_gen.call_count == 1
             _, kwargs = mock_gen.call_args
             assert kwargs.get("step_range") is None
+
+
+class TestGenerateConsistencyGuidelinesFast:
+    """The fast consistency pipeline must never resample or score externally."""
+
+    def _mock_completion_response(self, payload: dict):
+        from unittest.mock import MagicMock
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = __import__("json").dumps(payload)
+        return response
+
+    def test_fast_pipeline_never_resamples_or_analyzes_consistency(self, monkeypatch):
+        from unittest.mock import patch
+
+        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", False)
+
+        trajectory = {
+            "trace_id": "test-fast-1",
+            "messages": [
+                {"role": "user", "content": "What is 2+2?"},
+                {"role": "assistant", "content": "The answer is 4."},
+            ],
+        }
+
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.resample_trajectory") as mock_resample,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.analyze_consistency") as mock_analyze,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            mock_completion.return_value = self._mock_completion_response(
+                {
+                    "guidelines": [
+                        {
+                            "content": "Double-check arithmetic before answering.",
+                            "rationale": "Prevents silent calculation errors",
+                            "category": "strategy",
+                            "trigger": "When answering a math question",
+                            "implementation_steps": ["Recompute the result", "Compare against the stated answer"],
+                        }
+                    ]
+                }
+            )
+
+            results = generate_consistency_guidelines_fast(trajectory)
+
+            mock_resample.assert_not_called()
+            mock_analyze.assert_not_called()
+            mock_completion.assert_called_once()
+            assert results[0].guidelines[0].content == "Double-check arithmetic before answering."
+
+    def test_fast_pipeline_prompt_asks_llm_to_self_judge_confidence(self, monkeypatch):
+        from unittest.mock import patch
+
+        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", False)
+
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "What is 2+2?"},
+                {"role": "assistant", "content": "The answer is 4."},
+            ],
+        }
+
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            mock_completion.return_value = self._mock_completion_response({"guidelines": []})
+
+            generate_consistency_guidelines_fast(trajectory)
+
+            _, kwargs = mock_completion.call_args
+            prompt = kwargs["messages"][-1]["content"]
+            assert "judge" in prompt.lower()
+            assert "⚠️" not in prompt
+            assert "HIGH UNCERTAINTY" not in prompt

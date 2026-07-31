@@ -593,7 +593,7 @@ def save_trajectory(
     # then merge before the single update_entities call.
     guideline_entities = []
 
-    if guidelines_mode in ("regular", "both"):
+    if guidelines_mode in ("standard", "all"):
         try:
             regular_results = generate_guidelines(messages)
             guideline_entities += [
@@ -607,7 +607,7 @@ def save_trajectory(
                         "rationale": guideline.rationale,
                         "trigger": guideline.trigger,
                         "implementation_steps": guideline.implementation_steps,
-                        "generation_method": "regular",
+                        "generation_method": "standard",
                         "support": 1,
                     },
                 )
@@ -616,20 +616,27 @@ def save_trajectory(
             ]
         except Exception:
             logger.error(
-                f"Regular guideline generation failed for task {task_id}, skipping",
+                f"Standard guideline generation failed for task {task_id}, skipping",
                 exc_info=True,
             )
 
-    if guidelines_mode in ("consistency", "both"):
+    if guidelines_mode in ("consistency", "all"):
         try:
-            from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
-
             trajectory = {
                 "messages": messages,
                 "trace_id": task_id,
                 "tools": json.loads(tools) if tools else None,
             }
-            consistency_results = generate_consistency_guidelines(trajectory)
+            if guidelines_settings.consistency_method == "fast":
+                from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+                consistency_results = generate_consistency_guidelines_fast(trajectory)
+                consistency_method_tag = "consistency-fast"
+            else:
+                from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+                consistency_results = generate_consistency_guidelines(trajectory)
+                consistency_method_tag = "consistency"
             guideline_entities += [
                 Entity(
                     type="guideline",
@@ -641,7 +648,7 @@ def save_trajectory(
                         "rationale": guideline.rationale,
                         "trigger": guideline.trigger,
                         "implementation_steps": guideline.implementation_steps,
-                        "generation_method": "consistency",
+                        "generation_method": consistency_method_tag,
                         "support": 1,
                     },
                 )

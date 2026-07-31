@@ -45,10 +45,8 @@ All configuration variables are prefixed with `EVOLVE_`.
 |----------|-------------------------------------------------------------------------------|------------------------------------------|
 | `EVOLVE_BACKEND` | Backend provider (`milvus`, `filesystem`, or `postgres`)                      | `milvus`                                 |
 | `EVOLVE_NAMESPACE_ID` | Namespace ID for isolation                                                    | `evolve`                                 |
-| `EVOLVE_GUIDELINES_MODE` | Guideline generation pipeline: `regular`, `consistency`, or `both` — see [Enabling Guidelines](guidelines.md) | `regular` |
-| `EVOLVE_HIGH_UNCERTAINTY_THRESHOLD` | Consistency mode: steps scoring above this are treated as high-uncertainty — see [Enabling Guidelines](guidelines.md#configuring-consistency-guideline-generation) | `0.2` |
-| `EVOLVE_LOW_UNCERTAINTY_THRESHOLD` | Consistency mode: steps scoring below this are treated as stable — see [Enabling Guidelines](guidelines.md#configuring-consistency-guideline-generation) | `0.1` |
-| `EVOLVE_SKIP_ON_NO_UNCERTAINTY` | Consistency mode: skip guideline generation if no step exceeds the uncertainty threshold — see [Enabling Guidelines](guidelines.md#configuring-consistency-guideline-generation) | `true` |
+| `EVOLVE_GUIDELINES_MODE` | Guideline generation pipeline: `standard`, `consistency`, or `all` — see [Enabling Guidelines](guidelines.md) | `standard` |
+| `EVOLVE_CONSISTENCY_METHOD` | Consistency mode only: `fast` (LLM self-judged) or `accurate` (resampling based) — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method) | `fast` |
 | `EVOLVE_GUIDELINES_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_FACT_EXTRACTION_MODEL` | Model for fact extraction only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
