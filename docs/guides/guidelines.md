@@ -69,6 +69,8 @@ Use `accurate` when you want uncertainty estimated by actually observing varianc
 
 The resampling behavior (sample count, per-step-type uncertainty metric) and the `accurate`-only tuning knobs above are all defined in a YAML config file shipped alongside the consistency pipeline (`consistency_analyzer/agent_config.yaml`); advanced users calling `generate_consistency_guidelines()` directly from Python can point it at a custom config via `config_path=`.
 
+**Mixed-provider Phoenix syncs and `accurate` resampling:** resampling forwards `EVOLVE_CUSTOM_LLM_PROVIDER` for every step, regardless of which model the traced step actually used — it's treated as a single deployment-wide routing setting, not per-trace. This is fine when every trajectory in a sync comes from the same provider. If a namespace mixes traces from different providers (e.g. `claude-*` and `gpt-*` traces synced from the same Phoenix project) and `EVOLVE_CUSTOM_LLM_PROVIDER` resolves to `openai` — which it does by default whenever `OPENAI_API_KEY` or `OPENAI_BASE_URL` is set, even if you never set it explicitly — resampling forces every step through the OpenAI provider regardless of the traced model, and non-OpenAI steps fail or get misrouted. For mixed-provider syncs, either set `EVOLVE_CUSTOM_LLM_PROVIDER` to match the traces you're resampling and run `accurate` once per provider, or use `fast` (the default), which never resamples and has no provider-routing step to get wrong.
+
 ## Verifying output
 
 ```bash
