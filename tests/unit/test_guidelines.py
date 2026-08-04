@@ -35,6 +35,34 @@ class TestParseOpenaiAgentsTrajectory:
         result = parse_openai_agents_trajectory([])
         assert result["task_instruction"] == "Task description unknown"
 
+    def test_extracts_native_chat_completions_tool_calls(self):
+        """Native Chat Completions / Phoenix shape: content is null, call list lives in
+        tool_calls. Regression for a step being silently dropped (empty content fell
+        through to the "skip empty assistant messages" branch)."""
+        messages = [
+            {"role": "user", "content": "What is the weather in Paris?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "18C sunny"},
+            {"role": "assistant", "content": "It is 18C and sunny in Paris."},
+        ]
+        result = parse_openai_agents_trajectory(messages)
+
+        assert result["num_steps"] == 2
+        assert len(result["function_calls"]) == 1
+        assert result["function_calls"][0]["name"] == "get_weather"
+        assert result["function_calls"][0]["call_id"] == "call_1"
+        assert 'get_weather(city="Paris")' in result["trajectory_summary"]
+
     @patch("altk_evolve.llm.guidelines.guidelines.completion")
     @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
