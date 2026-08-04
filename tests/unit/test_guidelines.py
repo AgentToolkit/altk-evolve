@@ -63,6 +63,38 @@ class TestParseOpenaiAgentsTrajectory:
         assert result["function_calls"][0]["call_id"] == "call_1"
         assert 'get_weather(city="Paris")' in result["trajectory_summary"]
 
+    def test_native_tool_call_with_json_array_arguments_falls_back_to_raw(self):
+        """arguments decoding to a JSON array (not an object) must not crash — .items()
+        only applies to dict arguments, everything else uses the raw-string fallback."""
+        messages = [
+            {"role": "user", "content": "Log these values"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "log_values", "arguments": "[1, 2, 3]"}}],
+            },
+        ]
+        result = parse_openai_agents_trajectory(messages)
+
+        assert len(result["function_calls"]) == 1
+        assert "log_values([1, 2, 3])" in result["trajectory_summary"]
+
+    def test_native_tool_call_with_non_string_arguments_falls_back_to_raw(self):
+        """arguments that aren't a string at all (already-parsed, non-mapping) must not
+        crash — falls back to the raw-string fallback rather than calling .items()."""
+        messages = [
+            {"role": "user", "content": "Set the count"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "set_count", "arguments": 5}}],
+            },
+        ]
+        result = parse_openai_agents_trajectory(messages)
+
+        assert len(result["function_calls"]) == 1
+        assert "set_count(5)" in result["trajectory_summary"]
+
     @patch("altk_evolve.llm.guidelines.guidelines.completion")
     @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])

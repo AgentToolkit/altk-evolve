@@ -103,6 +103,8 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
 
                     try:
                         args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                        if not isinstance(args, dict):
+                            raise TypeError("tool-call arguments must be a JSON object")
                         args_display = ", ".join(f"{k}={json.dumps(v)}" for k, v in args.items())
                         function_description = f"{name}({args_display})"
                     except (JSONDecodeError, TypeError):
