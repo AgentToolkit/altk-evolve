@@ -1,11 +1,22 @@
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
+
+# Replaced by agent_config.yaml's high_uncertainty_threshold / low_uncertainty_threshold /
+# skip_on_no_uncertainty (accurate-method-only knobs). extra="ignore" below means a
+# deployment that still sets these silently loses them with no error — warn instead.
+_REMOVED_UNCERTAINTY_ENV_VARS = (
+    "EVOLVE_HIGH_UNCERTAINTY_THRESHOLD",
+    "EVOLVE_LOW_UNCERTAINTY_THRESHOLD",
+    "EVOLVE_SKIP_ON_NO_UNCERTAINTY",
+)
 
 
 class GuidelinesSettings(BaseSettings):
@@ -34,6 +45,18 @@ class GuidelinesSettings(BaseSettings):
             logger.warning(f"Unrecognised EVOLVE_CONSISTENCY_METHOD value '{v}', defaulting to 'fast'")
             return "fast"
         return v
+
+    @model_validator(mode="after")
+    def warn_on_removed_uncertainty_env_vars(self) -> Self:
+        stale = [name for name in _REMOVED_UNCERTAINTY_ENV_VARS if os.getenv(name) is not None]
+        if stale:
+            logger.warning(
+                f"{', '.join(stale)} are no longer read (extra='ignore' silently drops them) — "
+                "the accurate consistency method's uncertainty tuning now lives in "
+                "agent_config.yaml (high_uncertainty_threshold / low_uncertainty_threshold / "
+                "skip_on_no_uncertainty), passed via generate_consistency_guidelines(config_path=...)."
+            )
+        return self
 
 
 # to reload settings call guidelines_settings.__init__()
