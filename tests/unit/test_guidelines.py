@@ -79,6 +79,33 @@ class TestParseOpenaiAgentsTrajectory:
         assert len(result["function_calls"]) == 1
         assert "log_values([1, 2, 3])" in result["trajectory_summary"]
 
+    def test_native_tool_call_alongside_text_content_is_not_dropped(self):
+        """An Anthropic-shape turn `[{"type": "text", ...}, {"type": "tool_use", ...}]`
+        collapsed into one Chat Completions message carries both a non-empty `content`
+        string and `tool_calls`. Regression: the text/tool_calls branches were `elif`,
+        so the tool call was silently dropped whenever text content was also present."""
+        messages = [
+            {"role": "user", "content": "What is the weather in Paris?"},
+            {
+                "role": "assistant",
+                "content": "Let me check the weather for you.",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                    }
+                ],
+            },
+        ]
+        result = parse_openai_agents_trajectory(messages)
+
+        assert len(result["function_calls"]) == 1
+        assert result["function_calls"][0]["name"] == "get_weather"
+        assert result["num_steps"] == 2
+        assert "Let me check the weather for you." in result["trajectory_summary"]
+        assert 'get_weather(city="Paris")' in result["trajectory_summary"]
+
     def test_native_tool_call_with_non_string_arguments_falls_back_to_raw(self):
         """arguments that aren't a string at all (already-parsed, non-mapping) must not
         crash — falls back to the raw-string fallback rather than calling .items()."""

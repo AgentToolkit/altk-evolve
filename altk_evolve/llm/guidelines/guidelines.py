@@ -53,7 +53,7 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
 
             # Extract function calls (Agents SDK / Responses API shape: content is a list
             # of function_call items)
-            elif isinstance(content, list):
+            if isinstance(content, list):
                 for assistant_response in content:
                     if assistant_response["type"] == "function_call":
                         function_call = {
@@ -117,9 +117,7 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
                             "raw": call,
                         }
                     )
-            else:
-                # Skip empty assistant messages (common from tool-calling patterns)
-                continue
+            # Any other shape (e.g. empty content and no tool_calls) contributes no steps.
 
     steps_list = []
     for i, step in enumerate(agent_steps[:50], 1):
