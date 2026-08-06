@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from altk_evolve.config.llm import llm_settings
 from altk_evolve.llm.conflict_resolution.conflict_resolution import (
     resolve_conflicts,
     get_update_entities_messages,
@@ -399,6 +400,34 @@ def test_resolve_conflicts_retry_logic(
 
     # Verify it tried 3 times
     assert mock_completion.call_count == 3
+
+
+@pytest.mark.unit
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
+def test_resolve_conflicts_expands_groq_gpt_oss_output_budget(
+    mock_completion,
+    monkeypatch,
+    sample_recorded_entities,
+    sample_new_recorded_entities,
+    mock_llm_response_add,
+):
+    """GPT-OSS needs room for both reasoning tokens and the conflict JSON."""
+    monkeypatch.setattr(
+        llm_settings,
+        "conflict_resolution_model",
+        "groq/openai/gpt-oss-120b",
+    )
+    monkeypatch.setattr(llm_settings, "custom_llm_provider", "groq")
+    mock_response = Mock()
+    mock_response.choices = [Mock()]
+    mock_response.choices[0].message.content = mock_llm_response_add
+    mock_completion.return_value = mock_response
+
+    resolve_conflicts(sample_recorded_entities, sample_new_recorded_entities)
+
+    call_kwargs = mock_completion.call_args.kwargs
+    assert call_kwargs["max_tokens"] == 8192
+    assert call_kwargs["reasoning_effort"] == "low"
 
 
 @pytest.mark.unit
