@@ -10,6 +10,21 @@ from litellm import completion
 from pathlib import Path
 
 
+_GROQ_GPT_OSS_CONFLICT_MAX_TOKENS = 8192
+
+
+def _conflict_resolution_completion_options() -> dict[str, object]:
+    """Keep GPT-OSS reasoning from exhausting the conflict JSON budget."""
+    model = llm_settings.conflict_resolution_model.strip().lower()
+    provider = (llm_settings.custom_llm_provider or "").strip().lower()
+    if "gpt-oss" in model and (provider == "groq" or model.startswith("groq/")):
+        return {
+            "max_tokens": _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS,
+            "reasoning_effort": "low",
+        }
+    return {}
+
+
 def resolve_conflicts(
     old_entities: list[RecordedEntity], new_entities: list[RecordedEntity], custom_update_entities_prompt: str | None = None
 ) -> list[EntityUpdate]:
@@ -26,9 +41,12 @@ def resolve_conflicts(
                 model=llm_settings.conflict_resolution_model,
                 messages=[{"role": "user", "content": prompt}],
                 custom_llm_provider=llm_settings.custom_llm_provider,
+                **_conflict_resolution_completion_options(),
             )
             response = completion_response.choices[0].message.content or ""  # type: ignore[union-attr]
             response = clean_llm_response(response)
+            if not response:
+                raise ValueError("Conflict resolution LLM returned an empty response")
             parsed = json.loads(response)
             entity_updates = [EntityUpdate.model_validate(event) for event in parsed["entities"]]
             for update in entity_updates:
