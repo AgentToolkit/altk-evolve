@@ -47,11 +47,13 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
         # Extract assistant reasoning/messages
         if message.get("role") == "assistant":
             content = message.get("content", "")
+            tool_calls = message.get("tool_calls")
             if isinstance(content, str) and content.strip():
                 agent_steps.append({"type": "reasoning", "content": content, "raw": message})
 
-            # Extract function calls
-            elif isinstance(content, list):
+            # Extract function calls (Agents SDK / Responses API shape: content is a list
+            # of function_call items)
+            if isinstance(content, list):
                 for assistant_response in content:
                     if assistant_response["type"] == "function_call":
                         function_call = {
@@ -81,9 +83,41 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
                         )
                     else:
                         raise EvolveException(f"Unhandled assistant content type in list `{assistant_response['type']}`")
-            else:
-                # Skip empty assistant messages (common from tool-calling patterns)
-                continue
+
+            # Extract function calls (native Chat Completions / Phoenix shape: content is
+            # null and the call list lives in tool_calls)
+            elif tool_calls:
+                for call in tool_calls:
+                    func = call.get("function", {})
+                    name = func.get("name", "unknown")
+                    args_str = func.get("arguments", "")
+                    function_calls.append(
+                        {
+                            "type": "function_call",
+                            "name": name,
+                            "arguments": args_str,
+                            "call_id": call.get("id", "unknown_call"),
+                            "raw": call,
+                        }
+                    )
+
+                    try:
+                        args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                        if not isinstance(args, dict):
+                            raise TypeError("tool-call arguments must be a JSON object")
+                        args_display = ", ".join(f"{k}={json.dumps(v)}" for k, v in args.items())
+                        function_description = f"{name}({args_display})"
+                    except (JSONDecodeError, TypeError):
+                        function_description = f"{name}({args_str})"
+
+                    agent_steps.append(
+                        {
+                            "type": "action",
+                            "content": function_description,
+                            "raw": call,
+                        }
+                    )
+            # Any other shape (e.g. empty content and no tool_calls) contributes no steps.
 
     steps_list = []
     for i, step in enumerate(agent_steps[:50], 1):

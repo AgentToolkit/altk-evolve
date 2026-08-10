@@ -45,15 +45,13 @@ All configuration variables are prefixed with `EVOLVE_`.
 |----------|-------------------------------------------------------------------------------|------------------------------------------|
 | `EVOLVE_BACKEND` | Backend provider (`milvus`, `filesystem`, or `postgres`)                      | `milvus`                                 |
 | `EVOLVE_NAMESPACE_ID` | Namespace ID for isolation                                                    | `evolve`                                 |
-| `EVOLVE_GUIDELINES_MODE` | Guideline generation pipeline: `regular`, `consistency`, or `both` — see [Enabling Guidelines](guidelines.md) | `regular` |
-| `EVOLVE_HIGH_UNCERTAINTY_THRESHOLD` | Consistency mode: steps scoring above this are treated as high-uncertainty — see [Enabling Guidelines](guidelines.md#configuring-consistency-guideline-generation) | `0.2` |
-| `EVOLVE_LOW_UNCERTAINTY_THRESHOLD` | Consistency mode: steps scoring below this are treated as stable — see [Enabling Guidelines](guidelines.md#configuring-consistency-guideline-generation) | `0.1` |
-| `EVOLVE_SKIP_ON_NO_UNCERTAINTY` | Consistency mode: skip guideline generation if no step exceeds the uncertainty threshold — see [Enabling Guidelines](guidelines.md#configuring-consistency-guideline-generation) | `true` |
+| `EVOLVE_GUIDELINES_MODE` | Guideline generation pipeline: `standard`, `consistency`, or `all` — see [Enabling Guidelines](guidelines.md) | `standard` |
+| `EVOLVE_CONSISTENCY_METHOD` | Consistency mode only: `fast` (LLM self-judged) or `accurate` (resampling based) — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method) | `fast` |
 | `EVOLVE_GUIDELINES_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_FACT_EXTRACTION_MODEL` | Model for fact extraction only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_MODEL_NAME` | Global fallback model for all Evolve LLM calls | `gpt-4o` |
-| `EVOLVE_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for OpenAI-compatible endpoints) | `None`                                   |
+| `EVOLVE_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for OpenAI-compatible endpoints). Defaults to `openai` whenever `OPENAI_API_KEY` or `OPENAI_BASE_URL` is set, even if you never set this variable yourself — see the [consistency guide](guidelines.md#choosing-a-consistency-method) for a case where that implicit default causes misrouting | `openai` if `OPENAI_API_KEY`/`OPENAI_BASE_URL` is set, else `None` |
 | `EVOLVE_EMBEDDING_MODEL` | Embedding model                                                               | `sentence-transformers/all-MiniLM-L6-v2` |
 
 ### Milvus Backend Settings
