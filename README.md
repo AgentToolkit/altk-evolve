@@ -9,7 +9,7 @@
 [![License](https://img.shields.io/github/license/AgentToolkit/altk-evolve)](https://www.apache.org/licenses/LICENSE-2.0)
 ![Stars](https://img.shields.io/github/stars/AgentToolkit/altk-evolve?style=social)
 
-**Blog posts:** [IBM announcement](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) | [Hugging Face blog](https://huggingface.co/blog/ibm-research/altk-evolve)
+**Blog posts:** [IBM announcement](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) | [Hugging Face blog](https://huggingface.co/blog/ibm-research/altk-evolve) | [ACE Comparison](https://huggingface.co/blog/ibm-research/altk-evolve-sldd)
 </div>
 
 Coding agents repeat the same mistakes because they start fresh every session. Evolve gives agents memory — they learn from what worked and what didn't, so each session is better than the last.
