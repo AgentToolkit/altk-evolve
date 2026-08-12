@@ -2,7 +2,7 @@
 
 Sync agent trajectories from Arize Phoenix to Evolve and automatically generate guidelines.
 
-This guide assumes traces are already reaching Phoenix — see [Low-Code Tracing](low-code-tracing.md) to instrument your agent first. For choosing *how* guidelines get generated (regular vs. consistency), see [Enabling Guidelines](guidelines.md).
+This guide assumes traces are already reaching Phoenix — see [Low-Code Tracing](low-code-tracing.md) to instrument your agent first. For choosing *how* guidelines get generated (standard vs. consistency), see [Enabling Guidelines](guidelines.md).
 
 ## Overview
 
@@ -46,8 +46,11 @@ uv run evolve sync phoenix \
   --limit 500 \
   --include-errors
 
-# Generate consistency guidelines instead of regular ones
+# Generate consistency guidelines instead of standard ones
 uv run evolve sync phoenix --guidelines-mode consistency
+
+# Use the accurate (resampling) consistency method instead of the fast default
+uv run evolve sync phoenix --guidelines-mode consistency --consistency-method accurate
 
 # Full options
 uv run evolve sync phoenix \
@@ -56,7 +59,7 @@ uv run evolve sync phoenix \
   --project my_project \
   --limit 200 \
   --include-errors \
-  --guidelines-mode both
+  --guidelines-mode all
 ```
 
 ### CLI Options
@@ -68,7 +71,8 @@ uv run evolve sync phoenix \
 | `--project` | `-p` | Phoenix project name |
 | `--limit` | | Max spans to fetch (default: 100) |
 | `--include-errors` | | Include failed/error spans |
-| `--guidelines-mode` | | Guideline generation mode: `regular`, `consistency`, or `both` — see [Enabling Guidelines](guidelines.md) |
+| `--guidelines-mode` | | Guideline generation mode: `standard`, `consistency`, or `all` — see [Enabling Guidelines](guidelines.md) |
+| `--consistency-method` | | Consistency mode only: `fast` (default) or `accurate` — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method) |
 
 ### Python API
 

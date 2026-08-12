@@ -540,7 +540,11 @@ def sync_phoenix(
     include_errors: Annotated[bool, typer.Option("--include-errors", help="Include failed/error spans")] = False,
     guidelines_mode: Annotated[
         Optional[str],
-        typer.Option("--guidelines-mode", help="Guideline generation mode: regular, consistency, or both"),
+        typer.Option("--guidelines-mode", help="Guideline generation mode: standard, consistency, or all"),
+    ] = None,
+    consistency_method: Annotated[
+        Optional[str],
+        typer.Option("--consistency-method", help="Consistency pipeline: fast (LLM self-judged, default) or accurate (resampling)"),
     ] = None,
 ):
     """Sync trajectories from Arize Phoenix and generate guidelines."""
@@ -548,10 +552,16 @@ def sync_phoenix(
     from altk_evolve.sync.phoenix_sync import PhoenixSync
 
     if guidelines_mode is not None:
-        if guidelines_mode not in ("regular", "consistency", "both"):
-            console.print(f"[red]Invalid --guidelines-mode '{guidelines_mode}'. Choose: regular, consistency, both.[/red]")
+        if guidelines_mode not in ("standard", "consistency", "all"):
+            console.print(f"[red]Invalid --guidelines-mode '{guidelines_mode}'. Choose: standard, consistency, all.[/red]")
             raise typer.Exit(1)
         guidelines_settings.guidelines_mode = guidelines_mode
+
+    if consistency_method is not None:
+        if consistency_method not in ("accurate", "fast"):
+            console.print(f"[red]Invalid --consistency-method '{consistency_method}'. Choose: accurate, fast.[/red]")
+            raise typer.Exit(1)
+        guidelines_settings.consistency_method = consistency_method
 
     syncer = PhoenixSync(
         phoenix_url=phoenix_url,
@@ -565,6 +575,8 @@ def sync_phoenix(
     console.print(f"  Namespace: {syncer.namespace_id}")
     console.print(f"  Limit: {limit}")
     console.print(f"  Guidelines mode: {guidelines_settings.guidelines_mode}")
+    if guidelines_settings.guidelines_mode in ("consistency", "all"):
+        console.print(f"  Consistency method: {guidelines_settings.consistency_method}")
     console.print()
 
     try:

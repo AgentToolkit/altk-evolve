@@ -60,10 +60,10 @@ EVOLVE_BACKEND=filesystem \
 uv run evolve sync phoenix \
     --project guidelines-tutorial \
     --namespace guidelines-tutorial \
-    --guidelines-mode regular
+    --guidelines-mode standard
 ```
 
-See [Phoenix Sync](../guides/phoenix-sync.md) for the full set of sync options, and [Enabling Guidelines](../guides/guidelines.md) if you want to try `--guidelines-mode consistency` or `both` instead.
+See [Phoenix Sync](../guides/phoenix-sync.md) for the full set of sync options, and [Enabling Guidelines](../guides/guidelines.md) if you want to try `--guidelines-mode consistency` or `all` instead.
 
 ## Step 4: Verify guidelines exist
 
@@ -72,7 +72,7 @@ EVOLVE_BACKEND=filesystem \
 uv run evolve entities list guidelines-tutorial --type guideline
 ```
 
-You should see one or more `guideline` entities, each carrying `metadata.creation_mode: "auto-phoenix"` and `metadata.generation_method: "regular"`.
+You should see one or more `guideline` entities, each carrying `metadata.creation_mode: "auto-phoenix"` and `metadata.generation_method: "standard"`.
 
 ## Step 5: Retrieve guidelines and re-run the agent with them injected
 

@@ -825,7 +825,7 @@ class PhoenixSync:
 
         guidelines_mode = guidelines_settings.guidelines_mode
 
-        if guidelines_mode in ("regular", "both"):
+        if guidelines_mode in ("standard", "all"):
             regular_results = generate_guidelines(trajectory["messages"])
             _debug_dir = guidelines_settings.debug_dir
             if _debug_dir:
@@ -836,7 +836,7 @@ class PhoenixSync:
                         {"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]}
                         for r in regular_results
                     ]
-                    with open(_debug_dir / f"guidelines_{_trace_prefix}_regular.json", "w") as _f:
+                    with open(_debug_dir / f"guidelines_{_trace_prefix}_standard.json", "w") as _f:
                         json.dump(_guidelines_data, _f, indent=2)
                 except Exception as e:
                     logger.warning(f"Debug write failed for trace {trajectory['trace_id']}: {e} — production path unaffected")
@@ -851,18 +851,25 @@ class PhoenixSync:
                         "rationale": guideline.rationale,
                         "trigger": guideline.trigger,
                         "implementation_steps": guideline.implementation_steps,
-                        "generation_method": "regular",
+                        "generation_method": "standard",
                     },
                 )
                 for result in regular_results
                 for guideline in result.guidelines
             ]
 
-        if guidelines_mode in ("consistency", "both"):
-            from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
-
+        if guidelines_mode in ("consistency", "all"):
             try:
-                consistency_results = generate_consistency_guidelines(trajectory)
+                if guidelines_settings.consistency_method == "fast":
+                    from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+                    consistency_results = generate_consistency_guidelines_fast(trajectory)
+                    consistency_method_tag = "consistency-fast"
+                else:
+                    from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+                    consistency_results = generate_consistency_guidelines(trajectory)
+                    consistency_method_tag = "consistency"
                 guideline_entities += [
                     Entity(
                         type="guideline",
@@ -874,7 +881,7 @@ class PhoenixSync:
                             "rationale": guideline.rationale,
                             "trigger": guideline.trigger,
                             "implementation_steps": guideline.implementation_steps,
-                            "generation_method": "consistency",
+                            "generation_method": consistency_method_tag,
                         },
                     )
                     for result in consistency_results
@@ -885,7 +892,7 @@ class PhoenixSync:
                     raise
                 logger.warning(
                     f"Consistency guideline generation failed for trace {trajectory['trace_id']}, "
-                    f"skipping consistency results (regular guidelines unaffected): {e}"
+                    f"skipping consistency results (standard guidelines unaffected): {e}"
                 )
         # Write trajectory entity only after generation succeeded so a generation
         # failure leaves the trace unprocessed and eligible for retry on the next run.
