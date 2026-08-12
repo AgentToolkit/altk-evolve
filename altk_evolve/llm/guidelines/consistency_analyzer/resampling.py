@@ -67,11 +67,12 @@ def resample_trajectory(
 
         prompt = step["messages"]
         step_model = step["llm_params"].get("model")
+        # Prefer the model actually used at this step in the original trajectory;
+        # fall back to the configured default only when the step genuinely has none.
         model = step_model or model_name
-        # Only forward the configured provider when falling back to the configured
-        # model. For per-step models from the traced trajectory, let litellm infer
-        # the provider to avoid misrouting (e.g. a claude model to the openai endpoint).
-        provider = None if step_model else custom_llm_provider
+        # custom_llm_provider is never recorded per-step in the trajectory (only
+        # `model` is) — it's always a deployment-wide routing setting, so it applies
+        # regardless of which model name is used for this step.
         tools = step.get("tools", None)
 
         response_samples = get_response_sampling(
@@ -80,7 +81,7 @@ def resample_trajectory(
             temperature=temperature,
             samples=samples,
             tools=tools,
-            custom_llm_provider=provider,
+            custom_llm_provider=custom_llm_provider,
         )
 
         step["sampling"] = extract_raw_samples(response_samples)

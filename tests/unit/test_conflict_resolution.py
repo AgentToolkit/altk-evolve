@@ -450,14 +450,14 @@ def test_resolve_conflicts_update_preserves_old_metadata(mock_completion):
         id="entity_1",
         type="guideline",
         content="Use type hints in Python",
-        metadata={"generation_method": "regular", "category": "style"},
+        metadata={"generation_method": "standard", "category": "style"},
         created_at=datetime.now(),
     )
     new_entity = RecordedEntity(
         id="new_entity_1",
         type="guideline",
         content="Use type hints and docstrings in Python",
-        metadata={"generation_method": "regular", "category": "style"},
+        metadata={"generation_method": "standard", "category": "style"},
         created_at=datetime.now(),
     )
     llm_response = json.dumps(
@@ -481,19 +481,19 @@ def test_resolve_conflicts_update_preserves_old_metadata(mock_completion):
     result = resolve_conflicts([old_entity], [new_entity])
 
     assert result[0].event == "UPDATE"
-    assert result[0].metadata.get("generation_method") == "regular"
+    assert result[0].metadata.get("generation_method") == "standard"
     assert result[0].metadata.get("category") == "style"
 
 
 @pytest.mark.unit
 @patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
 def test_resolve_conflicts_update_unions_generation_methods(mock_completion):
-    """When old entity has generation_method=regular and incoming has consistency, UPDATE unions them."""
+    """When old entity has generation_method=standard and incoming has consistency, UPDATE unions them."""
     old_entity = RecordedEntity(
         id="entity_1",
         type="guideline",
         content="Use type hints in Python",
-        metadata={"generation_method": "regular", "category": "style"},
+        metadata={"generation_method": "standard", "category": "style"},
         created_at=datetime.now(),
     )
     new_entity = RecordedEntity(
@@ -526,6 +526,6 @@ def test_resolve_conflicts_update_unions_generation_methods(mock_completion):
     assert result[0].event == "UPDATE"
     # UPDATE preserves the old entity's metadata — generation_method stays as-is.
     # Provenance union is not attempted (no reliable mapping from UPDATE → source entities).
-    assert result[0].metadata.get("generation_method") == "regular"
+    assert result[0].metadata.get("generation_method") == "standard"
     assert "generation_methods" not in result[0].metadata
     assert result[0].metadata.get("category") == "style"
