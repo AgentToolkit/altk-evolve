@@ -8,9 +8,12 @@ import pytest
 
 from altk_evolve.config.llm import llm_settings
 from altk_evolve.llm.conflict_resolution.conflict_resolution import (
+    _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS,
+    _conflict_resolution_completion_options,
     resolve_conflicts,
     get_update_entities_messages,
 )
+from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.conflict_resolution import SimpleEntity
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.utils.utils import clean_llm_response
@@ -596,3 +599,119 @@ def test_resolve_conflicts_update_unions_generation_methods(mock_completion):
     assert result[0].metadata.get("generation_method") == "standard"
     assert "generation_methods" not in result[0].metadata
     assert result[0].metadata.get("category") == "style"
+
+
+# =============================================================================
+# Completion options: token budget, JSON mode, and the Groq carve-out
+# =============================================================================
+
+
+def _set_conflict_model(monkeypatch, model, provider):
+    monkeypatch.setattr(llm_settings, "conflict_resolution_model", model)
+    monkeypatch.setattr(llm_settings, "custom_llm_provider", provider)
+
+
+@pytest.mark.unit
+def test_groq_gpt_oss_gets_a_token_budget_and_no_response_format(monkeypatch):
+    """Groq keeps the prompt-and-parse path.
+
+    LiteLLM reports response-format support for groq/openai/gpt-oss while the
+    model can still fail when a schema/tool-backed reply is required (#264), so
+    the fix here is a completion budget, not constrained decoding. If this starts
+    failing because response_format was enabled for Groq, live-test
+    groq/openai/gpt-oss-120b before accepting the change.
+    """
+    _set_conflict_model(monkeypatch, "groq/openai/gpt-oss-120b", "groq")
+
+    options = _conflict_resolution_completion_options()
+
+    assert options["max_tokens"] == _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS
+    assert options["reasoning_effort"] == "low"
+    assert "response_format" not in options
+
+
+@pytest.mark.unit
+def test_capable_provider_gets_json_mode(monkeypatch):
+    _set_conflict_model(monkeypatch, "gpt-4o", "openai")
+
+    options = _conflict_resolution_completion_options()
+
+    assert options["response_format"] == {"type": "json_object"}
+    # The budget override is Groq-specific and must not leak to other providers.
+    assert "max_tokens" not in options
+    assert "reasoning_effort" not in options
+
+
+@pytest.mark.unit
+def test_provider_without_response_format_support_gets_no_options(monkeypatch):
+    _set_conflict_model(monkeypatch, "gpt-4o", "openai")
+
+    with patch(
+        "altk_evolve.llm.conflict_resolution.conflict_resolution.get_supported_openai_params",
+        return_value=["temperature"],
+    ):
+        options = _conflict_resolution_completion_options()
+
+    assert options == {}
+
+
+# =============================================================================
+# finish_reason: truncation is a distinct failure from malformed output
+# =============================================================================
+
+
+def _mock_reply(content, finish_reason="stop"):
+    response = Mock()
+    choice = Mock()
+    choice.message.content = content
+    choice.finish_reason = finish_reason
+    response.choices = [choice]
+    return response
+
+
+@pytest.mark.unit
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
+def test_truncated_reply_is_reported_as_a_budget_problem(mock_completion, sample_recorded_entities):
+    mock_completion.return_value = _mock_reply(
+        '{"entities": [{"id": "e1", "type": "guideline", "content": "Valid',
+        finish_reason="length",
+    )
+
+    with pytest.raises(EvolveException) as excinfo:
+        resolve_conflicts(sample_recorded_entities, sample_recorded_entities)
+
+    # The actionable cause is surfaced on the chained error, not buried in a
+    # generic "Expecting value" JSON message.
+    assert "cut off by the completion budget" in str(excinfo.value.__cause__)
+
+
+@pytest.mark.unit
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
+def test_empty_truncated_reply_names_the_budget(mock_completion, sample_recorded_entities):
+    mock_completion.return_value = _mock_reply("", finish_reason="length")
+
+    with pytest.raises(EvolveException) as excinfo:
+        resolve_conflicts(sample_recorded_entities, sample_recorded_entities)
+
+    assert "completion budget was spent before any JSON" in str(excinfo.value.__cause__)
+
+
+@pytest.mark.unit
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
+def test_complete_reply_at_the_budget_limit_is_still_accepted(mock_completion, sample_recorded_entities):
+    """finish_reason=length does not by itself mean the JSON is unusable.
+
+    A reply can stop exactly at the limit and still be complete; rejecting on the
+    flag alone would discard good output, so truncation is only reported when the
+    content also fails to parse.
+    """
+    mock_completion.return_value = _mock_reply(
+        json.dumps({"entities": [{"id": "e1", "type": "guideline", "content": "x", "event": "NONE"}]}),
+        finish_reason="length",
+    )
+
+    result = resolve_conflicts(sample_recorded_entities, sample_recorded_entities)
+
+    assert len(result) == 1
+    assert result[0].event == "NONE"
+    assert mock_completion.call_count == 1

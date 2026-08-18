@@ -7,7 +7,7 @@ from altk_evolve.schema.conflict_resolution import SimpleEntity, EntityUpdate
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.utils.utils import clean_llm_response, serialize_content
-from litellm import completion
+from litellm import completion, get_supported_openai_params
 from pathlib import Path
 
 
@@ -21,15 +21,42 @@ _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS = 8192
 
 
 def _conflict_resolution_completion_options() -> dict[str, object]:
-    """Keep GPT-OSS reasoning from exhausting the conflict JSON budget."""
+    """Per-provider completion options for conflict resolution.
+
+    Two independent concerns:
+    - GPT-OSS on Groq spends the completion budget on reasoning tokens, leaving
+      nothing for the conflict JSON, so cap tokens and lower reasoning effort.
+    - Ask for JSON mode where the provider handles it, so the reply is
+      constrained at the source instead of being recovered afterwards.
+
+    Groq is deliberately excluded from response_format on the same grounds as
+    guideline generation (#264): LiteLLM reports response-format support for
+    groq/openai/gpt-oss while the model can still fail when a schema- or
+    tool-backed response is required. Groq therefore stays on the
+    prompt-and-parse path, protected by the token budget above and by
+    clean_llm_response recovery. Do not enable it here without live-testing
+    groq/openai/gpt-oss-120b first.
+    """
     model = llm_settings.conflict_resolution_model.strip().lower()
     provider = (llm_settings.custom_llm_provider or "").strip().lower()
-    if "gpt-oss" in model and (provider == "groq" or model.startswith("groq/")):
-        return {
-            "max_tokens": _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS,
-            "reasoning_effort": "low",
-        }
-    return {}
+    is_groq = provider == "groq" or model.startswith("groq/")
+
+    options: dict[str, object] = {}
+    if is_groq:
+        if "gpt-oss" in model:
+            options["max_tokens"] = _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS
+            options["reasoning_effort"] = "low"
+        return options
+
+    supported_params = get_supported_openai_params(
+        model=llm_settings.conflict_resolution_model,
+        custom_llm_provider=llm_settings.custom_llm_provider,
+    )
+    if supported_params and "response_format" in supported_params:
+        # Plain JSON mode, not a schema: the prompt already fixes the shape, and
+        # json_object needs no tool routing.
+        options["response_format"] = {"type": "json_object"}
+    return options
 
 
 def resolve_conflicts(
@@ -60,11 +87,29 @@ def resolve_conflicts(
                 custom_llm_provider=llm_settings.custom_llm_provider,
                 **_conflict_resolution_completion_options(),
             )
-            response = completion_response.choices[0].message.content or ""  # type: ignore[union-attr]
-            response = clean_llm_response(response)
+            choice = completion_response.choices[0]
+            # A budget-capped reply is a different failure from a malformed one and
+            # needs a different fix (raise the budget or send fewer entities), so
+            # name it rather than surfacing a generic JSON error. Checked only when
+            # the content does not parse: a reply can stop exactly at the limit and
+            # still be complete, and rejecting that would throw away good output.
+            truncated = str(getattr(choice, "finish_reason", "") or "") == "length"
+            response = clean_llm_response(choice.message.content or "")  # type: ignore[union-attr]
             if not response:
-                raise ValueError("Conflict resolution LLM returned an empty response")
-            parsed = json.loads(response)
+                raise ValueError(
+                    "Conflict resolution LLM returned an empty response"
+                    + (" because the completion budget was spent before any JSON (finish_reason=length)" if truncated else "")
+                )
+            try:
+                parsed = json.loads(response)
+            except json.JSONDecodeError as decode_error:
+                if truncated:
+                    raise ValueError(
+                        "Conflict resolution response was cut off by the completion"
+                        " budget (finish_reason=length); raise max_tokens or send"
+                        " fewer entities per request"
+                    ) from decode_error
+                raise
             entity_updates = [EntityUpdate.model_validate(event) for event in parsed["entities"]]
             for update in entity_updates:
                 if update.event == "ADD":
