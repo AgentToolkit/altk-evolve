@@ -13,6 +13,7 @@ from altk_evolve.llm.conflict_resolution.conflict_resolution import (
 )
 from altk_evolve.schema.conflict_resolution import SimpleEntity
 from altk_evolve.schema.core import RecordedEntity
+from altk_evolve.utils.utils import clean_llm_response
 
 
 # =============================================================================
@@ -146,6 +147,31 @@ def mock_llm_response_with_markdown():
     ]
 }
 ```"""
+
+
+@pytest.mark.unit
+def test_clean_llm_response_extracts_embedded_json():
+    """Test JSON extraction when providers add explanatory text around the payload."""
+    expected = {"entities": []}
+
+    assert (
+        json.loads(
+            clean_llm_response(
+                """
+Here is the reconciled output:
+
+```json
+{"entities": []}
+```
+
+Done.
+"""
+            )
+        )
+        == expected
+    )
+
+    assert json.loads(clean_llm_response('Result: {"entities": []}\nThanks.')) == expected
 
 
 # =============================================================================
@@ -324,6 +350,18 @@ def test_resolve_conflicts_response_parsing(
     mock_response = Mock()
     mock_response.choices = [Mock()]
     mock_response.choices[0].message.content = mock_llm_response_with_markdown
+    mock_completion.return_value = mock_response
+
+    result = resolve_conflicts(
+        sample_recorded_entities,
+        sample_recorded_entities,
+    )
+
+    assert len(result) == 1
+    assert result[0].event == "NONE"
+
+    # Test that provider-added text around a code block is cleaned before parsing
+    mock_response.choices[0].message.content = f"Here is the reconciled output:\n{mock_llm_response_with_markdown}\nDone."
     mock_completion.return_value = mock_response
 
     result = resolve_conflicts(
