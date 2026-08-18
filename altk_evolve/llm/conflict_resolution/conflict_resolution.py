@@ -1,4 +1,5 @@
 import json
+import os
 
 from jinja2 import Template
 from altk_evolve.config.llm import llm_settings
@@ -20,41 +21,57 @@ _STICKY_STORED_METADATA_KEYS = ("generation_method",)
 _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS = 8192
 
 
+def _is_groq_gpt_oss_target() -> bool:
+    """Is the conflict model GPT-OSS served by Groq, reached by any route?
+
+    Provider and model prefix are not enough. wxo-agentic-memory sets
+    EVOLVE_CUSTOM_LLM_PROVIDER=openai whenever it routes through its AI gateway,
+    so a Groq-backed model arrives looking like OpenAI and the budget below
+    silently stops applying -- on the one model whose reasoning tokens eat the
+    reply. Measured against Groq gpt-oss-120b: ~2400 characters of reasoning
+    without the cap, ~350 with it.
+    """
+    model = llm_settings.conflict_resolution_model.strip().lower()
+    if "gpt-oss" not in model:
+        return False
+    provider = (llm_settings.custom_llm_provider or "").strip().lower()
+    if provider == "groq" or model.startswith("groq/"):
+        return True
+    base_url = (os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE") or "").lower()
+    return "groq" in base_url
+
+
 def _conflict_resolution_completion_options() -> dict[str, object]:
     """Per-provider completion options for conflict resolution.
 
-    Two independent concerns:
-    - GPT-OSS on Groq spends the completion budget on reasoning tokens, leaving
-      nothing for the conflict JSON, so cap tokens and lower reasoning effort.
-    - Ask for JSON mode where the provider handles it, so the reply is
-      constrained at the source instead of being recovered afterwards.
+    Ask for JSON mode wherever the provider handles it, so the reply is
+    constrained at the source rather than repaired afterwards. Plain
+    {"type": "json_object"} rather than a schema: the prompt already fixes the
+    shape, and json_object needs no tool routing -- which is what #264 found
+    Groq failing on. Verified live against Groq gpt-oss-120b through both the
+    groq provider and an OpenAI-compatible base URL.
 
-    Groq is deliberately excluded from response_format on the same grounds as
-    guideline generation (#264): LiteLLM reports response-format support for
-    groq/openai/gpt-oss while the model can still fail when a schema- or
-    tool-backed response is required. Groq therefore stays on the
-    prompt-and-parse path, protected by the token budget above and by
-    clean_llm_response recovery. Do not enable it here without live-testing
-    groq/openai/gpt-oss-120b first.
+    GPT-OSS on Groq additionally needs its reasoning bounded, or it spends the
+    completion budget before emitting any JSON.
     """
-    model = llm_settings.conflict_resolution_model.strip().lower()
-    provider = (llm_settings.custom_llm_provider or "").strip().lower()
-    is_groq = provider == "groq" or model.startswith("groq/")
-
-    options: dict[str, object] = {}
-    if is_groq:
-        if "gpt-oss" in model:
-            options["max_tokens"] = _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS
-            options["reasoning_effort"] = "low"
-        return options
-
-    supported_params = get_supported_openai_params(
-        model=llm_settings.conflict_resolution_model,
-        custom_llm_provider=llm_settings.custom_llm_provider,
+    supported_params = (
+        get_supported_openai_params(
+            model=llm_settings.conflict_resolution_model,
+            custom_llm_provider=llm_settings.custom_llm_provider,
+        )
+        or []
     )
-    if supported_params and "response_format" in supported_params:
-        # Plain JSON mode, not a schema: the prompt already fixes the shape, and
-        # json_object needs no tool routing.
+    options: dict[str, object] = {}
+
+    if _is_groq_gpt_oss_target():
+        options["max_tokens"] = _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS
+        # litellm RAISES UnsupportedParamsError rather than dropping this when the
+        # provider is openai, even though the Groq endpoint behind it accepts it,
+        # so it has to be gated on what litellm thinks it can send.
+        if "reasoning_effort" in supported_params:
+            options["reasoning_effort"] = "low"
+
+    if "response_format" in supported_params:
         options["response_format"] = {"type": "json_object"}
     return options
 

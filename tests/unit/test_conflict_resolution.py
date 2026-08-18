@@ -612,14 +612,12 @@ def _set_conflict_model(monkeypatch, model, provider):
 
 
 @pytest.mark.unit
-def test_groq_gpt_oss_gets_a_token_budget_and_no_response_format(monkeypatch):
-    """Groq keeps the prompt-and-parse path.
+def test_groq_gpt_oss_gets_budget_reasoning_cap_and_json_mode(monkeypatch):
+    """The Groq path needs its reasoning bounded, and tolerates JSON mode.
 
-    LiteLLM reports response-format support for groq/openai/gpt-oss while the
-    model can still fail when a schema/tool-backed reply is required (#264), so
-    the fix here is a completion budget, not constrained decoding. If this starts
-    failing because response_format was enabled for Groq, live-test
-    groq/openai/gpt-oss-120b before accepting the change.
+    #264 excluded Groq from *schema/tool-backed* response_format after the model
+    failed when no tool call was produced. Plain json_object involves no tool
+    routing, and was verified live against groq/openai/gpt-oss-120b.
     """
     _set_conflict_model(monkeypatch, "groq/openai/gpt-oss-120b", "groq")
 
@@ -627,12 +625,45 @@ def test_groq_gpt_oss_gets_a_token_budget_and_no_response_format(monkeypatch):
 
     assert options["max_tokens"] == _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS
     assert options["reasoning_effort"] == "low"
-    assert "response_format" not in options
+    assert options["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.unit
+def test_groq_behind_an_openai_compatible_base_url_still_gets_the_budget(monkeypatch):
+    """The gateway shape: Groq reached with custom_llm_provider=openai.
+
+    wxo-agentic-memory sets provider=openai when it routes through its AI
+    gateway, so provider and model prefix alone miss a Groq-backed model. Losing
+    the budget here is not cosmetic: measured live, reasoning grew from ~350 to
+    ~2400 characters without the cap, on the model whose reasoning is what
+    exhausts the reply in the first place.
+    """
+    _set_conflict_model(monkeypatch, "openai/gpt-oss-120b", "openai")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1")
+
+    options = _conflict_resolution_completion_options()
+
+    assert options["max_tokens"] == _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS
+    # litellm raises UnsupportedParamsError for reasoning_effort under the openai
+    # provider, so it must be omitted rather than sent hopefully.
+    assert "reasoning_effort" not in options
+    assert options["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.unit
+def test_non_groq_base_url_does_not_trigger_the_groq_budget(monkeypatch):
+    _set_conflict_model(monkeypatch, "openai/gpt-oss-120b", "openai")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+    options = _conflict_resolution_completion_options()
+
+    assert "max_tokens" not in options
 
 
 @pytest.mark.unit
 def test_capable_provider_gets_json_mode(monkeypatch):
     _set_conflict_model(monkeypatch, "gpt-4o", "openai")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
     options = _conflict_resolution_completion_options()
 
@@ -645,6 +676,7 @@ def test_capable_provider_gets_json_mode(monkeypatch):
 @pytest.mark.unit
 def test_provider_without_response_format_support_gets_no_options(monkeypatch):
     _set_conflict_model(monkeypatch, "gpt-4o", "openai")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
     with patch(
         "altk_evolve.llm.conflict_resolution.conflict_resolution.get_supported_openai_params",
