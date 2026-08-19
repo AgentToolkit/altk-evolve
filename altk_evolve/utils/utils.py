@@ -46,29 +46,51 @@ def _extract_json_payload(content: str) -> str | None:
         content,
         flags=re.MULTILINE | re.DOTALL,
     ):
-        payload = _decode_json_fragment(match.group(1).strip(), decoder)
+        payload, _ = _decode_json_prefix(match.group(1).strip(), decoder)
         if payload is not None:
             return payload
 
-    payload = _decode_json_fragment(content, decoder)
+    payload, _ = _decode_json_prefix(content, decoder)
     if payload is not None:
         return payload
 
     for index, char in enumerate(content):
         if char not in "{[":
             continue
-        payload = _decode_json_fragment(content[index:], decoder)
+        payload, incomplete = _decode_json_prefix(content[index:], decoder)
         if payload is not None:
             return payload
+        if incomplete:
+            # This container never closed, so it runs to the end of the input and
+            # every later `{`/`[` is nested inside it. Decoding one of those would
+            # return a FRAGMENT of the reply while looking like a success: a
+            # truncated {"entities": [...]} yields a lone entity object, and a
+            # truncated [{"entities": [...]}, ...] yields a complete-looking
+            # response holding only the events that arrived. Both hide the
+            # truncation from the caller, and the second would be applied.
+            # Give up instead, so the caller sees a parse failure and can report
+            # the reply as cut short.
+            return None
 
     return None
 
 
-def _decode_json_fragment(fragment: str, decoder: json.JSONDecoder) -> str | None:
+def _decode_json_prefix(fragment: str, decoder: json.JSONDecoder) -> tuple[str | None, bool]:
+    """Decode the JSON value starting at the beginning of *fragment*.
+
+    Returns (payload, incomplete). `incomplete` distinguishes "ran out of input"
+    from "not JSON": the decoder either reports a position at the end of the
+    input, or names an unterminated construct. Only the former means a later
+    fragment would be nested inside something unfinished.
+    """
     fragment = fragment.strip()
+    if not fragment:
+        return None, False
+
     try:
         _, end = decoder.raw_decode(fragment)
-    except JSONDecodeError:
-        return None
+    except JSONDecodeError as error:
+        incomplete = error.pos >= len(fragment) or error.msg.startswith("Unterminated")
+        return None, incomplete
 
-    return fragment[:end].strip()
+    return fragment[:end].strip(), False

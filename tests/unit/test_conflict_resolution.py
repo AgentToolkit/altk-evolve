@@ -747,3 +747,72 @@ def test_complete_reply_at_the_budget_limit_is_still_accepted(mock_completion, s
     assert len(result) == 1
     assert result[0].event == "NONE"
     assert mock_completion.call_count == 1
+
+
+# =============================================================================
+# Truncated replies must not be recovered from a nested fragment
+# =============================================================================
+
+
+TRUNCATED_ENTITIES_ARRAY = '{"entities": [{"id": "e1", "type": "guideline", "content": "x", "event": "NONE"}, {"id": "e2", "cont'
+TRUNCATED_OUTER_ARRAY = '[{"entities": [{"id": "e1", "type": "guideline", "content": "x", "event": "DELETE"}]}, {"entiti'
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "label,reply",
+    [
+        ("entities array cut mid-entity", TRUNCATED_ENTITIES_ARRAY),
+        ("outer array cut after first response", TRUNCATED_OUTER_ARRAY),
+        ("cut immediately after a key", '{"entities": [{"id": "e1"}, {"id": '),
+    ],
+)
+def test_truncated_reply_is_not_recovered_from_a_nested_fragment(label, reply):
+    """A cut-off document must stay a parse failure.
+
+    Scanning for an embedded payload used to accept any decodable `{`/`[`, so a
+    truncated document handed back a complete NESTED value: the first case yields
+    a lone entity object, and the second a response object holding only the
+    events that arrived. Both parse, so the finish_reason=length diagnosis was
+    lost — and the second still has an "entities" key, so a partial verdict
+    including a DELETE would have been applied as if it were the whole answer.
+    """
+    cleaned = clean_llm_response(reply)
+
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(cleaned)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "label,reply",
+    [
+        ("prose preamble", 'Here is the reconciliation:\n{"entities": []}'),
+        # A brace in the prose must not stop the scan: the first candidate fails
+        # because it is not JSON, which is different from being unfinished.
+        ("brace in prose", 'The rule mentions {discount_pct} so:\n{"entities": []}'),
+        ("fenced with trailing text", '```json\n{"entities": []}\n```\nLet me know.'),
+        ("bare object", '{"entities": []}'),
+    ],
+)
+def test_wrapped_but_complete_replies_are_still_recovered(label, reply):
+    parsed = json.loads(clean_llm_response(reply))
+
+    assert parsed == {"entities": []}
+
+
+@pytest.mark.unit
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
+def test_truncated_nested_fragment_still_reports_the_budget(mock_completion, sample_recorded_entities):
+    """End to end: the reason a caller is given must name the real problem.
+
+    Before the recovery scan was tightened this surfaced as a KeyError on
+    parsed["entities"] after three attempts, pointing a reader at the schema
+    rather than at the completion budget.
+    """
+    mock_completion.return_value = _mock_reply(TRUNCATED_ENTITIES_ARRAY, finish_reason="length")
+
+    with pytest.raises(EvolveException) as excinfo:
+        resolve_conflicts(sample_recorded_entities, sample_recorded_entities)
+
+    assert "cut off by the completion budget" in str(excinfo.value.__cause__)
