@@ -50,6 +50,7 @@ from config import (  # noqa: E402
     save_config,
     set_repos,
 )
+from entity_io import write_clone_gitignore  # noqa: E402
 
 
 def main():
@@ -99,6 +100,10 @@ def main():
         detail = (exc.stderr or exc.stdout or "").strip() or f"exit {exc.returncode}"
         print(f"Error: git clone failed: {detail}", file=sys.stderr)
         sys.exit(1)
+
+    # Write a protective .gitignore into the clone so noise files can never
+    # be accidentally staged or pushed from this directory.
+    write_clone_gitignore(dest)
 
     repos.append(
         {
