@@ -4,6 +4,90 @@
 
 <!-- version list -->
 
+## v1.1.6 (2026-08-19)
+
+### Bug Fixes
+
+- Address CodeRabbit nitpicks on PR #300
+  ([#300](https://github.com/AgentToolkit/altk-evolve/pull/300),
+  [`bfff823`](https://github.com/AgentToolkit/altk-evolve/commit/bfff8238a0a897d591a7fee14953038f7adfdf4b))
+
+- **conflicts**: Detect Groq behind an OpenAI-compatible base URL
+  ([#306](https://github.com/AgentToolkit/altk-evolve/pull/306),
+  [`5aea550`](https://github.com/AgentToolkit/altk-evolve/commit/5aea550105dc2c4050f238c281f68cb0070d3eaf))
+
+- **conflicts**: Do not recover a nested fragment of a truncated reply
+  ([#306](https://github.com/AgentToolkit/altk-evolve/pull/306),
+  [`5aea550`](https://github.com/AgentToolkit/altk-evolve/commit/5aea550105dc2c4050f238c281f68cb0070d3eaf))
+
+- **conflicts**: Preserve Groq GPT-OSS conflict output
+  ([#306](https://github.com/AgentToolkit/altk-evolve/pull/306),
+  [`5aea550`](https://github.com/AgentToolkit/altk-evolve/commit/5aea550105dc2c4050f238c281f68cb0070d3eaf))
+
+- **conflicts**: Recover conflict JSON that providers wrap in prose
+  ([#306](https://github.com/AgentToolkit/altk-evolve/pull/306),
+  [`5aea550`](https://github.com/AgentToolkit/altk-evolve/commit/5aea550105dc2c4050f238c281f68cb0070d3eaf))
+
+- **conflicts**: Request JSON mode and diagnose truncated replies
+  ([#306](https://github.com/AgentToolkit/altk-evolve/pull/306),
+  [`5aea550`](https://github.com/AgentToolkit/altk-evolve/commit/5aea550105dc2c4050f238c281f68cb0070d3eaf))
+
+- **conflicts**: Survive real-world conflict-resolution responses
+  ([#306](https://github.com/AgentToolkit/altk-evolve/pull/306),
+  [`5aea550`](https://github.com/AgentToolkit/altk-evolve/commit/5aea550105dc2c4050f238c281f68cb0070d3eaf))
+
+- **deps**: Update gitpython ([#303](https://github.com/AgentToolkit/altk-evolve/pull/303),
+  [`4b03cc4`](https://github.com/AgentToolkit/altk-evolve/commit/4b03cc41e450399e7b1a063f3332bbbe7dbaf1b6))
+
+- **examples**: Propagate agent-run failures as a nonzero exit
+  ([#297](https://github.com/AgentToolkit/altk-evolve/pull/297),
+  [`05f3641`](https://github.com/AgentToolkit/altk-evolve/commit/05f364185e2a3b4883dcb815a7f14d589f6ec449))
+
+- **guidelines**: Guard native tool-call argument formatting against non-dict args
+  ([#300](https://github.com/AgentToolkit/altk-evolve/pull/300),
+  [`bfff823`](https://github.com/AgentToolkit/altk-evolve/commit/bfff8238a0a897d591a7fee14953038f7adfdf4b))
+
+- **guidelines**: Parse native tool_calls shape in parse_openai_agents_trajectory
+  ([#300](https://github.com/AgentToolkit/altk-evolve/pull/300),
+  [`bfff823`](https://github.com/AgentToolkit/altk-evolve/commit/bfff8238a0a897d591a7fee14953038f7adfdf4b))
+
+- **guidelines**: Stop dropping native tool calls on messages that also carry text
+  ([#300](https://github.com/AgentToolkit/altk-evolve/pull/300),
+  [`bfff823`](https://github.com/AgentToolkit/altk-evolve/commit/bfff8238a0a897d591a7fee14953038f7adfdf4b))
+
+- **guidelines**: Warn when removed uncertainty env vars are still set
+  ([#300](https://github.com/AgentToolkit/altk-evolve/pull/300),
+  [`bfff823`](https://github.com/AgentToolkit/altk-evolve/commit/bfff8238a0a897d591a7fee14953038f7adfdf4b))
+
+### Documentation
+
+- Document custom_llm_provider misrouting risk for mixed-provider resampling
+  ([#300](https://github.com/AgentToolkit/altk-evolve/pull/300),
+  [`bfff823`](https://github.com/AgentToolkit/altk-evolve/commit/bfff8238a0a897d591a7fee14953038f7adfdf4b))
+
+- Document guideline generation modes and add end-to-end tutorial
+  ([#297](https://github.com/AgentToolkit/altk-evolve/pull/297),
+  [`05f3641`](https://github.com/AgentToolkit/altk-evolve/commit/05f364185e2a3b4883dcb815a7f14d589f6ec449))
+
+- Fix stale EVOLVE_GUIDELINES_MODE example values
+  ([#300](https://github.com/AgentToolkit/altk-evolve/pull/300),
+  [`bfff823`](https://github.com/AgentToolkit/altk-evolve/commit/bfff8238a0a897d591a7fee14953038f7adfdf4b))
+
+- Mention both mode alongside regular/consistency in low-code-tracing
+  ([#297](https://github.com/AgentToolkit/altk-evolve/pull/297),
+  [`05f3641`](https://github.com/AgentToolkit/altk-evolve/commit/05f364185e2a3b4883dcb815a7f14d589f6ec449))
+
+- **guidelines**: Add missing docstrings on functions touched by this PR
+  ([#300](https://github.com/AgentToolkit/altk-evolve/pull/300),
+  [`bfff823`](https://github.com/AgentToolkit/altk-evolve/commit/bfff8238a0a897d591a7fee14953038f7adfdf4b))
+
+### Features
+
+- **guidelines**: Add consistency-fast pipeline, simplify configuration
+  ([#300](https://github.com/AgentToolkit/altk-evolve/pull/300),
+  [`bfff823`](https://github.com/AgentToolkit/altk-evolve/commit/bfff8238a0a897d591a7fee14953038f7adfdf4b))
+
+
 ## v1.1.5 (2026-07-24)
 
 ### Bug Fixes
