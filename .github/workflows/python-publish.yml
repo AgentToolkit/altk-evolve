@@ -16,16 +16,72 @@ jobs:
       name: pypi
       url: https://pypi.org/project/altk-evolve
     steps:
+      # Wait for the release assets instead of assuming they are already there.
+      #
+      # GitHub fires `release: published` as soon as the release is published,
+      # but release-github.yaml attaches the sdist/wheel *after* that point, so
+      # this job can start before the assets exist. On v1.1.6 it started at
+      # 18:23:46 and failed at 18:23:47 with "no assets to download", while the
+      # wheel landed at 18:23:46 and the sdist at 18:23:47 — lost by under a
+      # second (run 32287087213), leaving a tagged release whose artifacts never
+      # reached PyPI and had to be published by re-running this job by hand.
+      #
+      # Retrying turns that manual re-run into something automatic. We
+      # deliberately keep downloading the release's own assets rather than
+      # rebuilding here: the artifacts are produced by `uv build` inside
+      # semantic-release's build_command, which first runs the npm UI build and
+      # rewrites README/install.sh for the new version. A plain `python -m build`
+      # in this job would silently omit all of that.
       - name: Download release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          mkdir dist
-          gh release download "${{ github.event.release.tag_name }}" \
-            --repo "${{ github.repository }}" \
-            --pattern "*.tar.gz" \
-            --pattern "*.whl" \
-            --dir dist/
+          mkdir -p dist
+          shopt -s nullglob
+
+          # Retry until BOTH artifact types are present, not merely until the
+          # download command succeeds. `gh release download` only errors when
+          # *no* pattern matches anything; when the wheel is up but the sdist is
+          # not, it downloads the wheel and exits 0. On v1.1.6 those two landed
+          # one second apart, so a partial download is the likely case here, not
+          # a corner case -- breaking on it would fail the job and still require
+          # the manual re-run this change exists to remove.
+          #
+          # --clobber lets a retry replace what a partial attempt already wrote;
+          # without it `gh release download` exits 1 on the pre-existing file and
+          # the loop could never recover.
+          for attempt in $(seq 1 30); do
+            gh release download "$TAG" \
+              --repo "${{ github.repository }}" \
+              --pattern "*.tar.gz" \
+              --pattern "*.whl" \
+              --dir dist/ \
+              --clobber || true
+
+            sdists=(dist/*.tar.gz)
+            wheels=(dist/*.whl)
+            if [ ${#sdists[@]} -gt 0 ] && [ ${#wheels[@]} -gt 0 ]; then
+              echo "Got sdist and wheel for $TAG on attempt $attempt."
+              break
+            fi
+
+            echo "Incomplete assets for $TAG (${#sdists[@]} sdist, ${#wheels[@]} wheel) on attempt $attempt/30; retrying in 10s..."
+            sleep 10
+          done
+
+          # Retained as a safeguard: never hand a partial or empty directory to
+          # the publish step, which would otherwise succeed while uploading an
+          # incomplete set.
+          sdists=(dist/*.tar.gz)
+          wheels=(dist/*.whl)
+          if [ ${#sdists[@]} -eq 0 ] || [ ${#wheels[@]} -eq 0 ]; then
+            echo "::error::Expected both an sdist and a wheel for $TAG; found ${#sdists[@]} sdist(s) and ${#wheels[@]} wheel(s) after 5 minutes of retries."
+            ls -la dist/ || true
+            exit 1
+          fi
+          echo "Found ${#sdists[@]} sdist(s) and ${#wheels[@]} wheel(s):"
+          ls -la dist/
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
