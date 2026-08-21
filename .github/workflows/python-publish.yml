@@ -37,26 +37,46 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
-          mkdir dist
+          mkdir -p dist
+          shopt -s nullglob
+
+          # Retry until BOTH artifact types are present, not merely until the
+          # download command succeeds. `gh release download` only errors when
+          # *no* pattern matches anything; when the wheel is up but the sdist is
+          # not, it downloads the wheel and exits 0. On v1.1.6 those two landed
+          # one second apart, so a partial download is the likely case here, not
+          # a corner case -- breaking on it would fail the job and still require
+          # the manual re-run this change exists to remove.
+          #
+          # --clobber lets a retry replace what a partial attempt already wrote;
+          # without it `gh release download` exits 1 on the pre-existing file and
+          # the loop could never recover.
           for attempt in $(seq 1 30); do
-            if gh release download "$TAG" \
-                 --repo "${{ github.repository }}" \
-                 --pattern "*.tar.gz" \
-                 --pattern "*.whl" \
-                 --dir dist/; then
-              echo "Downloaded release assets on attempt $attempt."
+            gh release download "$TAG" \
+              --repo "${{ github.repository }}" \
+              --pattern "*.tar.gz" \
+              --pattern "*.whl" \
+              --dir dist/ \
+              --clobber || true
+
+            sdists=(dist/*.tar.gz)
+            wheels=(dist/*.whl)
+            if [ ${#sdists[@]} -gt 0 ] && [ ${#wheels[@]} -gt 0 ]; then
+              echo "Got sdist and wheel for $TAG on attempt $attempt."
               break
             fi
-            echo "Assets for $TAG not available yet (attempt $attempt/30); retrying in 10s..."
+
+            echo "Incomplete assets for $TAG (${#sdists[@]} sdist, ${#wheels[@]} wheel) on attempt $attempt/30; retrying in 10s..."
             sleep 10
           done
-          # Fail loudly rather than handing an empty directory to the publish
-          # step, which would otherwise succeed while uploading nothing.
-          shopt -s nullglob
+
+          # Retained as a safeguard: never hand a partial or empty directory to
+          # the publish step, which would otherwise succeed while uploading an
+          # incomplete set.
           sdists=(dist/*.tar.gz)
           wheels=(dist/*.whl)
           if [ ${#sdists[@]} -eq 0 ] || [ ${#wheels[@]} -eq 0 ]; then
-            echo "::error::No sdist and/or wheel found for $TAG after 5 minutes of retries."
+            echo "::error::Expected both an sdist and a wheel for $TAG; found ${#sdists[@]} sdist(s) and ${#wheels[@]} wheel(s) after 5 minutes of retries."
             ls -la dist/ || true
             exit 1
           fi
