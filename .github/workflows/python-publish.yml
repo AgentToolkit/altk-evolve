@@ -36,37 +36,86 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
+          REPO: ${{ github.repository }}
         run: |
           mkdir -p dist
           shopt -s nullglob
 
-          # Retry until BOTH artifact types are present, not merely until the
-          # download command succeeds. `gh release download` only errors when
-          # *no* pattern matches anything; when the wheel is up but the sdist is
-          # not, it downloads the wheel and exits 0. On v1.1.6 those two landed
-          # one second apart, so a partial download is the likely case here, not
-          # a corner case -- breaking on it would fail the job and still require
-          # the manual re-run this change exists to remove.
+          # `gh release download` opens the destination with O_TRUNC before it
+          # copies and does not remove it when the copy fails, so "the file is
+          # on disk" is not the same as "the file is usable". Reading the
+          # contents is what keeps the counts below honest: a zero-byte or
+          # half-written artifact left behind by a failed transfer would
+          # otherwise satisfy the break condition and get published.
+          usable() {
+            local f="$1"
+            [ -s "$f" ] || return 1
+            case "$f" in
+              # Decompresses the whole stream, so a truncated sdist fails here.
+              *.tar.gz) tar -tzf "$f" >/dev/null 2>&1 || return 1 ;;
+              # ZipFile() needs the central directory, which is written last,
+              # and testzip() CRC-checks every member.
+              *.whl) python3 -c 'import sys, zipfile; sys.exit(1 if zipfile.ZipFile(sys.argv[1]).testzip() else 0)' "$f" 2>/dev/null || return 1 ;;
+              *) return 1 ;;
+            esac
+            return 0
+          }
+
+          # Delete whatever failed validation, so the next attempt re-downloads
+          # it instead of counting it as already present.
+          prune_unusable() {
+            local f
+            for f in dist/*.tar.gz dist/*.whl; do
+              if usable "$f"; then
+                continue
+              fi
+              echo "Discarding unusable artifact $f ($(wc -c <"$f") bytes)."
+              rm -f "$f"
+            done
+            return 0
+          }
+
+          # Retry until BOTH artifact types are present and readable, not merely
+          # until the download command succeeds. `gh release download` only
+          # errors when *no* pattern matches anything; when the wheel is up but
+          # the sdist is not, it downloads the wheel and exits 0. On v1.1.6 those
+          # two landed one second apart, so a partial download is the likely case
+          # here, not a corner case -- breaking on it would fail the job and
+          # still require the manual re-run this change exists to remove.
           #
           # --clobber lets a retry replace what a partial attempt already wrote;
           # without it `gh release download` exits 1 on the pre-existing file and
           # the loop could never recover.
-          for attempt in $(seq 1 30); do
+          #
+          # The bound is a wall-clock deadline checked *before* the sleep, so
+          # every delay is followed by another download. A fixed attempt count
+          # sleeps after its final attempt and then gives up without looking
+          # again, losing an asset that landed during that last delay -- the same
+          # sub-second race this step exists to absorb.
+          deadline=$(( $(date +%s) + 300 ))
+          attempt=0
+          while :; do
+            attempt=$(( attempt + 1 ))
             gh release download "$TAG" \
-              --repo "${{ github.repository }}" \
+              --repo "$REPO" \
               --pattern "*.tar.gz" \
               --pattern "*.whl" \
               --dir dist/ \
               --clobber || true
 
+            prune_unusable
             sdists=(dist/*.tar.gz)
             wheels=(dist/*.whl)
             if [ ${#sdists[@]} -gt 0 ] && [ ${#wheels[@]} -gt 0 ]; then
-              echo "Got sdist and wheel for $TAG on attempt $attempt."
+              echo "Got a usable sdist and wheel for $TAG on attempt $attempt."
               break
             fi
 
-            echo "Incomplete assets for $TAG (${#sdists[@]} sdist, ${#wheels[@]} wheel) on attempt $attempt/30; retrying in 10s..."
+            remaining=$(( deadline - $(date +%s) ))
+            if [ "$remaining" -le 0 ]; then
+              break
+            fi
+            echo "Incomplete assets for $TAG (${#sdists[@]} sdist, ${#wheels[@]} wheel) on attempt $attempt; ${remaining}s of wait left, retrying in 10s..."
             sleep 10
           done
 
@@ -76,7 +125,7 @@ jobs:
           sdists=(dist/*.tar.gz)
           wheels=(dist/*.whl)
           if [ ${#sdists[@]} -eq 0 ] || [ ${#wheels[@]} -eq 0 ]; then
-            echo "::error::Expected both an sdist and a wheel for $TAG; found ${#sdists[@]} sdist(s) and ${#wheels[@]} wheel(s) after 5 minutes of retries."
+            echo "::error::Expected a usable sdist and a usable wheel for $TAG; found ${#sdists[@]} sdist(s) and ${#wheels[@]} wheel(s) after $attempt attempts over ~5 minutes."
             ls -la dist/ || true
             exit 1
           fi
