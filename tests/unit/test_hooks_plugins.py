@@ -1,0 +1,441 @@
+"""Behavior of the in-tree hook plugins (normalizer, access stamp, PII filter).
+
+Requires the optional cpex package (``uv sync --extra hooks``); the PII tests
+additionally require cpex-pii-filter (``--extra pii-regex``).
+"""
+
+import asyncio
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("cpex")
+
+from altk_evolve.config.evolve import EvolveConfig
+from altk_evolve.config.filesystem import FilesystemSettings
+from altk_evolve.config.hooks import HookPluginSpec, HooksConfig
+from altk_evolve.frontend.client.evolve_client import EvolveClient
+from altk_evolve.hooks.manager import dispatch_llm_pre_call, shutdown_hooks
+from altk_evolve.hooks.plugin import HookContext
+from altk_evolve.schema.core import Entity
+
+NORMALIZER_SPEC = HookPluginSpec(
+    name="metadata_normalizer",
+    kind="altk_evolve.hooks.plugins.normalizer.MetadataNormalizerPlugin",
+    hooks=["memory_pre_write"],
+    mode="transform",
+    priority=40,
+)
+ACCESS_STAMP_SPEC = HookPluginSpec(
+    name="access_stamp",
+    kind="altk_evolve.hooks.plugins.access_stamp.AccessStampPlugin",
+    hooks=["memory_post_read"],
+    mode="fire_and_forget",
+)
+PII_SPEC = HookPluginSpec(
+    name="pii_filter_memory",
+    kind="altk_evolve.hooks.plugins.pii.PIIFilterMemoryPlugin",
+    hooks=["memory_pre_write", "llm_pre_call"],
+    mode="transform",
+    priority=10,
+    config={
+        "detect_email": True,
+        "detect_ssn": True,
+        "detect_phone": True,
+        "default_mask_strategy": "redact",
+        "redaction_text": "[REDACTED]",
+    },
+)
+SECRETS_SPEC = HookPluginSpec(
+    name="secrets_filter_memory",
+    kind="altk_evolve.hooks.plugins.secrets.SecretsFilterMemoryPlugin",
+    hooks=["memory_pre_write", "llm_pre_call"],
+    mode="sequential",
+    priority=10,
+    # Empty config on purpose: the plugin merges defaults, so the structured
+    # detectors (aws_access_key_id, github_token, ...) are ON with no toggles.
+    config={},
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_hook_state(monkeypatch):
+    # Explicit specs always override discovery, but keep the tests hermetic
+    # against a stray ./evolve.hooks.yaml or ~/.config/evolve/hooks.yaml.
+    monkeypatch.setattr("altk_evolve.hooks.manager.discover_hooks_config_path", lambda: None)
+    shutdown_hooks()
+    yield
+    shutdown_hooks()
+
+
+def make_client(tmp_path: Path, *specs: HookPluginSpec) -> EvolveClient:
+    config = EvolveConfig(
+        backend="filesystem",
+        settings=FilesystemSettings(data_dir=str(tmp_path)),
+        hooks=HooksConfig(plugins=list(specs)),
+    )
+    return EvolveClient(config)
+
+
+# ── MetadataNormalizerPlugin ─────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_normalizer_copies_task_id_to_trace_id(tmp_path: Path):
+    # Why this plugin exists: the MCP server's save_trajectory stamps task_id
+    # while Phoenix sync stamps trace_id — downstream cascade cleanup keys on
+    # trace_id, so MCP-saved sessions would otherwise miss it.
+    client = make_client(tmp_path, NORMALIZER_SPEC)
+    client.create_namespace("ns")
+    client.update_entities("ns", [Entity(content="x", type="trajectory", metadata={"task_id": "t-42"})], enable_conflict_resolution=False)
+
+    stored = client.search_entities("ns", limit=1)[0]
+    assert stored.metadata["trace_id"] == "t-42"
+    assert stored.metadata["task_id"] == "t-42"
+    assert "created_at" in stored.metadata
+
+
+@pytest.mark.unit
+def test_normalizer_preserves_existing_values(tmp_path: Path):
+    client = make_client(tmp_path, NORMALIZER_SPEC)
+    client.create_namespace("ns")
+    metadata = {"task_id": "t-1", "trace_id": "existing", "created_at": "2020-01-01T00:00:00+00:00"}
+    client.update_entities("ns", [Entity(content="x", type="note", metadata=metadata)], enable_conflict_resolution=False)
+
+    stored = client.search_entities("ns", limit=1)[0]
+    assert stored.metadata["trace_id"] == "existing"
+    assert stored.metadata["created_at"] == "2020-01-01T00:00:00+00:00"
+
+
+# ── AccessStampPlugin ────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_access_stamp_records_last_accessed(tmp_path: Path):
+    client = make_client(tmp_path, ACCESS_STAMP_SPEC)
+    client.create_namespace("ns")
+    client.update_entities("ns", [Entity(content="x", type="note")], enable_conflict_resolution=False)
+
+    first_read = client.search_entities("ns", limit=1)[0]
+    assert "last_accessed" not in first_read.metadata  # fire_and_forget: read result itself is untouched
+
+    re_read = client.get_entity_by_id("ns", first_read.id)
+    assert re_read is not None
+    assert re_read.metadata.get("last_accessed")
+
+
+@pytest.mark.unit
+def test_access_stamp_does_not_loop_with_write_plugins(tmp_path: Path):
+    # Stamping goes through the metadata-patch path (internal read + patch),
+    # which fires neither memory_post_read nor memory_pre_write — so combining
+    # it with write-hook plugins cannot loop.
+    client = make_client(tmp_path, NORMALIZER_SPEC, ACCESS_STAMP_SPEC)
+    client.create_namespace("ns")
+    client.update_entities("ns", [Entity(content="x", type="note", metadata={"task_id": "t"})], enable_conflict_resolution=False)
+
+    for _ in range(3):
+        results = client.search_entities("ns", limit=10)
+        assert len(results) == 1
+
+    stored = client.get_entity_by_id("ns", results[0].id)
+    assert stored is not None
+    assert stored.metadata["trace_id"] == "t"
+    assert stored.metadata.get("last_accessed")
+
+
+# ── PIIFilterMemoryPlugin ────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_pii_plugin_redacts_writes(tmp_path: Path):
+    pytest.importorskip("cpex_pii_filter")
+    client = make_client(tmp_path, PII_SPEC)
+    client.create_namespace("ns")
+    client.update_entities(
+        "ns",
+        [Entity(content="email dana@example.com ssn 123-45-6789", type="note")],
+        enable_conflict_resolution=False,
+    )
+
+    stored = client.search_entities("ns", limit=1)[0]
+    assert stored.content == "email [REDACTED] ssn [REDACTED]"
+
+
+@pytest.mark.unit
+def test_pii_plugin_redacts_llm_egress(tmp_path: Path):
+    pytest.importorskip("cpex_pii_filter")
+    make_client(tmp_path, PII_SPEC)
+
+    messages = dispatch_llm_pre_call([{"role": "user", "content": "reach me at dana@example.com"}], purpose="test")
+    assert messages == [{"role": "user", "content": "reach me at [REDACTED]"}]
+
+
+@pytest.mark.unit
+def test_plugin_stubs_raise_without_cpex(monkeypatch):
+    import altk_evolve.hooks.plugins.pii as pii_module
+
+    if pii_module._HAS_PII_FILTER:
+        pytest.skip("cpex-pii-filter installed; stub not active")
+    with pytest.raises(ImportError, match=r"altk-evolve\[pii-regex\]"):
+        pii_module.PIIFilterMemoryPlugin()
+
+
+# ── SecretsFilterMemoryPlugin ────────────────────────────────────────
+
+# Clearly-fake but shape-valid credentials. `# pragma: allowlist secret` keeps
+# this repo's own detect-secrets pre-commit hook from tripping on the fixtures.
+_FAKE_AWS_KEY = "AKIAIOSFODNN7EXAMPLE"  # pragma: allowlist secret
+_FAKE_GH_TOKEN = "ghp_16C7e42F292c6912E7710c838347Ae178B4a"  # pragma: allowlist secret
+
+
+@pytest.mark.unit
+def test_secrets_plugin_redacts_writes(tmp_path: Path):
+    pytest.importorskip("cpex_secrets_detection")
+    client = make_client(tmp_path, SECRETS_SPEC)
+    client.create_namespace("ns")
+    client.update_entities(
+        "ns",
+        [Entity(content=f"aws {_FAKE_AWS_KEY} gh {_FAKE_GH_TOKEN} plus a normal note", type="note")],
+        enable_conflict_resolution=False,
+    )
+
+    stored = client.search_entities("ns", limit=1)[0]
+    assert stored.content == "aws [REDACTED] gh [REDACTED] plus a normal note"
+
+
+@pytest.mark.unit
+def test_secrets_plugin_redacts_llm_egress(tmp_path: Path):
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+
+    messages = dispatch_llm_pre_call(
+        [{"role": "user", "content": f"deploy with {_FAKE_AWS_KEY} and {_FAKE_GH_TOKEN}"}],
+        purpose="test",
+    )
+    assert messages == [{"role": "user", "content": "deploy with [REDACTED] and [REDACTED]"}]
+
+
+@pytest.mark.unit
+def test_secrets_plugin_leaves_non_secret_untouched(tmp_path: Path):
+    pytest.importorskip("cpex_secrets_detection")
+    client = make_client(tmp_path, SECRETS_SPEC)
+    client.create_namespace("ns")
+    # A 32-char hex digest is NOT a secret with the entropy detectors off.
+    benign = "digest deadbeefdeadbeefdeadbeefdeadbeef and just plain words"
+    client.update_entities("ns", [Entity(content=benign, type="note")], enable_conflict_resolution=False)
+
+    stored = client.search_entities("ns", limit=1)[0]
+    assert stored.content == benign
+
+
+@pytest.mark.unit
+def test_secrets_plugin_is_native_not_raw_cpex():
+    """Routing guard: secrets is a NATIVE plugin (wrapped by the seam's native
+    adapter in `_register_spec`), NOT a raw-cpex plugin like pii — so it must
+    NOT subclass cpex's `Plugin`. If it did, the manager would register it
+    directly on the raw-cpex path instead of through the native adapter."""
+    from cpex.framework import Plugin as CpexPlugin
+
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    assert not issubclass(SecretsFilterMemoryPlugin, CpexPlugin)
+
+
+@pytest.mark.unit
+def test_secrets_plugin_fails_closed_at_init_without_extra(tmp_path: Path, monkeypatch):
+    """A missing [secrets] extra fails CLOSED at engine init (via startup_validate),
+    naming the extra — not lazily on the first write. Simulated by making the
+    lazy scanner build raise, then registering the plugin through the seam:
+    initialization must surface the extra-naming ImportError."""
+    import altk_evolve.hooks.plugins.secrets as secrets_module
+
+    def _raise() -> None:
+        raise ImportError(
+            "Structured secrets redaction requires cpex-secrets-detection. Install it with: pip install 'altk-evolve[secrets]'"
+        )
+
+    monkeypatch.setattr(secrets_module, "build_secrets_scanner", _raise)
+    with pytest.raises(ImportError, match=r"altk-evolve\[secrets\]"):
+        make_client(tmp_path, SECRETS_SPEC)
+
+
+@pytest.mark.unit
+def test_secrets_plugin_raises_without_cpex_secrets_detection():
+    """Without the [secrets] extra the plugin's lazy scanner import fails with a
+    named install hint. Construction is cheap (the Rust core loads lazily); the
+    extra-naming ImportError trips on `startup_validate` (engine init)."""
+    import importlib.util
+
+    if importlib.util.find_spec("cpex_secrets_detection") is not None:
+        pytest.skip("cpex-secrets-detection installed; the degradation path is not active")
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    plugin = SecretsFilterMemoryPlugin()  # construction is cheap; scanner loads lazily
+    with pytest.raises(ImportError, match=r"altk-evolve\[secrets\]"):
+        plugin.startup_validate()
+
+
+# ── ReadiSemanticPIIPlugin ───────────────────────────────────────────
+
+
+class _StubContext:
+    """Minimal cpex-style plugin context for the raw cpex pii plugin."""
+
+    class _GC:
+        state: dict = {}
+
+    global_context = _GC()
+
+
+def _pii_plugin():
+    from altk_evolve.hooks.plugins.pii import PIIFilterMemoryPlugin
+
+    return PIIFilterMemoryPlugin()
+
+
+def fake_name_detector(text: str):
+    """Stand-in for READI: finds one fixed 'name' so the shim is testable fast.
+
+    Loading a real transformer NER pipeline costs a ~460MB download and seconds
+    per test; the detection engine is covered by READI itself and by
+    ``examples/pii_benchmark.py``. What these tests must pin is the *shim*:
+    config parsing, hook wiring and the modified_payload contract.
+    """
+    start = text.find("Dana Whitfield")
+    return [(start, start + len("Dana Whitfield"))] if start != -1 else []
+
+
+@pytest.mark.unit
+def test_readi_native_redacts_names_regex_cannot(tmp_path: Path):
+    """The point of the semantic plugin: a NAME the regex filter leaves untouched.
+
+    The regex plugin is a RAW CPEX plugin (async, PluginResult); the semantic
+    plugin is a NATIVE plugin (sync, returns a plain payload) — this test proves
+    both flavors work side by side.
+    """
+    pytest.importorskip("cpex_pii_filter")
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import MemoryPreWritePayload
+
+    text = "Dana Whitfield can be reached at dana@example.com"
+    payload = MemoryPreWritePayload(namespace_id="ns", entities=[{"content": text, "type": "note"}])
+
+    regex_plugin = _pii_plugin()  # raw cpex plugin: async, returns PluginResult
+    regex_out = asyncio.run(regex_plugin.memory_pre_write(payload, _StubContext()))
+    assert "Dana Whitfield" in regex_out.modified_payload.entities[0]["content"]  # regex has no NER
+
+    readi_plugin = ReadiSemanticPIIPlugin()  # native plugin: sync, returns a plain payload
+    readi_plugin._detector = fake_name_detector
+    readi_out = readi_plugin.memory_pre_write(payload, HookContext())
+    assert readi_out is not None
+    assert readi_out.entities[0]["content"] == "[REDACTED] can be reached at dana@example.com"
+
+
+@pytest.mark.unit
+def test_readi_native_redacts_llm_egress():
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import LLMPreCallPayload
+
+    plugin = ReadiSemanticPIIPlugin()
+    plugin._detector = fake_name_detector
+    payload = LLMPreCallPayload(messages=[{"role": "user", "content": "summarize Dana Whitfield's notes"}], purpose="test")
+    result = plugin.llm_pre_call(payload, HookContext())
+    assert result.messages == [{"role": "user", "content": "summarize [REDACTED]'s notes"}]
+
+
+@pytest.mark.unit
+def test_readi_native_reads_config_keys():
+    """The plain config dict drives the mask and the metadata opt-in — no code change needed."""
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import MemoryPreWritePayload
+
+    plugin = ReadiSemanticPIIPlugin({"redaction_text": "<PERSON>", "redact_metadata": True})
+    plugin._detector = fake_name_detector
+    payload = MemoryPreWritePayload(
+        namespace_id="ns",
+        entities=[{"content": "hi Dana Whitfield", "metadata": {"author": "Dana Whitfield"}}],
+    )
+    entity = plugin.memory_pre_write(payload, HookContext()).entities[0]
+    assert entity["content"] == "hi <PERSON>"
+    assert entity["metadata"] == {"author": "<PERSON>"}
+
+
+@pytest.mark.unit
+def test_readi_native_redacts_metadata_by_default():
+    """Default (no config) redacts metadata, matching the regex plugin's behaviour."""
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import MemoryPreWritePayload
+
+    plugin = ReadiSemanticPIIPlugin()
+    plugin._detector = fake_name_detector
+    payload = MemoryPreWritePayload(
+        namespace_id="ns",
+        entities=[{"content": "note", "metadata": {"author": "Dana Whitfield"}}],
+    )
+    entity = plugin.memory_pre_write(payload, HookContext()).entities[0]
+    assert entity["metadata"] == {"author": "[REDACTED]"}
+
+
+@pytest.mark.unit
+def test_readi_native_redacts_pii_in_tool_call_arguments():
+    """Egress-leak regression at the plugin level: tool_call arguments are redacted."""
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import LLMPreCallPayload
+
+    plugin = ReadiSemanticPIIPlugin()
+    plugin._detector = fake_name_detector
+    payload = LLMPreCallPayload(
+        messages=[
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "save", "arguments": '{"who": "Dana Whitfield"}'}}],
+            }
+        ],
+        purpose="test",
+    )
+    result = plugin.llm_pre_call(payload, HookContext())
+    call = result.messages[0]["tool_calls"][0]
+    assert "Dana Whitfield" not in call["function"]["arguments"]
+    assert call["function"]["name"] == "save"
+
+
+@pytest.mark.unit
+def test_readi_scaffold_yaml_can_block_and_fails_closed():
+    """Mode/on_error are load-bearing, not cosmetic (see docs/guides/memory-hooks.md).
+
+    They now live in the scaffold YAML / HookPluginSpec, not a cpex
+    ``_default_config`` on the plugin. CPEX downgrades continue_processing=False
+    -> True in transform/audit mode, so a redactor that must be able to halt has
+    to register `sequential`; and a compliance plugin must fail closed so a
+    crashing NER model never silently passes PII through. Pin the shipped
+    scaffold's READI entry sets both.
+    """
+    from pathlib import Path as _Path
+
+    import yaml as _yaml
+
+    template = _Path(__file__).resolve().parents[2] / "altk_evolve" / "cli" / "templates" / "hooks.yaml"
+    entries = _yaml.safe_load(template.read_text())["plugins"]
+    readi = next(e for e in entries if e["name"] == "readi_semantic_pii")
+    assert readi["mode"] == "sequential"
+    assert readi["on_error"] == "fail"
+    assert set(readi["hooks"]) == {"memory_pre_write", "llm_pre_call"}
+
+
+@pytest.mark.unit
+def test_readi_native_raises_without_readi():
+    """Without the [pii-semantic] extra the plugin fails with a named install hint.
+
+    Construction is cheap (READI loads lazily); the extra-naming ImportError
+    trips on first detection (or ``startup_validate`` at engine init)."""
+    import importlib.util
+
+    if importlib.util.find_spec("risk_assessment") is not None:
+        pytest.skip("readi-privacy installed; the degradation path is not active")
+    from altk_evolve.hooks.plugins.readi import ReadiSemanticPIIPlugin
+    from altk_evolve.hooks.types import LLMPreCallPayload
+
+    plugin = ReadiSemanticPIIPlugin()  # construction is cheap; READI loads lazily
+    with pytest.raises(ImportError, match=r"altk-evolve\[pii-semantic\]"):
+        plugin.llm_pre_call(LLMPreCallPayload(messages=[{"role": "user", "content": "x"}]), HookContext())

@@ -1,3 +1,4 @@
+import datetime
 import logging
 from typing import TYPE_CHECKING, cast
 
@@ -57,6 +58,24 @@ class EvolveClient:
         else:
             raise NotImplementedError(f"Entity backend not implemented: {self.config.backend}")
 
+        # Initialize the memory hook seam. The seam is ALWAYS live — there is no
+        # enable/disable switch; behavior is decided by which plugins resolve
+        # (config + auto-discovered evolve.hooks.yaml). The CPEX PluginManager is
+        # a process-wide singleton, so the seam is process-global, not per-client:
+        #   - Constructing another client that resolves plugins resets the
+        #     manager and REPLACES this client's plugins (initialize_hooks warns
+        #     when the reset discards already-registered plugins, e.g. a PII
+        #     redaction plugin an earlier client relied on).
+        #   - A client that resolves NO plugins shuts the seam DOWN, so it does
+        #     not inherit another client's process-global hooks — hence this is
+        #     called unconditionally (initialize_hooks(no plugins) tears down and
+        #     returns None). The heavy cpex import stays deferred, so the no-op
+        #     path remains cheap. A configured-but-engine-missing setup instead
+        #     raises here (fail-closed), never a silent no-op.
+        from altk_evolve.hooks.manager import initialize_hooks
+
+        initialize_hooks(self.config.hooks)
+
     def ready(self) -> bool:
         """Check if the backend is healthy."""
         return self.backend.ready()
@@ -108,6 +127,36 @@ class EvolveClient:
         """Merge metadata_updates into an entity without touching content or ID."""
         return self.backend.update_entity_metadata(namespace_id, entity_id, metadata_updates)
 
+    def record_access(self, namespace_id: str, entity_ids: list[str], when: datetime.datetime | None = None) -> None:
+        """Stamp ``metadata.last_accessed`` (ISO-8601 UTC) on the given entities.
+
+        This is the *explicit* half of the access-stamping story and the signal
+        the retention engine's ``max_unused_days`` rules read (issue #275).
+
+        Relationship to ``AccessStampPlugin``: the plugin is the automatic path
+        — with hooks enabled it stamps every entity returned by a public read,
+        on ``memory_post_read``. ``record_access`` is the manual path, for
+        callers that do not run hooks or that want to record a *use* that was
+        not a store read (for example, a memory recalled from a cache and
+        actually acted on). Both funnel through the same core,
+        :func:`~altk_evolve.hooks.plugins.access_stamp.build_access_stamps`, so
+        the key and timestamp format are identical and one batch shares one
+        stamp; enabling both is harmless (last writer wins).
+
+        Failures on individual ids are logged and skipped rather than raised —
+        recording an access must never break the flow it rode in on.
+        """
+        # Imported here (not at module scope) to keep the client import cheap;
+        # build_access_stamps is a pure function with no cpex dependency.
+        from altk_evolve.hooks.plugins.access_stamp import build_access_stamps
+
+        moment = when if when is not None else datetime.datetime.now(datetime.UTC)
+        for entity_id, patch in build_access_stamps([{"id": eid} for eid in entity_ids], now=lambda: moment):
+            try:
+                self.patch_entity_metadata(namespace_id, entity_id, patch)
+            except Exception:
+                logger.warning("record_access: failed to stamp entity %s", entity_id, exc_info=True)
+
     def get_public_entities(
         self,
         query: str | None = None,
@@ -152,11 +201,6 @@ class EvolveClient:
         Returns:
             List of clusters, each containing related RecordedEntity objects.
         """
-        from altk_evolve.llm.guidelines.clustering import cluster_entities
-
-        if threshold is None:
-            threshold = self.config.clustering_threshold
-
         entities = self.get_all_entities(namespace_id, filters={"type": "guideline"}, limit=limit)
         if len(entities) >= limit:
             logger.warning(
@@ -164,6 +208,14 @@ class EvolveClient:
                 len(entities),
                 limit,
             )
+        return self._cluster_guideline_entities(entities, threshold=threshold)
+
+    def _cluster_guideline_entities(self, entities: list[RecordedEntity], threshold: float | None = None) -> list[list[RecordedEntity]]:
+        """Cluster a pre-fetched list of guideline entities by task similarity."""
+        from altk_evolve.llm.guidelines.clustering import cluster_entities
+
+        if threshold is None:
+            threshold = self.config.clustering_threshold
         return cluster_entities(entities, threshold=threshold)
 
     def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None, mode: str | None = None) -> ConsolidationResult:
@@ -191,7 +243,25 @@ class EvolveClient:
             return ConsolidationResult(clusters_found=0, guidelines_before=0, guidelines_after=0)
 
         combine_mode = "lossy" if mode == "lossy" else "lossless"
-        clusters = self.cluster_guidelines(namespace_id, threshold=threshold)
+
+        # Read guidelines through the INTERNAL seam (_search_entities_impl), NOT
+        # the public search_entities. Consolidation writes the fetched content
+        # back and deletes the originals, so a redacting memory_post_read plugin
+        # on the public read would make consolidation PERMANENTLY persist the
+        # redacted view (the original stored content is lost when the originals
+        # are deleted). The internal read round-trips the original stored
+        # content. LLM egress during combine_cluster stays covered by
+        # llm_pre_call; the write-back still fires memory_pre_write and the
+        # deletes still fire memory_pre_delete.
+        limit = 10000
+        entities = self.backend._search_entities_impl(namespace_id, query=None, filters={"type": "guideline"}, limit=limit)
+        if len(entities) >= limit:
+            logger.warning(
+                "Fetched %d entities (hit limit=%d); consolidation may be incomplete. Consider increasing the limit.",
+                len(entities),
+                limit,
+            )
+        clusters = self._cluster_guideline_entities(entities, threshold=threshold)
         clusters_found = 0
         guidelines_before = 0
         guidelines_after = 0

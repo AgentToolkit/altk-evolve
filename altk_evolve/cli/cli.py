@@ -1,6 +1,8 @@
 """Evolve CLI for managing entities and namespaces."""
 
+import importlib.resources
 import json
+import platform
 import sys
 import zipfile
 from pathlib import Path
@@ -24,12 +26,16 @@ entities_app = typer.Typer(help="Entity management commands")
 sync_app = typer.Typer(help="Sync commands")
 skills_app = typer.Typer(help="Skill management commands")
 viz_app = typer.Typer(help="Visualization commands")
+hooks_app = typer.Typer(help="Hook seam management commands")
+retention_app = typer.Typer(help="Data retention commands")
 
 app.add_typer(namespaces_app, name="namespaces")
 app.add_typer(entities_app, name="entities")
 app.add_typer(sync_app, name="sync")
 app.add_typer(skills_app, name="skills")
 app.add_typer(viz_app, name="viz")
+app.add_typer(hooks_app, name="hooks")
+app.add_typer(retention_app, name="retention")
 
 console = Console()
 
@@ -37,6 +43,84 @@ console = Console()
 def get_client() -> EvolveClient:
     """Get a EvolveClient instance."""
     return EvolveClient()
+
+
+# =============================================================================
+# Retention Commands
+# =============================================================================
+
+
+@retention_app.command("run")
+def run_retention(
+    policy_file: Annotated[str, typer.Option("--policy", "-p", help="Path to a retention policy file (YAML or JSON).")],
+    namespace: Annotated[Optional[str], typer.Argument(help="Namespace to sweep. Defaults to the configured namespace.")] = None,
+    apply: Annotated[bool, typer.Option("--apply", help="Actually flag/delete. Without this flag the run is a dry run.")] = False,
+):
+    """Apply a data-retention policy to a namespace.
+
+    Dry run by default - pass --apply to mutate. Reports what was (or would be)
+    flagged or deleted, why, and which rule decided it - including memories
+    cascade-deleted via session provenance.
+    """
+    from altk_evolve.retention import RetentionEngine, RetentionPolicy
+
+    client = get_client()
+    namespace_id = namespace or client.config.namespace_id
+
+    try:
+        policy = RetentionPolicy.from_file(policy_file)
+    except FileNotFoundError:
+        console.print(f"[red]Policy file not found:[/red] {policy_file}")
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]Failed to load policy:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if not policy.rules:
+        console.print(f"[yellow]Policy {policy_file} has no rules; nothing to do.[/yellow]")
+        return
+
+    report = RetentionEngine(client).apply(namespace_id, policy, dry_run=not apply)
+
+    mode = "[yellow]DRY RUN[/yellow]" if report.dry_run else "[green]APPLIED[/green]"
+    console.print(f"Retention {mode} on namespace [cyan]{namespace_id}[/cyan] - {report.summary()}")
+
+    if report.flagged or report.deleted:
+        table = Table(title="Retention actions")
+        table.add_column("Action", style="bold")
+        table.add_column("Entity ID", style="cyan")
+        table.add_column("Type")
+        table.add_column("Reason", style="dim")
+        table.add_column("Rule", style="dim")
+        table.add_column("Why", style="dim")
+        for item in [*report.deleted, *report.flagged]:
+            verb = "[red]delete[/red]" if item.action == "delete" else "[yellow]flag[/yellow]"
+            table.add_row(verb, item.entity_id, item.entity_type, item.reason, item.rule, item.detail)
+        console.print(table)
+    else:
+        console.print("[dim]No entities matched any rule.[/dim]")
+
+    if report.skipped:
+        skipped_table = Table(title="Skipped (degraded signal — not acted on)")
+        skipped_table.add_column("Entity ID", style="cyan")
+        skipped_table.add_column("Type")
+        skipped_table.add_column("Reason", style="dim")
+        skipped_table.add_column("Rule", style="dim")
+        skipped_table.add_column("Why", style="dim")
+        for item in report.skipped:
+            skipped_table.add_row(item.entity_id, item.entity_type, item.reason, item.rule, item.detail)
+        console.print(skipped_table)
+
+    for warning in report.warnings:
+        console.print(f"[yellow]warning:[/yellow] {warning}")
+    for err in report.errors:
+        console.print(f"[red]error:[/red] {err}")
+
+    if report.dry_run and (report.flagged or report.deleted):
+        console.print("[dim]Dry run - nothing was changed. Re-run with --apply to enforce.[/dim]")
+
+    if report.errors:
+        raise typer.Exit(1)
 
 
 # =============================================================================
@@ -454,9 +538,30 @@ def sync_phoenix(
     project: Annotated[Optional[str], typer.Option("--project", "-p", help="Phoenix project name")] = None,
     limit: Annotated[int, typer.Option(help="Maximum number of spans to fetch")] = 100,
     include_errors: Annotated[bool, typer.Option("--include-errors", help="Include failed/error spans")] = False,
+    guidelines_mode: Annotated[
+        Optional[str],
+        typer.Option("--guidelines-mode", help="Guideline generation mode: standard, consistency, or all"),
+    ] = None,
+    consistency_method: Annotated[
+        Optional[str],
+        typer.Option("--consistency-method", help="Consistency pipeline: fast (LLM self-judged, default) or accurate (resampling)"),
+    ] = None,
 ):
     """Sync trajectories from Arize Phoenix and generate guidelines."""
+    from altk_evolve.config.guidelines import guidelines_settings
     from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    if guidelines_mode is not None:
+        if guidelines_mode not in ("standard", "consistency", "all"):
+            console.print(f"[red]Invalid --guidelines-mode '{guidelines_mode}'. Choose: standard, consistency, all.[/red]")
+            raise typer.Exit(1)
+        guidelines_settings.guidelines_mode = guidelines_mode
+
+    if consistency_method is not None:
+        if consistency_method not in ("accurate", "fast"):
+            console.print(f"[red]Invalid --consistency-method '{consistency_method}'. Choose: accurate, fast.[/red]")
+            raise typer.Exit(1)
+        guidelines_settings.consistency_method = consistency_method
 
     syncer = PhoenixSync(
         phoenix_url=phoenix_url,
@@ -469,6 +574,9 @@ def sync_phoenix(
     console.print(f"  Project: {syncer.project}")
     console.print(f"  Namespace: {syncer.namespace_id}")
     console.print(f"  Limit: {limit}")
+    console.print(f"  Guidelines mode: {guidelines_settings.guidelines_mode}")
+    if guidelines_settings.guidelines_mode in ("consistency", "all"):
+        console.print(f"  Consistency method: {guidelines_settings.consistency_method}")
     console.print()
 
     try:
@@ -604,6 +712,70 @@ def serve_viz(
     from altk_evolve.viz.server import serve
 
     serve(evolve_dir=evolve_dir.resolve(), port=port, open_browser=not no_browser)
+
+
+# =============================================================================
+# Hooks Commands
+# =============================================================================
+
+
+def _load_hooks_template() -> str:
+    """Read the bundled default hooks config template (READI active, regex
+    commented). Packaged as data so `evolve hooks init` works from an install."""
+    return importlib.resources.files("altk_evolve.cli.templates").joinpath("hooks.yaml").read_text(encoding="utf-8")
+
+
+def hooks_init_platform_note(system: str) -> str:
+    """Platform-specific guidance printed after `evolve hooks init`.
+
+    ``system`` is ``platform.system()`` (e.g. "Darwin", "Linux", "Windows").
+    Kept as a pure function so the macOS vs non-macOS message can be unit-tested
+    without spoofing the host OS.
+    """
+    if system == "Darwin":
+        return (
+            "macOS note: READI's transformer model runs on Apple-Silicon MPS, which binds to the "
+            "first thread that touches it. The hook seam dispatches on a worker thread when an event "
+            "loop is already running, so the model can raise 'Placeholder storage has not been "
+            "allocated on MPS device!' and — because it is fail-closed (on_error: fail) — BLOCK writes. "
+            "For local dev on macOS, uncomment the regex block (and comment READI), or run READI on "
+            "CPU/Linux. See docs/guides/pii-redaction.md 'Known limitations'."
+        )
+    return "Once '[pii-semantic]' is installed, READI works out of the box (weights download on first use)."
+
+
+@hooks_app.command("init")
+def hooks_init(
+    path: Annotated[Path, typer.Option("--path", "-p", help="Where to write the hooks config")] = Path("evolve.hooks.yaml"),
+    force: Annotated[bool, typer.Option("--force", "-f", help="Overwrite an existing file")] = False,
+):
+    """Scaffold a default hooks config (`./evolve.hooks.yaml`).
+
+    The scaffolded file ships the READI SEMANTIC PII plugin ACTIVE and the regex
+    PII plugin commented out (both `mode: sequential`, `on_error: fail`). Evolve
+    auto-discovers `./evolve.hooks.yaml`, so no further wiring is needed.
+    """
+    if path.exists() and not force:
+        console.print(f"[red]Refusing to overwrite existing file:[/red] {path}")
+        console.print("[yellow]Pass --force to overwrite.[/yellow]")
+        raise typer.Exit(1)
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_load_hooks_template(), encoding="utf-8")
+    except OSError as e:
+        console.print(f"[red]Could not write {path}: {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]Wrote hooks config:[/green] {path}")
+    console.print("[dim]Evolve auto-discovers ./evolve.hooks.yaml — no further wiring needed.[/dim]\n")
+    console.print("[bold]READI semantic PII redaction is enabled by default.[/bold] Install it with:")
+    # markup=False so the "[pii-semantic]" extra is not parsed as rich markup, and
+    # highlight=False so rich's bracket *highlighter* does not split the extra with
+    # ANSI color codes under a TTY — the extras must render literally everywhere.
+    console.print("  pip install 'altk-evolve[pii-semantic]'", markup=False, highlight=False)
+    console.print("[dim](the NER model downloads on first use, ~460MB for en_core_web_trf)[/dim]\n")
+    console.print(hooks_init_platform_note(platform.system()), style="yellow", markup=False, highlight=False)
 
 
 if __name__ == "__main__":

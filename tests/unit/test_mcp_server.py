@@ -273,6 +273,145 @@ def test_save_trajectory_backward_compat_no_extra_params(mock_get_client):
 
 
 # ---------------------------------------------------------------------------
+# save_trajectory guidelines_mode tests
+# ---------------------------------------------------------------------------
+
+
+def _mock_guideline_result(content="Write clear code."):
+    from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResult
+
+    g = Guideline(
+        content=content, category="strategy", rationale="Clarity", trigger="code review", implementation_steps=["Review the diff"]
+    )
+    return GuidelineGenerationResult(guidelines=[g], task_description="some task")
+
+
+def test_save_trajectory_standard_mode_default(mock_get_client):
+    """Default guidelines_mode='standard' calls generate_guidelines and tags generation_method."""
+    with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_gen:
+        mock_gen.return_value = [_mock_guideline_result()]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-r1")
+
+        mock_gen.assert_called_once()
+        guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
+        entities = guideline_call["entities"]
+        assert len(entities) == 1
+        assert entities[0].metadata["generation_method"] == "standard"
+        assert entities[0].metadata["creation_mode"] == "auto-mcp"
+
+
+def test_save_trajectory_consistency_mode_calls_consistency_pipeline(mock_get_client):
+    """EVOLVE_GUIDELINES_MODE=consistency (accurate method) calls generate_consistency_guidelines,
+    not generate_guidelines. Method pinned explicitly since fast is now the default."""
+    with (
+        patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular,
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+        patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "consistency"),
+        patch("altk_evolve.config.guidelines.guidelines_settings.consistency_method", "accurate"),
+    ):
+        mock_consistency.return_value = [_mock_guideline_result("Use deterministic prompts.")]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-c1")
+
+        mock_regular.assert_not_called()
+        mock_consistency.assert_called_once()
+        guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
+        entities = guideline_call["entities"]
+        assert len(entities) == 1
+        assert entities[0].metadata["generation_method"] == "consistency"
+        assert entities[0].metadata["creation_mode"] == "auto-mcp"
+
+
+def test_save_trajectory_all_mode_calls_both_pipelines(mock_get_client):
+    """EVOLVE_GUIDELINES_MODE=all (accurate method) runs both pipelines and tags each entity
+    with its generation_method. Method pinned explicitly since fast is now the default."""
+    with (
+        patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular,
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+        patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "all"),
+        patch("altk_evolve.config.guidelines.guidelines_settings.consistency_method", "accurate"),
+    ):
+        mock_regular.return_value = [_mock_guideline_result("Write tests.")]
+        mock_consistency.return_value = [_mock_guideline_result("Reduce uncertainty.")]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-b1")
+
+        mock_regular.assert_called_once()
+        mock_consistency.assert_called_once()
+        guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
+        entities = guideline_call["entities"]
+        assert len(entities) == 2
+        methods = {e.metadata["generation_method"] for e in entities}
+        assert methods == {"standard", "consistency"}
+
+
+def test_save_trajectory_all_mode_merges_into_single_update_entities_call(mock_get_client):
+    """Both pipelines' entities are merged and sent in a single update_entities call.
+
+    Method pinned explicitly since fast is now the default — otherwise the unmocked
+    fast pipeline would run instead of the mocked accurate one.
+    """
+    with (
+        patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_regular,
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_consistency,
+        patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "all"),
+        patch("altk_evolve.config.guidelines.guidelines_settings.consistency_method", "accurate"),
+    ):
+        mock_regular.return_value = [_mock_guideline_result("Write tests.")]
+        mock_consistency.return_value = [_mock_guideline_result("Reduce uncertainty.")]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-b2")
+
+        # update_entities called twice: once for trajectory, once for all guidelines combined
+        assert mock_get_client.update_entities.call_count == 2
+        guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
+        assert guideline_call["enable_conflict_resolution"] is True
+
+
+def test_save_trajectory_consistency_fast_method_calls_fast_pipeline_not_accurate(mock_get_client):
+    """EVOLVE_CONSISTENCY_METHOD=fast calls generate_consistency_guidelines_fast, not the accurate/resampling pipeline."""
+    with (
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_accurate,
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines_fast") as mock_fast,
+        patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "consistency"),
+        patch("altk_evolve.config.guidelines.guidelines_settings.consistency_method", "fast"),
+    ):
+        mock_fast.return_value = [_mock_guideline_result("Confirm the tool schema before calling it.")]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-cf1")
+
+        mock_fast.assert_called_once()
+        mock_accurate.assert_not_called()
+        guideline_call = mock_get_client.update_entities.call_args_list[-1][1]
+        entities = guideline_call["entities"]
+        assert len(entities) == 1
+        assert entities[0].metadata["generation_method"] == "consistency-fast"
+        assert entities[0].metadata["creation_mode"] == "auto-mcp"
+
+
+def test_save_trajectory_consistency_fast_is_still_the_default_method(mock_get_client):
+    """Without EVOLVE_CONSISTENCY_METHOD set, consistency mode uses the fast (LLM self-judged) pipeline."""
+    with (
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines") as mock_accurate,
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines_fast") as mock_fast,
+        patch("altk_evolve.config.guidelines.guidelines_settings.guidelines_mode", "consistency"),
+    ):
+        mock_fast.return_value = [_mock_guideline_result("Use deterministic prompts.")]
+        trajectory_data = json.dumps([{"role": "user", "content": "hi"}])
+
+        save_trajectory(trajectory_data=trajectory_data, task_id="task-ca1")
+
+        mock_fast.assert_called_once()
+        mock_accurate.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # User facts tests
 # ---------------------------------------------------------------------------
 

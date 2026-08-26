@@ -1,8 +1,84 @@
 import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
 import uuid
 import warnings
+
 import pytest
 from altk_evolve.config.milvus import milvus_client_settings
+
+
+@pytest.fixture(scope="session", autouse=True)
+def phoenix_server():
+    """Ensure a Phoenix server is running for the E2E test session."""
+    otlp_ready = False
+    for _ in range(2):
+        try:
+            req = urllib.request.Request("http://localhost:6006/v1/traces", method="POST")
+            urllib.request.urlopen(req, timeout=1)
+            otlp_ready = True
+            break
+        except urllib.error.HTTPError:
+            otlp_ready = True
+            break
+        except (urllib.error.URLError, ConnectionError):
+            time.sleep(1)
+
+    if otlp_ready:
+        print("\nPhoenix is already running on port 6006.")
+        yield "http://localhost:6006"
+        return
+
+    print("\nStarting local Phoenix server for E2E tests...")
+    env = os.environ.copy()
+    env["PHOENIX_PORT"] = "6006"
+    script = "import phoenix as px; import time; px.launch_app(run_in_thread=True); import sys; sys.stdout.flush(); time.sleep(86400)"
+    proc = subprocess.Popen([sys.executable, "-c", script], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+
+    for _ in range(30):
+        try:
+            req = urllib.request.Request("http://localhost:6006/v1/traces", method="POST")
+            urllib.request.urlopen(req, timeout=1)
+            print("Phoenix server is up and running.")
+            break
+        except urllib.error.HTTPError:
+            print("Phoenix server is up and running.")
+            break
+        except Exception:
+            if proc.poll() is not None:
+                stderr_output = proc.stderr.read() if proc.stderr else "Unknown error"
+                pytest.fail(f"Phoenix server process crashed: {stderr_output}")
+            time.sleep(1)
+    else:
+        proc.terminate()
+        stderr_output = proc.stderr.read() if proc.stderr else "Unknown error"
+        pytest.fail(f"Failed to start Phoenix within 30 seconds. Stderr: {stderr_output}")
+
+    yield "http://localhost:6006"
+
+    print("\nShutting down local Phoenix server...")
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--consistency-debug-dir",
+        default=None,
+        help="Directory to write consistency analysis debug artifacts (IR, resampled IR, score card JSON files). Sets EVOLVE_DEBUG_DIR for the subprocess in consistency e2e tests.",
+    )
+    parser.addoption(
+        "--verbose-sync",
+        action="store_true",
+        default=False,
+        help="Print every line of sync subprocess output in consistency e2e tests (useful for seeing logger.info messages).",
+    )
 
 
 def pytest_configure(config):

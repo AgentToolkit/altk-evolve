@@ -2,6 +2,8 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
 
+from altk_evolve.config.hooks import HooksConfig
+
 
 class EvolveConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
@@ -10,6 +12,7 @@ class EvolveConfig(BaseSettings):
     settings: BaseSettings | None = None
     clustering_threshold: float = 0.80
     segmentation_enabled: bool = True
+    hooks: HooksConfig = Field(default_factory=HooksConfig)
     # Consolidation dosage knobs (see docs: capability-dependent dosage).
     #   none     - skip consolidation entirely
     #   lossless - merge only equivalent guidelines; conserve support (default)

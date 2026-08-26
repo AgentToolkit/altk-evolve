@@ -1,2 +1,3 @@
 recursive-include altk_evolve *.jinja2
+recursive-include altk_evolve *.yaml
 recursive-include altk_evolve/frontend/ui/dist *

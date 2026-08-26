@@ -1,6 +1,6 @@
 [project]
 name = "altk-evolve"
-version = "1.1.4"
+version = "1.1.6"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -9,7 +9,11 @@ dependencies = [
     "fastmcp",
     "jinja2",
     "litellm>=1.84.0",
+    "numpy",
+    "pandas",
     "pydantic",
+    "pyyaml",
+    "scipy",
     "sentence-transformers",
     "typer>=0.9.0",
     "uvicorn",
@@ -34,6 +38,86 @@ milvus = [
 pgvector = [
     "psycopg[binary]>=3.1",
     "pgvector>=0.3",
+]
+
+# Optional plugin/hook framework (CPEX). Kept out of core deps because cpex
+# pulls heavy transitive dependencies (fastapi, mcp, prometheus). Without this
+# extra installed, the hook seam is a fast no-op.
+hooks = [
+    "cpex>=0.1.0,<0.2",
+]
+
+# PII redaction is offered as two *methods*, each its own extra: regex (this
+# one, lightweight/deterministic) and semantic (NER, below). Both are PII
+# redaction; the name says the method, not "PII vs not-PII". Running BOTH is the
+# recommended defence-in-depth default — regex for structured identifiers,
+# semantic for names/entities.
+#
+# `[pii-regex]`: the regex method (cpex-pii-filter's Rust engine). Separate from
+# [hooks] so users who only want normalization/audit plugins don't pull the PII
+# filter.
+pii-regex = [
+    "altk-evolve[hooks]",
+    # Upper-bound the minor (mirrors cpex's <0.2): PIIFilterMemoryPlugin always
+    # receives a PluginConfig on the YAML/spec path (the `config or
+    # _default_config()` fallback is unreachable there — a PluginConfig is
+    # always truthy), so a defaults change in a 0.4 release would silently alter
+    # what gets redacted rather than surface as an error. Pin the minor and bump
+    # deliberately.
+    "cpex-pii-filter>=0.3,<0.4",
+]
+
+# Backward-compatible alias. `[pii]` historically meant the regex method, so it
+# maps to `[pii-regex]` and keeps existing `altk-evolve[pii]` installs working
+# with the same lightweight, deterministic behaviour. It deliberately does NOT
+# pull the heavy semantic deps — that would turn a previously ~small install
+# into a multi-hundred-MB spaCy/transformers download for existing users. For
+# semantic redaction, install `[pii-semantic]` explicitly.
+pii = [
+    "altk-evolve[pii-regex]",
+]
+
+# `[pii-semantic]`: the semantic (NER) method, backed by IBM READI
+# (``readi-privacy``, import name ``risk_assessment``). The more powerful method
+# — it catches names/locations/organizations regex cannot — but it drags in
+# spaCy/transformers and downloads model weights, so it is a separate extra from
+# `[pii-regex]`, which stays dependency-light for deployments that only need it.
+pii-semantic = [
+    "altk-evolve[hooks]",
+    # Upper-bound the minor, mirroring [hooks]/[pii-regex]: READI's extractor and
+    # DetectionType APIs (READIAnalyzer, SpacyEntityExtractor, ...) are what
+    # this plugin's core is written against, and a 0.2 release could reshape
+    # them silently rather than surface as an error.
+    "readi-privacy>=0.1.6,<0.2",
+    # READI's default English pipeline is the curated-transformer spaCy model
+    # en_core_web_trf, whose factories live in this package; without it the
+    # model loads with a bare "can't find factory" error.
+    "spacy-curated-transformers>=0.2,<3",
+]
+
+# `[secrets]`: structured secrets detection (cpex-secrets-detection's Rust
+# engine). A third redaction *method*, orthogonal to the two PII methods above:
+# it catches credentials/tokens (AWS keys, GitHub/Slack tokens, private-key
+# blocks, ...) that neither the regex nor the semantic PII path targets. Unlike
+# `[pii-regex]` (a raw-cpex plugin reusing cpex-pii-filter's cpex `Plugin`),
+# secrets is a NATIVE plugin that wraps cpex-secrets-detection's framework-free
+# Rust core directly (its packaged cpex/mcpgateway plugin is unusable here) — the
+# same shape as the READI plugin. The `[hooks]` line still pulls cpex because the
+# hook engine needs it to execute (cpex-secrets-detection also pins cpex).
+secrets = [
+    "altk-evolve[hooks]",
+    # Upper-bound the minor (mirrors cpex's <0.2 and [pii-regex]'s cpex-pii-filter
+    # pin): the plugin's DEFAULT_ENABLED map is written against this package's
+    # detector keys, so a defaults/schema change in a future minor could silently
+    # alter what gets redacted rather than surface as an error. Pin the minor and
+    # bump deliberately.
+    "cpex-secrets-detection>=0.1,<0.2",
+]
+
+# Benchmarking the redactors against external labeled corpora
+# (examples/pii_benchmark.py --dataset). Not needed at runtime.
+bench = [
+    "datasets>=2.14",
 ]
 
 examples = [
@@ -65,6 +149,7 @@ dev = [
     "python-dotenv>=1.2.1",
     "python-semantic-release",
     "ruff",
+    "types-pyyaml>=6.0.12.20260518",
     "types-requests>=2.32.4.20260107",
 ]
 
@@ -83,13 +168,14 @@ docs = [
 [tool.uv.sources]
 detect-secrets = { git = "https://github.com/ibm/detect-secrets", branch="master"}
 
+
 [tool.setuptools.packages.find]
 where = ["."]
 exclude = ["explorations*"]
 include = ["altk_evolve*"]
 
 [tool.setuptools.package-data]
-altk_evolve = ["**/*.jinja2"]
+altk_evolve = ["**/*.jinja2", "**/*.yaml"]
 
 [tool.uv]
 package = true
@@ -110,6 +196,13 @@ indent-width = 4
 # Generated example-wiki content (scripts the wiki builder emitted verbatim from
 # trajectories) is exploration artifact, not project source — don't lint it.
 extend-exclude = ["explorations/agent-wiki/wikis/"]
+
+[tool.ruff.lint.per-file-ignores]
+# Vendored consistency_analyzer modules: E402 because the vendored files place
+# logger = logging.getLogger(__name__) between standard-library and project imports,
+# a structural pattern we are not refactoring in this PR.
+"altk_evolve/llm/guidelines/consistency_analyzer/*.py" = ["E402"]
+
 
 [tool.semantic_release]
 allow_zero_version = true
@@ -175,6 +268,12 @@ exclude = [
 
 [[tool.mypy.overrides]]
 module = [
+    "cpex.*",
+    "cpex_pii_filter.*",
+    "cpex_secrets_detection.*",
+    # IBM READI ships no py.typed marker; Presidio is an optional transitive of it.
+    "risk_assessment.*",
+    "presidio_analyzer.*",
     "pymilvus.*",
     "smolagents.*",
     "milvus_lite.*",
@@ -186,5 +285,13 @@ module = [
     "local_mcp_server",
     "config",
     "audit",
+    "retention",
+    "yaml",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Vendored consistency_analyzer modules: structural type errors in the original code
+# (dynamic dict/str patterns, missing annotations) that we are not refactoring in this PR.
+module = "altk_evolve.llm.guidelines.consistency_analyzer.*"
+ignore_errors = true

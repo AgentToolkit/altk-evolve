@@ -260,11 +260,18 @@ class TestConsolidateGuidelines:
         ]
 
         mock_backend = MagicMock()
-        mock_backend.search_entities.return_value = entities_cluster
+        # Consolidation reads via the INTERNAL seam (_search_entities_impl), not
+        # public search_entities, so a redacting post_read plugin can't make it
+        # persist the redacted view back to the store.
+        mock_backend._search_entities_impl.return_value = entities_cluster
         client = _make_client(mock_backend)
 
-        with patch.object(client, "cluster_guidelines", return_value=[entities_cluster]):
+        with patch.object(client, "_cluster_guideline_entities", return_value=[entities_cluster]):
             client.consolidate_guidelines("test-ns")
+
+        # The read must NOT go through the public (post_read-firing) API.
+        mock_backend.search_entities.assert_not_called()
+        mock_backend._search_entities_impl.assert_called_once()
 
         # Verify insert was called with correct args
         assert mock_backend.update_entities.call_count == 1
@@ -303,9 +310,11 @@ class TestConsolidateGuidelines:
         cluster1 = [_make_entity(f"c1-{i}", f"Guideline {i}", "task A") for i in range(3)]
         cluster2 = [_make_entity(f"c2-{i}", f"Guideline {i}", "task B") for i in range(2)]
 
-        client = _make_client(MagicMock())
+        mock_backend = MagicMock()
+        mock_backend._search_entities_impl.return_value = cluster1 + cluster2
+        client = _make_client(mock_backend)
 
-        with patch.object(client, "cluster_guidelines", return_value=[cluster1, cluster2]):
+        with patch.object(client, "_cluster_guideline_entities", return_value=[cluster1, cluster2]):
             result = client.consolidate_guidelines("test-ns")
 
         assert isinstance(result, ConsolidationResult)
