@@ -11,7 +11,9 @@ evolve_data
 demo/workdir/.claude/
 .bob
 .bob-sandbox-home/
-.claude
+# Ignore local Claude Code state, but share team commands (checked in for everyone)
+.claude/*
+!.claude/commands/
 dist
 .coverage
 .evolve
