@@ -16,7 +16,7 @@ from altk_evolve.hooks.manager import (
 )
 from altk_evolve.hooks.types import HookType
 from altk_evolve.schema.conflict_resolution import EntityUpdate
-from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.core import SERVICE_INSTANCE_METADATA_KEY, Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.utils.utils import serialize_content
 
@@ -253,15 +253,26 @@ class BaseEntityBackend(ABC):
 
         if enable_conflict_resolution:
             old_entities: list[RecordedEntity] = []
+            instance_ids = {
+                str(entity.metadata.get(SERVICE_INSTANCE_METADATA_KEY)).strip()
+                for entity in entities
+                if entity.metadata and entity.metadata.get(SERVICE_INSTANCE_METADATA_KEY)
+            }
+            all_entities_are_instance_scoped = len(instance_ids) == 1 and all(
+                entity.metadata and entity.metadata.get(SERVICE_INSTANCE_METADATA_KEY) for entity in entities
+            )
             for entity in entities:
                 query_str = serialize_content(entity.content)
+                filters = {"type": entity_type}
+                if all_entities_are_instance_scoped:
+                    filters[f"metadata.{SERVICE_INSTANCE_METADATA_KEY}"] = next(iter(instance_ids))
                 # Internal pre-read for conflict resolution — must not fire
                 # memory_post_read (public-API reads only).
                 old_entities.extend(
                     self._search_entities_impl(
                         namespace_id=namespace_id,
                         query=query_str,
-                        filters={"type": entity_type},
+                        filters=filters,
                         limit=10,
                     )
                 )

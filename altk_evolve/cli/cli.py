@@ -28,6 +28,7 @@ skills_app = typer.Typer(help="Skill management commands")
 viz_app = typer.Typer(help="Visualization commands")
 hooks_app = typer.Typer(help="Hook seam management commands")
 retention_app = typer.Typer(help="Data retention commands")
+purge_app = typer.Typer(help="Operator-facing destructive cleanup commands")
 
 app.add_typer(namespaces_app, name="namespaces")
 app.add_typer(entities_app, name="entities")
@@ -36,6 +37,7 @@ app.add_typer(skills_app, name="skills")
 app.add_typer(viz_app, name="viz")
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(retention_app, name="retention")
+app.add_typer(purge_app, name="purge")
 
 console = Console()
 
@@ -43,6 +45,54 @@ console = Console()
 def get_client() -> EvolveClient:
     """Get a EvolveClient instance."""
     return EvolveClient()
+
+
+# =============================================================================
+# Operator Purge Commands
+# =============================================================================
+
+
+@purge_app.command("service-instance")
+def purge_service_instance(
+    service_instance_id: Annotated[
+        str,
+        typer.Option(
+            "--service-instance-id",
+            envvar="EVOLVE_SERVICE_INSTANCE_ID",
+            help="Service instance whose attributed Evolve entities should be purged.",
+        ),
+    ],
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Count matching entities without deleting them."),
+    ] = False,
+):
+    """Purge all Evolve records attributed to one service instance."""
+    from altk_evolve.config.evolve import evolve_config
+    from altk_evolve.reaper import purge_service_instance_records
+
+    if evolve_config.backend != "postgres":
+        console.print("[red]Service-instance purge requires EVOLVE_BACKEND=postgres.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        result = purge_service_instance_records(service_instance_id, dry_run=dry_run)
+    except Exception as exc:
+        console.print(f"[red]Failed to purge service-instance data:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    console.print(
+        json.dumps(
+            {
+                "service_instance_id": result.service_instance_id,
+                "dry_run": result.dry_run,
+                "deleted_records": result.deleted_records,
+                "tables": result.tables,
+            },
+            sort_keys=True,
+        ),
+        markup=False,
+    )
 
 
 # =============================================================================

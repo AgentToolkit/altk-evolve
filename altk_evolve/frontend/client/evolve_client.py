@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, cast
 from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.schema.conflict_resolution import EntityUpdate
-from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.core import SERVICE_INSTANCE_METADATA_KEY, Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
 from altk_evolve.schema.guidelines import ConsolidationResult
 
@@ -100,9 +100,27 @@ class EvolveClient:
         """Delete a namespace that entities exist in."""
         self.backend.delete_namespace(namespace_id)
 
-    def update_entities(self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True) -> list[EntityUpdate]:
-        """Add multiple entities to a namespace."""
-        return self.backend.update_entities(namespace_id, entities, enable_conflict_resolution)
+    def update_entities(
+        self,
+        namespace_id: str,
+        entities: list[Entity],
+        enable_conflict_resolution: bool = True,
+    ) -> list[EntityUpdate]:
+        """Add multiple entities to a namespace.
+
+        When configured, ``EVOLVE_SERVICE_INSTANCE_ID`` is persisted as
+        reserved metadata on every entity in the batch. Caller-provided values
+        for that metadata key are ignored.
+        """
+        attributed_entities: list[Entity] = []
+        for entity in entities:
+            metadata = dict(entity.metadata or {})
+            metadata.pop(SERVICE_INSTANCE_METADATA_KEY, None)
+            if self.config.service_instance_id is not None:
+                metadata[SERVICE_INSTANCE_METADATA_KEY] = self.config.service_instance_id
+            attributed_entities.append(entity.model_copy(update={"metadata": metadata}))
+
+        return self.backend.update_entities(namespace_id, attributed_entities, enable_conflict_resolution)
 
     def search_entities(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10

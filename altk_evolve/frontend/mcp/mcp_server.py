@@ -27,7 +27,7 @@ from altk_evolve.llm.fact_extraction.fact_extraction import (
 )
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines
 from altk_evolve.schema.conflict_resolution import EntityUpdate
-from altk_evolve.schema.core import Entity, RecordedEntity
+from altk_evolve.schema.core import SERVICE_INSTANCE_METADATA_KEY, Entity, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
 
 logging.basicConfig(level=logging.INFO)
@@ -241,17 +241,18 @@ def _persist_entities(
     namespace_id: str | None,
     entities: list[Entity],
     enable_conflict_resolution: bool = False,
-) -> tuple[list[EntityUpdate], str]:
+) -> tuple[list[EntityUpdate], str, str | None]:
     """Persist entities with a single retry if the namespace cache is stale.
 
     Resolves ``namespace_id`` (falling back to the configured default), writes
     via ``update_entities``, and on ``NamespaceNotFoundException`` evicts the
-    cached entry, re-resolves, and retries once. Returns the update records
-    and the namespace actually written to.
+    cached entry, re-resolves, and retries once. Returns the update records,
+    namespace, and configured service-instance attribution used for the write.
     """
     resolved_ns = _resolve_namespace(namespace_id)
     try:
-        updates = get_client().update_entities(
+        client = get_client()
+        updates = client.update_entities(
             namespace_id=resolved_ns,
             entities=entities,
             enable_conflict_resolution=enable_conflict_resolution,
@@ -259,12 +260,13 @@ def _persist_entities(
     except NamespaceNotFoundException:
         _evict_namespace(resolved_ns)
         resolved_ns = _resolve_namespace(namespace_id)
-        updates = get_client().update_entities(
+        client = get_client()
+        updates = client.update_entities(
             namespace_id=resolved_ns,
             entities=entities,
             enable_conflict_resolution=enable_conflict_resolution,
         )
-    return updates, resolved_ns
+    return updates, resolved_ns, client.config.service_instance_id
 
 
 @mcp.tool()
@@ -401,6 +403,7 @@ def store_user_facts(
         return _empty_store_user_facts_response(user_id)
 
     base_metadata: dict[str, Any] = dict(metadata_dict)
+    base_metadata.pop(SERVICE_INSTANCE_METADATA_KEY, None)
     base_metadata["user_id"] = user_id
 
     extracted = extract_facts_from_messages([{"role": "user", "content": trimmed_message}])
@@ -418,7 +421,7 @@ def store_user_facts(
     if not entities:
         return _empty_store_user_facts_response(user_id)
 
-    updates, _ = _persist_entities(
+    updates, _, _ = _persist_entities(
         namespace_id=None,
         entities=entities,
         enable_conflict_resolution=enable_conflict_resolution,
@@ -573,7 +576,7 @@ def save_trajectory(
             )
         )
 
-    _, resolved_ns = _persist_entities(
+    _, resolved_ns, service_instance_id = _persist_entities(
         namespace_id=namespace_id,
         entities=entities,
         enable_conflict_resolution=False,
@@ -668,6 +671,8 @@ def save_trajectory(
         )
 
     readback_filters: dict = {"type": "trajectory", "metadata.task_id": task_id}
+    if service_instance_id:
+        readback_filters[f"metadata.{SERVICE_INSTANCE_METADATA_KEY}"] = service_instance_id
     if effective_user_id:
         readback_filters["metadata.user_id"] = effective_user_id
     if session_id:
@@ -712,7 +717,13 @@ def create_entity(
         if visibility == "public" and not owner_id:
             return json.dumps({"error": "Missing owner_id", "message": "public entities must have an owner_id"})
 
-        _RESERVED_KEYS = {"owner_id", "visibility", "published_at", "creation_mode"}
+        _RESERVED_KEYS = {
+            "owner_id",
+            "visibility",
+            "published_at",
+            "creation_mode",
+            SERVICE_INSTANCE_METADATA_KEY,
+        }
 
         metadata_dict = {}
         if metadata:
@@ -741,7 +752,7 @@ def create_entity(
 
         entity = Entity(type=entity_type, content=content, metadata=metadata_dict)
 
-        updates, _ = _persist_entities(
+        updates, _, _ = _persist_entities(
             namespace_id=namespace_id,
             entities=[entity],
             enable_conflict_resolution=enable_conflict_resolution,
