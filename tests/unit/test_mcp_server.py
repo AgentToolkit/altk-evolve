@@ -22,6 +22,7 @@ pytestmark = pytest.mark.unit
 def mock_get_client():
     with patch("altk_evolve.frontend.mcp.mcp_server.get_client") as mock:
         client_instance = mock.return_value
+        client_instance.config.service_instance_id = None
         yield client_instance
 
 
@@ -109,6 +110,21 @@ def test_create_entity_no_metadata_injection_for_other_types(mock_get_client):
     assert "creation_mode" not in (entity.metadata or {})
 
 
+def test_create_entity_removes_caller_service_instance_metadata(mock_get_client):
+    mock_update = EntityUpdate(id="123", type="note", content="hello", event="ADD", metadata={})
+    mock_get_client.update_entities.return_value = [mock_update]
+
+    create_entity(
+        content="hello",
+        entity_type="note",
+        metadata=json.dumps({"service_instance_id": "spoofed", "source": "external"}),
+    )
+
+    entity = mock_get_client.update_entities.call_args.kwargs["entities"][0]
+    assert entity.metadata["source"] == "external"
+    assert "service_instance_id" not in entity.metadata
+
+
 def test_get_client_uses_idempotent_namespace_bootstrap(monkeypatch):
     original_client = mcp_server_module._client
     original_namespaces = mcp_server_module._initialized_namespaces.copy()
@@ -190,6 +206,7 @@ def test_resolve_namespace_caches_after_first_call(mock_get_client):
 
 def test_save_trajectory_with_user_and_session_metadata(mock_get_client):
     """save_trajectory should inject user_id and session_id into entity metadata."""
+    mock_get_client.config.service_instance_id = "instance-a"
     with patch("altk_evolve.frontend.mcp.mcp_server.generate_guidelines") as mock_gen:
         mock_result = MagicMock()
         mock_guideline = MagicMock()
@@ -225,6 +242,9 @@ def test_save_trajectory_with_user_and_session_metadata(mock_get_client):
         assert guide_entity.metadata["user_id"] == "user-42"
         assert guide_entity.metadata["owner_id"] == "user-42"
         assert guide_entity.metadata["session_id"] == "session-7"
+
+        readback_filters = mock_get_client.search_entities.call_args.kwargs["filters"]
+        assert readback_filters["metadata.service_instance_id"] == "instance-a"
 
 
 def test_save_trajectory_with_namespace_override(mock_get_client):
@@ -440,7 +460,7 @@ def test_store_user_facts_returns_structured_payload(mock_get_client):
             store_user_facts(
                 user_id="user-123",
                 message="I prefer concise answers.",
-                metadata=json.dumps({"source": "cuga-lite"}),
+                metadata=json.dumps({"source": "external", "service_instance_id": "spoofed"}),
             )
         )
 
@@ -458,7 +478,8 @@ def test_store_user_facts_returns_structured_payload(mock_get_client):
     assert entities[0].type == "fact"
     assert entities[0].metadata["user_id"] == "user-123"
     assert entities[0].metadata["category"] == "style"
-    assert entities[0].metadata["source"] == "cuga-lite"
+    assert entities[0].metadata["source"] == "external"
+    assert "service_instance_id" not in entities[0].metadata
     assert call_kwargs["enable_conflict_resolution"] is False
 
 

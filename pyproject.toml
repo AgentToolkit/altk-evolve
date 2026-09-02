@@ -40,6 +40,10 @@ pgvector = [
     "pgvector>=0.3",
 ]
 
+reaper = [
+    "psycopg[binary]>=3.1",
+]
+
 # Optional plugin/hook framework (CPEX). Kept out of core deps because cpex
 # pulls heavy transitive dependencies (fastapi, mcp, prometheus). Without this
 # extra installed, the hook seam is a fast no-op.

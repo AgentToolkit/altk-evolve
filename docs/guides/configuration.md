@@ -45,6 +45,7 @@ All configuration variables are prefixed with `EVOLVE_`.
 |----------|-------------------------------------------------------------------------------|------------------------------------------|
 | `EVOLVE_BACKEND` | Backend provider (`milvus`, `filesystem`, or `postgres`)                      | `milvus`                                 |
 | `EVOLVE_NAMESPACE_ID` | Namespace ID for isolation                                                    | `evolve`                                 |
+| `EVOLVE_SERVICE_INSTANCE_ID` | Deployment ownership marker added to newly written entities. | unset |
 | `EVOLVE_GUIDELINES_MODE` | Guideline generation pipeline: `standard`, `consistency`, or `all` — see [Enabling Guidelines](guidelines.md) | `standard` |
 | `EVOLVE_CONSISTENCY_METHOD` | Consistency mode only: `fast` (LLM self-judged) or `accurate` (resampling based) — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method) | `fast` |
 | `EVOLVE_GUIDELINES_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |

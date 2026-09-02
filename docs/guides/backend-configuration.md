@@ -141,6 +141,7 @@ Evolve uses a layered identity model. Understanding how each layer maps to physi
 | Layer | Purpose | Scope |
 |---|---|---|
 | **Namespace** (`namespace_id`) | Org / tenant boundary | First-class — physically separates data |
+| **Service instance** (`service_instance_id`) | Deployment ownership / deprovisioning boundary | Reserved entity metadata |
 | **User** (`user_id`) | Individual user within a namespace | Metadata-only — stored in the entity `metadata` dict |
 | **Session** (`session_id`) | Single agent session / conversation | Metadata-only — stored in the entity `metadata` dict |
 
@@ -149,6 +150,7 @@ Evolve uses a layered identity model. Understanding how each layer maps to physi
 | Aspect | Filesystem | PostgreSQL (pgvector) | Milvus |
 |---|---|---|---|
 | **Namespace isolation** | One JSON file per namespace (`{id}.json`) | One table per namespace (`ns_{id}`) | One collection per namespace |
+| **`service_instance_id` storage** | `metadata.service_instance_id` in JSON entity dict | `metadata` JSONB column (`metadata->>'service_instance_id'`) | `metadata` JSON field (`metadata["service_instance_id"]`) |
 | **`user_id` storage** | `metadata.user_id` in JSON entity dict | `metadata` JSONB column (`metadata->>'user_id'`) | `metadata` JSON field (`metadata["user_id"]`) |
 | **`session_id` storage** | `metadata.session_id` in JSON entity dict | `metadata` JSONB column (`metadata->>'session_id'`) | `metadata` JSON field (`metadata["session_id"]`) |
 | **`user_id` index** | None (in-memory scan) | None (JSONB GIN possible but not created) | None (scan within collection) |
@@ -160,14 +162,16 @@ Evolve uses a layered identity model. Understanding how each layer maps to physi
 
 1. **Namespace is the only hard boundary.** Data in different namespaces is physically separated across all backends. There is no way to accidentally query across namespaces without explicitly iterating over them.
 
-2. **`user_id` and `session_id` are soft filters.** They rely on query-time filtering against the `metadata` dict. There are no dedicated columns, foreign keys, or indexes — a missing filter silently returns all entities in the namespace regardless of owner.
+2. **`service_instance_id`, `user_id`, and `session_id` are metadata boundaries.** `service_instance_id` identifies which deployment owns an entity and supports operator cleanup; it is not a replacement for namespace tenant isolation. Evolve reads this value only from `EVOLVE_SERVICE_INSTANCE_ID`; callers cannot assign it through entity metadata or MCP tool arguments. Existing entities are not backfilled and remain unattributed. User and session identifiers remain optional query-time filters.
 
-3. **No indexes on identity metadata.** For small-to-medium namespaces this is fine. For large namespaces with frequent per-user queries, consider adding:
+3. **Conflict resolution respects service-instance ownership.** When every entity in a write batch has the same `service_instance_id`, Evolve only compares it with existing entities carrying that same marker. This prevents one service instance from merging with or deleting another instance's memory.
+
+4. **No indexes on identity metadata.** For small-to-medium namespaces this is fine. For large namespaces with frequent per-user queries, consider adding:
    - **PostgreSQL:** A GIN index on the `metadata` JSONB column, or a partial index on `(metadata->>'user_id')`.
    - **Milvus:** A scalar index on `metadata["user_id"]` (supported in Milvus 2.3+).
    - **Filesystem:** Not applicable — the backend scans in memory regardless.
 
-4. **Public entity queries iterate namespaces.** `get_public_entities` loops over all namespaces and filters for `metadata.visibility = "public"`. This is O(N) in the number of namespaces and is not a concern at small scale but should be revisited for deployments with many tenants.
+5. **Public entity queries iterate namespaces.** `get_public_entities` loops over all namespaces and filters for `metadata.visibility = "public"`. This is O(N) in the number of namespaces and is not a concern at small scale but should be revisited for deployments with many tenants.
 
 ## Troubleshooting
 

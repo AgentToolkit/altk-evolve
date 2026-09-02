@@ -21,8 +21,8 @@ COPY pyproject.toml uv.lock ./
 COPY altk_evolve ./altk_evolve
 COPY README.md LICENSE MANIFEST.in ./
 
-# Install dependencies using uv (no extras needed for milvus as it's in base dependencies)
-RUN uv sync --frozen --no-dev
+# Include the lightweight psycopg dependency used by the Kubernetes reaper.
+RUN uv sync --frozen --no-dev --extra reaper
 
 # Set environment variables for filesystem backend
 ENV EVOLVE_BACKEND=filesystem

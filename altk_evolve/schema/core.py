@@ -2,6 +2,8 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from sqlite3 import Cursor, Row
 
+SERVICE_INSTANCE_METADATA_KEY = "service_instance_id"
+
 
 class Namespace(BaseModel):
     """Details of a namespace containing memories."""

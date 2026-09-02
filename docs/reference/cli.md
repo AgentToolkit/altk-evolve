@@ -85,6 +85,28 @@ the rule that decided it, and the evidence behind it. See the
 [Data Retention guide](../guides/retention.md) for the policy format and the
 `AccessStampPlugin` dependency of `max_unused_days` rules.
 
+### Service Instance Cleanup
+
+Kubernetes operators can remove all Postgres entities attributed to a
+deprovisioned service instance. Preview the operation first, then apply it:
+
+```bash
+evolve purge service-instance --service-instance-id "$SERVICE_INSTANCE_ID" --dry-run
+evolve purge service-instance --service-instance-id "$SERVICE_INSTANCE_ID"
+```
+
+The command requires `EVOLVE_BACKEND=postgres`, uses the existing
+`EVOLVE_PG_*` connection settings, emits a JSON summary, and exits non-zero on
+failure. `--service-instance-id` can also be supplied through
+`EVOLVE_SERVICE_INSTANCE_ID`, which is convenient for a Kubernetes CronJob.
+
+The purge scans Evolve namespace tables and deletes rows whose
+`metadata.service_instance_id` exactly matches the requested value. It leaves
+other service instances, tenant-level namespace catalog rows, and legacy rows
+without an attribution marker intact. Run the reaper from a rebuilt
+`Dockerfile.core` image; the image includes the lightweight `reaper` extra and
+the command can be selected by overriding its default MCP entrypoint.
+
 ### Skill Management
 
 ```bash

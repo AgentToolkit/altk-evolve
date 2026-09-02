@@ -1,4 +1,4 @@
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
 
@@ -9,6 +9,7 @@ class EvolveConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
     backend: Literal["milvus", "filesystem", "postgres"] = "filesystem"
     namespace_id: str = "evolve"
+    service_instance_id: str | None = None
     settings: BaseSettings | None = None
     clustering_threshold: float = 0.80
     segmentation_enabled: bool = True
@@ -36,6 +37,13 @@ class EvolveConfig(BaseSettings):
     retrieval_near_core_thresh: float = Field(default=0.75, ge=0.0, le=1.0)
     retrieval_dedup_thresh: float = Field(default=0.90, ge=0.0, le=1.0)
     evidence_filter: Literal["all", "success", "failure"] = "all"
+
+    @field_validator("service_instance_id", mode="before")
+    @classmethod
+    def _normalize_service_instance_id(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     @model_validator(mode="after")
     def _check_support_thresholds(self) -> "EvolveConfig":
