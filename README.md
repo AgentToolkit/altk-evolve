@@ -9,7 +9,6 @@
 [![License](https://img.shields.io/github/license/AgentToolkit/altk-evolve)](https://www.apache.org/licenses/LICENSE-2.0)
 ![Stars](https://img.shields.io/github/stars/AgentToolkit/altk-evolve?style=social)
 
-**Blog posts:** [IBM announcement](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) | [Hugging Face blog](https://huggingface.co/blog/ibm-research/altk-evolve) | [ACE Comparison](https://huggingface.co/blog/ibm-research/altk-evolve-sldd)
 </div>
 
 Coding agents repeat the same mistakes because they start fresh every session. Evolve gives agents memory — they learn from what worked and what didn't, so each session is better than the last.
@@ -20,6 +19,18 @@ On the AppWorld benchmark, Evolve improved agent reliability by +8.9 points over
 
 > [!IMPORTANT]
 > ⭐ **Star the repo**: it helps others discover it.  
+
+## Latest from Evolve
+
+Research, releases, and practical findings from the Evolve team.
+
+| Date | Type | Update |
+|---|---|---|
+| 2026-08-18 | Article | [How Much Memory Does Your Agent Actually Need?](https://huggingface.co/blog/ibm-research/altk-evolve-hmm) — Why agent memory should be calibrated to the model instead of simply increased. |
+| 2026-08-11 | Article | [Thinking of ACE? We Can Do It with Fewer Tokens](https://huggingface.co/blog/ibm-research/altk-evolve-sldd) — Comparing Evolve’s targeted guideline retrieval with ACE’s playbook approach and token usage. |
+| 2026-04-08 | Article | [ALTK‑Evolve: On‑the‑Job Learning for AI Agents](https://huggingface.co/blog/ibm-research/altk-evolve) — An introduction to learning reusable guidance from agent trajectories. |
+| 2026-04-07 | Announcement | [IBM introduces ALTK Evolve](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) — Evolve is opened to builders creating agents that learn from experience. |
+| 2026-03-11 | Paper | [Trajectory-Informed Memory Generation for Self-Improving Agent Systems](https://arxiv.org/abs/2603.10600) — The research framework and evaluation underlying Evolve. |
 
 ## Quick Start (Lite)
 [IBM Bob →](https://agenttoolkit.github.io/altk-evolve/examples/hello_world/bob/)
