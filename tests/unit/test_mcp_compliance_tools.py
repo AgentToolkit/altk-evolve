@@ -8,8 +8,12 @@ from altk_evolve.frontend.mcp.mcp_server import (
     delete_entity,
     get_compliance_status,
     get_entity,
+    get_retention_policy,
     list_entities,
+    list_retention_policies,
+    list_retention_runs,
     patch_entity_metadata,
+    put_retention_policy,
     record_access,
     run_retention,
     validate_retention_policy,
@@ -303,6 +307,45 @@ def test_validate_retention_policy_returns_field_errors():
     assert result["errors"]
 
 
+def test_retention_policy_tools_persist_and_list_namespace_records(client):
+    store = MagicMock()
+    policy_record = {
+        "namespace_id": "tenant-a",
+        "policy_id": "standard",
+        "name": "Standard retention",
+        "description": None,
+        "enabled": True,
+        "policy": {"rules": []},
+    }
+    store.put_policy.return_value = policy_record
+    store.get_policy.return_value = policy_record
+    store.list_policies.return_value = [policy_record]
+
+    with patch("altk_evolve.frontend.mcp.mcp_server._retention_store", return_value=store):
+        created = json.loads(
+            put_retention_policy(
+                policy_id="standard",
+                name="Standard retention",
+                policy=json.dumps({"rules": []}),
+                namespace_id="tenant-a",
+            )
+        )
+        fetched = json.loads(get_retention_policy("standard", namespace_id="tenant-a"))
+        listed = json.loads(list_retention_policies(namespace_id="tenant-a"))
+
+    assert created["policy_id"] == "standard"
+    assert fetched["name"] == "Standard retention"
+    assert listed["items"] == [policy_record]
+    store.put_policy.assert_called_once_with(
+        namespace_id="tenant-a",
+        policy_id="standard",
+        name="Standard retention",
+        description=None,
+        enabled=True,
+        policy={"rules": []},
+    )
+
+
 def test_run_retention_returns_real_entity_references_and_predelete_snapshot(client):
     entity = _entity(
         "old-session",
@@ -313,31 +356,39 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
             "agent_id": "agent-a",
             "session_id": "thread-9",
             "task_id": "trace-9",
+            "title": "Quarterly planning session",
         },
     )
     client.scan_entities.return_value = [entity]
-    result = json.loads(
-        run_retention(
-            policy=json.dumps(
+    store = MagicMock()
+    store.get_policy.return_value = {
+        "policy_id": "standard",
+        "name": "Standard retention",
+        "enabled": True,
+        "policy": {
+            "rules": [
                 {
-                    "rules": [
-                        {
-                            "name": "old-sessions",
-                            "entity_type": "trajectory",
-                            "max_age_days": 365,
-                            "action": "delete",
-                            "cascade_derived": True,
-                        }
-                    ]
+                    "name": "old-sessions",
+                    "entity_type": "trajectory",
+                    "max_age_days": 365,
+                    "action": "delete",
+                    "cascade_derived": True,
                 }
-            ),
-            dry_run=False,
-            as_of=NOW.isoformat(),
-            run_id="run-1",
-            namespace_id="tenant-a",
-            metadata_filters=json.dumps({"agent_id": "agent-a"}),
+            ]
+        },
+    }
+    with patch("altk_evolve.frontend.mcp.mcp_server._retention_store", return_value=store):
+        result = json.loads(
+            run_retention(
+                policy_id="standard",
+                dry_run=False,
+                as_of=NOW.isoformat(),
+                run_id="run-1",
+                namespace_id="tenant-a",
+                metadata_filters=json.dumps({"agent_id": "agent-a"}),
+                actor_id="operator-a",
+            )
         )
-    )
 
     deleted = result["deleted"][0]
     assert result["run_id"] == "run-1"
@@ -351,6 +402,78 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
     assert deleted["outcome"] == "deleted"
     assert deleted["session_id"] == "thread-9"
     assert deleted["content_preview"] == "Memory old-session"
+    assert store.save_run.call_count == 2
+    assert store.save_run.call_args.kwargs["status"] == "completed"
+    assert store.save_run.call_args.kwargs["actor_id"] == "operator-a"
+    persisted = store.save_run.call_args.kwargs["report"]
+    assert "title" not in persisted["deleted"][0]
+    assert "content_preview" not in persisted["deleted"][0]
+    assert "metadata" not in persisted["deleted"][0]
+    assert "session_id" not in persisted["deleted"][0]
+
+
+def test_run_retention_applies_external_matches_in_scope(client):
+    entity = _entity("orphan", metadata={"agent_id": "agent-a"})
+    client.scan_entities.side_effect = [[], [entity]]
+    store = MagicMock()
+    store.get_policy.return_value = {
+        "policy_id": "standard",
+        "name": "Standard retention",
+        "enabled": True,
+        "policy": {"rules": []},
+    }
+
+    with patch("altk_evolve.frontend.mcp.mcp_server._retention_store", return_value=store):
+        result = json.loads(
+            run_retention(
+                policy_id="standard",
+                dry_run=False,
+                namespace_id="tenant-a",
+                metadata_filters=json.dumps({"agent_id": "agent-a"}),
+                additional_matches=json.dumps(
+                    [
+                        {
+                            "entity_id": "orphan",
+                            "rule": "orphaned-conversations",
+                            "reason": "orphaned_conversation",
+                            "detail": "source conversation is unavailable",
+                        }
+                    ]
+                ),
+            )
+        )
+
+    assert result["deleted"][0]["entity_id"] == "orphan"
+    assert result["deleted"][0]["rule"] == "orphaned-conversations"
+    client.delete_entity_by_id.assert_called_once_with("tenant-a", "orphan")
+    client.scan_entities.assert_any_call(
+        "tenant-a",
+        filters={"id": "orphan", "metadata.agent_id": "agent-a"},
+        limit=1,
+    )
+
+
+def test_list_retention_runs_filters_by_agent_and_policy(client):
+    store = MagicMock()
+    store.list_runs.return_value = [{"run_id": "run-1"}]
+
+    with patch("altk_evolve.frontend.mcp.mcp_server._retention_store", return_value=store):
+        result = json.loads(
+            list_retention_runs(
+                namespace_id="tenant-a",
+                agent_id="agent-a",
+                policy_id="standard",
+                limit=20,
+            )
+        )
+
+    assert result == {"items": [{"run_id": "run-1"}]}
+    store.list_runs.assert_called_once_with(
+        namespace_id="tenant-a",
+        agent_id="agent-a",
+        policy_id="standard",
+        limit=20,
+    )
 
 
 def test_get_compliance_status_reports_configured_plugin_health(client):

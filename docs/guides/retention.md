@@ -28,15 +28,27 @@ Or through the MCP server:
 
 ```text
 validate_retention_policy(policy='{"rules":[...]}')
-run_retention(policy='{"rules":[...]}')                    # dry run
-run_retention(policy='{"rules":[...]}', dry_run=false)     # enforce
+put_retention_policy(policy_id='standard', name='Standard', policy='{"rules":[...]}')
+list_retention_policies()
+run_retention(policy_id='standard')                    # dry run
+run_retention(policy_id='standard', dry_run=false)     # enforce
+list_retention_runs(policy_id='standard')
 ```
 
 The MCP report includes the retention item plus a pre-action entity snapshot
 (`content_preview`, attribution metadata, and session/provenance identifiers),
 so an audit UI can still explain an applied deletion after the entity is gone.
 `as_of` is an optional ISO-8601 clock override for deterministic audits and
-demonstrations.
+demonstrations. Evolve owns both the policy catalog and the run history. With a
+PostgreSQL entity backend those records use the same PostgreSQL database; other
+backends use a local SQLite catalog, whose location can be overridden with
+`EVOLVE_RETENTION_STORE_PATH`.
+
+An integrating service may pass `additional_matches` to `run_retention` when a
+criterion depends on data outside Evolve, such as whether a source conversation
+still exists. Evolve re-resolves each entity under the run's metadata filters,
+performs the deletion through the normal hook path, and includes the result in
+the persisted report.
 
 [`examples/retention_demo.py`](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/retention_demo.py) is a runnable end-to-end walkthrough.
 
