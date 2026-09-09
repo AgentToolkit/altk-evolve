@@ -145,6 +145,16 @@ def test_get_entity_denies_non_owner_before_access_stamping(client):
     client.record_access.assert_not_called()
 
 
+def test_get_entity_denies_attributed_entity_without_caller_identity(client):
+    client.scan_entities.return_value = [_entity("one", metadata={"owner_id": "user-1"})]
+
+    denied = json.loads(get_entity("one", namespace_id="tenant-a"))
+
+    assert denied["error"].startswith("Permission denied")
+    client.get_entity_by_id.assert_not_called()
+    client.record_access.assert_not_called()
+
+
 def test_get_entity_enforces_agent_scope(client):
     client.scan_entities.return_value = [
         _entity(
@@ -273,6 +283,15 @@ def test_delete_entity_enforces_user_and_agent_scope(client):
             namespace_id="tenant-a",
         )
     )
+
+    assert denied["error"].startswith("Permission denied")
+    client.delete_entity_by_id.assert_not_called()
+
+
+def test_delete_entity_denies_attributed_entity_without_caller_identity(client):
+    client.get_entity_by_id.return_value = _entity("one", metadata={"owner_id": "user-1"})
+
+    denied = json.loads(delete_entity("one", namespace_id="tenant-a"))
 
     assert denied["error"].startswith("Permission denied")
     client.delete_entity_by_id.assert_not_called()
@@ -453,6 +472,34 @@ def test_run_retention_applies_external_matches_in_scope(client):
     )
 
 
+def test_run_retention_persists_failed_status_when_execution_raises(client):
+    client.scan_entities.side_effect = RuntimeError("database unavailable")
+    store = MagicMock()
+    store.get_policy.return_value = {
+        "policy_id": "standard",
+        "name": "Standard retention",
+        "enabled": True,
+        "policy": {"rules": []},
+    }
+
+    with patch("altk_evolve.frontend.mcp.mcp_server._retention_store", return_value=store):
+        result = json.loads(
+            run_retention(
+                policy_id="standard",
+                run_id="run-failed",
+                namespace_id="tenant-a",
+            )
+        )
+
+    assert result["error"] == "Retention run failed"
+    assert result["run_id"] == "run-failed"
+    assert store.save_run.call_count == 2
+    failed_call = store.save_run.call_args
+    assert failed_call.kwargs["status"] == "failed"
+    assert failed_call.kwargs["report"]["failure"] == {"type": "RuntimeError"}
+    assert failed_call.kwargs["report"]["error_count"] == 1
+
+
 def test_list_retention_runs_filters_by_agent_and_policy(client):
     store = MagicMock()
     store.list_runs.return_value = [{"run_id": "run-1"}]
@@ -500,6 +547,31 @@ def test_get_compliance_status_reports_configured_plugin_health(client):
     assert result["retention_available"] is True
     assert result["plugins"][0]["protection_class"] == "access"
     assert result["plugins"][0]["healthy"] is True
+
+
+def test_get_compliance_status_classifies_redaction_plugins_as_pii(client):
+    client.ready.return_value = True
+    manager = MagicMock()
+    manager.has_hooks_for.return_value = True
+    specs = [
+        {
+            "name": "content-redaction",
+            "kind": "example.ContentRedactionPlugin",
+            "hooks": ["memory_pre_store"],
+            "mode": "sequential",
+        }
+    ]
+
+    with (
+        patch("altk_evolve.frontend.mcp.mcp_server._configured_hook_plugins", return_value=specs),
+        patch("altk_evolve.hooks.manager.get_plugin_manager", return_value=manager),
+        patch("altk_evolve.hooks.manager.hooks_active", return_value=True),
+        patch("altk_evolve.hooks.types.engine_available", return_value=True),
+        patch("altk_evolve.frontend.mcp.mcp_server.version", return_value="1.1.5"),
+    ):
+        result = json.loads(get_compliance_status(namespace_id="tenant-a"))
+
+    assert result["plugins"][0]["protection_class"] == "pii"
 
 
 def test_get_compliance_status_marks_unregistered_plugin_unhealthy(client):

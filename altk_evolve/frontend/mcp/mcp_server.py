@@ -298,8 +298,10 @@ def _entity_owned_by(
     agent_id: str | None = None,
 ) -> bool:
     metadata = entity.metadata or {}
+    attributed_ids = {str(value) for value in (metadata.get("owner_id"), metadata.get("user_id")) if value}
+    if user_id is None and agent_id is None and (attributed_ids or metadata.get("agent_id")):
+        return False
     if user_id is not None:
-        attributed_ids = {str(value) for value in (metadata.get("owner_id"), metadata.get("user_id")) if value}
         if user_id not in attributed_ids:
             return False
     if agent_id is not None and str(metadata.get("agent_id") or "") != agent_id:
@@ -904,76 +906,116 @@ def run_retention(
         report={"run_id": resolved_run_id, "started_at": started_at.isoformat()},
         created_at=started_at.isoformat(),
     )
-    engine = RetentionEngine(client)
-    report = engine.apply(
-        resolved_ns,
-        normalized_policy,
-        now=now,
-        dry_run=dry_run,
-        scan_limit=scan_limit,
-        filters=backend_filters,
-    )
-    snapshots = {entity.id: entity for entity in engine.last_scanned_entities}
-    deleted_ids = {item.entity_id for item in report.deleted}
-    for match in parsed_matches:
-        entity_id = str(match.get("entity_id") or "").strip()
-        rule = str(match.get("rule") or "external-match").strip()
-        reason = str(match.get("reason") or "external_match").strip()
-        detail = str(match.get("detail") or "matched an external retention criterion").strip()
-        if not entity_id or entity_id in deleted_ids:
-            continue
-        entity = snapshots.get(entity_id)
-        if entity is None:
-            scoped_filters = {"id": entity_id, **(backend_filters or {})}
-            matches = client.scan_entities(resolved_ns, filters=scoped_filters, limit=1)
-            entity = matches[0] if matches else None
-        if entity is None:
-            report.errors.append(f"external match {entity_id}: entity was not found in the requested scope")
-            continue
-        snapshots[entity_id] = entity
-        item = RetentionItem(entity_id, entity.type, "delete", reason, rule, detail)
-        report.flagged[:] = [entry for entry in report.flagged if entry.entity_id != entity_id]
-        report.skipped[:] = [entry for entry in report.skipped if entry.entity_id != entity_id]
+    try:
+        engine = RetentionEngine(client)
+        report = engine.apply(
+            resolved_ns,
+            normalized_policy,
+            now=now,
+            dry_run=dry_run,
+            scan_limit=scan_limit,
+            filters=backend_filters,
+        )
+        snapshots = {entity.id: entity for entity in engine.last_scanned_entities}
+        deleted_ids = {item.entity_id for item in report.deleted}
+        for match in parsed_matches:
+            entity_id = str(match.get("entity_id") or "").strip()
+            rule = str(match.get("rule") or "external-match").strip()
+            reason = str(match.get("reason") or "external_match").strip()
+            detail = str(match.get("detail") or "matched an external retention criterion").strip()
+            if not entity_id or entity_id in deleted_ids:
+                continue
+            entity = snapshots.get(entity_id)
+            if entity is None:
+                scoped_filters = {"id": entity_id, **(backend_filters or {})}
+                matches = client.scan_entities(resolved_ns, filters=scoped_filters, limit=1)
+                entity = matches[0] if matches else None
+            if entity is None:
+                report.errors.append(f"external match {entity_id}: entity was not found in the requested scope")
+                continue
+            snapshots[entity_id] = entity
+            item = RetentionItem(entity_id, entity.type, "delete", reason, rule, detail)
+            report.flagged[:] = [entry for entry in report.flagged if entry.entity_id != entity_id]
+            report.skipped[:] = [entry for entry in report.skipped if entry.entity_id != entity_id]
+            try:
+                if not dry_run:
+                    client.delete_entity_by_id(resolved_ns, entity_id)
+                report.deleted.append(item)
+                deleted_ids.add(entity_id)
+            except Exception as exc:
+                logger.warning("retention: failed to delete external match %s: %s", entity_id, exc)
+                report.errors.append(f"delete {entity_id}: {exc}")
+                report.skipped.append(RetentionItem(entity_id, entity.type, "skip", "delete_failed", rule, f"deletion failed: {exc}"))
+        completed_at = datetime.datetime.now(datetime.UTC)
+        result = {
+            "run_id": resolved_run_id,
+            "namespace_id": resolved_ns,
+            "policy_id": policy_id,
+            "policy_name": stored_policy["name"],
+            "actor_id": actor_id,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "as_of": (now or completed_at).isoformat(),
+            "dry_run": report.dry_run,
+            "policy": normalized_policy.model_dump(mode="json"),
+            "metadata_filters": metadata_filter_values,
+            "summary": report.summary(),
+            "flagged": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.flagged],
+            "deleted": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.deleted],
+            "skipped": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.skipped],
+            "errors": report.errors,
+            "warnings": report.warnings,
+        }
+        store.save_run(
+            namespace_id=resolved_ns,
+            run_id=resolved_run_id,
+            policy_id=policy_id,
+            agent_id=(metadata_filter_values or {}).get("agent_id"),
+            actor_id=actor_id,
+            status="failed" if report.errors else "completed",
+            report=_retention_audit_payload(result),
+            created_at=started_at.isoformat(),
+        )
+        return _json_response(result)
+    except Exception as exc:
+        logger.exception("retention run %s failed", resolved_run_id)
+        completed_at = datetime.datetime.now(datetime.UTC)
+        failed_result = {
+            "run_id": resolved_run_id,
+            "namespace_id": resolved_ns,
+            "policy_id": policy_id,
+            "policy_name": stored_policy["name"],
+            "actor_id": actor_id,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "as_of": (now or completed_at).isoformat(),
+            "dry_run": dry_run,
+            "errors": ["Retention execution failed"],
+            "warnings": [],
+            "failure": {"type": type(exc).__name__},
+        }
+        failed_audit = _retention_audit_payload(failed_result)
+        failed_audit["failure"] = failed_result["failure"]
         try:
-            if not dry_run:
-                client.delete_entity_by_id(resolved_ns, entity_id)
-            report.deleted.append(item)
-            deleted_ids.add(entity_id)
-        except Exception as exc:
-            logger.warning("retention: failed to delete external match %s: %s", entity_id, exc)
-            report.errors.append(f"delete {entity_id}: {exc}")
-            report.skipped.append(RetentionItem(entity_id, entity.type, "skip", "delete_failed", rule, f"deletion failed: {exc}"))
-    completed_at = datetime.datetime.now(datetime.UTC)
-    result = {
-        "run_id": resolved_run_id,
-        "namespace_id": resolved_ns,
-        "policy_id": policy_id,
-        "policy_name": stored_policy["name"],
-        "actor_id": actor_id,
-        "started_at": started_at.isoformat(),
-        "completed_at": completed_at.isoformat(),
-        "as_of": (now or completed_at).isoformat(),
-        "dry_run": report.dry_run,
-        "policy": normalized_policy.model_dump(mode="json"),
-        "metadata_filters": metadata_filter_values,
-        "summary": report.summary(),
-        "flagged": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.flagged],
-        "deleted": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.deleted],
-        "skipped": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.skipped],
-        "errors": report.errors,
-        "warnings": report.warnings,
-    }
-    store.save_run(
-        namespace_id=resolved_ns,
-        run_id=resolved_run_id,
-        policy_id=policy_id,
-        agent_id=(metadata_filter_values or {}).get("agent_id"),
-        actor_id=actor_id,
-        status="failed" if report.errors else "completed",
-        report=_retention_audit_payload(result),
-        created_at=started_at.isoformat(),
-    )
-    return _json_response(result)
+            store.save_run(
+                namespace_id=resolved_ns,
+                run_id=resolved_run_id,
+                policy_id=policy_id,
+                agent_id=(metadata_filter_values or {}).get("agent_id"),
+                actor_id=actor_id,
+                status="failed",
+                report=failed_audit,
+                created_at=started_at.isoformat(),
+            )
+        except Exception:
+            logger.exception("retention run %s failed to persist its terminal status", resolved_run_id)
+        return _json_response(
+            {
+                "error": "Retention run failed",
+                "run_id": resolved_run_id,
+                "details": [{"message": str(exc)}],
+            }
+        )
 
 
 @mcp.tool()
@@ -1002,7 +1044,7 @@ def _protection_class(name: str, kind: str, hooks: list[str]) -> str:
     searchable = f"{name} {kind}".lower()
     if "secret" in searchable:
         return "secrets"
-    if "pii" in searchable or "readi" in searchable:
+    if "pii" in searchable or "redact" in searchable:
         return "pii"
     if "access" in searchable:
         return "access"
