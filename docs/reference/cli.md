@@ -67,23 +67,25 @@ evolve entities delete my_namespace 12345
 Manage policies, rules, and schedules directly in Evolve:
 
 ```bash
-evolve retention policies put standard --namespace my-service
-evolve retention policies set-rule standard old-memories --namespace my-service --max-age-days 90 --action delete
+evolve retention policies create standard --namespace my-service
+evolve retention policies rules add standard --name old-memories --namespace my-service --max-age-days 90 --action delete
 
 # Immediate execution of the stored policy (dry run by default).
 evolve retention run standard --namespace my-service --actor alice
 evolve retention run standard --namespace my-service --actor alice --apply
 
-# Create a schedule, then run the executor.
+# Create a schedule for the running Evolve service.
 evolve retention schedules create nightly --namespace my-service --actor alice --policy standard --schedule '0 2 * * *' --time-zone America/Los_Angeles
-evolve retention execute
-# Or dispatch currently due schedules, drain queued jobs, and exit:
-evolve retention execute --once
+evolve retention schedules stop nightly --namespace my-service --actor alice --revision 1
+evolve retention schedules start nightly --namespace my-service --actor alice --revision 2
 ```
 
-`policies` supports `put`, `get`, `list`, `set-rule`, and `remove-rule`.
-`schedules` supports `create`, `show`, `list`, `update`, and `delete`. `show` includes the next five scheduled times alongside configuration, or no upcoming runs when suspended.
-`jobs` supports `list`, `get`, `cancel`, and `recover`.
+`policies` supports `create`, `list`, `show`, `update`, and `delete`.
+`policies rules` supports `add`, `list`, `update`, and `remove`; select a rule with `--name`.
+`schedules` supports `create`, `show`, `list`, `update`, `delete`, `start`, and `stop`. `show` includes the next five scheduled times alongside configuration, or no upcoming runs when suspended.
+`jobs` supports `list`, `show`, `cancel`, and `recover`.
+
+The Evolve service runs enabled schedules automatically. `start`/`stop` change persisted schedule state; stopping a schedule does not cancel admitted jobs.
 
 Catalog operations require `--namespace`. Immediate runs and schedule writes require `--actor` for audit attribution. `run` takes a stored policy ID, and `--apply` enables mutations. Schedule updates take `--revision` and preserve omitted fields. Retention commands do not take policy or schedule files.
 

@@ -7,8 +7,8 @@ It is a sweep, not an interceptor: you run it (CLI, cron, or in code), it report
 ## Quick start
 
 ```bash
-evolve retention policies put standard --namespace my-service
-evolve retention policies set-rule standard old-memories --namespace my-service --max-age-days 90 --action delete
+evolve retention policies create standard --namespace my-service
+evolve retention policies rules add standard --name old-memories --namespace my-service --max-age-days 90 --action delete
 evolve retention run standard --namespace my-service --actor alice          # dry run
 evolve retention run standard --namespace my-service --actor alice --apply  # enforce
 ```
@@ -228,7 +228,7 @@ In scope: private entities under `.evolve/entities/` and session files under `.e
 
 ## Known limitations
 
-- **Explicit worker deployment.** Evolve owns [namespace schedules and execution](retention-scheduling.md); start the retention worker to run them. Frontends do not start it automatically.
+- **A running service is required.** The Evolve server owns [namespace schedules and execution](retention-scheduling.md); embedded hosts must attach the scheduling runtime to their application lifespan.
 - **No restore.** `delete` is final. Use `flag` first if you want a review stage.
 - **`max_unused_days` is only as good as your access stamping** — see above. Without `AccessStampPlugin` or `record_access`, it is an age rule wearing a different name.
 - **The plugin-side cascade needs a link nothing writes yet** — see the table above.

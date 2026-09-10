@@ -258,3 +258,35 @@ def test_schedule_mcp_transport_and_worker(client, store, monkeypatch):
             assert json.loads(result.content[0].text)["next_runs"][0] == START.replace(hour=2).isoformat()
 
     asyncio.run(exercise())
+
+
+def test_service_runtime_joins_scheduler_on_shutdown(client, monkeypatch):
+    import threading
+    from altk_evolve.retention.scheduler import retention_runtime
+
+    entered = threading.Event()
+    finished = threading.Event()
+
+    def run(self, **kwargs):
+        entered.set()
+        kwargs["stop"].wait(3)
+        finished.set()
+
+    monkeypatch.setattr(RetentionScheduler, "run", run)
+    with retention_runtime(client):
+        assert entered.wait(2)
+        assert not finished.is_set()
+    assert finished.is_set()
+
+
+def test_service_runtime_can_be_disabled(client, monkeypatch):
+    from altk_evolve.retention.scheduler import retention_runtime
+
+    client.config.retention_scheduler_enabled = False
+
+    def unexpected(self):
+        raise AssertionError("Disabled runtime must not initialize scheduler storage")
+
+    monkeypatch.setattr(RetentionScheduler, "__init__", unexpected)
+    with retention_runtime(client):
+        pass

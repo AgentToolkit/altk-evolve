@@ -27,10 +27,21 @@ def test_postgres_concurrent_schedule_claims():
             with psycopg.connect(dsn, options=f"-csearch_path={schema}", autocommit=True) as conn:
                 client = SimpleNamespace(config=SimpleNamespace(backend="postgres"), backend=SimpleNamespace(conn=conn))
                 store = ScheduleStore(client)
-                store.put_policy(namespace_id="a", policy_id="p", name="P", description=None, enabled=True, policy={"rules": []})
+                store.create_policy("a", "p", "P")
+                with pytest.raises(ValueError, match="already exists"):
+                    store.create_policy("a", "p", "duplicate")
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    list(pool.map(lambda n: store.edit_rule("a", "p", str(n), "add", {"max_age_days": n}), range(4)))
+                assert len(store.get_policy(namespace_id="a", policy_id="p")["policy"]["rules"]) == 4
+                store.update_policy("a", "p", "renamed", None)
+                assert store.get_policy(namespace_id="a", policy_id="p")["name"] == "renamed"
+                store.create_policy("b", "p", "isolated")
+                store.delete_policy("b", "p")
                 start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
                 config = ScheduleDefinition(policy_id="p", spec=CronJobSpec(schedule="* * * * *", concurrencyPolicy="Forbid"))
                 store.put("a", "daily", config, "alice", expected_revision=0, now=start)
+                with pytest.raises(ValueError, match="referenced"):
+                    store.delete_policy("a", "p")
                 due = start + dt.timedelta(minutes=1)
                 with ThreadPoolExecutor(max_workers=4) as pool:
                     jobs = list(pool.map(lambda _: store.dispatch("a", "daily", due), range(4)))

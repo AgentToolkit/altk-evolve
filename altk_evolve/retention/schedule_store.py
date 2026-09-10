@@ -89,10 +89,9 @@ class ScheduleStore(RetentionStore):
             raise ValueError("namespace, schedule ID, and actor ID are required")
         timestamp = utc(now or dt.datetime.now(dt.UTC)).isoformat()
         definition.spec.next_time(dt.datetime.fromisoformat(timestamp))
-        policy = self.get_policy(namespace_id=namespace, policy_id=definition.policy_id)
-        if policy is None:
-            raise ValueError("Retention policy not found in this namespace")
         with self.transaction() as conn:
+            if self._locked_policy(conn, namespace, definition.policy_id) is None:
+                raise ValueError("Retention policy not found in this namespace")
             row = self._locked_schedule(conn, namespace, schedule_id)
             if row is None:
                 if expected_revision != 0:
@@ -314,3 +313,97 @@ class ScheduleStore(RetentionStore):
         with self.transaction() as conn:
             row = self.sql(conn, "SELECT * FROM evolve_retention_jobs WHERE namespace_id=? AND job_id=?", (namespace, job_id)).fetchone()
             return self.record(row) if row else None
+
+    def _locked_policy(self, conn: Any, namespace: str, policy_id: str) -> Any:
+        suffix = " FOR UPDATE" if self._is_postgres else ""
+        return self.sql(
+            conn, "SELECT * FROM evolve_retention_policies WHERE namespace_id=? AND policy_id=?" + suffix, (namespace, policy_id)
+        ).fetchone()
+
+    def create_policy(self, namespace: str, policy_id: str, name: str, enabled: bool = True) -> dict[str, Any]:
+        """Create only; concurrent creates cannot overwrite an existing policy."""
+        ScheduleDefinition.model_validate({"policy_id": policy_id, "spec": {"schedule": "@daily"}})
+        now = dt.datetime.now(dt.UTC).isoformat()
+        with self.transaction() as conn:
+            cursor = self.sql(
+                conn,
+                """INSERT INTO evolve_retention_policies
+                (namespace_id,policy_id,name,description,enabled,policy_json,created_at,updated_at)
+                VALUES (?,?,?,NULL,?,?,?,?) ON CONFLICT(namespace_id,policy_id) DO NOTHING""",
+                (namespace, policy_id, name, enabled, '{"rules":[]}', now, now),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("Policy already exists")
+            return self._policy_record(self._locked_policy(conn, namespace, policy_id))
+
+    def update_policy(self, namespace: str, policy_id: str, name: str | None, enabled: bool | None) -> dict[str, Any]:
+        with self.transaction() as conn:
+            row = self._locked_policy(conn, namespace, policy_id)
+            if row is None:
+                raise ValueError("Policy not found")
+            self.sql(
+                conn,
+                """UPDATE evolve_retention_policies SET name=?,enabled=?,updated_at=?
+                WHERE namespace_id=? AND policy_id=?""",
+                (
+                    name if name is not None else row["name"],
+                    enabled if enabled is not None else row["enabled"],
+                    dt.datetime.now(dt.UTC).isoformat(),
+                    namespace,
+                    policy_id,
+                ),
+            )
+            return self._policy_record(self._locked_policy(conn, namespace, policy_id))
+
+    def delete_policy(self, namespace: str, policy_id: str) -> None:
+        """Keep referenced policies available to schedules and admitted jobs."""
+        with self.transaction() as conn:
+            if self._locked_policy(conn, namespace, policy_id) is None:
+                raise ValueError("Policy not found")
+            schedules = self.sql(
+                conn, "SELECT definition_json FROM evolve_retention_schedules WHERE namespace_id=?", (namespace,)
+            ).fetchall()
+            jobs = self.sql(
+                conn,
+                """SELECT definition_json FROM evolve_retention_jobs WHERE namespace_id=?
+                AND status IN ('queued','running','cancelling')""",
+                (namespace,),
+            ).fetchall()
+            if any(json.loads(row["definition_json"])["policy_id"] == policy_id for row in [*schedules, *jobs]):
+                raise ValueError("Policy is referenced by a schedule or active job")
+            self.sql(conn, "DELETE FROM evolve_retention_policies WHERE namespace_id=? AND policy_id=?", (namespace, policy_id))
+
+    def edit_rule(self, namespace: str, policy_id: str, rule_name: str, operation: str, values: dict[str, Any]) -> dict[str, Any]:
+        """Serialize named rule edits so concurrent edits do not lose other rules."""
+        from altk_evolve.retention.policy import RetentionRule
+
+        if not rule_name.strip():
+            raise ValueError("Rule name must be nonblank")
+        with self.transaction() as conn:
+            row = self._locked_policy(conn, namespace, policy_id)
+            if row is None:
+                raise ValueError("Policy not found")
+            policy = json.loads(row["policy_json"])
+            rules = policy["rules"]
+            matches = [index for index, rule in enumerate(rules) if rule["name"] == rule_name]
+            if operation == "add":
+                if matches:
+                    raise ValueError("Rule already exists")
+                rules.append(RetentionRule.model_validate({**values, "name": rule_name}).model_dump(mode="json"))
+            else:
+                if len(matches) != 1:
+                    raise ValueError("Rule not found or name is ambiguous")
+                index = matches[0]
+                if operation == "remove":
+                    del rules[index]
+                elif operation == "update":
+                    rules[index] = RetentionRule.model_validate({**rules[index], **values, "name": rule_name}).model_dump(mode="json")
+                else:
+                    raise ValueError("Unknown rule operation")
+            self.sql(
+                conn,
+                """UPDATE evolve_retention_policies SET policy_json=?,updated_at=?
+                WHERE namespace_id=? AND policy_id=?""",
+                (json.dumps(policy), dt.datetime.now(dt.UTC).isoformat(), namespace, policy_id),
+            )
+            return self._policy_record(self._locked_policy(conn, namespace, policy_id))

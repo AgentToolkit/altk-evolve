@@ -230,4 +230,4 @@ See the [Contributing Guide](CONTRIBUTING.md) to understand our development proc
 
 ### Embedded memory API and scheduling
 
-Hosts can mount the [scoped REST router](docs/guides/embedded-memory-api.md) with their own client and authentication dependencies. Evolve owns [retention schedules and worker execution](docs/guides/retention-scheduling.md), using Kubernetes-compatible cron, timezone, concurrency, deadline, and suspension fields. Use `evolve retention schedules` to manage schedules and `evolve retention execute` to run them.
+Hosts can mount the [scoped REST router](docs/guides/embedded-memory-api.md) with their own client and authentication dependencies. Evolve owns [retention schedules and worker execution](docs/guides/retention-scheduling.md), using Kubernetes-compatible cron, timezone, concurrency, deadline, and suspension fields. Use `evolve retention schedules` to manage schedules and `start`/`stop` to enable or suspend them. The Evolve service owns background execution.

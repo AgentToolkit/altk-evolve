@@ -10,7 +10,6 @@ import typer
 
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.frontend.services.schedules import ScheduleService, preview
-from altk_evolve.retention.policy import RetentionRule
 from altk_evolve.schema.exceptions import EvolveException
 
 Namespace = Annotated[str, typer.Option("--namespace", "-n", help="Service-instance namespace (required).")]
@@ -60,6 +59,8 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
     app.add_typer(schedules, name="schedules")
     app.add_typer(policies, name="policies")
     app.add_typer(jobs, name="jobs")
+    rules = typer.Typer(help="Manage ordered rules inside a policy.", no_args_is_help=True)
+    policies.add_typer(rules, name="rules")
 
     def service(namespace: str) -> ScheduleService:
         return ScheduleService(get_client(), namespace)
@@ -164,6 +165,27 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
             raise ValueError("Schedule not found")
         emit(result)
 
+    def set_schedule_state(schedule_id, namespace, actor, revision, suspended):
+        catalog = service(namespace)
+        record = catalog.get(schedule_id)
+        if record["revision"] != revision:
+            raise ValueError("Schedule revision conflict")
+        definition = record["definition"]
+        definition["spec"]["suspend"] = suspended
+        emit(catalog.put(schedule_id, definition, actor, expected_revision=revision))
+
+    @schedules.command("start")
+    @command_errors
+    def start_schedule(schedule_id: str, namespace: Namespace, actor: Actor, revision: Revision):
+        """Enable future scheduled execution by the running Evolve service."""
+        set_schedule_state(schedule_id, namespace, actor, revision, False)
+
+    @schedules.command("stop")
+    @command_errors
+    def stop_schedule(schedule_id: str, namespace: Namespace, actor: Actor, revision: Revision):
+        """Suspend future runs; queued or active jobs are not cancelled."""
+        set_schedule_state(schedule_id, namespace, actor, revision, True)
+
     def existing_policy(namespace, policy_id):
         catalog = service(namespace).store
         record = catalog.get_policy(namespace_id=namespace, policy_id=policy_id)
@@ -171,43 +193,41 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
             raise ValueError("Policy not found")
         return catalog, record
 
-    def save_policy(catalog, record):
-        return catalog.put_policy(**{key: record[key] for key in ("namespace_id", "policy_id", "name", "description", "enabled", "policy")})
-
-    @policies.command("put")
+    @policies.command("create")
     @command_errors
-    def put_policy(
+    def create_policy(
+        policy_id: str,
+        namespace: Namespace,
+        name: Annotated[str | None, typer.Option()] = None,
+        enabled: Annotated[bool, typer.Option("--enabled/--disabled")] = True,
+    ):
+        """Create an empty policy; fail if the ID already exists."""
+        emit(service(namespace).store.create_policy(namespace, policy_id, name or policy_id, enabled))
+
+    @policies.command("update")
+    @command_errors
+    def update_policy(
         policy_id: str,
         namespace: Namespace,
         name: Annotated[str | None, typer.Option()] = None,
         enabled: Annotated[bool | None, typer.Option("--enabled/--disabled")] = None,
     ):
-        """Create a policy or update its name/status, preserving existing rules."""
-        from altk_evolve.retention.schedule import ScheduleDefinition
+        """Change policy name/status without replacing its rules."""
+        emit(service(namespace).store.update_policy(namespace, policy_id, name, enabled))
 
-        # Reuse the catalog's policy identifier constraints.
-        ScheduleDefinition.model_validate({"policy_id": policy_id, "spec": {"schedule": "@daily"}})
-        catalog = service(namespace).store
-        record = catalog.get_policy(namespace_id=namespace, policy_id=policy_id) or {
-            "namespace_id": namespace,
-            "policy_id": policy_id,
-            "name": policy_id,
-            "description": None,
-            "enabled": True,
-            "policy": {"rules": []},
-        }
-        if name is not None:
-            record["name"] = name
-        if enabled is not None:
-            record["enabled"] = enabled
-        emit(save_policy(catalog, record))
-
-    @policies.command("set-rule")
+    @policies.command("delete")
     @command_errors
-    def set_rule(
+    def delete_policy(policy_id: str, namespace: Namespace):
+        """Delete a policy only when no schedules or active jobs reference it."""
+        service(namespace).store.delete_policy(namespace, policy_id)
+        emit({"deleted": True})
+
+    @rules.command("add")
+    @command_errors
+    def add_rule(
         policy_id: str,
-        rule_name: str,
         namespace: Namespace,
+        name: Annotated[str, typer.Option(help="Unique rule name within the policy.")],
         max_age_days: Annotated[int | None, typer.Option(min=0)] = None,
         max_unused_days: Annotated[int | None, typer.Option(min=0)] = None,
         entity_type: Annotated[str | None, typer.Option()] = None,
@@ -215,42 +235,73 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         on_missing_access_signal: Annotated[MissingAccess, typer.Option()] = MissingAccess.skip,
         cascade_derived: Annotated[bool, typer.Option()] = False,
     ):
-        """Append a rule or replace a named rule in place. First matching rule wins."""
-        rule = RetentionRule.model_validate(
-            {
-                "name": rule_name,
+        """Append a named rule. First matching rule wins."""
+        emit(
+            service(namespace).store.edit_rule(
+                namespace,
+                policy_id,
+                name,
+                "add",
+                {
+                    "max_age_days": max_age_days,
+                    "max_unused_days": max_unused_days,
+                    "entity_type": entity_type,
+                    "action": action.value,
+                    "on_missing_access_signal": on_missing_access_signal.value,
+                    "cascade_derived": cascade_derived,
+                },
+            )
+        )
+
+    @rules.command("update")
+    @command_errors
+    def update_rule(
+        policy_id: str,
+        namespace: Namespace,
+        name: Annotated[str, typer.Option(help="Existing rule name.")],
+        max_age_days: Annotated[int | None, typer.Option(min=0)] = None,
+        max_unused_days: Annotated[int | None, typer.Option(min=0)] = None,
+        entity_type: Annotated[str | None, typer.Option()] = None,
+        action: Annotated[Action | None, typer.Option()] = None,
+        on_missing_access_signal: Annotated[MissingAccess | None, typer.Option()] = None,
+        cascade_derived: Annotated[bool | None, typer.Option("--cascade-derived/--no-cascade-derived")] = None,
+        clear_age: Annotated[bool, typer.Option()] = False,
+        clear_unused: Annotated[bool, typer.Option()] = False,
+        all_types: Annotated[bool, typer.Option()] = False,
+    ):
+        """Change supplied fields of a named rule, keeping its position."""
+        values: dict[str, Any] = {
+            key: value
+            for key, value in {
                 "max_age_days": max_age_days,
                 "max_unused_days": max_unused_days,
                 "entity_type": entity_type,
-                "action": action.value,
-                "on_missing_access_signal": on_missing_access_signal.value,
+                "action": action.value if action else None,
+                "on_missing_access_signal": on_missing_access_signal.value if on_missing_access_signal else None,
                 "cascade_derived": cascade_derived,
-            }
-        )
-        catalog, record = existing_policy(namespace, policy_id)
-        rules = record["policy"]["rules"]
-        matches = [index for index, item in enumerate(rules) if item["name"] == rule_name]
-        if len(matches) > 1:
-            raise ValueError("Policy contains duplicate rule names; cannot replace unambiguously")
-        if matches:
-            rules[matches[0]] = rule.model_dump(mode="json")
-        else:
-            rules.append(rule.model_dump(mode="json"))
-        emit(save_policy(catalog, record))
+            }.items()
+            if value is not None
+        }
+        for clear, key in [(clear_age, "max_age_days"), (clear_unused, "max_unused_days"), (all_types, "entity_type")]:
+            if clear:
+                if key in values:
+                    raise ValueError(f"Cannot set and clear {key} together")
+                values[key] = None
+        emit(service(namespace).store.edit_rule(namespace, policy_id, name, "update", values))
 
-    @policies.command("remove-rule")
+    @rules.command("list")
     @command_errors
-    def remove_rule(policy_id: str, rule_name: str, namespace: Namespace):
-        """Remove rules with this name from the stored policy."""
-        catalog, record = existing_policy(namespace, policy_id)
-        rules = record["policy"]["rules"]
-        remaining = [rule for rule in rules if rule["name"] != rule_name]
-        if len(remaining) == len(rules):
-            raise ValueError("Rule not found")
-        record["policy"]["rules"] = remaining
-        emit(save_policy(catalog, record))
+    def list_rules(policy_id: str, namespace: Namespace):
+        _, record = existing_policy(namespace, policy_id)
+        emit({"items": record["policy"]["rules"]})
 
-    @policies.command("get")
+    @rules.command("remove")
+    @command_errors
+    def remove_rule(policy_id: str, namespace: Namespace, name: Annotated[str, typer.Option()]):
+        """Remove a named rule from the policy."""
+        emit(service(namespace).store.edit_rule(namespace, policy_id, name, "remove", {}))
+
+    @policies.command("show")
     @command_errors
     def get_policy(policy_id: str, namespace: Namespace):
         result = service(namespace).store.get_policy(namespace_id=namespace, policy_id=policy_id)
@@ -272,7 +323,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
     ):
         emit(service(namespace).jobs(schedule_id=schedule, limit=limit))
 
-    @jobs.command("get")
+    @jobs.command("show")
     @command_errors
     def get_job(job_id: str, namespace: Namespace):
         catalog = service(namespace).store
@@ -326,15 +377,3 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         emit(result)
         if result.get("error") or result.get("errors"):
             raise typer.Exit(1)
-
-    @app.command("execute")
-    @command_errors
-    def execute(
-        once: Annotated[bool, typer.Option("--once", help="Dispatch due schedules, drain queued jobs, and exit.")] = False,
-        poll_seconds: Annotated[float, typer.Option(min=0.001, help="Seconds between scheduling checks.")] = 10,
-        max_workers: Annotated[int, typer.Option(min=1, help="Maximum simultaneous executions in this process.")] = 1,
-    ):
-        """Execute stored schedules across namespaces; continuous unless --once is set."""
-        from altk_evolve.retention.scheduler import run_worker
-
-        run_worker(get_client(), once=once, poll_seconds=poll_seconds, max_workers=max_workers)

@@ -2,7 +2,7 @@
 
 import datetime as dt
 import json
-import signal
+import time
 
 import pytest
 from typer.testing import CliRunner
@@ -25,9 +25,11 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr("altk_evolve.cli.cli.get_client", lambda: client)
     for namespace in ("a", "b"):
         client.ensure_namespace(namespace)
-    result = runner.invoke(app, ["retention", "policies", "put", "p", "-n", "a"])
+    result = runner.invoke(app, ["retention", "policies", "create", "p", "-n", "a"])
     assert result.exit_code == 0, result.output
-    result = runner.invoke(app, ["retention", "policies", "set-rule", "p", "old", "-n", "a", "--max-age-days", "0", "--action", "delete"])
+    result = runner.invoke(
+        app, ["retention", "policies", "rules", "add", "p", "--name", "old", "-n", "a", "--max-age-days", "0", "--action", "delete"]
+    )
     assert result.exit_code == 0, result.output
     return client
 
@@ -107,9 +109,9 @@ def test_schedule_help_has_show_and_no_preview():
 
 
 def test_policy_management(setup):
-    assert invoke("policies", "get", "p", "-n", "a")["enabled"]
+    assert invoke("policies", "show", "p", "-n", "a")["enabled"]
     assert invoke("policies", "list", "-n", "b")["items"] == []
-    invoke("policies", "put", "p", "-n", "a", "--disabled")
+    invoke("policies", "update", "p", "-n", "a", "--disabled")
     assert not invoke("policies", "list", "-n", "a")["items"][0]["enabled"]
 
 
@@ -126,13 +128,19 @@ def test_cli_executor_and_job_history(setup):
             "UPDATE evolve_retention_schedules SET last_schedule_at=?",
             ((dt.datetime.now(dt.UTC) - dt.timedelta(minutes=2)).isoformat(),),
         )
-    handlers = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
-    result = runner.invoke(app, ["retention", "execute", "--once", "--max-workers", "2"])
-    assert result.exit_code == 0, result.output
-    assert all(signal.getsignal(s) == handler for s, handler in handlers.items())
+    from altk_evolve.retention.scheduler import retention_runtime
+
+    client.config.retention_poll_seconds = 0.01
+    with retention_runtime(client):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            jobs = catalog.jobs("a")
+            if jobs and jobs[0]["status"] == "completed":
+                break
+            time.sleep(0.01)
     job = invoke("jobs", "list", "-n", "a")["items"][0]
     assert job["status"] == "completed"
-    detail = invoke("jobs", "get", job["job_id"], "-n", "a")
+    detail = invoke("jobs", "show", job["job_id"], "-n", "a")
     assert detail["run"]["actor_id"] == "alice"
     assert detail["run"]["report"]["dry_run"]
     assert len(client.scan_entities("a")) == 1
@@ -153,10 +161,22 @@ def test_job_cancel_and_explicit_recovery(setup):
     assert invoke("jobs", "recover", job, "-n", "a", "--worker-stopped")["acknowledged"]
 
 
-def test_executor_rejects_invalid_limits():
-    for args in (["--max-workers", "0"], ["--poll-seconds", "0"]):
-        result = runner.invoke(app, ["retention", "execute", "--once", *args])
-        assert result.exit_code == 2
+def test_cli_command_tree_matches_resource_actions():
+    from typer.main import get_command
+
+    for path, expected, absent in [
+        ([], ["policies", "schedules", "jobs", "run"], ["execute", "worker"]),
+        (["policies"], ["create", "update", "delete", "show", "list", "rules"], ["put", "set-rule"]),
+        (["policies", "rules"], ["add", "list", "update", "remove"], ["set-rule"]),
+        (["schedules"], ["create", "show", "list", "update", "delete", "start", "stop"], ["preview", "run"]),
+        (["jobs"], ["show", "list", "cancel", "recover"], ["get"]),
+    ]:
+        result = runner.invoke(app, ["retention", *path, "--help"])
+        assert result.exit_code == 0
+        group = get_command(app)
+        for component in ["retention", *path]:
+            group = group.commands[component]
+        assert set(group.commands) == set(expected)
 
 
 def test_immediate_run_uses_stored_policy_and_audit(setup):
@@ -175,15 +195,15 @@ def test_immediate_run_uses_stored_policy_and_audit(setup):
 
 
 def test_rule_order_replacement_and_removal(setup):
-    invoke("policies", "set-rule", "p", "second", "-n", "a", "--max-unused-days", "30", "--action", "flag")
-    result = invoke("policies", "set-rule", "p", "old", "-n", "a", "--max-age-days", "90", "--action", "delete")
+    invoke("policies", "rules", "add", "p", "--name", "second", "-n", "a", "--max-unused-days", "30", "--action", "flag")
+    result = invoke("policies", "rules", "update", "p", "--name", "old", "-n", "a", "--max-age-days", "90", "--action", "delete")
     assert [r["name"] for r in result["policy"]["rules"]] == ["old", "second"]
     assert result["policy"]["rules"][0]["max_age_days"] == 90
-    result = invoke("policies", "put", "p", "-n", "a", "--disabled")
+    result = invoke("policies", "update", "p", "-n", "a", "--disabled")
     assert len(result["policy"]["rules"]) == 2
-    result = invoke("policies", "remove-rule", "p", "old", "-n", "a")
+    result = invoke("policies", "rules", "remove", "p", "--name", "old", "-n", "a")
     assert [r["name"] for r in result["policy"]["rules"]] == ["second"]
-    invalid = runner.invoke(app, ["retention", "policies", "set-rule", "p", "bad", "-n", "a"])
+    invalid = runner.invoke(app, ["retention", "policies", "rules", "add", "p", "--name", "bad", "-n", "a"])
     assert invalid.exit_code == 1
 
 
@@ -231,3 +251,42 @@ def test_partial_schedule_updates_preserve_and_clear_fields(setup):
     assert result["definition"]["agent_id"] is None
     assert result["definition"]["spec"]["suspend"] is False
     assert result["definition"]["spec"]["startingDeadlineSeconds"] is None
+
+
+def test_policy_create_update_delete_and_references(setup):
+    duplicate = runner.invoke(app, ["retention", "policies", "create", "p", "-n", "a"])
+    assert duplicate.exit_code == 1 and "already exists" in duplicate.stderr
+    missing = runner.invoke(app, ["retention", "policies", "update", "missing", "-n", "a"])
+    assert missing.exit_code == 1
+    create()
+    referenced = runner.invoke(app, ["retention", "policies", "delete", "p", "-n", "a"])
+    assert referenced.exit_code == 1 and "referenced" in referenced.stderr
+    invoke("schedules", "delete", "daily", "-n", "a", "--revision", "1")
+    assert invoke("policies", "delete", "p", "-n", "a")["deleted"]
+
+
+def test_schedule_start_stop_preserves_existing_jobs(setup):
+    create()
+    store = ScheduleStore(setup)
+    due = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=1)
+    job = store.dispatch("a", "daily", due)
+    stopped = invoke("schedules", "stop", "daily", "-n", "a", "--actor", "alice", "--revision", "1")
+    assert stopped["definition"]["spec"]["suspend"]
+    assert store.get_job("a", job)["status"] == "queued"
+    assert store.dispatch("a", "daily", due + dt.timedelta(minutes=1)) is None
+    started = invoke("schedules", "start", "daily", "-n", "a", "--actor", "alice", "--revision", "2")
+    assert not started["definition"]["spec"]["suspend"]
+    assert started["definition"]["policy_id"] == "p"
+    stale = runner.invoke(app, ["retention", "schedules", "stop", "daily", "-n", "a", "--actor", "alice", "--revision", "2"])
+    assert stale.exit_code == 1
+
+
+def test_nested_rules_fail_closed_on_missing_or_duplicate(setup):
+    duplicate = runner.invoke(app, ["retention", "policies", "rules", "add", "p", "--name", "old", "-n", "a", "--max-age-days", "30"])
+    assert duplicate.exit_code == 1
+    missing = runner.invoke(app, ["retention", "policies", "rules", "update", "p", "--name", "missing", "-n", "a", "--max-age-days", "30"])
+    assert missing.exit_code == 1
+    updated = invoke("policies", "rules", "update", "p", "--name", "old", "-n", "a", "--max-age-days", "30")
+    assert updated["policy"]["rules"][0]["action"] == "delete"
+    assert invoke("policies", "rules", "list", "p", "-n", "a")["items"][0]["max_age_days"] == 30
+    assert invoke("policies", "rules", "list", "p", "-n", "a")["items"][0]["name"] == "old"

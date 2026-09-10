@@ -1,15 +1,16 @@
-"""Evolve-owned CronJob controller and executable retention worker."""
+"""Evolve-owned CronJob controller and service scheduling lifecycle."""
 
 from __future__ import annotations
 
 import datetime as dt
 import json
 import logging
-import signal
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Any
+from contextlib import contextmanager
+from collections.abc import Iterator
 
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.frontend.services.context import use_client, execution_cancelled
@@ -102,14 +103,31 @@ class RetentionScheduler:
                 self.store.cancel(namespace, job_id)
 
 
-def run_worker(client: EvolveClient, *, once: bool = False, poll_seconds: float = 10, max_workers: int = 1) -> None:
-    """Execute schedules with graceful signal handling for `evolve retention execute`."""
+@contextmanager
+def retention_runtime(client: EvolveClient) -> Iterator[None]:
+    """Run scheduling for an Evolve service's lifetime; join on shutdown.
+
+    Embedded hosts can use this context in their own application lifespan.
+    Claims stay durable across service restarts; uncertain work is not retried.
+    """
+    if not client.config.retention_scheduler_enabled:
+        yield
+        return
+    scheduler = RetentionScheduler(client)
     stop = threading.Event()
-    previous = {}
+
+    def serve():
+        while not stop.is_set():
+            try:
+                scheduler.run(stop=stop, poll_seconds=client.config.retention_poll_seconds, max_workers=client.config.retention_max_workers)
+            except Exception:
+                logger.exception("Retention scheduling interrupted; retrying after the polling interval")
+                stop.wait(client.config.retention_poll_seconds)
+
+    thread = threading.Thread(target=serve, name="evolve-retention")
+    thread.start()
     try:
-        for signum in (signal.SIGINT, signal.SIGTERM):
-            previous[signum] = signal.signal(signum, lambda *_: stop.set())
-        RetentionScheduler(client).run(once=once, poll_seconds=poll_seconds, max_workers=max_workers, stop=stop)
+        yield
     finally:
-        for signum, handler in previous.items():
-            signal.signal(signum, handler)
+        stop.set()
+        thread.join()
