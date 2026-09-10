@@ -173,6 +173,20 @@ Evolve supports sharing entities across namespaces using a simple public/private
 
 ### MCP Tools
 
+**Personal facts on a shared Evolve service:**
+```python
+store_user_facts(namespace_id="service-instance-1", user_id="alice", message="I prefer concise answers")
+retrieve_user_facts(namespace_id="service-instance-1", user_id="alice", query="answer preferences")
+```
+Pass the service instance ID as `namespace_id` and the individual user's ID as
+`user_id` on both calls. Explicitly scoped retrieval filters by that exact pair,
+including query fallback, and never falls back to another user's facts. Empty
+explicit namespaces or user IDs are rejected. Calls omitting `namespace_id`
+retain the configured default namespace and legacy default-user fallback.
+Integrating clients must supply the scope; upgrading Evolve alone cannot infer
+which service instance an unscoped request belongs to.
+
+
 **Publishing an entity:**
 ```python
 publish_entity(entity_id="42", user_id="alice")

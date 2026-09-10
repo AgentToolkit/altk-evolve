@@ -1143,8 +1143,15 @@ def store_user_facts(
     message: str,
     metadata: str | None = None,
     enable_conflict_resolution: bool = False,
+    namespace_id: str | None = None,
 ) -> str:
-    """Extract and store user facts/preferences for a durable user identity."""
+    """Store personal facts in the supplied namespace (the service instance ID).
+
+    Omitting namespace_id retains the configured default for legacy callers.
+    The explicit user_id overrides any user identity supplied in metadata.
+    """
+    if namespace_id is not None and (not namespace_id.strip() or not user_id.strip()):
+        return json.dumps({"error": "namespace_id and user_id must be nonblank"})
     try:
         metadata_dict = _parse_metadata(metadata)
     except ValueError as e:
@@ -1179,7 +1186,7 @@ def store_user_facts(
         return _empty_store_user_facts_response(user_id)
 
     updates, _ = _persist_entities(
-        namespace_id=None,
+        namespace_id=namespace_id,
         entities=entities,
         enable_conflict_resolution=enable_conflict_resolution,
     )
@@ -1209,12 +1216,14 @@ def _search_facts_with_fallback(
     user_id: str,
     query: str | None,
     limit: int,
+    *,
+    allow_default_user: bool = True,
 ) -> list[RecordedEntity]:
     """Fetch fact entities for a user with the legacy fallback chain.
 
     Order: (1) user filter + query, (2) user filter without query, (3) default
     user with query, (4) default user without query. The default-user fallback
-    is skipped when the caller is already ``"default"``.
+    is skipped for explicitly scoped calls or when the caller is already ``"default"``.
     """
     client = get_client()
     facts = client.search_entities(
@@ -1230,7 +1239,7 @@ def _search_facts_with_fallback(
             filters={"type": "fact", "metadata.user_id": user_id},
             limit=limit,
         )
-    if not facts and user_id != "default":
+    if allow_default_user and not facts and user_id != "default":
         facts = client.search_entities(
             namespace_id=namespace_id,
             query=query,
@@ -1248,9 +1257,16 @@ def _search_facts_with_fallback(
 
 
 @mcp.tool()
-def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5) -> str:
-    """Retrieve categorized user facts/preferences for a durable user identity."""
-    namespace_id = evolve_config.namespace_id
+def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5, namespace_id: str | None = None) -> str:
+    """Retrieve facts for the exact namespace/user pair without crossing users.
+
+    Only legacy calls omitting namespace_id retain the default-user fallback.
+    Reads of absent namespaces return no facts without creating a namespace.
+    """
+    if namespace_id is not None and (not namespace_id.strip() or not user_id.strip()):
+        return json.dumps({"error": "namespace_id and user_id must be nonblank"})
+    allow_default_user = namespace_id is None
+    namespace_id = namespace_id if namespace_id is not None else evolve_config.namespace_id
 
     if limit <= 0 or not get_client().namespace_exists(namespace_id):
         return json.dumps(
@@ -1262,7 +1278,7 @@ def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5) 
             }
         )
 
-    facts = _search_facts_with_fallback(namespace_id, user_id, query, limit)
+    facts = _search_facts_with_fallback(namespace_id, user_id, query, limit, allow_default_user=allow_default_user)
     categories = categorize_facts(facts)
     matched_count = sum(len(items) for items in categories.values())
 
