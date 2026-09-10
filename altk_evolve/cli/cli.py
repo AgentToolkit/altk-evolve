@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from altk_evolve.frontend.client.evolve_client import EvolveClient
+from altk_evolve.cli.retention import register_retention_commands
 from altk_evolve.schema.core import Entity
 from altk_evolve.schema.exceptions import (
     EvolveException,
@@ -27,7 +28,7 @@ sync_app = typer.Typer(help="Sync commands")
 skills_app = typer.Typer(help="Skill management commands")
 viz_app = typer.Typer(help="Visualization commands")
 hooks_app = typer.Typer(help="Hook seam management commands")
-retention_app = typer.Typer(help="Data retention commands")
+retention_app = typer.Typer(help="Retention policies, schedules, and execution", no_args_is_help=True)
 
 app.add_typer(namespaces_app, name="namespaces")
 app.add_typer(entities_app, name="entities")
@@ -43,6 +44,9 @@ console = Console()
 def get_client() -> EvolveClient:
     """Get a EvolveClient instance."""
     return EvolveClient()
+
+
+register_retention_commands(retention_app, lambda: get_client())
 
 
 # =============================================================================

@@ -130,7 +130,6 @@ examples = [
 ]
 
 [project.scripts]
-evolve-retention-worker = "altk_evolve.retention.scheduler:main"
 evolve = "altk_evolve.cli.cli:app"
 evolve-mcp = "altk_evolve.frontend.mcp.__main__:main"
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import datetime as dt
 import json
 import logging
@@ -103,18 +102,14 @@ class RetentionScheduler:
                 self.store.cancel(namespace, job_id)
 
 
-def main() -> None:
-    """Run `evolve-retention-worker`, optionally as a Kubernetes one-shot Job."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--once", action="store_true")
-    parser.add_argument("--poll-seconds", type=float, default=10)
-    parser.add_argument("--max-workers", type=int, default=1)
-    args = parser.parse_args()
+def run_worker(client: EvolveClient, *, once: bool = False, poll_seconds: float = 10, max_workers: int = 1) -> None:
+    """Execute schedules with graceful signal handling for `evolve retention execute`."""
     stop = threading.Event()
-    for signum in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(signum, lambda *_: stop.set())
-    RetentionScheduler(EvolveClient()).run(once=args.once, poll_seconds=args.poll_seconds, max_workers=args.max_workers, stop=stop)
-
-
-if __name__ == "__main__":
-    main()
+    previous = {}
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous[signum] = signal.signal(signum, lambda *_: stop.set())
+        RetentionScheduler(client).run(once=once, poll_seconds=poll_seconds, max_workers=max_workers, stop=stop)
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)

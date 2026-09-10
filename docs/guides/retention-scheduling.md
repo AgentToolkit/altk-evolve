@@ -35,12 +35,43 @@ Nonexistent spring-forward wall times are skipped; repeated fall-back times can 
 
 `Forbid` waits while an earlier job is queued or running. `Replace` cancels queued work and requests cancellation of running work, then waits for acknowledgment before admitting the replacement. Cancellation is cooperative between mutations: it cannot interrupt a blocked backend call and cannot roll back completed changes. This differs from Kubernetes terminating a Job's pods.
 
+## Manage retention from the CLI
+
+All commands live under `evolve retention`. Catalog commands print JSON and require an explicit service-instance namespace. The CLI uses the configured backend credentials and is intended for trusted operators; `--actor` records attribution, not authentication.
+
+Save the definition above as `schedule.json` and a retention policy as `policy.yaml`, then:
+
+```bash
+# Store the policy referenced by the schedule.
+evolve retention policies put standard-retention --namespace service-1 --file policy.yaml
+
+# Create and inspect a schedule.
+evolve retention schedules create nightly --namespace service-1 --actor alice --file schedule.json
+evolve retention schedules list --namespace service-1
+evolve retention schedules get nightly --namespace service-1
+
+# Preview timing without connecting to storage.
+evolve retention schedules preview --file schedule.json --count 5
+
+# Edit schedule.json, then replace the definition using its current revision.
+evolve retention schedules update nightly --namespace service-1 --actor alice --file schedule.json --revision 1
+
+# Delete only when no jobs are active, using the revision returned by update.
+evolve retention schedules delete nightly --namespace service-1 --revision 2
+```
+
+Updates replace the full definition. To suspend a schedule or apply changes instead of a dry run, edit `spec.suspend` or `dry_run` in the file and update with the last observed revision. Duplicate creates and stale updates/deletes fail with a nonzero exit status. Use `policies get` and `policies list` to inspect the policy catalog; `policies put --disabled` disables a policy.
+
+Inspect executions with `evolve retention jobs list --namespace service-1` and `jobs get JOB_ID --namespace service-1`; the latter includes the retention report when available. Use `jobs cancel JOB_ID --namespace service-1` to request cancellation. After confirming an interrupted job's owning worker stopped, use `jobs recover JOB_ID --namespace service-1 --worker-stopped`.
+
+The existing `evolve retention run --policy policy.yaml service-1` performs an immediate dry-run sweep from a file; `--apply` enforces it. `evolve retention execute` runs stored schedules and uses their persisted dry-run settings.
+
 ## Run the worker
 
 Use the same backend configuration and durable catalog as the API/MCP service:
 
 ```bash
-uv run evolve-retention-worker --poll-seconds 10 --max-workers 1
+uv run evolve retention execute --poll-seconds 10 --max-workers 1
 ```
 
 The worker is explicit; starting a frontend does not start a scheduler. Multiple workers coordinate admission and claims through database transactions. Filesystem deployments must also share the entity data directory, not just the catalog. PostgreSQL deployments use their configured PostgreSQL database; other backends use the existing SQLite retention catalog (`EVOLVE_RETENTION_STORE_PATH` can override its path). SQLite must be on storage that supports its locking semantics.
@@ -48,7 +79,7 @@ The worker is explicit; starting a frontend does not start a scheduler. Multiple
 For an externally invoked one-shot worker:
 
 ```bash
-uv run evolve-retention-worker --once
+uv run evolve retention execute --once
 ```
 
 This dispatches currently due schedules, drains queued jobs, then exits. It can itself be run by a Kubernetes CronJob; in that arrangement Evolve still evaluates the stored schedules. A future per-schedule CronJob translation should use a separate execution entry point, avoiding two independent timing controllers for the same occurrence.
