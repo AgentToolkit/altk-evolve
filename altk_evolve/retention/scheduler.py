@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 import logging
 import threading
 import uuid
@@ -13,7 +12,7 @@ from contextlib import contextmanager
 from collections.abc import Iterator
 
 from altk_evolve.frontend.client.evolve_client import EvolveClient
-from altk_evolve.frontend.services.context import use_client, execution_cancelled
+from altk_evolve.frontend.services.context import execution_cancelled
 from altk_evolve.retention.schedule import ScheduleDefinition
 from altk_evolve.retention.schedule_store import ScheduleStore
 
@@ -42,7 +41,6 @@ class RetentionScheduler:
 
     def execute(self, job: dict[str, Any]) -> None:
         """Claim once; preserve failed, cancelled, or partial execution in run history."""
-        from altk_evolve.frontend.mcp.mcp_server import run_retention
 
         namespace, job_id = job["namespace_id"], job["job_id"]
         claimed = self.store.claim(namespace, job_id, self.worker_id, dt.datetime.now(dt.UTC))
@@ -55,17 +53,9 @@ class RetentionScheduler:
             if self.store.cancelled(namespace, job_id, self.worker_id):
                 self.store.finish(namespace, job_id, self.worker_id, "cancelled")
                 return
-            with use_client(self.client):
-                result = json.loads(
-                    run_retention(
-                        policy_id=definition.policy_id,
-                        namespace_id=namespace,
-                        run_id=job_id,
-                        dry_run=definition.dry_run,
-                        actor_id=job["actor_id"],
-                        metadata_filters=json.dumps({"agent_id": definition.agent_id}) if definition.agent_id else None,
-                    )
-                )
+            result = self.client.retention(namespace, agent_id=definition.agent_id).run(
+                definition.policy_id, run_id=job_id, dry_run=definition.dry_run, actor_id=job["actor_id"]
+            )
             status = "cancelled" if result.get("cancelled") else ("failed" if result.get("error") or result.get("errors") else "completed")
             self.store.finish(namespace, job_id, self.worker_id, status, result.get("error"))
         except Exception as exc:

@@ -171,10 +171,7 @@ def test_mcp_schedule_round_trip(client, store):
         result = json.loads(mcp.put_retention_schedule("daily", definition().model_dump_json(), "a", "alice"))
         assert result["definition"]["spec"]["concurrencyPolicy"] == "Forbid"
         assert json.loads(mcp.list_retention_schedules("b"))["items"] == []
-        assert (
-            json.loads(mcp.preview_retention_schedule('{"schedule":"0 2 * * *"}', after=START.isoformat()))["next_runs"][0]
-            == START.replace(hour=2).isoformat()
-        )
+        assert len(json.loads(mcp.get_retention_schedule("daily", "a"))["next_runs"]) == 5
 
 
 def test_daylight_saving_skips_gap_and_keeps_repeated_occurrences():
@@ -248,14 +245,8 @@ def test_schedule_mcp_transport_and_worker(client, store, monkeypatch):
             assert json.loads(result.content[0].text)["revision"] == 1
             result = await transport.call_tool_mcp("list_retention_schedules", {"namespace_id": "b"})
             assert json.loads(result.content[0].text)["items"] == []
-            result = await transport.call_tool_mcp(
-                "preview_retention_schedule",
-                {
-                    "spec": '{"schedule":"0 2 * * *","timeZone":"Etc/UTC"}',
-                    "after": START.isoformat(),
-                },
-            )
-            assert json.loads(result.content[0].text)["next_runs"][0] == START.replace(hour=2).isoformat()
+            result = await transport.call_tool_mcp("get_retention_schedule", {"namespace_id": "a", "schedule_id": "nightly"})
+            assert len(json.loads(result.content[0].text)["next_runs"]) == 5
 
     asyncio.run(exercise())
 

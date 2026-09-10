@@ -13,6 +13,7 @@ from altk_evolve.retention.engine import (
 )
 from altk_evolve.retention.policy import RetentionPolicy, RetentionRule
 from altk_evolve.retention.store import RetentionStore
+from altk_evolve.retention.service import RetentionService, RetentionError
 
 __all__ = [
     "NO_ACCESS_SIGNAL_HINT",
@@ -22,4 +23,6 @@ __all__ = [
     "RetentionReport",
     "RetentionRule",
     "RetentionStore",
+    "RetentionService",
+    "RetentionError",
 ]

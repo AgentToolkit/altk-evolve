@@ -48,10 +48,12 @@ class RetentionRule(BaseModel):
     )
     max_age_days: int | None = Field(
         default=None,
+        ge=0,
         description="Match entities whose created_at is older than this many days.",
     )
     max_unused_days: int | None = Field(
         default=None,
+        ge=0,
         description=(
             "Match entities not read in this many days. Uses metadata.last_accessed, which "
             "AccessStampPlugin (or EvolveClient.record_access) stamps; entities that carry no "

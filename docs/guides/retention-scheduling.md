@@ -1,6 +1,6 @@
 # Retention scheduling
 
-Evolve owns retention policies, schedules, job claims, execution, and run history. Hosts can manage them through MCP or the [embedded REST router](embedded-memory-api.md), without maintaining their own retention tables.
+Evolve owns retention policies, schedules, job claims, execution, and run history. All interfaces share the [public retention service](retention-api.md). Hosts can manage them through MCP or the [embedded REST router](embedded-memory-api.md), without maintaining their own retention tables.
 
 Create a policy first, then call `put_retention_schedule` with an explicit `namespace_id` (the host service-instance ID), `actor_id` (the authenticated operator), `schedule_id`, and a JSON-encoded `definition`:
 
@@ -31,7 +31,7 @@ The `spec` uses the timing fields of [Kubernetes batch/v1 CronJobSpec](https://k
 | `startingDeadlineSeconds` | Optional nonnegative deadline from scheduled time to actual job claim. Omitting it leaves no deadline. Very short deadlines can be missed with the default ten-second polling interval. |
 | `suspend` | Stops new admission without cancelling existing jobs. Resuming retains the missed-occurrence window. |
 
-Nonexistent spring-forward wall times are skipped; repeated fall-back times can run twice. Preview returns absolute UTC timestamps through `preview_retention_schedule`. More than 100 missed occurrences produces a persisted schedule condition; set a deadline or change the timing to reset the window. Evolve admits the most recent eligible occurrence rather than replaying every missed run.
+Nonexistent spring-forward wall times are skipped; repeated fall-back times can run twice. `get_retention_schedule` and REST schedule detail include the next five nominal UTC timestamps; suspended schedules return no upcoming times. More than 100 missed occurrences produces a persisted schedule condition; set a deadline or change the timing to reset the window. Evolve admits the most recent eligible occurrence rather than replaying every missed run.
 
 `Forbid` waits while an earlier job is queued or running. `Replace` cancels queued work and requests cancellation of running work, then waits for acknowledgment before admitting the replacement. Cancellation is cooperative between mutations: it cannot interrupt a blocked backend call and cannot roll back completed changes. This differs from Kubernetes terminating a Job's pods.
 

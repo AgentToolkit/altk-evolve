@@ -15,10 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.frontend.services.context import use_client
-from altk_evolve.frontend.services.schedules import ScheduleService, preview
-from altk_evolve.retention.schedule import CronJobSpec, ScheduleDefinition
+from altk_evolve.retention.service import RetentionService, RetentionError
+from altk_evolve.retention.reports import audit_payload
+from altk_evolve.retention.schedule import ScheduleDefinition
 from altk_evolve.retention.policy import RetentionPolicy
-from altk_evolve.retention.store import RetentionStore
 
 
 class MemoryScope(BaseModel):
@@ -77,10 +77,38 @@ class RecoveryRequest(Body):
     worker_stopped: bool = False
 
 
-class PreviewRequest(Body):
-    spec: CronJobSpec
-    after: str | None = None
-    count: int = Field(default=5, ge=1, le=20)
+class CreatePolicyRequest(Body):
+    policy_id: str
+    name: str | None = None
+    enabled: bool = True
+
+
+class UpdatePolicyRequest(Body):
+    name: str | None = None
+    enabled: bool | None = None
+
+
+class CreateRuleRequest(Body):
+    name: str
+    rule: dict[str, Any]
+
+
+class ChangesRequest(Body):
+    changes: dict[str, Any]
+
+
+class CreateScheduleRequest(Body):
+    schedule_id: str
+    definition: ScheduleDefinition
+
+
+class UpdateScheduleRequest(Body):
+    changes: dict[str, Any]
+    expected_revision: int = Field(ge=1)
+
+
+class ScheduleStateRequest(Body):
+    expected_revision: int = Field(ge=1)
 
 
 def _result(value: str) -> dict[str, Any]:
@@ -140,19 +168,14 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
         with use_client(client):
             return _result(getattr(mcp_server, tool_name)(namespace_id=scope.namespace_id, **args))
 
-    def schedules(pair) -> ScheduleService:
+    def retention_call(pair, method: str, *args, **kwargs):
         client, scope = pair
         _manager(scope)
-        return ScheduleService(client, scope.namespace_id)
-
-    def schedule_call(pair, method: str, *args, **kwargs):
         try:
-            return getattr(schedules(pair), method)(*args, **kwargs)
-        except ValueError as exc:
-            message = str(exc)
-            raise HTTPException(
-                409 if "conflict" in message.lower() else (404 if "not found" in message.lower() else 400), message
-            ) from exc
+            retention = RetentionService(client, scope.namespace_id, agent_id=scope.agent_id)
+            return getattr(retention, method)(*args, **kwargs)
+        except RetentionError as exc:
+            raise HTTPException(exc.status, detail=exc.payload()) from exc
 
     @router.get("/memory/entities")
     def inventory(limit: int = Query(50, ge=1, le=200), cursor: str | None = None, pair=Depends(service)):
@@ -225,121 +248,124 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
 
     @router.get("/manage/retention/policies")
     def policies(pair=Depends(service)):
-        _manager(pair[1])
-        return invoke(pair, "list_retention_policies", include_disabled=True)
+        return retention_call(pair, "list_policies", include_disabled=True)
+
+    @router.post("/manage/retention/policies", status_code=201)
+    def create_policy(body: CreatePolicyRequest, pair=Depends(service)):
+        return retention_call(pair, "create_policy", body.policy_id, name=body.name, enabled=body.enabled)
+
+    @router.get("/manage/retention/policies/{policy_id}")
+    def get_policy(policy_id: str, pair=Depends(service)):
+        return retention_call(pair, "get_policy", policy_id)
+
+    @router.patch("/manage/retention/policies/{policy_id}")
+    def update_policy(policy_id: str, body: UpdatePolicyRequest, pair=Depends(service)):
+        return retention_call(pair, "update_policy", policy_id, name=body.name, enabled=body.enabled)
 
     @router.put("/manage/retention/policies/{policy_id}")
     def put_policy(policy_id: str, body: PolicyRequest, pair=Depends(service)):
-        _manager(pair[1])
-        return invoke(
+        return retention_call(
             pair,
-            "put_retention_policy",
-            policy_id=policy_id,
+            "put_policy",
+            policy_id,
             name=body.name,
-            policy=body.policy.model_dump_json(),
+            policy=body.policy.model_dump(mode="json"),
             description=body.description,
             enabled=body.enabled,
         )
 
+    @router.delete("/manage/retention/policies/{policy_id}")
+    def delete_policy(policy_id: str, pair=Depends(service)):
+        return retention_call(pair, "delete_policy", policy_id)
+
+    @router.get("/manage/retention/policies/{policy_id}/rules")
+    def list_rules(policy_id: str, pair=Depends(service)):
+        return retention_call(pair, "list_rules", policy_id)
+
+    @router.post("/manage/retention/policies/{policy_id}/rules", status_code=201)
+    def add_rule(policy_id: str, body: CreateRuleRequest, pair=Depends(service)):
+        return retention_call(pair, "add_rule", policy_id, body.name, body.rule)
+
+    @router.patch("/manage/retention/policies/{policy_id}/rules/{name}")
+    def update_rule(policy_id: str, name: str, body: ChangesRequest, pair=Depends(service)):
+        return retention_call(pair, "update_rule", policy_id, name, body.changes)
+
+    @router.delete("/manage/retention/policies/{policy_id}/rules/{name}")
+    def remove_rule(policy_id: str, name: str, pair=Depends(service)):
+        return retention_call(pair, "remove_rule", policy_id, name)
+
     @router.post("/manage/retention/runs")
     def run(body: RunRequest, pair=Depends(service)):
-        from altk_evolve.frontend.mcp.mcp_server import _retention_audit_payload
-
-        actor = _manager(pair[1])
-        scope = pair[1]
-        result = invoke(
-            pair,
-            "run_retention",
-            policy_id=body.policy_id,
-            dry_run=body.dry_run,
-            actor_id=actor,
-            metadata_filters=json.dumps({"agent_id": scope.agent_id}) if scope.agent_id else None,
-            additional_matches=json.dumps(body.additional_matches),
+        result = retention_call(
+            pair, "run", body.policy_id, dry_run=body.dry_run, actor_id=_manager(pair[1]), additional_matches=body.additional_matches
         )
-        return _retention_audit_payload(result)
+        return audit_payload(result)
 
     @router.get("/manage/retention/runs")
     def runs(limit: int = Query(50, ge=1, le=200), pair=Depends(service)):
-        _manager(pair[1])
-        return invoke(pair, "list_retention_runs", agent_id=pair[1].agent_id, limit=limit)
+        return retention_call(pair, "list_runs", limit=limit)
 
     @router.get("/manage/retention/runs/{run_id}")
     def run_detail(run_id: str, pair=Depends(service)):
-        client, scope = pair
-        _manager(scope)
-        record = RetentionStore(client).get_run(namespace_id=scope.namespace_id, run_id=run_id)
-        if record is None or (scope.agent_id and record["agent_id"] != scope.agent_id):
-            raise HTTPException(404, "Run not found")
-        return record
-
-    @router.post("/manage/retention/schedules/preview")
-    def preview_schedule(body: PreviewRequest, pair=Depends(service)):
-        _manager(pair[1])
-        try:
-            return preview(body.spec.model_dump(), after=body.after, count=body.count)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+        return retention_call(pair, "get_run", run_id)
 
     @router.get("/manage/retention/schedules")
     def list_schedules(pair=Depends(service)):
-        result = schedule_call(pair, "list")
-        if pair[1].agent_id:
-            result["items"] = [item for item in result["items"] if item["definition"]["agent_id"] == pair[1].agent_id]
-        return result
+        return retention_call(pair, "list_schedules")
 
-    def scoped_schedule(pair, schedule_id):
-        record = schedule_call(pair, "get", schedule_id)
-        if pair[1].agent_id and record["definition"]["agent_id"] != pair[1].agent_id:
-            raise HTTPException(404, "Schedule not found")
-        return record
+    @router.post("/manage/retention/schedules", status_code=201)
+    def create_schedule(body: CreateScheduleRequest, pair=Depends(service)):
+        return retention_call(
+            pair, "create_schedule", body.schedule_id, body.definition.model_dump(mode="json"), actor_id=_manager(pair[1])
+        )
 
     @router.get("/manage/retention/schedules/{schedule_id}")
     def get_schedule(schedule_id: str, pair=Depends(service)):
-        return scoped_schedule(pair, schedule_id)
+        return retention_call(pair, "get_schedule", schedule_id)
 
     @router.put("/manage/retention/schedules/{schedule_id}")
     def put_schedule(schedule_id: str, body: ScheduleRequest, pair=Depends(service)):
-        actor = _manager(pair[1])
-        if pair[1].agent_id and body.definition.agent_id != pair[1].agent_id:
-            raise HTTPException(403, "Schedule agent must match the authorized scope")
-        if body.expected_revision:
-            scoped_schedule(pair, schedule_id)
-        return schedule_call(pair, "put", schedule_id, body.definition.model_dump(), actor, body.expected_revision)
+        return retention_call(
+            pair,
+            "put_schedule",
+            schedule_id,
+            body.definition.model_dump(mode="json"),
+            actor_id=_manager(pair[1]),
+            expected_revision=body.expected_revision,
+        )
+
+    @router.patch("/manage/retention/schedules/{schedule_id}")
+    def update_schedule(schedule_id: str, body: UpdateScheduleRequest, pair=Depends(service)):
+        return retention_call(
+            pair, "update_schedule", schedule_id, body.changes, actor_id=_manager(pair[1]), expected_revision=body.expected_revision
+        )
+
+    @router.post("/manage/retention/schedules/{schedule_id}/start")
+    def start_schedule(schedule_id: str, body: ScheduleStateRequest, pair=Depends(service)):
+        return retention_call(pair, "start_schedule", schedule_id, actor_id=_manager(pair[1]), expected_revision=body.expected_revision)
+
+    @router.post("/manage/retention/schedules/{schedule_id}/stop")
+    def stop_schedule(schedule_id: str, body: ScheduleStateRequest, pair=Depends(service)):
+        return retention_call(pair, "stop_schedule", schedule_id, actor_id=_manager(pair[1]), expected_revision=body.expected_revision)
 
     @router.delete("/manage/retention/schedules/{schedule_id}")
     def delete_schedule(schedule_id: str, expected_revision: int = Query(..., ge=1), pair=Depends(service)):
-        scoped_schedule(pair, schedule_id)
-        return schedule_call(pair, "delete", schedule_id, expected_revision)
+        return retention_call(pair, "delete_schedule", schedule_id, expected_revision=expected_revision)
 
     @router.get("/manage/retention/jobs")
     def jobs(limit: int = Query(100, ge=1, le=1000), pair=Depends(service)):
-        result = schedule_call(pair, "jobs", limit=limit)
-        if pair[1].agent_id:
-            result["items"] = [item for item in result["items"] if item["definition"]["agent_id"] == pair[1].agent_id]
-        return result
-
-    def scoped_job(pair, job_id):
-        # Exact lookup avoids confusing old jobs outside a pagination window with absent jobs.
-        client, scope = pair
-        _manager(scope)
-        store = ScheduleService(client, scope.namespace_id).store
-        record = store.get_job(scope.namespace_id, job_id)
-        if record is None or (scope.agent_id and record["definition"]["agent_id"] != scope.agent_id):
-            raise HTTPException(404, "Job not found")
-        return record
+        return retention_call(pair, "list_jobs", limit=limit)
 
     @router.get("/manage/retention/jobs/{job_id}")
     def job_detail(job_id: str, pair=Depends(service)):
-        return scoped_job(pair, job_id)
+        return retention_call(pair, "get_job", job_id)
 
     @router.post("/manage/retention/jobs/{job_id}/cancel")
     def cancel_job(job_id: str, pair=Depends(service)):
-        scoped_job(pair, job_id)
-        return schedule_call(pair, "cancel", job_id)
+        return retention_call(pair, "cancel_job", job_id)
 
     @router.post("/manage/retention/jobs/{job_id}/acknowledge-interrupted")
     def recover_job(job_id: str, body: RecoveryRequest, pair=Depends(service)):
-        scoped_job(pair, job_id)
-        return schedule_call(pair, "recover", job_id, body.worker_stopped)
+        return retention_call(pair, "recover_job", job_id, worker_stopped=body.worker_stopped)
 
     return router

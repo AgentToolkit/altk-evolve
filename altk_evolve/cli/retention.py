@@ -9,7 +9,7 @@ from typing import Annotated, Any
 import typer
 
 from altk_evolve.frontend.client.evolve_client import EvolveClient
-from altk_evolve.frontend.services.schedules import ScheduleService, preview
+from altk_evolve.retention.service import RetentionService
 from altk_evolve.schema.exceptions import EvolveException
 
 Namespace = Annotated[str, typer.Option("--namespace", "-n", help="Service-instance namespace (required).")]
@@ -62,8 +62,8 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
     rules = typer.Typer(help="Manage ordered rules inside a policy.", no_args_is_help=True)
     policies.add_typer(rules, name="rules")
 
-    def service(namespace: str) -> ScheduleService:
-        return ScheduleService(get_client(), namespace)
+    def service(namespace: str) -> RetentionService:
+        return get_client().retention(namespace)
 
     @schedules.command("create")
     @command_errors
@@ -93,7 +93,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
                 "suspend": suspend,
             },
         }
-        emit(service(namespace).put(schedule_id, definition, actor, expected_revision=0))
+        emit(service(namespace).create_schedule(schedule_id, definition, actor_id=actor))
 
     @schedules.command("update")
     @command_errors
@@ -118,11 +118,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
             raise ValueError("Use either --clear-deadline or --starting-deadline-seconds")
         if clear_agent and agent is not None:
             raise ValueError("Use either --clear-agent or --agent")
-        catalog = service(namespace)
-        record = catalog.get(schedule_id)
-        if record["revision"] != revision:
-            raise ValueError("Schedule revision conflict")
-        definition = record["definition"]
+        definition: dict[str, Any] = {"spec": {}}
         for key, value in {"policy_id": policy, "agent_id": agent, "dry_run": None if apply is None else not apply}.items():
             if value is not None:
                 definition[key] = value
@@ -139,59 +135,40 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
             definition["spec"]["startingDeadlineSeconds"] = None
         if clear_agent:
             definition["agent_id"] = None
-        emit(catalog.put(schedule_id, definition, actor, expected_revision=revision))
+        emit(service(namespace).update_schedule(schedule_id, definition, actor_id=actor, expected_revision=revision))
 
     @schedules.command("show")
     @command_errors
     def show(schedule_id: str, namespace: Namespace):
         """Show configuration, revision, and the next five scheduled times in UTC."""
-        record = service(namespace).get(schedule_id)
-        spec = record["definition"]["spec"]
-        record["next_runs"] = [] if spec["suspend"] else preview(spec)["next_runs"]
-        emit(record)
+        emit(service(namespace).get_schedule(schedule_id))
 
     @schedules.command("list")
     @command_errors
     def list_schedules(namespace: Namespace):
         """List schedules in one service instance."""
-        emit(service(namespace).list())
+        emit(service(namespace).list_schedules())
 
     @schedules.command("delete")
     @command_errors
     def delete(schedule_id: str, namespace: Namespace, revision: Revision):
         """Delete an inactive schedule at the specified revision."""
-        result = service(namespace).delete(schedule_id, revision)
+        result = service(namespace).delete_schedule(schedule_id, expected_revision=revision)
         if not result["deleted"]:
             raise ValueError("Schedule not found")
         emit(result)
-
-    def set_schedule_state(schedule_id, namespace, actor, revision, suspended):
-        catalog = service(namespace)
-        record = catalog.get(schedule_id)
-        if record["revision"] != revision:
-            raise ValueError("Schedule revision conflict")
-        definition = record["definition"]
-        definition["spec"]["suspend"] = suspended
-        emit(catalog.put(schedule_id, definition, actor, expected_revision=revision))
 
     @schedules.command("start")
     @command_errors
     def start_schedule(schedule_id: str, namespace: Namespace, actor: Actor, revision: Revision):
         """Enable future scheduled execution by the running Evolve service."""
-        set_schedule_state(schedule_id, namespace, actor, revision, False)
+        emit(service(namespace).start_schedule(schedule_id, actor_id=actor, expected_revision=revision))
 
     @schedules.command("stop")
     @command_errors
     def stop_schedule(schedule_id: str, namespace: Namespace, actor: Actor, revision: Revision):
         """Suspend future runs; queued or active jobs are not cancelled."""
-        set_schedule_state(schedule_id, namespace, actor, revision, True)
-
-    def existing_policy(namespace, policy_id):
-        catalog = service(namespace).store
-        record = catalog.get_policy(namespace_id=namespace, policy_id=policy_id)
-        if record is None:
-            raise ValueError("Policy not found")
-        return catalog, record
+        emit(service(namespace).stop_schedule(schedule_id, actor_id=actor, expected_revision=revision))
 
     @policies.command("create")
     @command_errors
@@ -202,7 +179,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         enabled: Annotated[bool, typer.Option("--enabled/--disabled")] = True,
     ):
         """Create an empty policy; fail if the ID already exists."""
-        emit(service(namespace).store.create_policy(namespace, policy_id, name or policy_id, enabled))
+        emit(service(namespace).create_policy(policy_id, name=name, enabled=enabled))
 
     @policies.command("update")
     @command_errors
@@ -213,13 +190,13 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         enabled: Annotated[bool | None, typer.Option("--enabled/--disabled")] = None,
     ):
         """Change policy name/status without replacing its rules."""
-        emit(service(namespace).store.update_policy(namespace, policy_id, name, enabled))
+        emit(service(namespace).update_policy(policy_id, name=name, enabled=enabled))
 
     @policies.command("delete")
     @command_errors
     def delete_policy(policy_id: str, namespace: Namespace):
         """Delete a policy only when no schedules or active jobs reference it."""
-        service(namespace).store.delete_policy(namespace, policy_id)
+        service(namespace).delete_policy(policy_id)
         emit({"deleted": True})
 
     @rules.command("add")
@@ -237,11 +214,9 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
     ):
         """Append a named rule. First matching rule wins."""
         emit(
-            service(namespace).store.edit_rule(
-                namespace,
+            service(namespace).add_rule(
                 policy_id,
                 name,
-                "add",
                 {
                     "max_age_days": max_age_days,
                     "max_unused_days": max_unused_days,
@@ -287,24 +262,23 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
                 if key in values:
                     raise ValueError(f"Cannot set and clear {key} together")
                 values[key] = None
-        emit(service(namespace).store.edit_rule(namespace, policy_id, name, "update", values))
+        emit(service(namespace).update_rule(policy_id, name, values))
 
     @rules.command("list")
     @command_errors
     def list_rules(policy_id: str, namespace: Namespace):
-        _, record = existing_policy(namespace, policy_id)
-        emit({"items": record["policy"]["rules"]})
+        emit(service(namespace).list_rules(policy_id))
 
     @rules.command("remove")
     @command_errors
     def remove_rule(policy_id: str, namespace: Namespace, name: Annotated[str, typer.Option()]):
         """Remove a named rule from the policy."""
-        emit(service(namespace).store.edit_rule(namespace, policy_id, name, "remove", {}))
+        emit(service(namespace).remove_rule(policy_id, name))
 
     @policies.command("show")
     @command_errors
     def get_policy(policy_id: str, namespace: Namespace):
-        result = service(namespace).store.get_policy(namespace_id=namespace, policy_id=policy_id)
+        result = service(namespace).get_policy(policy_id)
         if result is None:
             raise ValueError("Policy not found")
         emit(result)
@@ -312,7 +286,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
     @policies.command("list")
     @command_errors
     def list_policies(namespace: Namespace):
-        emit({"items": service(namespace).store.list_policies(namespace_id=namespace, include_disabled=True)})
+        emit(service(namespace).list_policies(include_disabled=True))
 
     @jobs.command("list")
     @command_errors
@@ -321,21 +295,19 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         schedule: Annotated[str | None, typer.Option()] = None,
         limit: Annotated[int, typer.Option(min=1, max=1000)] = 100,
     ):
-        emit(service(namespace).jobs(schedule_id=schedule, limit=limit))
+        emit(service(namespace).list_jobs(schedule_id=schedule, limit=limit))
 
     @jobs.command("show")
     @command_errors
     def get_job(job_id: str, namespace: Namespace):
-        catalog = service(namespace).store
-        result = catalog.get_job(namespace, job_id)
-        if result is None:
-            raise ValueError("Job not found")
-        emit({"job": result, "run": catalog.get_run(namespace_id=namespace, run_id=job_id)})
+        result = service(namespace).get_job(job_id)
+        report = result.pop("run", None)
+        emit({"job": result, "run": report})
 
     @jobs.command("cancel")
     @command_errors
     def cancel_job(job_id: str, namespace: Namespace):
-        emit(service(namespace).cancel(job_id))
+        emit(service(namespace).cancel_job(job_id))
 
     @jobs.command("recover")
     @command_errors
@@ -345,7 +317,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         worker_stopped: Annotated[bool, typer.Option("--worker-stopped", help="Confirm the owning worker has stopped.")] = False,
     ):
         """Mark interrupted work after confirming worker shutdown; never retry it."""
-        emit(service(namespace).recover(job_id, worker_stopped))
+        emit(service(namespace).recover_job(job_id, worker_stopped=worker_stopped))
 
     @app.command("run")
     @command_errors
@@ -357,23 +329,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         apply: Annotated[bool, typer.Option("--apply", help="Apply mutations; defaults to dry run.")] = False,
     ):
         """Run a stored policy immediately and persist its audit report."""
-        from altk_evolve.frontend.mcp.mcp_server import run_retention
-        from altk_evolve.frontend.services.context import use_client
-
-        client = get_client()
-        ScheduleService(client, namespace)  # Validate explicit namespace before resolving the operation.
-        if not actor.strip():
-            raise ValueError("Actor identity must be nonblank")
-        with use_client(client):
-            result = json.loads(
-                run_retention(
-                    policy_id,
-                    namespace_id=namespace,
-                    actor_id=actor,
-                    dry_run=not apply,
-                    metadata_filters=json.dumps({"agent_id": agent}) if agent else None,
-                )
-            )
+        result = get_client().retention(namespace, agent_id=agent).run(policy_id, actor_id=actor, dry_run=not apply)
         emit(result)
-        if result.get("error") or result.get("errors"):
+        if result.get("errors"):
             raise typer.Exit(1)

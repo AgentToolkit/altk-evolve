@@ -10,6 +10,7 @@ from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, Names
 from altk_evolve.schema.guidelines import ConsolidationResult
 
 if TYPE_CHECKING:
+    from altk_evolve.retention.service import RetentionService
     from altk_evolve.llm.guidelines.retrieval import GuidelineSelection, SimilarityKey
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,12 @@ def _filter_by_evidence(entities: list[RecordedEntity], evidence_filter: str) ->
 
 class EvolveClient:
     """Wrapper client around evolve entity backends."""
+
+    def retention(self, namespace_id: str, *, agent_id: str | None = None) -> "RetentionService":
+        """Return the public retention service bound to an authorized scope."""
+        from altk_evolve.retention.service import RetentionService
+
+        return RetentionService(self, namespace_id, agent_id=agent_id)
 
     def __init__(self, config: EvolveConfig | None = None):
         """Initialize the Evolve client."""

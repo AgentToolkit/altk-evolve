@@ -11,7 +11,6 @@ import logging
 import threading
 import uuid
 import os
-from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
@@ -25,7 +24,7 @@ from starlette.requests import Request
 from starlette.exceptions import HTTPException
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
-from altk_evolve.frontend.services.context import injected_client, cancellation_requested
+from altk_evolve.frontend.services.context import injected_client
 from altk_evolve.frontend.api.routes import router as api_router
 from altk_evolve.llm.fact_extraction.fact_extraction import (
     ExtractedFact,
@@ -697,156 +696,72 @@ def record_access(
     )
 
 
-def _retention_item_payload(item: Any, entity: RecordedEntity | None, *, dry_run: bool) -> dict[str, Any]:
-    payload = asdict(item)
-    applied_outcomes = {"flag": "flagged", "delete": "deleted", "skip": "skipped"}
-    payload["outcome"] = f"would_{item.action}" if dry_run else applied_outcomes.get(item.action, item.action)
-    if entity is not None:
-        snapshot = _entity_payload(entity, include_content=False)
-        metadata = entity.metadata or {}
-        payload.update(
-            {
-                "created_at": snapshot["created_at"],
-                "content_preview": snapshot["content_preview"],
-                "metadata": metadata,
-                "user_id": metadata.get("user_id") or metadata.get("owner_id"),
-                "agent_id": metadata.get("agent_id"),
-                "session_id": metadata.get("session_id") or metadata.get("thread_id"),
-                "source_task_id": metadata.get("source_task_id"),
-            }
-        )
-    return payload
-
-
-def _retention_audit_payload(report: dict[str, Any]) -> dict[str, Any]:
-    """Keep durable run history useful without retaining deleted memory content."""
-    audit = {
-        key: report[key]
-        for key in (
-            "run_id",
-            "namespace_id",
-            "policy_id",
-            "policy_name",
-            "actor_id",
-            "started_at",
-            "completed_at",
-            "as_of",
-            "dry_run",
-            "cancelled",
-        )
-        if key in report
-    }
-    audit["error_count"] = len(report.get("errors", []))
-    audit["warning_count"] = len(report.get("warnings", []))
-    item_fields = {"entity_id", "entity_type", "created_at", "action", "outcome", "reason", "rule"}
-    for bucket in ("flagged", "deleted", "skipped"):
-        items = []
-        for item in report.get(bucket, []):
-            if not isinstance(item, dict):
-                continue
-            projected = {key: item[key] for key in item_fields if key in item}
-            metadata = item.get("metadata")
-            if bucket != "deleted" and isinstance(metadata, dict):
-                title = metadata.get("title") or metadata.get("display_name")
-                if isinstance(title, str) and title.strip():
-                    projected["title"] = title.strip()[:200]
-            items.append(projected)
-        audit[bucket] = items
-    return audit
+def _retention_object(value: dict[str, Any] | str | None) -> dict[str, Any]:
+    return value if isinstance(value, dict) else _parse_metadata(value)
 
 
 @mcp.tool()
-def validate_retention_policy(policy: str) -> str:
-    """Validate and normalize a JSON retention policy without scanning data."""
-    from pydantic import ValidationError
-
-    from altk_evolve.retention import RetentionPolicy
+def validate_retention_policy(policy: dict[str, Any] | str) -> str:
+    """Validate a structured retention policy without scanning data."""
+    from altk_evolve.retention.service import RetentionService, RetentionError
 
     try:
-        parsed = _parse_metadata(policy)
-        normalized = RetentionPolicy.from_mapping(parsed)
-    except (ValueError, ValidationError) as exc:
-        errors: list[dict[str, Any]] = (
-            [dict(error) for error in exc.errors()] if isinstance(exc, ValidationError) else [{"message": str(exc)}]
-        )
-        return _json_response({"valid": False, "normalized_policy": None, "errors": errors, "warnings": []})
-    return _json_response(
-        {
-            "valid": True,
-            "normalized_policy": normalized.model_dump(mode="json"),
-            "errors": [],
-            "warnings": [],
-        }
-    )
-
-
-def _valid_retention_policy_id(policy_id: str) -> bool:
-    return bool(policy_id) and len(policy_id) <= 128 and all(character.isalnum() or character in "-_.:" for character in policy_id)
+        normalized = RetentionService.validate_policy(_retention_object(policy))
+        return _json_response({"valid": True, "normalized_policy": normalized, "errors": [], "warnings": []})
+    except (ValueError, RetentionError) as exc:
+        return _json_response({"valid": False, "normalized_policy": None, "errors": [{"message": str(exc)}], "warnings": []})
 
 
 def _retention_store(client: EvolveClient | None = None):
-    from altk_evolve.retention import RetentionStore
+    from altk_evolve.retention.schedule_store import ScheduleStore
 
-    return RetentionStore(client or get_client())
+    return ScheduleStore(client or get_client())
+
+
+def _retention_service(namespace_id: str | None, agent_id: str | None = None):
+    from altk_evolve.retention.service import RetentionService
+
+    return RetentionService(
+        get_client(), namespace_id if namespace_id is not None else evolve_config.namespace_id, agent_id=agent_id, store=_retention_store()
+    )
+
+
+def _retention_call(namespace_id, operation, *args, agent_id=None, **kwargs) -> str:
+    from altk_evolve.retention.service import RetentionError
+
+    try:
+        return _json_response(getattr(_retention_service(namespace_id, agent_id), operation)(*args, **kwargs))
+    except RetentionError as exc:
+        return _json_response(exc.payload())
 
 
 @mcp.tool()
 def put_retention_policy(
     policy_id: str,
     name: str,
-    policy: str,
+    policy: dict[str, Any] | str,
     description: str | None = None,
     enabled: bool = True,
     namespace_id: str | None = None,
 ) -> str:
-    """Create or replace a named retention policy in an Evolve namespace."""
-    from pydantic import ValidationError
-
-    from altk_evolve.retention import RetentionPolicy
-
-    if not _valid_retention_policy_id(policy_id):
-        return _json_response({"error": "policy_id must be 1-128 letters, numbers, or -_.: characters"})
-    if not name.strip():
-        return _json_response({"error": "name is required"})
+    """Create or replace the complete policy document in the supplied namespace."""
     try:
-        normalized = RetentionPolicy.from_mapping(_parse_metadata(policy))
-    except (ValueError, ValidationError) as exc:
-        errors = [dict(error) for error in exc.errors()] if isinstance(exc, ValidationError) else [{"message": str(exc)}]
-        return _json_response({"error": "Invalid retention policy", "details": errors})
-
-    resolved_ns = _resolve_namespace(namespace_id)
-    record = _retention_store().put_policy(
-        namespace_id=resolved_ns,
-        policy_id=policy_id,
-        name=name.strip(),
-        description=description.strip() if description and description.strip() else None,
-        enabled=enabled,
-        policy=normalized.model_dump(mode="json"),
-    )
-    return _json_response(record)
+        parsed = _retention_object(policy)
+    except ValueError as exc:
+        return _json_response({"error": "Invalid retention policy", "details": [{"message": str(exc)}]})
+    return _retention_call(namespace_id, "put_policy", policy_id, name=name, policy=parsed, description=description, enabled=enabled)
 
 
 @mcp.tool()
 def get_retention_policy(policy_id: str, namespace_id: str | None = None) -> str:
-    """Return one stored retention policy from an Evolve namespace."""
-    if not _valid_retention_policy_id(policy_id):
-        return _json_response({"error": "Invalid retention policy id"})
-    resolved_ns = _resolve_namespace(namespace_id)
-    record = _retention_store().get_policy(namespace_id=resolved_ns, policy_id=policy_id)
-    if record is None:
-        return _json_response({"error": f"Retention policy {policy_id!r} not found"})
-    return _json_response(record)
+    """Return a namespace-owned policy."""
+    return _retention_call(namespace_id, "get_policy", policy_id)
 
 
 @mcp.tool()
 def list_retention_policies(namespace_id: str | None = None, include_disabled: bool = False) -> str:
-    """List stored retention policies visible in an Evolve namespace."""
-    resolved_ns = _resolve_namespace(namespace_id)
-    items = _retention_store().list_policies(
-        namespace_id=resolved_ns,
-        include_disabled=include_disabled,
-    )
-    return _json_response({"items": items})
+    """List policies in the supplied namespace."""
+    return _retention_call(namespace_id, "list_policies", include_disabled=include_disabled)
 
 
 @mcp.tool()
@@ -857,199 +772,34 @@ def run_retention(
     scan_limit: int | None = None,
     run_id: str | None = None,
     namespace_id: str | None = None,
-    metadata_filters: str | None = None,
-    additional_matches: str | None = None,
+    metadata_filters: dict[str, Any] | str | None = None,
+    additional_matches: list[dict[str, Any]] | str | None = None,
     actor_id: str | None = None,
 ) -> str:
-    """Evaluate or apply a stored retention policy and persist its report.
-
-    ``as_of`` exists for deterministic audits and demonstrations. Applied
-    deletes still flow through ``memory_pre_delete``, so legal-hold plugins can
-    veto individual entities without aborting the run. ``metadata_filters`` is
-    a JSON object of metadata key/value pairs used to scope shared namespaces.
-    ``additional_matches`` lets an integrating host submit entities matched by
-    criteria outside Evolve, while Evolve still enforces scope, performs the
-    deletion, and owns the audit record.
-    """
-    from pydantic import ValidationError
-
-    from altk_evolve.retention import RetentionEngine, RetentionItem, RetentionPolicy
-
+    """Execute a stored policy and persist its audit report through the shared retention service."""
     try:
-        now = _parse_datetime(as_of, field_name="as_of")
-        metadata_filter_values = _parse_metadata(metadata_filters) if metadata_filters else None
-        backend_filters = {f"metadata.{key}": value for key, value in metadata_filter_values.items()} if metadata_filter_values else None
-        parsed_matches = json.loads(additional_matches) if additional_matches else []
-        if not isinstance(parsed_matches, list) or any(not isinstance(item, dict) for item in parsed_matches):
-            raise ValueError("additional_matches must be a JSON array of objects")
-    except (ValueError, ValidationError) as exc:
-        errors: list[dict[str, Any]] = (
-            [dict(error) for error in exc.errors()] if isinstance(exc, ValidationError) else [{"message": str(exc)}]
-        )
-        return _json_response({"error": "Invalid retention request", "details": errors})
-
-    if not _valid_retention_policy_id(policy_id):
-        return _json_response({"error": "Invalid retention policy id"})
-    if scan_limit is not None and scan_limit <= 0:
-        return _json_response({"error": "scan_limit must be greater than zero"})
-
-    resolved_ns = _resolve_namespace(namespace_id)
-    client = get_client()
-    store = _retention_store(client)
-    stored_policy = store.get_policy(namespace_id=resolved_ns, policy_id=policy_id)
-    if stored_policy is None:
-        return _json_response({"error": f"Retention policy {policy_id!r} not found"})
-    if not stored_policy["enabled"]:
-        return _json_response({"error": f"Retention policy {policy_id!r} is disabled"})
-    normalized_policy = RetentionPolicy.from_mapping(stored_policy["policy"])
-    resolved_run_id = run_id or str(uuid.uuid4())
-    started_at = datetime.datetime.now(datetime.UTC)
-    store.save_run(
-        namespace_id=resolved_ns,
-        run_id=resolved_run_id,
-        policy_id=policy_id,
-        agent_id=(metadata_filter_values or {}).get("agent_id"),
+        filters = _retention_object(metadata_filters) if metadata_filters else None
+        matches = json.loads(additional_matches) if isinstance(additional_matches, str) else additional_matches
+    except ValueError as exc:
+        return _json_response({"error": "Invalid retention request", "details": [{"message": str(exc)}]})
+    return _retention_call(
+        namespace_id,
+        "run",
+        policy_id,
+        dry_run=dry_run,
+        as_of=as_of,
+        scan_limit=scan_limit,
+        run_id=run_id,
+        metadata_filters=filters,
+        additional_matches=matches,
         actor_id=actor_id,
-        status="running",
-        report={"run_id": resolved_run_id, "started_at": started_at.isoformat()},
-        created_at=started_at.isoformat(),
     )
-    try:
-        engine = RetentionEngine(client)
-        report = engine.apply(
-            resolved_ns,
-            normalized_policy,
-            now=now,
-            dry_run=dry_run,
-            scan_limit=scan_limit,
-            filters=backend_filters,
-        )
-        snapshots = {entity.id: entity for entity in engine.last_scanned_entities}
-        deleted_ids = {item.entity_id for item in report.deleted}
-        for match in parsed_matches:
-            if report.cancelled or cancellation_requested():
-                report.cancelled = True
-                break
-            entity_id = str(match.get("entity_id") or "").strip()
-            rule = str(match.get("rule") or "external-match").strip()
-            reason = str(match.get("reason") or "external_match").strip()
-            detail = str(match.get("detail") or "matched an external retention criterion").strip()
-            if not entity_id or entity_id in deleted_ids:
-                continue
-            entity = snapshots.get(entity_id)
-            if entity is None:
-                scoped_filters = {"id": entity_id, **(backend_filters or {})}
-                matches = client.scan_entities(resolved_ns, filters=scoped_filters, limit=1)
-                entity = matches[0] if matches else None
-            if entity is None:
-                report.errors.append(f"external match {entity_id}: entity was not found in the requested scope")
-                continue
-            snapshots[entity_id] = entity
-            item = RetentionItem(entity_id, entity.type, "delete", reason, rule, detail)
-            report.flagged[:] = [entry for entry in report.flagged if entry.entity_id != entity_id]
-            report.skipped[:] = [entry for entry in report.skipped if entry.entity_id != entity_id]
-            try:
-                if not dry_run:
-                    client.delete_entity_by_id(resolved_ns, entity_id)
-                report.deleted.append(item)
-                deleted_ids.add(entity_id)
-            except Exception as exc:
-                logger.warning("retention: failed to delete external match %s: %s", entity_id, exc)
-                report.errors.append(f"delete {entity_id}: {exc}")
-                report.skipped.append(RetentionItem(entity_id, entity.type, "skip", "delete_failed", rule, f"deletion failed: {exc}"))
-        completed_at = datetime.datetime.now(datetime.UTC)
-        result = {
-            "run_id": resolved_run_id,
-            "namespace_id": resolved_ns,
-            "policy_id": policy_id,
-            "policy_name": stored_policy["name"],
-            "actor_id": actor_id,
-            "started_at": started_at.isoformat(),
-            "completed_at": completed_at.isoformat(),
-            "as_of": (now or completed_at).isoformat(),
-            "dry_run": report.dry_run,
-            "cancelled": report.cancelled,
-            "policy": normalized_policy.model_dump(mode="json"),
-            "metadata_filters": metadata_filter_values,
-            "summary": report.summary(),
-            "flagged": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.flagged],
-            "deleted": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.deleted],
-            "skipped": [_retention_item_payload(item, snapshots.get(item.entity_id), dry_run=dry_run) for item in report.skipped],
-            "errors": report.errors,
-            "warnings": report.warnings,
-        }
-        store.save_run(
-            namespace_id=resolved_ns,
-            run_id=resolved_run_id,
-            policy_id=policy_id,
-            agent_id=(metadata_filter_values or {}).get("agent_id"),
-            actor_id=actor_id,
-            status="cancelled" if report.cancelled else ("failed" if report.errors else "completed"),
-            report=_retention_audit_payload(result),
-            created_at=started_at.isoformat(),
-        )
-        return _json_response(result)
-    except Exception as exc:
-        logger.exception("retention run %s failed", resolved_run_id)
-        completed_at = datetime.datetime.now(datetime.UTC)
-        failed_result = {
-            "run_id": resolved_run_id,
-            "namespace_id": resolved_ns,
-            "policy_id": policy_id,
-            "policy_name": stored_policy["name"],
-            "actor_id": actor_id,
-            "started_at": started_at.isoformat(),
-            "completed_at": completed_at.isoformat(),
-            "as_of": (now or completed_at).isoformat(),
-            "dry_run": dry_run,
-            "errors": ["Retention execution failed"],
-            "warnings": [],
-            "failure": {"type": type(exc).__name__},
-        }
-        failed_audit = _retention_audit_payload(failed_result)
-        failed_audit["failure"] = failed_result["failure"]
-        try:
-            store.save_run(
-                namespace_id=resolved_ns,
-                run_id=resolved_run_id,
-                policy_id=policy_id,
-                agent_id=(metadata_filter_values or {}).get("agent_id"),
-                actor_id=actor_id,
-                status="failed",
-                report=failed_audit,
-                created_at=started_at.isoformat(),
-            )
-        except Exception:
-            logger.exception("retention run %s failed to persist its terminal status", resolved_run_id)
-        return _json_response(
-            {
-                "error": "Retention run failed",
-                "run_id": resolved_run_id,
-                "details": [{"message": str(exc)}],
-            }
-        )
 
 
 @mcp.tool()
-def list_retention_runs(
-    namespace_id: str | None = None,
-    agent_id: str | None = None,
-    policy_id: str | None = None,
-    limit: int = 50,
-) -> str:
-    """List persisted retention runs in an Evolve namespace."""
-    if limit <= 0 or limit > 200:
-        return _json_response({"error": "limit must be between 1 and 200"})
-    if policy_id is not None and not _valid_retention_policy_id(policy_id):
-        return _json_response({"error": "Invalid retention policy id"})
-    resolved_ns = _resolve_namespace(namespace_id)
-    items = _retention_store().list_runs(
-        namespace_id=resolved_ns,
-        agent_id=agent_id,
-        policy_id=policy_id,
-        limit=limit,
-    )
-    return _json_response({"items": items})
+def list_retention_runs(namespace_id: str | None = None, agent_id: str | None = None, policy_id: str | None = None, limit: int = 50) -> str:
+    """List persisted retention runs in the requested scope."""
+    return _retention_call(namespace_id, "list_runs", agent_id=agent_id, policy_id=policy_id, limit=limit)
 
 
 def _protection_class(name: str, kind: str, hooks: list[str]) -> str:
@@ -1713,81 +1463,127 @@ def delete_entity(
         return json.dumps({"success": False, "error": str(e)})
 
 
-def _schedule_service(namespace_id: str):
-    from altk_evolve.frontend.services.schedules import ScheduleService
-
-    return ScheduleService(get_client(), namespace_id)
-
-
 @mcp.tool()
-def put_retention_schedule(schedule_id: str, definition: str, namespace_id: str, actor_id: str, expected_revision: int = 0) -> str:
-    """Store a policy target and Kubernetes CronJob timing spec; revision 0 creates."""
+def put_retention_schedule(
+    schedule_id: str, definition: dict[str, Any] | str, namespace_id: str, actor_id: str, expected_revision: int = 0
+) -> str:
+    """Create or replace a revisioned schedule using a complete definition."""
     try:
-        return _json_response(_schedule_service(namespace_id).put(schedule_id, _parse_metadata(definition), actor_id, expected_revision))
+        parsed = _retention_object(definition)
     except ValueError as exc:
         return _json_response({"error": str(exc)})
+    return _retention_call(namespace_id, "put_schedule", schedule_id, parsed, actor_id=actor_id, expected_revision=expected_revision)
 
 
 @mcp.tool()
 def get_retention_schedule(schedule_id: str, namespace_id: str) -> str:
-    """Read one namespace-owned retention schedule."""
-    try:
-        return _json_response(_schedule_service(namespace_id).get(schedule_id))
-    except ValueError as exc:
-        return _json_response({"error": str(exc)})
+    """Show stored configuration and upcoming times; suspended schedules have no upcoming runs."""
+    return _retention_call(namespace_id, "get_schedule", schedule_id)
 
 
 @mcp.tool()
 def list_retention_schedules(namespace_id: str) -> str:
-    """List retention schedules for the explicit service-instance namespace."""
-    try:
-        return _json_response(_schedule_service(namespace_id).list())
-    except ValueError as exc:
-        return _json_response({"error": str(exc)})
+    """List schedules in the supplied namespace."""
+    return _retention_call(namespace_id, "list_schedules")
 
 
 @mcp.tool()
 def delete_retention_schedule(schedule_id: str, namespace_id: str, expected_revision: int) -> str:
-    """Delete an inactive schedule using its last observed revision."""
-    try:
-        return _json_response(_schedule_service(namespace_id).delete(schedule_id, expected_revision))
-    except ValueError as exc:
-        return _json_response({"error": str(exc)})
-
-
-@mcp.tool()
-def preview_retention_schedule(spec: str, after: str | None = None, count: int = 5) -> str:
-    """Validate CronJob timing and return upcoming UTC instants without persisting."""
-    from altk_evolve.frontend.services.schedules import preview
-
-    try:
-        return _json_response(preview(_parse_metadata(spec), after=after, count=count))
-    except ValueError as exc:
-        return _json_response({"error": str(exc)})
+    """Delete an inactive schedule at the last observed revision."""
+    return _retention_call(namespace_id, "delete_schedule", schedule_id, expected_revision=expected_revision)
 
 
 @mcp.tool()
 def list_retention_jobs(namespace_id: str, schedule_id: str | None = None, limit: int = 100) -> str:
-    """Inspect queued, active, and terminal schedule executions; job IDs are run IDs."""
-    try:
-        return _json_response(_schedule_service(namespace_id).jobs(schedule_id, limit))
-    except ValueError as exc:
-        return _json_response({"error": str(exc)})
+    """List admitted executions in the namespace."""
+    return _retention_call(namespace_id, "list_jobs", schedule_id=schedule_id, limit=limit)
 
 
 @mcp.tool()
 def cancel_retention_job(namespace_id: str, job_id: str) -> str:
-    """Request cancellation at the next safe entity-operation boundary."""
-    try:
-        return _json_response(_schedule_service(namespace_id).cancel(job_id))
-    except ValueError as exc:
-        return _json_response({"error": str(exc)})
+    """Request cancellation at the next entity-operation boundary."""
+    return _retention_call(namespace_id, "cancel_job", job_id)
 
 
 @mcp.tool()
 def acknowledge_interrupted_retention_job(namespace_id: str, job_id: str, worker_stopped: bool) -> str:
-    """Recover a dead worker's claim only after the operator confirms it has stopped."""
-    try:
-        return _json_response(_schedule_service(namespace_id).recover(job_id, worker_stopped))
-    except ValueError as exc:
-        return _json_response({"error": str(exc)})
+    """Recover an interrupted claim after confirming its owning process stopped."""
+    return _retention_call(namespace_id, "recover_job", job_id, worker_stopped=worker_stopped)
+
+
+@mcp.tool()
+def create_retention_policy(policy_id: str, namespace_id: str, name: str | None = None, enabled: bool = True) -> str:
+    """Create an empty policy; duplicate IDs fail."""
+    return _retention_call(namespace_id, "create_policy", policy_id, name=name, enabled=enabled)
+
+
+@mcp.tool()
+def update_retention_policy(policy_id: str, namespace_id: str, name: str | None = None, enabled: bool | None = None) -> str:
+    """Update policy metadata, preserving its rules."""
+    return _retention_call(namespace_id, "update_policy", policy_id, name=name, enabled=enabled)
+
+
+@mcp.tool()
+def delete_retention_policy(policy_id: str, namespace_id: str) -> str:
+    """Delete a policy only if no schedule or active job references it."""
+    return _retention_call(namespace_id, "delete_policy", policy_id)
+
+
+@mcp.tool()
+def add_retention_rule(policy_id: str, name: str, rule: dict[str, Any], namespace_id: str) -> str:
+    """Append a named rule to the policy. Rule is a structured object."""
+    return _retention_call(namespace_id, "add_rule", policy_id, name, rule)
+
+
+@mcp.tool()
+def update_retention_rule(policy_id: str, name: str, changes: dict[str, Any], namespace_id: str) -> str:
+    """Update supplied fields of a named rule without changing its position."""
+    return _retention_call(namespace_id, "update_rule", policy_id, name, changes)
+
+
+@mcp.tool()
+def list_retention_rules(policy_id: str, namespace_id: str) -> str:
+    """List a policy's rules in execution order."""
+    return _retention_call(namespace_id, "list_rules", policy_id)
+
+
+@mcp.tool()
+def remove_retention_rule(policy_id: str, name: str, namespace_id: str) -> str:
+    """Remove one named rule from a policy."""
+    return _retention_call(namespace_id, "remove_rule", policy_id, name)
+
+
+@mcp.tool()
+def create_retention_schedule(schedule_id: str, definition: dict[str, Any], namespace_id: str, actor_id: str) -> str:
+    """Create a schedule from a structured definition; duplicate IDs fail."""
+    return _retention_call(namespace_id, "create_schedule", schedule_id, definition, actor_id=actor_id)
+
+
+@mcp.tool()
+def update_retention_schedule(schedule_id: str, changes: dict[str, Any], namespace_id: str, actor_id: str, expected_revision: int) -> str:
+    """Update supplied schedule fields using the last observed revision."""
+    return _retention_call(namespace_id, "update_schedule", schedule_id, changes, actor_id=actor_id, expected_revision=expected_revision)
+
+
+@mcp.tool()
+def start_retention_schedule(schedule_id: str, namespace_id: str, actor_id: str, expected_revision: int) -> str:
+    """Enable future admissions without changing timing or scope."""
+    return _retention_call(namespace_id, "start_schedule", schedule_id, actor_id=actor_id, expected_revision=expected_revision)
+
+
+@mcp.tool()
+def stop_retention_schedule(schedule_id: str, namespace_id: str, actor_id: str, expected_revision: int) -> str:
+    """Suspend future admissions without cancelling existing jobs."""
+    return _retention_call(namespace_id, "stop_schedule", schedule_id, actor_id=actor_id, expected_revision=expected_revision)
+
+
+@mcp.tool()
+def get_retention_job(job_id: str, namespace_id: str) -> str:
+    """Get a namespace-owned scheduled execution."""
+    return _retention_call(namespace_id, "get_job", job_id)
+
+
+@mcp.tool()
+def get_retention_run(run_id: str, namespace_id: str, agent_id: str | None = None) -> str:
+    """Get a persisted report in the requested namespace/agent scope."""
+    return _retention_call(namespace_id, "get_run", run_id, agent_id=agent_id)

@@ -102,10 +102,7 @@ def test_schedule_rest_roundtrip_revision_and_namespace(app_client):
     assert http.put("/api/manage/retention/schedules/daily", json=payload, headers=headers).status_code == 409
     assert http.get("/api/manage/retention/schedules/daily", headers={**headers, "x-instance": "instance-b"}).status_code == 404
     assert http.get("/api/manage/retention/schedules", headers={**headers, "x-instance": "instance-b"}).json()["items"] == []
-    assert (
-        http.post("/api/manage/retention/schedules/preview", headers=headers, json={"spec": payload["definition"]["spec"]}).status_code
-        == 200
-    )
+    assert len(http.get("/api/manage/retention/schedules/daily", headers=headers).json()["next_runs"]) == 5
     assert http.delete("/api/manage/retention/schedules/daily?expected_revision=1", headers=headers).json()["deleted"] is True
 
 

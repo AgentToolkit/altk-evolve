@@ -39,9 +39,9 @@ The example assumes host-defined authentication dependencies; request headers or
 | `/memory/access` | Record access to a deduplicated list of personally owned entity IDs. |
 | `/memory/facts` | Store/retrieve facts for the authenticated namespace/user and optional agent. |
 | `/manage/memory/entities` and `/{id}` | Administrative inventory/detail; content and arbitrary metadata are omitted. `/metadata` patch permits title, category, and legal hold. |
-| `/manage/retention/policies` and `/{id}` | List and upsert namespace policies. |
+| `/manage/retention/policies` and `/{id}` | Create, list, read, update, and delete namespace policies. Nested `/rules` routes manage ordered rules. |
 | `/manage/retention/runs` and `/{id}` | Run policies and read history, constrained by the authorized agent when supplied. |
-| `/manage/retention/schedules` and `/{id}` | Revision-checked schedule CRUD. `/preview` returns upcoming UTC instants. |
+| `/manage/retention/schedules` and `/{id}` | Revision-checked schedule CRUD, `/start`, and `/stop`. Detail includes upcoming UTC instants. |
 | `/manage/retention/jobs` and `/{id}` | Job status; `/{id}/cancel` requests cancellation and `/{id}/acknowledge-interrupted` records confirmed worker failure. |
 
 Administrative routes require `can_manage=True` and a real user identity; that identity becomes the run/schedule actor. Policies are namespace-wide reusable definitions, while schedules and runs can target an agent. Personal routes reject absent and placeholder users, restrict edits to title/category, and reject identity/protection overrides in submitted fact metadata. The namespace and actor come from trusted scope, not request payloads. Detail/inventory reads do not stamp access; call the explicit access route when memories are actually used.
@@ -68,3 +68,5 @@ app = FastAPI(lifespan=lifespan)
 ```
 
 The runtime stops and joins its scheduling thread on shutdown. Service replicas coordinate through durable database claims. The retention CLI manages stored resources; it does not start a scheduler in each CLI process.
+
+See the [retention API reference](retention-api.md) for exact REST bodies and corresponding Python/MCP operations.
