@@ -82,7 +82,7 @@ evolve retention execute --once
 ```
 
 `policies` supports `put`, `get`, `list`, `set-rule`, and `remove-rule`.
-`schedules` supports `create`, `get`, `list`, `update`, `delete`, and `preview`.
+`schedules` supports `create`, `show`, `list`, `update`, and `delete`. `show` includes the next five scheduled times alongside configuration, or no upcoming runs when suspended.
 `jobs` supports `list`, `get`, `cancel`, and `recover`.
 
 Catalog operations require `--namespace`. Immediate runs and schedule writes require `--actor` for audit attribution. `run` takes a stored policy ID, and `--apply` enables mutations. Schedule updates take `--revision` and preserve omitted fields. Retention commands do not take policy or schedule files.

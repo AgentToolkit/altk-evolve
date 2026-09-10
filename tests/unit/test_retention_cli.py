@@ -44,9 +44,9 @@ def create():
 
 def test_schedule_crud_revision_and_namespace(setup):
     assert create()["revision"] == 1
-    assert invoke("schedules", "get", "daily", "-n", "a")["actor_id"] == "alice"
+    assert invoke("schedules", "show", "daily", "-n", "a")["actor_id"] == "alice"
     assert invoke("schedules", "list", "-n", "b")["items"] == []
-    missing = runner.invoke(app, ["retention", "schedules", "get", "daily", "-n", "b"])
+    missing = runner.invoke(app, ["retention", "schedules", "show", "daily", "-n", "b"])
     assert missing.exit_code == 1 and "not found" in missing.stderr
     duplicate = runner.invoke(
         app, ["retention", "schedules", "create", "daily", "-n", "a", "--actor", "alice", "--policy", "p", "--schedule", "* * * * *"]
@@ -68,15 +68,42 @@ def test_schedule_validation_and_required_scope(setup):
     assert result.exit_code == 1 and "schedule" in result.stderr
 
 
-def test_preview_needs_no_backend(setup, monkeypatch):
-    """Timing preview works even when no backend is available."""
+def test_schedule_show_includes_upcoming_times_without_mutating(setup):
+    from zoneinfo import ZoneInfo
 
-    def unavailable():
-        raise AssertionError("Preview must not initialize storage")
+    invoke(
+        "schedules",
+        "create",
+        "daily",
+        "-n",
+        "a",
+        "--actor",
+        "alice",
+        "--policy",
+        "p",
+        "--schedule",
+        "0 2 * * *",
+        "--time-zone",
+        "America/Los_Angeles",
+    )
+    catalog = ScheduleStore(setup)
+    before = catalog.get("a", "daily")
+    result = invoke("schedules", "show", "daily", "-n", "a")
+    times = [dt.datetime.fromisoformat(value) for value in result["next_runs"]]
+    assert len(times) == 5 and times == sorted(set(times))
+    assert all(time > dt.datetime.now(dt.UTC) for time in times)
+    assert all(time.astimezone(ZoneInfo("America/Los_Angeles")).hour == 2 for time in times)
+    assert result["definition"] == before["definition"]
+    assert catalog.get("a", "daily") == before
+    assert catalog.jobs("a") == []
+    invoke("schedules", "update", "daily", "-n", "a", "--actor", "alice", "--revision", "1", "--suspend")
+    assert invoke("schedules", "show", "daily", "-n", "a")["next_runs"] == []
 
-    monkeypatch.setattr("altk_evolve.cli.cli.get_client", unavailable)
-    result = invoke("schedules", "preview", "--schedule", "* * * * *", "--after", "2026-01-01T00:00:00+00:00", "--count", "2")
-    assert result["next_runs"] == ["2026-01-01T00:01:00+00:00", "2026-01-01T00:02:00+00:00"]
+
+def test_schedule_help_has_show_and_no_preview():
+    result = runner.invoke(app, ["retention", "schedules", "--help"])
+    assert result.exit_code == 0
+    assert "show" in result.stdout and "preview" not in result.stdout
 
 
 def test_policy_management(setup):

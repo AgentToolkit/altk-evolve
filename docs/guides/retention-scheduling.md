@@ -47,15 +47,14 @@ evolve retention policies set-rule standard-retention old-memories --namespace s
 
 evolve retention schedules create nightly --namespace service-1 --actor alice --policy standard-retention --schedule '0 2 * * *' --time-zone America/Los_Angeles --concurrency-policy Forbid
 evolve retention schedules list --namespace service-1
-evolve retention schedules get nightly --namespace service-1
+evolve retention schedules show nightly --namespace service-1
 
-# Preview timing without connecting to storage.
-evolve retention schedules preview --schedule '0 2 * * *' --time-zone America/Los_Angeles --count 5
-
-# Updates change only supplied fields; use the revision returned by get/update.
+# Updates change only supplied fields; use the revision returned by show/update.
 evolve retention schedules update nightly --namespace service-1 --actor alice --revision 1 --suspend
 evolve retention schedules delete nightly --namespace service-1 --revision 2
 ```
+
+`schedules show` includes the next five scheduled times in UTC, calculated from the stored timezone-aware expression. Suspended schedules show an empty `next_runs` list. These are nominal times; deadlines and concurrency rules still determine actual execution.
 
 Schedule creation defaults to dry run. Use `--apply` to enforce; updates accept `--apply` or `--dry-run`. Updates also accept `--suspend` or `--resume`, `--clear-agent` to target the entire namespace, and `--clear-deadline` to remove the deadline. Omitted fields retain their stored values. Duplicate creates and stale updates/deletes fail with a nonzero exit status.
 

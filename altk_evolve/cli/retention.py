@@ -140,11 +140,14 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
             definition["agent_id"] = None
         emit(catalog.put(schedule_id, definition, actor, expected_revision=revision))
 
-    @schedules.command("get")
+    @schedules.command("show")
     @command_errors
-    def get(schedule_id: str, namespace: Namespace):
-        """Read a schedule, its definition, and current revision."""
-        emit(service(namespace).get(schedule_id))
+    def show(schedule_id: str, namespace: Namespace):
+        """Show configuration, revision, and the next five scheduled times in UTC."""
+        record = service(namespace).get(schedule_id)
+        spec = record["definition"]["spec"]
+        record["next_runs"] = [] if spec["suspend"] else preview(spec)["next_runs"]
+        emit(record)
 
     @schedules.command("list")
     @command_errors
@@ -160,17 +163,6 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         if not result["deleted"]:
             raise ValueError("Schedule not found")
         emit(result)
-
-    @schedules.command("preview")
-    @command_errors
-    def preview_schedule(
-        schedule: Annotated[str, typer.Option(help="Five-field cron expression.")],
-        time_zone: Annotated[str, typer.Option()] = "Etc/UTC",
-        after: Annotated[str | None, typer.Option(help="Starting ISO timestamp including timezone.")] = None,
-        count: Annotated[int, typer.Option(min=1, max=20)] = 5,
-    ):
-        """Preview timing without connecting to storage."""
-        emit(preview({"schedule": schedule, "timeZone": time_zone}, after=after, count=count))
 
     def existing_policy(namespace, policy_id):
         catalog = service(namespace).store
