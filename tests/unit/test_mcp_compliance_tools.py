@@ -609,3 +609,18 @@ def test_get_compliance_status_handles_non_mapping_hooks_config(client, tmp_path
 
     assert result["healthy"] is False
     assert "Unable to read hook configuration" in result["error"]
+
+
+@pytest.mark.parametrize("mode", ["sequential", "disabled", None])
+@pytest.mark.parametrize("engine_available", [True, False])
+def test_compliance_health_requires_engine_only_for_enabled_plugins(client, mode, engine_available):
+    client.ready.return_value = True
+    specs = [{"name": "legal-hold", "hooks": ["memory_pre_delete"], "mode": mode}] if mode else []
+    with (
+        patch("altk_evolve.frontend.mcp.mcp_server._configured_hook_plugins", return_value=specs),
+        patch("altk_evolve.hooks.manager.get_plugin_manager", return_value=MagicMock()),
+        patch("altk_evolve.hooks.manager.hooks_active", return_value=True),
+        patch("altk_evolve.hooks.types.engine_available", return_value=engine_available),
+    ):
+        result = json.loads(get_compliance_status(namespace_id="tenant-a"))
+    assert result["healthy"] is (mode != "sequential" or engine_available)

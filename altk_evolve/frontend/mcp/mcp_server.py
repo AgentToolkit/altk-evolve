@@ -1117,7 +1117,13 @@ def get_compliance_status(namespace_id: str | None = None) -> str:
     retention_available = (callable(getattr(client, "scan_entities", None)) or callable(getattr(client, "get_all_entities", None))) and all(
         callable(getattr(client, method, None)) for method in ("patch_entity_metadata", "delete_entity_by_id")
     )
-    healthy = client.ready() and retention_available and all(not plugin["enabled"] or plugin["healthy"] for plugin in plugins)
+    any_plugin_enabled = any(plugin["enabled"] for plugin in plugins)
+    healthy = (
+        client.ready()
+        and retention_available
+        and (not any_plugin_enabled or hook_engine_available)
+        and all(not plugin["enabled"] or plugin["healthy"] for plugin in plugins)
+    )
     return _json_response(
         {
             "healthy": healthy,

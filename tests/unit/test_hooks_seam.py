@@ -684,9 +684,10 @@ def test_shipped_legal_hold_plugin_blocks_delete_with_stable_code(client: Evolve
     with pytest.raises(
         MemoryPolicyViolation,
         match=r"\[LEGAL_HOLD\] entity is under legal hold",
-    ):
+    ) as raised:
         client.delete_entity_by_id("ns", entity.id)
 
+    assert raised.value.details == {"entity_id": entity.id}
     assert client.get_entity_by_id("ns", entity.id) is not None
 
 
