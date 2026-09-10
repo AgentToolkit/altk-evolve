@@ -9,8 +9,8 @@ It is a sweep, not an interceptor: you run it (CLI, cron, or in code), it report
 ```bash
 evolve retention policies create standard --namespace my-service
 evolve retention policies rules add standard --name old-memories --namespace my-service --max-age-days 90 --action delete
-evolve retention run standard --namespace my-service --actor alice          # dry run
-evolve retention run standard --namespace my-service --actor alice --apply  # enforce
+evolve retention run standard --namespace my-service --initiated-by alice          # dry run
+evolve retention run standard --namespace my-service --initiated-by alice --apply  # enforce
 ```
 
 Or in code:

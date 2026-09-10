@@ -58,20 +58,21 @@ def test_policy_rules_and_schedule_lifecycle_across_interfaces(interfaces):
     definition = {"policy_id": "p", "agent_id": "agent-a", "spec": {"schedule": "0 2 * * *", "timeZone": "America/Los_Angeles"}}
     response = http.post("/manage/retention/schedules", json={"schedule_id": "nightly", "definition": definition})
     assert response.status_code == 201
+    assert response.json()["initiated_by"] == "alice"
     shown = mcp_call("get_retention_schedule", namespace_id="a", schedule_id="nightly")
     assert shown["definition"] == service.get_schedule("nightly")["definition"]
     assert len(shown["next_runs"]) == 5
     assert http.post("/manage/retention/schedules/nightly/stop", json={"expected_revision": 1}).status_code == 200
     assert service.get_schedule("nightly")["next_runs"] == []
-    resumed = mcp_call("start_retention_schedule", namespace_id="a", schedule_id="nightly", actor_id="alice", expected_revision=2)
+    resumed = mcp_call("start_retention_schedule", namespace_id="a", schedule_id="nightly", initiated_by="alice", expected_revision=2)
     assert resumed["revision"] == 3 and not resumed["definition"]["spec"]["suspend"]
     assert http.post("/manage/retention/schedules/nightly/stop", json={"expected_revision": 1}).status_code == 409
     with pytest.raises(RetentionError) as stale:
-        service.stop_schedule("nightly", actor_id="alice", expected_revision=1)
+        service.stop_schedule("nightly", initiated_by="alice", expected_revision=1)
     assert stale.value.status == 409
     assert (
         "conflict"
-        in mcp_call("stop_retention_schedule", namespace_id="a", schedule_id="nightly", actor_id="alice", expected_revision=1)["error"]
+        in mcp_call("stop_retention_schedule", namespace_id="a", schedule_id="nightly", initiated_by="alice", expected_revision=1)["error"]
     )
     assert http.delete("/manage/retention/policies/p").status_code == 409
     service.delete_schedule("nightly", expected_revision=3)
@@ -92,7 +93,7 @@ def test_shared_errors_authentication_and_scope(interfaces):
     assert http.post("/manage/retention/policies/p/rules", json={"name": "bad", "rule": {"max_age_dayz": 90}}).status_code == 400
     assert http.post("/manage/retention/policies/p/rules", json={"name": "bad", "rule": {"max_age_days": -1}}).status_code == 400
     assert http.post("/manage/retention/policies", json={"policy_id": "other"}, headers={"x-manage": "no"}).status_code == 403
-    service.create_schedule("nightly", {"policy_id": "p", "agent_id": "agent-a", "spec": {"schedule": "@daily"}}, actor_id="alice")
+    service.create_schedule("nightly", {"policy_id": "p", "agent_id": "agent-a", "spec": {"schedule": "@daily"}}, initiated_by="alice")
     assert (
         http.post("/manage/retention/schedules/nightly/start", json={"expected_revision": 1}, headers={"x-agent": "agent-b"}).status_code
         == 404
@@ -102,7 +103,9 @@ def test_shared_errors_authentication_and_scope(interfaces):
         == 403
     )
     assert service.get_schedule("nightly")["revision"] == 1
-    assert http.post("/manage/retention/schedules/nightly/stop", json={"expected_revision": 1, "actor_id": "impostor"}).status_code == 422
+    assert (
+        http.post("/manage/retention/schedules/nightly/stop", json={"expected_revision": 1, "initiated_by": "impostor"}).status_code == 422
+    )
     assert "not found" in mcp_call("get_retention_schedule", namespace_id="b", schedule_id="nightly")["error"]
 
 
@@ -120,7 +123,7 @@ def test_execution_is_independent_of_mcp_and_has_scoped_audit(interfaces, monkey
         raise AssertionError("Programmatic and REST execution must not invoke MCP tools")
 
     monkeypatch.setattr(mcp_server, "run_retention", unavailable)
-    preview = service.run("p", actor_id="alice")
+    preview = service.run("p", initiated_by="alice")
     assert len(preview["deleted"]) == 1
     assert len(client.scan_entities("a")) == 2
     response = http.post("/manage/retention/runs", json={"policy_id": "p", "dry_run": False})
@@ -128,7 +131,7 @@ def test_execution_is_independent_of_mcp_and_has_scoped_audit(interfaces, monkey
     assert "private content" not in response.text
     assert len(client.scan_entities("a")) == 1 and len(client.scan_entities("b")) == 1
     report = service.get_run(response.json()["run_id"])
-    assert report["status"] == "completed" and report["actor_id"] == "alice"
+    assert report["status"] == "completed" and report["initiated_by"] == "alice"
     assert http.get(f"/manage/retention/runs/{report['run_id']}", headers={"x-agent": "agent-b"}).status_code == 404
     with pytest.raises(RetentionError) as forbidden:
         service.run("p", metadata_filters={"agent_id": "agent-b"})
@@ -147,23 +150,29 @@ def test_structured_mcp_catalog_and_execution_inputs(interfaces):
     assert mcp_call("put_retention_policy", namespace_id="a", policy_id="p", name="P", policy=policy)["policy"]["rules"][0]["name"] == "old"
     definition = {"policy_id": "p", "spec": {"schedule": "@daily"}}
     assert (
-        mcp_call("create_retention_schedule", namespace_id="a", schedule_id="s", actor_id="alice", definition=definition)["revision"] == 1
+        mcp_call("create_retention_schedule", namespace_id="a", schedule_id="s", initiated_by="alice", definition=definition)["revision"]
+        == 1
     )
     changed = mcp_call(
         "update_retention_schedule",
         namespace_id="a",
         schedule_id="s",
-        actor_id="alice",
+        initiated_by="alice",
         expected_revision=1,
         changes={"spec": {"timeZone": "America/Los_Angeles"}},
     )
     assert changed["definition"]["spec"]["schedule"] == "@daily"
     assert "referenced" in mcp_call("delete_retention_policy", namespace_id="a", policy_id="p")["error"]
     report = mcp_call(
-        "run_retention", namespace_id="a", policy_id="p", actor_id="alice", metadata_filters={"agent_id": "agent-a"}, additional_matches=[]
+        "run_retention",
+        namespace_id="a",
+        policy_id="p",
+        initiated_by="alice",
+        metadata_filters={"agent_id": "agent-a"},
+        additional_matches=[],
     )
     assert report["dry_run"]
-    assert mcp_call("get_retention_run", namespace_id="a", run_id=report["run_id"])["actor_id"] == "alice"
+    assert mcp_call("get_retention_run", namespace_id="a", run_id=report["run_id"])["initiated_by"] == "alice"
     client.retention("a").delete_schedule("s", expected_revision=2)
     assert mcp_call("delete_retention_policy", namespace_id="a", policy_id="p")["deleted"]
 

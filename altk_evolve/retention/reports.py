@@ -51,7 +51,7 @@ def audit_payload(report: dict[str, Any]) -> dict[str, Any]:
             "namespace_id",
             "policy_id",
             "policy_name",
-            "actor_id",
+            "initiated_by",
             "started_at",
             "completed_at",
             "as_of",

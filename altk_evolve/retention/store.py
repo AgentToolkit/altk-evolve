@@ -80,7 +80,7 @@ class RetentionStore:
                 run_id TEXT NOT NULL,
                 policy_id TEXT NOT NULL,
                 agent_id TEXT,
-                actor_id TEXT,
+                initiated_by TEXT,
                 status TEXT NOT NULL,
                 report_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -122,7 +122,7 @@ class RetentionStore:
             "run_id": row["run_id"],
             "policy_id": row["policy_id"],
             "agent_id": row["agent_id"],
-            "actor_id": row["actor_id"],
+            "initiated_by": row["initiated_by"],
             "status": row["status"],
             "report": _decode_json(row["report_json"]),
             "created_at": row["created_at"],
@@ -228,7 +228,7 @@ class RetentionStore:
         run_id: str,
         policy_id: str,
         agent_id: str | None,
-        actor_id: str | None,
+        initiated_by: str | None,
         status: str,
         report: dict[str, Any],
         created_at: str,
@@ -239,7 +239,7 @@ class RetentionStore:
             run_id,
             policy_id,
             agent_id,
-            actor_id,
+            initiated_by,
             status,
             json.dumps(report),
             created_at,
@@ -247,12 +247,12 @@ class RetentionStore:
         )
         postgres_sql = """
             INSERT INTO evolve_retention_runs
-            (namespace_id, run_id, policy_id, agent_id, actor_id, status, report_json, created_at, updated_at)
+            (namespace_id, run_id, policy_id, agent_id, initiated_by, status, report_json, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (namespace_id, run_id) DO UPDATE SET
                 policy_id = EXCLUDED.policy_id,
                 agent_id = EXCLUDED.agent_id,
-                actor_id = EXCLUDED.actor_id,
+                initiated_by = EXCLUDED.initiated_by,
                 status = EXCLUDED.status,
                 report_json = EXCLUDED.report_json,
                 updated_at = EXCLUDED.updated_at
@@ -270,7 +270,7 @@ class RetentionStore:
 
     def get_run(self, *, namespace_id: str, run_id: str) -> dict[str, Any] | None:
         statement = """
-            SELECT namespace_id, run_id, policy_id, agent_id, actor_id, status, report_json, created_at, updated_at
+            SELECT namespace_id, run_id, policy_id, agent_id, initiated_by, status, report_json, created_at, updated_at
             FROM evolve_retention_runs
             WHERE namespace_id = {namespace} AND run_id = {run}
         """
@@ -304,7 +304,7 @@ class RetentionStore:
             values.append(policy_id)
         values.append(limit)
         statement = f"""
-            SELECT namespace_id, run_id, policy_id, agent_id, actor_id, status, report_json, created_at, updated_at
+            SELECT namespace_id, run_id, policy_id, agent_id, initiated_by, status, report_json, created_at, updated_at
             FROM evolve_retention_runs
             WHERE {" AND ".join(conditions)}
             ORDER BY created_at DESC

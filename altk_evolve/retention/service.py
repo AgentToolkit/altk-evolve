@@ -81,9 +81,9 @@ class RetentionService:
             raise RetentionError("Invalid retention policy id")
 
     @staticmethod
-    def _actor(actor_id: str | None) -> None:
-        if actor_id is not None and not actor_id.strip():
-            raise RetentionError("Actor identity must be nonblank")
+    def _validate_initiator(initiated_by: str | None) -> None:
+        if initiated_by is not None and not initiated_by.strip():
+            raise RetentionError("Initiator identity must be nonblank")
 
     @staticmethod
     @operation
@@ -169,12 +169,14 @@ class RetentionService:
             raise RetentionError("Schedule not found", 404)
 
     @operation
-    def create_schedule(self, schedule_id: str, definition: dict[str, Any], *, actor_id: str) -> dict[str, Any]:
-        return self.put_schedule(schedule_id, definition, actor_id=actor_id, expected_revision=0)
+    def create_schedule(self, schedule_id: str, definition: dict[str, Any], *, initiated_by: str) -> dict[str, Any]:
+        return self.put_schedule(schedule_id, definition, initiated_by=initiated_by, expected_revision=0)
 
     @operation
-    def put_schedule(self, schedule_id: str, definition: dict[str, Any], *, actor_id: str, expected_revision: int = 0) -> dict[str, Any]:
-        self._actor(actor_id)
+    def put_schedule(
+        self, schedule_id: str, definition: dict[str, Any], *, initiated_by: str, expected_revision: int = 0
+    ) -> dict[str, Any]:
+        self._validate_initiator(initiated_by)
         if len(schedule_id) > 128 or expected_revision < 0:
             raise RetentionError("Invalid schedule ID or revision")
         parsed = ScheduleDefinition.model_validate(definition)
@@ -182,7 +184,7 @@ class RetentionService:
             raise RetentionError("Schedule agent must match the authorized scope", 403)
         if expected_revision:
             self.get_schedule(schedule_id)
-        return self.store.put(self.namespace_id, schedule_id, parsed, actor_id, expected_revision=expected_revision)
+        return self.store.put(self.namespace_id, schedule_id, parsed, initiated_by, expected_revision=expected_revision)
 
     @operation
     def get_schedule(self, schedule_id: str) -> dict[str, Any]:
@@ -210,7 +212,7 @@ class RetentionService:
         }
 
     @operation
-    def update_schedule(self, schedule_id: str, changes: dict[str, Any], *, actor_id: str, expected_revision: int) -> dict[str, Any]:
+    def update_schedule(self, schedule_id: str, changes: dict[str, Any], *, initiated_by: str, expected_revision: int) -> dict[str, Any]:
         record = self.get_schedule(schedule_id)
         if record["revision"] != expected_revision:
             raise RetentionError("Schedule revision conflict", 409)
@@ -222,15 +224,19 @@ class RetentionService:
             if not isinstance(changes["spec"], dict):
                 raise RetentionError("spec must be an object")
             definition["spec"].update(changes["spec"])
-        return self.put_schedule(schedule_id, definition, actor_id=actor_id, expected_revision=expected_revision)
+        return self.put_schedule(schedule_id, definition, initiated_by=initiated_by, expected_revision=expected_revision)
 
     @operation
-    def start_schedule(self, schedule_id: str, *, actor_id: str, expected_revision: int) -> dict[str, Any]:
-        return self.update_schedule(schedule_id, {"spec": {"suspend": False}}, actor_id=actor_id, expected_revision=expected_revision)
+    def start_schedule(self, schedule_id: str, *, initiated_by: str, expected_revision: int) -> dict[str, Any]:
+        return self.update_schedule(
+            schedule_id, {"spec": {"suspend": False}}, initiated_by=initiated_by, expected_revision=expected_revision
+        )
 
     @operation
-    def stop_schedule(self, schedule_id: str, *, actor_id: str, expected_revision: int) -> dict[str, Any]:
-        return self.update_schedule(schedule_id, {"spec": {"suspend": True}}, actor_id=actor_id, expected_revision=expected_revision)
+    def stop_schedule(self, schedule_id: str, *, initiated_by: str, expected_revision: int) -> dict[str, Any]:
+        return self.update_schedule(
+            schedule_id, {"spec": {"suspend": True}}, initiated_by=initiated_by, expected_revision=expected_revision
+        )
 
     @operation
     def delete_schedule(self, schedule_id: str, *, expected_revision: int) -> dict[str, bool]:
@@ -274,7 +280,7 @@ class RetentionService:
         self,
         policy_id: str,
         *,
-        actor_id: str | None = None,
+        initiated_by: str | None = None,
         dry_run: bool = True,
         as_of: str | dt.datetime | None = None,
         scan_limit: int | None = None,
@@ -282,7 +288,7 @@ class RetentionService:
         metadata_filters: dict[str, Any] | None = None,
         additional_matches: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        self._actor(actor_id)
+        self._validate_initiator(initiated_by)
         self._policy_id(policy_id)
         if scan_limit is not None and scan_limit <= 0:
             raise RetentionError("scan_limit must be greater than zero")
@@ -304,7 +310,7 @@ class RetentionService:
             self.namespace_id,
             policy_id,
             dry_run=dry_run,
-            actor_id=actor_id,
+            initiated_by=initiated_by,
             as_of=now,
             scan_limit=scan_limit,
             run_id=run_id,

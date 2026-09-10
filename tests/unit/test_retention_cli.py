@@ -41,20 +41,20 @@ def invoke(*args):
 
 
 def create():
-    return invoke("schedules", "create", "daily", "-n", "a", "--actor", "alice", "--policy", "p", "--schedule", "* * * * *")
+    return invoke("schedules", "create", "daily", "-n", "a", "--initiated-by", "alice", "--policy", "p", "--schedule", "* * * * *")
 
 
 def test_schedule_crud_revision_and_namespace(setup):
     assert create()["revision"] == 1
-    assert invoke("schedules", "show", "daily", "-n", "a")["actor_id"] == "alice"
+    assert invoke("schedules", "show", "daily", "-n", "a")["initiated_by"] == "alice"
     assert invoke("schedules", "list", "-n", "b")["items"] == []
     missing = runner.invoke(app, ["retention", "schedules", "show", "daily", "-n", "b"])
     assert missing.exit_code == 1 and "not found" in missing.stderr
     duplicate = runner.invoke(
-        app, ["retention", "schedules", "create", "daily", "-n", "a", "--actor", "alice", "--policy", "p", "--schedule", "* * * * *"]
+        app, ["retention", "schedules", "create", "daily", "-n", "a", "--initiated-by", "alice", "--policy", "p", "--schedule", "* * * * *"]
     )
     assert duplicate.exit_code == 1 and "conflict" in duplicate.stderr
-    updated = invoke("schedules", "update", "daily", "-n", "a", "--actor", "bob", "--suspend", "--revision", "1")
+    updated = invoke("schedules", "update", "daily", "-n", "a", "--initiated-by", "bob", "--suspend", "--revision", "1")
     assert updated["revision"] == 2 and updated["definition"]["spec"]["suspend"]
     stale = runner.invoke(app, ["retention", "schedules", "delete", "daily", "-n", "a", "--revision", "1"])
     assert stale.exit_code == 1
@@ -65,7 +65,7 @@ def test_schedule_validation_and_required_scope(setup):
     result = runner.invoke(app, ["retention", "schedules", "list"])
     assert result.exit_code == 2
     result = runner.invoke(
-        app, ["retention", "schedules", "create", "daily", "-n", "a", "--actor", "alice", "--policy", "p", "--schedule", "invalid"]
+        app, ["retention", "schedules", "create", "daily", "-n", "a", "--initiated-by", "alice", "--policy", "p", "--schedule", "invalid"]
     )
     assert result.exit_code == 1 and "schedule" in result.stderr
 
@@ -79,7 +79,7 @@ def test_schedule_show_includes_upcoming_times_without_mutating(setup):
         "daily",
         "-n",
         "a",
-        "--actor",
+        "--initiated-by",
         "alice",
         "--policy",
         "p",
@@ -98,7 +98,7 @@ def test_schedule_show_includes_upcoming_times_without_mutating(setup):
     assert result["definition"] == before["definition"]
     assert catalog.get("a", "daily") == before
     assert catalog.jobs("a") == []
-    invoke("schedules", "update", "daily", "-n", "a", "--actor", "alice", "--revision", "1", "--suspend")
+    invoke("schedules", "update", "daily", "-n", "a", "--initiated-by", "alice", "--revision", "1", "--suspend")
     assert invoke("schedules", "show", "daily", "-n", "a")["next_runs"] == []
 
 
@@ -141,7 +141,7 @@ def test_cli_executor_and_job_history(setup):
     job = invoke("jobs", "list", "-n", "a")["items"][0]
     assert job["status"] == "completed"
     detail = invoke("jobs", "show", job["job_id"], "-n", "a")
-    assert detail["run"]["actor_id"] == "alice"
+    assert detail["run"]["initiated_by"] == "alice"
     assert detail["run"]["report"]["dry_run"]
     assert len(client.scan_entities("a")) == 1
     assert invoke("jobs", "list", "-n", "b")["items"] == []
@@ -182,15 +182,15 @@ def test_cli_command_tree_matches_resource_actions():
 def test_immediate_run_uses_stored_policy_and_audit(setup):
     for namespace in ("a", "b"):
         setup.update_entities(namespace, [Entity(type="fact", content="scoped memory")], False)
-    result = invoke("run", "p", "-n", "a", "--actor", "alice")
+    result = invoke("run", "p", "-n", "a", "--initiated-by", "alice")
     assert result["dry_run"]
-    assert ScheduleStore(setup).get_run(namespace_id="a", run_id=result["run_id"])["actor_id"] == "alice"
+    assert ScheduleStore(setup).get_run(namespace_id="a", run_id=result["run_id"])["initiated_by"] == "alice"
     assert len(setup.scan_entities("a")) == 1
-    applied = invoke("run", "p", "-n", "a", "--actor", "alice", "--apply")
+    applied = invoke("run", "p", "-n", "a", "--initiated-by", "alice", "--apply")
     assert not applied["dry_run"]
     assert setup.scan_entities("a") == []
     assert len(setup.scan_entities("b")) == 1
-    failed = runner.invoke(app, ["retention", "run", "missing", "-n", "a", "--actor", "alice"])
+    failed = runner.invoke(app, ["retention", "run", "missing", "-n", "a", "--initiated-by", "alice"])
     assert failed.exit_code == 1
 
 
@@ -214,7 +214,7 @@ def test_partial_schedule_updates_preserve_and_clear_fields(setup):
         "daily",
         "-n",
         "a",
-        "--actor",
+        "--initiated-by",
         "alice",
         "--policy",
         "p",
@@ -228,7 +228,7 @@ def test_partial_schedule_updates_preserve_and_clear_fields(setup):
         "60",
         "--apply",
     )
-    result = invoke("schedules", "update", "daily", "-n", "a", "--actor", "alice", "--revision", "1", "--suspend")
+    result = invoke("schedules", "update", "daily", "-n", "a", "--initiated-by", "alice", "--revision", "1", "--suspend")
     assert result["definition"]["dry_run"] is False
     assert result["definition"]["agent_id"] == "agent-a"
     assert result["definition"]["spec"]["timeZone"] == "America/Los_Angeles"
@@ -238,7 +238,7 @@ def test_partial_schedule_updates_preserve_and_clear_fields(setup):
         "daily",
         "-n",
         "a",
-        "--actor",
+        "--initiated-by",
         "alice",
         "--revision",
         "2",
@@ -270,14 +270,14 @@ def test_schedule_start_stop_preserves_existing_jobs(setup):
     store = ScheduleStore(setup)
     due = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=1)
     job = store.dispatch("a", "daily", due)
-    stopped = invoke("schedules", "stop", "daily", "-n", "a", "--actor", "alice", "--revision", "1")
+    stopped = invoke("schedules", "stop", "daily", "-n", "a", "--initiated-by", "alice", "--revision", "1")
     assert stopped["definition"]["spec"]["suspend"]
     assert store.get_job("a", job)["status"] == "queued"
     assert store.dispatch("a", "daily", due + dt.timedelta(minutes=1)) is None
-    started = invoke("schedules", "start", "daily", "-n", "a", "--actor", "alice", "--revision", "2")
+    started = invoke("schedules", "start", "daily", "-n", "a", "--initiated-by", "alice", "--revision", "2")
     assert not started["definition"]["spec"]["suspend"]
     assert started["definition"]["policy_id"] == "p"
-    stale = runner.invoke(app, ["retention", "schedules", "stop", "daily", "-n", "a", "--actor", "alice", "--revision", "2"])
+    stale = runner.invoke(app, ["retention", "schedules", "stop", "daily", "-n", "a", "--initiated-by", "alice", "--revision", "2"])
     assert stale.exit_code == 1
 
 

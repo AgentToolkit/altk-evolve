@@ -405,7 +405,7 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
                 run_id="run-1",
                 namespace_id="tenant-a",
                 metadata_filters=json.dumps({"agent_id": "agent-a"}),
-                actor_id="operator-a",
+                initiated_by="operator-a",
             )
         )
 
@@ -423,7 +423,7 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
     assert deleted["content_preview"] == "Memory old-session"
     assert store.save_run.call_count == 2
     assert store.save_run.call_args.kwargs["status"] == "completed"
-    assert store.save_run.call_args.kwargs["actor_id"] == "operator-a"
+    assert store.save_run.call_args.kwargs["initiated_by"] == "operator-a"
     persisted = store.save_run.call_args.kwargs["report"]
     assert "title" not in persisted["deleted"][0]
     assert "content_preview" not in persisted["deleted"][0]

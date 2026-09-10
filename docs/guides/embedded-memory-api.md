@@ -44,11 +44,11 @@ The example assumes host-defined authentication dependencies; request headers or
 | `/manage/retention/schedules` and `/{id}` | Revision-checked schedule CRUD, `/start`, and `/stop`. Detail includes upcoming UTC instants. |
 | `/manage/retention/jobs` and `/{id}` | Job status; `/{id}/cancel` requests cancellation and `/{id}/acknowledge-interrupted` records confirmed worker failure. |
 
-Administrative routes require `can_manage=True` and a real user identity; that identity becomes the run/schedule actor. Policies are namespace-wide reusable definitions, while schedules and runs can target an agent. Personal routes reject absent and placeholder users, restrict edits to title/category, and reject identity/protection overrides in submitted fact metadata. The namespace and actor come from trusted scope, not request payloads. Detail/inventory reads do not stamp access; call the explicit access route when memories are actually used.
+Administrative routes require `can_manage=True` and a real user identity; that identity becomes the run/schedule initiator. Policies are namespace-wide reusable definitions, while schedules and runs can target an agent. Personal routes reject absent and placeholder users, restrict edits to title/category, and reject identity/protection overrides in submitted fact metadata. The namespace and initiator come from trusted scope, not request payloads. Detail/inventory reads do not stamp access; call the explicit access route when memories are actually used.
 
 A schedule PUT body contains `definition` and `expected_revision` (zero for creation). See [retention scheduling](retention-scheduling.md) for the definition, worker setup, timing semantics, and recovery. Mounting the router alone does not launch scheduling; attach the runtime to the host lifespan as below. The host can use friendly UI controls to generate cron and display the preview without asking end users to read cron expressions.
 
-MCP tools remain an application integration surface: their namespace, user, and actor arguments must be supplied by a trusted caller. The embedded REST router supplies those values from authenticated host dependencies; it does not make the legacy dashboard or an independently exposed MCP server authenticated.
+MCP tools remain an application integration surface: their namespace, user, and initiator arguments must be supplied by a trusted caller. The embedded REST router supplies those values from authenticated host dependencies; it does not make the legacy dashboard or an independently exposed MCP server authenticated.
 
 ## Embedded scheduling lifecycle
 

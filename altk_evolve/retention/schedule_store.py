@@ -44,7 +44,7 @@ class ScheduleStore(RetentionStore):
                 conn,
                 """CREATE TABLE IF NOT EXISTS evolve_retention_schedules (
                 namespace_id TEXT NOT NULL, schedule_id TEXT NOT NULL, definition_json TEXT NOT NULL,
-                revision INTEGER NOT NULL, actor_id TEXT NOT NULL, last_schedule_at TEXT NOT NULL,
+                revision INTEGER NOT NULL, initiated_by TEXT NOT NULL, last_schedule_at TEXT NOT NULL,
                 condition TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                 PRIMARY KEY(namespace_id, schedule_id))""",
             )
@@ -52,7 +52,7 @@ class ScheduleStore(RetentionStore):
                 conn,
                 """CREATE TABLE IF NOT EXISTS evolve_retention_jobs (
                 namespace_id TEXT NOT NULL, job_id TEXT NOT NULL, schedule_id TEXT NOT NULL,
-                definition_json TEXT NOT NULL, actor_id TEXT NOT NULL, scheduled_at TEXT NOT NULL,
+                definition_json TEXT NOT NULL, initiated_by TEXT NOT NULL, scheduled_at TEXT NOT NULL,
                 status TEXT NOT NULL, worker_id TEXT, heartbeat_at TEXT, finished_at TEXT, error TEXT,
                 PRIMARY KEY(namespace_id, job_id))""",
             )
@@ -79,14 +79,14 @@ class ScheduleStore(RetentionStore):
         namespace: str,
         schedule_id: str,
         definition: ScheduleDefinition,
-        actor_id: str,
+        initiated_by: str,
         *,
         expected_revision: int,
         now: dt.datetime | None = None,
     ) -> dict[str, Any]:
         """Create with revision 0 or replace using optimistic concurrency control."""
-        if not namespace.strip() or not schedule_id.strip() or not actor_id.strip():
-            raise ValueError("namespace, schedule ID, and actor ID are required")
+        if not namespace.strip() or not schedule_id.strip() or not initiated_by.strip():
+            raise ValueError("namespace, schedule ID, and initiator identity are required")
         timestamp = utc(now or dt.datetime.now(dt.UTC)).isoformat()
         definition.spec.next_time(dt.datetime.fromisoformat(timestamp))
         with self.transaction() as conn:
@@ -101,7 +101,7 @@ class ScheduleStore(RetentionStore):
                     conn,
                     """INSERT INTO evolve_retention_schedules VALUES (?, ?, ?, 1, ?, ?, NULL, ?, ?)
                     ON CONFLICT(namespace_id, schedule_id) DO NOTHING""",
-                    (namespace, schedule_id, definition.model_dump_json(), actor_id, timestamp, timestamp, timestamp),
+                    (namespace, schedule_id, definition.model_dump_json(), initiated_by, timestamp, timestamp, timestamp),
                 )
                 if cursor.rowcount != 1:
                     raise ValueError("Schedule revision conflict")
@@ -113,10 +113,10 @@ class ScheduleStore(RetentionStore):
                 self.sql(
                     conn,
                     """UPDATE evolve_retention_schedules SET definition_json=?, revision=revision+1,
-                    actor_id=?, last_schedule_at=?, condition=NULL, updated_at=? WHERE namespace_id=? AND schedule_id=?""",
+                    initiated_by=?, last_schedule_at=?, condition=NULL, updated_at=? WHERE namespace_id=? AND schedule_id=?""",
                     (
                         definition.model_dump_json(),
-                        actor_id,
+                        initiated_by,
                         timestamp if changed_time else row["last_schedule_at"],
                         timestamp,
                         namespace,
@@ -198,9 +198,9 @@ class ScheduleStore(RetentionStore):
             self.sql(
                 conn,
                 """INSERT INTO evolve_retention_jobs
-                (namespace_id,job_id,schedule_id,definition_json,actor_id,scheduled_at,status)
+                (namespace_id,job_id,schedule_id,definition_json,initiated_by,scheduled_at,status)
                 VALUES (?,?,?,?,?,?,'queued')""",
-                (namespace, job_id, schedule_id, row["definition_json"], row["actor_id"], due.isoformat()),
+                (namespace, job_id, schedule_id, row["definition_json"], row["initiated_by"], due.isoformat()),
             )
             self.sql(
                 conn,

@@ -112,7 +112,7 @@ def test_request_cannot_supply_scope_or_actor(app_client):
         http.post(
             "/api/manage/retention/runs",
             headers={"x-manage": "yes"},
-            json={"policy_id": "p", "namespace_id": "instance-b", "actor_id": "bob"},
+            json={"policy_id": "p", "namespace_id": "instance-b", "initiated_by": "bob"},
         ).status_code
         == 422
     )

@@ -774,7 +774,7 @@ def run_retention(
     namespace_id: str | None = None,
     metadata_filters: dict[str, Any] | str | None = None,
     additional_matches: list[dict[str, Any]] | str | None = None,
-    actor_id: str | None = None,
+    initiated_by: str | None = None,
 ) -> str:
     """Execute a stored policy and persist its audit report through the shared retention service."""
     try:
@@ -792,7 +792,7 @@ def run_retention(
         run_id=run_id,
         metadata_filters=filters,
         additional_matches=matches,
-        actor_id=actor_id,
+        initiated_by=initiated_by,
     )
 
 
@@ -1465,14 +1465,16 @@ def delete_entity(
 
 @mcp.tool()
 def put_retention_schedule(
-    schedule_id: str, definition: dict[str, Any] | str, namespace_id: str, actor_id: str, expected_revision: int = 0
+    schedule_id: str, definition: dict[str, Any] | str, namespace_id: str, initiated_by: str, expected_revision: int = 0
 ) -> str:
     """Create or replace a revisioned schedule using a complete definition."""
     try:
         parsed = _retention_object(definition)
     except ValueError as exc:
         return _json_response({"error": str(exc)})
-    return _retention_call(namespace_id, "put_schedule", schedule_id, parsed, actor_id=actor_id, expected_revision=expected_revision)
+    return _retention_call(
+        namespace_id, "put_schedule", schedule_id, parsed, initiated_by=initiated_by, expected_revision=expected_revision
+    )
 
 
 @mcp.tool()
@@ -1554,27 +1556,31 @@ def remove_retention_rule(policy_id: str, name: str, namespace_id: str) -> str:
 
 
 @mcp.tool()
-def create_retention_schedule(schedule_id: str, definition: dict[str, Any], namespace_id: str, actor_id: str) -> str:
+def create_retention_schedule(schedule_id: str, definition: dict[str, Any], namespace_id: str, initiated_by: str) -> str:
     """Create a schedule from a structured definition; duplicate IDs fail."""
-    return _retention_call(namespace_id, "create_schedule", schedule_id, definition, actor_id=actor_id)
+    return _retention_call(namespace_id, "create_schedule", schedule_id, definition, initiated_by=initiated_by)
 
 
 @mcp.tool()
-def update_retention_schedule(schedule_id: str, changes: dict[str, Any], namespace_id: str, actor_id: str, expected_revision: int) -> str:
+def update_retention_schedule(
+    schedule_id: str, changes: dict[str, Any], namespace_id: str, initiated_by: str, expected_revision: int
+) -> str:
     """Update supplied schedule fields using the last observed revision."""
-    return _retention_call(namespace_id, "update_schedule", schedule_id, changes, actor_id=actor_id, expected_revision=expected_revision)
+    return _retention_call(
+        namespace_id, "update_schedule", schedule_id, changes, initiated_by=initiated_by, expected_revision=expected_revision
+    )
 
 
 @mcp.tool()
-def start_retention_schedule(schedule_id: str, namespace_id: str, actor_id: str, expected_revision: int) -> str:
+def start_retention_schedule(schedule_id: str, namespace_id: str, initiated_by: str, expected_revision: int) -> str:
     """Enable future admissions without changing timing or scope."""
-    return _retention_call(namespace_id, "start_schedule", schedule_id, actor_id=actor_id, expected_revision=expected_revision)
+    return _retention_call(namespace_id, "start_schedule", schedule_id, initiated_by=initiated_by, expected_revision=expected_revision)
 
 
 @mcp.tool()
-def stop_retention_schedule(schedule_id: str, namespace_id: str, actor_id: str, expected_revision: int) -> str:
+def stop_retention_schedule(schedule_id: str, namespace_id: str, initiated_by: str, expected_revision: int) -> str:
     """Suspend future admissions without cancelling existing jobs."""
-    return _retention_call(namespace_id, "stop_schedule", schedule_id, actor_id=actor_id, expected_revision=expected_revision)
+    return _retention_call(namespace_id, "stop_schedule", schedule_id, initiated_by=initiated_by, expected_revision=expected_revision)
 
 
 @mcp.tool()

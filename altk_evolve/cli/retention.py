@@ -13,7 +13,7 @@ from altk_evolve.retention.service import RetentionService
 from altk_evolve.schema.exceptions import EvolveException
 
 Namespace = Annotated[str, typer.Option("--namespace", "-n", help="Service-instance namespace (required).")]
-Actor = Annotated[str, typer.Option("--actor", help="Operator identity recorded in the audit history.")]
+InitiatedBy = Annotated[str, typer.Option("--initiated-by", help="Operator identity recorded in the audit history.")]
 Revision = Annotated[int, typer.Option("--revision", min=1, help="Last observed revision; stale writes are rejected.")]
 
 
@@ -70,7 +70,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
     def create(
         schedule_id: str,
         namespace: Namespace,
-        actor: Actor,
+        initiated_by: InitiatedBy,
         policy: Annotated[str, typer.Option(help="Stored policy ID.")],
         schedule: Annotated[str, typer.Option(help="Five-field cron expression.")],
         time_zone: Annotated[str, typer.Option()] = "Etc/UTC",
@@ -93,14 +93,14 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
                 "suspend": suspend,
             },
         }
-        emit(service(namespace).create_schedule(schedule_id, definition, actor_id=actor))
+        emit(service(namespace).create_schedule(schedule_id, definition, initiated_by=initiated_by))
 
     @schedules.command("update")
     @command_errors
     def update(
         schedule_id: str,
         namespace: Namespace,
-        actor: Actor,
+        initiated_by: InitiatedBy,
         revision: Revision,
         policy: Annotated[str | None, typer.Option()] = None,
         schedule: Annotated[str | None, typer.Option()] = None,
@@ -135,7 +135,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
             definition["spec"]["startingDeadlineSeconds"] = None
         if clear_agent:
             definition["agent_id"] = None
-        emit(service(namespace).update_schedule(schedule_id, definition, actor_id=actor, expected_revision=revision))
+        emit(service(namespace).update_schedule(schedule_id, definition, initiated_by=initiated_by, expected_revision=revision))
 
     @schedules.command("show")
     @command_errors
@@ -160,15 +160,15 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
 
     @schedules.command("start")
     @command_errors
-    def start_schedule(schedule_id: str, namespace: Namespace, actor: Actor, revision: Revision):
+    def start_schedule(schedule_id: str, namespace: Namespace, initiated_by: InitiatedBy, revision: Revision):
         """Enable future scheduled execution by the running Evolve service."""
-        emit(service(namespace).start_schedule(schedule_id, actor_id=actor, expected_revision=revision))
+        emit(service(namespace).start_schedule(schedule_id, initiated_by=initiated_by, expected_revision=revision))
 
     @schedules.command("stop")
     @command_errors
-    def stop_schedule(schedule_id: str, namespace: Namespace, actor: Actor, revision: Revision):
+    def stop_schedule(schedule_id: str, namespace: Namespace, initiated_by: InitiatedBy, revision: Revision):
         """Suspend future runs; queued or active jobs are not cancelled."""
-        emit(service(namespace).stop_schedule(schedule_id, actor_id=actor, expected_revision=revision))
+        emit(service(namespace).stop_schedule(schedule_id, initiated_by=initiated_by, expected_revision=revision))
 
     @policies.command("create")
     @command_errors
@@ -324,12 +324,12 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
     def run_policy(
         policy_id: str,
         namespace: Namespace,
-        actor: Actor,
+        initiated_by: InitiatedBy,
         agent: Annotated[str | None, typer.Option()] = None,
         apply: Annotated[bool, typer.Option("--apply", help="Apply mutations; defaults to dry run.")] = False,
     ):
         """Run a stored policy immediately and persist its audit report."""
-        result = get_client().retention(namespace, agent_id=agent).run(policy_id, actor_id=actor, dry_run=not apply)
+        result = get_client().retention(namespace, agent_id=agent).run(policy_id, initiated_by=initiated_by, dry_run=not apply)
         emit(result)
         if result.get("errors"):
             raise typer.Exit(1)

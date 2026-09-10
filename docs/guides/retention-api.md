@@ -2,6 +2,8 @@
 
 Python, CLI, REST, MCP, and the scheduler all call `RetentionService`. The service owns validation, namespace/agent scope, policy and rule operations, revision checks, schedule lifecycle, execution, and audit projections. The adapters supply authentication context and translate input/output formats.
 
+`initiated_by` records who requested a run or schedule change. It is audit attribution, not a user-memory filter. Scheduled jobs preserve this identity when admitted. The REST adapter derives it from the authenticated user.
+
 ## Python
 
 Use `client.retention(namespace_id, agent_id=...)`, or import `RetentionService` and `RetentionError` from `altk_evolve.retention`:
@@ -25,16 +27,16 @@ schedule = retention.create_schedule(
         "dry_run": True,
         "spec": {"schedule": "0 2 * * *", "timeZone": "America/Los_Angeles"},
     },
-    actor_id="alice",
+    initiated_by="alice",
 )
 shown = retention.get_schedule("nightly")  # configuration + next_runs
 stopped = retention.stop_schedule(
-    "nightly", actor_id="alice", expected_revision=shown["revision"],
+    "nightly", initiated_by="alice", expected_revision=shown["revision"],
 )
 retention.start_schedule(
-    "nightly", actor_id="alice", expected_revision=stopped["revision"],
+    "nightly", initiated_by="alice", expected_revision=stopped["revision"],
 )
-report = retention.run("memory-retention", actor_id="alice")  # dry run
+report = retention.run("memory-retention", initiated_by="alice")  # dry run
 persisted = retention.get_run(report["run_id"])
 ```
 
@@ -112,11 +114,11 @@ PATCH schedule bodies contain `changes` and `expected_revision`. Start/stop bodi
 
 Create/add requests return 201, reads and mutations return 200, malformed HTTP bodies return 422, and service failures use the service's status with `{"detail": {"error": "..."}}`. REST run responses and persisted audits omit memory content; programmatic/MCP immediate reports can include pre-action previews for trusted integrations.
 
-The host injects an authenticated `MemoryScope`; namespace and actor are not accepted from request bodies. Administrative routes require management permission. Python and MCP callers are trusted integrations and must authenticate and authorize their supplied namespace, actor, and agent scope. See [embedding](embedded-memory-api.md).
+The host injects an authenticated `MemoryScope`; namespace and initiator are not accepted from request bodies. Administrative routes require management permission. Python and MCP callers are trusted integrations and must authenticate and authorize their supplied namespace, initiator, and agent scope. See [embedding](embedded-memory-api.md).
 
 ## MCP inputs
 
-New tools take structured objects. For example, `create_retention_schedule` receives `schedule_id`, `namespace_id`, `actor_id`, and `definition` as an object. `update_retention_rule` receives an object in `changes`. Complete-policy/schedule PUT tools and `run_retention` also accept structured objects; their earlier JSON-string forms remain accepted by the transport adapter. Business operations never parse transport JSON.
+New tools take structured objects. For example, `create_retention_schedule` receives `schedule_id`, `namespace_id`, `initiated_by`, and `definition` as an object. `update_retention_rule` receives an object in `changes`. Complete-policy/schedule PUT tools and `run_retention` also accept structured objects; their earlier JSON-string forms remain accepted by the transport adapter. Business operations never parse transport JSON.
 
 MCP tools return JSON text; errors contain `error` and optional details. The separate preview tool/REST endpoint is removed: retrieve the schedule to see upcoming times.
 

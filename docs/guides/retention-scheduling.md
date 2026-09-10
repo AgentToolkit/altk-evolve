@@ -2,7 +2,7 @@
 
 Evolve owns retention policies, schedules, job claims, execution, and run history. All interfaces share the [public retention service](retention-api.md). Hosts can manage them through MCP or the [embedded REST router](embedded-memory-api.md), without maintaining their own retention tables.
 
-Create a policy first, then call `put_retention_schedule` with an explicit `namespace_id` (the host service-instance ID), `actor_id` (the authenticated operator), `schedule_id`, and a JSON-encoded `definition`:
+Create a policy first, then call `put_retention_schedule` with an explicit `namespace_id` (the host service-instance ID), `initiated_by` (the authenticated operator), `schedule_id`, and a JSON-encoded `definition`:
 
 ```json
 {
@@ -19,7 +19,7 @@ Create a policy first, then call `put_retention_schedule` with an explicit `name
 }
 ```
 
-Omit `agent_id` for the entire namespace. Scheduled retention is administrative: it can process multiple users within that scope, and records the operator separately as `actor_id`. Personal memory APIs still isolate by namespace and user. `dry_run` defaults to true; set it to false to apply the policy.
+Omit `agent_id` for the entire namespace. Scheduled retention is administrative: it can process multiple users within that scope, and records the operator separately as `initiated_by`. Personal memory APIs still isolate by namespace and user. `dry_run` defaults to true; set it to false to apply the policy.
 
 The `spec` uses the timing fields of [Kubernetes batch/v1 CronJobSpec](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/). It can later be copied into a CronJob alongside a host-provided `jobTemplate`. Evolve does not currently create Kubernetes resources.
 
@@ -37,7 +37,7 @@ Nonexistent spring-forward wall times are skipped; repeated fall-back times can 
 
 ## Manage retention from the CLI
 
-All commands live under `evolve retention`. Catalog commands print JSON and require an explicit service-instance namespace. The CLI uses the configured backend credentials and is intended for trusted operators; `--actor` records attribution, not authentication.
+All commands live under `evolve retention`. Catalog commands print JSON and require an explicit service-instance namespace. The CLI uses the configured backend credentials and is intended for trusted operators; `--initiated-by` records attribution, not authentication.
 
 Create the policy and rules directly, then reference the policy ID when scheduling:
 
@@ -45,12 +45,12 @@ Create the policy and rules directly, then reference the policy ID when scheduli
 evolve retention policies create standard-retention --namespace service-1
 evolve retention policies rules add standard-retention --name old-memories --namespace service-1 --max-age-days 90 --action delete
 
-evolve retention schedules create nightly --namespace service-1 --actor alice --policy standard-retention --schedule '0 2 * * *' --time-zone America/Los_Angeles --concurrency-policy Forbid
+evolve retention schedules create nightly --namespace service-1 --initiated-by alice --policy standard-retention --schedule '0 2 * * *' --time-zone America/Los_Angeles --concurrency-policy Forbid
 evolve retention schedules list --namespace service-1
 evolve retention schedules show nightly --namespace service-1
 
 # Updates change only supplied fields; use the revision returned by show/update.
-evolve retention schedules stop nightly --namespace service-1 --actor alice --revision 1
+evolve retention schedules stop nightly --namespace service-1 --initiated-by alice --revision 1
 evolve retention schedules delete nightly --namespace service-1 --revision 2
 ```
 
@@ -62,11 +62,11 @@ Schedule creation defaults to dry run. Use `--apply` to enforce; updates accept 
 
 Rules belong to policies: `policies rules add POLICY_ID --name RULE_NAME` appends a new rule; `rules update` changes supplied fields in place; `rules list` shows execution order; `rules remove` removes a named rule. Add rejects duplicate names and update rejects missing names. Supply `--max-age-days`, `--max-unused-days`, or both. Other options are `--entity-type`, `--action flag|delete`, `--on-missing-access-signal skip|flag|delete`, and `--cascade-derived`. Updates can clear thresholds with `--clear-age`/`--clear-unused` or remove the type restriction with `--all-types`. At least one threshold must remain. First matching rule wins.
 
-`schedules start ID --namespace N --actor USER --revision REV` enables a stored schedule. `schedules stop` suspends future admissions without cancelling queued or running jobs. Both preserve timing and scope and reject stale revisions. CLI schedule creation is enabled by default; use `--suspend` to stage it before starting.
+`schedules start ID --namespace N --initiated-by USER --revision REV` enables a stored schedule. `schedules stop` suspends future admissions without cancelling queued or running jobs. Both preserve timing and scope and reject stale revisions. CLI schedule creation is enabled by default; use `--suspend` to stage it before starting.
 
 Inspect executions with `evolve retention jobs list --namespace service-1` and `jobs show JOB_ID --namespace service-1`; the latter includes the retention report when available. Use `jobs cancel JOB_ID --namespace service-1` to request cancellation. After confirming an interrupted job's owning worker stopped, use `jobs recover JOB_ID --namespace service-1 --worker-stopped`.
 
-Run a stored policy immediately with `evolve retention run standard-retention --namespace service-1 --actor alice`. This defaults to dry run; add `--apply` to enforce. The report is persisted in Evolve. The running Evolve service executes enabled schedules using their persisted dry-run settings. Retention CLI commands take options and stored IDs; there are no policy or schedule file inputs.
+Run a stored policy immediately with `evolve retention run standard-retention --namespace service-1 --initiated-by alice`. This defaults to dry run; add `--apply` to enforce. The report is persisted in Evolve. The running Evolve service executes enabled schedules using their persisted dry-run settings. Retention CLI commands take options and stored IDs; there are no policy or schedule file inputs.
 
 ## Service lifecycle
 
@@ -86,7 +86,7 @@ A future Kubernetes CronJob integration can translate the stored timing fields a
 
 ## Updates and recovery
 
-Use `expected_revision: 0` to create, then the returned revision to update or delete. Updates affect future admissions; queued jobs retain the admitted definition and actor. The referenced policy is resolved at execution time, so policy edits or disabling take effect before execution. Changing the cron expression or timezone resets the scheduling cursor. Deletion requires no active jobs; suspend and cancel them first.
+Use `expected_revision: 0` to create, then the returned revision to update or delete. Updates affect future admissions; queued jobs retain the admitted definition and initiator. The referenced policy is resolved at execution time, so policy edits or disabling take effect before execution. Changing the cron expression or timezone resets the scheduling cursor. Deletion requires no active jobs; suspend and cancel them first.
 
 `list_retention_jobs` exposes ownership, status, heartbeat, and scheduled time. A started job's ID is also its retention run ID. Use `list_retention_runs` for persisted reports. Cancel with `cancel_retention_job`.
 

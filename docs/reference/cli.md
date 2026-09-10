@@ -71,13 +71,13 @@ evolve retention policies create standard --namespace my-service
 evolve retention policies rules add standard --name old-memories --namespace my-service --max-age-days 90 --action delete
 
 # Immediate execution of the stored policy (dry run by default).
-evolve retention run standard --namespace my-service --actor alice
-evolve retention run standard --namespace my-service --actor alice --apply
+evolve retention run standard --namespace my-service --initiated-by alice
+evolve retention run standard --namespace my-service --initiated-by alice --apply
 
 # Create a schedule for the running Evolve service.
-evolve retention schedules create nightly --namespace my-service --actor alice --policy standard --schedule '0 2 * * *' --time-zone America/Los_Angeles
-evolve retention schedules stop nightly --namespace my-service --actor alice --revision 1
-evolve retention schedules start nightly --namespace my-service --actor alice --revision 2
+evolve retention schedules create nightly --namespace my-service --initiated-by alice --policy standard --schedule '0 2 * * *' --time-zone America/Los_Angeles
+evolve retention schedules stop nightly --namespace my-service --initiated-by alice --revision 1
+evolve retention schedules start nightly --namespace my-service --initiated-by alice --revision 2
 ```
 
 `policies` supports `create`, `list`, `show`, `update`, and `delete`.
@@ -87,7 +87,7 @@ evolve retention schedules start nightly --namespace my-service --actor alice --
 
 The Evolve service runs enabled schedules automatically. `start`/`stop` change persisted schedule state; stopping a schedule does not cancel admitted jobs.
 
-Catalog operations require `--namespace`. Immediate runs and schedule writes require `--actor` for audit attribution. `run` takes a stored policy ID, and `--apply` enables mutations. Schedule updates take `--revision` and preserve omitted fields. Retention commands do not take policy or schedule files.
+Catalog operations require `--namespace`. Immediate runs and schedule writes require `--initiated-by` for audit attribution. `run` takes a stored policy ID, and `--apply` enables mutations. Schedule updates take `--revision` and preserve omitted fields. Retention commands do not take policy or schedule files.
 
 Reports contain actions, reasons, deciding rules, and evidence. See the
 [Data Retention guide](../guides/retention.md) for rule semantics and the

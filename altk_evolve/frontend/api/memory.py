@@ -297,7 +297,7 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
     @router.post("/manage/retention/runs")
     def run(body: RunRequest, pair=Depends(service)):
         result = retention_call(
-            pair, "run", body.policy_id, dry_run=body.dry_run, actor_id=_manager(pair[1]), additional_matches=body.additional_matches
+            pair, "run", body.policy_id, dry_run=body.dry_run, initiated_by=_manager(pair[1]), additional_matches=body.additional_matches
         )
         return audit_payload(result)
 
@@ -316,7 +316,7 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
     @router.post("/manage/retention/schedules", status_code=201)
     def create_schedule(body: CreateScheduleRequest, pair=Depends(service)):
         return retention_call(
-            pair, "create_schedule", body.schedule_id, body.definition.model_dump(mode="json"), actor_id=_manager(pair[1])
+            pair, "create_schedule", body.schedule_id, body.definition.model_dump(mode="json"), initiated_by=_manager(pair[1])
         )
 
     @router.get("/manage/retention/schedules/{schedule_id}")
@@ -330,23 +330,23 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
             "put_schedule",
             schedule_id,
             body.definition.model_dump(mode="json"),
-            actor_id=_manager(pair[1]),
+            initiated_by=_manager(pair[1]),
             expected_revision=body.expected_revision,
         )
 
     @router.patch("/manage/retention/schedules/{schedule_id}")
     def update_schedule(schedule_id: str, body: UpdateScheduleRequest, pair=Depends(service)):
         return retention_call(
-            pair, "update_schedule", schedule_id, body.changes, actor_id=_manager(pair[1]), expected_revision=body.expected_revision
+            pair, "update_schedule", schedule_id, body.changes, initiated_by=_manager(pair[1]), expected_revision=body.expected_revision
         )
 
     @router.post("/manage/retention/schedules/{schedule_id}/start")
     def start_schedule(schedule_id: str, body: ScheduleStateRequest, pair=Depends(service)):
-        return retention_call(pair, "start_schedule", schedule_id, actor_id=_manager(pair[1]), expected_revision=body.expected_revision)
+        return retention_call(pair, "start_schedule", schedule_id, initiated_by=_manager(pair[1]), expected_revision=body.expected_revision)
 
     @router.post("/manage/retention/schedules/{schedule_id}/stop")
     def stop_schedule(schedule_id: str, body: ScheduleStateRequest, pair=Depends(service)):
-        return retention_call(pair, "stop_schedule", schedule_id, actor_id=_manager(pair[1]), expected_revision=body.expected_revision)
+        return retention_call(pair, "stop_schedule", schedule_id, initiated_by=_manager(pair[1]), expected_revision=body.expected_revision)
 
     @router.delete("/manage/retention/schedules/{schedule_id}")
     def delete_schedule(schedule_id: str, expected_revision: int = Query(..., ge=1), pair=Depends(service)):

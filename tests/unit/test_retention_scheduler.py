@@ -147,7 +147,7 @@ def test_worker_uses_policy_agent_scope_and_persists_history(client, store):
     assert store.jobs("a")[0]["status"] == "completed"
     run = store.get_run(namespace_id="a", run_id=job_id)
     assert run["status"] == "completed"
-    assert run["actor_id"] == "alice"
+    assert run["initiated_by"] == "alice"
     assert len(run["report"]["deleted"]) == 1
     scheduler.execute(store.jobs("a")[0])  # Finished claim cannot run twice.
     assert store.get_run(namespace_id="a", run_id=job_id) == run
@@ -200,7 +200,7 @@ def test_cancellation_stops_between_mutations_and_preserves_run_audit(client, st
     token = execution_cancelled.set(lambda: len(deleted) == 1)
     try:
         with use_client(client):
-            result = json.loads(mcp_server.run_retention("p", dry_run=False, namespace_id="a", actor_id="alice"))
+            result = json.loads(mcp_server.run_retention("p", dry_run=False, namespace_id="a", initiated_by="alice"))
     finally:
         execution_cancelled.reset(token)
     assert result["cancelled"] is True
@@ -237,7 +237,7 @@ def test_schedule_mcp_transport_and_worker(client, store, monkeypatch):
                 {
                     "namespace_id": "a",
                     "schedule_id": "nightly",
-                    "actor_id": "alice",
+                    "initiated_by": "alice",
                     "definition": definition().model_dump_json(),
                 },
             )

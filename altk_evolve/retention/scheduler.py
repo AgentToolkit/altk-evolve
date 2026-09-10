@@ -54,7 +54,7 @@ class RetentionScheduler:
                 self.store.finish(namespace, job_id, self.worker_id, "cancelled")
                 return
             result = self.client.retention(namespace, agent_id=definition.agent_id).run(
-                definition.policy_id, run_id=job_id, dry_run=definition.dry_run, actor_id=job["actor_id"]
+                definition.policy_id, run_id=job_id, dry_run=definition.dry_run, initiated_by=job["initiated_by"]
             )
             status = "cancelled" if result.get("cancelled") else ("failed" if result.get("error") or result.get("errors") else "completed")
             self.store.finish(namespace, job_id, self.worker_id, status, result.get("error"))
