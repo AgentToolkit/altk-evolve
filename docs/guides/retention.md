@@ -7,8 +7,10 @@ It is a sweep, not an interceptor: you run it (CLI, cron, or in code), it report
 ## Quick start
 
 ```bash
-evolve retention run --policy examples/retention.example.yaml            # dry run: report only
-evolve retention run --policy examples/retention.example.yaml --apply    # enforce
+evolve retention policies put standard --namespace my-service
+evolve retention policies set-rule standard old-memories --namespace my-service --max-age-days 90 --action delete
+evolve retention run standard --namespace my-service --actor alice          # dry run
+evolve retention run standard --namespace my-service --actor alice --apply  # enforce
 ```
 
 Or in code:
@@ -17,7 +19,9 @@ Or in code:
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.retention import RetentionEngine, RetentionPolicy
 
-policy = RetentionPolicy.from_file("retention.yaml")
+policy = RetentionPolicy.from_mapping({"rules": [
+    {"name": "old-memories", "max_age_days": 90, "action": "delete"}
+]})
 report = RetentionEngine(EvolveClient()).apply("my-namespace", policy)  # dry_run=True by default
 print(report.summary())
 for item in [*report.deleted, *report.flagged]:
@@ -119,7 +123,7 @@ Because deletes go through the client's public API, they flow through the `memor
 
 `RetentionEngine.apply()` defaults to `dry_run=True`, and the CLI requires an explicit `--apply`. A dry run reads the namespace, computes every decision, and mutates nothing; the returned `RetentionReport` is identical in shape to an enforced one, with `dry_run=True`.
 
-Each `RetentionItem` carries five things: `entity_id`, `entity_type`, `action`, `reason` (`age` / `unused` / `cascade:<trace_id>`) and `rule` — plus `detail`, a human-readable *why* that names the numbers the decision was made on. Here is a real dry run of the [example policy above](#policy-format) over a small namespace — an old session, a memory derived from it, a stale-but-recently-read guideline, and an ancient never-recalled guideline:
+Each `RetentionItem` carries five things: `entity_id`, `entity_type`, `action`, `reason` (`age` / `unused` / `cascade:<trace_id>`) and `rule` — plus `detail`, a human-readable *why* that names the numbers the decision was made on. Here is an illustrative rendering of a dry run of the [example policy above](#policy-format) over a small namespace — an old session, a memory derived from it, a stale-but-recently-read guideline, and an ancient never-recalled guideline:
 
 ```
 DELETE  4   trajectory reason=age          rule=old-sessions
@@ -134,7 +138,7 @@ SKIP    2   guideline  reason=unused       rule=unused-guidelines
 warning: 3 of 4 entities carry no metadata.last_accessed, so their disuse was measured from created_at …
 ```
 
-Note the last two lines. The stale guideline is **flagged** by the `age` rule (`stale-guidelines`), not by the delete rule. The ancient never-recalled guideline *matches* the `unused-guidelines` **delete** rule, but because it carries no `last_accessed` stamp its disuse was only inferred from `created_at`, so the rule's default `on_missing_access_signal: skip` **spares** it — it lands in `report.skipped` (the "Skipped" table), never deleted and never flagged. See [When the unused signal is missing](#when-the-unused-signal-is-missing).
+Note the last two lines. The stale guideline is **flagged** by the `age` rule (`stale-guidelines`), not by the delete rule. The ancient never-recalled guideline *matches* the `unused-guidelines` **delete** rule, but because it carries no `last_accessed` stamp its disuse was only inferred from `created_at`, so the rule's default `on_missing_access_signal: skip` **spares** it — it lands in `report.skipped` (the report’s `skipped` entries), never deleted and never flagged. See [When the unused signal is missing](#when-the-unused-signal-is-missing).
 
 Read the dry run before you apply. That is the whole point of it.
 

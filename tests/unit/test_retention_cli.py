@@ -25,13 +25,11 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr("altk_evolve.cli.cli.get_client", lambda: client)
     for namespace in ("a", "b"):
         client.ensure_namespace(namespace)
-    policy = tmp_path / "policy.json"
-    policy.write_text(json.dumps({"rules": [{"name": "old", "max_age_days": 0, "action": "delete"}]}))
-    definition = tmp_path / "schedule.json"
-    definition.write_text(json.dumps({"policy_id": "p", "spec": {"schedule": "* * * * *", "concurrencyPolicy": "Forbid"}}))
-    result = runner.invoke(app, ["retention", "policies", "put", "p", "-n", "a", "-f", str(policy)])
+    result = runner.invoke(app, ["retention", "policies", "put", "p", "-n", "a"])
     assert result.exit_code == 0, result.output
-    return client, definition, policy
+    result = runner.invoke(app, ["retention", "policies", "set-rule", "p", "old", "-n", "a", "--max-age-days", "0", "--action", "delete"])
+    assert result.exit_code == 0, result.output
+    return client
 
 
 def invoke(*args):
@@ -40,23 +38,21 @@ def invoke(*args):
     return json.loads(result.stdout)
 
 
-def create(definition):
-    return invoke("schedules", "create", "daily", "-n", "a", "--actor", "alice", "-f", str(definition))
+def create():
+    return invoke("schedules", "create", "daily", "-n", "a", "--actor", "alice", "--policy", "p", "--schedule", "* * * * *")
 
 
 def test_schedule_crud_revision_and_namespace(setup):
-    _, definition, _ = setup
-    assert create(definition)["revision"] == 1
+    assert create()["revision"] == 1
     assert invoke("schedules", "get", "daily", "-n", "a")["actor_id"] == "alice"
     assert invoke("schedules", "list", "-n", "b")["items"] == []
     missing = runner.invoke(app, ["retention", "schedules", "get", "daily", "-n", "b"])
     assert missing.exit_code == 1 and "not found" in missing.stderr
-    duplicate = runner.invoke(app, ["retention", "schedules", "create", "daily", "-n", "a", "--actor", "alice", "-f", str(definition)])
+    duplicate = runner.invoke(
+        app, ["retention", "schedules", "create", "daily", "-n", "a", "--actor", "alice", "--policy", "p", "--schedule", "* * * * *"]
+    )
     assert duplicate.exit_code == 1 and "conflict" in duplicate.stderr
-    data = json.loads(definition.read_text())
-    data["spec"]["suspend"] = True
-    definition.write_text(json.dumps(data))
-    updated = invoke("schedules", "update", "daily", "-n", "a", "--actor", "bob", "-f", str(definition), "--revision", "1")
+    updated = invoke("schedules", "update", "daily", "-n", "a", "--actor", "bob", "--suspend", "--revision", "1")
     assert updated["revision"] == 2 and updated["definition"]["spec"]["suspend"]
     stale = runner.invoke(app, ["retention", "schedules", "delete", "daily", "-n", "a", "--revision", "1"])
     assert stale.exit_code == 1
@@ -64,41 +60,37 @@ def test_schedule_crud_revision_and_namespace(setup):
 
 
 def test_schedule_validation_and_required_scope(setup):
-    _, definition, _ = setup
     result = runner.invoke(app, ["retention", "schedules", "list"])
     assert result.exit_code == 2
-    definition.write_text('{"policy_id":"p","spec":{"schedule":"invalid"}}')
-    result = runner.invoke(app, ["retention", "schedules", "create", "daily", "-n", "a", "--actor", "alice", "-f", str(definition)])
+    result = runner.invoke(
+        app, ["retention", "schedules", "create", "daily", "-n", "a", "--actor", "alice", "--policy", "p", "--schedule", "invalid"]
+    )
     assert result.exit_code == 1 and "schedule" in result.stderr
-    definition.write_text("[]")
-    result = runner.invoke(app, ["retention", "schedules", "preview", "-f", str(definition)])
-    assert result.exit_code == 1 and "JSON object" in result.stderr
 
 
 def test_preview_needs_no_backend(setup, monkeypatch):
-    _, definition, _ = setup
+    """Timing preview works even when no backend is available."""
 
     def unavailable():
         raise AssertionError("Preview must not initialize storage")
 
     monkeypatch.setattr("altk_evolve.cli.cli.get_client", unavailable)
-    result = invoke("schedules", "preview", "-f", str(definition), "--after", "2026-01-01T00:00:00+00:00", "--count", "2")
+    result = invoke("schedules", "preview", "--schedule", "* * * * *", "--after", "2026-01-01T00:00:00+00:00", "--count", "2")
     assert result["next_runs"] == ["2026-01-01T00:01:00+00:00", "2026-01-01T00:02:00+00:00"]
 
 
 def test_policy_management(setup):
-    _, _, policy = setup
     assert invoke("policies", "get", "p", "-n", "a")["enabled"]
     assert invoke("policies", "list", "-n", "b")["items"] == []
-    invoke("policies", "put", "p", "-n", "a", "-f", str(policy), "--disabled")
+    invoke("policies", "put", "p", "-n", "a", "--disabled")
     assert not invoke("policies", "list", "-n", "a")["items"][0]["enabled"]
 
 
 @pytest.mark.e2e
 def test_cli_executor_and_job_history(setup):
-    client, definition, _ = setup
+    client = setup
     client.update_entities("a", [Entity(type="fact", content="dry run keeps this")], False)
-    create(definition)
+    create()
     catalog = ScheduleStore(client)
     # Backdate the schedule to make an occurrence due without sleeping.
     with catalog.transaction() as conn:
@@ -121,8 +113,8 @@ def test_cli_executor_and_job_history(setup):
 
 
 def test_job_cancel_and_explicit_recovery(setup):
-    client, definition, _ = setup
-    create(definition)
+    client = setup
+    create()
     catalog = ScheduleStore(client)
     due = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=1)
     job = catalog.dispatch("a", "daily", due)
@@ -140,7 +132,75 @@ def test_executor_rejects_invalid_limits():
         assert result.exit_code == 2
 
 
-def test_legacy_immediate_run_remains_available(setup):
-    _, _, policy = setup
-    result = runner.invoke(app, ["retention", "run", "a", "--policy", str(policy)])
-    assert result.exit_code == 0 and "DRY RUN" in result.stdout
+def test_immediate_run_uses_stored_policy_and_audit(setup):
+    for namespace in ("a", "b"):
+        setup.update_entities(namespace, [Entity(type="fact", content="scoped memory")], False)
+    result = invoke("run", "p", "-n", "a", "--actor", "alice")
+    assert result["dry_run"]
+    assert ScheduleStore(setup).get_run(namespace_id="a", run_id=result["run_id"])["actor_id"] == "alice"
+    assert len(setup.scan_entities("a")) == 1
+    applied = invoke("run", "p", "-n", "a", "--actor", "alice", "--apply")
+    assert not applied["dry_run"]
+    assert setup.scan_entities("a") == []
+    assert len(setup.scan_entities("b")) == 1
+    failed = runner.invoke(app, ["retention", "run", "missing", "-n", "a", "--actor", "alice"])
+    assert failed.exit_code == 1
+
+
+def test_rule_order_replacement_and_removal(setup):
+    invoke("policies", "set-rule", "p", "second", "-n", "a", "--max-unused-days", "30", "--action", "flag")
+    result = invoke("policies", "set-rule", "p", "old", "-n", "a", "--max-age-days", "90", "--action", "delete")
+    assert [r["name"] for r in result["policy"]["rules"]] == ["old", "second"]
+    assert result["policy"]["rules"][0]["max_age_days"] == 90
+    result = invoke("policies", "put", "p", "-n", "a", "--disabled")
+    assert len(result["policy"]["rules"]) == 2
+    result = invoke("policies", "remove-rule", "p", "old", "-n", "a")
+    assert [r["name"] for r in result["policy"]["rules"]] == ["second"]
+    invalid = runner.invoke(app, ["retention", "policies", "set-rule", "p", "bad", "-n", "a"])
+    assert invalid.exit_code == 1
+
+
+def test_partial_schedule_updates_preserve_and_clear_fields(setup):
+    invoke(
+        "schedules",
+        "create",
+        "daily",
+        "-n",
+        "a",
+        "--actor",
+        "alice",
+        "--policy",
+        "p",
+        "--schedule",
+        "0 2 * * *",
+        "--time-zone",
+        "America/Los_Angeles",
+        "--agent",
+        "agent-a",
+        "--starting-deadline-seconds",
+        "60",
+        "--apply",
+    )
+    result = invoke("schedules", "update", "daily", "-n", "a", "--actor", "alice", "--revision", "1", "--suspend")
+    assert result["definition"]["dry_run"] is False
+    assert result["definition"]["agent_id"] == "agent-a"
+    assert result["definition"]["spec"]["timeZone"] == "America/Los_Angeles"
+    result = invoke(
+        "schedules",
+        "update",
+        "daily",
+        "-n",
+        "a",
+        "--actor",
+        "alice",
+        "--revision",
+        "2",
+        "--resume",
+        "--dry-run",
+        "--clear-agent",
+        "--clear-deadline",
+    )
+    assert result["definition"]["dry_run"] is True
+    assert result["definition"]["agent_id"] is None
+    assert result["definition"]["spec"]["suspend"] is False
+    assert result["definition"]["spec"]["startingDeadlineSeconds"] is None

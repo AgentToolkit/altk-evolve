@@ -64,26 +64,32 @@ evolve entities delete my_namespace 12345
 
 ### Data Retention
 
+Manage policies, rules, and schedules directly in Evolve:
+
 ```bash
-# Dry run: report what the policy would flag or delete (nothing is mutated)
-evolve retention run --policy retention.yaml
+evolve retention policies put standard --namespace my-service
+evolve retention policies set-rule standard old-memories --namespace my-service --max-age-days 90 --action delete
 
-# Sweep a specific namespace
-evolve retention run --policy retention.yaml my_namespace
+# Immediate execution of the stored policy (dry run by default).
+evolve retention run standard --namespace my-service --actor alice
+evolve retention run standard --namespace my-service --actor alice --apply
 
-# Enforce the policy
-evolve retention run --policy retention.yaml my_namespace --apply
+# Create a schedule, then run the executor.
+evolve retention schedules create nightly --namespace my-service --actor alice --policy standard --schedule '0 2 * * *' --time-zone America/Los_Angeles
+evolve retention execute
+# Or dispatch currently due schedules, drain queued jobs, and exit:
+evolve retention execute --once
 ```
 
-**Options:**
-- `--policy, -p`: Path to a retention policy file (YAML or JSON). Required.
-- `--apply`: Actually flag/delete. Without it the run is a dry run.
-- Positional namespace argument defaults to the configured `namespace_id`.
+`policies` supports `put`, `get`, `list`, `set-rule`, and `remove-rule`.
+`schedules` supports `create`, `get`, `list`, `update`, `delete`, and `preview`.
+`jobs` supports `list`, `get`, `cancel`, and `recover`.
 
-The report lists every action with its reason (`age`, `unused`, `cascade:<trace_id>`),
-the rule that decided it, and the evidence behind it. See the
-[Data Retention guide](../guides/retention.md) for the policy format and the
-`AccessStampPlugin` dependency of `max_unused_days` rules.
+Catalog operations require `--namespace`. Immediate runs and schedule writes require `--actor` for audit attribution. `run` takes a stored policy ID, and `--apply` enables mutations. Schedule updates take `--revision` and preserve omitted fields. Retention commands do not take policy or schedule files.
+
+Reports contain actions, reasons, deciding rules, and evidence. See the
+[Data Retention guide](../guides/retention.md) for rule semantics and the
+[Scheduling guide](../guides/retention-scheduling.md) for command options, execution, and recovery.
 
 ### Skill Management
 

@@ -39,32 +39,31 @@ Nonexistent spring-forward wall times are skipped; repeated fall-back times can 
 
 All commands live under `evolve retention`. Catalog commands print JSON and require an explicit service-instance namespace. The CLI uses the configured backend credentials and is intended for trusted operators; `--actor` records attribution, not authentication.
 
-Save the definition above as `schedule.json` and a retention policy as `policy.yaml`, then:
+Create the policy and rules directly, then reference the policy ID when scheduling:
 
 ```bash
-# Store the policy referenced by the schedule.
-evolve retention policies put standard-retention --namespace service-1 --file policy.yaml
+evolve retention policies put standard-retention --namespace service-1
+evolve retention policies set-rule standard-retention old-memories --namespace service-1 --max-age-days 90 --action delete
 
-# Create and inspect a schedule.
-evolve retention schedules create nightly --namespace service-1 --actor alice --file schedule.json
+evolve retention schedules create nightly --namespace service-1 --actor alice --policy standard-retention --schedule '0 2 * * *' --time-zone America/Los_Angeles --concurrency-policy Forbid
 evolve retention schedules list --namespace service-1
 evolve retention schedules get nightly --namespace service-1
 
 # Preview timing without connecting to storage.
-evolve retention schedules preview --file schedule.json --count 5
+evolve retention schedules preview --schedule '0 2 * * *' --time-zone America/Los_Angeles --count 5
 
-# Edit schedule.json, then replace the definition using its current revision.
-evolve retention schedules update nightly --namespace service-1 --actor alice --file schedule.json --revision 1
-
-# Delete only when no jobs are active, using the revision returned by update.
+# Updates change only supplied fields; use the revision returned by get/update.
+evolve retention schedules update nightly --namespace service-1 --actor alice --revision 1 --suspend
 evolve retention schedules delete nightly --namespace service-1 --revision 2
 ```
 
-Updates replace the full definition. To suspend a schedule or apply changes instead of a dry run, edit `spec.suspend` or `dry_run` in the file and update with the last observed revision. Duplicate creates and stale updates/deletes fail with a nonzero exit status. Use `policies get` and `policies list` to inspect the policy catalog; `policies put --disabled` disables a policy.
+Schedule creation defaults to dry run. Use `--apply` to enforce; updates accept `--apply` or `--dry-run`. Updates also accept `--suspend` or `--resume`, `--clear-agent` to target the entire namespace, and `--clear-deadline` to remove the deadline. Omitted fields retain their stored values. Duplicate creates and stale updates/deletes fail with a nonzero exit status.
+
+`policies put` creates an empty policy or updates its name/status while preserving rules. `policies set-rule POLICY_ID RULE_NAME` appends a new rule or replaces that named rule in place; its options define the whole rule. Supply `--max-age-days`, `--max-unused-days`, or both. Other options are `--entity-type`, `--action flag|delete`, `--on-missing-access-signal skip|flag|delete`, and `--cascade-derived`. Rules run in insertion order, first match wins. `policies remove-rule` removes a named rule. Use `policies get` and `policies list` to inspect the catalog; `policies put --disabled` disables a policy without changing its rules.
 
 Inspect executions with `evolve retention jobs list --namespace service-1` and `jobs get JOB_ID --namespace service-1`; the latter includes the retention report when available. Use `jobs cancel JOB_ID --namespace service-1` to request cancellation. After confirming an interrupted job's owning worker stopped, use `jobs recover JOB_ID --namespace service-1 --worker-stopped`.
 
-The existing `evolve retention run --policy policy.yaml service-1` performs an immediate dry-run sweep from a file; `--apply` enforces it. `evolve retention execute` runs stored schedules and uses their persisted dry-run settings.
+Run a stored policy immediately with `evolve retention run standard-retention --namespace service-1 --actor alice`. This defaults to dry run; add `--apply` to enforce. The report is persisted in Evolve. `evolve retention execute` runs stored schedules and uses their persisted dry-run settings. Retention CLI commands take options and stored IDs; there are no policy or schedule file inputs.
 
 ## Run the worker
 
