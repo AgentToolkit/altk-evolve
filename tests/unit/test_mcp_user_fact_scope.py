@@ -63,6 +63,7 @@ def test_explicit_blank_namespace_does_not_use_default(client, namespace):
     assert not client.namespace_exists("legacy")
 
 
+@pytest.mark.e2e
 def test_mcp_transport_accepts_namespace_and_enforces_user_scope(client):
     import asyncio
     from fastmcp import Client
