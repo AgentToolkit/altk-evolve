@@ -25,6 +25,7 @@ from starlette.requests import Request
 from starlette.exceptions import HTTPException
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
+from altk_evolve.frontend.services.context import injected_client, cancellation_requested
 from altk_evolve.frontend.api.routes import router as api_router
 from altk_evolve.llm.fact_extraction.fact_extraction import (
     ExtractedFact,
@@ -111,6 +112,9 @@ def get_client() -> EvolveClient:
     """
     global _client
 
+    if (client := injected_client.get()) is not None:
+        return client
+
     with _client_init_lock:
         if _client is None:
             logger.info("Initializing Evolve client...")
@@ -135,6 +139,9 @@ def _resolve_namespace(namespace_id: str | None) -> str:
     """Resolve the effective namespace, ensuring it exists before use."""
     client = get_client()
     resolved = namespace_id or evolve_config.namespace_id
+    if injected_client.get() is not None:
+        client.ensure_namespace(resolved)
+        return resolved
     if resolved not in _initialized_namespaces:
         logger.info(f"Ensuring namespace '{resolved}' exists (first use)...")
         try:
@@ -725,6 +732,7 @@ def _retention_audit_payload(report: dict[str, Any]) -> dict[str, Any]:
             "completed_at",
             "as_of",
             "dry_run",
+            "cancelled",
         )
         if key in report
     }
@@ -919,6 +927,9 @@ def run_retention(
         snapshots = {entity.id: entity for entity in engine.last_scanned_entities}
         deleted_ids = {item.entity_id for item in report.deleted}
         for match in parsed_matches:
+            if report.cancelled or cancellation_requested():
+                report.cancelled = True
+                break
             entity_id = str(match.get("entity_id") or "").strip()
             rule = str(match.get("rule") or "external-match").strip()
             reason = str(match.get("reason") or "external_match").strip()
@@ -957,6 +968,7 @@ def run_retention(
             "completed_at": completed_at.isoformat(),
             "as_of": (now or completed_at).isoformat(),
             "dry_run": report.dry_run,
+            "cancelled": report.cancelled,
             "policy": normalized_policy.model_dump(mode="json"),
             "metadata_filters": metadata_filter_values,
             "summary": report.summary(),
@@ -972,7 +984,7 @@ def run_retention(
             policy_id=policy_id,
             agent_id=(metadata_filter_values or {}).get("agent_id"),
             actor_id=actor_id,
-            status="failed" if report.errors else "completed",
+            status="cancelled" if report.cancelled else ("failed" if report.errors else "completed"),
             report=_retention_audit_payload(result),
             created_at=started_at.isoformat(),
         )
@@ -1224,6 +1236,7 @@ def _search_facts_with_fallback(
     limit: int,
     *,
     allow_default_user: bool = True,
+    agent_id: str | None = None,
 ) -> list[RecordedEntity]:
     """Fetch fact entities for a user with the legacy fallback chain.
 
@@ -1232,38 +1245,41 @@ def _search_facts_with_fallback(
     is skipped for explicitly scoped calls or when the caller is already ``"default"``.
     """
     client = get_client()
+    agent_filter = {"metadata.agent_id": agent_id} if agent_id is not None else {}
     facts = client.search_entities(
         namespace_id=namespace_id,
         query=query,
-        filters={"type": "fact", "metadata.user_id": user_id},
+        filters={"type": "fact", "metadata.user_id": user_id, **agent_filter},
         limit=limit,
     )
     if query and not facts:
         facts = client.search_entities(
             namespace_id=namespace_id,
             query=None,
-            filters={"type": "fact", "metadata.user_id": user_id},
+            filters={"type": "fact", "metadata.user_id": user_id, **agent_filter},
             limit=limit,
         )
     if allow_default_user and not facts and user_id != "default":
         facts = client.search_entities(
             namespace_id=namespace_id,
             query=query,
-            filters={"type": "fact", "metadata.user_id": "default"},
+            filters={"type": "fact", "metadata.user_id": "default", **agent_filter},
             limit=limit,
         )
         if query and not facts:
             facts = client.search_entities(
                 namespace_id=namespace_id,
                 query=None,
-                filters={"type": "fact", "metadata.user_id": "default"},
+                filters={"type": "fact", "metadata.user_id": "default", **agent_filter},
                 limit=limit,
             )
     return facts
 
 
 @mcp.tool()
-def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5, namespace_id: str | None = None) -> str:
+def retrieve_user_facts(
+    user_id: str, query: str | None = None, limit: int = 5, namespace_id: str | None = None, agent_id: str | None = None
+) -> str:
     """Retrieve facts for the exact namespace/user pair without crossing users.
 
     Only legacy calls omitting namespace_id retain the default-user fallback.
@@ -1284,7 +1300,7 @@ def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5, 
             }
         )
 
-    facts = _search_facts_with_fallback(namespace_id, user_id, query, limit, allow_default_user=allow_default_user)
+    facts = _search_facts_with_fallback(namespace_id, user_id, query, limit, allow_default_user=allow_default_user, agent_id=agent_id)
     categories = categorize_facts(facts)
     matched_count = sum(len(items) for items in categories.values())
 
@@ -1695,3 +1711,83 @@ def delete_entity(
     except EvolveException as e:
         logger.exception(f"Error deleting entity {entity_id}: {str(e)}")
         return json.dumps({"success": False, "error": str(e)})
+
+
+def _schedule_service(namespace_id: str):
+    from altk_evolve.frontend.services.schedules import ScheduleService
+
+    return ScheduleService(get_client(), namespace_id)
+
+
+@mcp.tool()
+def put_retention_schedule(schedule_id: str, definition: str, namespace_id: str, actor_id: str, expected_revision: int = 0) -> str:
+    """Store a policy target and Kubernetes CronJob timing spec; revision 0 creates."""
+    try:
+        return _json_response(_schedule_service(namespace_id).put(schedule_id, _parse_metadata(definition), actor_id, expected_revision))
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+
+@mcp.tool()
+def get_retention_schedule(schedule_id: str, namespace_id: str) -> str:
+    """Read one namespace-owned retention schedule."""
+    try:
+        return _json_response(_schedule_service(namespace_id).get(schedule_id))
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+
+@mcp.tool()
+def list_retention_schedules(namespace_id: str) -> str:
+    """List retention schedules for the explicit service-instance namespace."""
+    try:
+        return _json_response(_schedule_service(namespace_id).list())
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+
+@mcp.tool()
+def delete_retention_schedule(schedule_id: str, namespace_id: str, expected_revision: int) -> str:
+    """Delete an inactive schedule using its last observed revision."""
+    try:
+        return _json_response(_schedule_service(namespace_id).delete(schedule_id, expected_revision))
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+
+@mcp.tool()
+def preview_retention_schedule(spec: str, after: str | None = None, count: int = 5) -> str:
+    """Validate CronJob timing and return upcoming UTC instants without persisting."""
+    from altk_evolve.frontend.services.schedules import preview
+
+    try:
+        return _json_response(preview(_parse_metadata(spec), after=after, count=count))
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+
+@mcp.tool()
+def list_retention_jobs(namespace_id: str, schedule_id: str | None = None, limit: int = 100) -> str:
+    """Inspect queued, active, and terminal schedule executions; job IDs are run IDs."""
+    try:
+        return _json_response(_schedule_service(namespace_id).jobs(schedule_id, limit))
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+
+@mcp.tool()
+def cancel_retention_job(namespace_id: str, job_id: str) -> str:
+    """Request cancellation at the next safe entity-operation boundary."""
+    try:
+        return _json_response(_schedule_service(namespace_id).cancel(job_id))
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+
+@mcp.tool()
+def acknowledge_interrupted_retention_job(namespace_id: str, job_id: str, worker_stopped: bool) -> str:
+    """Recover a dead worker's claim only after the operator confirms it has stopped."""
+    try:
+        return _json_response(_schedule_service(namespace_id).recover(job_id, worker_stopped))
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})

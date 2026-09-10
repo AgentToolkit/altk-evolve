@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from altk_evolve.retention.policy import RetentionPolicy, RetentionRule
+from altk_evolve.frontend.services.context import cancellation_requested
 from altk_evolve.schema.core import RecordedEntity
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,7 @@ class RetentionReport:
     errors: list[str] = field(default_factory=list)
     #: Non-fatal caveats about the run (e.g. degraded "unused" signal).
     warnings: list[str] = field(default_factory=list)
+    cancelled: bool = False
 
     def summary(self) -> str:
         verb = "would flag/delete" if self.dry_run else "flagged/deleted"
@@ -351,6 +353,10 @@ class RetentionEngine:
         flagged_at = now.isoformat()
 
         for item in items:
+            if cancellation_requested():
+                report.cancelled = True
+                report.warnings.append("Execution cancelled; completed mutations are not rolled back")
+                break
             try:
                 if item.action == "delete":
                     if not dry_run:

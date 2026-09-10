@@ -224,7 +224,7 @@ In scope: private entities under `.evolve/entities/` and session files under `.e
 
 ## Known limitations
 
-- **No per-namespace or global scheduling.** You run the sweep; nothing runs it for you.
+- **Explicit worker deployment.** Evolve owns [namespace schedules and execution](retention-scheduling.md); start the retention worker to run them. Frontends do not start it automatically.
 - **No restore.** `delete` is final. Use `flag` first if you want a review stage.
 - **`max_unused_days` is only as good as your access stamping** — see above. Without `AccessStampPlugin` or `record_access`, it is an age rule wearing a different name.
 - **The plugin-side cascade needs a link nothing writes yet** — see the table above.

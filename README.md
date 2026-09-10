@@ -227,3 +227,7 @@ Evolve is an active project, and real‑world usage helps guide its direction.
 If you’re experimenting with Evolve or exploring on‑the‑job learning for agents, feel free to open an issue or discussion to share use cases, ideas, or feedback.
 
 See the [Contributing Guide](CONTRIBUTING.md) to understand our development process, or how to submit changes, report bugs, or propose features.
+
+### Embedded memory API and scheduling
+
+Hosts can mount the [scoped REST router](docs/guides/embedded-memory-api.md) with their own client and authentication dependencies. Evolve owns [retention schedules and worker execution](docs/guides/retention-scheduling.md), using Kubernetes-compatible cron, timezone, concurrency, deadline, and suspension fields.
