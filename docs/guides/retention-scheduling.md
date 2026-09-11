@@ -135,3 +135,26 @@ fixture teardown. Allow several minutes for actual heartbeat expiry and cron tic
 This exercises the production scheduler, retention service, and collector against
 PostgreSQL with a minimal client adapter. It is not a packaged MCP/REST startup test
 or a Kubernetes deployment/readiness test.
+
+For local Kubernetes, `tests/e2e/test_retention_kubernetes_crashes.py` reuses these
+four scenarios with a PostgreSQL Pod and Service, a victim Pod, and a Deployment
+scaled to two surviving scheduler replicas. A test-only signal request kills the
+executor process with SIGKILL; the test checks the Pod's terminated container exit
+code is 137 before waiting for heartbeat expiry and subsequent cron execution.
+The heartbeat scenario runs all three scheduler processes together before killing
+the victim. Test instrumentation pauses the production collector at transaction
+boundaries and injects the signal; scheduling and retention use the real implementation.
+
+```bash
+EVOLVE_TEST_KUBERNETES_CONTEXT=rancher-desktop \
+EVOLVE_TEST_CONTAINER_IMAGE=evolve:retention-crash-test \
+  uv run pytest -v -s -m e2e tests/e2e/test_retention_kubernetes_crashes.py
+```
+
+This suite requires an explicit context, locally available images (`imagePullPolicy:
+Never`), and a node that can mount the checkout's absolute path through `hostPath`.
+The tested image provides `uv` and `/app/.venv` with Evolve's dependencies. Each
+scenario creates and deletes its own namespace. PostgreSQL uses disposable
+`emptyDir` storage; this validates executor crashes, not database or node failure.
+The cluster remains enabled after testing. Full packaged MCP/REST startup,
+production probes, and multi-node networking are separate checks.

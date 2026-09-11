@@ -1,6 +1,9 @@
 """Container entrypoint for retention SIGKILL integration tests."""
 
 import os
+from pathlib import Path
+import signal
+import threading
 import time
 from types import SimpleNamespace
 
@@ -11,6 +14,15 @@ def executor():
     from altk_evolve.retention.collection import Collection
     from altk_evolve.retention.scheduler import RetentionScheduler
     from altk_evolve.retention.service import RetentionService
+
+    if kill_file := os.environ.get("TEST_KILL_FILE"):
+
+        def kill_on_request():
+            while not Path(kill_file).exists():
+                time.sleep(0.1)
+            os.kill(os.getpid(), signal.SIGKILL)
+
+        threading.Thread(target=kill_on_request, daemon=True).start()
 
     conn = psycopg.connect(os.environ["TEST_DSN"], autocommit=True)
     client = SimpleNamespace(
