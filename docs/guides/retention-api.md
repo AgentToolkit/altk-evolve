@@ -179,3 +179,32 @@ eligibility and namespace/agent scope: historical `as_of`, arbitrary metadata fi
 and externally computed deletion matches are rejected. CUGA's separate-database
 orphan-conversation criterion is therefore not advertised by the new collection UI.
 Dry-run evaluation remains available through `run(dry_run=True)`.
+
+
+### Explicit source-deletion receipts
+
+PostgreSQL policies may set `source_deleted: true` alongside an age/disuse threshold.
+Only memories with an acknowledged source deletion can match such a rule. Trusted
+hosts call `client.retention(namespace).record_source_deletion(source_id, user_id=...,
+agent_id=..., deleted_at=...)`, MCP `record_source_deletion`, or the authenticated
+management endpoint `POST /manage/retention/deleted-sources` with those four fields.
+The REST namespace is injected by the host; callers need management permission.
+Delivery is idempotent. The host must record the event atomically with its source
+deletion and retry delivery after failures; absence from a listing is not evidence.
+
+Matching requires exact namespace, `metadata.user_id`, `metadata.agent_id`, and
+`metadata.thread_id` (or `session_id`). Unknown provenance is kept. Memories created
+after the receipt's deletion time are kept, protecting source-ID reuse. Existing
+memories are not backfilled based on missing source records. Late-generated
+memories created after deletion are conservatively retained for ordinary age rules.
+Marking still records held memories; sweeping checks holds and current row versions.
+Receipts retain identifiers and timestamps only, never conversation content.
+
+An existing policy can opt in with:
+
+```bash
+evolve retention policies rules add cuga-standard --namespace service-1 \
+  --name orphaned-conversations --source-deleted --max-age-days 7 --action delete
+```
+
+Existing policies are not silently overwritten when a host updates its defaults.

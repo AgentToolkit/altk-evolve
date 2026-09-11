@@ -357,6 +357,16 @@ class RetentionService:
         return self._collection().sweep(policy_id, initiated_by=initiated_by, limit=limit)
 
     @operation
+    def record_source_deletion(self, source_id: str, *, user_id: str, deleted_at: str, agent_id: str | None = None) -> dict[str, Any]:
+        """Record a trusted host's source deletion within the authorized namespace."""
+        agent_id = agent_id or self.agent_id
+        if not agent_id:
+            raise RetentionError("agent_id is required")
+        if self.agent_id is not None and agent_id != self.agent_id:
+            raise RetentionError("Agent must match authorized scope", 403)
+        return self._collection().record_source_deletion(source_id, user_id, agent_id, deleted_at)
+
+    @operation
     def list_candidates(self, *, limit: int = 100) -> dict[str, Any]:
         if not 1 <= limit <= 1000:
             raise RetentionError("limit must be between 1 and 1000")

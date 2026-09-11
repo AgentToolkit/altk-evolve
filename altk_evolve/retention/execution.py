@@ -52,6 +52,16 @@ def execute_policy(
     )
     try:
         engine = RetentionEngine(client)
+        if any(rule.source_deleted for rule in normalized_policy.rules):
+            from altk_evolve.retention.collection import Collection
+
+            collection = Collection(client, resolved_ns)
+
+            def source_deleted(entity):
+                with collection.store.transaction() as connection:
+                    return entity.id in collection.source_deleted_ids(connection, [entity])
+
+            engine.source_deleted_lookup = source_deleted
         report = engine.apply(resolved_ns, normalized_policy, now=now, dry_run=dry_run, scan_limit=scan_limit, filters=backend_filters)
         snapshots = {entity.id: entity for entity in engine.last_scanned_entities}
         deleted_ids = {item.entity_id for item in report.deleted}

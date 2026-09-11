@@ -245,3 +245,46 @@ def test_concurrent_collectors_can_initialize_schema(collection):
     with ThreadPoolExecutor(max_workers=4) as pool:
         collectors = list(pool.map(lambda _: Collection(collector.client, "a"), range(4)))
     assert all(item.list()["items"] == [] for item in collectors)
+
+
+def test_source_deletion_requires_exact_scope_and_preserves_holds(collection):
+    import datetime as dt
+    from altk_evolve.frontend.services.context import use_client
+    from altk_evolve.frontend.mcp import mcp_server
+    import json
+
+    collector, conn = collection
+    collector.store.edit_rule("a", "p", "old", "update", {"source_deleted": True})
+    conn.execute("UPDATE ns_a SET metadata=jsonb_build_object('thread_id','thread','user_id','u','agent_id','agent','legal_hold',true)")
+    conn.execute(
+        "INSERT INTO ns_a (type,content,created_at,metadata) SELECT type,content,created_at,metadata||jsonb_build_object('user_id','other') FROM ns_a"
+    )
+    assert collector.mark("p", initiated_by="admin")["marked"] == []
+    when = (dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1)).isoformat()
+    with use_client(collector.client):
+        for _ in range(2):
+            assert json.loads(mcp_server.record_source_deletion("a", "thread", "u", "agent", when))["recorded"]
+    assert len(collector.mark("p", initiated_by="admin")["marked"]) == 1
+    assert collector.sweep("p", initiated_by="admin")["items"][0]["outcome"] == "held"
+    assert conn.execute("SELECT count(*) AS n FROM evolve_retention_deleted_sources").fetchone()["n"] == 1
+    conn.execute("UPDATE ns_a SET metadata=metadata-'legal_hold' WHERE id=1")
+    collector.mark("p", initiated_by="admin")
+    assert collector.sweep("p", initiated_by="admin")["items"][0]["outcome"] == "deleted"
+    assert conn.execute("SELECT count(*) AS n FROM ns_a").fetchone()["n"] == 1
+    assert conn.execute("SELECT count(*) AS n FROM ns_b").fetchone()["n"] == 1
+
+
+def test_source_deletion_does_not_match_reused_source_or_changed_provenance(collection):
+    import datetime as dt
+
+    collector, conn = collection
+    collector.store.edit_rule("a", "p", "old", "update", {"source_deleted": True})
+    conn.execute("UPDATE ns_a SET metadata=jsonb_build_object('thread_id','thread','user_id','u','agent_id','agent')")
+    collector.record_source_deletion("thread", "u", "agent", (dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1)).isoformat())
+    collector.mark("p", initiated_by="admin")
+    conn.execute("UPDATE ns_a SET metadata=metadata||jsonb_build_object('agent_id','other')")
+    assert collector.sweep("p", initiated_by="admin")["items"][0]["outcome"] == "withdrawn"
+    conn.execute(
+        "UPDATE ns_a SET metadata=metadata||jsonb_build_object('agent_id','agent'),created_at=extract(epoch from clock_timestamp()+interval '1 second')::bigint"
+    )
+    assert collector.mark("p", initiated_by="admin")["marked"] == []

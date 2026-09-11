@@ -1073,6 +1073,7 @@ def save_trajectory(
     namespace_id: str | None = None,
     session_id: str | None = None,
     tools: str | None = None,
+    agent_id: str | None = None,
 ) -> list[RecordedEntity]:
     """
     Save the full agent trajectory to the Entity DB and generate guidelines
@@ -1104,6 +1105,8 @@ def save_trajectory(
     entities = []
     messages = json.loads(trajectory_data)
     trajectory_metadata_base: dict = {"task_id": task_id}
+    if agent_id:
+        trajectory_metadata_base["agent_id"] = agent_id
     if effective_user_id:
         trajectory_metadata_base["user_id"] = effective_user_id
     if session_id:
@@ -1131,6 +1134,8 @@ def save_trajectory(
         "source_task_id": task_id,
         "creation_mode": "auto-mcp",
     }
+    if agent_id:
+        guideline_metadata_base["agent_id"] = agent_id
     if effective_user_id:
         guideline_metadata_base["owner_id"] = effective_user_id
         guideline_metadata_base["user_id"] = effective_user_id
@@ -1617,3 +1622,9 @@ def list_retention_candidates(namespace_id: str, agent_id: str | None = None, li
 def list_retention_audit(namespace_id: str, agent_id: str | None = None, limit: int = 100) -> str:
     """List committed marking and deletion receipts without memory contents."""
     return _retention_call(namespace_id, "list_audit", agent_id=agent_id, limit=limit)
+
+
+@mcp.tool()
+def record_source_deletion(namespace_id: str, source_id: str, user_id: str, agent_id: str, deleted_at: str) -> str:
+    """Trusted hosts report committed source deletions; repeated delivery is safe."""
+    return _retention_call(namespace_id, "record_source_deletion", source_id, user_id=user_id, agent_id=agent_id, deleted_at=deleted_at)

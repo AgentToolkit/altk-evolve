@@ -46,6 +46,13 @@ class MetadataPatch(Body):
     metadata: dict[str, Any]
 
 
+class SourceDeletionRequest(Body):
+    source_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    agent_id: str = Field(min_length=1)
+    deleted_at: str
+
+
 class AccessRequest(Body):
     entity_ids: list[str] = Field(min_length=1, max_length=200)
 
@@ -308,6 +315,11 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
     @router.post("/manage/retention/policies/{policy_id}/sweep")
     def sweep_retention(policy_id: str, pair=Depends(service)):
         return retention_call(pair, "sweep", policy_id, initiated_by=_manager(pair[1]))
+
+    @router.post("/manage/retention/deleted-sources")
+    def source_deleted(body: SourceDeletionRequest, pair=Depends(service)):
+        _manager(pair[1])
+        return retention_call(pair, "record_source_deletion", **body.model_dump())
 
     @router.get("/manage/retention/candidates")
     def retention_candidates(limit: int = 100, pair=Depends(service)):

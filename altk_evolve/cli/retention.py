@@ -211,6 +211,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         action: Annotated[Action, typer.Option()] = Action.flag,
         on_missing_access_signal: Annotated[MissingAccess, typer.Option()] = MissingAccess.skip,
         cascade_derived: Annotated[bool, typer.Option()] = False,
+        source_deleted: Annotated[bool, typer.Option()] = False,
     ):
         """Append a named rule. First matching rule wins."""
         emit(
@@ -224,6 +225,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
                     "action": action.value,
                     "on_missing_access_signal": on_missing_access_signal.value,
                     "cascade_derived": cascade_derived,
+                    "source_deleted": source_deleted,
                 },
             )
         )
@@ -240,6 +242,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         action: Annotated[Action | None, typer.Option()] = None,
         on_missing_access_signal: Annotated[MissingAccess | None, typer.Option()] = None,
         cascade_derived: Annotated[bool | None, typer.Option("--cascade-derived/--no-cascade-derived")] = None,
+        source_deleted: Annotated[bool | None, typer.Option("--source-deleted/--no-source-deleted")] = None,
         clear_age: Annotated[bool, typer.Option()] = False,
         clear_unused: Annotated[bool, typer.Option()] = False,
         all_types: Annotated[bool, typer.Option()] = False,
@@ -254,6 +257,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
                 "action": action.value if action else None,
                 "on_missing_access_signal": on_missing_access_signal.value if on_missing_access_signal else None,
                 "cascade_derived": cascade_derived,
+                "source_deleted": source_deleted,
             }.items()
             if value is not None
         }

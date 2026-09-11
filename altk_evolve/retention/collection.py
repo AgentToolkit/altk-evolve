@@ -35,6 +35,10 @@ class Collection:
         self.table = sql.Identifier(client.backend._table_name(namespace))
         with self.store.transaction() as conn:
             conn.execute("SELECT pg_advisory_xact_lock(hashtext('evolve_retention_collection_schema'))")
+            conn.execute("""CREATE TABLE IF NOT EXISTS evolve_retention_deleted_sources (
+                namespace_id TEXT NOT NULL, user_id TEXT NOT NULL, agent_id TEXT NOT NULL,
+                source_id TEXT NOT NULL, deleted_at TIMESTAMPTZ NOT NULL,
+                PRIMARY KEY(namespace_id,user_id,agent_id,source_id))""")
             conn.execute("""CREATE TABLE IF NOT EXISTS evolve_retention_candidates (
                 namespace_id TEXT NOT NULL, policy_id TEXT NOT NULL, entity_id TEXT NOT NULL,
                 agent_id TEXT, entity_type TEXT NOT NULL, fingerprint TEXT NOT NULL,
@@ -53,6 +57,43 @@ class Collection:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS evolve_retention_audit_scope ON evolve_retention_audit(namespace_id,agent_id,occurred_at)"
             )
+
+    def record_source_deletion(self, source_id: str, user_id: str, agent_id: str, deleted_at: str) -> dict[str, Any]:
+        """Idempotently accept an explicit deletion receipt from a trusted host."""
+        if not all(isinstance(v, str) and v.strip() for v in (source_id, user_id, agent_id)):
+            raise ValueError("source_id, user_id and agent_id are required")
+        when = dt.datetime.fromisoformat(deleted_at.replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            raise ValueError("deleted_at must include a timezone")
+        with self.store.transaction() as conn:
+            now = conn.execute("SELECT clock_timestamp() AS now").fetchone()["now"]
+            if when > now:
+                raise ValueError("deleted_at cannot be in the future")
+            conn.execute(
+                """INSERT INTO evolve_retention_deleted_sources VALUES (%s,%s,%s,%s,%s)
+                ON CONFLICT(namespace_id,user_id,agent_id,source_id) DO UPDATE
+                SET deleted_at=GREATEST(evolve_retention_deleted_sources.deleted_at,EXCLUDED.deleted_at)""",
+                (self.namespace, user_id, agent_id, source_id, when),
+            )
+        return {"recorded": True}
+
+    def source_deleted_ids(self, conn: Any, entities: list[RecordedEntity]) -> set[str]:
+        """Resolve only exact provenance and exclude memories created after deletion."""
+        result = set()
+        for entity in entities:
+            metadata = entity.metadata or {}
+            source = metadata.get("thread_id") or metadata.get("session_id")
+            user = metadata.get("user_id")
+            agent = metadata.get("agent_id")
+            if not all(isinstance(v, str) and v.strip() for v in (source, user, agent)):
+                continue
+            if conn.execute(
+                """SELECT 1 FROM evolve_retention_deleted_sources WHERE namespace_id=%s
+                AND user_id=%s AND agent_id=%s AND source_id=%s AND deleted_at>=%s""",
+                (self.namespace, user, agent, source, entity.created_at),
+            ).fetchone():
+                result.add(entity.id)
+        return result
 
     def run(self, policy_id: str, *, initiated_by: str | None, run_id: str | None = None, limit: int = 1000) -> dict[str, Any]:
         run_id = run_id or str(uuid.uuid4())
@@ -173,7 +214,9 @@ class Collection:
                 versions.update({str(row["id"]): row["version"] for row in derived})
                 known = {e.id for e in entities}
                 entities.extend(self.entity(row) for row in derived if str(row["id"]) not in known)
-        engine = RetentionEngine(SimpleNamespace(scan_entities=lambda *a, **kw: entities))
+        with self.store.transaction() as conn:
+            deleted_sources = self.source_deleted_ids(conn, entities) if any(rule.source_deleted for rule in parsed.rules) else set()
+        engine = RetentionEngine(SimpleNamespace(scan_entities=lambda *a, **kw: entities), source_deleted_ids=deleted_sources)
         items = engine.evaluate(self.namespace, parsed, now=now, scan_limit=limit)
         snapshots = {e.id: e for e in entities}
         policy_hash = fingerprint(parsed.model_dump(mode="json"))
@@ -329,7 +372,9 @@ class Collection:
                         if not receipt:
                             outcome = "withdrawn"
                 if not candidate["dependencies"]:
-                    engine = RetentionEngine(SimpleNamespace(scan_entities=lambda *a, **kw: [entity]))
+                    engine = RetentionEngine(
+                        SimpleNamespace(scan_entities=lambda *a, **kw: [entity]), source_deleted_ids=self.source_deleted_ids(conn, [entity])
+                    )
                     actions = engine.evaluate(self.namespace, parsed, now=now)
                     if not any(i.entity_id == entity_id and i.action == "delete" for i in actions):
                         outcome = "withdrawn"

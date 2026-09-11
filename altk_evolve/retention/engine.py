@@ -121,8 +121,10 @@ class RetentionEngine:
     #: How many entities to scan per namespace.
     FETCH_LIMIT = 100_000
 
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, *, source_deleted_ids: set[str] | None = None) -> None:
         self.client = client
+        self.source_deleted_ids = source_deleted_ids or set()
+        self.source_deleted_lookup: Any = None
         self.last_scanned_entities: list[RecordedEntity] = []
 
     # ── signal helpers ────────────────────────────────────────────────
@@ -164,6 +166,12 @@ class RetentionEngine:
         ``metadata.last_accessed`` stamp. ``on_missing_access_signal`` governs
         whether such a match is still allowed to delete.
         """
+        if (
+            rule.source_deleted
+            and entity.id not in self.source_deleted_ids
+            and not (self.source_deleted_lookup and self.source_deleted_lookup(entity))
+        ):
+            return None
         if rule.entity_type is not None and entity.type != rule.entity_type:
             return None
         if rule.max_age_days is not None:

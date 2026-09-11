@@ -71,6 +71,9 @@ class RetentionRule(BaseModel):
             "age matches and stamped entities are unaffected."
         ),
     )
+    source_deleted: bool = Field(
+        default=False, description="Require a durable, scoped source-deletion receipt in addition to the age threshold. PostgreSQL only."
+    )
     cascade_derived: bool = Field(
         default=False,
         description="On delete of a session entity, also delete the entities derived from it (via provenance metadata).",
