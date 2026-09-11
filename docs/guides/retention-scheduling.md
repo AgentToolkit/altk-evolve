@@ -101,3 +101,37 @@ For the current PostgreSQL collector, see [transactional mark and sweep](retenti
 An expired executor heartbeat interrupts the old run; a later scheduled run processes
 remaining durable candidates. The manual recovery procedure above applies to the
 legacy non-PostgreSQL executor. PostgreSQL jobs do not need partial-run reconstruction.
+
+### Container crash validation
+
+The opt-in `tests/e2e/test_retention_container_crashes.py` suite starts a disposable
+PostgreSQL container and independent scheduler containers on a private Docker network.
+It sends SIGKILL at three boundaries: during a second mark transaction, during a
+second deletion before its audit receipt commits, and immediately after a deletion
+transaction commits. Two replacement schedulers then compete for subsequent cron
+occurrences using the real 60-second heartbeat expiry. Assertions check durable
+marks, rollback of uncommitted deletion, unique committed deletion receipts, legal
+holds, and isolation of another service namespace. Each namespace contains memories
+from multiple users.
+
+A fourth case keeps the executor alive at a marking boundary for 65 seconds while
+two other schedulers poll. Its heartbeat must retain ownership and prevent another
+admission. The test then kills it and checks the same automatic recovery path.
+
+Use an image containing Evolve's Python dependencies (including `psycopg` and
+`croniter`) with a Python entrypoint. For example, an existing CUGA dependency image
+can use `ENTRYPOINT ["uv", "run", "--no-sync", "--project", "/app", "python"]`.
+The test mounts the current checkout read-only at `/evolve`; it does not use the
+image's installed Evolve source or call an LLM.
+
+```bash
+EVOLVE_TEST_CONTAINER_IMAGE=evolve:retention-crash-test \
+  uv run pytest -v -s -m e2e tests/e2e/test_retention_container_crashes.py
+```
+
+The default database image is `pgvector/pgvector:pg16`; override it with
+`EVOLVE_TEST_POSTGRES_IMAGE`. The suite removes its containers and networks in
+fixture teardown. Allow several minutes for actual heartbeat expiry and cron ticks.
+This exercises the production scheduler, retention service, and collector against
+PostgreSQL with a minimal client adapter. It is not a packaged MCP/REST startup test
+or a Kubernetes deployment/readiness test.
