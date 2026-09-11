@@ -17,6 +17,7 @@ from altk_evolve.retention.schedule_store import ScheduleStore
 
 if TYPE_CHECKING:
     from altk_evolve.frontend.client.evolve_client import EvolveClient
+    from altk_evolve.retention.collection import Collection
 
 
 class RetentionError(ValueError):
@@ -304,6 +305,16 @@ class RetentionService:
             if "agent_id" in filters and filters["agent_id"] != self.agent_id:
                 raise RetentionError("Agent filter must match the authorized scope", 403)
             filters["agent_id"] = self.agent_id
+        if self.client.config.backend == "postgres" and not dry_run:
+            if additional_matches or set(filters) - {"agent_id"} or as_of is not None:
+                raise RetentionError(
+                    "Durable sweeping uses current policy eligibility and namespace/agent scope; external matches, arbitrary filters, and historical execution are not supported"
+                )
+            from altk_evolve.retention.collection import Collection
+
+            return Collection(self.client, self.namespace_id, filters.get("agent_id")).run(
+                policy_id, initiated_by=initiated_by, run_id=run_id, limit=scan_limit or 1000
+            )
         result = execute_policy(
             self.client,
             self.store,
@@ -325,6 +336,37 @@ class RetentionService:
                 {key: value for key, value in result.items() if key != "error"},
             )
         return result
+
+    def _collection(self) -> Collection:
+        from altk_evolve.retention.collection import Collection
+
+        return Collection(self.client, self.namespace_id, self.agent_id)
+
+    @operation
+    def mark(self, policy_id: str, *, initiated_by: str | None = None, limit: int = 1000) -> dict[str, Any]:
+        self._validate_initiator(initiated_by)
+        if not 1 <= limit <= 10000:
+            raise RetentionError("limit must be between 1 and 10000")
+        return self._collection().mark(policy_id, initiated_by=initiated_by, limit=limit)
+
+    @operation
+    def sweep(self, policy_id: str, *, initiated_by: str | None = None, limit: int = 1000) -> dict[str, Any]:
+        self._validate_initiator(initiated_by)
+        if not 1 <= limit <= 10000:
+            raise RetentionError("limit must be between 1 and 10000")
+        return self._collection().sweep(policy_id, initiated_by=initiated_by, limit=limit)
+
+    @operation
+    def list_candidates(self, *, limit: int = 100) -> dict[str, Any]:
+        if not 1 <= limit <= 1000:
+            raise RetentionError("limit must be between 1 and 1000")
+        return self._collection().list(limit=limit)
+
+    @operation
+    def list_audit(self, *, limit: int = 100) -> dict[str, Any]:
+        if not 1 <= limit <= 1000:
+            raise RetentionError("limit must be between 1 and 1000")
+        return self._collection().list(audit=True, limit=limit)
 
     @operation
     def list_runs(self, *, policy_id: str | None = None, limit: int = 50) -> dict[str, Any]:

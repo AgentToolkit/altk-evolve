@@ -28,7 +28,8 @@ class RetentionScheduler:
         self.worker_id = str(uuid.uuid4())
 
     def dispatch(self, now: dt.datetime | None = None) -> list[str]:
-        now = now or dt.datetime.now(dt.UTC)
+        now = now or self.store.current_time()
+        self.store.expire_interrupted_jobs()
         admitted = []
         for schedule in self.store.list_schedules():
             try:
@@ -43,11 +44,24 @@ class RetentionScheduler:
         """Claim once; preserve failed, cancelled, or partial execution in run history."""
 
         namespace, job_id = job["namespace_id"], job["job_id"]
-        claimed = self.store.claim(namespace, job_id, self.worker_id, dt.datetime.now(dt.UTC))
+        claimed = self.store.claim(namespace, job_id, self.worker_id, self.store.current_time())
         if claimed is None:
             return
         job = claimed
         definition = ScheduleDefinition.model_validate(job["definition"])
+        heartbeat_stop = threading.Event()
+
+        def renew():
+            while not heartbeat_stop.wait(10):
+                try:
+                    if self.store.cancelled(namespace, job_id, self.worker_id):
+                        return
+                except Exception:
+                    logger.exception("Retention heartbeat failed for %s", job_id)
+                    return
+
+        heartbeat = threading.Thread(target=renew, name="retention-heartbeat")
+        heartbeat.start()
         token = execution_cancelled.set(lambda: self.store.cancelled(namespace, job_id, self.worker_id))
         try:
             if self.store.cancelled(namespace, job_id, self.worker_id):
@@ -63,6 +77,8 @@ class RetentionScheduler:
             self.store.finish(namespace, job_id, self.worker_id, "failed", type(exc).__name__)
         finally:
             execution_cancelled.reset(token)
+            heartbeat_stop.set()
+            heartbeat.join()
 
     def run(self, *, once: bool = False, poll_seconds: float = 10, max_workers: int = 1, stop: threading.Event | None = None) -> None:
         """Run until stopped; once mode drains currently admitted work and exits."""

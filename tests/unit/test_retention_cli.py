@@ -165,7 +165,7 @@ def test_cli_command_tree_matches_resource_actions():
     from typer.main import get_command
 
     for path, expected, absent in [
-        ([], ["policies", "schedules", "jobs", "run"], ["execute", "worker"]),
+        ([], ["policies", "schedules", "jobs", "run", "mark", "sweep", "candidates", "audit"], ["execute", "worker"]),
         (["policies"], ["create", "update", "delete", "show", "list", "rules"], ["put", "set-rule"]),
         (["policies", "rules"], ["add", "list", "update", "remove"], ["set-rule"]),
         (["schedules"], ["create", "show", "list", "update", "delete", "start", "stop"], ["preview", "run"]),

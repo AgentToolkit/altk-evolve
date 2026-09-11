@@ -94,9 +94,12 @@ class RetentionStore:
             """,
         ]
         if self._is_postgres:
-            with self._postgres.cursor() as cursor:
+            import psycopg
+
+            with psycopg.connect(self._postgres.info.dsn, password=self._postgres.info.password) as connection:
+                connection.execute("SELECT pg_advisory_xact_lock(hashtext('evolve_retention_schema'))")
                 for statement in statements:
-                    cursor.execute(statement)
+                    connection.execute(statement)
             return
         with self._connect_sqlite() as connection:
             for statement in statements:

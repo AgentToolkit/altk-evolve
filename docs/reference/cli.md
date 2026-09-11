@@ -176,3 +176,9 @@ See the [Evolve Viz guide](../guides/viz.md) for full usage.
 ## Environment Variables
 
 The CLI uses the same environment variables as the MCP server. See the [Configuration](README.md#configuration) section in the main README.
+
+
+PostgreSQL also supports `evolve retention mark POLICY`, `sweep POLICY`, `candidates`,
+and `audit`. Use `--namespace` for each and `--initiated-by` for mark/sweep. Marking
+never deletes; sweeping applies deletions only after rechecking eligibility and holds.
+See [collection semantics](../guides/retention-api.md#postgresql-collection).

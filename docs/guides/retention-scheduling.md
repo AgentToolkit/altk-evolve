@@ -93,3 +93,11 @@ Use `expected_revision: 0` to create, then the returned revision to update or de
 A crashed worker's destructive job is never automatically retried. Confirm that its owning worker has stopped, then call `acknowledge_interrupted_retention_job` with `worker_stopped: true`. This marks the job and any unfinished run interrupted, allowing later occurrences to proceed. A stale heartbeat alone is not proof that the worker stopped. Partial effects may exist; cancellation and recovery do not restore deleted entities.
 
 Scheduled runs evaluate Evolve policy rules. Criteria owned by another application, such as whether a CUGA conversation still exists, require the host to evaluate them and supply `additional_matches` to a manual run; the scheduler does not query host databases.
+
+
+### PostgreSQL deployment recovery
+
+For the current PostgreSQL collector, see [transactional mark and sweep](retention-api.md#postgresql-collection).
+An expired executor heartbeat interrupts the old run; a later scheduled run processes
+remaining durable candidates. The manual recovery procedure above applies to the
+legacy non-PostgreSQL executor. PostgreSQL jobs do not need partial-run reconstruction.

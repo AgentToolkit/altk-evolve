@@ -301,6 +301,22 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
         )
         return audit_payload(result)
 
+    @router.post("/manage/retention/policies/{policy_id}/mark")
+    def mark_retention(policy_id: str, pair=Depends(service)):
+        return retention_call(pair, "mark", policy_id, initiated_by=_manager(pair[1]))
+
+    @router.post("/manage/retention/policies/{policy_id}/sweep")
+    def sweep_retention(policy_id: str, pair=Depends(service)):
+        return retention_call(pair, "sweep", policy_id, initiated_by=_manager(pair[1]))
+
+    @router.get("/manage/retention/candidates")
+    def retention_candidates(limit: int = 100, pair=Depends(service)):
+        return retention_call(pair, "list_candidates", limit=limit)
+
+    @router.get("/manage/retention/audit")
+    def retention_audit(limit: int = 100, pair=Depends(service)):
+        return retention_call(pair, "list_audit", limit=limit)
+
     @router.get("/manage/retention/runs")
     def runs(limit: int = Query(50, ge=1, le=200), pair=Depends(service)):
         return retention_call(pair, "list_runs", limit=limit)

@@ -2,7 +2,9 @@
 
 Memories accumulate. Some go stale, some are never read again, and some — session transcripts especially — carry data you agreed to keep for a bounded time. `altk_evolve.retention` applies a declarative policy to a namespace: it selects entities by type and age, then either **flags** them for review or **deletes** them, and can cascade a session delete to the memories derived from that session.
 
-It is a sweep, not an interceptor: you run it (CLI, cron, or in code), it reports what it would do, and it only mutates when you say so. **Dry run is the default everywhere.**
+It is a sweep, not an interceptor: you run it (CLI, cron, or in code), it reports what it would do, and it only mutates when you say so. **The `run` operation defaults to dry run.** Explicit `mark` and `sweep` commands perform their named operations.
+
+For PostgreSQL, applied runs use [durable mark and sweep](retention-api.md#postgresql-collection): marking records candidates without hooks; sweeping checks current legal holds directly and commits deletion with an audit receipt. The lower-level engine and other backends retain the immediate, hook-based behavior described below.
 
 ## Quick start
 

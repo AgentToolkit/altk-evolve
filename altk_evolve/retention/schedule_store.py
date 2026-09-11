@@ -40,6 +40,8 @@ class ScheduleStore(RetentionStore):
     def _ensure_schema(self) -> None:
         super()._ensure_schema()
         with self.transaction() as conn:
+            if self._is_postgres:
+                conn.execute("SELECT pg_advisory_xact_lock(hashtext('evolve_retention_schema'))")
             self.sql(
                 conn,
                 """CREATE TABLE IF NOT EXISTS evolve_retention_schedules (
@@ -165,6 +167,31 @@ class ScheduleStore(RetentionStore):
             ).fetchall()
         )
 
+    def current_time(self) -> dt.datetime:
+        if self._is_postgres:
+            with self.transaction() as conn:
+                now: dt.datetime = conn.execute("SELECT clock_timestamp() AS now").fetchone()["now"]
+                return now
+        return dt.datetime.now(dt.UTC)
+
+    def expire_interrupted_jobs(self, seconds: float = 60) -> None:
+        """PostgreSQL GC runs are disposable; committed candidates survive interruption."""
+        if not self._is_postgres:
+            return
+        with self.transaction() as conn:
+            rows = conn.execute(
+                """UPDATE evolve_retention_jobs SET status='interrupted',finished_at=clock_timestamp()::text,
+                error='Executor heartbeat expired; later runs will process remaining candidates'
+                WHERE status IN ('running','cancelling') AND heartbeat_at::timestamptz < clock_timestamp() - (%s * interval '1 second')
+                RETURNING namespace_id,job_id""",
+                (seconds,),
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    "UPDATE evolve_retention_runs SET status='interrupted' WHERE namespace_id=%s AND run_id=%s AND status='running'",
+                    (row["namespace_id"], row["job_id"]),
+                )
+
     def dispatch(self, namespace: str, schedule_id: str, now: dt.datetime) -> str | None:
         """Atomically admit the most recent due occurrence; never duplicate a tick."""
         now = utc(now)
@@ -245,7 +272,7 @@ class ScheduleStore(RetentionStore):
                 conn,
                 """UPDATE evolve_retention_jobs SET status='running',worker_id=?,heartbeat_at=?
                 WHERE namespace_id=? AND job_id=? AND status='queued'""",
-                (worker_id, utc(now).isoformat(), namespace, job_id),
+                (worker_id, self.current_time().isoformat(), namespace, job_id),
             )
             return self.record(row) if cursor.rowcount == 1 else None
 
@@ -256,7 +283,7 @@ class ScheduleStore(RetentionStore):
                 conn,
                 """UPDATE evolve_retention_jobs SET heartbeat_at=?
                 WHERE namespace_id=? AND job_id=? AND worker_id=? AND status='running'""",
-                (dt.datetime.now(dt.UTC).isoformat(), namespace, job_id, worker_id),
+                (self.current_time().isoformat(), namespace, job_id, worker_id),
             )
             return bool(cursor.rowcount != 1)
 

@@ -125,3 +125,57 @@ MCP tools return JSON text; errors contain `error` and optional details. The sep
 ## Runtime
 
 Execution runs directly through the shared service, without invoking MCP from Python, REST, the CLI, or the scheduler. The `evolve-mcp` launcher owns background scheduling. Embedded hosts attach `retention_runtime(client)` to their lifespan; CLI catalog commands do not start background execution. See [scheduling](retention-scheduling.md).
+
+
+## PostgreSQL collection
+
+Applied PostgreSQL runs now mark candidates durably and sweep them in separate,
+small transactions. `mark` alone never deletes a memory or invokes a hook. A
+`flag` rule creates a review candidate; a `delete` rule creates a pending deletion.
+Marking uses a persisted keyset cursor, so later runs advance past an already
+processed page. Repeated marks of the same entity version and policy are idempotent.
+
+```python
+retention = client.retention("service-instance-id")
+retention.mark("memory-retention", initiated_by="admin")
+retention.list_candidates()
+retention.sweep("memory-retention", initiated_by="admin")
+retention.list_audit()
+```
+
+The matching CLI commands are `evolve retention mark POLICY`, `sweep POLICY`,
+`candidates`, and `audit`; supply `--namespace` and, for mutations, `--initiated-by`.
+REST adds POST `/manage/retention/policies/{id}/mark` and `/sweep`, plus GET
+`/manage/retention/candidates` and `/audit`. MCP exposes `mark_retention`,
+`sweep_retention`, `list_retention_candidates`, and `list_retention_audit`.
+These use the same service-instance namespace; an administrator identity is attribution,
+not a filter on memory owners. Omit agent scope for the entire service instance.
+
+A sweep locks the candidate, policy, and current entity rows. Legal holds are
+checked directly; a held memory remains marked. A changed entity version or policy
+withdraws the old candidate for reevaluation by a later marking pass. Deletion and
+its audit receipt commit together on the same PostgreSQL connection. No deletion
+hook or external notification is part of this transaction. Ordinary non-retention
+memory operations retain their existing hooks.
+
+Candidate and audit APIs contain references, statuses, policy identifiers, rule
+identifiers, timestamps, and operator attribution, never memory contents or titles.
+Marks retain PostgreSQL row versions, not hashes of memory contents. Audit events
+include a policy-definition hash identifying the applied revision. `missing` means
+an entity was already unavailable; it is never reported as a confirmed deletion.
+The UI resolves existing memories separately and groups committed outcomes; technical
+references are expandable administrative details.
+
+Scheduled PostgreSQL jobs have a 10-second heartbeat. A heartbeat older than 60
+seconds permits the scheduler to mark the old run interrupted and admit future
+occurrences. It never resumes that run. Already committed candidates and action
+receipts survive. An old executor may overlap with a later run; idempotent marks
+and transactional sweep claims make that overlap safe. Cancellation is checked
+between candidates. A sweep already inside its transaction finishes or rolls back.
+
+This atomic collection API requires PostgreSQL. Other backends retain the existing
+immediate retention implementation. PostgreSQL applied runs use current policy
+eligibility and namespace/agent scope: historical `as_of`, arbitrary metadata filters,
+and externally computed deletion matches are rejected. CUGA's separate-database
+orphan-conversation criterion is therefore not advertised by the new collection UI.
+Dry-run evaluation remains available through `run(dry_run=True)`.

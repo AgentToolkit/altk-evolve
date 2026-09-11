@@ -1593,3 +1593,27 @@ def get_retention_job(job_id: str, namespace_id: str) -> str:
 def get_retention_run(run_id: str, namespace_id: str, agent_id: str | None = None) -> str:
     """Get a persisted report in the requested namespace/agent scope."""
     return _retention_call(namespace_id, "get_run", run_id, agent_id=agent_id)
+
+
+@mcp.tool()
+def mark_retention(policy_id: str, namespace_id: str, initiated_by: str | None = None) -> str:
+    """Durably mark deletion candidates without deleting memories or running hooks."""
+    return _retention_call(namespace_id, "mark", policy_id, initiated_by=initiated_by)
+
+
+@mcp.tool()
+def sweep_retention(policy_id: str, namespace_id: str, initiated_by: str | None = None) -> str:
+    """Sweep marked candidates, honoring current legal holds in the deletion transaction."""
+    return _retention_call(namespace_id, "sweep", policy_id, initiated_by=initiated_by)
+
+
+@mcp.tool()
+def list_retention_candidates(namespace_id: str, agent_id: str | None = None, limit: int = 100) -> str:
+    """List durable candidate states without memory contents."""
+    return _retention_call(namespace_id, "list_candidates", agent_id=agent_id, limit=limit)
+
+
+@mcp.tool()
+def list_retention_audit(namespace_id: str, agent_id: str | None = None, limit: int = 100) -> str:
+    """List committed marking and deletion receipts without memory contents."""
+    return _retention_call(namespace_id, "list_audit", agent_id=agent_id, limit=limit)

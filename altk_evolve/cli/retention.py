@@ -333,3 +333,25 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         emit(result)
         if result.get("errors"):
             raise typer.Exit(1)
+
+    @app.command("mark")
+    @command_errors
+    def mark_policy(policy_id: str, namespace: Namespace, initiated_by: InitiatedBy):
+        """Persist deletion candidates without deleting memories."""
+        emit(service(namespace).mark(policy_id, initiated_by=initiated_by))
+
+    @app.command("sweep")
+    @command_errors
+    def sweep_policy(policy_id: str, namespace: Namespace, initiated_by: InitiatedBy):
+        """Delete eligible, unprotected candidates and commit audit receipts."""
+        emit(service(namespace).sweep(policy_id, initiated_by=initiated_by))
+
+    @app.command("candidates")
+    @command_errors
+    def list_candidates(namespace: Namespace):
+        emit(service(namespace).list_candidates())
+
+    @app.command("audit")
+    @command_errors
+    def list_audit(namespace: Namespace):
+        emit(service(namespace).list_audit())
