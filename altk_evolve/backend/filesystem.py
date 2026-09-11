@@ -232,12 +232,21 @@ class FilesystemEntityBackend(BaseEntityBackend):
         namespace_id: str,
         entities: list[Entity],
         enable_conflict_resolution: bool = True,
+        *,
+        conflict_settings=None,
+        processing_provenance: dict | None = None,
     ) -> list[EntityUpdate]:
         """Override to wrap the base template in a lock with loaded data."""
         with self._lock:
             self._active_data = self._load_namespace_data(namespace_id)
             try:
-                return super().update_entities(namespace_id, entities, enable_conflict_resolution)
+                return super().update_entities(
+                    namespace_id,
+                    entities,
+                    enable_conflict_resolution,
+                    conflict_settings=conflict_settings,
+                    processing_provenance=processing_provenance,
+                )
             finally:
                 # Clear in-flight state even if a write hook halts the batch
                 # (raises): _post_update runs only on the success path, so

@@ -5,19 +5,19 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Optional
 
-import litellm
 import yaml
 from jinja2 import Template
 from litellm import completion, get_supported_openai_params, supports_response_schema
 from pydantic import ValidationError
 
+from altk_evolve.config.llm import llm_settings  # noqa: F401
+from altk_evolve.config.evolve import evolve_config  # noqa: F401
+from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
 from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
 from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 
-from altk_evolve.config.evolve import evolve_config
 from altk_evolve.config.guidelines import guidelines_settings
-from altk_evolve.config.llm import llm_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.guidelines import (
@@ -343,6 +343,8 @@ def _generate_guideline_result(
     config: Optional[dict] = None,
     debug_dir: Optional[Path] = None,
     trace_id: Any = "unknown",
+    *,
+    options: GuidelineRuntime | None = None,
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory).
 
@@ -350,6 +352,7 @@ def _generate_guideline_result(
     the prompt, calls the LLM, and parses the response. debug_suffix distinguishes
     per-segment artifacts (e.g. "_seg1") from full-trajectory artifacts ("").
     """
+    options = options or GuidelineRuntime.legacy()
     config = config or {}
     skip_on_no_uncertainty = config.get("skip_on_no_uncertainty", DEFAULT_SKIP_ON_NO_UNCERTAINTY)
     low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
@@ -381,28 +384,26 @@ def _generate_guideline_result(
     # Hoisted above the constrained/unconstrained branch so BOTH egress paths send
     # the same redacted messages and the hook fires exactly once per generation.
     llm_messages = dispatch_llm_pre_call(
-        [{"role": "user", "content": prompt}], purpose="consistency_guidelines", model=llm_settings.guidelines_model
+        [{"role": "user", "content": prompt}], purpose="consistency_guidelines", model=options.guidelines_model
     )
 
     if constrained_decoding_supported:
-        litellm.enable_json_schema_validation = True
         raw = (
             completion(
-                model=llm_settings.guidelines_model,
+                model=options.guidelines_model,
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
-                custom_llm_provider=llm_settings.custom_llm_provider,
+                custom_llm_provider=options.custom_llm_provider,
             )
             .choices[0]
             .message.content
         )
     else:
-        litellm.enable_json_schema_validation = False
         raw = (
             completion(
-                model=llm_settings.guidelines_model,
+                model=options.guidelines_model,
                 messages=llm_messages,
-                custom_llm_provider=llm_settings.custom_llm_provider,
+                custom_llm_provider=options.custom_llm_provider,
             )
             .choices[0]
             .message.content
@@ -410,7 +411,7 @@ def _generate_guideline_result(
     clean_response = clean_llm_response(raw)
 
     if not clean_response:
-        logger.warning(f"LLM returned empty response for consistency guideline generation. Model: {llm_settings.guidelines_model}")
+        logger.warning(f"LLM returned empty response for consistency guideline generation. Model: {options.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
     try:
@@ -432,8 +433,7 @@ def _generate_guideline_result(
 
 
 def generate_consistency_guidelines(
-    trajectory: dict,
-    config_path: Optional[Path | str] = None,
+    trajectory: dict, config_path: Optional[Path | str] = None, *, options: GuidelineRuntime | None = None
 ) -> list[GuidelineGenerationResult]:
     """Generate consistency-focused guidelines from an agent trajectory.
 
@@ -456,14 +456,18 @@ def generate_consistency_guidelines(
         config_path: YAML config consumed by consistency_analyzer. Defaults to
             `consistency_analyzer/agent_config.yaml`.
     """
-    config_path = Path(config_path) if config_path else Path(__file__).parent / "consistency_analyzer" / "agent_config.yaml"
-    if not config_path.exists():
-        raise FileNotFoundError(
-            f"Consistency analyzer config not found: {config_path}. Provide config_path= or create the default file alongside this module."
-        )
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-    logger.info(f"Loaded consistency configuration from {config_path}")
+    options = options or GuidelineRuntime.legacy()
+    if options.analysis_config is not None:
+        config = dict(options.analysis_config)
+    else:
+        config_path = Path(config_path) if config_path else Path(__file__).parent / "consistency_analyzer" / "agent_config.yaml"
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"Consistency analyzer config not found: {config_path}. Provide config_path= or create the default file alongside this module."
+            )
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        logger.info(f"Loaded consistency configuration from {config_path}")
 
     low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
     high_uncertainty_threshold = config.get("high_uncertainty_threshold", DEFAULT_HIGH_UNCERTAINTY_THRESHOLD)
@@ -494,15 +498,15 @@ def generate_consistency_guidelines(
             _safe_write_debug(debug_dir / f"trajectory_{str(trace_id)[:8]}.json", trajectory)
 
     supported_params = get_supported_openai_params(
-        model=llm_settings.guidelines_model,
-        custom_llm_provider=llm_settings.custom_llm_provider,
+        model=options.guidelines_model,
+        custom_llm_provider=options.custom_llm_provider,
     )
     supports_response_format = supported_params and "response_format" in supported_params
     response_schema_enabled = supports_response_schema(
-        model=llm_settings.guidelines_model,
-        custom_llm_provider=llm_settings.custom_llm_provider,
+        model=options.guidelines_model,
+        custom_llm_provider=options.custom_llm_provider,
     )
-    is_groq = llm_settings.custom_llm_provider == "groq" or llm_settings.guidelines_model.startswith("groq/")
+    is_groq = options.custom_llm_provider == "groq" or options.guidelines_model.startswith("groq/")
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
     trajectory_ir = transform_trajectory_to_IR(trajectory)
@@ -520,9 +524,9 @@ def generate_consistency_guidelines(
     trajectory_ir = resample_trajectory(
         trajectory=trajectory_ir,
         samples=config.get("max_samples", 10),
-        model_name=model or llm_settings.guidelines_model,
+        model_name=model or options.guidelines_model,
         max_steps=config.get("max_steps", -1),
-        custom_llm_provider=llm_settings.custom_llm_provider,
+        custom_llm_provider=options.custom_llm_provider,
     )
 
     logger.info(f"Computing consistency score card for {trajectory_ir.get('name', '')}")
@@ -540,11 +544,11 @@ def generate_consistency_guidelines(
     # Only attempt when every assistant message's content field allows a 1:1 step index
     # mapping between segment_trajectory and transform_trajectory_to_IR.
     subtasks = []
-    if n_scorable_steps >= 2 and _can_segment_trajectory(messages):
+    if options.segmentation_enabled and n_scorable_steps >= 2 and _can_segment_trajectory(messages):
         try:
             from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
-            subtasks = segment_trajectory(messages)
+            subtasks = segment_trajectory(messages, options=options)
         except Exception as e:
             logger.warning(f"Segmentation failed, falling back to full trajectory: {e}")
             subtasks = []
@@ -572,6 +576,7 @@ def generate_consistency_guidelines(
                 config=config,
                 debug_dir=debug_dir,
                 trace_id=trace_id,
+                options=options,
             )
             results.append(result)
         if debug_dir:
@@ -589,6 +594,7 @@ def generate_consistency_guidelines(
         config=config,
         debug_dir=debug_dir,
         trace_id=trace_id,
+        options=options,
     )
     if debug_dir:
         _write_guidelines_debug(debug_dir, trace_id, [result], "_consistency")
@@ -603,11 +609,14 @@ def _generate_fast_guideline_result(
     debug_dir: Optional[Path] = None,
     trace_id: Any = "unknown",
     debug_suffix: str = "",
+    *,
+    options: GuidelineRuntime | None = None,
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory)
     using the fast consistency pipeline: the LLM judges each step's confidence itself, in the
     same call that produces guidelines, rather than reading resampling-derived scores.
     """
+    options = options or GuidelineRuntime.legacy()
     prompt = _CONSISTENCY_GUIDELINES_FAST_TEMPLATE.render(
         task_instruction=task_description,
         num_steps=num_steps,
@@ -619,28 +628,26 @@ def _generate_fast_guideline_result(
         _safe_write_text_debug(debug_dir / f"prompt_{str(trace_id)[:8]}{debug_suffix}.txt", prompt)
 
     llm_messages = dispatch_llm_pre_call(
-        [{"role": "user", "content": prompt}], purpose="consistency_guidelines_fast", model=llm_settings.guidelines_model
+        [{"role": "user", "content": prompt}], purpose="consistency_guidelines_fast", model=options.guidelines_model
     )
 
     if constrained_decoding_supported:
-        litellm.enable_json_schema_validation = True
         raw = (
             completion(
-                model=llm_settings.guidelines_model,
+                model=options.guidelines_model,
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
-                custom_llm_provider=llm_settings.custom_llm_provider,
+                custom_llm_provider=options.custom_llm_provider,
             )
             .choices[0]
             .message.content
         )
     else:
-        litellm.enable_json_schema_validation = False
         raw = (
             completion(
-                model=llm_settings.guidelines_model,
+                model=options.guidelines_model,
                 messages=llm_messages,
-                custom_llm_provider=llm_settings.custom_llm_provider,
+                custom_llm_provider=options.custom_llm_provider,
             )
             .choices[0]
             .message.content
@@ -648,7 +655,7 @@ def _generate_fast_guideline_result(
     clean_response = clean_llm_response(raw)
 
     if not clean_response:
-        logger.warning(f"LLM returned empty response for fast consistency guideline generation. Model: {llm_settings.guidelines_model}")
+        logger.warning(f"LLM returned empty response for fast consistency guideline generation. Model: {options.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
     try:
@@ -669,7 +676,7 @@ def _generate_fast_guideline_result(
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
 
-def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGenerationResult]:
+def generate_consistency_guidelines_fast(trajectory: dict, *, options: GuidelineRuntime | None = None) -> list[GuidelineGenerationResult]:
     """Generate consistency-focused guidelines without resampling.
 
     Instead of resampling each decision step and computing an uncertainty score externally
@@ -696,6 +703,7 @@ def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGene
             accepted for call-site parity with `generate_consistency_guidelines` but are not
             used — this pipeline never resamples.
     """
+    options = options or GuidelineRuntime.legacy()
     messages = trajectory.get("messages", [])
     trace_id = trajectory.get("trace_id") or "unknown"
     if not messages:
@@ -711,15 +719,15 @@ def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGene
         else:
             _safe_write_debug(debug_dir / f"trajectory_{str(trace_id)[:8]}.json", trajectory)
 
-    is_groq = llm_settings.custom_llm_provider == "groq" or llm_settings.guidelines_model.startswith("groq/")
+    is_groq = options.custom_llm_provider == "groq" or options.guidelines_model.startswith("groq/")
     supported_params = get_supported_openai_params(
-        model=llm_settings.guidelines_model,
-        custom_llm_provider=llm_settings.custom_llm_provider,
+        model=options.guidelines_model,
+        custom_llm_provider=options.custom_llm_provider,
     )
     supports_response_format = supported_params and "response_format" in supported_params
     response_schema_enabled = supports_response_schema(
-        model=llm_settings.guidelines_model,
-        custom_llm_provider=llm_settings.custom_llm_provider,
+        model=options.guidelines_model,
+        custom_llm_provider=options.custom_llm_provider,
     )
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
@@ -729,11 +737,11 @@ def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGene
     n_steps = len(steps_list)
 
     subtasks = []
-    if evolve_config.segmentation_enabled:
+    if options.segmentation_enabled:
         from altk_evolve.llm.guidelines.segmentation import segment_trajectory  # avoid circular import
 
         try:
-            subtasks = segment_trajectory(messages)
+            subtasks = segment_trajectory(messages, options=options)
         except Exception as e:
             logger.warning(f"Trajectory segmentation failed, falling back to full trajectory: {e}")
             subtasks = []
@@ -758,6 +766,7 @@ def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGene
                     debug_dir=debug_dir,
                     trace_id=trace_id,
                     debug_suffix=f"_seg{i}",
+                    options=options,
                 )
                 for i, (subtask, slice_steps) in enumerate(valid_slices, 1)
             ]
@@ -775,6 +784,7 @@ def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGene
         constrained_decoding_supported=constrained_decoding_supported,
         debug_dir=debug_dir,
         trace_id=trace_id,
+        options=options,
     )
     if debug_dir:
         _write_guidelines_debug(debug_dir, trace_id, [result], "_consistency-fast")

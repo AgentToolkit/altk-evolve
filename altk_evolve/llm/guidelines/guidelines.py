@@ -3,13 +3,13 @@ import logging
 from json import JSONDecodeError
 from pathlib import Path
 
-import litellm
 from jinja2 import Template
 from litellm import completion, get_supported_openai_params, supports_response_schema
 from pydantic import ValidationError
 
-from altk_evolve.config.evolve import evolve_config
-from altk_evolve.config.llm import llm_settings
+from altk_evolve.config.llm import llm_settings  # noqa: F401
+from altk_evolve.config.evolve import evolve_config  # noqa: F401
+from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.guidelines import DEFAULT_TASK_DESCRIPTION, GuidelineGenerationResponse, GuidelineGenerationResult
@@ -146,8 +146,11 @@ def _generate_guidelines_for_segment(
     trajectory_slice: str,
     num_steps: int,
     constrained_decoding_supported: bool,
+    *,
+    options: GuidelineRuntime | None = None,
 ) -> GuidelineGenerationResult:
     """Generate guidelines for a single trajectory slice (full or subtask)."""
+    options = options or GuidelineRuntime.legacy()
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         num_steps=num_steps,
@@ -156,27 +159,25 @@ def _generate_guidelines_for_segment(
     )
 
     llm_messages = dispatch_llm_pre_call(
-        [{"role": "user", "content": prompt}], purpose="guideline_generation", model=llm_settings.guidelines_model
+        [{"role": "user", "content": prompt}], purpose="guideline_generation", model=options.guidelines_model
     )
     if constrained_decoding_supported:
-        litellm.enable_json_schema_validation = True
         raw = (
             completion(
-                model=llm_settings.guidelines_model,
+                model=options.guidelines_model,
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
-                custom_llm_provider=llm_settings.custom_llm_provider,
+                custom_llm_provider=options.custom_llm_provider,
             )
             .choices[0]
             .message.content
         )
     else:
-        litellm.enable_json_schema_validation = False
         raw = (
             completion(
-                model=llm_settings.guidelines_model,
+                model=options.guidelines_model,
                 messages=llm_messages,
-                custom_llm_provider=llm_settings.custom_llm_provider,
+                custom_llm_provider=options.custom_llm_provider,
             )
             .choices[0]
             .message.content
@@ -184,7 +185,7 @@ def _generate_guidelines_for_segment(
     clean_response = clean_llm_response(raw)
 
     if not clean_response:
-        logger.warning(f"LLM returned empty response for guideline generation. Model: {llm_settings.guidelines_model}")
+        logger.warning(f"LLM returned empty response for guideline generation. Model: {options.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
     try:
         guidelines = GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
@@ -197,7 +198,7 @@ def _generate_guidelines_for_segment(
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
 
-def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]:
+def generate_guidelines(messages: list[dict], *, options: GuidelineRuntime | None = None) -> list[GuidelineGenerationResult]:
     """Generate guidelines from a trajectory, optionally segmented into subtasks.
 
     When segmentation is enabled (EVOLVE_SEGMENTATION_ENABLED=true, the default),
@@ -209,15 +210,16 @@ def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
     trajectory when segmentation is disabled or produces fewer than 2 subtasks).
     """
-    is_groq = llm_settings.custom_llm_provider == "groq" or llm_settings.guidelines_model.startswith("groq/")
+    options = options or GuidelineRuntime.legacy()
+    is_groq = options.custom_llm_provider == "groq" or options.guidelines_model.startswith("groq/")
     supported_params = get_supported_openai_params(
-        model=llm_settings.guidelines_model,
-        custom_llm_provider=llm_settings.custom_llm_provider,
+        model=options.guidelines_model,
+        custom_llm_provider=options.custom_llm_provider,
     )
     supports_response_format = supported_params and "response_format" in supported_params
     response_schema_enabled = supports_response_schema(
-        model=llm_settings.guidelines_model,
-        custom_llm_provider=llm_settings.custom_llm_provider,
+        model=options.guidelines_model,
+        custom_llm_provider=options.custom_llm_provider,
     )
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
@@ -227,11 +229,11 @@ def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]
     n_steps = len(steps_list)
 
     subtasks = []
-    if evolve_config.segmentation_enabled:
+    if options.segmentation_enabled:
         from altk_evolve.llm.guidelines.segmentation import segment_trajectory  # avoid circular import
 
         try:
-            subtasks = segment_trajectory(messages)
+            subtasks = segment_trajectory(messages, options=options)
         except Exception as e:
             logger.warning(f"Trajectory segmentation failed, falling back to full trajectory: {e}")
             subtasks = []
@@ -253,6 +255,7 @@ def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]
                     trajectory_slice="\n\n".join(slice_steps),
                     num_steps=len(slice_steps),
                     constrained_decoding_supported=constrained_decoding_supported,
+                    options=options,
                 )
                 for subtask, slice_steps in valid_slices
             ]
@@ -266,5 +269,6 @@ def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]
             trajectory_slice=trajectory_data["trajectory_summary"],
             num_steps=trajectory_data["num_steps"],
             constrained_decoding_supported=constrained_decoding_supported,
+            options=options,
         )
     ]

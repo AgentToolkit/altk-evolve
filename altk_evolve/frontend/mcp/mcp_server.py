@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.requests import Request
 from starlette.exceptions import HTTPException
+from altk_evolve.frontend.api.processing import router as processing_router
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.frontend.api.routes import router as api_router
@@ -43,6 +44,8 @@ mcp = FastMCP("entities")
 
 # Mount API routes
 app.include_router(api_router, prefix="/api")
+
+app.include_router(processing_router, prefix="/api")
 
 
 # Configure UI Static Files Serving
@@ -525,6 +528,8 @@ def save_trajectory(
     namespace_id: str | None = None,
     session_id: str | None = None,
     tools: str | None = None,
+    processing_profile: str | None = None,
+    profile_revision: int | None = None,
 ) -> list[RecordedEntity]:
     """
     Save the full agent trajectory to the Entity DB and generate guidelines
@@ -552,6 +557,12 @@ def save_trajectory(
         f"Saving trajectory: namespace={resolved_ns}, user_present={effective_user_id is not None}, session_present={session_id is not None}, task_id={task_id}"
     )
     logger.debug(f"save_trajectory identifiers: user_id={effective_user_id}, session_id={session_id}")
+
+    processing_plan = None
+    if processing_profile is not None:
+        processing_plan = get_client().processing.resolve(processing_profile, revision=profile_revision)
+    elif profile_revision is not None:
+        raise ValueError("profile_revision requires processing_profile")
 
     entities = []
     messages = json.loads(trajectory_data)
@@ -588,6 +599,14 @@ def save_trajectory(
         guideline_metadata_base["user_id"] = effective_user_id
     if session_id:
         guideline_metadata_base["session_id"] = session_id
+
+    if processing_plan is not None:
+        get_client().process_trajectory(
+            {"messages": messages, "tools": json.loads(tools) if tools else None, "trace_id": task_id, "metadata": guideline_metadata_base},
+            namespace_id=resolved_ns,
+            plan=processing_plan,
+        )
+        return get_client().search_entities(resolved_ns, filters={"type": "trajectory", "metadata.task_id": task_id}, limit=1000)
 
     # Build entity lists per pipeline so each carries its own generation_method tag,
     # then merge before the single update_entities call.
@@ -879,3 +898,35 @@ def delete_entity(entity_id: str, user_id: str | None = None, namespace_id: str 
     except EvolveException as e:
         logger.exception(f"Error deleting entity {entity_id}: {str(e)}")
         return json.dumps({"success": False, "error": str(e)})
+
+
+@mcp.tool()
+def list_processors() -> list[dict]:
+    """List registered trajectory processors and their configuration schemas."""
+    return get_client().processing.registry.inventory()
+
+
+@mcp.tool()
+def get_processing_profile(profile_id: str, revision: int | None = None) -> dict:
+    """Read a processing profile; omit revision for latest."""
+    return get_client().processing.get(profile_id, revision)
+
+
+@mcp.tool()
+def set_processing_profile(profile_id: str, definition: dict, expected_revision: int) -> dict:
+    """Validate and replace a complete profile. Revision 0 creates; stale writes fail."""
+    return get_client().processing.put(profile_id, definition, expected_revision=expected_revision)
+
+
+@mcp.tool()
+def process_trajectory(trajectory: dict, namespace_id: str, processing_profile: str, revision: int | None = None) -> dict:
+    """Run a profile and persist derived entities. Does not store the raw trajectory."""
+    from altk_evolve.processing import ProfileReference
+
+    return (
+        get_client()
+        .process_trajectory(
+            trajectory, namespace_id=namespace_id, processing_profile=ProfileReference(id=processing_profile, revision=revision)
+        )
+        .model_dump(mode="json")
+    )

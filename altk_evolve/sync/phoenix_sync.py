@@ -55,11 +55,21 @@ class PhoenixSync:
         phoenix_url: str | None = None,
         namespace_id: str | None = None,
         project: str | None = None,
+        processing_profile: str | None = None,
+        profile_revision: int | None = None,
     ):
         self.phoenix_url = phoenix_url or phoenix_settings.url
         self.project = project or phoenix_settings.project
         self.namespace_id = namespace_id or evolve_config.namespace_id
         self.client = EvolveClient()
+        if profile_revision is not None and processing_profile is None:
+            raise ValueError("profile_revision requires processing_profile")
+        self.processing_profile = processing_profile
+        self.processing_plan = (
+            self.client.processing.resolve(processing_profile, revision=profile_revision)
+            if processing_profile is not None and profile_revision is not None
+            else None
+        )
 
     def _ensure_namespace(self):
         """Ensure the target namespace exists."""
@@ -811,6 +821,27 @@ class PhoenixSync:
         )
 
         # Generate guidelines from the trajectory (returns one result per subtask).
+        if self.processing_profile is not None:
+            plan = self.processing_plan or self.client.processing.resolve(self.processing_profile)
+            result = self.client.process_trajectory(
+                {
+                    "messages": trajectory["messages"],
+                    "tools": trajectory.get("tools"),
+                    "trace_id": trajectory["trace_id"],
+                    "model": trajectory.get("model"),
+                    "metadata": {
+                        "source_task_id": trajectory["trace_id"],
+                        "source_span_id": trajectory["span_id"],
+                        "creation_mode": "auto-phoenix",
+                    },
+                },
+                namespace_id=self.namespace_id,
+                plan=plan,
+            )
+            if trajectory_entity:
+                self.client.update_entities(self.namespace_id, [trajectory_entity], enable_conflict_resolution=False)
+            return sum(entity.type == "guideline" for entity in result.entities)
+
         # Build entity lists per pipeline so each carries its own generation_method tag,
         # then merge before the single update_entities call.
         guideline_entities = []

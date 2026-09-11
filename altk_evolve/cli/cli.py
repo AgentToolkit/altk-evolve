@@ -6,12 +6,13 @@ import platform
 import sys
 import zipfile
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from altk_evolve.cli.processing import profiles_app, processors_app, processing_app
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.schema.core import Entity
 from altk_evolve.schema.exceptions import (
@@ -36,6 +37,11 @@ app.add_typer(skills_app, name="skills")
 app.add_typer(viz_app, name="viz")
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(retention_app, name="retention")
+
+
+app.add_typer(profiles_app, name="processing-profiles")
+app.add_typer(processors_app, name="processors")
+app.add_typer(processing_app, name="processing")
 
 console = Console()
 
@@ -546,10 +552,17 @@ def sync_phoenix(
         Optional[str],
         typer.Option("--consistency-method", help="Consistency pipeline: fast (LLM self-judged, default) or accurate (resampling)"),
     ] = None,
+    processing_profile: Annotated[Optional[str], typer.Option("--processing-profile")] = None,
+    profile_revision: Annotated[Optional[int], typer.Option("--profile-revision", min=1)] = None,
 ):
     """Sync trajectories from Arize Phoenix and generate guidelines."""
     from altk_evolve.config.guidelines import guidelines_settings
     from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    if processing_profile is not None and (guidelines_mode is not None or consistency_method is not None):
+        raise typer.BadParameter("Profile selection cannot be combined with guideline mode flags")
+    if profile_revision is not None and processing_profile is None:
+        raise typer.BadParameter("--profile-revision requires --processing-profile")
 
     if guidelines_mode is not None:
         if guidelines_mode not in ("standard", "consistency", "all"):
@@ -563,10 +576,14 @@ def sync_phoenix(
             raise typer.Exit(1)
         guidelines_settings.consistency_method = consistency_method
 
+    profile_options: dict[str, Any] = (
+        {"processing_profile": processing_profile, "profile_revision": profile_revision} if processing_profile is not None else {}
+    )
     syncer = PhoenixSync(
         phoenix_url=phoenix_url,
         namespace_id=namespace,
         project=project,
+        **profile_options,
     )
 
     console.print("[bold]Syncing from Phoenix[/bold]")

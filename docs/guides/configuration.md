@@ -180,3 +180,11 @@ except ImportError:
 | `EVOLVE_TRACING_ENDPOINT` | Phoenix collector endpoint | `http://localhost:6006/v1/traces` |
 
 > **Note**: Auto-patching skips if existing tracing is detected. Use `enable_tracing(force=True)` to override.
+
+## Runtime processing profiles
+
+Processing profiles select built-in or installed trajectory processors with validated,
+versioned configuration. Configure their SQLite repository with
+`EVOLVE_PROCESSING_PROFILES_PATH` (also accepted in `.env`), or inject an application
+repository programmatically. See [processing profiles](../design/processing-profiles.md)
+for Python, REST, MCP, CLI, and plugin-discovery examples.
