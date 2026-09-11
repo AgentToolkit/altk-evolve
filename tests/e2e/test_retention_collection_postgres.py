@@ -288,3 +288,51 @@ def test_source_deletion_does_not_match_reused_source_or_changed_provenance(coll
         "UPDATE ns_a SET metadata=metadata||jsonb_build_object('agent_id','agent'),created_at=extract(epoch from clock_timestamp()+interval '1 second')::bigint"
     )
     assert collector.mark("p", initiated_by="admin")["marked"] == []
+
+
+def test_remarking_reassigned_memory_refreshes_candidate_scope(collection):
+    collector, conn = collection
+    conn.execute('UPDATE ns_a SET metadata=\'{"agent_id":"old-agent"}\'')
+    old = Collection(collector.client, "a", "old-agent")
+    new = Collection(collector.client, "a", "new-agent")
+    old.mark("p", initiated_by="admin")
+    conn.execute("UPDATE ns_a SET metadata='{\"agent_id\":\"new-agent\"}',type='guideline'")
+    new.mark("p", initiated_by="admin")
+    assert old.sweep("p", initiated_by="admin")["items"] == []
+    candidate = new.list()["items"][0]
+    assert candidate["agent_id"] == "new-agent"
+    assert candidate["entity_type"] == "guideline"
+    assert new.sweep("p", initiated_by="admin")["items"][0]["outcome"] == "deleted"
+
+
+def test_source_receipt_excludes_ambiguous_creation_second(collection):
+    import datetime as dt
+
+    collector, conn = collection
+    second = dt.datetime.now(dt.UTC).replace(microsecond=0) - dt.timedelta(seconds=10)
+    conn.execute(
+        'UPDATE ns_a SET created_at=%s,metadata=\'{"agent_id":"agent","user_id":"u","thread_id":"thread"}\'',
+        (int(second.timestamp()),),
+    )
+    collector.record_source_deletion("thread", "u", "agent", (second + dt.timedelta(microseconds=100000)).isoformat())
+    row = conn.execute("SELECT * FROM ns_a").fetchone()
+    assert collector.source_deleted_ids(conn, [collector.entity(row)]) == set()
+    conn.execute("UPDATE ns_a SET created_at=created_at-1")
+    row = conn.execute("SELECT * FROM ns_a").fetchone()
+    assert collector.source_deleted_ids(conn, [collector.entity(row)]) == {"1"}
+
+
+def test_cascade_keeps_same_trace_owned_by_other_user_or_agent(collection):
+    collector, conn = collection
+    conn.execute('UPDATE ns_a SET type=\'trajectory\',metadata=\'{"trace_id":"shared","user_id":"alice","agent_id":"a"}\'')
+    for user, agent in (("alice", "a"), ("bob", "a"), ("alice", "b")):
+        from psycopg.types.json import Jsonb
+
+        conn.execute(
+            "INSERT INTO ns_a(type,content,created_at,metadata) VALUES ('guideline','derived',0,%s)",
+            (Jsonb({"source_task_id": "shared", "user_id": user, "agent_id": agent}),),
+        )
+    collector.store.edit_rule("a", "p", "old", "update", {"entity_type": "trajectory", "cascade_derived": True})
+    assert {x["entity_id"] for x in collector.mark("p", initiated_by="admin")["marked"]} == {"1", "2"}
+    collector.sweep("p", initiated_by="admin")
+    assert {row["id"] for row in conn.execute("SELECT id FROM ns_a").fetchall()} == {3, 4}

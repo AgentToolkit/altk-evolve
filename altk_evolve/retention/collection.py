@@ -89,7 +89,7 @@ class Collection:
                 continue
             if conn.execute(
                 """SELECT 1 FROM evolve_retention_deleted_sources WHERE namespace_id=%s
-                AND user_id=%s AND agent_id=%s AND source_id=%s AND deleted_at>=%s""",
+                AND user_id=%s AND agent_id=%s AND source_id=%s AND date_trunc('second',deleted_at)>%s""",
                 (self.namespace, user, agent, source, entity.created_at),
             ).fetchone():
                 result.add(entity.id)
@@ -232,7 +232,9 @@ class Collection:
                 dependencies = [
                     {"id": e.id, "fingerprint": versions[e.id]}
                     for e in entities
-                    if e.type == engine.TRAJECTORY_TYPE and str(engine._trace_id(e)) == trace
+                    if e.type == engine.TRAJECTORY_TYPE
+                    and str(engine._trace_id(e)) == trace
+                    and engine.provenance_scope(e) == engine.provenance_scope(entity)
                 ]
                 if not dependencies:
                     continue
@@ -248,6 +250,7 @@ class Collection:
                     """INSERT INTO evolve_retention_candidates
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,clock_timestamp(),clock_timestamp(),%s,%s)
                     ON CONFLICT(namespace_id,policy_id,entity_id) DO UPDATE SET
+                    agent_id=EXCLUDED.agent_id,entity_type=EXCLUDED.entity_type,
                     fingerprint=EXCLUDED.fingerprint,policy_fingerprint=EXCLUDED.policy_fingerprint,
                     rule=EXCLUDED.rule,reason=EXCLUDED.reason,dependencies=EXCLUDED.dependencies,
                     status=EXCLUDED.status,updated_at=clock_timestamp(),initiated_by=EXCLUDED.initiated_by,run_id=EXCLUDED.run_id
@@ -351,6 +354,8 @@ class Collection:
             outcome = "deleted"
             if not entity:
                 outcome = "missing"
+            elif self.agent_id is not None and entity.metadata.get("agent_id") != self.agent_id:
+                outcome = "withdrawn"
             elif not policy["enabled"] or fingerprint(parsed.model_dump(mode="json")) != candidate["policy_fingerprint"]:
                 outcome = "withdrawn"
             elif any(e.metadata.get("legal_hold") for e in entities.values()):

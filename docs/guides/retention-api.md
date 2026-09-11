@@ -194,7 +194,7 @@ deletion and retry delivery after failures; absence from a listing is not eviden
 
 Matching requires exact namespace, `metadata.user_id`, `metadata.agent_id`, and
 `metadata.thread_id` (or `session_id`). Unknown provenance is kept. Memories created
-after the receipt's deletion time are kept, protecting source-ID reuse. Existing
+in or after the receipt's deletion second are kept, protecting source-ID reuse despite integer-second creation timestamps. Existing
 memories are not backfilled based on missing source records. Late-generated
 memories created after deletion are conservatively retained for ordinary age rules.
 Marking still records held memories; sweeping checks holds and current row versions.

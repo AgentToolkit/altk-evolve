@@ -69,11 +69,6 @@ def audit_payload(report: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(item, dict):
                 continue
             projected = {key: item[key] for key in item_fields if key in item}
-            metadata = item.get("metadata")
-            if bucket != "deleted" and isinstance(metadata, dict):
-                title = metadata.get("title") or metadata.get("display_name")
-                if isinstance(title, str) and title.strip():
-                    projected["title"] = title.strip()[:200]
             items.append(projected)
         audit[bucket] = items
     return audit

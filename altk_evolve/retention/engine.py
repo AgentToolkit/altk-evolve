@@ -144,6 +144,11 @@ class RetentionEngine:
             last = _as_aware(entity.created_at)
         return (now - last).total_seconds() / 86400.0, stamped
 
+    @staticmethod
+    def provenance_scope(entity: RecordedEntity) -> tuple[str | None, str | None]:
+        metadata = entity.metadata or {}
+        return (metadata.get("user_id") or metadata.get("owner_id"), metadata.get("agent_id"))
+
     def _trace_id(self, entity: RecordedEntity) -> str | None:
         metadata = entity.metadata or {}
         for key in self.TRACE_KEYS:
@@ -240,12 +245,12 @@ class RetentionEngine:
         # entities are skipped rather than bucketed under an empty/degenerate
         # key — otherwise a session with a falsy trace id would cascade-delete
         # every entity that merely lacks provenance.
-        derived_by_trace: dict[str, list[str]] = {}
+        derived_by_trace: dict[tuple[tuple[str | None, str | None], str], list[str]] = {}
         for e in entities:
             src = (e.metadata or {}).get(self.SOURCE_KEY)
             if not src:
                 continue
-            derived_by_trace.setdefault(str(src), []).append(e.id)
+            derived_by_trace.setdefault((self.provenance_scope(e), str(src)), []).append(e.id)
 
         # delete supersedes flag for the same entity; first writer otherwise wins.
         actions: dict[str, RetentionItem] = {}
@@ -305,7 +310,7 @@ class RetentionEngine:
                 trace = self._trace_id(e)
                 if not trace:
                     continue
-                for did in derived_by_trace.get(trace, []):
+                for did in derived_by_trace.get((self.provenance_scope(e), trace), []):
                     if did == e.id:
                         continue
                     record(
