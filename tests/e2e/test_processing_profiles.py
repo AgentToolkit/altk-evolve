@@ -33,8 +33,13 @@ class Processor:
     api_version = 1
     version = "1.0"
     config_model = Settings
-    def process(self, trajectory, *, config, context):
-        return ProcessorResult(entities=[Entity(type="review", content=config.label)])
+    def __init__(self, config):
+        self.config = config
+    @classmethod
+    def from_config(cls, config):
+        return cls(config)
+    def process(self, trajectory, *, context):
+        return ProcessorResult(entities=[Entity(type="review", content=self.config.label)])
 """)
     info = package / "example_processor-1.0.dist-info"
     info.mkdir()

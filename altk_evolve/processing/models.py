@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol, cast
+from typing import Any, ClassVar, Protocol, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -80,28 +80,29 @@ class ProcessorResult(BaseModel):
 
 
 class Processor(Protocol):
-    id: str
-    api_version: int
-    version: str
-    config_model: type[BaseModel]
+    """A plugin owns construction from validated config and execution on that instance."""
 
-    def process(self, trajectory: Trajectory, *, config: Any, context: ProcessorContext) -> ProcessorResult: ...
+    id: ClassVar[str]
+    api_version: ClassVar[int]
+    version: ClassVar[str]
+    config_model: ClassVar[type[BaseModel]]
 
+    @classmethod
+    def from_config(cls, config: BaseModel) -> Self: ...
 
-@dataclass(frozen=True)
-class BoundProcessor:
-    id: str
-    plugin: str
-    version: str
-    config_json: str
-    factory: Callable[[], Processor]
+    def process(self, trajectory: Trajectory, *, context: ProcessorContext) -> ProcessorResult: ...
 
 
 @dataclass(frozen=True)
 class ProcessingPlan:
-    """JSON strings keep nested configuration immutable and private to each invocation."""
+    """Execution snapshot: captured plugin classes plus one serialized configuration manifest.
 
-    processors: tuple[BoundProcessor, ...]
+    Classes correspond positionally to the manifest's ordered processor entries.
+    The runner validates a fresh config and calls each class's from_config for every
+    trajectory. No running instances or separately duplicated config records are kept.
+    """
+
+    processor_types: tuple[type[Processor], ...]
     manifest_json: str
     conflict_settings_json: str
     profile_id: str | None = None

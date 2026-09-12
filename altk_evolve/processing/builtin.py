@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from altk_evolve import __version__
 from pathlib import Path
-from typing import Literal, cast
+from typing import ClassVar, Literal, Self, cast
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -40,12 +40,20 @@ class GuidelineConfig(GuidelineRuntime):
 
 
 class GuidelineProcessor:
-    id = "evolve.guidelines"
-    api_version = 1
-    version = __version__
-    config_model: type[BaseModel] = GuidelineConfig
+    id: ClassVar[str] = "evolve.guidelines"
+    api_version: ClassVar[int] = 1
+    version: ClassVar[str] = __version__
+    config_model: ClassVar[type[BaseModel]] = GuidelineConfig
 
-    def process(self, trajectory: Trajectory, *, config: GuidelineConfig, context: ProcessorContext) -> ProcessorResult:
+    def __init__(self, config: GuidelineConfig):
+        self.config = config
+
+    @classmethod
+    def from_config(cls, config: BaseModel) -> Self:
+        return cls(GuidelineConfig.model_validate(config))
+
+    def process(self, trajectory: Trajectory, *, context: ProcessorContext) -> ProcessorResult:
+        config = self.config
         from altk_evolve.llm.guidelines.guidelines import generate_guidelines
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines, generate_consistency_guidelines_fast
 

@@ -137,21 +137,47 @@ for trajectory in trajectories:
 
 If A starts under revision 1 and an update publishes revision 2, A finishes with
 revision 1; the next latest-following trajectory uses revision 2. This applies to
-processor additions/removals as well as settings. Plans store config as JSON strings
-and processor bindings as frozen tuples. Each invocation gets a fresh processor and
-validated configuration; plugins receive isolated trajectory copies.
+processor additions/removals as well as settings. Plans capture processor classes in an ordered tuple and store resolved configuration
+once in the serialized manifest. Each invocation validates an isolated config and
+calls the class's `from_config(config)` factory to create a fresh processor instance;
+plugins receive isolated trajectory copies.
 
 Profiles store normalized defaults and plugin versions. Resolving a saved profile
 rejects incompatible installed versions or configuration drift; publish a new revision
-explicitly after upgrades. A retained in-process plan keeps its factory references.
+explicitly after upgrades. A retained in-process plan keeps its processor class references.
 Hot replacement of installed Python code is unsupported.
 
 ## Built-ins, discovered packages, and local plugins
 
-A processor has `id`, `api_version=1`, `version`, a Pydantic `config_model`, and a
-`process(trajectory, *, config, context)` method returning `ProcessorResult`.
+A processor class has `id`, `api_version=1`, `version`, a Pydantic `config_model`,
+a `from_config(config)` classmethod that constructs its configured instance, and a
+`process(trajectory, *, context)` instance method returning `ProcessorResult`.
 Config schemas are plugin-owned. The result contains entities, diagnostics, and an
-optional request for persistence-time conflict resolution. No subclass is required.
+optional request for persistence-time conflict resolution. No subclass is required. Registration and inventory inspect class metadata and never
+construct instances. Construction belongs to the plugin, so its constructor can
+require configuration or plugin-specific dependencies:
+
+```python
+class MyProcessor:
+    id = "example.custom"
+    api_version = 1
+    version = "1.0"
+    config_model = MyConfig
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(MyConfig.model_validate(config))
+
+    def __init__(self, config):
+        self.config = config
+
+    def process(self, trajectory, *, context):
+        return ProcessorResult(entities=[])
+```
+
+`MyConfig` is the application's Pydantic model. The runner supplies a fresh validated
+config to `from_config` for every trajectory, including repeated runs of a pinned
+plan. There is no separate `BoundProcessor` record or external factory callable.
 
 Built-ins are registered automatically. Installed packages advertise entry points:
 

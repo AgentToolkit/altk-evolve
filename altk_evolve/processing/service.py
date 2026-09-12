@@ -11,7 +11,6 @@ from typing import Any
 
 from altk_evolve.config.llm import LLMSettings
 from altk_evolve.processing.models import (
-    BoundProcessor,
     ProcessingError,
     ProcessingPlan,
     ProcessingResult,
@@ -39,14 +38,13 @@ class ProcessingService:
         processors = []
         manifest: dict[str, Any] = {"schema_version": 1, "processors": []}
         for spec in definition.processors:
-            factory = self.registry.factory(spec.plugin)
-            descriptor = factory()
+            descriptor = self.registry.get(spec.plugin)
             try:
                 config = descriptor.config_model.model_validate(spec.config).model_dump(mode="json")
-                encoded = _encode(config)
+                _encode(config)  # Reject non-JSON/non-finite values before publication.
             except Exception as exc:
                 raise ProcessingError(f"Invalid config for {spec.id} ({spec.plugin}): {exc}") from exc
-            processors.append(BoundProcessor(spec.id, spec.plugin, descriptor.version, encoded, factory))
+            processors.append(descriptor)
             manifest["processors"].append(
                 {
                     "id": spec.id,
@@ -98,7 +96,7 @@ class ProcessingService:
         record = self.get(reference.id, reference.revision)
         manifest = record["manifest"]
         for item in manifest["processors"]:
-            descriptor = self.registry.factory(item["plugin"])()
+            descriptor = self.registry.get(item["plugin"])
             if descriptor.version != item["version"] or descriptor.api_version != item["api_version"]:
                 raise ProcessingError(f"Processor version changed: {item['plugin']}; publish a new profile revision")
         plan = self.validate(
@@ -130,12 +128,12 @@ class ProcessingService:
         batches = []
         diagnostics = {}
         entities = []
-        for bound in plan.processors:
-            processor = bound.factory()
-            config = processor.config_model.model_validate_json(bound.config_json)
-            result = ProcessorResult.model_validate(processor.process(trajectory.model_copy(deep=True), config=config, context=context))
-            diagnostics[bound.id] = result.diagnostics
-            stamp = {**provenance, "processor_id": bound.id}
+        for processor_type, spec in zip(plan.processor_types, manifest["processors"], strict=True):
+            config = processor_type.config_model.model_validate_json(_encode(spec["config"]))
+            processor = processor_type.from_config(config)
+            result = ProcessorResult.model_validate(processor.process(trajectory.model_copy(deep=True), context=context))
+            diagnostics[spec["id"]] = result.diagnostics
+            stamp = {**provenance, "processor_id": spec["id"]}
             for entity in result.entities:
                 entity.metadata = {**entity.metadata, "processing": stamp}
             entities.extend(result.entities)

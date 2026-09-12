@@ -39,7 +39,15 @@ class EchoProcessor:
     version = "1"
     config_model = EchoConfig
 
-    def process(self, trajectory, *, config, context):
+    def __init__(self, config):
+        self.config = config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(config)
+
+    def process(self, trajectory, *, context):
+        config = self.config
         config.values.append(2)
         return ProcessorResult(
             entities=[Entity(type="note", content=config.label, metadata={"values": config.values, "processing": "forged"})]
@@ -50,9 +58,9 @@ def definition(label="old", plugin="tests.echo"):
     return {"processors": [{"id": "first", "plugin": plugin, "config": {"label": label}}]}
 
 
-def make_service(repository=None, factory=EchoProcessor):
+def make_service(repository=None, processor_type=EchoProcessor):
     registry = ProcessorRegistry()
-    registry.register(factory)
+    registry.register(processor_type)
     return ProcessingService(registry=registry, repository=repository)
 
 
@@ -90,13 +98,13 @@ def test_inflight_plan_isolation_and_latest_next(client):
     started, release = Event(), Event()
 
     class Blocking(EchoProcessor):
-        def process(self, trajectory, *, config, context):
-            if config.label == "old":
+        def process(self, trajectory, *, context):
+            if self.config.label == "old":
                 started.set()
                 assert release.wait(10)
-            return super().process(trajectory, config=config, context=context)
+            return super().process(trajectory, context=context)
 
-    client._processing = make_service(factory=Blocking)
+    client._processing = make_service(processor_type=Blocking)
     service = client.processing
     service.put("review", definition(), expected_revision=0)
     original = service.resolve("review")
@@ -128,7 +136,7 @@ def test_discovery_is_not_activation_and_failures_are_explicit(monkeypatch):
     service = ProcessingService(registry=registry)
     plan = service.validate(definition())
     entry.load.assert_called_once()
-    assert plan.processors[0].plugin == EchoProcessor.id
+    assert plan.processor_types[0].id == EchoProcessor.id
     with pytest.raises(ProcessingError, match="Duplicate"):
         registry.register(EchoProcessor)
     with pytest.raises(ProcessingError, match="Cannot load"):
@@ -148,7 +156,7 @@ def test_isolated_input_and_no_persistence_when_processor_fails(client):
     class Fails(EchoProcessor):
         id = "tests.fail"
 
-        def process(self, trajectory, *, config, context):
+        def process(self, trajectory, *, context):
             raise RuntimeError("processor failed")
 
     client.processing.registry.register(Fails)
@@ -178,7 +186,7 @@ def test_builtin_mode_and_config_are_captured(monkeypatch):
         ]
 
     monkeypatch.setattr("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines_fast", generate)
-    service = make_service(factory=GuidelineProcessor)
+    service = make_service(processor_type=GuidelineProcessor)
     plan = service.validate(
         {
             "processors": [
@@ -208,12 +216,12 @@ def test_conflict_resolution_uses_captured_settings_and_stamps_after_model(clien
     from altk_evolve.config.llm import llm_settings
 
     class Conflicts(EchoProcessor):
-        def process(self, trajectory, *, config, context):
-            result = super().process(trajectory, config=config, context=context)
+        def process(self, trajectory, *, context):
+            result = super().process(trajectory, context=context)
             result.enable_conflict_resolution = True
             return result
 
-    client._processing = make_service(factory=Conflicts)
+    client._processing = make_service(processor_type=Conflicts)
     monkeypatch.setenv("EVOLVE_CONFLICT_RESOLUTION_MODEL", "before")
     plan = client.processing.validate(definition())
     monkeypatch.setattr(llm_settings, "conflict_resolution_model", "after")
@@ -327,10 +335,47 @@ def test_unknown_namespace_fails_before_processor_calls(client):
     from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
     class Never(EchoProcessor):
-        def process(self, trajectory, *, config, context):
+        def process(self, trajectory, *, context):
             raise AssertionError("must validate destination before execution")
 
-    client._processing = make_service(factory=Never)
+    client._processing = make_service(processor_type=Never)
     plan = client.processing.validate(definition())
     with pytest.raises(NamespaceNotFoundException):
         client.process_trajectory({"messages": []}, namespace_id="missing", plan=plan)
+
+
+def test_processor_owns_construction_and_instances_are_operation_local():
+    calls = []
+
+    class RequiresResource(EchoProcessor):
+        def __init__(self, config, resource):
+            super().__init__(config)
+            self.resource = resource
+
+        @classmethod
+        def from_config(cls, config):
+            resource = object()
+            calls.append(resource)
+            return cls(config, resource)
+
+    service = make_service(processor_type=RequiresResource)
+    service.registry.inventory()
+    service.put("review", definition(), expected_revision=0)
+    plan = service.resolve("review")
+    assert calls == []  # Discovery, schema validation, and resolution never construct instances.
+    first = service.process({"messages": []}, plan=plan)
+    second = service.process({"messages": []}, plan=plan)
+    assert len(calls) == 2 and calls[0] is not calls[1]
+    assert first.entities[0].metadata["values"] == second.entities[0].metadata["values"] == [1, 2]
+    assert plan.manifest()["processors"][0]["config"]["values"] == [1]
+
+
+def test_registration_requires_a_processor_owned_factory():
+    class MissingFactory:
+        id = "tests.missing-factory"
+        api_version = 1
+        version = "1"
+        config_model = EchoConfig
+
+    with pytest.raises(ProcessingError, match="from_config"):
+        ProcessorRegistry().register(MissingFactory)
