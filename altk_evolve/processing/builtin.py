@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from altk_evolve import __version__
 from pathlib import Path
+from collections.abc import Callable
 from typing import ClassVar, Literal, Self, cast
 
 from pydantic import BaseModel, Field, model_validator
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field, model_validator
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.processing.models import ProcessorContext, ProcessorResult, Trajectory
 from altk_evolve.schema.core import Entity
+from altk_evolve.schema.guidelines import GuidelineGenerationResult
 
 
 def _analysis_defaults() -> dict:
@@ -45,27 +47,31 @@ class GuidelineProcessor:
     version: ClassVar[str] = __version__
     config_model: ClassVar[type[BaseModel]] = GuidelineConfig
 
-    def __init__(self, config: GuidelineConfig):
-        self.config = config
+    def __init__(self, steps: tuple[tuple[str, Callable[[Trajectory], list[GuidelineGenerationResult]]], ...]):
+        self._steps = steps
 
     @classmethod
     def from_config(cls, config: BaseModel) -> Self:
-        return cls(GuidelineConfig.model_validate(config))
-
-    def process(self, trajectory: Trajectory, *, context: ProcessorContext) -> ProcessorResult:
-        config = self.config
+        """Select generation steps once using this trajectory's resolved settings."""
         from altk_evolve.llm.guidelines.guidelines import generate_guidelines
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines, generate_consistency_guidelines_fast
 
+        config = GuidelineConfig.model_validate(config)
         options = GuidelineRuntime.model_validate(config.model_dump(include=set(GuidelineRuntime.model_fields)))
-        batches = []
+        steps: list[tuple[str, Callable[[Trajectory], list[GuidelineGenerationResult]]]] = []
         if config.guidelines_mode in ("standard", "all"):
-            batches.append(("standard", generate_guidelines(trajectory.messages, options=options)))
+            steps.append(("standard", lambda trajectory: generate_guidelines(trajectory.messages, options=options)))
         if config.guidelines_mode in ("consistency", "all"):
-            if config.consistency_method == "fast":
-                batches.append(("consistency-fast", generate_consistency_guidelines_fast(trajectory.model_dump(), options=options)))
-            else:
-                batches.append(("consistency", generate_consistency_guidelines(trajectory.model_dump(), options=options)))
+            method, generate = (
+                ("consistency-fast", generate_consistency_guidelines_fast)
+                if config.consistency_method == "fast"
+                else ("consistency", generate_consistency_guidelines)
+            )
+            steps.append((method, lambda trajectory: generate(trajectory.model_dump(), options=options)))
+        return cls(tuple(steps))
+
+    def process(self, trajectory: Trajectory, *, context: ProcessorContext) -> ProcessorResult:
+        batches = [(method, generate(trajectory)) for method, generate in self._steps]
         entities = [
             Entity(
                 type="guideline",

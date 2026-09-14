@@ -43,6 +43,12 @@ An omitted analysis configuration is captured from the shipped analyzer YAML.
 An explicit analysis configuration replaces it; it is not a path to a file that can
 change under a running job. Debug-output location remains deployment-controlled.
 
+`GuidelineProcessor.from_config()` selects the generation functions and captures their
+runtime options when each processor instance is constructed. `process()` only runs
+those selected steps. A profile update is picked up when the next trajectory resolves
+its plan and constructs fresh processors; in-flight instances and pinned plans keep
+their original selection.
+
 Each instance ID is unique within the profile. Multiple instances may use the same
 plugin. The processor list is ordered; an empty list explicitly runs no processors.
 Updates replace the definition, so removed config fields return to plugin defaults.

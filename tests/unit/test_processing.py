@@ -577,3 +577,109 @@ with backend.transaction("memories"):
     with client.backend.transaction("memories"):
         client.update_entities("memories", [Entity(type="note", content="retry")], enable_conflict_resolution=False)
     assert [entity.content for entity in client.get_all_entities("memories")] == ["retry"]
+
+
+@pytest.mark.parametrize("mode", ["standard", "consistency", "all"])
+@pytest.mark.parametrize("method", ["fast", "accurate"])
+def test_builtin_factory_selects_generation_steps(mode, method, monkeypatch):
+    from altk_evolve.processing.builtin import GuidelineConfig, GuidelineProcessor
+    from altk_evolve.processing.models import ProcessorContext, Trajectory
+    from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResult
+
+    calls = []
+
+    def generator(name):
+        def run(data, *, options):
+            calls.append((name, data, options.guidelines_model))
+            return [
+                GuidelineGenerationResult(
+                    task_description="task", guidelines=[Guideline(content=name, rationale="test", category="strategy", trigger="task")]
+                )
+            ]
+
+        return run
+
+    monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.generate_guidelines", generator("standard"))
+    monkeypatch.setattr(
+        "altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines_fast", generator("consistency-fast")
+    )
+    monkeypatch.setattr("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines", generator("consistency"))
+    processor = GuidelineProcessor.from_config(
+        GuidelineConfig(
+            guidelines_mode=mode,
+            consistency_method=method,
+            guidelines_model="captured",
+            segmentation_enabled=False,
+        )
+    )
+    assert calls == []  # Construction selects functions but does not execute generation.
+    trajectory = Trajectory(messages=[{"role": "user", "content": "task"}], trace_id="trace")
+    result = processor.process(trajectory, context=ProcessorContext("operation"))
+    expected = (["standard"] if mode in ("standard", "all") else []) + (
+        ["consistency-fast" if method == "fast" else "consistency"] if mode in ("consistency", "all") else []
+    )
+    assert [entity.metadata["generation_method"] for entity in result.entities] == expected
+    assert [name for name, _, _ in calls] == expected
+    for name, data, model in calls:
+        assert data == (trajectory.messages if name == "standard" else trajectory.model_dump())
+        assert model == "captured"
+    assert result.enable_conflict_resolution is True
+
+
+def test_builtin_admin_update_changes_next_trajectory_not_running_steps(monkeypatch):
+    from altk_evolve.processing.builtin import GuidelineProcessor
+    from altk_evolve.schema.guidelines import GuidelineGenerationResult
+
+    started, resume = Event(), Event()
+    calls = []
+
+    def standard(messages, *, options):
+        calls.append(("standard", options.guidelines_model))
+        started.set()
+        assert resume.wait(10)
+        return [GuidelineGenerationResult(task_description="task", guidelines=[])]
+
+    def fast(trajectory, *, options):
+        calls.append(("fast", options.guidelines_model))
+        return []
+
+    def accurate(trajectory, *, options):
+        calls.append(("accurate", options.guidelines_model))
+        return []
+
+    monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.generate_guidelines", standard)
+    monkeypatch.setattr("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines_fast", fast)
+    monkeypatch.setattr("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines", accurate)
+    manager = make_manager(processor_type=GuidelineProcessor)
+
+    def profile(method, model):
+        return {
+            "processors": [
+                {
+                    "id": "g",
+                    "plugin": "evolve.guidelines",
+                    "config": {
+                        "guidelines_mode": "all",
+                        "consistency_method": method,
+                        "guidelines_model": model,
+                        "segmentation_enabled": False,
+                    },
+                }
+            ]
+        }
+
+    manager.put("review", profile("fast", "old-model"), expected_revision=0)
+    pinned = manager.resolve("review", revision=1)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        running = pool.submit(manager.process, {"messages": []}, plan=pinned)
+        try:
+            assert started.wait(10)
+            manager.put("review", profile("accurate", "new-model"), expected_revision=1)
+        finally:
+            resume.set()
+        running.result(timeout=10)
+    assert calls == [("standard", "old-model"), ("fast", "old-model")]
+    manager.process({"messages": []}, plan=manager.resolve("review"))
+    assert calls[-2:] == [("standard", "new-model"), ("accurate", "new-model")]
+    manager.process({"messages": []}, plan=pinned)
+    assert calls[-2:] == [("standard", "old-model"), ("fast", "old-model")]
