@@ -29,6 +29,7 @@ from altk_evolve.llm.fact_extraction.fact_extraction import (
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, RecordedEntity
+from altk_evolve.processing import Trajectory
 from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
 
 logging.basicConfig(level=logging.INFO)
@@ -566,6 +567,9 @@ def save_trajectory(
 
     entities = []
     messages = json.loads(trajectory_data)
+    processing_trajectory = (
+        Trajectory(messages=messages, tools=json.loads(tools) if tools else None, trace_id=task_id) if processing_plan is not None else None
+    )
     trajectory_metadata_base: dict = {"task_id": task_id}
     if effective_user_id:
         trajectory_metadata_base["user_id"] = effective_user_id
@@ -600,13 +604,20 @@ def save_trajectory(
     if session_id:
         guideline_metadata_base["session_id"] = session_id
 
-    if processing_plan is not None:
+    readback_filters: dict = {"type": "trajectory", "metadata.task_id": task_id}
+    if effective_user_id:
+        readback_filters["metadata.user_id"] = effective_user_id
+    if session_id:
+        readback_filters["metadata.session_id"] = session_id
+
+    if processing_trajectory is not None:
+        processing_trajectory.metadata = guideline_metadata_base
         get_client().process_trajectory(
-            {"messages": messages, "tools": json.loads(tools) if tools else None, "trace_id": task_id, "metadata": guideline_metadata_base},
+            processing_trajectory,
             namespace_id=resolved_ns,
             plan=processing_plan,
         )
-        return get_client().search_entities(resolved_ns, filters={"type": "trajectory", "metadata.task_id": task_id}, limit=1000)
+        return get_client().search_entities(resolved_ns, filters=readback_filters, limit=1000)
 
     # Build entity lists per pipeline so each carries its own generation_method tag,
     # then merge before the single update_entities call.
@@ -685,12 +696,6 @@ def save_trajectory(
             entities=guideline_entities,
             enable_conflict_resolution=True,
         )
-
-    readback_filters: dict = {"type": "trajectory", "metadata.task_id": task_id}
-    if effective_user_id:
-        readback_filters["metadata.user_id"] = effective_user_id
-    if session_id:
-        readback_filters["metadata.session_id"] = session_id
 
     return get_client().search_entities(
         namespace_id=resolved_ns,

@@ -64,6 +64,7 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
                         messages=llm_messages,
                         response_format=SegmentationResponse,
                         custom_llm_provider=options.custom_llm_provider,
+                        enable_json_schema_validation=constrained_decoding_supported,
                     )
                     .choices[0]
                     .message.content
@@ -74,6 +75,7 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
                         model=options.guidelines_model,
                         messages=llm_messages,
                         custom_llm_provider=options.custom_llm_provider,
+                        enable_json_schema_validation=constrained_decoding_supported,
                     )
                     .choices[0]
                     .message.content

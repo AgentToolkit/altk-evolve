@@ -5,6 +5,8 @@ from __future__ import annotations
 from importlib.metadata import entry_points
 from typing import cast
 
+from pydantic import BaseModel
+
 from altk_evolve.processing.models import ProcessingError, Processor
 
 
@@ -28,18 +30,31 @@ class ProcessorRegistry:
         return registry
 
     def register(self, processor_type: type[Processor]) -> None:
+        self._check(processor_type, getattr(processor_type, "id", ""))
         if processor_type.id in self._processors or processor_type.id in self._entries:
             raise ProcessingError(f"Duplicate processor: {processor_type.id}")
-        self._check(processor_type, processor_type.id)
         self._processors[processor_type.id] = processor_type
 
     @staticmethod
     def _check(processor: type[Processor], name: str):
-        if not isinstance(processor, type) or processor.id != name or processor.api_version != 1:
+        if (
+            not isinstance(processor, type)
+            or not isinstance(name, str)
+            or not name
+            or processor.id != name
+            or getattr(processor, "api_version", None) != 1
+        ):
             raise ProcessingError(f"Incompatible processor: {name}")
         if not callable(getattr(processor, "from_config", None)):
             raise ProcessingError(f"Processor {name} must implement from_config")
-        processor.config_model.model_json_schema()
+        if not isinstance(getattr(processor, "version", None), str) or not processor.version:
+            raise ProcessingError(f"Processor {name} must declare a nonempty version")
+        if not callable(getattr(processor, "process", None)):
+            raise ProcessingError(f"Processor {name} must implement process")
+        config_model = getattr(processor, "config_model", None)
+        if not isinstance(config_model, type) or not issubclass(config_model, BaseModel):
+            raise ProcessingError(f"Processor {name} must declare a Pydantic config_model")
+        config_model.model_json_schema()
 
     def get(self, name: str) -> type[Processor]:
         try:

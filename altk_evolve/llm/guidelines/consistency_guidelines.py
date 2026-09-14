@@ -393,6 +393,7 @@ def _generate_guideline_result(
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=constrained_decoding_supported,
             )
             .choices[0]
             .message.content
@@ -403,6 +404,7 @@ def _generate_guideline_result(
                 model=options.guidelines_model,
                 messages=llm_messages,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=constrained_decoding_supported,
             )
             .choices[0]
             .message.content
@@ -636,6 +638,7 @@ def _generate_fast_guideline_result(
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=constrained_decoding_supported,
             )
             .choices[0]
             .message.content
@@ -646,6 +649,7 @@ def _generate_fast_guideline_result(
                 model=options.guidelines_model,
                 messages=llm_messages,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=constrained_decoding_supported,
             )
             .choices[0]
             .message.content

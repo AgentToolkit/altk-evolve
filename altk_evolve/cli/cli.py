@@ -579,24 +579,24 @@ def sync_phoenix(
     profile_options: dict[str, Any] = (
         {"processing_profile": processing_profile, "profile_revision": profile_revision} if processing_profile is not None else {}
     )
-    syncer = PhoenixSync(
-        phoenix_url=phoenix_url,
-        namespace_id=namespace,
-        project=project,
-        **profile_options,
-    )
-
-    console.print("[bold]Syncing from Phoenix[/bold]")
-    console.print(f"  URL: {syncer.phoenix_url}")
-    console.print(f"  Project: {syncer.project}")
-    console.print(f"  Namespace: {syncer.namespace_id}")
-    console.print(f"  Limit: {limit}")
-    console.print(f"  Guidelines mode: {guidelines_settings.guidelines_mode}")
-    if guidelines_settings.guidelines_mode in ("consistency", "all"):
-        console.print(f"  Consistency method: {guidelines_settings.consistency_method}")
-    console.print()
-
     try:
+        syncer = PhoenixSync(
+            phoenix_url=phoenix_url,
+            namespace_id=namespace,
+            project=project,
+            **profile_options,
+        )
+
+        console.print("[bold]Syncing from Phoenix[/bold]")
+        console.print(f"  URL: {syncer.phoenix_url}")
+        console.print(f"  Project: {syncer.project}")
+        console.print(f"  Namespace: {syncer.namespace_id}")
+        console.print(f"  Limit: {limit}")
+        console.print(f"  Guidelines mode: {guidelines_settings.guidelines_mode}")
+        if guidelines_settings.guidelines_mode in ("consistency", "all"):
+            console.print(f"  Consistency method: {guidelines_settings.consistency_method}")
+        console.print()
+
         result = syncer.sync(limit=limit, include_errors=include_errors)
 
         table = Table(title="Sync Results")

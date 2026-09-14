@@ -167,6 +167,7 @@ def _generate_guidelines_for_segment(
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=constrained_decoding_supported,
             )
             .choices[0]
             .message.content
@@ -177,6 +178,7 @@ def _generate_guidelines_for_segment(
                 model=options.guidelines_model,
                 messages=llm_messages,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=constrained_decoding_supported,
             )
             .choices[0]
             .message.content

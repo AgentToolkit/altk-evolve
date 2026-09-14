@@ -255,6 +255,9 @@ MCP `save_trajectory` also accepts `processing_profile` and optional
 `profile_revision`; it preserves its raw-trajectory persistence and return shape.
 The service's existing authentication model is unchanged. Application adapters must
 supply their own authorization; identifiers alone are not authenticated principals.
+The stock REST/MCP service has no authenticated-principal or profile-editor policy.
+Run it within a trusted deployment boundary, or protect all routes with application
+authentication and resource authorization before exposing it to untrusted callers.
 
 ## CLI and Phoenix sync
 
@@ -288,8 +291,8 @@ from trusted third-party Python cannot be intercepted by this contract.
 The runner captures conflict-resolution model/provider settings with the plan and
 passes them through the client/backend/LLM call chain. Generation receives explicit
 settings; it does not mutate globals to switch modes. Per-call LiteLLM global JSON
-validation toggles were removed in these generation paths; responses remain locally
-validated with Pydantic. Deployment connections, credentials, and global hook setup
+validation toggles were replaced with per-request validation in these generation paths;
+responses are also locally validated with Pydantic. Deployment connections, credentials, and global hook setup
 are not hot-swapped by profiles. Constructing clients with different hook configurations
 still has the existing process-global hook lifecycle limitation.
 

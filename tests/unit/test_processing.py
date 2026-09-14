@@ -379,3 +379,87 @@ def test_registration_requires_a_processor_owned_factory():
 
     with pytest.raises(ProcessingError, match="from_config"):
         ProcessorRegistry().register(MissingFactory)
+
+
+@pytest.mark.parametrize("field,value", [("process", None), ("version", ""), ("config_model", dict)])
+def test_registry_rejects_incomplete_processor_classes(field, value):
+    incomplete = type("Incomplete", (EchoProcessor,), {field: value})
+    with pytest.raises(ProcessingError, match=field):
+        ProcessorRegistry().register(incomplete)
+
+
+def test_cli_reports_pinned_profile_setup_failure(monkeypatch):
+    from typer.testing import CliRunner
+    from altk_evolve.cli.cli import app
+    from altk_evolve.sync import phoenix_sync
+
+    monkeypatch.setattr(phoenix_sync, "PhoenixSync", Mock(side_effect=ProfileNotFound("missing@1")))
+    result = CliRunner().invoke(app, ["sync", "phoenix", "--processing-profile", "missing", "--profile-revision", "1"])
+    assert result.exit_code == 1
+    assert "Sync failed: missing@1" in result.output
+
+
+def test_mcp_profile_readback_filters_identity(client, monkeypatch):
+    from altk_evolve.frontend.mcp import mcp_server
+
+    monkeypatch.setattr(mcp_server, "get_client", lambda: client)
+    client.processing.put("review", definition(), expected_revision=0)
+    for user, session in [("alice", "one"), ("bob", "one"), ("alice", "two")]:
+        saved = mcp_server.save_trajectory(
+            json.dumps([{"role": "user", "content": f"{user}/{session}"}]),
+            namespace_id="memories",
+            task_id="same-task",
+            user_id=user,
+            session_id=session,
+            processing_profile="review",
+        )
+        assert len(saved) == 1
+        assert saved[0].metadata["user_id"] == user
+        assert saved[0].metadata["session_id"] == session
+
+
+@pytest.mark.parametrize("constrained", [False, True])
+@pytest.mark.parametrize("pipeline", ["standard", "fast", "accurate", "segmentation"])
+def test_schema_validation_is_per_call(pipeline, constrained, monkeypatch):
+    from altk_evolve.config.guideline_runtime import GuidelineRuntime
+    from altk_evolve.llm.guidelines import guidelines, consistency_guidelines, segmentation
+
+    module = guidelines if pipeline == "standard" else segmentation if pipeline == "segmentation" else consistency_guidelines
+    response = Mock()
+    response.choices = [Mock(message=Mock(content=json.dumps({"subtasks": [], "guidelines": []})))]
+    completion = Mock(return_value=response)
+    monkeypatch.setattr(module, "completion", completion)
+    options = GuidelineRuntime()
+    if pipeline == "segmentation":
+        monkeypatch.setattr(module, "get_supported_openai_params", lambda **kw: ["response_format"])
+        monkeypatch.setattr(module, "supports_response_schema", lambda **kw: constrained)
+        module.segment_trajectory([{"role": "user", "content": "hello"}], options=options)
+    elif pipeline == "accurate":
+        module._generate_guideline_result(
+            messages=[],
+            consistency_data={"step_uncertainties": {}},
+            task_description="task",
+            step_range=None,
+            constrained_decoding_supported=constrained,
+            debug_suffix="",
+            config={"skip_on_no_uncertainty": False},
+            options=options,
+        )
+    else:
+        generate = module._generate_guidelines_for_segment if pipeline == "standard" else module._generate_fast_guideline_result
+        generate(
+            task_description="task", trajectory_slice="hello", num_steps=1, constrained_decoding_supported=constrained, options=options
+        )
+    assert completion.call_args.kwargs["enable_json_schema_validation"] is constrained
+
+
+def test_invalid_profile_trajectory_does_not_write_raw_messages(client, monkeypatch):
+    from altk_evolve.frontend.mcp import mcp_server
+
+    monkeypatch.setattr(mcp_server, "get_client", lambda: client)
+    client.processing.put("review", definition(), expected_revision=0)
+    with pytest.raises(ValueError):
+        mcp_server.save_trajectory(
+            json.dumps([dict(role="user", content="hello")]), namespace_id="memories", processing_profile="review", tools="{}"
+        )
+    assert client.get_all_entities("memories") == []
