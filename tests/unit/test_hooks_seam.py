@@ -1023,7 +1023,11 @@ def test_llm_pre_call_fires_at_guideline_generation_call_site():
     response.choices = [Mock(message=Mock(content=json.dumps({"guidelines": []})))]
     with patch.object(guidelines, "completion", return_value=response) as mock_completion:
         guidelines._generate_guidelines_for_segment(
-            task_description="t", trajectory_slice="s", num_steps=1, constrained_decoding_supported=False
+            task_description="t",
+            trajectory_slice="s",
+            num_steps=1,
+            constrained_decoding_supported=False,
+            options=guidelines.GuidelineRuntime(),
         )
 
     sent = mock_completion.call_args.kwargs["messages"]
@@ -1098,6 +1102,7 @@ def test_llm_pre_call_fires_at_consistency_guidelines_call_site(constrained_deco
             step_range=None,
             constrained_decoding_supported=constrained_decoding_supported,
             debug_suffix="",
+            options=consistency_guidelines.GuidelineRuntime(),
         )
 
     sent = mock_completion.call_args.kwargs["messages"]

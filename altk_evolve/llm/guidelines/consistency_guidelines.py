@@ -344,7 +344,7 @@ def _generate_guideline_result(
     debug_dir: Optional[Path] = None,
     trace_id: Any = "unknown",
     *,
-    options: GuidelineRuntime | None = None,
+    options: GuidelineRuntime,
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory).
 
@@ -352,7 +352,6 @@ def _generate_guideline_result(
     the prompt, calls the LLM, and parses the response. debug_suffix distinguishes
     per-segment artifacts (e.g. "_seg1") from full-trajectory artifacts ("").
     """
-    options = options or GuidelineRuntime.from_settings()
     config = config or {}
     skip_on_no_uncertainty = config.get("skip_on_no_uncertainty", DEFAULT_SKIP_ON_NO_UNCERTAINTY)
     low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
@@ -610,13 +609,12 @@ def _generate_fast_guideline_result(
     trace_id: Any = "unknown",
     debug_suffix: str = "",
     *,
-    options: GuidelineRuntime | None = None,
+    options: GuidelineRuntime,
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory)
     using the fast consistency pipeline: the LLM judges each step's confidence itself, in the
     same call that produces guidelines, rather than reading resampling-derived scores.
     """
-    options = options or GuidelineRuntime.from_settings()
     prompt = _CONSISTENCY_GUIDELINES_FAST_TEMPLATE.render(
         task_instruction=task_description,
         num_steps=num_steps,

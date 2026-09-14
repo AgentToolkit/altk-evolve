@@ -147,10 +147,9 @@ def _generate_guidelines_for_segment(
     num_steps: int,
     constrained_decoding_supported: bool,
     *,
-    options: GuidelineRuntime | None = None,
+    options: GuidelineRuntime,
 ) -> GuidelineGenerationResult:
     """Generate guidelines for a single trajectory slice (full or subtask)."""
-    options = options or GuidelineRuntime.from_settings()
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         num_steps=num_steps,
