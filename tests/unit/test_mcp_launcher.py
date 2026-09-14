@@ -1,4 +1,5 @@
 import tomllib
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,26 @@ def test_pyproject_exports_mcp_launcher_script() -> None:
     assert parsed["project"]["scripts"]["evolve-mcp"] == "altk_evolve.frontend.mcp.__main__:main"
 
 
-def test_stdio_launcher_starts_ui_thread(monkeypatch) -> None:
+@pytest.fixture
+def runtime(monkeypatch):
+    events = []
+    client = object()
+    monkeypatch.setattr(launcher, "get_client", lambda: client)
+
+    @contextmanager
+    def lifecycle(injected):
+        assert injected is client
+        events.append("started")
+        try:
+            yield
+        finally:
+            events.append("stopped")
+
+    monkeypatch.setattr(launcher, "retention_runtime", lifecycle)
+    return events
+
+
+def test_stdio_launcher_starts_ui_thread(monkeypatch, runtime) -> None:
     thread_calls: list[tuple[object, bool]] = []
     run_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
@@ -31,13 +51,14 @@ def test_stdio_launcher_starts_ui_thread(monkeypatch) -> None:
     monkeypatch.setattr(launcher.sys, "argv", ["evolve-mcp"])
 
     launcher.main()
+    assert runtime == ["started", "stopped"]
 
     assert thread_calls[0] == (launcher.run_api_server, True)
     assert thread_calls[1] == ("started", True)
     assert run_calls == [((), {})]
 
 
-def test_sse_launcher_skips_ui_thread(monkeypatch) -> None:
+def test_sse_launcher_skips_ui_thread(monkeypatch, runtime) -> None:
     thread_called = False
     sse_calls: list[tuple[str, int]] = []
 
@@ -55,6 +76,7 @@ def test_sse_launcher_skips_ui_thread(monkeypatch) -> None:
     monkeypatch.setattr(launcher.sys, "argv", ["evolve-mcp", "--transport", "sse", "--host", "0.0.0.0", "--port", "9300"])
 
     launcher.main()
+    assert runtime == ["started", "stopped"]
 
     assert thread_called is False
     assert sse_calls == [("0.0.0.0", 9300)]

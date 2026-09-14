@@ -98,11 +98,12 @@ _CPEX_INSTALL_HINT = "Hooks require the CPEX plugin framework. Install it with: 
 class MemoryPolicyViolation(EvolveException):
     """Raised when a plugin halts a memory operation or LLM call."""
 
-    def __init__(self, hook_type: str, reason: str, code: str = "", plugin_name: str = ""):
+    def __init__(self, hook_type: str, reason: str, code: str = "", plugin_name: str = "", details: dict[str, Any] | None = None):
         self.hook_type = hook_type
         self.reason = reason
         self.code = code
         self.plugin_name = plugin_name
+        self.details = dict(details or {})
         detail = f"[{code}] " if code else ""
         super().__init__(f"Plugin blocked {hook_type}: {detail}{reason}")
 
@@ -388,9 +389,9 @@ def _native_adapter_cls() -> Any:
         return _NATIVE_ADAPTER_CLS
 
     from cpex.framework import Plugin
-    from cpex.framework.models import PluginResult
+    from cpex.framework.models import PluginResult, PluginViolation
 
-    from altk_evolve.hooks.plugin import HookContext
+    from altk_evolve.hooks.plugin import HookContext, HookPolicyViolation
     from altk_evolve.hooks.types import HOOK_PAYLOADS, active_payload_cls
 
     class _NativePluginAdapter(Plugin):
@@ -444,7 +445,18 @@ def _native_adapter_cls() -> Any:
                 state=state,
                 request_id=getattr(gc, "request_id", "") if gc else "",
             )
-            out = method(plain, hook_ctx)  # native, sync; raises to halt (propagates -> on_error)
+            try:
+                out = method(plain, hook_ctx)
+            except HookPolicyViolation as violation:
+                return PluginResult(
+                    continue_processing=False,
+                    violation=PluginViolation(
+                        reason=violation.reason,
+                        description=violation.reason,
+                        code=violation.code,
+                        details=violation.details,
+                    ),
+                )
             if out is None:
                 return PluginResult(continue_processing=True)
             engine_cls: Any = active_payload_cls(hook_type)
@@ -570,6 +582,7 @@ def _invoke(hook_type: HookType, payload: Any, backend: BaseEntityBackend | None
             reason=violation.reason if violation else "Blocked by plugin",
             code=(violation.code or "") if violation else "",
             plugin_name=(violation.plugin_name or "") if violation else "",
+            details=violation.details if violation else None,
         )
     if result is not None and result.modified_payload is not None:
         return result.modified_payload

@@ -55,6 +55,22 @@ class HookContext:
     request_id: str = ""
 
 
+class HookPolicyViolation(Exception):
+    """Engine-neutral signal that a native plugin intentionally blocked an operation."""
+
+    def __init__(
+        self,
+        reason: str,
+        *,
+        code: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.code = code
+        self.details = dict(details or {})
+
+
 @runtime_checkable
 class HookPlugin(Protocol):
     """Structural contract for a native hook plugin.
@@ -113,4 +129,4 @@ class HookPluginBase:
         return None
 
 
-__all__ = ["HookContext", "HookPlugin", "HookPluginBase"]
+__all__ = ["HookContext", "HookPlugin", "HookPluginBase", "HookPolicyViolation"]
