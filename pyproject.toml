@@ -95,6 +95,8 @@ pii-semantic = [
     # en_core_web_trf, whose factories live in this package; without it the
     # model loads with a bare "can't find factory" error.
     "spacy-curated-transformers>=0.2,<3",
+    # 0.0.9 has no Python 3.13 wheels and its Cython source build fails.
+    "curated-tokenizers>=0.0.10",
 ]
 
 # `[secrets]`: structured secrets detection (cpex-secrets-detection's Rust
