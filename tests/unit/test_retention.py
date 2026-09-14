@@ -65,6 +65,69 @@ def test_age_flag_marks_old_entities_without_deleting():
     assert "retention_flagged_at" not in client.store["2"].metadata
 
 
+def test_retention_prefers_non_access_administrative_scan():
+    class ScanAwareClient(FakeClient):
+        def __init__(self, entities):
+            super().__init__(entities)
+            self.scan_calls = 0
+            self.read_calls = 0
+
+        def scan_entities(self, namespace_id, filters=None, limit=100):
+            self.scan_calls += 1
+            return list(self.store.values())
+
+        def get_all_entities(self, namespace_id, filters=None, limit=100):
+            self.read_calls += 1
+            return list(self.store.values())
+
+    client = ScanAwareClient([_entity("1", created_days_ago=100)])
+    policy = RetentionPolicy(rules=[RetentionRule(name="stale", max_age_days=90, action="flag")])
+
+    RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=True)
+
+    assert client.scan_calls == 1
+    assert client.read_calls == 0
+
+
+def test_retention_forwards_administrative_scope_filters():
+    class FilterAwareClient(FakeClient):
+        def __init__(self, entities):
+            super().__init__(entities)
+            self.filters = None
+
+        def scan_entities(self, namespace_id, filters=None, limit=100):
+            self.filters = filters
+            return list(self.store.values())
+
+    client = FilterAwareClient([_entity("1", created_days_ago=100)])
+    policy = RetentionPolicy(rules=[RetentionRule(name="stale", max_age_days=90, action="flag")])
+
+    RetentionEngine(client).apply(
+        "ns",
+        policy,
+        now=NOW,
+        dry_run=True,
+        filters={"metadata.agent_id": "agent-a"},
+    )
+
+    assert client.filters == {"metadata.agent_id": "agent-a"}
+
+
+def test_retention_scan_does_not_require_get_all_entities():
+    class ScanOnlyClient:
+        def scan_entities(self, namespace_id, filters=None, limit=100):
+            return [_entity("1", created_days_ago=100)]
+
+        def patch_entity_metadata(self, namespace_id, entity_id, metadata_patch):
+            pass
+
+    policy = RetentionPolicy(rules=[RetentionRule(name="stale", max_age_days=90, action="flag")])
+
+    report = RetentionEngine(ScanOnlyClient()).apply("ns", policy, now=NOW, dry_run=True)
+
+    assert len(report.flagged) == 1
+
+
 def test_age_delete_removes_old_entities():
     client = FakeClient([_entity("1", created_days_ago=400)])
     policy = RetentionPolicy(rules=[RetentionRule(name="old", max_age_days=365, action="delete")])
@@ -442,6 +505,40 @@ def test_cascade_delete_supersedes_a_flag_from_an_earlier_rule():
 
     assert {i.entity_id for i in report.deleted} == {"traj", "g1"}
     assert report.flagged == []
+
+
+def test_cascade_delete_supersedes_a_degraded_skip_from_an_earlier_rule():
+    trajectory = _entity(
+        "traj",
+        type="trajectory",
+        created_days_ago=400,
+        metadata={"trace_id": "T1", "last_accessed": (NOW - datetime.timedelta(days=400)).isoformat()},
+    )
+    derived = _entity("g1", type="guideline", created_days_ago=220, metadata={"source_task_id": "T1"})
+    policy = RetentionPolicy(
+        rules=[
+            RetentionRule(
+                name="unused-guidelines",
+                entity_type="guideline",
+                max_unused_days=180,
+                action="delete",
+                on_missing_access_signal="skip",
+            ),
+            RetentionRule(
+                name="old-sessions",
+                entity_type="trajectory",
+                max_age_days=365,
+                action="delete",
+                cascade_derived=True,
+            ),
+        ]
+    )
+
+    for entities in ([derived, trajectory], [trajectory, derived]):
+        report = RetentionEngine(FakeClient(entities)).apply("ns", policy, now=NOW, dry_run=True)
+
+        assert {item.entity_id for item in report.deleted} == {"traj", "g1"}
+        assert report.skipped == []
 
 
 # ── record_access: the explicit half of the access signal ─────────────

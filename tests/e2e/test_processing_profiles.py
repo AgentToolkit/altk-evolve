@@ -48,7 +48,7 @@ class Processor:
     root = Path(__file__).resolve().parents[2]
     env = {
         **os.environ,
-        "PYTHONPATH": os.pathsep.join([str(root), str(package)]),
+        "PYTHONPATH": os.pathsep.join(filter(None, [str(root), str(package), os.environ.get("PYTHONPATH", "")])),
         "EVOLVE_BACKEND": "filesystem",
         "EVOLVE_DATA_DIR": str(tmp_path / "entities"),
         "EVOLVE_PROCESSING_PROFILES_PATH": str(tmp_path / "profiles.db"),

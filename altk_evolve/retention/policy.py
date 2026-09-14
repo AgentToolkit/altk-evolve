@@ -48,10 +48,12 @@ class RetentionRule(BaseModel):
     )
     max_age_days: int | None = Field(
         default=None,
+        ge=0,
         description="Match entities whose created_at is older than this many days.",
     )
     max_unused_days: int | None = Field(
         default=None,
+        ge=0,
         description=(
             "Match entities not read in this many days. Uses metadata.last_accessed, which "
             "AccessStampPlugin (or EvolveClient.record_access) stamps; entities that carry no "
@@ -68,6 +70,9 @@ class RetentionRule(BaseModel):
             "fallback (the original behaviour). Only affects unused-driven deletes on unstamped entities; "
             "age matches and stamped entities are unaffected."
         ),
+    )
+    source_deleted: bool = Field(
+        default=False, description="Require a durable, scoped source-deletion receipt in addition to the age threshold. PostgreSQL only."
     )
     cascade_derived: bool = Field(
         default=False,

@@ -822,25 +822,36 @@ class PhoenixSync:
 
         # Generate guidelines from the trajectory (returns one result per subtask).
         if self.processing_profile is not None:
-            plan = self.processing_plan or self.client.processing.resolve(self.processing_profile)
-            result = self.client.process_trajectory(
-                {
-                    "messages": trajectory["messages"],
-                    "tools": trajectory.get("tools"),
-                    "trace_id": trajectory["trace_id"],
-                    "model": trajectory.get("model"),
-                    "metadata": {
-                        "source_task_id": trajectory["trace_id"],
-                        "source_span_id": trajectory["span_id"],
-                        "creation_mode": "auto-phoenix",
+            if trajectory_entity is None:
+                return 0
+            with self.client.backend.transaction(self.namespace_id):
+                # The initial sync scan is only an optimization. Recheck while
+                # holding the transaction lock so concurrent/restarted syncs agree.
+                if self.client.search_entities(
+                    self.namespace_id,
+                    filters={"type": "trajectory", "metadata.trace_id": trajectory["trace_id"]},
+                    limit=1,
+                ):
+                    return 0
+                plan = self.processing_plan or self.client.processing.resolve(self.processing_profile)
+                result = self.client.process_trajectory(
+                    {
+                        "messages": trajectory["messages"],
+                        "tools": trajectory.get("tools"),
+                        "trace_id": trajectory["trace_id"],
+                        "model": trajectory.get("model"),
+                        "metadata": {
+                            "source_task_id": trajectory["trace_id"],
+                            "source_span_id": trajectory["span_id"],
+                            "creation_mode": "auto-phoenix",
+                        },
                     },
-                },
-                namespace_id=self.namespace_id,
-                plan=plan,
-            )
-            if trajectory_entity:
-                self.client.update_entities(self.namespace_id, [trajectory_entity], enable_conflict_resolution=False)
-            return sum(entity.type == "guideline" for entity in result.entities)
+                    namespace_id=self.namespace_id,
+                    plan=plan,
+                )
+                if trajectory_entity:
+                    self.client.update_entities(self.namespace_id, [trajectory_entity], enable_conflict_resolution=False)
+                return sum(entity.type == "guideline" for entity in result.entities)
 
         # Build entity lists per pipeline so each carries its own generation_method tag,
         # then merge before the single update_entities call.

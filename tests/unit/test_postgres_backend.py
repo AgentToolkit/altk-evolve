@@ -719,3 +719,37 @@ def test_update_entity_metadata_rejects_non_numeric_id(postgres_backend: Postgre
     """Raises EvolveException immediately for non-numeric entity IDs."""
     with pytest.raises(EvolveException, match="must be numeric"):
         postgres_backend.update_entity_metadata("test_namespace", "not-an-id", {"visibility": "public"})
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("fail", [False, True])
+def test_transaction_uses_dedicated_connection_and_restores_it(postgres_backend, fail):
+    from contextlib import contextmanager
+
+    original = postgres_backend.conn
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    outcomes = []
+
+    @contextmanager
+    def transaction():
+        try:
+            yield
+        except RuntimeError:
+            outcomes.append("rollback")
+            raise
+        else:
+            outcomes.append("commit")
+
+    connection.transaction.side_effect = transaction
+    with patch.object(postgres_backend, "_connect", return_value=connection), patch("altk_evolve.backend.postgres.register_vector"):
+        try:
+            with postgres_backend.transaction("memories"):
+                assert postgres_backend.conn is connection
+                if fail:
+                    raise RuntimeError("write failed")
+        except RuntimeError:
+            assert fail
+    assert postgres_backend.conn is original
+    assert outcomes == ["rollback" if fail else "commit"]
+    connection.cursor.return_value.__enter__.return_value.execute.assert_called_once()

@@ -119,6 +119,18 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 **Available tools:**
 - `get_entities(task: str, entity_type: str = "guideline", include_public: bool = False)`: Get relevant entities for a specific task. Set `include_public=True` to merge in public entities from all other namespaces; those results are annotated with `[public: {owner_id}]`.
 - `get_guidelines(task: str)`: Get relevant guidelines for a specific task (backward compatibility alias for `get_entities`).
+- `get_guidelines_with_attribution(task: str)`: Return formatted guidelines with the entity IDs used to build the prompt.
+- `get_relevant_guidelines(task: str, top_k: int | None, core_support: int | None)`: Retrieve the always-on guideline core plus a task-relevant dosage.
+- `list_entities(...)`: Return structured, filtered, cursor-paginated entity inventory for user and administrative UIs.
+- `get_entity(entity_id: str, user_id: str | None, record_access: bool = True)`: Return one structured entity, enforcing ownership when a caller ID is supplied.
+- `patch_entity_metadata(entity_id: str, metadata_patch: str, user_id: str | None)`: Merge JSON metadata through the memory hook seam.
+- `record_access(entity_ids: list[str], accessed_at: str | None)`: Explicitly stamp the retention engine's `last_accessed` signal.
+- `validate_retention_policy(policy: str)`: Validate and normalize a JSON retention policy without scanning data.
+- `put_retention_policy(policy_id: str, name: str, policy: str, ...)`: Create or replace an Evolve-owned retention policy.
+- `get_retention_policy(policy_id: str)` / `list_retention_policies()`: Read the namespace's policy catalog for operators and management UIs.
+- `run_retention(policy_id: str, dry_run: bool = True, ...)`: Dry-run or apply a stored policy and persist a structured, entity-linked report.
+- `list_retention_runs(...)`: Read namespace-scoped retention run history, optionally filtered by agent or policy.
+- `get_compliance_status()`: Report backend health, retention availability, hook coverage, and configured plugin health.
 - `save_trajectory(trajectory_data: str, task_id: str | None, owner_id: str | None)`: Save a conversation trajectory and generate new guidelines.
 - `create_entity(content: str, entity_type: str, metadata: str | None, enable_conflict_resolution: bool, owner_id: str | None, visibility: str = "private")`: Create a single entity. Pass `visibility="public"` and `owner_id` to make it immediately discoverable by other namespaces.
 - `publish_entity(entity_id: str, user_id: str | None)`: Make an entity publicly visible to all namespaces. Records the caller as owner and stamps `published_at`.
@@ -161,6 +173,20 @@ Evolve supports sharing entities across namespaces using a simple public/private
 
 ### MCP Tools
 
+**Personal facts on a shared Evolve service:**
+```python
+store_user_facts(namespace_id="service-instance-1", user_id="alice", message="I prefer concise answers")
+retrieve_user_facts(namespace_id="service-instance-1", user_id="alice", query="answer preferences")
+```
+Pass the service instance ID as `namespace_id` and the individual user's ID as
+`user_id` on both calls. Explicitly scoped retrieval filters by that exact pair,
+including query fallback, and never falls back to another user's facts. Empty
+explicit namespaces or user IDs are rejected. Calls omitting `namespace_id`
+retain the configured default namespace and legacy default-user fallback.
+Integrating clients must supply the scope; upgrading Evolve alone cannot infer
+which service instance an unscoped request belongs to.
+
+
 **Publishing an entity:**
 ```python
 publish_entity(entity_id="42", user_id="alice")
@@ -201,3 +227,9 @@ Evolve is an active project, and real‑world usage helps guide its direction.
 If you’re experimenting with Evolve or exploring on‑the‑job learning for agents, feel free to open an issue or discussion to share use cases, ideas, or feedback.
 
 See the [Contributing Guide](CONTRIBUTING.md) to understand our development process, or how to submit changes, report bugs, or propose features.
+
+### Embedded memory API and scheduling
+
+Hosts can mount the [scoped REST router](docs/guides/embedded-memory-api.md) with their own client and authentication dependencies. Evolve owns [retention schedules and worker execution](docs/guides/retention-scheduling.md), using Kubernetes-compatible cron, timezone, concurrency, deadline, and suspension fields. Use `evolve retention schedules` to manage schedules and `start`/`stop` to enable or suspend them. The Evolve service owns background execution.
+
+The [public retention service](docs/guides/retention-api.md) is available as `client.retention(namespace_id, agent_id=...)`; CLI, REST, MCP, and scheduling share its operations and scope checks.

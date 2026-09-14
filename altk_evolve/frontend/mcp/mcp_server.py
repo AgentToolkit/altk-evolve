@@ -4,13 +4,18 @@ Evolve MCP Server
 This server provides a tool to get task-relevant guidelines.
 """
 
+import base64
+import datetime
 import json
 import logging
 import threading
 import uuid
 import os
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import Any
 
+import yaml
 from fastmcp import FastMCP
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +25,7 @@ from starlette.exceptions import HTTPException
 from altk_evolve.frontend.api.processing import router as processing_router
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
+from altk_evolve.frontend.services.context import injected_client
 from altk_evolve.frontend.api.routes import router as api_router
 from altk_evolve.llm.fact_extraction.fact_extraction import (
     ExtractedFact,
@@ -109,6 +115,9 @@ def get_client() -> EvolveClient:
     """
     global _client
 
+    if (client := injected_client.get()) is not None:
+        return client
+
     with _client_init_lock:
         if _client is None:
             logger.info("Initializing Evolve client...")
@@ -133,6 +142,9 @@ def _resolve_namespace(namespace_id: str | None) -> str:
     """Resolve the effective namespace, ensuring it exists before use."""
     client = get_client()
     resolved = namespace_id or evolve_config.namespace_id
+    if injected_client.get() is not None:
+        client.ensure_namespace(resolved)
+        return resolved
     if resolved not in _initialized_namespaces:
         logger.info(f"Ensuring namespace '{resolved}' exists (first use)...")
         try:
@@ -241,6 +253,84 @@ def _parse_metadata(metadata: str | None) -> dict[str, Any]:
     return parsed
 
 
+def _json_response(payload: Any) -> str:
+    """Serialize MCP responses consistently, including datetimes and errors."""
+    return json.dumps(payload, default=str)
+
+
+def _entity_payload(entity: RecordedEntity, *, include_content: bool = True) -> dict[str, Any]:
+    content = entity.content
+    preview_source = content if isinstance(content, str) else _json_response(content)
+    payload: dict[str, Any] = {
+        "id": entity.id,
+        "type": entity.type,
+        "content_preview": preview_source[:240],
+        "created_at": entity.created_at.isoformat(),
+        "metadata": entity.metadata or {},
+    }
+    if include_content:
+        payload["content"] = content
+    return payload
+
+
+def _encode_cursor(offset: int) -> str:
+    return base64.urlsafe_b64encode(str(offset).encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str | None) -> int:
+    if not cursor:
+        return 0
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        offset = int(base64.urlsafe_b64decode(padded).decode())
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError("cursor is invalid") from exc
+    if offset < 0:
+        raise ValueError("cursor is invalid")
+    return offset
+
+
+def _parse_datetime(value: str | None, *, field_name: str) -> datetime.datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO-8601 datetime") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.UTC)
+    return parsed
+
+
+def _entity_owned_by(
+    entity: RecordedEntity,
+    user_id: str | None,
+    agent_id: str | None = None,
+) -> bool:
+    metadata = entity.metadata or {}
+    attributed_ids = {str(value) for value in (metadata.get("owner_id"), metadata.get("user_id")) if value}
+    if user_id is None and agent_id is None and (attributed_ids or metadata.get("agent_id")):
+        return False
+    if user_id is not None:
+        if user_id not in attributed_ids:
+            return False
+    if agent_id is not None and str(metadata.get("agent_id") or "") != agent_id:
+        return False
+    return True
+
+
+def _record_entity_access(client: EvolveClient, namespace_id: str, entities: list[RecordedEntity]) -> list[RecordedEntity]:
+    if not entities:
+        return entities
+    moment = datetime.datetime.now(datetime.UTC)
+    updated_ids = set(client.record_access(namespace_id, [entity.id for entity in entities], when=moment))
+    stamp = moment.isoformat()
+    return [
+        entity.model_copy(update={"metadata": {**(entity.metadata or {}), "last_accessed": stamp}}) if entity.id in updated_ids else entity
+        for entity in entities
+    ]
+
+
 def _persist_entities(
     namespace_id: str | None,
     entities: list[Entity],
@@ -326,6 +416,69 @@ def get_guidelines(
 
 
 @mcp.tool()
+def get_guidelines_with_attribution(
+    task: str,
+    user_id: str | None = None,
+    namespace_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
+    """Return injectable guidelines together with the entities that supplied them.
+
+    Existing callers keep the text-only contract; clients that need to audit
+    actual prompt context can record ``entity_ids`` as memory-use events.
+    """
+    from altk_evolve.config.evolve import evolve_config
+    from altk_evolve.llm.guidelines.retrieval import format_selection
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    if evolve_config.injection_mode == "retrieval":
+        try:
+            selection = client.select_guidelines(resolved_ns, task)
+        except NamespaceNotFoundException:
+            _evict_namespace(resolved_ns)
+            resolved_ns = _resolve_namespace(namespace_id)
+            selection = client.select_guidelines(resolved_ns, task)
+        entities = selection.all
+        text = format_selection(selection)
+    else:
+        try:
+            entities = client.search_entities(
+                namespace_id=resolved_ns,
+                query=task,
+                filters={"type": "guideline"},
+                limit=10,
+            )
+        except NamespaceNotFoundException:
+            _evict_namespace(resolved_ns)
+            resolved_ns = _resolve_namespace(namespace_id)
+            entities = client.search_entities(
+                namespace_id=resolved_ns,
+                query=task,
+                filters={"type": "guideline"},
+                limit=10,
+            )
+        lines = [f"# Guidelines for: {task}\n"]
+        lines.extend(f"{index}. {entity.content}" for index, entity in enumerate(entities, 1))
+        text = "\n".join(lines)
+
+    logger.info(
+        "get_guidelines_with_attribution (namespace=%s, count=%s, user_present=%s, session_present=%s)",
+        resolved_ns,
+        len(entities),
+        user_id is not None,
+        session_id is not None,
+    )
+    return _json_response(
+        {
+            "text": text,
+            "entity_ids": [entity.id for entity in entities],
+            "namespace_id": resolved_ns,
+        }
+    )
+
+
+@mcp.tool()
 def get_relevant_guidelines(
     task: str,
     top_k: int | None = None,
@@ -377,6 +530,381 @@ def get_relevant_guidelines(
     return format_selection(selection)
 
 
+@mcp.tool()
+def list_entities(
+    entity_types: list[str] | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    session_id: str | None = None,
+    metadata_filters: str | None = None,
+    cursor: str | None = None,
+    limit: int = 50,
+    include_content: bool = False,
+    record_access: bool = False,
+    namespace_id: str | None = None,
+) -> str:
+    """Return a structured, paginated entity inventory.
+
+    This is the UI/admin counterpart to ``get_entities``, whose prose response
+    is intentionally optimized for prompt injection. Administrative scans do
+    not count as memory use by default; set ``record_access=True`` for a
+    user-facing read that should refresh ``metadata.last_accessed``.
+    """
+    try:
+        filters = _parse_metadata(metadata_filters)
+        offset = _decode_cursor(cursor)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    page_size = max(1, min(limit, 200))
+    scan_limit = 100_000
+    client = get_client()
+    candidates = client.scan_entities(resolved_ns, limit=scan_limit)
+
+    wanted_types = set(entity_types or [])
+
+    def matches(entity: RecordedEntity) -> bool:
+        metadata = entity.metadata or {}
+        if wanted_types and entity.type not in wanted_types:
+            return False
+        if user_id and user_id not in {metadata.get("user_id"), metadata.get("owner_id")}:
+            return False
+        if agent_id and metadata.get("agent_id") != agent_id:
+            return False
+        if session_id and session_id not in {metadata.get("session_id"), metadata.get("thread_id")}:
+            return False
+        return all(metadata.get(key) == value for key, value in filters.items())
+
+    matched = [entity for entity in candidates if matches(entity)]
+    matched.sort(key=lambda entity: (entity.created_at, entity.id), reverse=True)
+    page = matched[offset : offset + page_size]
+    consumed = len(page)
+    if record_access and page:
+        transformed_page = []
+        for entity in page:
+            transformed = client.get_entity_by_id(resolved_ns, entity.id)
+            if transformed is not None:
+                transformed_page.append(transformed)
+        page = _record_entity_access(client, resolved_ns, transformed_page)
+    next_offset = offset + consumed
+    facets: dict[str, int] = {}
+    for entity in matched:
+        facets[entity.type] = facets.get(entity.type, 0) + 1
+
+    return _json_response(
+        {
+            "items": [_entity_payload(entity, include_content=include_content) for entity in page],
+            "next_cursor": _encode_cursor(next_offset) if next_offset < len(matched) else None,
+            "total": len(matched),
+            "facets": {"entity_types": facets},
+            "truncated": len(candidates) >= scan_limit,
+            "namespace_id": resolved_ns,
+        }
+    )
+
+
+@mcp.tool()
+def get_entity(
+    entity_id: str,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    record_access: bool = True,
+    namespace_id: str | None = None,
+) -> str:
+    """Return one structured entity, optionally recording a user-facing read."""
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    matches = client.scan_entities(resolved_ns, filters={"id": entity_id}, limit=1)
+    entity = matches[0] if matches else None
+    if entity is None:
+        return _json_response({"error": f"Entity {entity_id} not found"})
+    if not _entity_owned_by(entity, user_id, agent_id):
+        return _json_response({"error": "Permission denied: caller is not the owner of this entity"})
+    if record_access:
+        refreshed = client.get_entity_by_id(resolved_ns, entity_id)
+        if refreshed is not None:
+            entity = refreshed
+        entity = _record_entity_access(client, resolved_ns, [entity])[0]
+    return _json_response(_entity_payload(entity))
+
+
+@mcp.tool()
+def patch_entity_metadata(
+    entity_id: str,
+    metadata_patch: str,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    namespace_id: str | None = None,
+) -> str:
+    """Merge metadata into an owned entity through the memory hook seam."""
+    try:
+        patch = _parse_metadata(metadata_patch)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    matches = client.scan_entities(resolved_ns, filters={"id": entity_id}, limit=1)
+    entity = matches[0] if matches else None
+    if entity is None:
+        return _json_response({"error": f"Entity {entity_id} not found"})
+    if not _entity_owned_by(entity, user_id, agent_id):
+        return _json_response({"error": "Permission denied: caller is not the owner of this entity"})
+    try:
+        updated = client.patch_entity_metadata(resolved_ns, entity_id, patch)
+        return _json_response(_entity_payload(updated))
+    except EvolveException as exc:
+        return _json_response({"error": str(exc)})
+
+
+@mcp.tool()
+def record_access(
+    entity_ids: list[str],
+    accessed_at: str | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    namespace_id: str | None = None,
+) -> str:
+    """Explicitly stamp memories as used without requiring a retrieval query."""
+    try:
+        moment = _parse_datetime(accessed_at, field_name="accessed_at")
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    allowed: list[str] = []
+    denied: list[str] = []
+    missing: list[str] = []
+    for entity_id in dict.fromkeys(entity_ids):
+        matches = client.scan_entities(resolved_ns, filters={"id": entity_id}, limit=1)
+        entity = matches[0] if matches else None
+        if entity is None:
+            missing.append(entity_id)
+        elif not _entity_owned_by(entity, user_id, agent_id):
+            denied.append(entity_id)
+        else:
+            allowed.append(entity_id)
+
+    moment = moment or datetime.datetime.now(datetime.UTC)
+    updated = client.record_access(resolved_ns, allowed, when=moment) if allowed else []
+    return _json_response(
+        {
+            "updated_ids": updated,
+            "denied_ids": denied,
+            "missing_ids": missing,
+            "accessed_at": moment.isoformat(),
+            "namespace_id": resolved_ns,
+        }
+    )
+
+
+def _retention_object(value: dict[str, Any] | str | None) -> dict[str, Any]:
+    return value if isinstance(value, dict) else _parse_metadata(value)
+
+
+@mcp.tool()
+def validate_retention_policy(policy: dict[str, Any] | str) -> str:
+    """Validate a structured retention policy without scanning data."""
+    from altk_evolve.retention.service import RetentionService, RetentionError
+
+    try:
+        normalized = RetentionService.validate_policy(_retention_object(policy))
+        return _json_response({"valid": True, "normalized_policy": normalized, "errors": [], "warnings": []})
+    except (ValueError, RetentionError) as exc:
+        return _json_response({"valid": False, "normalized_policy": None, "errors": [{"message": str(exc)}], "warnings": []})
+
+
+def _retention_store(client: EvolveClient | None = None):
+    from altk_evolve.retention.schedule_store import ScheduleStore
+
+    return ScheduleStore(client or get_client())
+
+
+def _retention_service(namespace_id: str | None, agent_id: str | None = None):
+    from altk_evolve.retention.service import RetentionService
+
+    return RetentionService(
+        get_client(), namespace_id if namespace_id is not None else evolve_config.namespace_id, agent_id=agent_id, store=_retention_store()
+    )
+
+
+def _retention_call(namespace_id, operation, *args, agent_id=None, **kwargs) -> str:
+    from altk_evolve.retention.service import RetentionError
+
+    try:
+        return _json_response(getattr(_retention_service(namespace_id, agent_id), operation)(*args, **kwargs))
+    except RetentionError as exc:
+        return _json_response(exc.payload())
+
+
+@mcp.tool()
+def put_retention_policy(
+    policy_id: str,
+    name: str,
+    policy: dict[str, Any] | str,
+    description: str | None = None,
+    enabled: bool = True,
+    namespace_id: str | None = None,
+) -> str:
+    """Create or replace the complete policy document in the supplied namespace."""
+    try:
+        parsed = _retention_object(policy)
+    except ValueError as exc:
+        return _json_response({"error": "Invalid retention policy", "details": [{"message": str(exc)}]})
+    return _retention_call(namespace_id, "put_policy", policy_id, name=name, policy=parsed, description=description, enabled=enabled)
+
+
+@mcp.tool()
+def get_retention_policy(policy_id: str, namespace_id: str | None = None) -> str:
+    """Return a namespace-owned policy."""
+    return _retention_call(namespace_id, "get_policy", policy_id)
+
+
+@mcp.tool()
+def list_retention_policies(namespace_id: str | None = None, include_disabled: bool = False) -> str:
+    """List policies in the supplied namespace."""
+    return _retention_call(namespace_id, "list_policies", include_disabled=include_disabled)
+
+
+@mcp.tool()
+def run_retention(
+    policy_id: str,
+    dry_run: bool = True,
+    as_of: str | None = None,
+    scan_limit: int | None = None,
+    run_id: str | None = None,
+    namespace_id: str | None = None,
+    metadata_filters: dict[str, Any] | str | None = None,
+    additional_matches: list[dict[str, Any]] | str | None = None,
+    initiated_by: str | None = None,
+) -> str:
+    """Execute a stored policy and persist its audit report through the shared retention service."""
+    try:
+        filters = _retention_object(metadata_filters) if metadata_filters else None
+        matches = json.loads(additional_matches) if isinstance(additional_matches, str) else additional_matches
+    except ValueError as exc:
+        return _json_response({"error": "Invalid retention request", "details": [{"message": str(exc)}]})
+    return _retention_call(
+        namespace_id,
+        "run",
+        policy_id,
+        dry_run=dry_run,
+        as_of=as_of,
+        scan_limit=scan_limit,
+        run_id=run_id,
+        metadata_filters=filters,
+        additional_matches=matches,
+        initiated_by=initiated_by,
+    )
+
+
+@mcp.tool()
+def list_retention_runs(namespace_id: str | None = None, agent_id: str | None = None, policy_id: str | None = None, limit: int = 50) -> str:
+    """List persisted retention runs in the requested scope."""
+    return _retention_call(namespace_id, "list_runs", agent_id=agent_id, policy_id=policy_id, limit=limit)
+
+
+def _protection_class(name: str, kind: str, hooks: list[str]) -> str:
+    searchable = f"{name} {kind}".lower()
+    if "secret" in searchable:
+        return "secrets"
+    if "pii" in searchable or "redact" in searchable:
+        return "pii"
+    if "access" in searchable:
+        return "access"
+    if "normalizer" in searchable or "provenance" in searchable:
+        return "provenance"
+    if "memory_pre_delete" in hooks:
+        return "deletion_protection"
+    return "memory_policy"
+
+
+def _configured_hook_plugins() -> list[dict[str, Any]]:
+    from altk_evolve.config.hooks import discover_hooks_config_path
+
+    specs = [spec.model_dump(mode="json") for spec in evolve_config.hooks.plugins]
+    yaml_path = evolve_config.hooks.plugins_yaml
+    if not yaml_path and not specs:
+        yaml_path = discover_hooks_config_path()
+    if yaml_path:
+        loaded = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8")) or {}
+        if not isinstance(loaded, dict):
+            raise ValueError(f"hooks config {yaml_path} must hold a mapping with a 'plugins' list")
+        yaml_specs = loaded.get("plugins", []) or []
+        if not isinstance(yaml_specs, list) or any(not isinstance(spec, dict) for spec in yaml_specs):
+            raise ValueError(f"hooks config {yaml_path} must contain a 'plugins' list of mappings")
+        specs = yaml_specs + specs
+    return specs
+
+
+@mcp.tool()
+def get_compliance_status(namespace_id: str | None = None) -> str:
+    """Report Evolve backend, retention, and configured memory-hook health."""
+    from altk_evolve.hooks.manager import get_plugin_manager, hooks_active
+    from altk_evolve.hooks.types import HookType, engine_available
+
+    resolved_ns = _resolve_namespace(namespace_id)
+    client = get_client()
+    manager = get_plugin_manager()
+    try:
+        specs = _configured_hook_plugins()
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        return _json_response({"healthy": False, "error": f"Unable to read hook configuration: {exc}"})
+
+    plugins = []
+    for spec in specs:
+        hooks = list(spec.get("hooks", []) or [])
+        mode = str(spec.get("mode", "sequential"))
+        enabled = mode != "disabled"
+        plugins.append(
+            {
+                "name": str(spec.get("name") or spec.get("kind") or "unnamed"),
+                "kind": str(spec.get("kind") or ""),
+                "protection_class": _protection_class(
+                    str(spec.get("name") or ""),
+                    str(spec.get("kind") or ""),
+                    hooks,
+                ),
+                "hooks": hooks,
+                "enabled": enabled,
+                "healthy": bool(manager is not None and enabled and all(manager.has_hooks_for(hook) for hook in hooks)),
+            }
+        )
+
+    try:
+        package_version = version("altk-evolve")
+    except PackageNotFoundError:
+        package_version = "unknown"
+
+    hook_coverage = {hook.value: hooks_active(hook) for hook in HookType}
+    hook_engine_available = engine_available()
+    retention_available = (callable(getattr(client, "scan_entities", None)) or callable(getattr(client, "get_all_entities", None))) and all(
+        callable(getattr(client, method, None)) for method in ("patch_entity_metadata", "delete_entity_by_id")
+    )
+    any_plugin_enabled = any(plugin["enabled"] for plugin in plugins)
+    healthy = (
+        client.ready()
+        and retention_available
+        and (not any_plugin_enabled or hook_engine_available)
+        and all(not plugin["enabled"] or plugin["healthy"] for plugin in plugins)
+    )
+    return _json_response(
+        {
+            "healthy": healthy,
+            "evolve_version": package_version,
+            "backend": evolve_config.backend,
+            "namespace_id": resolved_ns,
+            "retention_available": retention_available,
+            "hooks_enabled": manager is not None,
+            "hook_engine_available": hook_engine_available,
+            "hook_coverage": hook_coverage,
+            "plugins": plugins,
+        }
+    )
+
+
 def _empty_store_user_facts_response(user_id: str) -> str:
     return json.dumps({"user_id": user_id, "stored_count": 0, "updates": []})
 
@@ -387,8 +915,15 @@ def store_user_facts(
     message: str,
     metadata: str | None = None,
     enable_conflict_resolution: bool = False,
+    namespace_id: str | None = None,
 ) -> str:
-    """Extract and store user facts/preferences for a durable user identity."""
+    """Store personal facts in the supplied namespace (the service instance ID).
+
+    Omitting namespace_id retains the configured default for legacy callers.
+    The explicit user_id overrides any user identity supplied in metadata.
+    """
+    if namespace_id is not None and (not namespace_id.strip() or not user_id.strip()):
+        return json.dumps({"error": "namespace_id and user_id must be nonblank"})
     try:
         metadata_dict = _parse_metadata(metadata)
     except ValueError as e:
@@ -423,7 +958,7 @@ def store_user_facts(
         return _empty_store_user_facts_response(user_id)
 
     updates, _ = _persist_entities(
-        namespace_id=None,
+        namespace_id=namespace_id,
         entities=entities,
         enable_conflict_resolution=enable_conflict_resolution,
     )
@@ -453,48 +988,61 @@ def _search_facts_with_fallback(
     user_id: str,
     query: str | None,
     limit: int,
+    *,
+    allow_default_user: bool = True,
+    agent_id: str | None = None,
 ) -> list[RecordedEntity]:
     """Fetch fact entities for a user with the legacy fallback chain.
 
     Order: (1) user filter + query, (2) user filter without query, (3) default
     user with query, (4) default user without query. The default-user fallback
-    is skipped when the caller is already ``"default"``.
+    is skipped for explicitly scoped calls or when the caller is already ``"default"``.
     """
     client = get_client()
+    agent_filter = {"metadata.agent_id": agent_id} if agent_id is not None else {}
     facts = client.search_entities(
         namespace_id=namespace_id,
         query=query,
-        filters={"type": "fact", "metadata.user_id": user_id},
+        filters={"type": "fact", "metadata.user_id": user_id, **agent_filter},
         limit=limit,
     )
     if query and not facts:
         facts = client.search_entities(
             namespace_id=namespace_id,
             query=None,
-            filters={"type": "fact", "metadata.user_id": user_id},
+            filters={"type": "fact", "metadata.user_id": user_id, **agent_filter},
             limit=limit,
         )
-    if not facts and user_id != "default":
+    if allow_default_user and not facts and user_id != "default":
         facts = client.search_entities(
             namespace_id=namespace_id,
             query=query,
-            filters={"type": "fact", "metadata.user_id": "default"},
+            filters={"type": "fact", "metadata.user_id": "default", **agent_filter},
             limit=limit,
         )
         if query and not facts:
             facts = client.search_entities(
                 namespace_id=namespace_id,
                 query=None,
-                filters={"type": "fact", "metadata.user_id": "default"},
+                filters={"type": "fact", "metadata.user_id": "default", **agent_filter},
                 limit=limit,
             )
     return facts
 
 
 @mcp.tool()
-def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5) -> str:
-    """Retrieve categorized user facts/preferences for a durable user identity."""
-    namespace_id = evolve_config.namespace_id
+def retrieve_user_facts(
+    user_id: str, query: str | None = None, limit: int = 5, namespace_id: str | None = None, agent_id: str | None = None
+) -> str:
+    """Retrieve facts for the exact namespace/user pair without crossing users.
+
+    Only legacy calls omitting namespace_id retain the default-user fallback.
+    Reads of absent namespaces return no facts without creating a namespace.
+    """
+    if namespace_id is not None and (not namespace_id.strip() or not user_id.strip()):
+        return json.dumps({"error": "namespace_id and user_id must be nonblank"})
+    allow_default_user = namespace_id is None
+    namespace_id = namespace_id if namespace_id is not None else evolve_config.namespace_id
 
     if limit <= 0 or not get_client().namespace_exists(namespace_id):
         return json.dumps(
@@ -506,7 +1054,7 @@ def retrieve_user_facts(user_id: str, query: str | None = None, limit: int = 5) 
             }
         )
 
-    facts = _search_facts_with_fallback(namespace_id, user_id, query, limit)
+    facts = _search_facts_with_fallback(namespace_id, user_id, query, limit, allow_default_user=allow_default_user, agent_id=agent_id)
     categories = categorize_facts(facts)
     matched_count = sum(len(items) for items in categories.values())
 
@@ -529,6 +1077,7 @@ def save_trajectory(
     namespace_id: str | None = None,
     session_id: str | None = None,
     tools: str | None = None,
+    agent_id: str | None = None,
     processing_profile: str | None = None,
     profile_revision: int | None = None,
 ) -> list[RecordedEntity]:
@@ -571,6 +1120,8 @@ def save_trajectory(
         Trajectory(messages=messages, tools=json.loads(tools) if tools else None, trace_id=task_id) if processing_plan is not None else None
     )
     trajectory_metadata_base: dict = {"task_id": task_id}
+    if agent_id:
+        trajectory_metadata_base["agent_id"] = agent_id
     if effective_user_id:
         trajectory_metadata_base["user_id"] = effective_user_id
     if session_id:
@@ -598,6 +1149,8 @@ def save_trajectory(
         "source_task_id": task_id,
         "creation_mode": "auto-mcp",
     }
+    if agent_id:
+        guideline_metadata_base["agent_id"] = agent_id
     if effective_user_id:
         guideline_metadata_base["owner_id"] = effective_user_id
         guideline_metadata_base["user_id"] = effective_user_id
@@ -605,6 +1158,8 @@ def save_trajectory(
         guideline_metadata_base["session_id"] = session_id
 
     readback_filters: dict = {"type": "trajectory", "metadata.task_id": task_id}
+    if agent_id:
+        readback_filters["metadata.agent_id"] = agent_id
     if effective_user_id:
         readback_filters["metadata.user_id"] = effective_user_id
     if session_id:
@@ -713,6 +1268,7 @@ def create_entity(
     owner_id: str | None = None,
     visibility: str = "private",
     namespace_id: str | None = None,
+    created_at: str | None = None,
 ) -> str:
     """
     Create a single entity in the namespace.
@@ -725,12 +1281,23 @@ def create_entity(
         owner_id: Optional user ID to record as the owner of this entity
         visibility: Visibility of the entity — 'private' (default) or 'public'
         namespace_id: Optional namespace override. Falls back to the configured default.
+        created_at: Optional ISO-8601 timestamp for administrative fixture/import data.
 
     Returns:
         JSON string with the entity update details (ADD/UPDATE/DELETE/NONE) and entity ID
     """
     logger.info(f"Creating entity of type: {entity_type} (namespace override: {namespace_id})")
     try:
+        parsed_created_at = None
+        if created_at:
+            from datetime import UTC, datetime
+
+            try:
+                parsed_created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except ValueError:
+                return json.dumps({"error": "Invalid created_at", "message": "created_at must be ISO-8601"})
+            if parsed_created_at.tzinfo is None:
+                parsed_created_at = parsed_created_at.replace(tzinfo=UTC)
         if visibility not in ("private", "public"):
             return json.dumps({"error": f"Invalid visibility '{visibility}': must be 'private' or 'public'"})
         if visibility == "public" and not owner_id:
@@ -765,7 +1332,7 @@ def create_entity(
 
         entity = Entity(type=entity_type, content=content, metadata=metadata_dict)
 
-        updates, _ = _persist_entities(
+        updates, resolved_ns = _persist_entities(
             namespace_id=namespace_id,
             entities=[entity],
             enable_conflict_resolution=enable_conflict_resolution,
@@ -773,8 +1340,26 @@ def create_entity(
 
         if updates:
             update = updates[0]
+            if parsed_created_at and update.event == "ADD":
+                readback = get_client().set_entity_created_at(namespace_id=resolved_ns, entity_id=update.id, created_at=parsed_created_at)
+                return json.dumps(
+                    {
+                        "event": update.event,
+                        "id": readback.id,
+                        "type": readback.type,
+                        "content": readback.content,
+                        "metadata": readback.metadata,
+                        "created_at": readback.created_at.isoformat(),
+                    }
+                )
             return json.dumps(
-                {"event": update.event, "id": update.id, "type": update.type, "content": update.content, "metadata": update.metadata}
+                {
+                    "event": update.event,
+                    "id": update.id,
+                    "type": update.type,
+                    "content": update.content,
+                    "metadata": update.metadata,
+                }
             )
         else:
             return json.dumps({"error": "Entity creation failed"})
@@ -870,7 +1455,12 @@ def unpublish_entity(entity_id: str, user_id: str | None = None, namespace_id: s
 
 
 @mcp.tool()
-def delete_entity(entity_id: str, user_id: str | None = None, namespace_id: str | None = None) -> str:
+def delete_entity(
+    entity_id: str,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    namespace_id: str | None = None,
+) -> str:
     """
     Delete a specific entity by its ID.
 
@@ -890,8 +1480,7 @@ def delete_entity(entity_id: str, user_id: str | None = None, namespace_id: str 
         if entity is None:
             return json.dumps({"success": False, "error": f"Entity {entity_id} not found"})
 
-        existing_owner = (entity.metadata or {}).get("owner_id")
-        if existing_owner is not None and user_id != existing_owner:
+        if not _entity_owned_by(entity, user_id, agent_id):
             logger.info(f"Delete denied for entity={entity_id} namespace={resolved_ns}: caller is not owner")
             return json.dumps({"error": "Permission denied: caller is not the owner of this entity"})
 
@@ -935,3 +1524,165 @@ def process_trajectory(trajectory: dict, namespace_id: str, processing_profile: 
         )
         .model_dump(mode="json")
     )
+
+
+@mcp.tool()
+def put_retention_schedule(
+    schedule_id: str, definition: dict[str, Any] | str, namespace_id: str, initiated_by: str, expected_revision: int = 0
+) -> str:
+    """Create or replace a revisioned schedule using a complete definition."""
+    try:
+        parsed = _retention_object(definition)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)})
+    return _retention_call(
+        namespace_id, "put_schedule", schedule_id, parsed, initiated_by=initiated_by, expected_revision=expected_revision
+    )
+
+
+@mcp.tool()
+def get_retention_schedule(schedule_id: str, namespace_id: str) -> str:
+    """Show stored configuration and upcoming times; suspended schedules have no upcoming runs."""
+    return _retention_call(namespace_id, "get_schedule", schedule_id)
+
+
+@mcp.tool()
+def list_retention_schedules(namespace_id: str) -> str:
+    """List schedules in the supplied namespace."""
+    return _retention_call(namespace_id, "list_schedules")
+
+
+@mcp.tool()
+def delete_retention_schedule(schedule_id: str, namespace_id: str, expected_revision: int) -> str:
+    """Delete an inactive schedule at the last observed revision."""
+    return _retention_call(namespace_id, "delete_schedule", schedule_id, expected_revision=expected_revision)
+
+
+@mcp.tool()
+def list_retention_jobs(namespace_id: str, schedule_id: str | None = None, limit: int = 100) -> str:
+    """List admitted executions in the namespace."""
+    return _retention_call(namespace_id, "list_jobs", schedule_id=schedule_id, limit=limit)
+
+
+@mcp.tool()
+def cancel_retention_job(namespace_id: str, job_id: str) -> str:
+    """Request cancellation at the next entity-operation boundary."""
+    return _retention_call(namespace_id, "cancel_job", job_id)
+
+
+@mcp.tool()
+def acknowledge_interrupted_retention_job(namespace_id: str, job_id: str, worker_stopped: bool) -> str:
+    """Recover an interrupted claim after confirming its owning process stopped."""
+    return _retention_call(namespace_id, "recover_job", job_id, worker_stopped=worker_stopped)
+
+
+@mcp.tool()
+def create_retention_policy(policy_id: str, namespace_id: str, name: str | None = None, enabled: bool = True) -> str:
+    """Create an empty policy; duplicate IDs fail."""
+    return _retention_call(namespace_id, "create_policy", policy_id, name=name, enabled=enabled)
+
+
+@mcp.tool()
+def update_retention_policy(policy_id: str, namespace_id: str, name: str | None = None, enabled: bool | None = None) -> str:
+    """Update policy metadata, preserving its rules."""
+    return _retention_call(namespace_id, "update_policy", policy_id, name=name, enabled=enabled)
+
+
+@mcp.tool()
+def delete_retention_policy(policy_id: str, namespace_id: str) -> str:
+    """Delete a policy only if no schedule or active job references it."""
+    return _retention_call(namespace_id, "delete_policy", policy_id)
+
+
+@mcp.tool()
+def add_retention_rule(policy_id: str, name: str, rule: dict[str, Any], namespace_id: str) -> str:
+    """Append a named rule to the policy. Rule is a structured object."""
+    return _retention_call(namespace_id, "add_rule", policy_id, name, rule)
+
+
+@mcp.tool()
+def update_retention_rule(policy_id: str, name: str, changes: dict[str, Any], namespace_id: str) -> str:
+    """Update supplied fields of a named rule without changing its position."""
+    return _retention_call(namespace_id, "update_rule", policy_id, name, changes)
+
+
+@mcp.tool()
+def list_retention_rules(policy_id: str, namespace_id: str) -> str:
+    """List a policy's rules in execution order."""
+    return _retention_call(namespace_id, "list_rules", policy_id)
+
+
+@mcp.tool()
+def remove_retention_rule(policy_id: str, name: str, namespace_id: str) -> str:
+    """Remove one named rule from a policy."""
+    return _retention_call(namespace_id, "remove_rule", policy_id, name)
+
+
+@mcp.tool()
+def create_retention_schedule(schedule_id: str, definition: dict[str, Any], namespace_id: str, initiated_by: str) -> str:
+    """Create a schedule from a structured definition; duplicate IDs fail."""
+    return _retention_call(namespace_id, "create_schedule", schedule_id, definition, initiated_by=initiated_by)
+
+
+@mcp.tool()
+def update_retention_schedule(
+    schedule_id: str, changes: dict[str, Any], namespace_id: str, initiated_by: str, expected_revision: int
+) -> str:
+    """Update supplied schedule fields using the last observed revision."""
+    return _retention_call(
+        namespace_id, "update_schedule", schedule_id, changes, initiated_by=initiated_by, expected_revision=expected_revision
+    )
+
+
+@mcp.tool()
+def start_retention_schedule(schedule_id: str, namespace_id: str, initiated_by: str, expected_revision: int) -> str:
+    """Enable future admissions without changing timing or scope."""
+    return _retention_call(namespace_id, "start_schedule", schedule_id, initiated_by=initiated_by, expected_revision=expected_revision)
+
+
+@mcp.tool()
+def stop_retention_schedule(schedule_id: str, namespace_id: str, initiated_by: str, expected_revision: int) -> str:
+    """Suspend future admissions without cancelling existing jobs."""
+    return _retention_call(namespace_id, "stop_schedule", schedule_id, initiated_by=initiated_by, expected_revision=expected_revision)
+
+
+@mcp.tool()
+def get_retention_job(job_id: str, namespace_id: str) -> str:
+    """Get a namespace-owned scheduled execution."""
+    return _retention_call(namespace_id, "get_job", job_id)
+
+
+@mcp.tool()
+def get_retention_run(run_id: str, namespace_id: str, agent_id: str | None = None) -> str:
+    """Get a persisted report in the requested namespace/agent scope."""
+    return _retention_call(namespace_id, "get_run", run_id, agent_id=agent_id)
+
+
+@mcp.tool()
+def mark_retention(policy_id: str, namespace_id: str, initiated_by: str | None = None) -> str:
+    """Durably mark deletion candidates without deleting memories or running hooks."""
+    return _retention_call(namespace_id, "mark", policy_id, initiated_by=initiated_by)
+
+
+@mcp.tool()
+def sweep_retention(policy_id: str, namespace_id: str, initiated_by: str | None = None) -> str:
+    """Sweep marked candidates, honoring current legal holds in the deletion transaction."""
+    return _retention_call(namespace_id, "sweep", policy_id, initiated_by=initiated_by)
+
+
+@mcp.tool()
+def list_retention_candidates(namespace_id: str, agent_id: str | None = None, limit: int = 100) -> str:
+    """List durable candidate states without memory contents."""
+    return _retention_call(namespace_id, "list_candidates", agent_id=agent_id, limit=limit)
+
+
+@mcp.tool()
+def list_retention_audit(namespace_id: str, agent_id: str | None = None, limit: int = 100) -> str:
+    """List committed marking and deletion receipts without memory contents."""
+    return _retention_call(namespace_id, "list_audit", agent_id=agent_id, limit=limit)
+
+
+@mcp.tool()
+def record_source_deletion(namespace_id: str, source_id: str, user_id: str, agent_id: str, deleted_at: str) -> str:
+    """Trusted hosts report committed source deletions; repeated delivery is safe."""
+    return _retention_call(namespace_id, "record_source_deletion", source_id, user_id=user_id, agent_id=agent_id, deleted_at=deleted_at)

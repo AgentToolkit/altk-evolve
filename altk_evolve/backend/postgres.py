@@ -2,6 +2,8 @@ import datetime
 import json
 import logging
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -39,7 +41,7 @@ def _entity_row_factory(cursor: psycopg.Cursor[Any]) -> Callable[[Sequence[Any]]
 
 
 class PostgresEntityBackend(BaseEntityBackend):
-    conn: psycopg.Connection
+    _conn: psycopg.Connection
     embedding_model: SentenceTransformer
     embedding_dim: int
     _settings: PostgresDBSettings
@@ -49,6 +51,7 @@ class PostgresEntityBackend(BaseEntityBackend):
     def __init__(self, config: BaseSettings | None = None):
         super().__init__(config)
         self._settings = config if isinstance(config, type(postgres_db_settings)) else postgres_db_settings
+        self._transaction_connection: ContextVar[psycopg.Connection | None] = ContextVar("postgres_transaction", default=None)
         self.conn = self._connect_target_db()
         try:
             self._ensure_pgvector_extension()
@@ -64,6 +67,32 @@ class PostgresEntityBackend(BaseEntityBackend):
             if not self.conn.closed:
                 self.conn.close()
             raise
+
+    @property
+    def conn(self) -> psycopg.Connection:
+        return self._transaction_connection.get() or self._conn
+
+    @conn.setter
+    def conn(self, value: psycopg.Connection):
+        self._conn = value
+
+    @contextmanager
+    def transaction(self, namespace_id: str):
+        """Use an operation-local connection; ordinary concurrent writes also wait."""
+        if self._transaction_connection.get() is not None:
+            raise EvolveException("Nested processing transactions are not supported")
+        with self._connect(self._settings.dbname) as connection:
+            register_vector(connection)
+            with connection.transaction():
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        sql.SQL("LOCK TABLE {} IN SHARE ROW EXCLUSIVE MODE").format(sql.Identifier(self._table_name(namespace_id)))
+                    )
+                token = self._transaction_connection.set(connection)
+                try:
+                    yield
+                finally:
+                    self._transaction_connection.reset(token)
 
     def _connect(self, dbname: str) -> psycopg.Connection:
         return psycopg.connect(

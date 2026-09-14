@@ -303,13 +303,31 @@ resolution so model-returned metadata cannot replace it. Unchanged entities reta
 prior provenance. Results expose proposed entities and actual persistence updates
 separately; an update may consolidate into an existing entity.
 
-No transaction spans all processor outputs or backends. A storage failure can leave
-partial writes; retry/idempotency orchestration is not implemented. MCP ingestion
-retains its existing early raw writes; Phoenix profile execution marks a trajectory
-processed only after derived processing/persistence succeeds. Reuse a captured plan
-for application-managed retries. Effective settings are inspectable, but model outputs
-are not deterministic. Keep credentials out of profile config; inject deployment
-resources instead.
+Phoenix profile sync commits every processor's entity mutations and the raw trajectory
+completion marker in one `backend.transaction(namespace_id)`. It checks for the marker
+inside the same transaction, so a retry after rollback or a lost acknowledgement, or
+concurrent deliveries of the same trace, cannot append output again. As with existing
+Phoenix ingestion, completion is per trace, independent of later profile changes.
+
+Filesystem stages namespace changes in memory and publishes them with one atomic file
+replacement. A reentrant SQLite writer lock coordinates filesystem readers and writers
+across threads, clients, and processes; it is released by the OS after process failure.
+The lock covers the data directory, so unrelated namespaces in that directory also wait.
+PostgreSQL uses a dedicated connection and a namespace-table write lock for each transaction;
+exceptions roll back output mutations and the marker together. Locks span processing,
+including model calls. This favors consistency over write concurrency for now.
+
+Backends opt into the transaction capability by overriding `BaseEntityBackend.transaction`.
+Milvus and third-party backends without this capability reject Phoenix profile sync before
+processor execution or writes. Other existing ingestion paths remain available. External
+side effects performed by processors or hooks are not part of the entity transaction.
+
+Direct processing and MCP ingestion do not automatically open this transaction. Their
+multi-batch persistence may still leave partial writes on storage failure; applications
+can use the backend transaction explicitly where supported. MCP validates profile input
+before its early raw writes. Effective settings are inspectable, but model outputs are
+not deterministic. Keep credentials out of profile config; inject deployment resources
+instead.
 
 ## Validation and remaining scope
 

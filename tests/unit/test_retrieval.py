@@ -234,3 +234,57 @@ class TestInjectionModeRouting:
         assert out == "RETRIEVAL"
         retrieval_path.assert_called_once()
         static_path.assert_not_called()
+
+
+@pytest.mark.unit
+class TestAttributedGuidelines:
+    def test_static_mode_preserves_entity_ids(self):
+        import json
+
+        import altk_evolve.config.evolve as cfg
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+
+        entities = [
+            _make_entity("g-1", "Keep summaries concise"),
+            _make_entity("g-2", "Name the action owner"),
+        ]
+        client = MagicMock()
+        client.search_entities.return_value = entities
+
+        with (
+            patch.object(cfg.evolve_config, "injection_mode", "static"),
+            patch.object(mcp, "_resolve_namespace", return_value="ns"),
+            patch.object(mcp, "get_client", return_value=client),
+        ):
+            out = json.loads(mcp.get_guidelines_with_attribution("prepare an update"))
+
+        assert out == {
+            "text": "# Guidelines for: prepare an update\n\n1. Keep summaries concise\n2. Name the action owner",
+            "entity_ids": ["g-1", "g-2"],
+            "namespace_id": "ns",
+        }
+
+    def test_retrieval_mode_preserves_core_and_retrieved_ids(self):
+        import json
+
+        import altk_evolve.config.evolve as cfg
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+
+        core = _make_entity("core", "Always name the owner", support=3)
+        retrieved = _make_entity("specific", "Lead with the decision")
+        client = MagicMock()
+        client.select_guidelines.return_value = GuidelineSelection(
+            core=[core],
+            retrieved=[retrieved],
+        )
+
+        with (
+            patch.object(cfg.evolve_config, "injection_mode", "retrieval"),
+            patch.object(mcp, "_resolve_namespace", return_value="ns"),
+            patch.object(mcp, "get_client", return_value=client),
+        ):
+            out = json.loads(mcp.get_guidelines_with_attribution("prepare an update"))
+
+        assert out["entity_ids"] == ["core", "specific"]
+        assert "Always name the owner" in out["text"]
+        assert "Lead with the decision" in out["text"]

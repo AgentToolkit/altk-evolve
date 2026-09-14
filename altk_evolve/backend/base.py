@@ -1,6 +1,7 @@
 import datetime
 import logging
 from abc import ABC, abstractmethod
+from contextlib import AbstractContextManager
 from typing import Literal
 
 from pydantic_settings import BaseSettings
@@ -27,6 +28,15 @@ logger = logging.getLogger("entities-db")
 class BaseEntityBackend(ABC):
     def __init__(self, config: BaseSettings | None = None):
         pass
+
+    def transaction(self, namespace_id: str) -> AbstractContextManager[None]:
+        """Atomically commit or roll back entity mutations in one namespace.
+
+        Implementations must isolate concurrent writers and expose pending writes
+        to reads in the transaction. Unsupported backends fail before any work.
+        External side effects of hooks/processors are outside this contract.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support atomic namespace writes")
 
     @abstractmethod
     def ready(self) -> bool:
@@ -77,6 +87,33 @@ class BaseEntityBackend(ABC):
         """
         results = self._search_entities_impl(namespace_id, query, filters, limit)
         return dispatch_memory_post_read(self, namespace_id, results, query=query, filters=filters)
+
+    def scan_entities(self, namespace_id: str, filters: dict | None = None, limit: int = 100) -> list[RecordedEntity]:
+        """Read entities for administrative work without firing read hooks."""
+        return self._search_entities_impl(namespace_id, query=None, filters=filters, limit=limit)
+
+    def set_entity_created_at(self, namespace_id: str, entity_id: str, created_at: datetime.datetime) -> RecordedEntity:
+        """Set an imported entity's persisted creation time without a public-read hook.
+
+        This is intentionally an administrative import operation. It uses the
+        backend's normal patch/persist path without firing public-read hooks.
+        """
+        entities = self.scan_entities(namespace_id, filters={"id": entity_id}, limit=1)
+        if not entities:
+            raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
+        entity = entities[0]
+        self._patch_entity(
+            namespace_id,
+            entity_id,
+            entity.type,
+            serialize_content(entity.content),
+            int(created_at.timestamp()),
+            dict(entity.metadata or {}),
+        )
+        updated = self.scan_entities(namespace_id, filters={"id": entity_id}, limit=1)
+        if not updated:
+            raise EvolveException(f"Entity '{entity_id}' disappeared after timestamp update")
+        return updated[0]
 
     @abstractmethod
     def _search_entities_impl(

@@ -92,6 +92,20 @@ def test_create_entity_metadata_injection_manual_policy(mock_get_client):
     assert entity.metadata["creation_mode"] == "manual"
 
 
+def test_create_entity_import_timestamp_is_read_back(mock_get_client):
+    stamped = datetime.datetime(2020, 1, 2, tzinfo=datetime.UTC)
+    mock_get_client.update_entities.return_value = [EntityUpdate(id="123", type="fact", content="fake", event="ADD", metadata={})]
+    mock_get_client.set_entity_created_at.return_value = RecordedEntity(
+        id="123", type="fact", content="fake", created_at=stamped, metadata={}
+    )
+
+    result = json.loads(create_entity(content="fake", entity_type="fact", created_at="2020-01-02T00:00:00Z"))
+
+    assert result["id"] == "123"
+    assert result["created_at"].startswith("2020-01-02T00:00:00")
+    mock_get_client.set_entity_created_at.assert_called_once()
+
+
 def test_create_entity_no_metadata_injection_for_other_types(mock_get_client):
     mock_update = EntityUpdate(id="123", type="log", content="App started", event="ADD", metadata={})
     mock_get_client.update_entities.return_value = [mock_update]

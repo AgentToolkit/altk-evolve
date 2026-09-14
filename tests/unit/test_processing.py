@@ -404,18 +404,20 @@ def test_mcp_profile_readback_filters_identity(client, monkeypatch):
 
     monkeypatch.setattr(mcp_server, "get_client", lambda: client)
     client.processing.put("review", definition(), expected_revision=0)
-    for user, session in [("alice", "one"), ("bob", "one"), ("alice", "two")]:
+    for user, session, agent in [("alice", "one", "a"), ("bob", "one", "a"), ("alice", "two", "a"), ("alice", "one", "b")]:
         saved = mcp_server.save_trajectory(
             json.dumps([{"role": "user", "content": f"{user}/{session}"}]),
             namespace_id="memories",
             task_id="same-task",
             user_id=user,
             session_id=session,
+            agent_id=agent,
             processing_profile="review",
         )
         assert len(saved) == 1
         assert saved[0].metadata["user_id"] == user
         assert saved[0].metadata["session_id"] == session
+        assert saved[0].metadata["agent_id"] == agent
 
 
 @pytest.mark.parametrize("constrained", [False, True])
@@ -463,3 +465,115 @@ def test_invalid_profile_trajectory_does_not_write_raw_messages(client, monkeypa
             json.dumps([dict(role="user", content="hello")]), namespace_id="memories", processing_profile="review", tools="{}"
         )
     assert client.get_all_entities("memories") == []
+
+
+def test_phoenix_marker_failure_rolls_back_outputs_and_retry_is_safe(client, monkeypatch):
+    from unittest.mock import patch
+    from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    client.processing.put("review", definition(), expected_revision=0)
+    with patch("altk_evolve.sync.phoenix_sync.EvolveClient", return_value=client):
+        sync = PhoenixSync(namespace_id="memories", processing_profile="review")
+    trajectory = dict(messages=[dict(role="user", content="hello")], trace_id="trace", span_id="span", model="unknown", timestamp=0)
+    original = client.update_entities
+
+    def fail_marker(namespace, entities, **kwargs):
+        if entities[0].type == "trajectory":
+            raise OSError("marker failed")
+        return original(namespace, entities, **kwargs)
+
+    monkeypatch.setattr(client, "update_entities", fail_marker)
+    with pytest.raises(OSError, match="marker failed"):
+        sync._process_trajectory(trajectory)
+    assert client.get_all_entities("memories") == []
+    monkeypatch.setattr(client, "update_entities", original)
+    sync._process_trajectory(trajectory)
+    # A repeat delivery (including a lost acknowledgement) must not rerun plugins.
+    sync._process_trajectory(trajectory)
+    assert sorted(e.type for e in client.get_all_entities("memories")) == ["note", "trajectory"]
+
+
+def test_filesystem_transaction_rolls_back_updates_deletes_and_commit_failure(client, monkeypatch):
+    from altk_evolve.backend import filesystem
+
+    client.update_entities("memories", [Entity(type="note", content="existing")], enable_conflict_resolution=False)
+    before = client.get_all_entities("memories")
+    with pytest.raises(RuntimeError):
+        with client.backend.transaction("memories"):
+            client.patch_entity_metadata("memories", before[0].id, {"changed": True})
+            client.delete_entity_by_id("memories", before[0].id)
+            client.update_entities("memories", [Entity(type="note", content="replacement")], enable_conflict_resolution=False)
+            assert client.get_all_entities("memories")[0].content == "replacement"
+            raise RuntimeError("rollback")
+    assert client.get_all_entities("memories") == before
+    with monkeypatch.context() as patcher:
+        patcher.setattr(filesystem.os, "replace", Mock(side_effect=OSError("commit failed")))
+        with pytest.raises(OSError, match="commit failed"):
+            with client.backend.transaction("memories"):
+                client.update_entities("memories", [Entity(type="note", content="new")], enable_conflict_resolution=False)
+    assert client.get_all_entities("memories") == before
+    with client.backend.transaction("memories"):
+        client.update_entities("memories", [Entity(type="note", content="new")], enable_conflict_resolution=False)
+    assert len(client.get_all_entities("memories")) == 2
+
+
+def test_concurrent_phoenix_retries_use_one_commit(client, monkeypatch):
+    from unittest.mock import patch
+    from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    client.processing.put("review", definition(), expected_revision=0)
+    other = EvolveClient(client.config, processing=client.processing)
+    with patch("altk_evolve.sync.phoenix_sync.EvolveClient", side_effect=[client, other]):
+        syncs = [PhoenixSync(namespace_id="memories", processing_profile="review") for _ in range(2)]
+    trajectory = dict(messages=[dict(role="user", content="hello")], trace_id="trace", span_id="span", model="unknown", timestamp=0)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(lambda sync: sync._process_trajectory(trajectory), syncs))
+    assert sorted(e.type for e in client.get_all_entities("memories")) == ["note", "trajectory"]
+
+
+def test_unsupported_atomic_backend_fails_before_processing(client, monkeypatch):
+    from altk_evolve.backend.base import BaseEntityBackend
+    from altk_evolve.sync.phoenix_sync import PhoenixSync
+    from unittest.mock import patch
+
+    client.processing.put("review", definition(), expected_revision=0)
+    monkeypatch.setattr(client.backend, "transaction", lambda namespace: BaseEntityBackend.transaction(client.backend, namespace))
+    with patch("altk_evolve.sync.phoenix_sync.EvolveClient", return_value=client):
+        sync = PhoenixSync(namespace_id="memories", processing_profile="review")
+    process = Mock(side_effect=AssertionError("must not run"))
+    monkeypatch.setattr(client, "process_trajectory", process)
+    with pytest.raises(NotImplementedError, match="atomic namespace writes"):
+        sync._process_trajectory(
+            dict(messages=[dict(role="user", content="hi")], trace_id="trace", span_id="span", model="unknown", timestamp=0)
+        )
+    process.assert_not_called()
+    assert client.get_all_entities("memories") == []
+
+
+def test_filesystem_process_crash_rolls_back_and_releases_lock(client):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = """
+import os, sys
+from altk_evolve.backend.filesystem import FilesystemEntityBackend
+from altk_evolve.config.filesystem import FilesystemSettings
+from altk_evolve.schema.core import Entity
+backend = FilesystemEntityBackend(FilesystemSettings(data_dir=sys.argv[1]))
+with backend.transaction("memories"):
+    backend.update_entities("memories", [Entity(type="note", content="uncommitted")], False)
+    os._exit(19)
+"""
+    crashed = subprocess.run(
+        [sys.executable, "-c", script, str(client.backend.data_dir)],
+        cwd=Path(__file__).resolve().parents[2],
+        timeout=30,
+        capture_output=True,
+        text=True,
+    )
+    assert crashed.returncode == 19, crashed.stderr
+    assert client.get_all_entities("memories") == []
+    with client.backend.transaction("memories"):
+        client.update_entities("memories", [Entity(type="note", content="retry")], enable_conflict_resolution=False)
+    assert [entity.content for entity in client.get_all_entities("memories")] == ["retry"]

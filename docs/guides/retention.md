@@ -2,13 +2,17 @@
 
 Memories accumulate. Some go stale, some are never read again, and some — session transcripts especially — carry data you agreed to keep for a bounded time. `altk_evolve.retention` applies a declarative policy to a namespace: it selects entities by type and age, then either **flags** them for review or **deletes** them, and can cascade a session delete to the memories derived from that session.
 
-It is a sweep, not an interceptor: you run it (CLI, cron, or in code), it reports what it would do, and it only mutates when you say so. **Dry run is the default everywhere.**
+It is a sweep, not an interceptor: you run it (CLI, cron, or in code), it reports what it would do, and it only mutates when you say so. **The `run` operation defaults to dry run.** Explicit `mark` and `sweep` commands perform their named operations.
+
+For PostgreSQL, applied runs use [durable mark and sweep](retention-api.md#postgresql-collection): marking records candidates without hooks; sweeping checks current legal holds directly and commits deletion with an audit receipt. The lower-level engine and other backends retain the immediate, hook-based behavior described below.
 
 ## Quick start
 
 ```bash
-evolve retention run --policy examples/retention.example.yaml            # dry run: report only
-evolve retention run --policy examples/retention.example.yaml --apply    # enforce
+evolve retention policies create standard --namespace my-service
+evolve retention policies rules add standard --name old-memories --namespace my-service --max-age-days 90 --action delete
+evolve retention run standard --namespace my-service --initiated-by alice          # dry run
+evolve retention run standard --namespace my-service --initiated-by alice --apply  # enforce
 ```
 
 Or in code:
@@ -17,12 +21,40 @@ Or in code:
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.retention import RetentionEngine, RetentionPolicy
 
-policy = RetentionPolicy.from_file("retention.yaml")
+policy = RetentionPolicy.from_mapping({"rules": [
+    {"name": "old-memories", "max_age_days": 90, "action": "delete"}
+]})
 report = RetentionEngine(EvolveClient()).apply("my-namespace", policy)  # dry_run=True by default
 print(report.summary())
 for item in [*report.deleted, *report.flagged]:
     print(item.action, item.entity_id, item.reason, "—", item.detail)
 ```
+
+Or through the MCP server:
+
+```text
+validate_retention_policy(policy='{"rules":[...]}')
+put_retention_policy(policy_id='standard', name='Standard', policy='{"rules":[...]}')
+list_retention_policies()
+run_retention(policy_id='standard')                    # dry run
+run_retention(policy_id='standard', dry_run=false)     # enforce
+list_retention_runs(policy_id='standard')
+```
+
+The MCP report includes the retention item plus a pre-action entity snapshot
+(`content_preview`, attribution metadata, and session/provenance identifiers),
+so an audit UI can still explain an applied deletion after the entity is gone.
+`as_of` is an optional ISO-8601 clock override for deterministic audits and
+demonstrations. Evolve owns both the policy catalog and the run history. With a
+PostgreSQL entity backend those records use the same PostgreSQL database; other
+backends use a local SQLite catalog, whose location can be overridden with
+`EVOLVE_RETENTION_STORE_PATH`.
+
+An integrating service may pass `additional_matches` to `run_retention` when a
+criterion depends on data outside Evolve, such as whether a source conversation
+still exists. Evolve re-resolves each entity under the run's metadata filters,
+performs the deletion through the normal hook path, and includes the result in
+the persisted report.
 
 [`examples/retention_demo.py`](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/retention_demo.py) is a runnable end-to-end walkthrough.
 
@@ -93,7 +125,7 @@ Because deletes go through the client's public API, they flow through the `memor
 
 `RetentionEngine.apply()` defaults to `dry_run=True`, and the CLI requires an explicit `--apply`. A dry run reads the namespace, computes every decision, and mutates nothing; the returned `RetentionReport` is identical in shape to an enforced one, with `dry_run=True`.
 
-Each `RetentionItem` carries five things: `entity_id`, `entity_type`, `action`, `reason` (`age` / `unused` / `cascade:<trace_id>`) and `rule` — plus `detail`, a human-readable *why* that names the numbers the decision was made on. Here is a real dry run of the [example policy above](#policy-format) over a small namespace — an old session, a memory derived from it, a stale-but-recently-read guideline, and an ancient never-recalled guideline:
+Each `RetentionItem` carries five things: `entity_id`, `entity_type`, `action`, `reason` (`age` / `unused` / `cascade:<trace_id>`) and `rule` — plus `detail`, a human-readable *why* that names the numbers the decision was made on. Here is an illustrative rendering of a dry run of the [example policy above](#policy-format) over a small namespace — an old session, a memory derived from it, a stale-but-recently-read guideline, and an ancient never-recalled guideline:
 
 ```
 DELETE  4   trajectory reason=age          rule=old-sessions
@@ -108,7 +140,7 @@ SKIP    2   guideline  reason=unused       rule=unused-guidelines
 warning: 3 of 4 entities carry no metadata.last_accessed, so their disuse was measured from created_at …
 ```
 
-Note the last two lines. The stale guideline is **flagged** by the `age` rule (`stale-guidelines`), not by the delete rule. The ancient never-recalled guideline *matches* the `unused-guidelines` **delete** rule, but because it carries no `last_accessed` stamp its disuse was only inferred from `created_at`, so the rule's default `on_missing_access_signal: skip` **spares** it — it lands in `report.skipped` (the "Skipped" table), never deleted and never flagged. See [When the unused signal is missing](#when-the-unused-signal-is-missing).
+Note the last two lines. The stale guideline is **flagged** by the `age` rule (`stale-guidelines`), not by the delete rule. The ancient never-recalled guideline *matches* the `unused-guidelines` **delete** rule, but because it carries no `last_accessed` stamp its disuse was only inferred from `created_at`, so the rule's default `on_missing_access_signal: skip` **spares** it — it lands in `report.skipped` (the report’s `skipped` entries), never deleted and never flagged. See [When the unused signal is missing](#when-the-unused-signal-is-missing).
 
 Read the dry run before you apply. That is the whole point of it.
 
@@ -118,6 +150,7 @@ Read the dry run before you apply. That is the whole point of it.
 
 - **`AccessStampPlugin`** (shipped with the [hook seam](memory-hooks.md)) stamps `last_accessed` on every entity returned by a public `search_entities`, via `memory_post_read`. This is the automatic path, and **enabling it is what makes an unused rule mean anything**. Note its cost: fire-and-forget tasks are awaited before the read returns, so every public read pays one metadata write per returned entity (~3.7 ms vs ~0.1 ms for a 10-entity filesystem read).
 - **`EvolveClient.record_access(namespace_id, entity_ids)`** is the explicit path, for callers that do not run hooks, or that want to record a *use* that was not a store read — a memory pulled from a cache and actually acted on, say. It goes through the same core function as the plugin (`build_access_stamps`), so the key, the format, and the one-stamp-per-batch behaviour are identical. Running both is harmless.
+- **The MCP `record_access` tool** exposes that explicit path to remote integrations. The MCP `list_entities` tool defaults to an administrative scan that does not stamp access; set `record_access=true` when the list is a genuine user-facing recall.
 
 **If neither is in play, the signal does not exist.** The engine then falls back to `created_at` — and says so, rather than quietly pretending it measured disuse. Every affected item's `detail` names the fallback, and the report carries a run-level warning:
 
@@ -193,10 +226,11 @@ In scope: private entities under `.evolve/entities/` and session files under `.e
 - One failing entity does not abort the sweep — the failure is logged and recorded in `report.errors`, and the remaining entities are processed. The CLI exits non-zero when `errors` is non-empty.
 - Naive `created_at` values are treated as UTC.
 - Retention is not a hook: it is a periodic sweep you schedule. There is no automatic expiry on write or read.
+- Retention and administrative inventory use the client's non-access scan path, so a compliance sweep does not refresh every entity's `last_accessed` timestamp.
 
 ## Known limitations
 
-- **No per-namespace or global scheduling.** You run the sweep; nothing runs it for you.
+- **A running service is required.** The Evolve server owns [namespace schedules and execution](retention-scheduling.md); embedded hosts must attach the scheduling runtime to their application lifespan.
 - **No restore.** `delete` is final. Use `flag` first if you want a review stage.
 - **`max_unused_days` is only as good as your access stamping** — see above. Without `AccessStampPlugin` or `record_access`, it is an age rule wearing a different name.
 - **The plugin-side cascade needs a link nothing writes yet** — see the table above.
