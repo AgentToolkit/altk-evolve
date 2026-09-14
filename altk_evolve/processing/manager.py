@@ -1,4 +1,4 @@
-"""Shared profile management and execution used by every transport."""
+"""In-process profile management and trajectory execution shared by all interfaces."""
 
 from __future__ import annotations
 
@@ -28,7 +28,9 @@ def _encode(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
-class ProcessingService:
+class ProcessingManager:
+    """Coordinate profile storage, plugin resolution, and execution in the caller’s process."""
+
     def __init__(self, *, registry: ProcessorRegistry | None = None, repository: ProfileRepository | None = None):
         self.registry = registry if registry is not None else ProcessorRegistry.discover()
         self.repository = repository if repository is not None else InMemoryProfileRepository()

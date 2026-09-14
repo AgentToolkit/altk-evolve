@@ -1,4 +1,4 @@
-"""REST adapters for the transport-independent processing service."""
+"""REST adapters for the in-process processing manager."""
 
 from typing import Any
 
@@ -12,7 +12,7 @@ from altk_evolve.schema.exceptions import NamespaceNotFoundException
 router = APIRouter()
 
 
-def service():
+def manager():
     from altk_evolve.frontend.mcp.mcp_server import get_client
 
     return get_client().processing
@@ -25,13 +25,13 @@ def _http_error(exc):
 
 @router.get("/processors")
 def list_processors():
-    return service().registry.inventory()
+    return manager().registry.inventory()
 
 
 @router.get("/processing-profiles/{profile_id}")
 def get_profile(profile_id: str, response: Response, revision: int | None = None):
     try:
-        result = service().get(profile_id, revision)
+        result = manager().get(profile_id, revision)
     except ProcessingError as exc:
         raise _http_error(exc) from exc
     response.headers["ETag"] = f'"{result["revision"]}"'
@@ -55,7 +55,7 @@ def put_profile(
     else:
         raise HTTPException(428, 'Use If-None-Match: * to create, or If-Match: "revision" to update')
     try:
-        result = service().put(profile_id, definition, expected_revision=expected)
+        result = manager().put(profile_id, definition, expected_revision=expected)
     except ProcessingError as exc:
         raise _http_error(exc) from exc
     response.headers["ETag"] = f'"{result["revision"]}"'

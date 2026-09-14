@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.config.postgres import PostgresDBSettings
 from altk_evolve.frontend.client.evolve_client import EvolveClient
-from altk_evolve.processing import ProcessingService, ProcessorRegistry, ProcessorResult
+from altk_evolve.processing import ProcessingManager, ProcessorRegistry, ProcessorResult
 from altk_evolve.schema.core import Entity
 from altk_evolve.sync.phoenix_sync import PhoenixSync
 
@@ -60,7 +60,7 @@ def sync(tmp_path, monkeypatch):
     settings = PostgresDBSettings(**{key: value for key, value in options.items() if key in PostgresDBSettings.model_fields})
     registry = ProcessorRegistry()
     registry.register(NoteProcessor)
-    processing = ProcessingService(registry=registry)
+    processing = ProcessingManager(registry=registry)
     processing.put("review", {"processors": [{"id": "note", "plugin": "tests.note"}]}, expected_revision=0)
     client = EvolveClient(EvolveConfig(backend="postgres", settings=settings), processing=processing)
     namespace = "processing_" + uuid.uuid4().hex

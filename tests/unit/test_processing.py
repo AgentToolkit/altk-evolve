@@ -14,7 +14,7 @@ from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.processing import (
     InMemoryProfileRepository,
     ProcessingError,
-    ProcessingService,
+    ProcessingManager,
     ProcessorRegistry,
     ProcessorResult,
     ProfileConflict,
@@ -58,18 +58,18 @@ def definition(label="old", plugin="tests.echo"):
     return {"processors": [{"id": "first", "plugin": plugin, "config": {"label": label}}]}
 
 
-def make_service(repository=None, processor_type=EchoProcessor):
+def make_manager(repository=None, processor_type=EchoProcessor):
     registry = ProcessorRegistry()
     registry.register(processor_type)
-    return ProcessingService(registry=registry, repository=repository)
+    return ProcessingManager(registry=registry, repository=repository)
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("EVOLVE_HOOKS_CONFIG", "")
-    service = make_service(SQLiteProfileRepository(tmp_path / "profiles.db"))
-    client = EvolveClient(EvolveConfig(settings=FilesystemSettings(data_dir=str(tmp_path / "entities"))), processing=service)
+    manager = make_manager(SQLiteProfileRepository(tmp_path / "profiles.db"))
+    client = EvolveClient(EvolveConfig(settings=FilesystemSettings(data_dir=str(tmp_path / "entities"))), processing=manager)
     client.create_namespace("memories")
     return client
 
@@ -77,21 +77,21 @@ def client(tmp_path, monkeypatch):
 @pytest.mark.parametrize("persistent", [False, True])
 def test_revision_conflicts_and_old_revisions(tmp_path, persistent):
     repository = SQLiteProfileRepository(tmp_path / "profiles.db") if persistent else InMemoryProfileRepository()
-    service = make_service(repository)
-    service.put("review", definition(), expected_revision=0)
+    manager = make_manager(repository)
+    manager.put("review", definition(), expected_revision=0)
     with ThreadPoolExecutor(2) as pool:
-        futures = [pool.submit(service.put, "review", definition(label), expected_revision=1) for label in ("a", "b")]
+        futures = [pool.submit(manager.put, "review", definition(label), expected_revision=1) for label in ("a", "b")]
     assert sum(isinstance(f.exception(), ProfileConflict) for f in futures) == 1
-    assert service.resolve("review").revision == 2
-    assert service.resolve("review", revision=1).manifest()["processors"][0]["config"]["label"] == "old"
+    assert manager.resolve("review").revision == 2
+    assert manager.resolve("review", revision=1).manifest()["processors"][0]["config"]["label"] == "old"
     with pytest.raises(ProfileNotFound):
-        service.resolve("review", revision=99)
+        manager.resolve("review", revision=99)
     with pytest.raises(ProcessingError):
-        service.put("review", {"processors": [{"id": "bad", "plugin": "tests.echo", "config": {"unknown": 1}}]}, expected_revision=2)
-    assert service.get("review")["revision"] == 2
+        manager.put("review", {"processors": [{"id": "bad", "plugin": "tests.echo", "config": {"unknown": 1}}]}, expected_revision=2)
+    assert manager.get("review")["revision"] == 2
     if persistent:
-        restarted = make_service(SQLiteProfileRepository(tmp_path / "profiles.db"))
-        assert restarted.get("review") == service.get("review")
+        restarted = make_manager(SQLiteProfileRepository(tmp_path / "profiles.db"))
+        assert restarted.get("review") == manager.get("review")
 
 
 def test_inflight_plan_isolation_and_latest_next(client):
@@ -104,15 +104,15 @@ def test_inflight_plan_isolation_and_latest_next(client):
                 assert release.wait(10)
             return super().process(trajectory, context=context)
 
-    client._processing = make_service(processor_type=Blocking)
-    service = client.processing
-    service.put("review", definition(), expected_revision=0)
-    original = service.resolve("review")
+    client._processing = make_manager(processor_type=Blocking)
+    manager = client.processing
+    manager.put("review", definition(), expected_revision=0)
+    original = manager.resolve("review")
     with ThreadPoolExecutor(1) as pool:
         future = pool.submit(client.process_trajectory, {"messages": []}, namespace_id="memories", plan=original)
         try:
             assert started.wait(10)
-            service.put("review", definition("new"), expected_revision=1)
+            manager.put("review", definition("new"), expected_revision=1)
         finally:
             release.set()
         first = future.result()
@@ -133,21 +133,21 @@ def test_discovery_is_not_activation_and_failures_are_explicit(monkeypatch):
     monkeypatch.setattr("altk_evolve.processing.registry.entry_points", lambda **_: [entry])
     registry = ProcessorRegistry.discover(include_builtins=False)
     entry.load.assert_not_called()
-    service = ProcessingService(registry=registry)
-    plan = service.validate(definition())
+    manager = ProcessingManager(registry=registry)
+    plan = manager.validate(definition())
     entry.load.assert_called_once()
     assert plan.processor_types[0].id == EchoProcessor.id
     with pytest.raises(ProcessingError, match="Duplicate"):
         registry.register(EchoProcessor)
     with pytest.raises(ProcessingError, match="Cannot load"):
-        service.validate(definition(plugin="missing"))
+        manager.validate(definition(plugin="missing"))
     EchoProcessor.version = "2"
     try:
         # A plan already captured implementation/config, while profile resolves check versions.
-        service.put("review", definition(), expected_revision=0)
+        manager.put("review", definition(), expected_revision=0)
         EchoProcessor.version = "3"
         with pytest.raises(ProcessingError, match="version changed"):
-            service.resolve("review")
+            manager.resolve("review")
     finally:
         EchoProcessor.version = "1"
 
@@ -186,8 +186,8 @@ def test_builtin_mode_and_config_are_captured(monkeypatch):
         ]
 
     monkeypatch.setattr("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines_fast", generate)
-    service = make_service(processor_type=GuidelineProcessor)
-    plan = service.validate(
+    manager = make_manager(processor_type=GuidelineProcessor)
+    plan = manager.validate(
         {
             "processors": [
                 {
@@ -203,12 +203,12 @@ def test_builtin_mode_and_config_are_captured(monkeypatch):
             ]
         }
     )
-    result = service.process({"messages": [{"role": "user", "content": "task"}]}, plan=plan)
+    result = manager.process({"messages": [{"role": "user", "content": "task"}]}, plan=plan)
     assert calls[0].guidelines_model == "captured-model"
     assert calls[0].segmentation_enabled is False
     assert result.entities[0].metadata["generation_method"] == "consistency-fast"
     with pytest.raises(ProcessingError):
-        service.validate({"processors": [{"id": "g", "plugin": "evolve.guidelines", "config": {"guidelines_mode": "typo"}}]})
+        manager.validate({"processors": [{"id": "g", "plugin": "evolve.guidelines", "config": {"guidelines_mode": "typo"}}]})
 
 
 def test_conflict_resolution_uses_captured_settings_and_stamps_after_model(client, monkeypatch):
@@ -221,7 +221,7 @@ def test_conflict_resolution_uses_captured_settings_and_stamps_after_model(clien
             result.enable_conflict_resolution = True
             return result
 
-    client._processing = make_service(processor_type=Conflicts)
+    client._processing = make_manager(processor_type=Conflicts)
     monkeypatch.setenv("EVOLVE_CONFLICT_RESOLUTION_MODEL", "before")
     plan = client.processing.validate(definition())
     monkeypatch.setattr(llm_settings, "conflict_resolution_model", "after")
@@ -235,7 +235,7 @@ def test_conflict_resolution_uses_captured_settings_and_stamps_after_model(clien
     assert client.get_all_entities("memories")[0].metadata["processing"]["operation_id"] == result.operation_id
 
 
-def test_rest_mcp_cli_share_profile_service(client, monkeypatch, tmp_path):
+def test_rest_mcp_cli_share_profile_manager(client, monkeypatch, tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from typer.testing import CliRunner
@@ -319,16 +319,16 @@ def test_mcp_ingestion_and_phoenix_sync_use_profiles(client, monkeypatch):
 
 def test_validation_failure_and_repository_write_failure_leave_profile_unchanged():
     repository = InMemoryProfileRepository()
-    service = make_service(repository)
-    service.put("review", definition("old"), expected_revision=0)
-    original = service.get("review")
+    manager = make_manager(repository)
+    manager.put("review", definition("old"), expected_revision=0)
+    original = manager.get("review")
     with pytest.raises(ProcessingError):
-        service.put("review", definition(plugin="not-installed"), expected_revision=1)
-    assert service.get("review") == original
+        manager.put("review", definition(plugin="not-installed"), expected_revision=1)
+    assert manager.get("review") == original
     repository.put = Mock(side_effect=OSError("storage unavailable"))
     with pytest.raises(OSError):
-        service.put("review", definition("new"), expected_revision=1)
-    assert service.get("review") == original
+        manager.put("review", definition("new"), expected_revision=1)
+    assert manager.get("review") == original
 
 
 def test_unknown_namespace_fails_before_processor_calls(client):
@@ -338,7 +338,7 @@ def test_unknown_namespace_fails_before_processor_calls(client):
         def process(self, trajectory, *, context):
             raise AssertionError("must validate destination before execution")
 
-    client._processing = make_service(processor_type=Never)
+    client._processing = make_manager(processor_type=Never)
     plan = client.processing.validate(definition())
     with pytest.raises(NamespaceNotFoundException):
         client.process_trajectory({"messages": []}, namespace_id="missing", plan=plan)
@@ -358,13 +358,13 @@ def test_processor_owns_construction_and_instances_are_operation_local():
             calls.append(resource)
             return cls(config, resource)
 
-    service = make_service(processor_type=RequiresResource)
-    service.registry.inventory()
-    service.put("review", definition(), expected_revision=0)
-    plan = service.resolve("review")
+    manager = make_manager(processor_type=RequiresResource)
+    manager.registry.inventory()
+    manager.put("review", definition(), expected_revision=0)
+    plan = manager.resolve("review")
     assert calls == []  # Discovery, schema validation, and resolution never construct instances.
-    first = service.process({"messages": []}, plan=plan)
-    second = service.process({"messages": []}, plan=plan)
+    first = manager.process({"messages": []}, plan=plan)
+    second = manager.process({"messages": []}, plan=plan)
     assert len(calls) == 2 and calls[0] is not calls[1]
     assert first.entities[0].metadata["values"] == second.entities[0].metadata["values"] == [1, 2]
     assert plan.manifest()["processors"][0]["config"]["values"] == [1]

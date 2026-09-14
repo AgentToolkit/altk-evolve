@@ -51,9 +51,9 @@ Plugin validation runs before publication. Invalid modes do not silently fall ba
 ## Python: no profile persistence required
 
 ```python
-from altk_evolve.processing import ProcessingService
+from altk_evolve.processing import ProcessingManager
 
-processing = ProcessingService()  # built-ins + installed entry points; in-memory profiles
+processing = ProcessingManager()  # built-ins + installed entry points; in-memory profiles
 plan = processing.validate(definition)
 result = processing.process({"messages": messages}, plan=plan)
 # result.entities contains proposed entities; this form performs no database writes.
@@ -73,7 +73,7 @@ result = client.process_trajectory(
 )
 ```
 
-Without an explicit service, `EvolveClient.processing` lazily creates a service with
+Without an explicit manager, `EvolveClient.processing` lazily creates an in-process manager with
 a SQLite profile repository. Its path is `EVOLVE_PROCESSING_PROFILES_PATH`, falling
 back to `EVOLVE_SQLITE_PATH`, `EVOLVE_SQLITE_URI`, then `entities.sqlite.db`.
 An injected `ProfileRepository` can use application storage instead. The profile
@@ -197,11 +197,11 @@ packages or supply arbitrary import paths.
 Local plugins use the same registry:
 
 ```python
-from altk_evolve.processing import ProcessorRegistry, ProcessingService
+from altk_evolve.processing import ProcessorRegistry, ProcessingManager
 
 registry = ProcessorRegistry.discover()
 registry.register(MyProcessor)
-processing = ProcessingService(registry=registry)
+processing = ProcessingManager(registry=registry)
 ```
 
 Use `discover(installed=False)` to exclude installed extensions, or

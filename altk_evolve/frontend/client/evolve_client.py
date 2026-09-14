@@ -15,7 +15,7 @@ from altk_evolve.schema.guidelines import ConsolidationResult
 
 if TYPE_CHECKING:
     from altk_evolve.config.llm import LLMSettings
-    from altk_evolve.processing import ProcessingPlan, ProcessingResult, ProcessingService, ProfileReference, Trajectory
+    from altk_evolve.processing import ProcessingPlan, ProcessingResult, ProcessingManager, ProfileReference, Trajectory
     from altk_evolve.retention.service import RetentionService
     from altk_evolve.llm.guidelines.retrieval import GuidelineSelection, SimilarityKey
 
@@ -46,7 +46,7 @@ class EvolveClient:
         self,
         config: EvolveConfig | None = None,
         *,
-        processing: ProcessingService | None = None,
+        processing: ProcessingManager | None = None,
         processing_selector: Callable[[Any], ProcessingPlan | ProfileReference | str | None] | None = None,
     ):
         """Initialize the Evolve client."""
@@ -99,9 +99,9 @@ class EvolveClient:
         initialize_hooks(self.config.hooks)
 
     @property
-    def processing(self) -> ProcessingService:
-        """Shared processing API; inject a service for custom registries/repositories."""
-        from altk_evolve.processing import ProcessingService, SQLiteProfileRepository
+    def processing(self) -> ProcessingManager:
+        """In-process processing API; inject a manager for custom registries/repositories."""
+        from altk_evolve.processing import ProcessingManager, SQLiteProfileRepository
 
         with self._processing_lock:
             if self._processing is None:
@@ -111,7 +111,7 @@ class EvolveClient:
                     or os.getenv("EVOLVE_SQLITE_URI")
                     or "entities.sqlite.db"
                 )
-                self._processing = ProcessingService(repository=SQLiteProfileRepository(path))
+                self._processing = ProcessingManager(repository=SQLiteProfileRepository(path))
             return self._processing
 
     def process_trajectory(

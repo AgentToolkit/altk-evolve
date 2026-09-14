@@ -15,7 +15,7 @@ from altk_evolve.processing.models import (
 )
 from altk_evolve.processing.registry import ProcessorRegistry
 from altk_evolve.processing.repository import InMemoryProfileRepository, ProfileRepository, SQLiteProfileRepository
-from altk_evolve.processing.service import ProcessingService
+from altk_evolve.processing.manager import ProcessingManager
 
 __all__ = [
     "ProcessingError",
@@ -33,5 +33,5 @@ __all__ = [
     "InMemoryProfileRepository",
     "ProfileRepository",
     "SQLiteProfileRepository",
-    "ProcessingService",
+    "ProcessingManager",
 ]
