@@ -92,6 +92,7 @@ nav:
     - Policies: reference/policies.md
   - Integrations:
     - Evolve Lite (Claude Code): integrations/claude/evolve-lite.md
+    - Memory Provider (Hermes): integrations/hermes.md
   - Results:
     - Benchmarks: results/index.md
   - Operations:
