@@ -68,6 +68,12 @@ class PostgresEntityBackend(BaseEntityBackend):
                 self.conn.close()
             raise
 
+    def profile_repository(self):
+        """Use the same PostgreSQL database/settings as entity storage."""
+        from altk_evolve.processing.repository import PostgresProfileRepository
+
+        return PostgresProfileRepository(lambda: self._connect(self._settings.dbname))
+
     @property
     def conn(self) -> psycopg.Connection:
         return self._transaction_connection.get() or self._conn

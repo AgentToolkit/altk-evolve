@@ -51,7 +51,7 @@ class Processor:
         "PYTHONPATH": os.pathsep.join(filter(None, [str(root), str(package), os.environ.get("PYTHONPATH", "")])),
         "EVOLVE_BACKEND": "filesystem",
         "EVOLVE_DATA_DIR": str(tmp_path / "entities"),
-        "EVOLVE_PROCESSING_PROFILES_PATH": str(tmp_path / "profiles.db"),
+        "EVOLVE_SQLITE_PATH": str(tmp_path / "entities.sqlite.db"),
         "XDG_CONFIG_HOME": str(tmp_path / "config"),
         "EVOLVE_HOOKS_CONFIG": "",
     }

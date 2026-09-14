@@ -1,4 +1,4 @@
-"""CLI profile management and trajectory processing against a local repository."""
+"""CLI profile management and trajectory processing against the configured database."""
 
 import json
 from pathlib import Path
@@ -8,7 +8,7 @@ import typer
 
 from altk_evolve.processing import ProfileReference
 
-profiles_app = typer.Typer(help="Manage local processing profiles (EVOLVE_PROCESSING_PROFILES_PATH).")
+profiles_app = typer.Typer(help="Manage processing profiles in the configured database.")
 processors_app = typer.Typer(help="Discover installed trajectory processors.")
 processing_app = typer.Typer(help="Run trajectory processors.")
 

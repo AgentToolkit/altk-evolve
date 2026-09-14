@@ -14,7 +14,12 @@ from altk_evolve.processing.models import (
     Trajectory,
 )
 from altk_evolve.processing.registry import ProcessorRegistry
-from altk_evolve.processing.repository import InMemoryProfileRepository, ProfileRepository, SQLiteProfileRepository
+from altk_evolve.processing.repository import (
+    InMemoryProfileRepository,
+    PostgresProfileRepository,
+    ProfileRepository,
+    SQLiteProfileRepository,
+)
 from altk_evolve.processing.manager import ProcessingManager
 
 __all__ = [
@@ -33,5 +38,6 @@ __all__ = [
     "InMemoryProfileRepository",
     "ProfileRepository",
     "SQLiteProfileRepository",
+    "PostgresProfileRepository",
     "ProcessingManager",
 ]

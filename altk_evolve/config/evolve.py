@@ -9,7 +9,6 @@ class EvolveConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
     backend: Literal["milvus", "filesystem", "postgres"] = "filesystem"
     namespace_id: str = "evolve"
-    processing_profiles_path: str | None = None
     settings: BaseSettings | None = None
     clustering_threshold: float = 0.80
     segmentation_enabled: bool = True

@@ -1,4 +1,4 @@
-"""Profile storage independent of entity backends and application ownership."""
+"""Versioned profile tables in the configured database, independent of application scope."""
 
 from __future__ import annotations
 
@@ -6,7 +6,11 @@ import json
 import sqlite3
 from pathlib import Path
 from threading import Lock
-from typing import Protocol
+from typing import Protocol, TYPE_CHECKING
+from collections.abc import Callable
+
+if TYPE_CHECKING:
+    import psycopg
 
 from altk_evolve.processing.models import ProfileConflict, ProfileNotFound
 
@@ -80,4 +84,52 @@ class SQLiteProfileRepository:
                 raise ProfileConflict(f"Profile {name} changed; current revision is {current}")
             revision = current + 1
             connection.execute("INSERT INTO processing_profiles VALUES (?, ?, ?)", (name, revision, encoded))
+        return revision
+
+
+class PostgresProfileRepository:
+    """Profile revisions in the entity backend's PostgreSQL database.
+
+    The backend supplies its configured connection factory. Operation-local
+    connections let an admin publish while another connection processes a trajectory.
+    """
+
+    def __init__(self, connect: Callable[[], "psycopg.Connection"]):
+        self._connect = connect
+        with self._connect() as connection, connection.transaction():
+            # CREATE TABLE IF NOT EXISTS alone can race on PostgreSQL's catalogs.
+            connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("evolve.processing_profiles.schema",))
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS processing_profiles "
+                "(id TEXT NOT NULL, revision INTEGER NOT NULL, definition JSONB NOT NULL, "
+                "PRIMARY KEY(id, revision))"
+            )
+
+    def get(self, name, revision=None):
+        with self._connect() as connection:
+            if revision is None:
+                row = connection.execute(
+                    "SELECT revision, definition FROM processing_profiles WHERE id=%s ORDER BY revision DESC LIMIT 1", (name,)
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT revision, definition FROM processing_profiles WHERE id=%s AND revision=%s", (name, revision)
+                ).fetchone()
+        if row is None:
+            raise ProfileNotFound(f"Profile not found: {name}@{revision or 'latest'}")
+        return row[0], row[1]
+
+    def put(self, name, value, *, expected_revision):
+        from psycopg.types.json import Jsonb
+
+        with self._connect() as connection, connection.transaction():
+            # Serialize writers for this profile, including its first revision.
+            connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("evolve.processing_profiles:" + name,))
+            current = connection.execute("SELECT COALESCE(MAX(revision), 0) FROM processing_profiles WHERE id=%s", (name,)).fetchone()[0]
+            if current != expected_revision:
+                raise ProfileConflict(f"Profile {name} changed; current revision is {current}")
+            revision = current + 1
+            connection.execute(
+                "INSERT INTO processing_profiles (id, revision, definition) VALUES (%s, %s, %s)", (name, revision, Jsonb(value))
+            )
         return revision

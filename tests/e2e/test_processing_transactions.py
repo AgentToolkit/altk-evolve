@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.config.postgres import PostgresDBSettings
 from altk_evolve.frontend.client.evolve_client import EvolveClient
-from altk_evolve.processing import ProcessingManager, ProcessorRegistry, ProcessorResult
+from altk_evolve.processing import ProcessorResult, ProfileConflict, ProfileNotFound
 from altk_evolve.schema.core import Entity
 from altk_evolve.sync.phoenix_sync import PhoenixSync
 
@@ -58,18 +58,17 @@ def sync(tmp_path, monkeypatch):
     monkeypatch.setenv("EVOLVE_SQLITE_PATH", str(tmp_path / "namespaces.db"))
     monkeypatch.setattr("altk_evolve.backend.postgres.SentenceTransformer", lambda _: Embeddings())
     settings = PostgresDBSettings(**{key: value for key, value in options.items() if key in PostgresDBSettings.model_fields})
-    registry = ProcessorRegistry()
-    registry.register(NoteProcessor)
-    processing = ProcessingManager(registry=registry)
-    processing.put("review", {"processors": [{"id": "note", "plugin": "tests.note"}]}, expected_revision=0)
-    client = EvolveClient(EvolveConfig(backend="postgres", settings=settings), processing=processing)
+    client = EvolveClient(EvolveConfig(backend="postgres", settings=settings))
+    client.processing.registry.register(NoteProcessor)
     namespace = "processing_" + uuid.uuid4().hex
+    client.processing.put(namespace, {"processors": [{"id": "note", "plugin": "tests.note"}]}, expected_revision=0)
     client.create_namespace(namespace)
     with patch("altk_evolve.sync.phoenix_sync.EvolveClient", return_value=client):
-        syncer = PhoenixSync(namespace_id=namespace, processing_profile="review")
+        syncer = PhoenixSync(namespace_id=namespace, processing_profile=namespace)
     try:
         yield syncer
     finally:
+        client.backend.conn.execute("DELETE FROM processing_profiles WHERE id=%s", (namespace,))
         client.delete_namespace(namespace)
         client.backend.close()
 
@@ -101,3 +100,52 @@ def test_postgres_concurrent_duplicate_deliveries_commit_once(sync):
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: sync._process_trajectory(trajectory()), range(2)))
     assert sorted(e.type for e in sync.client.get_all_entities(sync.namespace_id)) == ["note", "trajectory"]
+
+
+def test_profiles_share_postgres_database_and_survive_new_client(sync):
+    import sqlite3
+
+    client = sync.client
+    name = sync.processing_profile
+    assert client.backend.conn.execute("SELECT revision FROM processing_profiles WHERE id=%s", (name,)).fetchone() == (1,)
+    with sqlite3.connect(os.environ["EVOLVE_SQLITE_PATH"]) as metadata:
+        assert metadata.execute("SELECT name FROM sqlite_master WHERE name='processing_profiles'").fetchone() is None
+    peer = EvolveClient(client.config)
+    try:
+        assert peer.processing.get(name) == client.processing.get(name)
+        peer.processing.put(name, {"processors": []}, expected_revision=1)
+        assert client.processing.get(name)["revision"] == 2
+        assert client.processing.get(name, revision=1)["manifest"]["processors"][0]["plugin"] == "tests.note"
+        with pytest.raises(ProfileNotFound):
+            peer.processing.get(name, revision=99)
+    finally:
+        peer.backend.close()
+
+
+def test_postgres_profile_updates_reject_stale_writers_and_roll_back(sync):
+    from threading import Barrier
+
+    client = sync.client
+    peer = EvolveClient(client.config)
+    name = sync.processing_profile
+    gate = Barrier(2)
+
+    def publish(manager):
+        gate.wait(timeout=10)
+        try:
+            return manager.put(name, {"processors": []}, expected_revision=1)["revision"]
+        except ProfileConflict:
+            return "conflict"
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(publish, [client.processing, peer.processing]))
+        assert set(results) == {2, "conflict"}
+        repository = peer.processing.repository
+        with pytest.raises(TypeError):
+            repository.put(name, {"invalid": object()}, expected_revision=2)
+        assert client.processing.get(name)["revision"] == 2
+        peer.processing.put(name, {"processors": []}, expected_revision=2)
+        assert client.processing.get(name)["revision"] == 3
+    finally:
+        peer.backend.close()

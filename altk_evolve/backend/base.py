@@ -2,7 +2,10 @@ import datetime
 import logging
 from abc import ABC, abstractmethod
 from contextlib import AbstractContextManager
-from typing import Literal
+from typing import Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from altk_evolve.processing.repository import ProfileRepository
 
 from pydantic_settings import BaseSettings
 
@@ -28,6 +31,13 @@ logger = logging.getLogger("entities-db")
 class BaseEntityBackend(ABC):
     def __init__(self, config: BaseSettings | None = None):
         pass
+
+    def profile_repository(self) -> "ProfileRepository":
+        """Store profiles alongside existing SQLite metadata unless overridden."""
+        from altk_evolve.db.sqlite_manager import SQLiteManager
+        from altk_evolve.processing.repository import SQLiteProfileRepository
+
+        return SQLiteProfileRepository(SQLiteManager().db_path)
 
     def transaction(self, namespace_id: str) -> AbstractContextManager[None]:
         """Atomically commit or roll back entity mutations in one namespace.

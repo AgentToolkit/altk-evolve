@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import logging
-import os
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Callable, cast
 
@@ -101,17 +100,11 @@ class EvolveClient:
     @property
     def processing(self) -> ProcessingManager:
         """In-process processing API; inject a manager for custom registries/repositories."""
-        from altk_evolve.processing import ProcessingManager, SQLiteProfileRepository
+        from altk_evolve.processing import ProcessingManager
 
         with self._processing_lock:
             if self._processing is None:
-                path = (
-                    self.config.processing_profiles_path
-                    or os.getenv("EVOLVE_SQLITE_PATH")
-                    or os.getenv("EVOLVE_SQLITE_URI")
-                    or "entities.sqlite.db"
-                )
-                self._processing = ProcessingManager(repository=SQLiteProfileRepository(path))
+                self._processing = ProcessingManager(repository=self.backend.profile_repository())
             return self._processing
 
     def process_trajectory(

@@ -184,7 +184,8 @@ except ImportError:
 ## Runtime processing profiles
 
 Processing profiles select built-in or installed trajectory processors with validated,
-versioned configuration. Configure their SQLite repository with
-`EVOLVE_PROCESSING_PROFILES_PATH` (also accepted in `.env`), or inject an application
-repository programmatically. See [processing profiles](../design/processing-profiles.md)
+versioned configuration. Profiles use the existing configured database: PostgreSQL
+for the PostgreSQL backend, or the existing SQLite metadata database for filesystem
+and Milvus. No separate profile database configuration is required; applications
+can still inject a custom repository. See [processing profiles](../design/processing-profiles.md)
 for Python, REST, MCP, CLI, and plugin-discovery examples.

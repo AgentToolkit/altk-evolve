@@ -683,3 +683,24 @@ def test_builtin_admin_update_changes_next_trajectory_not_running_steps(monkeypa
     assert calls[-2:] == [("standard", "new-model"), ("accurate", "new-model")]
     manager.process({"messages": []}, plan=pinned)
     assert calls[-2:] == [("standard", "old-model"), ("fast", "old-model")]
+
+
+def test_default_profiles_share_existing_sqlite_metadata_database(tmp_path, monkeypatch):
+    import sqlite3
+    from altk_evolve.db.sqlite_manager import SQLiteManager
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("EVOLVE_HOOKS_CONFIG", "")
+    path = tmp_path / "metadata.sqlite"
+    monkeypatch.setenv("EVOLVE_SQLITE_PATH", str(path))
+    with SQLiteManager() as database:
+        database.create_namespace("existing-metadata")
+    config = EvolveConfig(settings=FilesystemSettings(data_dir=str(tmp_path / "entities")))
+    first = EvolveClient(config)
+    first.processing.put("review", {"processors": []}, expected_revision=0)
+    second = EvolveClient(config)
+    assert second.processing.get("review")["revision"] == 1
+    with sqlite3.connect(path) as database:
+        assert database.execute("SELECT id FROM namespaces").fetchone()[0] == "existing-metadata"
+        assert database.execute("SELECT id, revision FROM processing_profiles").fetchone() == ("review", 1)
+    assert not (tmp_path / "entities.sqlite.db").exists()

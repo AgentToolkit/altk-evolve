@@ -79,12 +79,12 @@ result = client.process_trajectory(
 )
 ```
 
-Without an explicit manager, `EvolveClient.processing` lazily creates an in-process manager with
-a SQLite profile repository. Its path is `EVOLVE_PROCESSING_PROFILES_PATH`, falling
-back to `EVOLVE_SQLITE_PATH`, `EVOLVE_SQLITE_URI`, then `entities.sqlite.db`.
-An injected `ProfileRepository` can use application storage instead. The profile
-repository is independent of the entity backend; using Postgres entities does not
-implicitly put profiles in Postgres.
+Without an explicit manager, `EvolveClient.processing` uses the backend's profile
+repository in the existing configured database. PostgreSQL stores a `processing_profiles`
+table alongside the entity tables, using the same connection settings. Filesystem and
+Milvus use the existing SQLite metadata database selected by `EVOLVE_SQLITE_PATH` /
+`EVOLVE_SQLITE_URI` (default `entities.sqlite.db`). No separate profile database setting
+is needed. Repository injection remains available for custom integrations.
 
 ## Python: saved profiles and application selection
 
@@ -98,8 +98,10 @@ result = client.process_trajectory(trajectory, namespace_id="memories", plan=pla
 ```
 
 Revision 0 means create-only. Subsequent writes require the last observed revision;
-stale writes raise `ProfileConflict`. Old revisions remain available. SQLite updates
-use a transaction and revision check, including across repository instances.
+stale writes raise `ProfileConflict`. Old revisions remain available. Both SQLite and
+PostgreSQL use transactions and serialize competing profile writes across repository
+instances. PostgreSQL uses operation-local connections to the same configured database,
+so an admin can publish while a trajectory uses its already-captured plan.
 
 An application can choose profiles directly or inject a selector:
 
@@ -267,8 +269,9 @@ authentication and resource authorization before exposing it to untrusted caller
 
 ## CLI and Phoenix sync
 
-CLI profile operations use the configured local repository, not an implicit remote
-service. Use REST/MCP to manage a remote process's repository.
+CLI profile operations connect to the configured database, including PostgreSQL. They
+do not contact a running REST/MCP service. Clients using the same database see the same
+profile revisions; use REST/MCP when the host service owns the database access.
 
 ```sh
 uv run evolve processing-profiles get support-review --revision 1
@@ -346,6 +349,6 @@ Existing guideline, consistency, backend, hook, and CLI tests remain regression 
 
 Not implemented: namespace binding storage, remote CLI management, execution DAGs,
 parallel processors, plugin hot code reload, automatic retries/cancellation, and
-multi-worker guarantees for entity backends. SQLite profile publication itself uses
+multi-worker guarantees for entity backends. SQLite and PostgreSQL profile publication use
 atomic revision checks. A caller may inject another profile repository; none of the
 processing interfaces require namespace-specific SQL or a fixed user/agent model.
