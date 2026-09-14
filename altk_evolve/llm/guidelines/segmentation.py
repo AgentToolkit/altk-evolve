@@ -29,7 +29,7 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
 
     Returns an empty list on failure — callers fall back to full-trajectory guideline generation.
     """
-    options = options or GuidelineRuntime.legacy()
+    options = options or GuidelineRuntime.from_settings()
     # Import here to avoid circular import (guidelines.py imports this module)
     from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 

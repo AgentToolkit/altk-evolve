@@ -23,9 +23,9 @@ def _analysis_defaults() -> dict:
 class GuidelineConfig(GuidelineRuntime):
     guidelines_mode: Literal["standard", "consistency", "all"] = "standard"
     consistency_method: Literal["fast", "accurate"] = "fast"
-    guidelines_model: str = Field(default_factory=lambda: GuidelineRuntime.legacy().guidelines_model)
-    custom_llm_provider: str | None = Field(default_factory=lambda: GuidelineRuntime.legacy().custom_llm_provider)
-    segmentation_enabled: bool = Field(default_factory=lambda: GuidelineRuntime.legacy().segmentation_enabled)
+    guidelines_model: str = Field(default_factory=lambda: GuidelineRuntime.from_settings().guidelines_model)
+    custom_llm_provider: str | None = Field(default_factory=lambda: GuidelineRuntime.from_settings().custom_llm_provider)
+    segmentation_enabled: bool = Field(default_factory=lambda: GuidelineRuntime.from_settings().segmentation_enabled)
 
     @model_validator(mode="after")
     def capture_analysis(self):

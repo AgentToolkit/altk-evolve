@@ -150,7 +150,7 @@ def _generate_guidelines_for_segment(
     options: GuidelineRuntime | None = None,
 ) -> GuidelineGenerationResult:
     """Generate guidelines for a single trajectory slice (full or subtask)."""
-    options = options or GuidelineRuntime.legacy()
+    options = options or GuidelineRuntime.from_settings()
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         num_steps=num_steps,
@@ -210,7 +210,7 @@ def generate_guidelines(messages: list[dict], *, options: GuidelineRuntime | Non
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
     trajectory when segmentation is disabled or produces fewer than 2 subtasks).
     """
-    options = options or GuidelineRuntime.legacy()
+    options = options or GuidelineRuntime.from_settings()
     is_groq = options.custom_llm_provider == "groq" or options.guidelines_model.startswith("groq/")
     supported_params = get_supported_openai_params(
         model=options.guidelines_model,

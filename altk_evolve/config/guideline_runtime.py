@@ -14,7 +14,7 @@ class GuidelineRuntime(BaseModel):
     analysis_config: dict[str, Any] | None = None
 
     @classmethod
-    def legacy(cls):
+    def from_settings(cls):
         from altk_evolve.config.evolve import evolve_config
         from altk_evolve.config.llm import llm_settings
 

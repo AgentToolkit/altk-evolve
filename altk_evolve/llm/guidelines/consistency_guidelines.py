@@ -352,7 +352,7 @@ def _generate_guideline_result(
     the prompt, calls the LLM, and parses the response. debug_suffix distinguishes
     per-segment artifacts (e.g. "_seg1") from full-trajectory artifacts ("").
     """
-    options = options or GuidelineRuntime.legacy()
+    options = options or GuidelineRuntime.from_settings()
     config = config or {}
     skip_on_no_uncertainty = config.get("skip_on_no_uncertainty", DEFAULT_SKIP_ON_NO_UNCERTAINTY)
     low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
@@ -456,7 +456,7 @@ def generate_consistency_guidelines(
         config_path: YAML config consumed by consistency_analyzer. Defaults to
             `consistency_analyzer/agent_config.yaml`.
     """
-    options = options or GuidelineRuntime.legacy()
+    options = options or GuidelineRuntime.from_settings()
     if options.analysis_config is not None:
         config = dict(options.analysis_config)
     else:
@@ -616,7 +616,7 @@ def _generate_fast_guideline_result(
     using the fast consistency pipeline: the LLM judges each step's confidence itself, in the
     same call that produces guidelines, rather than reading resampling-derived scores.
     """
-    options = options or GuidelineRuntime.legacy()
+    options = options or GuidelineRuntime.from_settings()
     prompt = _CONSISTENCY_GUIDELINES_FAST_TEMPLATE.render(
         task_instruction=task_description,
         num_steps=num_steps,
@@ -703,7 +703,7 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
             accepted for call-site parity with `generate_consistency_guidelines` but are not
             used — this pipeline never resamples.
     """
-    options = options or GuidelineRuntime.legacy()
+    options = options or GuidelineRuntime.from_settings()
     messages = trajectory.get("messages", [])
     trace_id = trajectory.get("trace_id") or "unknown"
     if not messages:
