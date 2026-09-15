@@ -89,6 +89,26 @@ class TestFlattenResponse:
         result = flatten_response({"items": [1, 2, 3]})
         assert result == {"items": [1, 2, 3]}
 
+    def test_mixed_top_level_list_is_preserved_not_inverted(self):
+        """Homogeneity is checked across every element, not just the first. Inverting a
+        mixed list would call .items() on a non-dict and raise AttributeError."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response([{"a": 1}, 2]) == [{"a": 1}, 2]
+
+    def test_mixed_nested_list_is_preserved_not_inverted(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response({"k": [{"a": 1}, 2]}) == {"k": [{"a": 1}, 2]}
+
+    def test_mixed_inverted_value_is_not_recursed_into(self):
+        """Inverting can yield a mixed list, which must stop at its key rather than
+        being handed back to the top-level list path."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        result = flatten_response({"steps": [{"call": {"n": "a"}}, {"call": 2}]})
+        assert result == {"steps_call": [{"n": "a"}, 2]}
+
 
 class TestExtractFieldValuesFromResponses:
     def test_single_field_name(self):
