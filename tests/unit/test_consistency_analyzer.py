@@ -54,11 +54,60 @@ class TestFlattenResponse:
         assert flatten_response("hello") == "hello"
         assert flatten_response(42) == 42
 
+    def test_top_level_list_of_dicts_inverted(self):
+        """A JSON-array response is inverted before flattening, so field extraction works on it."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        result = flatten_response([{"name": "add", "arg": 1}, {"name": "mul", "arg": 2}])
+        assert result == {"name": ["add", "mul"], "arg": [1, 2]}
+
+    def test_top_level_list_of_primitives_returned_as_is(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response([1, 2, 3]) == [1, 2, 3]
+
+    def test_top_level_empty_list_returned_as_is(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response([]) == []
+
+    def test_nested_list_of_dicts_is_flattened_not_left_opaque(self):
+        """Inverting a list of dicts can yield another list of dicts, which must be flattened too.
+
+        Exercises both the recursion and the top-level-list handling, since the recursive
+        call receives a list. Without it the value stays an unflattened list of dicts under
+        "steps_call", which field extraction cannot read.
+        """
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        result = flatten_response({"steps": [{"call": {"name": "a"}}, {"call": {"name": "b"}}]})
+        assert result == {"steps_call_name": ["a", "b"]}
+
     def test_list_of_primitives_kept(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
 
         result = flatten_response({"items": [1, 2, 3]})
         assert result == {"items": [1, 2, 3]}
+
+    def test_mixed_top_level_list_is_preserved_not_inverted(self):
+        """Homogeneity is checked across every element, not just the first. Inverting a
+        mixed list would call .items() on a non-dict and raise AttributeError."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response([{"a": 1}, 2]) == [{"a": 1}, 2]
+
+    def test_mixed_nested_list_is_preserved_not_inverted(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response({"k": [{"a": 1}, 2]}) == {"k": [{"a": 1}, 2]}
+
+    def test_mixed_inverted_value_is_not_recursed_into(self):
+        """Inverting can yield a mixed list, which must stop at its key rather than
+        being handed back to the top-level list path."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        result = flatten_response({"steps": [{"call": {"n": "a"}}, {"call": 2}]})
+        assert result == {"steps_call": [{"n": "a"}, 2]}
 
 
 class TestExtractFieldValuesFromResponses:
@@ -767,6 +816,15 @@ class TestInnerFieldBackfill:
         config = {"fields": [{"name": "action", "backfill": "none"}]}
         result = inner_field_backfill("not_a_dict", config)
         assert result["action"] == "none"
+
+    def test_list_response_survives_untouched(self):
+        """A JSON-array response is valid parsed output. Backfill doesn't apply to it, but it
+        must not be reset to {} either — that discarded the entire response."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import inner_field_backfill
+
+        config = {"fields": [{"name": "action", "backfill": "none"}]}
+        result = inner_field_backfill([{"action": "search"}, {"other": 1}], config)
+        assert result == [{"action": "search"}, {"other": 1}]
 
 
 # ---------------------------------------------------------------------------
