@@ -1,6 +1,8 @@
 from pathlib import Path
 
 import pytest
+from datetime import UTC, datetime
+from altk_evolve.schema.core import Entity
 
 from altk_evolve.backend.filesystem import FilesystemEntityBackend
 from altk_evolve.config.evolve import EvolveConfig
@@ -67,3 +69,16 @@ def test_save_tolerates_stale_shared_tmp(backend: FilesystemEntityBackend, tmp_p
 
     target = tmp_path / "ns_busy.json"
     assert target.exists() and target.stat().st_size > 0
+
+
+@pytest.mark.unit
+def test_set_entity_created_at_persists_and_reads_back(client: EvolveClient):
+    client.ensure_namespace("imports")
+    update = client.update_entities("imports", [Entity(type="fact", content="fixture", metadata={})], enable_conflict_resolution=False)[0]
+    expected = datetime(2020, 1, 2, tzinfo=UTC)
+
+    stamped = client.set_entity_created_at("imports", update.id, expected)
+    readback = client.scan_entities("imports", filters={"id": update.id}, limit=1)[0]
+
+    assert stamped.created_at == expected
+    assert readback.created_at == expected
