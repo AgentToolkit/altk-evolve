@@ -33,9 +33,12 @@ _CONSISTENCY_GUIDELINES_FAST_TEMPLATE = Template(
 
 # Defaults for the advanced accurate-method tuning knobs, used when agent_config.yaml
 # (or a custom config_path=) doesn't set them.
-DEFAULT_HIGH_UNCERTAINTY_THRESHOLD = 0.2
-DEFAULT_LOW_UNCERTAINTY_THRESHOLD = 0.1
+DEFAULT_HIGH_UNCERTAINTY_THRESHOLD = 0.15
 DEFAULT_SKIP_ON_NO_UNCERTAINTY = True
+
+# How many steps may carry the HIGH marker. A cap rather than a threshold: the markers
+# exist to focus the model's attention, and flagging every step focuses it nowhere.
+HIGH_MARKER_CAP = 5
 
 
 def _strip_orphaned_tool_messages(messages: list[dict]) -> list[dict]:
@@ -228,10 +231,19 @@ def format_trajectory_data(
 ) -> str:
     """Render assistant steps (optionally scoped to step_range) into the text block the
     accurate-method prompt embeds, marking each step ⚠️ HIGH/ELEVATED UNCERTAINTY per the
-    high/low thresholds in config (falling back to the DEFAULT_* module constants)."""
+    high_uncertainty_threshold in config (falling back to the DEFAULT_* module constant).
+
+    The most-uncertain steps at or above the threshold are marked HIGH, up to
+    HIGH_MARKER_CAP of them. When no step clears the threshold, the single most-uncertain
+    step is marked ELEVATED instead, provided its score is non-zero — so any trajectory
+    with measurable uncertainty carries at least one marker, and only a fully consistent
+    one carries none.
+
+    Both limits keep the markers doing their job: they direct the model's attention, and a
+    trajectory marked end to end conveys no more than one marked nowhere.
+    """
     config = config or {}
     high_uncertainty_threshold = config.get("high_uncertainty_threshold", DEFAULT_HIGH_UNCERTAINTY_THRESHOLD)
-    low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
 
     step_uncertainties = consistency_data.get("step_uncertainties", {})
 
@@ -239,18 +251,18 @@ def format_trajectory_data(
         start, end = step_range
         step_uncertainties = {k: v for k, v in step_uncertainties.items() if start <= k <= end}
 
-    TOP_N = 3
-    top_steps = sorted(step_uncertainties.items(), key=lambda x: x[1], reverse=True)[:TOP_N]
-    high_uncertainty_steps = {step_num: score for step_num, score in top_steps if score >= high_uncertainty_threshold}
+    ranked_steps = sorted(step_uncertainties.items(), key=lambda x: x[1], reverse=True)
+    high_uncertainty_steps = {step_num: score for step_num, score in ranked_steps[:HIGH_MARKER_CAP] if score >= high_uncertainty_threshold}
 
-    # Fallback: no step cleared the high bar, but the single most-uncertain step still
-    # cleared the low bar — worth flagging, but honestly, not as "HIGH". Tracked
-    # separately so the marker text doesn't claim a threshold that was never met.
+    # Fallback: no step cleared the high bar, but the most-uncertain step still scored
+    # above zero — worth a look, but honestly, not "HIGH". Tracked separately so the
+    # marker text never claims a threshold that was not actually met. Just the one step:
+    # this fires only for an otherwise-quiet trajectory, where widening the marker would
+    # dilute the little signal there is. Rank 2 may be a near-tie the metric can't really
+    # separate from rank 1 — accepted, in exchange for pointing somewhere specific.
     elevated_uncertainty_steps: dict[int, float] = {}
-    if not high_uncertainty_steps and step_uncertainties:
-        highest = max(step_uncertainties.items(), key=lambda x: x[1])
-        if highest[1] > low_uncertainty_threshold:
-            elevated_uncertainty_steps = {highest[0]: highest[1]}
+    if not high_uncertainty_steps:
+        elevated_uncertainty_steps = {step_num: score for step_num, score in ranked_steps[:1] if score > 0}
 
     MAX_STEPS = 50
     steps_text: list[str] = []
@@ -349,18 +361,17 @@ def _generate_guideline_result(
     """
     config = config or {}
     skip_on_no_uncertainty = config.get("skip_on_no_uncertainty", DEFAULT_SKIP_ON_NO_UNCERTAINTY)
-    low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
 
     if skip_on_no_uncertainty:
         step_uncertainties = consistency_data.get("step_uncertainties", {})
         if step_range:
             start, end = step_range
             step_uncertainties = {k: v for k, v in step_uncertainties.items() if start <= k <= end}
-        has_uncertain_steps = bool(step_uncertainties) and max(step_uncertainties.values()) > low_uncertainty_threshold
+        has_uncertain_steps = bool(step_uncertainties) and max(step_uncertainties.values()) > 0
         if not has_uncertain_steps:
             logger.info(
                 f"Skipping guideline generation{' for segment' + debug_suffix if debug_suffix else ''}: "
-                f"no steps above low_uncertainty_threshold ({low_uncertainty_threshold})"
+                "no steps with non-zero uncertainty (all steps scored 0)"
             )
             return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
@@ -448,12 +459,15 @@ def generate_consistency_guidelines(
         config = yaml.safe_load(f)
     logger.info(f"Loaded consistency configuration from {config_path}")
 
-    low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
-    high_uncertainty_threshold = config.get("high_uncertainty_threshold", DEFAULT_HIGH_UNCERTAINTY_THRESHOLD)
-    if low_uncertainty_threshold > high_uncertainty_threshold:
+    # Fail loudly on a threshold outside the score range. Step uncertainty is normalised to
+    # [0, 1], so a value like 15 (meaning 15%) would clear no step for any trajectory and
+    # silently downgrade every run to a single ELEVATED marker. Bools are rejected
+    # explicitly because bool is a subclass of int and would otherwise pass the range test.
+    threshold = config.get("high_uncertainty_threshold", DEFAULT_HIGH_UNCERTAINTY_THRESHOLD)
+    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
         raise EvolveException(
-            f"Invalid consistency config at {config_path}: low_uncertainty_threshold "
-            f"({low_uncertainty_threshold}) must not exceed high_uncertainty_threshold ({high_uncertainty_threshold})."
+            f"Invalid consistency config at {config_path}: high_uncertainty_threshold must be a number "
+            f"in [0, 1] (step uncertainty is normalised to that range), got {threshold!r}."
         )
 
     messages = trajectory.get("messages", [])
@@ -523,7 +537,7 @@ def generate_consistency_guidelines(
     # Only attempt when every assistant message's content field allows a 1:1 step index
     # mapping between segment_trajectory and transform_trajectory_to_IR.
     subtasks = []
-    if n_scorable_steps >= 2 and _can_segment_trajectory(messages):
+    if n_scorable_steps >= 5 and _can_segment_trajectory(messages):
         try:
             from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
@@ -698,7 +712,7 @@ def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGene
     n_steps = len(steps_list)
 
     subtasks = []
-    if evolve_config.segmentation_enabled:
+    if evolve_config.segmentation_enabled and n_steps >= 5 and _can_segment_trajectory(messages):
         from altk_evolve.llm.guidelines.segmentation import segment_trajectory  # avoid circular import
 
         try:

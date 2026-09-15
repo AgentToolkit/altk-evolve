@@ -16,6 +16,9 @@ from altk_evolve.llm.guidelines.consistency_guidelines import (
 
 pytestmark = pytest.mark.unit
 
+# Sentinel for "omit the key entirely", distinct from any value the key could hold.
+_UNSET = object()
+
 
 SAMPLE_TOOLS = [{"type": "function", "function": {"name": "add", "parameters": {}}}]
 
@@ -438,9 +441,9 @@ class TestFormatTrajectoryData:
         assert "step two" in result
 
     def test_marks_elevated_not_high_when_below_high_threshold(self):
-        """A score that only clears the low threshold (not the high one) must be
-        labeled ELEVATED, not HIGH — the label must never claim a threshold that
-        wasn't actually met (default high=0.2, low=0.1)."""
+        """A non-zero score below the high threshold must be labeled ELEVATED, not
+        HIGH — the label must never claim a threshold that wasn't actually met
+        (default high=0.15)."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
@@ -450,15 +453,51 @@ class TestFormatTrajectoryData:
         assert "ELEVATED UNCERTAINTY: 0.1029" in result
         assert "HIGH UNCERTAINTY" not in result
 
-    def test_no_marker_when_nothing_clears_low_threshold(self):
-        """No ⚠️ marker at all when every step's uncertainty stays below the low threshold."""
+    def test_elevated_marks_only_the_top_step(self):
+        """The ELEVATED fallback flags just the most-uncertain step, so a trajectory of
+        uniformly-small scores doesn't end up marked end to end."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
         ]
         consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.05}}
         result = format_trajectory_data(messages, consistency_data)
+        assert result.count("ELEVATED UNCERTAINTY") == 1
+        assert "ELEVATED UNCERTAINTY: 0.05" in result
+        assert "ELEVATED UNCERTAINTY: 0.02" not in result
         assert "HIGH UNCERTAINTY" not in result
+
+    def test_elevated_stays_single_across_many_sub_threshold_steps(self):
+        """Adding more sub-threshold steps never widens the ELEVATED marker past the top one."""
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(1, 6)]
+        consistency_data = {"step_uncertainties": {1: 0.01, 2: 0.02, 3: 0.03, 4: 0.04, 5: 0.05}}
+        result = format_trajectory_data(messages, consistency_data)
+        assert result.count("ELEVATED UNCERTAINTY") == 1
+        assert "ELEVATED UNCERTAINTY: 0.05" in result
+        assert "HIGH UNCERTAINTY" not in result
+
+    def test_no_marker_when_every_step_is_fully_consistent(self):
+        """Zero is the only score that earns no marker at all — with one threshold left,
+        every trajectory carrying measurable uncertainty gets at least one flag."""
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+        ]
+        consistency_data = {"step_uncertainties": {1: 0.0, 2: 0.0}}
+        result = format_trajectory_data(messages, consistency_data)
+        assert "HIGH UNCERTAINTY" not in result
+        assert "ELEVATED UNCERTAINTY" not in result
+
+    def test_caps_high_markers_at_five(self):
+        """At most HIGH_MARKER_CAP steps carry the HIGH marker, even when more clear the
+        threshold — the lowest-scoring ones above the bar go unmarked."""
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(1, 8)]
+        consistency_data = {"step_uncertainties": {1: 0.9, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.5, 6: 0.4, 7: 0.3}}
+        result = format_trajectory_data(messages, consistency_data)
+        assert result.count("HIGH UNCERTAINTY") == 5
+        assert "HIGH UNCERTAINTY: 0.4" not in result
+        assert "HIGH UNCERTAINTY: 0.3" not in result
+        # The ELEVATED fallback stays silent whenever any step cleared the threshold.
         assert "ELEVATED UNCERTAINTY" not in result
 
     def test_tool_calls_none_does_not_crash(self):
@@ -560,6 +599,44 @@ class TestSegmentationGuard:
             assert mock_gen.call_count == 1
             _, kwargs = mock_gen.call_args
             assert kwargs.get("step_range") is None
+
+
+@pytest.mark.unit
+class TestHighUncertaintyThresholdValidation:
+    """A threshold outside [0, 1] must fail loudly rather than silently marking nothing HIGH."""
+
+    def _config(self, tmp_path, threshold):
+        """Write a minimal analyzer config carrying `threshold`, and return its path."""
+        body = "name: t\naggregation: mean\nmax_samples: 5\nmax_steps: 15\nagents: []\n"
+        if threshold is not _UNSET:
+            body += f"high_uncertainty_threshold: {threshold}\n"
+        path = tmp_path / "agent_config.yaml"
+        path.write_text(body)
+        return path
+
+    def _run(self, tmp_path, threshold):
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        return generate_consistency_guidelines(
+            {"messages": [{"role": "user", "content": "hi"}], "trace_id": "t"},
+            config_path=self._config(tmp_path, threshold),
+        )
+
+    @pytest.mark.parametrize("threshold", ["15", "-0.1", "1.5", "'0.15'", "true"])
+    def test_rejects_out_of_range_or_non_numeric(self, tmp_path, threshold):
+        from altk_evolve.schema.exceptions import EvolveException
+
+        with pytest.raises(EvolveException, match="high_uncertainty_threshold must be a number"):
+            self._run(tmp_path, threshold)
+
+    @pytest.mark.parametrize("threshold", ["0", "0.15", "1", _UNSET])
+    def test_accepts_in_range_values_and_an_absent_key(self, tmp_path, threshold):
+        """Valid thresholds get past validation — the later failure proves it wasn't the threshold."""
+        from altk_evolve.schema.exceptions import EvolveException
+
+        # The trajectory has no assistant turns, so generation fails *after* validation.
+        with pytest.raises(EvolveException, match="no steps"):
+            self._run(tmp_path, threshold)
 
 
 @pytest.mark.unit
