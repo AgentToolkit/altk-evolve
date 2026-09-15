@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from altk_evolve.retention.policy import RetentionPolicy, RetentionRule
+from altk_evolve.frontend.services.context import cancellation_requested
 from altk_evolve.schema.core import RecordedEntity
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,7 @@ class RetentionReport:
     errors: list[str] = field(default_factory=list)
     #: Non-fatal caveats about the run (e.g. degraded "unused" signal).
     warnings: list[str] = field(default_factory=list)
+    cancelled: bool = False
 
     def summary(self) -> str:
         verb = "would flag/delete" if self.dry_run else "flagged/deleted"
@@ -119,8 +121,11 @@ class RetentionEngine:
     #: How many entities to scan per namespace.
     FETCH_LIMIT = 100_000
 
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, *, source_deleted_ids: set[str] | None = None) -> None:
         self.client = client
+        self.source_deleted_ids = source_deleted_ids or set()
+        self.source_deleted_lookup: Any = None
+        self.last_scanned_entities: list[RecordedEntity] = []
 
     # ── signal helpers ────────────────────────────────────────────────
 
@@ -138,6 +143,11 @@ class RetentionEngine:
         if last is None:
             last = _as_aware(entity.created_at)
         return (now - last).total_seconds() / 86400.0, stamped
+
+    @staticmethod
+    def provenance_scope(entity: RecordedEntity) -> tuple[str | None, str | None]:
+        metadata = entity.metadata or {}
+        return (metadata.get("user_id") or metadata.get("owner_id"), metadata.get("agent_id"))
 
     def _trace_id(self, entity: RecordedEntity) -> str | None:
         metadata = entity.metadata or {}
@@ -161,6 +171,12 @@ class RetentionEngine:
         ``metadata.last_accessed`` stamp. ``on_missing_access_signal`` governs
         whether such a match is still allowed to delete.
         """
+        if (
+            rule.source_deleted
+            and entity.id not in self.source_deleted_ids
+            and not (self.source_deleted_lookup and self.source_deleted_lookup(entity))
+        ):
+            return None
         if rule.entity_type is not None and entity.type != rule.entity_type:
             return None
         if rule.max_age_days is not None:
@@ -194,6 +210,7 @@ class RetentionEngine:
         warnings: list[str] | None = None,
         skipped: list[RetentionItem] | None = None,
         scan_limit: int | None = None,
+        filters: dict | None = None,
     ) -> list[RetentionItem]:
         """Compute the actions a policy implies, without mutating anything.
 
@@ -206,11 +223,15 @@ class RetentionEngine:
         *scan_limit* caps how many entities are fetched from the namespace in
         one call; it defaults to :attr:`FETCH_LIMIT`. When the fetch returns
         exactly the limit a warning is emitted, since entities beyond it were
-        not evaluated (and therefore not cascaded).
+        not evaluated (and therefore not cascaded). *filters* are forwarded to
+        the administrative scan so a shared namespace can be scoped by owner,
+        agent, or other metadata.
         """
         now = _as_aware(now) if now else datetime.datetime.now(datetime.UTC)
         limit = self.FETCH_LIMIT if scan_limit is None else scan_limit
-        entities = self.client.get_all_entities(namespace_id, limit=limit)
+        scan = getattr(self.client, "scan_entities", None) or self.client.get_all_entities
+        entities = scan(namespace_id, filters=filters, limit=limit)
+        self.last_scanned_entities = entities
         if warnings is not None and len(entities) >= limit:
             warnings.append(
                 f"scan hit the fetch limit of {limit} entities in namespace {namespace_id!r}; entities beyond it "
@@ -224,12 +245,12 @@ class RetentionEngine:
         # entities are skipped rather than bucketed under an empty/degenerate
         # key — otherwise a session with a falsy trace id would cascade-delete
         # every entity that merely lacks provenance.
-        derived_by_trace: dict[str, list[str]] = {}
+        derived_by_trace: dict[tuple[tuple[str | None, str | None], str], list[str]] = {}
         for e in entities:
             src = (e.metadata or {}).get(self.SOURCE_KEY)
             if not src:
                 continue
-            derived_by_trace.setdefault(str(src), []).append(e.id)
+            derived_by_trace.setdefault((self.provenance_scope(e), str(src)), []).append(e.id)
 
         # delete supersedes flag for the same entity; first writer otherwise wins.
         actions: dict[str, RetentionItem] = {}
@@ -238,6 +259,8 @@ class RetentionEngine:
             existing = actions.get(item.entity_id)
             if existing is not None and (existing.action == "delete" or item.action == "flag"):
                 return
+            if item.action == "delete" and skipped is not None:
+                skipped[:] = [entry for entry in skipped if entry.entity_id != item.entity_id]
             actions[item.entity_id] = item
 
         unstamped = 0
@@ -262,6 +285,9 @@ class RetentionEngine:
             if degraded and rule.action == "delete":
                 choice = rule.on_missing_access_signal
                 if choice == "skip":
+                    existing = actions.get(e.id)
+                    if existing is not None and existing.action == "delete":
+                        continue
                     if skipped is not None:
                         skipped.append(
                             RetentionItem(
@@ -284,7 +310,7 @@ class RetentionEngine:
                 trace = self._trace_id(e)
                 if not trace:
                     continue
-                for did in derived_by_trace.get(trace, []):
+                for did in derived_by_trace.get((self.provenance_scope(e), trace), []):
                     if did == e.id:
                         continue
                     record(
@@ -316,13 +342,15 @@ class RetentionEngine:
         now: datetime.datetime | None = None,
         dry_run: bool = True,
         scan_limit: int | None = None,
+        filters: dict | None = None,
     ) -> RetentionReport:
         """Evaluate and — unless *dry_run* — flag/delete the matched entities.
 
         Dry run is the default: nothing is mutated and the report describes what
         *would* happen. *scan_limit* caps how many entities are fetched per
         namespace (defaults to :attr:`FETCH_LIMIT`); a boundary hit is surfaced
-        in ``report.warnings``.
+        in ``report.warnings``. *filters* use the backend's structured filter
+        syntax and constrain both direct matches and cascade candidates.
         """
         now = _as_aware(now) if now else datetime.datetime.now(datetime.UTC)
         report = RetentionReport(dry_run=dry_run)
@@ -333,10 +361,15 @@ class RetentionEngine:
             warnings=report.warnings,
             skipped=report.skipped,
             scan_limit=scan_limit,
+            filters=filters,
         )
         flagged_at = now.isoformat()
 
         for item in items:
+            if cancellation_requested():
+                report.cancelled = True
+                report.warnings.append("Execution cancelled; completed mutations are not rolled back")
+                break
             try:
                 if item.action == "delete":
                     if not dry_run:

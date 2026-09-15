@@ -4,6 +4,105 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-09-14)
+
+### Bug Fixes
+
+- Address compliance review feedback ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- Scope direct memory operations by agent
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **ci**: Re-check after the final retry delay and validate artifacts
+  ([#307](https://github.com/AgentToolkit/altk-evolve/pull/307),
+  [`4a52294`](https://github.com/AgentToolkit/altk-evolve/commit/4a52294dd0c35a32416b7f4a80b81805f5930aa4))
+
+- **ci**: Retry until both sdist and wheel are present
+  ([#307](https://github.com/AgentToolkit/altk-evolve/pull/307),
+  [`4a52294`](https://github.com/AgentToolkit/altk-evolve/commit/4a52294dd0c35a32416b7f4a80b81805f5930aa4))
+
+- **ci**: Wait for release assets before publishing to PyPI
+  ([#307](https://github.com/AgentToolkit/altk-evolve/pull/307),
+  [`4a52294`](https://github.com/AgentToolkit/altk-evolve/commit/4a52294dd0c35a32416b7f4a80b81805f5930aa4))
+
+- **compliance**: Require hook engine and preserve violation details
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **deps**: Support semantic PII installation on Python 3.13
+  ([#315](https://github.com/AgentToolkit/altk-evolve/pull/315),
+  [`9aa999b`](https://github.com/AgentToolkit/altk-evolve/commit/9aa999b360c09efc541c039176b43b3bbef1bfec))
+
+- **mcp**: Isolate user facts by namespace and user
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **mcp**: Return stamped access metadata
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **retention**: Close review gaps ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **retention**: Enforce provenance scope and content-free audit history
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+### Documentation
+
+- **readme**: Surface latest Evolve updates
+  ([#312](https://github.com/AgentToolkit/altk-evolve/pull/312),
+  [`b95ed43`](https://github.com/AgentToolkit/altk-evolve/commit/b95ed43bf65c29789f7cae1756ec9925ff11ed3c))
+
+### Features
+
+- Support realistic compliance PoC data
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **cli**: Configure retention without file inputs
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **cli**: Finalize retention resource commands and service lifecycle
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **cli**: Manage retention schedules and execution under evolve
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **cli**: Show upcoming retention times with schedule details
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **compliance**: Add scoped memory API and Evolve-owned retention scheduling
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **mcp**: Expose compliance and retention controls
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **retention**: Collect PostgreSQL memories with durable marks and atomic audits
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **retention**: Match durable source deletion receipts
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **retention**: Own CronJob schedules and scoped embedded API
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+- **retention**: Own policies and run history
+  ([#296](https://github.com/AgentToolkit/altk-evolve/pull/296),
+  [`a8ffafb`](https://github.com/AgentToolkit/altk-evolve/commit/a8ffafbf819e92f8f1a54f29fb8f17e03dce5877))
+
+
 ## v1.1.6 (2026-08-19)
 
 ### Bug Fixes
