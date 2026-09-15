@@ -1,19 +1,88 @@
 """Tests for guideline generation utilities."""
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from altk_evolve.llm.guidelines import guidelines as guidelines_module
-from altk_evolve.llm.guidelines.guidelines import generate_guidelines, parse_openai_agents_trajectory
+from altk_evolve.llm.guidelines.guidelines import generate_guidelines, parse_guideline_response, parse_openai_agents_trajectory
 
 
-def _mock_completion_response(payload: dict) -> MagicMock:
+def _mock_completion_response(payload: dict | list) -> MagicMock:
     response = MagicMock()
     response.choices = [MagicMock()]
     response.choices[0].message.content = json.dumps(payload)
     return response
+
+
+# One valid guideline, as the schema requires it.
+_GUIDELINE = {
+    "content": "Validate files before parsing",
+    "rationale": "Avoids parser crashes on empty inputs",
+    "category": "strategy",
+    "trigger": "Before reading user-provided CSV files",
+}
+
+
+@pytest.mark.unit
+class TestParseGuidelineResponse:
+    """Repairs for the two ways models break the {"guidelines": [...]} output contract."""
+
+    def test_returns_guidelines_for_well_formed_response(self, caplog):
+        with caplog.at_level(logging.INFO):
+            guidelines = parse_guideline_response(json.dumps({"guidelines": [_GUIDELINE]}), "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == "Validate files before parsing"
+        # Nothing was repaired, so nothing should be reported as repaired.
+        assert "after repair" not in caplog.text
+
+    def test_wraps_bare_array(self):
+        """A bare [...] parses as valid JSON but fails validation — wrap it under the key."""
+        guidelines = parse_guideline_response(json.dumps([_GUIDELINE]), "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == "Validate files before parsing"
+
+    def test_repairs_lone_backslashes(self):
+        """LaTeX-style \\( \\) in a string value is not a valid JSON escape and fails to parse."""
+        raw = r'{"guidelines": [{"content": "Write \( x \) inline", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        guidelines = parse_guideline_response(raw, "consistency")
+        assert guidelines is not None
+        assert guidelines[0].content == r"Write \( x \) inline"
+
+    def test_repairs_compose_for_bare_array_with_lone_backslashes(self):
+        """Both malformations at once — the escape repair must feed into the wrap repair."""
+        raw = r'[{"content": "Write \( x \) inline", "rationale": "r", "category": "strategy", "trigger": "t"}]'
+        guidelines = parse_guideline_response(raw, "fast consistency")
+        assert guidelines is not None
+        assert guidelines[0].content == r"Write \( x \) inline"
+
+    def test_logs_the_repairs_that_were_applied(self, caplog):
+        raw = r'[{"content": "Write \( x \) inline", "rationale": "r", "category": "strategy", "trigger": "t"}]'
+        with caplog.at_level(logging.INFO):
+            parse_guideline_response(raw, "fast consistency")
+        assert "Recovered fast consistency guideline response after repair" in caplog.text
+        assert "escaped lone backslashes" in caplog.text
+        assert 'wrapped a bare array under "guidelines"' in caplog.text
+
+    def test_returns_none_for_unparseable_response(self, caplog):
+        guidelines = parse_guideline_response("not json at all {{{", "standard")
+        assert guidelines is None
+        assert "Failed to parse standard guideline response" in caplog.text
+
+    def test_returns_none_when_array_items_do_not_match_the_schema(self, caplog):
+        """A bare array is only rescued when its items are valid guidelines."""
+        guidelines = parse_guideline_response(json.dumps([{"content": "no other required fields"}]), "standard")
+        assert guidelines is None
+        assert "Failed to parse standard guideline response" in caplog.text
+
+    def test_returns_none_for_a_wrong_category_value(self, caplog):
+        """category is a Literal, so an unrecognised value must not be quietly accepted."""
+        bad = {**_GUIDELINE, "category": "not-a-real-category"}
+        guidelines = parse_guideline_response(json.dumps({"guidelines": [bad]}), "standard")
+        assert guidelines is None
+        assert "Failed to parse standard guideline response" in caplog.text
 
 
 @pytest.mark.unit
@@ -156,3 +225,21 @@ class TestParseOpenaiAgentsTrajectory:
         assert "response_format" not in kwargs
         assert kwargs["custom_llm_provider"] == "groq"
         assert "Output Format (JSON)" in kwargs["messages"][0]["content"]
+
+    @patch("altk_evolve.llm.guidelines.guidelines.completion")
+    @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
+    def test_generate_guidelines_recovers_a_bare_array_response(
+        self,
+        _mock_params,
+        _mock_schema,
+        mock_completion,
+        monkeypatch,
+    ):
+        """The standard pipeline is wired to the repairing parser, not a strict one."""
+        monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", False)
+        mock_completion.return_value = _mock_completion_response([_GUIDELINE])
+
+        results = generate_guidelines([{"role": "user", "content": "Fix CSV parsing"}])
+
+        assert results[0].guidelines[0].content == "Validate files before parsing"
