@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from json import JSONDecodeError
 from pathlib import Path
 
@@ -12,12 +13,82 @@ from altk_evolve.config.evolve import evolve_config
 from altk_evolve.config.llm import llm_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.exceptions import EvolveException
-from altk_evolve.schema.guidelines import DEFAULT_TASK_DESCRIPTION, GuidelineGenerationResponse, GuidelineGenerationResult
+from altk_evolve.schema.guidelines import (
+    DEFAULT_TASK_DESCRIPTION,
+    Guideline,
+    GuidelineGenerationResponse,
+    GuidelineGenerationResult,
+)
 from altk_evolve.utils.utils import clean_llm_response
 
 logger = logging.getLogger(__name__)
 
 _GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_guidelines.jinja2").read_text())
+
+# Lone backslash — not the start of a valid JSON escape sequence. \u only counts as one
+# when four hex digits actually follow it, so LaTeX like \underbrace is repaired rather
+# than left as an invalid \u escape that fails to parse either way.
+_LONE_BACKSLASH_RE = re.compile(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})')
+
+
+def parse_guideline_response(clean_response: str, context: str) -> list[Guideline] | None:
+    """Parse a guideline-generation LLM response, repairing the malformations models
+    commonly emit, and log whichever repair was needed.
+
+    Tries the response as-is first, then two repairs that compose, so a response with
+    both problems is still recovered:
+
+    1. Lone backslashes escaped — models emit LaTeX-style ``\\( \\)`` inside string
+       values, which is not a valid JSON escape sequence and fails to parse at all.
+    2. A bare top-level array wrapped under the ``guidelines`` key — a bare ``[...]``
+       parses as valid JSON but doesn't match the schema, so it fails validation
+       rather than parsing. Only reachable when the provider can't enforce a response
+       schema; constrained decoding makes the shape impossible to get wrong.
+
+    A repair that succeeds is logged at INFO, so a prompt or model that keeps producing
+    off-contract output stays visible instead of being silently rescued.
+
+    Args:
+        clean_response: Response text, already passed through ``clean_llm_response``.
+        context: Pipeline name for log messages, e.g. ``"consistency"``.
+
+    Returns:
+        The parsed guidelines, or None if no variant validated — in which case the
+        failure has already been logged, so callers need only handle the empty case.
+    """
+    variants: list[tuple[str, str]] = [("", clean_response)]
+    escaped = _LONE_BACKSLASH_RE.sub(r"\\\\", clean_response)
+    if escaped != clean_response:
+        variants.append(("escaped lone backslashes", escaped))
+
+    # Report the failure the unrepaired response produced — the later errors are
+    # artifacts of the repair attempts and say less about what the model actually did.
+    first_error: Exception | None = None
+
+    for parse_repair, text in variants:
+        try:
+            parsed = json.loads(text)
+        except JSONDecodeError as e:
+            first_error = first_error or e
+            continue
+
+        payloads: list[tuple[str, object]] = [("", parsed)]
+        if isinstance(parsed, list):
+            payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}))
+
+        for shape_repair, payload in payloads:
+            try:
+                guidelines = GuidelineGenerationResponse.model_validate(payload).guidelines
+            except ValidationError as e:
+                first_error = first_error or e
+                continue
+            repairs = [r for r in (parse_repair, shape_repair) if r]
+            if repairs:
+                logger.info(f"Recovered {context} guideline response after repair: {'; '.join(repairs)}.")
+            return guidelines
+
+    logger.warning(f"Failed to parse {context} guideline response: {first_error}. Response: {repr(clean_response[:500])}")
+    return None
 
 
 def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
@@ -186,15 +257,8 @@ def _generate_guidelines_for_segment(
     if not clean_response:
         logger.warning(f"LLM returned empty response for guideline generation. Model: {llm_settings.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
-    try:
-        guidelines = GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
-        return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
-    except JSONDecodeError as e:
-        logger.warning(f"Failed to parse LLM guideline generation response: {e}. Response: {repr(clean_response[:500])}")
-        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
-    except ValidationError as e:
-        logger.warning(f"Failed to validate LLM guideline generation response: {e}. Response: {repr(clean_response[:500])}")
-        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
+    guidelines = parse_guideline_response(clean_response, "standard")
+    return GuidelineGenerationResult(guidelines=guidelines or [], task_description=task_description)
 
 
 def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]:
