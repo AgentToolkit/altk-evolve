@@ -519,9 +519,13 @@ def inner_field_backfill(response, config: dict):
         Response with backfilled fields
     """
     if "fields" in config:
-        # we are expecting a dictionary
-        if not isinstance(response, dict):
+        # we are expecting a dictionary; a list is a valid parsed response
+        # (e.g. the agent returns a JSON array of items) — don't obliterate it
+        if not isinstance(response, (dict, list)):
             response = {}
+        if not isinstance(response, dict):
+            # list response: backfill is not applicable at the top level
+            return response
         for field in config["fields"]:
             if "backfill" not in field:
                 continue

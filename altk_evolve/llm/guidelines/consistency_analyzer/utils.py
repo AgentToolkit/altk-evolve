@@ -110,6 +110,8 @@ def flatten_response(d, parent_key="", sep="_"):
 
     Converts nested dictionaries into a flat dictionary with concatenated keys.
     Handles lists of dictionaries by inverting them into dictionaries of lists.
+    When the top-level value is itself a list of dicts (e.g. a JSON-array
+    response), it is inverted first so field extraction works normally.
 
     Args:
         d: Dictionary to flatten (or non-dict value to return as-is)
@@ -119,6 +121,12 @@ def flatten_response(d, parent_key="", sep="_"):
     Returns:
         Flattened dictionary with concatenated keys
     """
+    # Top-level list of dicts: invert to dict of lists so field extraction works
+    if isinstance(d, list):
+        if d and isinstance(d[0], dict):
+            d = invert_list_of_dictionaries(d)
+        else:
+            return d
     if not isinstance(d, dict):
         return d
 
@@ -131,10 +139,14 @@ def flatten_response(d, parent_key="", sep="_"):
             if v == [] or not isinstance(v[0], dict):
                 items.append((new_key, v))
             else:
-                # v is a list of dicts - invert it to a dict of lists
+                # v is a list of dicts - invert it to a dict of lists, then recurse
                 inverted_v = invert_list_of_dictionaries(v)
                 for in_k, in_v in inverted_v.items():
-                    items.append((new_key + sep + in_k, in_v))
+                    nested_key = new_key + sep + in_k
+                    if isinstance(in_v, list) and in_v and isinstance(in_v[0], dict):
+                        items.extend(flatten_response(in_v, nested_key, sep=sep).items())
+                    else:
+                        items.append((nested_key, in_v))
         else:
             items.append((new_key, v))
     return dict(items)

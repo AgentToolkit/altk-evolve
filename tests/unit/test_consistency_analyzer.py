@@ -54,6 +54,35 @@ class TestFlattenResponse:
         assert flatten_response("hello") == "hello"
         assert flatten_response(42) == 42
 
+    def test_top_level_list_of_dicts_inverted(self):
+        """A JSON-array response is inverted before flattening, so field extraction works on it."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        result = flatten_response([{"name": "add", "arg": 1}, {"name": "mul", "arg": 2}])
+        assert result == {"name": ["add", "mul"], "arg": [1, 2]}
+
+    def test_top_level_list_of_primitives_returned_as_is(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response([1, 2, 3]) == [1, 2, 3]
+
+    def test_top_level_empty_list_returned_as_is(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response([]) == []
+
+    def test_nested_list_of_dicts_is_flattened_not_left_opaque(self):
+        """Inverting a list of dicts can yield another list of dicts, which must be flattened too.
+
+        Exercises both the recursion and the top-level-list handling, since the recursive
+        call receives a list. Without it the value stays an unflattened list of dicts under
+        "steps_call", which field extraction cannot read.
+        """
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        result = flatten_response({"steps": [{"call": {"name": "a"}}, {"call": {"name": "b"}}]})
+        assert result == {"steps_call_name": ["a", "b"]}
+
     def test_list_of_primitives_kept(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
 
@@ -767,6 +796,15 @@ class TestInnerFieldBackfill:
         config = {"fields": [{"name": "action", "backfill": "none"}]}
         result = inner_field_backfill("not_a_dict", config)
         assert result["action"] == "none"
+
+    def test_list_response_survives_untouched(self):
+        """A JSON-array response is valid parsed output. Backfill doesn't apply to it, but it
+        must not be reset to {} either — that discarded the entire response."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import inner_field_backfill
+
+        config = {"fields": [{"name": "action", "backfill": "none"}]}
+        result = inner_field_backfill([{"action": "search"}, {"other": 1}], config)
+        assert result == [{"action": "search"}, {"other": 1}]
 
 
 # ---------------------------------------------------------------------------
