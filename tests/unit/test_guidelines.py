@@ -58,6 +58,31 @@ class TestParseGuidelineResponse:
         assert guidelines is not None
         assert guidelines[0].content == r"Write \( x \) inline"
 
+    def test_repairs_a_backslash_u_that_is_not_a_unicode_escape(self):
+        r"""\u is only a JSON escape when four hex digits follow. LaTeX like \underbrace
+        starts with \u but is invalid JSON, so it must be escaped rather than skipped —
+        skipping it left the response unparseable and the whole generation discarded."""
+        raw = r'{"guidelines": [{"content": "use \underbrace{x}", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        guidelines = parse_guideline_response(raw, "consistency")
+        assert guidelines is not None
+        assert guidelines[0].content == r"use \underbrace{x}"
+
+    def test_preserves_a_real_unicode_escape_while_repairing_another_escape(self):
+        r"""A response carrying both a genuine é and an invalid \( must repair only
+        the latter — the valid escape still has to decode to its character."""
+        raw = r'{"guidelines": [{"content": "café and \( x \)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        guidelines = parse_guideline_response(raw, "consistency")
+        assert guidelines is not None
+        assert guidelines[0].content == "café and " + r"\( x \)"
+
+    def test_preserves_valid_control_escapes_while_repairing(self):
+        r"""Single-character escapes such as \n are valid JSON and must keep decoding to
+        their control character, not be turned into a literal backslash-n."""
+        raw = r'{"guidelines": [{"content": "line1\nline2 \( x \)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        guidelines = parse_guideline_response(raw, "consistency")
+        assert guidelines is not None
+        assert guidelines[0].content == "line1\nline2 " + r"\( x \)"
+
     def test_logs_the_repairs_that_were_applied(self, caplog):
         raw = r'[{"content": "Write \( x \) inline", "rationale": "r", "category": "strategy", "trigger": "t"}]'
         with caplog.at_level(logging.INFO):

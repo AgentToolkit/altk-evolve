@@ -25,8 +25,10 @@ logger = logging.getLogger(__name__)
 
 _GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_guidelines.jinja2").read_text())
 
-# Lone backslash — not the start of a valid JSON escape sequence.
-_LONE_BACKSLASH_RE = re.compile(r'\\(?!["\\/bfnrtu])')
+# Lone backslash — not the start of a valid JSON escape sequence. \u only counts as one
+# when four hex digits actually follow it, so LaTeX like \underbrace is repaired rather
+# than left as an invalid \u escape that fails to parse either way.
+_LONE_BACKSLASH_RE = re.compile(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})')
 
 
 def parse_guideline_response(clean_response: str, context: str) -> list[Guideline] | None:
