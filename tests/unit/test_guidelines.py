@@ -68,9 +68,11 @@ class TestParseGuidelineResponse:
         assert guidelines[0].content == r"use \underbrace{x}"
 
     def test_preserves_a_real_unicode_escape_while_repairing_another_escape(self):
-        r"""A response carrying both a genuine é and an invalid \( must repair only
-        the latter — the valid escape still has to decode to its character."""
-        raw = r'{"guidelines": [{"content": "café and \( x \)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        r"""A response carrying both a valid é and an invalid \( must repair only the
+        latter — the complete escape still has to decode to its character. The payload uses
+        the escape sequence, not a literal é, so this fails if the u[0-9a-fA-F]{4} exclusion
+        is ever dropped and \u starts being escaped unconditionally."""
+        raw = r'{"guidelines": [{"content": "caf\u00e9 and \( x \)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
         guidelines = parse_guideline_response(raw, "consistency")
         assert guidelines is not None
         assert guidelines[0].content == "café and " + r"\( x \)"
