@@ -3,7 +3,7 @@
 import logging
 
 logger = logging.getLogger(__name__)
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 
 def extract_field_values_from_responses(flat_responses: list[dict], field: dict) -> list[str]:
@@ -51,7 +51,7 @@ def extract_field_values_from_responses(flat_responses: list[dict], field: dict)
     return field_samples
 
 
-def find_matching_alternate(alternates: dict, parsed_actual: dict) -> dict:
+def find_matching_alternate(alternates: list[dict], parsed_actual: dict) -> dict:
     """
     Find the first alternate configuration that matches the actual parsed response.
 
@@ -134,6 +134,15 @@ def flatten_response(d, parent_key="", sep="_"):
     would call .items() on a non-dict and raise, and consumers such as
     single_step_consistency.py expect to receive such lists intact.
 
+    Known limits, both shared with the pre-flattening behaviour:
+
+    - A list whose inverted value is itself a *list of lists* of dicts is not
+      descended into, so those inner dicts stay raw under the intermediate key
+      (e.g. ``[{"y": [{"z": 1}]}, {"y": [{"z": 2}]}]`` keeps ``z`` unreachable).
+    - ``invert_list_of_dictionaries`` appends per key without positional padding, so
+      ragged element dicts lose their alignment: two responses that attach the same
+      value to *different* elements can flatten identically.
+
     Args:
         d: Dictionary to flatten (or non-dict value to return as-is)
         parent_key: Prefix for keys (used in recursion)
@@ -165,11 +174,24 @@ def flatten_response(d, parent_key="", sep="_"):
                 for in_k, in_v in inverted_v.items():
                     nested_key = new_key + sep + in_k
                     if _is_list_of_dicts(in_v):
+                        # Emit the intermediate key as well as the deeper ones. A config
+                        # field may be named for it — agent_config.yaml's
+                        # function_arguments is, whenever tool-call arguments are
+                        # dict-valued — and replacing it with deeper keys would resolve
+                        # that field to "" and drop it from scoring with no error.
+                        items.append((nested_key, in_v))
                         items.extend(flatten_response(in_v, nested_key, sep=sep).items())
                     else:
                         items.append((nested_key, in_v))
         else:
             items.append((new_key, v))
+
+    # dict() keeps the last value for a repeated key, so a post-inversion collision
+    # (e.g. a literal "a_b" alongside a nested a -> b) drops data. Can't be resolved
+    # here without changing the key scheme, but it should at least be audible.
+    collisions = sorted({key for key, count in Counter(key for key, _ in items).items() if count > 1})
+    if collisions:
+        logger.warning("flatten_response: flattened key collision on %s — only the last value for each is kept.", collisions)
     return dict(items)
 
 

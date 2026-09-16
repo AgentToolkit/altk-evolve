@@ -71,17 +71,37 @@ class TestFlattenResponse:
 
         assert flatten_response([]) == []
 
-    def test_nested_list_of_dicts_is_flattened_not_left_opaque(self):
-        """Inverting a list of dicts can yield another list of dicts, which must be flattened too.
+    def test_nested_list_of_dicts_is_flattened_without_losing_the_intermediate_key(self):
+        """Inverting a list of dicts can yield another list of dicts, which must be flattened
+        too — but the intermediate key has to survive alongside the deeper ones.
 
-        Exercises both the recursion and the top-level-list handling, since the recursive
-        call receives a list. Without it the value stays an unflattened list of dicts under
-        "steps_call", which field extraction cannot read.
+        Replacing it would silently zero any config field named for it. agent_config.yaml's
+        `function_arguments` is exactly that, whenever tool-call arguments are dict-valued.
         """
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
 
         result = flatten_response({"steps": [{"call": {"name": "a"}}, {"call": {"name": "b"}}]})
-        assert result == {"steps_call_name": ["a", "b"]}
+        assert result == {
+            "steps_call": [{"name": "a"}, {"name": "b"}],
+            "steps_call_name": ["a", "b"],
+        }
+
+    def test_configured_field_still_resolves_for_dict_valued_tool_arguments(self):
+        """End-to-end guard for the shipped config: `function_arguments` must keep
+        extracting a value when tool-call `arguments` arrive as dicts rather than JSON
+        strings, which is the shape resampling.py passes through unnormalised."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import parse_tool_calls_response
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import extract_field_values_from_responses, flatten_response
+
+        raw = [
+            {"id": "c1", "type": "function", "function": {"name": "get_weather", "arguments": {"city": "NYC"}}},
+            {"id": "c2", "type": "function", "function": {"name": "get_time", "arguments": {"tz": "EST"}}},
+        ]
+        flat = flatten_response(parse_tool_calls_response(raw))
+
+        assert extract_field_values_from_responses([flat], {"name": "function_arguments"}) == ["{'city': 'NYC'} {'tz': 'EST'}"]
+        # The deeper keys are additive, not a replacement.
+        assert extract_field_values_from_responses([flat], {"name": "function_arguments_city"}) == ["NYC"]
 
     def test_list_of_primitives_kept(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
@@ -178,11 +198,27 @@ class TestFindMatchingAlternate:
         result = find_matching_alternate([alt1, alt2], parsed)
         assert result["id"] == 1
 
-    @pytest.mark.parametrize("parsed", [5, None, 1.5, True, "a string", [], [{"a": 1}, 2], [1, 2, 3]])
-    def test_non_mapping_response_reports_no_match(self, parsed):
-        """A JSON primitive, null, or a list has no fields to match on, and the membership
-        test raises TypeError for non-iterables. No-match is the signal callers already
-        translate into 'consistency undefined'."""
+    @pytest.mark.parametrize("parsed", [5, None, 1.5, True])
+    def test_non_iterable_response_reports_no_match(self, parsed):
+        """Without the guard these raise TypeError: `name not in 5` is not a valid test.
+        No-match is the signal callers already translate into 'consistency undefined'."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import find_matching_alternate
+
+        assert find_matching_alternate([{"fields": [{"name": "action"}]}], parsed) == {}
+
+    def test_string_response_does_not_substring_match_a_field_name(self):
+        """The more valuable half of the guard. A string never raised — `in` silently
+        degrades to a substring test, so a response *containing* a field name produced a
+        false alternate match and selected the wrong metric config. Worse than a crash,
+        because nothing signals it."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import find_matching_alternate
+
+        assert find_matching_alternate([{"fields": [{"name": "act"}]}], "the action") == {}
+
+    @pytest.mark.parametrize("parsed", [[], [{"a": 1}, 2], [1, 2, 3]])
+    def test_list_response_reports_no_match(self, parsed):
+        """Lists never raised and already reported no-match — kept as cover that adding
+        the guard did not change that."""
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import find_matching_alternate
 
         assert find_matching_alternate([{"fields": [{"name": "action"}]}], parsed) == {}
