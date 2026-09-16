@@ -7,24 +7,38 @@ A method for reviewing pull requests where **every claim carries a reproduction 
 Five moves, in order.
 
 ### 1. Isolate & baseline
-Review in a throwaway git worktree checked out at the PR head, so the working tree is never touched:
+Review in a throwaway git worktree checked out at the PR head, so the working tree is never touched. `pull/<PR#>/head` is a *mutable* ref, so pin the SHA you reviewed rather than trusting the ref to sit still:
 
 ```bash
-git fetch <remote> pull/<PR#>/head:pr-<PR#>
-git worktree add /tmp/review-<PR#> pr-<PR#>
+HEAD_SHA=$(gh pr view <PR#> --json headRefOid --jq .headRefOid)
+BASE_SHA=$(gh pr view <PR#> --json baseRefOid --jq .baseRefOid)
+
+git fetch <remote> pull/<PR#>/head
+[ "$(git rev-parse FETCH_HEAD)" = "$HEAD_SHA" ] || exit 1   # force-push between the two calls
+git worktree add --detach /tmp/review-<PR#> "$HEAD_SHA"
 ```
+
+Check out the SHA, not the ref, and **re-check `headRefOid` immediately before posting** — if it moved, the findings describe one revision while the inline comments anchor to another, so re-run rather than post.
+
+Give each sub-agent **its own worktree**. Anything that mutates the tree — mutation testing especially — corrupts a sibling agent's run otherwise, and the failures look like flaky tests rather than interference. Clear `__pycache__` after checkout for the same reason.
 
 **A worktree isolates files, not execution.** Step 3 of this method runs the PR's code — its test suite, its dependency install, your repros — and that code is written by the PR author. On the reviewer's host it inherits the reviewer's processes, credentials, SSH agent, cloud tokens and network. For a PR from a fork or an unfamiliar author, that is arbitrary code execution, and the worktree does nothing about it.
 
-So decide the trust level before running anything. A same-repo branch from a maintainer can run on the host. Anything else runs in a container — this repo ships one (`just sandbox-build claude`; see `sandbox/README.md`), but any minimal Python image works:
+So decide the trust level before running anything. A same-repo branch from a maintainer can run on the host. Anything else runs in a container — this repo ships one (`just sandbox-build claude`; see `sandbox/README.md`), but any minimal Python image works. Installing needs the network and reviewing does not, so split it in two and run the PR's code with **no network at all**:
 
 ```bash
-docker run --rm -it -v /tmp/review-<PR#>:/workspace -w /workspace claude-sandbox bash
+# phase 1 — install only, still networked, nothing of the PR's executed yet
+docker run --rm -v /tmp/review-<PR#>:/workspace -w /workspace claude-sandbox \
+  uv sync --all-extras
+
+# phase 2 — everything from here runs the PR's code, so cut the network
+docker run --rm -it --network=none \
+  -v /tmp/review-<PR#>:/workspace -w /workspace claude-sandbox bash
 ```
 
-Mount only the disposable worktree, pass no env file and no host credentials, and drop the network once dependencies are installed. Never source the PR's `.env`, run its git hooks, or `pre-commit install` from it. Keep `gh` calls and the review posting outside the sandbox — those are exactly the credentials you are keeping away from the code. If you cannot sandbox an untrusted PR, review it by reading and **say so in the review**; an unverified finding is the one thing this method does not allow.
+Mount only the disposable worktree and pass no env file and no host credentials. Note that phase 1 still executes the PR's `pyproject.toml` — a build backend can run arbitrary code at install time — so for a genuinely untrusted PR, read the packaging diff before running even that. Never source the PR's `.env`, run its git hooks, or `pre-commit install` from it. Keep `gh` calls and the review posting outside the sandbox — those are exactly the credentials you are keeping away from the code. If you cannot sandbox an untrusted PR, review it by reading and **say so in the review**; an unverified finding is the one thing this method does not allow.
 
-Then get the base right: use the PR's own base SHA (`gh pr view <PR#> --json baseRefOid,headRefOid`), not a hard-coded `main`. A PR targeting a release or feature branch diffed against `main` will attribute pre-existing defects to it, or hide its changes entirely.
+Diff against `$BASE_SHA`, not a hard-coded `main`. A PR targeting a release or feature branch diffed against `main` will attribute pre-existing defects to it, or hide its changes entirely.
 
 *Before* judging anything, run the project's lint / type / test commands and record the result. That's your baseline — it lets you separate PR-caused breakage from pre-existing environmental noise (a missing optional dep, deselected markers, a flaky unrelated test).
 

@@ -19,7 +19,8 @@ Parse `$ARGUMENTS` positionally and by flag, independently of each other:
 ## Steps
 
 1. **Fetch & size the PR.**
-   - `gh pr view $1 --repo <REPO> --json title,author,authorAssociation,state,isCrossRepository,headRepositoryOwner,headRefName,headRefOid,baseRefName,baseRefOid,mergeable,mergeStateStatus,body,additions,deletions,changedFiles,commits`
+   - `gh pr view $1 --repo <REPO> --json title,author,state,isCrossRepository,headRepositoryOwner,headRefName,headRefOid,baseRefName,baseRefOid,mergeable,mergeStateStatus,body,additions,deletions,changedFiles,commits`
+   - `gh api repos/<REPO>/pulls/$1 --jq .author_association` — **not** a `gh pr view` field; asking for it there fails the whole call.
    - `gh pr view $1 --repo <REPO> --json files --jq '.files[]|"\(.additions)+ \(.deletions)- \(.path)"' | sort -rn` to see the shape.
    - Record `baseRefOid` and `headRefOid` — **every diff and baseline below uses those two SHAs**, never a hard-coded `main`. A PR may target a release or feature branch; diffing against the wrong base misattributes pre-existing defects to the PR, or hides its changes entirely.
    - If the PR body claims specific bugs/fixes, note them — they become verification targets.
@@ -30,12 +31,18 @@ Parse `$ARGUMENTS` positionally and by flag, independently of each other:
    - Correlate each inline comment to its review via `pull_request_review_id`, and keep `path` + `line`/`original_line`. Every prior finding must come back with a fixed / still-open / regressed verdict.
 
 3. **Isolate — files *and* execution.** A git worktree isolates files; it does not isolate processes, credentials, host mounts or network. Anything you run from the PR head is code the PR author controls.
-   - Fetch the head into a temp branch and add a worktree under the scratchpad dir; never touch the user's working tree. Clean it up at the end (`git worktree remove --force`, delete the temp branch).
+   - **Pin the head SHA.** `pull/$1/head` is a mutable ref: `git fetch <remote> pull/$1/head`, then abort unless `git rev-parse FETCH_HEAD` equals the `headRefOid` from step 1 — a force-push in between would leave you reviewing one revision and anchoring comments to another.
+   - Add the worktree **detached at that SHA**, under the scratchpad dir, never the user's working tree: `git worktree add --detach <scratchpad>/review-$1 <HEAD_SHA>`. Clear `__pycache__` after checkout. Clean up at the end (`git worktree remove --force`).
+   - **One worktree per sub-agent.** Agents that mutate the tree (mutation testing especially) corrupt each other's runs, and the damage presents as flaky tests rather than as interference.
    - **Decide where execution happens.** Treat the head as *untrusted* unless `isCrossRepository` is false **and** `authorAssociation` is `OWNER`/`MEMBER`/`COLLABORATOR`. `--sandbox` / `--no-sandbox` overrides this; if the head is untrusted and no sandbox is available, run no PR code at all and say so in the review rather than reviewing by reading alone and implying otherwise.
-   - **Untrusted head** → run every install, test and repro inside a container, using this repo's image (`just sandbox-build claude`, or any minimal Python image). Mount only the disposable worktree, pass **no** `--env-file` and no host credentials, and drop the network once dependencies are installed:
+   - **Untrusted head** → run every install, test and repro inside a container, using this repo's image (`just sandbox-build claude`, or any minimal Python image). Mount only the disposable worktree and pass **no** `--env-file` and no host credentials. Install and review are two phases, because only the first needs the network:
      ```bash
-     docker run --rm -it -v "<WORKTREE>":/workspace -w /workspace claude-sandbox bash
+     # phase 1 — dependency install, networked
+     docker run --rm -v "<WORKTREE>":/workspace -w /workspace claude-sandbox uv sync --all-extras
+     # phase 2 — everything that runs the PR's code, no network
+     docker run --rm -it --network=none -v "<WORKTREE>":/workspace -w /workspace claude-sandbox bash
      ```
+     Phase 1 still executes the PR's `pyproject.toml` (a build backend runs arbitrary code at install time), so read the packaging diff first when the head is genuinely untrusted.
    - Never source the PR's `.env`, never run its git hooks, and never `pre-commit install` from it.
    - Keep all `gh` metadata calls and the review posting **outside** the sandbox — those hold the user's credentials.
 
@@ -47,4 +54,4 @@ Parse `$ARGUMENTS` positionally and by flag, independently of each other:
 
 7. **Synthesize & show the user.** Rank blocker → high → medium → low; separate verified from hypothesized; **credit what's genuinely correct** (a status table is ideal on re-reviews). Present the results and STOP — do not post unless `--post` was passed or the user asks.
 
-8. **Post (only when asked).** Build a review with a summary body + inline comments anchored to `file:line` at `headRefOid` (inline comments must land on diff lines; otherwise put them in the body). Pick the verdict deliberately (`REQUEST_CHANGES` for a real correctness drop or several mediums; else `COMMENT`/`APPROVE`). Submit as the user's own GitHub account with **no AI attribution**. Verify every inline comment anchored, then report the review URL.
+8. **Post (only when asked).** First re-read `headRefOid` and abort if it no longer matches the SHA you reviewed — say so and re-run rather than posting findings against a revision that moved. Then build a review with a summary body + inline comments anchored to `file:line` at that SHA (inline comments must land on diff lines; otherwise put them in the body). Pick the verdict deliberately (`REQUEST_CHANGES` for a real correctness drop or several mediums; else `COMMENT`/`APPROVE`). Submit as the user's own GitHub account with **no AI attribution**. Verify every inline comment anchored, then report the review URL.
