@@ -25,10 +25,39 @@ logger = logging.getLogger(__name__)
 
 _GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_guidelines.jinja2").read_text())
 
-# Lone backslash — not the start of a valid JSON escape sequence. \u only counts as one
-# when four hex digits actually follow it, so LaTeX like \underbrace is repaired rather
-# than left as an invalid \u escape that fails to parse either way.
-_LONE_BACKSLASH_RE = re.compile(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})')
+# Matches one escape at a time: group 1 is a complete, valid JSON escape (\u only counts
+# when four hex digits follow, so LaTeX like \underbrace is repaired rather than left as
+# an invalid \u that fails to parse either way); group 2 is any other escaped character,
+# i.e. a lone backslash needing doubling. Valid pairs are *consumed*, not looked past —
+# with a lookahead, the second half of a correct \\ was re-examined as the start of a new
+# escape, so `\\d` became `\\\d` and the response stayed unparseable. A trailing lone
+# backslash matches group 2 as empty and is still doubled.
+_JSON_ESCAPE_RE = re.compile(r'\\(?:(["\\/bfnrt]|u[0-9a-fA-F]{4})|(.|$))', re.DOTALL)
+
+# C0 control characters, which a JSON string can only carry via an escape sequence.
+_C0_CONTROL = {chr(code) for code in range(0x20)}
+
+
+def _escape_lone_backslashes(text: str) -> str:
+    """Double every backslash that does not already start a valid JSON escape."""
+    return _JSON_ESCAPE_RE.sub(lambda m: m.group(0) if m.group(1) else "\\\\" + m.group(2), text)
+
+
+def _introduces_control_characters(guidelines: list[Guideline], raw: str) -> bool:
+    """Whether decoding produced C0 control characters the raw response never contained.
+
+    The escape repair only runs on a response the model failed to escape properly, so its
+    ``\\t``/``\\n``/``\\r`` almost certainly meant a literal backslash — a Windows path or a
+    regex — rather than a control character. Decoding them anyway yields a guideline that
+    looks valid but whose text is silently wrong, which then gets embedded and served on.
+    Detect that and reject, rather than reporting a successful recovery.
+    """
+    present_in_raw = {ch for ch in raw if ch in _C0_CONTROL}
+    for guideline in guidelines:
+        for value in (guideline.content, guideline.rationale, guideline.trigger, *guideline.implementation_steps):
+            if any(ch in _C0_CONTROL and ch not in present_in_raw for ch in value):
+                return True
+    return False
 
 
 def parse_guideline_response(clean_response: str, context: str) -> list[Guideline] | None:
@@ -57,7 +86,7 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
         failure has already been logged, so callers need only handle the empty case.
     """
     variants: list[tuple[str, str]] = [("", clean_response)]
-    escaped = _LONE_BACKSLASH_RE.sub(r"\\\\", clean_response)
+    escaped = _escape_lone_backslashes(clean_response)
     if escaped != clean_response:
         variants.append(("escaped lone backslashes", escaped))
 
@@ -83,6 +112,15 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
                 first_error = first_error or e
                 continue
             repairs = [r for r in (parse_repair, shape_repair) if r]
+            if parse_repair and _introduces_control_characters(guidelines, clean_response):
+                # Fail closed: a plausible-looking guideline with silently corrupted text is
+                # worse than none, and the operator can regenerate.
+                logger.warning(
+                    f"Discarding {context} guideline response: escaping lone backslashes made it parse, but decoding "
+                    f"introduced control characters absent from the response, so its text would be corrupted "
+                    f"(a Windows path or regex read as \\t/\\n/\\r). Response: {repr(clean_response[:500])}"
+                )
+                return None
             if repairs:
                 logger.info(f"Recovered {context} guideline response after repair: {'; '.join(repairs)}.")
             return guidelines

@@ -585,12 +585,14 @@ class TestConsistencyResponseRepair:
         response.choices[0].message.content = json.dumps([self._GUIDELINE])
         return response
 
-    def test_accurate_pipeline_recovers_a_bare_array_response(self):
+    def test_accurate_pipeline_recovers_a_bare_array_response(self, caplog):
+        import logging
+
         from unittest.mock import patch
 
         from altk_evolve.llm.guidelines.consistency_guidelines import _generate_guideline_result
 
-        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion:
+        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion, caplog.at_level(logging.INFO):
             mock_completion.return_value = self._bare_array_response()
             result = _generate_guideline_result(
                 messages=[{"role": "assistant", "content": "step one"}],
@@ -602,13 +604,19 @@ class TestConsistencyResponseRepair:
             )
 
         assert [g.content for g in result.guidelines] == ["Re-read the tool output before answering"]
+        # The label is the only thing distinguishing the two consistency pipelines in logs,
+        # which is what the "keep off-contract models visible" rationale depends on.
+        assert "Recovered consistency guideline response" in caplog.text
+        assert "fast consistency" not in caplog.text
 
-    def test_fast_pipeline_recovers_a_bare_array_response(self):
+    def test_fast_pipeline_recovers_a_bare_array_response(self, caplog):
+        import logging
+
         from unittest.mock import patch
 
         from altk_evolve.llm.guidelines.consistency_guidelines import _generate_fast_guideline_result
 
-        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion:
+        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion, caplog.at_level(logging.INFO):
             mock_completion.return_value = self._bare_array_response()
             result = _generate_fast_guideline_result(
                 task_description="Answer a question",
@@ -618,6 +626,7 @@ class TestConsistencyResponseRepair:
             )
 
         assert [g.content for g in result.guidelines] == ["Re-read the tool output before answering"]
+        assert "Recovered fast consistency guideline response" in caplog.text
 
 
 class TestGenerateConsistencyGuidelinesFast:

@@ -77,13 +77,35 @@ class TestParseGuidelineResponse:
         assert guidelines is not None
         assert guidelines[0].content == "café and " + r"\( x \)"
 
-    def test_preserves_valid_control_escapes_while_repairing(self):
-        r"""Single-character escapes such as \n are valid JSON and must keep decoding to
-        their control character, not be turned into a literal backslash-n."""
-        raw = r'{"guidelines": [{"content": "line1\nline2 \( x \)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+    def test_valid_control_escapes_are_honoured_when_no_repair_is_needed(self):
+        r"""A response that parses on its own is never touched — \n keeps decoding to a
+        newline. The repair path is the only thing that treats escapes with suspicion."""
+        raw = r'{"guidelines": [{"content": "line1\nline2", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
         guidelines = parse_guideline_response(raw, "consistency")
         assert guidelines is not None
-        assert guidelines[0].content == "line1\nline2 " + r"\( x \)"
+        assert guidelines[0].content == "line1\nline2"
+
+    def test_discards_when_the_repair_would_inject_control_characters(self, caplog):
+        r"""A model emitting raw backslashes emits them throughout, so \t in C:\trainer meant
+        a literal backslash, not a tab. Decoding it anyway yields a plausible-looking
+        guideline with silently corrupted text, which then gets embedded and served on — so
+        fail closed instead of reporting a successful recovery."""
+        raw = r'{"guidelines": [{"content": "Normalize C:\Users\trainer\runs. Bound \( x \)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        with caplog.at_level(logging.WARNING):
+            guidelines = parse_guideline_response(raw, "standard")
+        assert guidelines is None
+        assert "introduced control characters" in caplog.text
+        # Must not be reported as a success.
+        assert "Recovered" not in caplog.text
+
+    def test_repair_survives_a_correctly_escaped_backslash(self):
+        r"""A response mixing a correct \\ with a raw \( is realistic. The escape scan has to
+        *consume* the valid pair: looking past it re-examined the second backslash as a new
+        escape, turned \\d into \\\d, and discarded every guideline in the batch."""
+        raw = r'{"guidelines": [{"content": "match \\d+ and \( x \)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        guidelines = parse_guideline_response(raw, "consistency")
+        assert guidelines is not None
+        assert guidelines[0].content == r"match \d+ and \( x \)"
 
     def test_logs_the_repairs_that_were_applied(self, caplog):
         raw = r'[{"content": "Write \( x \) inline", "rationale": "r", "category": "strategy", "trigger": "t"}]'
@@ -262,11 +284,16 @@ class TestParseOpenaiAgentsTrajectory:
         _mock_schema,
         mock_completion,
         monkeypatch,
+        caplog,
     ):
         """The standard pipeline is wired to the repairing parser, not a strict one."""
         monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", False)
         mock_completion.return_value = _mock_completion_response([_GUIDELINE])
 
-        results = generate_guidelines([{"role": "user", "content": "Fix CSV parsing"}])
+        with caplog.at_level(logging.INFO):
+            results = generate_guidelines([{"role": "user", "content": "Fix CSV parsing"}])
 
         assert results[0].guidelines[0].content == "Validate files before parsing"
+        # The context label is the only thing distinguishing the three pipelines in logs.
+        assert "Recovered standard guideline response" in caplog.text
+        assert "consistency" not in caplog.text
