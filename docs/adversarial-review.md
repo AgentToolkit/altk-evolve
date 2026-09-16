@@ -14,6 +14,18 @@ git fetch <remote> pull/<PR#>/head:pr-<PR#>
 git worktree add /tmp/review-<PR#> pr-<PR#>
 ```
 
+**A worktree isolates files, not execution.** Step 3 of this method runs the PR's code — its test suite, its dependency install, your repros — and that code is written by the PR author. On the reviewer's host it inherits the reviewer's processes, credentials, SSH agent, cloud tokens and network. For a PR from a fork or an unfamiliar author, that is arbitrary code execution, and the worktree does nothing about it.
+
+So decide the trust level before running anything. A same-repo branch from a maintainer can run on the host. Anything else runs in a container — this repo ships one (`just sandbox-build claude`; see `sandbox/README.md`), but any minimal Python image works:
+
+```bash
+docker run --rm -it -v /tmp/review-<PR#>:/workspace -w /workspace claude-sandbox bash
+```
+
+Mount only the disposable worktree, pass no env file and no host credentials, and drop the network once dependencies are installed. Never source the PR's `.env`, run its git hooks, or `pre-commit install` from it. Keep `gh` calls and the review posting outside the sandbox — those are exactly the credentials you are keeping away from the code. If you cannot sandbox an untrusted PR, review it by reading and **say so in the review**; an unverified finding is the one thing this method does not allow.
+
+Then get the base right: use the PR's own base SHA (`gh pr view <PR#> --json baseRefOid,headRefOid`), not a hard-coded `main`. A PR targeting a release or feature branch diffed against `main` will attribute pre-existing defects to it, or hide its changes entirely.
+
 *Before* judging anything, run the project's lint / type / test commands and record the result. That's your baseline — it lets you separate PR-caused breakage from pre-existing environmental noise (a missing optional dep, deselected markers, a flaky unrelated test).
 
 ### 2. Fan out independent skeptics
@@ -28,16 +40,19 @@ Re-run the agents' **headline** claims yourself. Agents are confidently wrong so
 ### 5. Rank, separate, and credit
 Blockers first, then high / medium / low. Distinguish verified from hypothesized. Say plainly which claimed fixes are genuinely correct so the author doesn't churn on the parts they nailed. A review that only lists faults is a worse review.
 
+On a **re-review**, the status table is per *finding*, so load the individual findings and not just the review bodies — `gh api --paginate repos/<REPO>/pulls/<PR#>/reviews` for the verdicts and `.../comments` for the inline findings, correlated through `pull_request_review_id`. Paginate both; a long-running PR overflows one page, and a finding you silently dropped reads to the author as a finding you withdrew.
+
 **Through-line: evidence over opinion.**
 
 ## The reusable sub-agent prompt
 
 Fill in the bracketed parts, one instance per risk surface.
 
-```
+```text
 Adversarial code review. Code is checked out at: <WORKTREE_PATH>
-Base branch is `main` (or `upstream/main`); `git diff main...HEAD -- <path>`
-shows only this PR's changes.
+The PR's base commit is <BASE_SHA>; `git diff <BASE_SHA>...HEAD -- <path>`
+shows only this PR's changes. Run every command <WHERE: on the host / inside
+the review container, e.g. `docker exec <NAME> ...`>.
 
 Focus ONLY on: <SPECIFIC FILES / ONE RISK SURFACE>.
 (Another reviewer owns <the other areas> — do not duplicate.)
