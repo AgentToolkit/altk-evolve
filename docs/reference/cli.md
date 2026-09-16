@@ -64,26 +64,34 @@ evolve entities delete my_namespace 12345
 
 ### Data Retention
 
+Manage policies, rules, and schedules directly in Evolve:
+
 ```bash
-# Dry run: report what the policy would flag or delete (nothing is mutated)
-evolve retention run --policy retention.yaml
+evolve retention policies create standard --namespace my-service
+evolve retention policies rules add standard --name old-memories --namespace my-service --max-age-days 90 --action delete
 
-# Sweep a specific namespace
-evolve retention run --policy retention.yaml my_namespace
+# Immediate execution of the stored policy (dry run by default).
+evolve retention run standard --namespace my-service --initiated-by alice
+evolve retention run standard --namespace my-service --initiated-by alice --apply
 
-# Enforce the policy
-evolve retention run --policy retention.yaml my_namespace --apply
+# Create a schedule for the running Evolve service.
+evolve retention schedules create nightly --namespace my-service --initiated-by alice --policy standard --schedule '0 2 * * *' --time-zone America/Los_Angeles
+evolve retention schedules stop nightly --namespace my-service --initiated-by alice --revision 1
+evolve retention schedules start nightly --namespace my-service --initiated-by alice --revision 2
 ```
 
-**Options:**
-- `--policy, -p`: Path to a retention policy file (YAML or JSON). Required.
-- `--apply`: Actually flag/delete. Without it the run is a dry run.
-- Positional namespace argument defaults to the configured `namespace_id`.
+`policies` supports `create`, `list`, `show`, `update`, and `delete`.
+`policies rules` supports `add`, `list`, `update`, and `remove`; select a rule with `--name`.
+`schedules` supports `create`, `show`, `list`, `update`, `delete`, `start`, and `stop`. `show` includes the next five scheduled times alongside configuration, or no upcoming runs when suspended.
+`jobs` supports `list`, `show`, `cancel`, and `recover`.
 
-The report lists every action with its reason (`age`, `unused`, `cascade:<trace_id>`),
-the rule that decided it, and the evidence behind it. See the
-[Data Retention guide](../guides/retention.md) for the policy format and the
-`AccessStampPlugin` dependency of `max_unused_days` rules.
+The Evolve service runs enabled schedules automatically. `start`/`stop` change persisted schedule state; stopping a schedule does not cancel admitted jobs.
+
+Catalog operations require `--namespace`. Immediate runs and schedule writes require `--initiated-by` for audit attribution. `run` takes a stored policy ID, and `--apply` enables mutations. Schedule updates take `--revision` and preserve omitted fields. Retention commands do not take policy or schedule files.
+
+Reports contain actions, reasons, deciding rules, and evidence. See the
+[Data Retention guide](../guides/retention.md) for rule semantics and the
+[Scheduling guide](../guides/retention-scheduling.md) for command options, execution, and recovery.
 
 ### Skill Management
 
@@ -168,3 +176,9 @@ See the [Evolve Viz guide](../guides/viz.md) for full usage.
 ## Environment Variables
 
 The CLI uses the same environment variables as the MCP server. See the [Configuration](README.md#configuration) section in the main README.
+
+
+PostgreSQL also supports `evolve retention mark POLICY`, `sweep POLICY`, `candidates`,
+and `audit`. Use `--namespace` for each and `--initiated-by` for mark/sweep. Marking
+never deletes; sweeping applies deletions only after rechecking eligibility and holds.
+See [collection semantics](../guides/retention-api.md#postgresql-collection).
