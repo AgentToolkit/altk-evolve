@@ -178,6 +178,15 @@ class TestFindMatchingAlternate:
         result = find_matching_alternate([alt1, alt2], parsed)
         assert result["id"] == 1
 
+    @pytest.mark.parametrize("parsed", [5, None, 1.5, True, "a string", [], [{"a": 1}, 2], [1, 2, 3]])
+    def test_non_mapping_response_reports_no_match(self, parsed):
+        """A JSON primitive, null, or a list has no fields to match on, and the membership
+        test raises TypeError for non-iterables. No-match is the signal callers already
+        translate into 'consistency undefined'."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import find_matching_alternate
+
+        assert find_matching_alternate([{"fields": [{"name": "action"}]}], parsed) == {}
+
 
 class TestRescaleWeights:
     def test_equal_default_weights_when_all_minus_one(self):

@@ -65,6 +65,13 @@ def find_matching_alternate(alternates: dict, parsed_actual: dict) -> dict:
     Returns:
         The matching alternate configuration, or empty dict if no match found
     """
+    # A non-mapping response (a JSON primitive, null, or a list preserved by
+    # flatten_response) has no fields to match against, and the `name not in parsed_actual`
+    # test below raises TypeError for anything non-iterable. Report no-match instead: callers
+    # already treat that as the unsupported-response case and mark consistency undefined.
+    if not isinstance(parsed_actual, dict):
+        return {}
+
     # We consider it a match if we can find every field mentioned in the alternate config in the actual response
     for alternate in alternates:
         field_list = alternate["fields"]
