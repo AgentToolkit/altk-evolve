@@ -200,11 +200,11 @@ def _generate_guidelines_for_segment(
 def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]:
     """Generate guidelines from a trajectory, optionally segmented into subtasks.
 
-    When segmentation is enabled (EVOLVE_SEGMENTATION_ENABLED=true, the default),
-    the trajectory is first segmented into logical subtasks. Guidelines are then generated
-    per subtask and each result carries the subtask's generalized description as
-    task_description — giving downstream clustering much more precise signal than
-    the raw first user message.
+    Segmentation is disabled by default. When enabled with
+    EVOLVE_SEGMENTATION_ENABLED=true, the trajectory is first segmented into logical
+    subtasks. Guidelines are then generated per subtask and each result carries the
+    subtask's generalized description as task_description — giving downstream
+    clustering much more precise signal than the raw first user message.
 
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
     trajectory when segmentation is disabled or produces fewer than 2 subtasks).
