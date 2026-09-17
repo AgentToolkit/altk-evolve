@@ -3,12 +3,13 @@ import logging
 from json import JSONDecodeError
 from pathlib import Path
 
-import litellm
 from jinja2 import Template
 from litellm import completion, get_supported_openai_params, supports_response_schema
 from pydantic import ValidationError
 
-from altk_evolve.config.llm import llm_settings
+from altk_evolve.config.llm import llm_settings  # noqa: F401
+from altk_evolve.config.evolve import evolve_config  # noqa: F401
+from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.guidelines import SegmentationResponse, SubtaskSegment
 from altk_evolve.utils.utils import clean_llm_response
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 _SEGMENT_TEMPLATE = Template((Path(__file__).parent / "prompts/segment_trajectory.jinja2").read_text())
 
 
-def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
+def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None = None) -> list[SubtaskSegment]:
     """Segment a trajectory into logical subtasks with generalized descriptions.
 
     The returned start_step/end_step are 1-based indices into the filtered
@@ -28,19 +29,20 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
 
     Returns an empty list on failure — callers fall back to full-trajectory guideline generation.
     """
+    options = options or GuidelineRuntime.from_settings()
     # Import here to avoid circular import (guidelines.py imports this module)
     from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 
     trajectory_data = parse_openai_agents_trajectory(messages)
 
     supported_params = get_supported_openai_params(
-        model=llm_settings.guidelines_model,
-        custom_llm_provider=llm_settings.custom_llm_provider,
+        model=options.guidelines_model,
+        custom_llm_provider=options.custom_llm_provider,
     )
     supports_response_format = supported_params and "response_format" in supported_params
     response_schema_enabled = supports_response_schema(
-        model=llm_settings.guidelines_model,
-        custom_llm_provider=llm_settings.custom_llm_provider,
+        model=options.guidelines_model,
+        custom_llm_provider=options.custom_llm_provider,
     )
     constrained_decoding_supported = bool(supports_response_format and response_schema_enabled)
 
@@ -50,8 +52,7 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
         constrained_decoding_supported=constrained_decoding_supported,
     )
 
-    litellm.enable_json_schema_validation = constrained_decoding_supported
-    llm_messages = dispatch_llm_pre_call([{"role": "user", "content": prompt}], purpose="segmentation", model=llm_settings.guidelines_model)
+    llm_messages = dispatch_llm_pre_call([{"role": "user", "content": prompt}], purpose="segmentation", model=options.guidelines_model)
 
     last_error: Exception | None = None
     for attempt in range(3):
@@ -59,10 +60,11 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
             if constrained_decoding_supported:
                 raw = (
                     completion(
-                        model=llm_settings.guidelines_model,
+                        model=options.guidelines_model,
                         messages=llm_messages,
                         response_format=SegmentationResponse,
-                        custom_llm_provider=llm_settings.custom_llm_provider,
+                        custom_llm_provider=options.custom_llm_provider,
+                        enable_json_schema_validation=constrained_decoding_supported,
                     )
                     .choices[0]
                     .message.content
@@ -70,9 +72,10 @@ def segment_trajectory(messages: list[dict]) -> list[SubtaskSegment]:
             else:
                 raw = (
                     completion(
-                        model=llm_settings.guidelines_model,
+                        model=options.guidelines_model,
                         messages=llm_messages,
-                        custom_llm_provider=llm_settings.custom_llm_provider,
+                        custom_llm_provider=options.custom_llm_provider,
+                        enable_json_schema_validation=constrained_decoding_supported,
                     )
                     .choices[0]
                     .message.content
