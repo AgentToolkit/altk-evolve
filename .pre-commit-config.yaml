@@ -67,3 +67,14 @@ repos:
         language: system
         pass_filenames: false
         files: ^(plugin-source/|platform-integrations/)
+
+  # Latest-updates sync gate — fails if README's "Latest from Evolve" block has
+  # drifted from the single-source snippet in includes/latest-updates.md.
+  - repo: local
+    hooks:
+      - id: latest-updates-synced
+        name: latest-updates-synced
+        entry: uv run python scripts/sync_latest_updates.py check
+        language: system
+        pass_filenames: false
+        files: ^(includes/latest-updates\.md|README\.md)$
