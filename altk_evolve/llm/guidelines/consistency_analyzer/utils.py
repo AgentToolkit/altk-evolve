@@ -3,7 +3,7 @@
 import logging
 
 logger = logging.getLogger(__name__)
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 
 def extract_field_values_from_responses(flat_responses: list[dict], field: dict) -> list[str]:
@@ -120,6 +120,19 @@ def _is_list_of_dicts(value) -> bool:
     return isinstance(value, list) and bool(value) and all(isinstance(item, dict) for item in value)
 
 
+def _has_uniform_keys(list_of_dicts: list) -> bool:
+    """Whether every dict in the list carries the same key set.
+
+    invert_list_of_dictionaries appends per key with no positional padding, so a ragged
+    list loses the correspondence between an element and its values: [{"tool": "search",
+    "args": "q"}, {"tool": "write"}] and the same "args" attached to the *other* tool
+    both invert to {"tool": [...], "args": ["q"]}. Downstream that reads as perfect
+    consistency for two different responses, so a ragged list must not be inverted.
+    """
+    expected = list_of_dicts[0].keys()
+    return all(item.keys() == expected for item in list_of_dicts)
+
+
 def flatten_response(d, parent_key="", sep="_"):
     """
     Recursively flatten a nested dictionary structure.
@@ -134,14 +147,22 @@ def flatten_response(d, parent_key="", sep="_"):
     would call .items() on a non-dict and raise, and consumers such as
     single_step_consistency.py expect to receive such lists intact.
 
+    A top-level list is also left untouched when it is *ragged* — its element dicts do
+    not share one key set. Inverting one misaligns element values, so two responses that
+    attach the same value to different elements would flatten identically and score as
+    perfectly consistent; returning the list unchanged instead reaches the scorer as
+    unscorable and is honestly reported undefined.
+
     Known limits, both shared with the pre-flattening behaviour:
 
     - A list whose inverted value is itself a *list of lists* of dicts is not
       descended into, so those inner dicts stay raw under the intermediate key
       (e.g. ``[{"y": [{"z": 1}]}, {"y": [{"z": 2}]}]`` keeps ``z`` unreachable).
-    - ``invert_list_of_dictionaries`` appends per key without positional padding, so
-      ragged element dicts lose their alignment: two responses that attach the same
-      value to *different* elements can flatten identically.
+    - The raggedness guard above covers only the top level. A ragged list nested under a
+      key is still inverted and can still misalign, exactly as it did before flattening
+      handled top-level lists at all.
+    - Not idempotent: a retained intermediate key holds a live list of dicts, so
+      re-flattening the result descends into it. Every call site flattens once.
 
     Args:
         d: Dictionary to flatten (or non-dict value to return as-is)
@@ -151,9 +172,12 @@ def flatten_response(d, parent_key="", sep="_"):
     Returns:
         Flattened dictionary with concatenated keys
     """
-    # Top-level list of dicts: invert to dict of lists so field extraction works
+    # Top-level list of dicts: invert to dict of lists so field extraction works. A ragged
+    # list is returned untouched instead — inverting it silently misaligns element values
+    # and scores two different responses as identical, where an un-inverted list reaches the
+    # scorer as unscorable and is honestly reported undefined.
     if isinstance(d, list):
-        if _is_list_of_dicts(d):
+        if _is_list_of_dicts(d) and _has_uniform_keys(d):
             d = invert_list_of_dictionaries(d)
         else:
             return d
@@ -173,25 +197,34 @@ def flatten_response(d, parent_key="", sep="_"):
                 inverted_v = invert_list_of_dictionaries(v)
                 for in_k, in_v in inverted_v.items():
                     nested_key = new_key + sep + in_k
-                    if _is_list_of_dicts(in_v):
-                        # Emit the intermediate key as well as the deeper ones. A config
-                        # field may be named for it — agent_config.yaml's
-                        # function_arguments is, whenever tool-call arguments are
-                        # dict-valued — and replacing it with deeper keys would resolve
-                        # that field to "" and drop it from scoring with no error.
-                        items.append((nested_key, in_v))
+                    # Always emit the intermediate key. A config field may be named for it —
+                    # agent_config.yaml's function_arguments is, whenever tool-call arguments
+                    # are dict-valued — and replacing it with deeper keys would resolve that
+                    # field to "" and drop it from scoring with no error.
+                    items.append((nested_key, in_v))
+                    # Descend only when the inner list will actually flatten to a dict. A
+                    # ragged one comes back from the guard above as a list, with no .items().
+                    if _is_list_of_dicts(in_v) and _has_uniform_keys(in_v):
                         items.extend(flatten_response(in_v, nested_key, sep=sep).items())
-                    else:
-                        items.append((nested_key, in_v))
         else:
             items.append((new_key, v))
 
-    # dict() keeps the last value for a repeated key, so a post-inversion collision
-    # (e.g. a literal "a_b" alongside a nested a -> b) drops data. Can't be resolved
-    # here without changing the key scheme, but it should at least be audible.
-    collisions = sorted({key for key, count in Counter(key for key, _ in items).items() if count > 1})
+    # dict() keeps the last value for a repeated key, so a post-inversion collision (e.g. a
+    # literal "a_b" alongside a nested a -> b) drops one. Not resolvable here without
+    # changing the key scheme; this only records it.
+    #
+    # Deliberately debug, not warning, and only for differing values. Equal values lose
+    # nothing, and a differing collision is not reliably data loss either: the intermediate
+    # keys emitted above collide with their own deep projection, where the "dropped" value is
+    # still reachable under the intermediate key. Distinguishing that from real loss needs
+    # provenance this function doesn't track, so an alert here would cry wolf on its own
+    # normal output — once per sample per step — and get tuned out.
+    grouped: dict[str, list] = defaultdict(list)
+    for key, value in items:
+        grouped[key].append(value)
+    collisions = sorted(key for key, values in grouped.items() if len(values) > 1 and any(v != values[-1] for v in values))
     if collisions:
-        logger.warning("flatten_response: flattened key collision on %s — only the last value for each is kept.", collisions)
+        logger.debug("flatten_response: flattened key collision on %s — only the last value for each is kept.", collisions)
     return dict(items)
 
 

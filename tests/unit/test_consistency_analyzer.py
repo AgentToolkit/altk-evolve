@@ -89,7 +89,13 @@ class TestFlattenResponse:
     def test_configured_field_still_resolves_for_dict_valued_tool_arguments(self):
         """End-to-end guard for the shipped config: `function_arguments` must keep
         extracting a value when tool-call `arguments` arrive as dicts rather than JSON
-        strings, which is the shape resampling.py passes through unnormalised."""
+        strings, which is the shape resampling.py passes through unnormalised.
+
+        Two calls with *different* argument names make the inverted value ragged, so the
+        raggedness guard stops the descent and no deeper keys are produced. That is the
+        intended precedence: the configured field is what must not break, and misaligned
+        deeper keys are worse than absent ones.
+        """
         from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import parse_tool_calls_response
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import extract_field_values_from_responses, flatten_response
 
@@ -100,14 +106,84 @@ class TestFlattenResponse:
         flat = flatten_response(parse_tool_calls_response(raw))
 
         assert extract_field_values_from_responses([flat], {"name": "function_arguments"}) == ["{'city': 'NYC'} {'tz': 'EST'}"]
-        # The deeper keys are additive, not a replacement.
-        assert extract_field_values_from_responses([flat], {"name": "function_arguments_city"}) == ["NYC"]
+        assert "function_arguments_city" not in flat
+
+    def test_deeper_keys_are_additive_for_uniform_tool_arguments(self):
+        """When both calls take the same argument name the inverted value is uniform, so the
+        descent runs and the deeper key is emitted *alongside* the intermediate one."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import parse_tool_calls_response
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import extract_field_values_from_responses, flatten_response
+
+        raw = [
+            {"id": "c1", "type": "function", "function": {"name": "get_weather", "arguments": {"city": "NYC"}}},
+            {"id": "c2", "type": "function", "function": {"name": "get_weather", "arguments": {"city": "Paris"}}},
+        ]
+        flat = flatten_response(parse_tool_calls_response(raw))
+
+        assert extract_field_values_from_responses([flat], {"name": "function_arguments"}) == ["{'city': 'NYC'} {'city': 'Paris'}"]
+        assert extract_field_values_from_responses([flat], {"name": "function_arguments_city"}) == ["NYC Paris"]
 
     def test_list_of_primitives_kept(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
 
         result = flatten_response({"items": [1, 2, 3]})
         assert result == {"items": [1, 2, 3]}
+
+    def test_ragged_top_level_list_is_not_inverted(self):
+        """Inverting appends per key without positional padding, so a ragged list loses which
+        element a value belonged to. Two responses attaching the same "args" to a *different*
+        "tool" would flatten identically and score as perfectly consistent."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        a = [{"tool": "search", "args": "q=cats"}, {"tool": "write"}]
+        b = [{"tool": "search"}, {"tool": "write", "args": "q=cats"}]
+
+        assert flatten_response(a) == a
+        assert flatten_response(b) == b
+        assert flatten_response(a) != flatten_response(b)
+
+    def test_ragged_top_level_list_scores_undefined_not_perfect(self):
+        """The reason the guard exists, asserted through the real scorer: without it these two
+        score a confident 1.0. -1 (undefined) is the honest answer and matches base."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        a = [{"tool": "search", "args": "q=cats"}, {"tool": "write"}]
+        b = [{"tool": "search"}, {"tool": "write", "args": "q=cats"}]
+        cfg = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+
+        consistency, _ = compute_json_step_consistency([a, b], cfg, 2)
+        assert consistency == -1
+
+    def test_uniform_top_level_list_still_scores_normally(self):
+        """The guard must not cost the case it was built for: same key set, so still inverted,
+        and genuine disagreement still lands below 1.0."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        cfg = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+        same = [{"tool": "search", "args": "q"}, {"tool": "write", "args": "x"}]
+        differing = [{"tool": "search", "args": "q"}, {"tool": "write", "args": "OTHER"}]
+
+        assert compute_json_step_consistency([same, list(same)], cfg, 2)[0] == 1.0
+        assert compute_json_step_consistency([same, differing], cfg, 2)[0] < 1.0
+
+    def test_collision_is_reported_only_when_values_differ(self, caplog):
+        """The report is debug-level and value-aware. Equal values lose nothing, and the
+        intermediate keys this function emits collide with their own deep projection — a
+        warning on those would fire on normal output once per sample per step."""
+        import logging
+
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        with caplog.at_level(logging.DEBUG):
+            flatten_response({"a": {"b": 1}, "a_b": 1})
+        assert "collision" not in caplog.text
+
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            flatten_response({"a": {"b": 1}, "a_b": 2})
+        assert "flattened key collision on ['a_b']" in caplog.text
+        # Never above debug: it is diagnostic, not actionable.
+        assert not [r for r in caplog.records if r.levelno > logging.DEBUG]
 
     def test_mixed_top_level_list_is_preserved_not_inverted(self):
         """Homogeneity is checked across every element, not just the first. Inverting a
