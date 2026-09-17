@@ -25,6 +25,10 @@ On the AppWorld benchmark, Evolve improved agent reliability by +8.9 points over
 Research, releases, and practical findings from the Evolve team.
 
 <!-- BEGIN LATEST-UPDATES (generated; edit includes/latest-updates.md then run scripts/sync_latest_updates.py) -->
+- **2026-09-15** · Article — **[Your Agent Aced the Task. Will It Do It Again?](https://huggingface.co/blog/ibm-research/altk-evolve-consistency)**
+  Diagnosing where an agent's decisions wobble and stabilizing them so success repeats.
+- **2026-09-08** · Paper — **[Closing the Consistency Gap: Self-Evolving Agents That Learn to Stay on Course](https://arxiv.org/abs/2609.08832)**
+  Turning unstable trajectory steps into episodic memory to keep agents consistent across repeated runs.
 - **2026-08-18** · Article — **[How Much Memory Does Your Agent Actually Need?](https://huggingface.co/blog/ibm-research/altk-evolve-hmm)**
   Why agent memory should be calibrated to the model instead of simply increased.
 - **2026-08-11** · Article — **[Thinking of ACE? We Can Do It with Fewer Tokens](https://huggingface.co/blog/ibm-research/altk-evolve-sldd)**
