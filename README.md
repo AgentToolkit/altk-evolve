@@ -39,6 +39,8 @@ Research, releases, and practical findings from the Evolve team.
 
 [Codex →](https://agenttoolkit.github.io/altk-evolve/examples/hello_world/codex/)
 
+[Hermes →](https://agenttoolkit.github.io/altk-evolve/integrations/hermes/)
+
 ## Quick Start (Evolve MCP Server)
 ### Installation
 Prerequisites:

@@ -23,7 +23,7 @@ Evolve is a system designed to help agents improve over time by learning from th
 
     [General Installation](installation/index.md){ .md-button }
 
-    [Claude Code](examples/hello_world/claude.md){ .md-button } [IBM Bob](examples/hello_world/bob.md){ .md-button } [Codex](examples/hello_world/codex.md){ .md-button }
+    [Claude Code](examples/hello_world/claude.md){ .md-button } [IBM Bob](examples/hello_world/bob.md){ .md-button } [Codex](examples/hello_world/codex.md){ .md-button } [Hermes](integrations/hermes.md){ .md-button }
 
 === "Full"
     Total Control

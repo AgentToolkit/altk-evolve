@@ -14,6 +14,13 @@ claude plugin install evolve-lite
 ```
 Next: [Hello World with Claude Code](../examples/hello_world/claude.md)
 
+### Hermes Quick Start
+```bash
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform hermes
+hermes config set memory.provider evolve
+```
+Next: [Hermes Memory Provider](../integrations/hermes.md)
+
 ### Download Install Script
 ```bash
 # Latest (based on main)
@@ -24,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/pla
 ```
 ### Install Script Usage
 ```bash
-./install.sh install --platform {bob,claude,codex,all} --mode {lite,full} [--dry-run]
+./install.sh install --platform {bob,claude,claw-code,codex,hermes,all} --mode {lite,full} [--dry-run]
 ```
 
 | Platform | Description |
@@ -32,7 +39,9 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/pla
 | `all` | Install all platforms |
 | `bob` | IBM Bob |
 | `claude` | Claude Code |
+| `claw-code` | Claw Code |
 | `codex` | Codex |
+| `hermes` | [Hermes](../integrations/hermes.md) (installs a memory provider into `$HERMES_HOME`; ignores `--dir`) |
 
 | Mode | Description |
 |------|-------------|
