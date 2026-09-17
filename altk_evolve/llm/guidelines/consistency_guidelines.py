@@ -262,6 +262,11 @@ def format_trajectory_data(
         start, end = step_range
         step_uncertainties = {k: v for k, v in step_uncertainties.items() if start <= k <= end}
 
+    # Same window the loop below renders. Without this an out-of-window step can win a HIGH
+    # slot — or the single ELEVATED slot — and then never render, so a trajectory kept alive
+    # by an in-window step generates with no marker at all. With equal scores `sorted` is
+    # stable, which made insertion order decide whether a marker appeared.
+    step_uncertainties = {k: v for k, v in step_uncertainties.items() if k <= MAX_RENDERED_STEPS}
     ranked_steps = sorted(step_uncertainties.items(), key=lambda x: x[1], reverse=True)
     high_uncertainty_steps = {step_num: score for step_num, score in ranked_steps[:HIGH_MARKER_CAP] if score >= high_uncertainty_threshold}
 
