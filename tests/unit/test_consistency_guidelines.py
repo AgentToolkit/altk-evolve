@@ -502,6 +502,37 @@ class TestFormatTrajectoryData:
         # The ELEVATED fallback stays silent whenever any step cleared the threshold.
         assert "ELEVATED UNCERTAINTY" not in result
 
+    def test_out_of_window_step_cannot_steal_a_marker_slot(self):
+        """The ranking is clamped to the rendered window, like the loop. Otherwise an
+        out-of-window step wins the HIGH slot — or the single ELEVATED slot — and then never
+        renders, so a trajectory kept alive by an in-window step shows no marker at all."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
+
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
+        out_of_window = MAX_RENDERED_STEPS + 5
+
+        for label, scores in [
+            ("out-of-window would take HIGH", {5: 0.02, out_of_window: 0.9}),
+            ("out-of-window would take ELEVATED", {5: 0.02, out_of_window: 0.09}),
+        ]:
+            result = format_trajectory_data(messages, {"step_uncertainties": scores})
+            markers = result.count("HIGH UNCERTAINTY") + result.count("ELEVATED UNCERTAINTY")
+            assert markers == 1, label
+
+    def test_marker_does_not_depend_on_uncertainty_insertion_order(self):
+        """`sorted` is stable, so with equal scores an unclamped ranking let dict insertion
+        order decide whether a marker appeared at all."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
+
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
+        far = MAX_RENDERED_STEPS + 5
+
+        in_first = format_trajectory_data(messages, {"step_uncertainties": {5: 0.02, far: 0.02}})
+        out_first = format_trajectory_data(messages, {"step_uncertainties": {far: 0.02, 5: 0.02}})
+
+        assert in_first.count("ELEVATED UNCERTAINTY") == 1
+        assert out_first.count("ELEVATED UNCERTAINTY") == 1
+
     def test_tool_calls_none_does_not_crash(self):
         # Raw OpenAI message dumps always carry tool_calls: null
         messages = [{"role": "assistant", "content": "hello", "tool_calls": None}]
@@ -744,6 +775,18 @@ class TestSkipGateWindow:
         from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
 
         assert self._run_gate({5: 0.5}, n_messages=MAX_RENDERED_STEPS + 10) is True
+
+    def test_an_in_window_step_keeps_a_mixed_trajectory_alive(self):
+        """Mixed in-window and out-of-window uncertainty: the gate must key on the in-window
+        step alone, and format_trajectory_data must then actually mark it."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS, format_trajectory_data
+
+        scores = {5: 0.02, MAX_RENDERED_STEPS + 5: 0.9}
+        assert self._run_gate(scores, n_messages=MAX_RENDERED_STEPS + 10) is True
+
+        messages = [{"role": "assistant", "content": f"s{i}"} for i in range(MAX_RENDERED_STEPS + 10)]
+        rendered = format_trajectory_data(messages, {"step_uncertainties": scores})
+        assert rendered.count("HIGH UNCERTAINTY") + rendered.count("ELEVATED UNCERTAINTY") == 1
 
     def test_skips_only_on_all_zero_uncertainty(self):
         """Pins the gate's `> 0`: raising it to a threshold left the whole suite green."""
