@@ -12,6 +12,10 @@ on:
       - 'docs/**'
       - 'includes/**'
       - 'mkdocs.yaml'
+      # Docs tooling (mkdocs + plugins) lives in the `docs` dependency group;
+      # rebuild when it or the lockfile changes so the site tracks main's build.
+      - 'pyproject.toml'
+      - 'uv.lock'
       - '.github/workflows/deploy-docs.yaml'
   workflow_dispatch: {}
 
