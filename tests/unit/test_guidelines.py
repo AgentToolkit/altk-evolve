@@ -7,6 +7,7 @@ import pytest
 
 from altk_evolve.llm.guidelines import guidelines as guidelines_module
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines, parse_openai_agents_trajectory
+from altk_evolve.schema.guidelines import SubtaskSegment
 
 
 def _mock_completion_response(payload: dict) -> MagicMock:
@@ -156,3 +157,120 @@ class TestParseOpenaiAgentsTrajectory:
         assert "response_format" not in kwargs
         assert kwargs["custom_llm_provider"] == "groq"
         assert "Output Format (JSON)" in kwargs["messages"][0]["content"]
+
+
+@pytest.mark.unit
+class TestSegmentationFlag:
+    """`EVOLVE_SEGMENTATION_ENABLED` must gate segmentation in both directions.
+
+    The default value itself is pinned in tests/unit/test_evolve_config.py; these tests pin
+    the *behaviour* on each side of the gate and set the flag explicitly, so they stay
+    deterministic regardless of what the developer has in their environment.
+    """
+
+    # 1 user + 2 assistant turns, so num_steps == 2 and two single-step subtasks both slice
+    # validly. Fewer steps than that and the segmented path could not be reached at all.
+    MESSAGES = [
+        {"role": "user", "content": "Find config.yaml in /etc/acme and summarize it"},
+        {"role": "assistant", "content": "Searching /etc/acme for config.yaml."},
+        {"role": "assistant", "content": "It sets retries=3 and a 30s timeout."},
+    ]
+    PAYLOAD = {
+        "guidelines": [
+            {
+                "content": "Confirm a config file exists before parsing it",
+                "rationale": "Avoids a crash on a missing path",
+                "category": "strategy",
+                "trigger": "Before opening a config file by name",
+                "implementation_steps": ["Stat the path", "Report a clear error when it is absent"],
+            }
+        ]
+    }
+
+    @patch("altk_evolve.llm.guidelines.guidelines.completion")
+    @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
+    def test_disabled_skips_segmentation_and_keeps_user_message_verbatim(
+        self,
+        _mock_params,
+        _mock_schema,
+        mock_completion,
+        monkeypatch,
+    ):
+        """Flag off: one LLM call for the whole trajectory, the segmenter is never reached,
+        and task_description is the first user message verbatim. That last assertion is the
+        documented cost of the default — task_description is both the clustering key
+        (clustering.py) and the retrieval ranking key (retrieval.py), so it carries whatever
+        the user typed, user-specific values included."""
+        monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", False)
+        mock_completion.return_value = _mock_completion_response(self.PAYLOAD)
+
+        with patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory") as mock_segment:
+            results = generate_guidelines(self.MESSAGES)
+
+        mock_segment.assert_not_called()
+        mock_completion.assert_called_once()
+        assert len(results) == 1
+        assert results[0].task_description == "Find config.yaml in /etc/acme and summarize it"
+
+    @patch("altk_evolve.llm.guidelines.guidelines.completion")
+    @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
+    def test_enabled_segments_and_carries_generalized_descriptions(
+        self,
+        _mock_params,
+        _mock_schema,
+        mock_completion,
+        monkeypatch,
+    ):
+        """Flag on: the segmenter runs once over the raw messages and each subtask becomes its
+        own result carrying that subtask's generalized description. Proves the new default is
+        a gate rather than a kill switch — opting back in still works."""
+        monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", True)
+        mock_completion.return_value = _mock_completion_response(self.PAYLOAD)
+
+        subtasks = [
+            SubtaskSegment(
+                generalized_description="Locate a named config file under a directory",
+                purpose="Find the file to read",
+                start_step=1,
+                end_step=1,
+            ),
+            SubtaskSegment(
+                generalized_description="Summarize the settings a config file declares",
+                purpose="Report the configured values",
+                start_step=2,
+                end_step=2,
+            ),
+        ]
+
+        with patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks) as mock_segment:
+            results = generate_guidelines(self.MESSAGES)
+
+        mock_segment.assert_called_once_with(self.MESSAGES)
+        assert mock_completion.call_count == 2
+        assert [r.task_description for r in results] == [s.generalized_description for s in subtasks]
+
+    @patch("altk_evolve.llm.guidelines.guidelines.completion")
+    @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
+    def test_enabled_but_segmenter_raises_falls_back_to_full_trajectory(
+        self,
+        _mock_params,
+        _mock_schema,
+        mock_completion,
+        monkeypatch,
+    ):
+        """Opting in must not make generation fail closed: a segmenter error degrades to the
+        full-trajectory path instead of propagating."""
+        monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", True)
+        mock_completion.return_value = _mock_completion_response(self.PAYLOAD)
+
+        with patch(
+            "altk_evolve.llm.guidelines.segmentation.segment_trajectory",
+            side_effect=RuntimeError("segmenter unavailable"),
+        ):
+            results = generate_guidelines(self.MESSAGES)
+
+        assert len(results) == 1
+        assert results[0].task_description == "Find config.yaml in /etc/acme and summarize it"

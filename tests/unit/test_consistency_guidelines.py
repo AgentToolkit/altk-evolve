@@ -518,11 +518,19 @@ class TestSegmentationGuard:
             ],
         }
 
-    def test_single_step_trajectory_skips_segmentation(self):
+    def test_single_step_trajectory_skips_segmentation(self, monkeypatch):
         """A trajectory with too few scorable steps falls back to full-trajectory generation
-        instead of segmenting, even if the segmenter itself returns subtasks."""
+        instead of segmenting, even if the segmenter itself returns subtasks.
+
+        The flag is forced on deliberately: segmentation_enabled now short-circuits the same
+        `if`, so with the shipped default this test would pass even if the step-count guard
+        were deleted. Enabling it keeps the guard itself under test."""
         from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", True)
 
         mock_segment = MagicMock(
             return_value=[
@@ -648,3 +656,112 @@ class TestGenerateConsistencyGuidelinesFast:
             assert "judge" in prompt.lower()
             assert "⚠️" not in prompt
             assert "HIGH UNCERTAINTY" not in prompt
+
+
+class TestSegmentationFlagAccuratePipeline:
+    """The accurate consistency pipeline must honour EVOLVE_SEGMENTATION_ENABLED.
+
+    The standard path (guidelines.py) and the fast path both checked the flag; this third
+    generation path did not, so the flag silently failed to apply to
+    `generate_consistency_guidelines` — segmentation ran regardless of the setting.
+    """
+
+    # 1 user + 2 assistant string-content turns: two scorable steps, two positional steps,
+    # and _can_segment_trajectory() accepts it, so the segmented branch is genuinely reachable
+    # and the flag is the only thing deciding whether it is taken.
+    MESSAGES = [
+        {"role": "user", "content": "Find config.yaml in /etc/acme and summarize it"},
+        {"role": "assistant", "content": "Searching /etc/acme for config.yaml."},
+        {"role": "assistant", "content": "It sets retries=3 and a 30s timeout."},
+    ]
+
+    def _make_sampled_ir(self):
+        def step(n, response):
+            return {
+                "name": "AnyAgent_content",
+                "step_number": n,
+                "raw_response": response,
+                "raw_response_type": "content",
+                "messages": [],
+                "llm_params": {"model": None},
+                "sampling": {"num_samples": 1, "raw_samples": [response]},
+            }
+
+        return {
+            "task": "Find config.yaml in /etc/acme and summarize it",
+            "name": "Trajectory test",
+            "steps": [step(1, "Searching /etc/acme for config.yaml."), step(2, "It sets retries=3 and a 30s timeout.")],
+        }
+
+    def _run(self, monkeypatch, *, enabled):
+        """Drive generate_consistency_guidelines with resampling/scoring/LLM all stubbed.
+
+        Returns (mock_segment, mock_gen) so each test can assert on the segmenter call and on
+        the per-result task_description that segmentation decides.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+        from altk_evolve.schema.guidelines import SubtaskSegment
+
+        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", enabled)
+
+        mock_segment = MagicMock(
+            return_value=[
+                SubtaskSegment(
+                    generalized_description="Locate a named config file under a directory",
+                    purpose="Find the file to read",
+                    start_step=1,
+                    end_step=1,
+                ),
+                SubtaskSegment(
+                    generalized_description="Summarize the settings a config file declares",
+                    purpose="Report the configured values",
+                    start_step=2,
+                    end_step=2,
+                ),
+            ]
+        )
+        sampled_ir = self._make_sampled_ir()
+
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.resample_trajectory") as mock_resample,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.analyze_consistency") as mock_analyze,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines._generate_guideline_result") as mock_gen,
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", mock_segment),
+        ):
+            mock_resample.return_value = sampled_ir
+            mock_analyze.return_value = ({"steps": [], "aggregate_trajectory_uncertainty": 0.5}, sampled_ir)
+            mock_gen.return_value = MagicMock(guidelines=[])
+            results = generate_consistency_guidelines({"trace_id": "test-seg-flag", "messages": self.MESSAGES})
+
+        return mock_segment, mock_gen, results
+
+    def test_disabled_skips_segmentation_on_a_segmentable_trajectory(self, monkeypatch):
+        """Flag off: the segmenter is never called even though the trajectory qualifies, and
+        generation runs once over the full trajectory with the IR task as its description."""
+        mock_segment, mock_gen, results = self._run(monkeypatch, enabled=False)
+
+        mock_segment.assert_not_called()
+        assert len(results) == 1
+        assert mock_gen.call_count == 1
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("step_range") is None
+        assert kwargs["task_description"] == "Find config.yaml in /etc/acme and summarize it"
+
+    def test_enabled_segments_the_same_trajectory(self, monkeypatch):
+        """Flag on: the same trajectory now segments, one result per subtask, each scoped to
+        its own step range and carrying that subtask's generalized description. Establishes
+        that the flag-off assertion above is the flag's doing and not an unrelated guard."""
+        mock_segment, mock_gen, results = self._run(monkeypatch, enabled=True)
+
+        mock_segment.assert_called_once_with(self.MESSAGES)
+        assert len(results) == 2
+        assert mock_gen.call_count == 2
+        descriptions = [c.kwargs["task_description"] for c in mock_gen.call_args_list]
+        assert descriptions == [
+            "Locate a named config file under a directory",
+            "Summarize the settings a config file declares",
+        ]
+        assert [c.kwargs["step_range"] for c in mock_gen.call_args_list] == [(1, 1), (2, 2)]
