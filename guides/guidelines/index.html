@@ -927,22 +927,16 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Choosing a guideline generation mode">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#configuring-consistency-guideline-generation" class="md-nav__link">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-consistency-method" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configuring consistency guideline generation
+        Choosing a consistency method
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1542,22 +1536,16 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Choosing a guideline generation mode">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#configuring-consistency-guideline-generation" class="md-nav__link">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-consistency-method" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configuring consistency guideline generation
+        Choosing a consistency method
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1652,7 +1640,7 @@
 
 
 <h1 id="enabling-guidelines">Enabling Guidelines<a class="headerlink" href="#enabling-guidelines" title="Permanent link">&para;</a></h1>
-<p>Guidelines are short, actionable recommendations Evolve extracts from agent conversations ("trajectories") and stores as <code>guideline</code> entities. This guide covers how guideline generation works in <strong>full Evolve (MCP server / CLI)</strong> and how to choose between the two available generation methods, <strong>regular</strong> and <strong>consistency</strong>.</p>
+<p>Guidelines are short, actionable recommendations Evolve extracts from agent conversations ("trajectories") and stores as <code>guideline</code> entities. This guide covers how guideline generation works in <strong>full Evolve (MCP server / CLI)</strong> and how to choose between the two available generation methods, <strong>standard</strong> and <strong>consistency</strong>.</p>
 <blockquote>
 <p>This guide applies to full Evolve. It does not apply to <a href="../../integrations/claude/evolve-lite/">Evolve Lite</a>, where guideline extraction happens entirely inside the host agent's own reasoning (a prompt-driven skill) rather than through the LLM pipeline described here.</p>
 </blockquote>
@@ -1688,69 +1676,74 @@
 </thead>
 <tbody>
 <tr>
-<td><code>regular</code> (default)</td>
+<td><code>standard</code> (default)</td>
 <td>Correctness on a single run</td>
 <td>Single LLM pass over the trajectory; produces one guideline set.</td>
 </tr>
 <tr>
 <td><code>consistency</code></td>
 <td>Reliability across repeated runs</td>
-<td>Resampling pass to score agent decision steps in the trajectory for consistency followed by a focused LLM pass to produce guidelines for inconsistent steps.</td>
+<td>Scores agent decision steps for consistency, then a focused LLM pass produces guidelines for the inconsistent ones. Two interchangeable <strong>methods</strong> compute that score — see <a href="#choosing-a-consistency-method">Choosing a consistency method</a> below.</td>
 </tr>
 <tr>
-<td><code>both</code></td>
+<td><code>all</code></td>
 <td>Both</td>
 <td>Runs both pipelines and stores both sets of guidelines side by side.</td>
 </tr>
 </tbody>
 </table>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Regular guidelines (default) — no change needed</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_GUIDELINES_MODE</span><span class="o">=</span>regular
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Standard guidelines (default) — no change needed</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_GUIDELINES_MODE</span><span class="o">=</span>standard
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Consistency guidelines only</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_GUIDELINES_MODE</span><span class="o">=</span>consistency
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Generate both</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_GUIDELINES_MODE</span><span class="o">=</span>both
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_GUIDELINES_MODE</span><span class="o">=</span>all
 </code></pre></div>
-<p>Or for a one-off Phoenix sync, set <code>--guidelines-mode</code> to <code>regular</code>, <code>consistency</code>, or <code>both</code>:</p>
+<p>Or for a one-off Phoenix sync, set <code>--guidelines-mode</code> to <code>standard</code>, <code>consistency</code>, or <code>all</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--guidelines-mode<span class="w"> </span>consistency
 </code></pre></div>
-<h3 id="configuring-consistency-guideline-generation">Configuring consistency guideline generation<a class="headerlink" href="#configuring-consistency-guideline-generation" title="Permanent link">&para;</a></h3>
-<p>The consistency pipeline scores each decision step in a trajectory by resampling the decision multiple times and measuring how much the outcome varies, i.e. its uncertainty. The guideline-generation prompt is then steered toward the highest-uncertainty steps rather than summarizing the trajectory as a whole.</p>
-<p>Consistency guideline generation is noticeably more costly (multiple resample LLM calls per trajectory instead of one) and is worth it when you specifically want to catch agent behavior that's unstable across runs — decisions that the agent sometimes gets right and sometimes doesn't. </p>
-<p>Tunable via:</p>
+<h2 id="choosing-a-consistency-method">Choosing a consistency method<a class="headerlink" href="#choosing-a-consistency-method" title="Permanent link">&para;</a></h2>
+<p><code>consistency</code> mode has two interchangeable implementations, controlled by <code>EVOLVE_CONSISTENCY_METHOD</code> (or <code>--consistency-method</code> on <code>evolve sync phoenix</code>). <strong>This setting only has an effect when <code>EVOLVE_GUIDELINES_MODE</code> is <code>consistency</code> or <code>all</code></strong> — it's silently ignored in <code>standard</code> mode.</p>
 <table>
 <thead>
 <tr>
-<th>Variable</th>
-<th>Default</th>
-<th>Description</th>
+<th>Method</th>
+<th>How it estimates uncertainty</th>
+<th>Cost</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>EVOLVE_HIGH_UNCERTAINTY_THRESHOLD</code></td>
-<td><code>0.2</code></td>
-<td>Steps scoring above this are treated as high-uncertainty</td>
+<td><code>fast</code> (default)</td>
+<td>Asks the guideline-generation LLM to judge each step's stability itself, in the same call that produces guidelines — no resampling</td>
+<td>Same as <code>standard</code> mode: one LLM call per generated subtask, or one for the whole trajectory when it isn't segmented</td>
 </tr>
 <tr>
-<td><code>EVOLVE_LOW_UNCERTAINTY_THRESHOLD</code></td>
-<td><code>0.1</code></td>
-<td>Steps scoring below this are treated as stable</td>
-</tr>
-<tr>
-<td><code>EVOLVE_SKIP_ON_NO_UNCERTAINTY</code></td>
-<td><code>true</code></td>
-<td>Skip guideline generation entirely if no step exceeds the uncertainty threshold</td>
+<td><code>accurate</code></td>
+<td>Resamples each decision step multiple times and measures how much the outcome varies across resamples</td>
+<td>Several extra LLM calls per trajectory</td>
 </tr>
 </tbody>
 </table>
-<p>The resampling behavior itself (sample count, per-step-type uncertainty metric) is defined in a YAML config file shipped alongside the consistency pipeline; advanced users calling <code>generate_consistency_guidelines()</code> directly from Python can point it at a custom config via <code>config_path=</code>.</p>
-<h2 id="verifying-output">Verifying output<a class="headerlink" href="#verifying-output" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>entities<span class="w"> </span>list<span class="w"> </span>&lt;namespace&gt;<span class="w"> </span>--type<span class="w"> </span>guideline
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Fast (default) — no change needed</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_CONSISTENCY_METHOD</span><span class="o">=</span>fast
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Accurate — resample each step and measure actual variance</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_CONSISTENCY_METHOD</span><span class="o">=</span>accurate
 </code></pre></div>
-<p>Each guideline's <code>metadata.generation_method</code> is <code>"regular"</code> or <code>"consistency"</code>, so you can tell which pipeline produced it when running in <code>both</code> mode. See <a href="../low-code-tracing/#6-understanding-guideline-provenance-metadata">Guideline Provenance</a> for the full metadata schema, including <code>creation_mode</code> (<code>auto-mcp</code> vs <code>auto-phoenix</code> vs <code>manual</code>).</p>
+<p>Or for a one-off sync:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--guidelines-mode<span class="w"> </span>consistency<span class="w"> </span>--consistency-method<span class="w"> </span>accurate
+</code></pre></div>
+<p>Use <code>accurate</code> when you want uncertainty estimated by actually observing variance across resamples, not the LLM's own self-assessment of confidence, or when you're comfortable paying for the extra resampling calls in exchange for a measured signal. Use <code>fast</code> (the default) when <code>accurate</code>'s per-trajectory resampling cost is too expensive to run at the volume you need.</p>
+<p><code>accurate</code> has further tuning knobs — the uncertainty thresholds that decide what counts as "high" vs "stable" (<code>high_uncertainty_threshold</code>, <code>low_uncertainty_threshold</code>), and whether to skip generation entirely when nothing looks uncertain (<code>skip_on_no_uncertainty</code>) — defined alongside the resampling config below; they're advanced settings, not something most readers need on a first pass. <code>fast</code> has no equivalent tunables today: it relies entirely on the prompt instructing the LLM to return no guidelines when it judges every step confident, rather than a pre-call numeric skip gate.</p>
+<p>The resampling behavior (sample count, per-step-type uncertainty metric) and the <code>accurate</code>-only tuning knobs above are all defined in a YAML config file shipped alongside the consistency pipeline (<code>consistency_analyzer/agent_config.yaml</code>); advanced users calling <code>generate_consistency_guidelines()</code> directly from Python can point it at a custom config via <code>config_path=</code>.</p>
+<p><strong>Mixed-provider Phoenix syncs and <code>accurate</code> resampling:</strong> resampling forwards <code>EVOLVE_CUSTOM_LLM_PROVIDER</code> for every step, regardless of which model the traced step actually used — it's treated as a single deployment-wide routing setting, not per-trace. This is fine when every trajectory in a sync comes from the same provider. If a namespace mixes traces from different providers (e.g. <code>claude-*</code> and <code>gpt-*</code> traces synced from the same Phoenix project) and <code>EVOLVE_CUSTOM_LLM_PROVIDER</code> resolves to <code>openai</code> — which it does by default whenever <code>OPENAI_API_KEY</code> or <code>OPENAI_BASE_URL</code> is set, even if you never set it explicitly — resampling forces every step through the OpenAI provider regardless of the traced model, and non-OpenAI steps fail or get misrouted. For mixed-provider syncs, either set <code>EVOLVE_CUSTOM_LLM_PROVIDER</code> to match the traces you're resampling and run <code>accurate</code> once per provider, or use <code>fast</code> (the default), which never resamples and has no provider-routing step to get wrong.</p>
+<h2 id="verifying-output">Verifying output<a class="headerlink" href="#verifying-output" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>entities<span class="w"> </span>list<span class="w"> </span>&lt;namespace&gt;<span class="w"> </span>--type<span class="w"> </span>guideline
+</code></pre></div>
+<p>Each guideline's <code>metadata.generation_method</code> is <code>"standard"</code>, <code>"consistency"</code> (accurate method), or <code>"consistency-fast"</code> (fast method), so you can tell which pipeline — and, for consistency, which method — produced it when running in <code>all</code> mode. See <a href="../low-code-tracing/#6-understanding-guideline-provenance-metadata">Guideline Provenance</a> for the full metadata schema, including <code>creation_mode</code> (<code>auto-mcp</code> vs <code>auto-phoenix</code> vs <code>manual</code>).</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../configuration/">Configuration</a> — model selection (<code>EVOLVE_GUIDELINES_MODEL</code>) and other environment variables</li>

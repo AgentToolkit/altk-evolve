@@ -1770,14 +1770,14 @@
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span>--project<span class="w"> </span>guidelines-tutorial<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span>--namespace<span class="w"> </span>guidelines-tutorial<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span>--guidelines-mode<span class="w"> </span>regular
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span>--guidelines-mode<span class="w"> </span>standard
 </code></pre></div>
-<p>See <a href="../../guides/phoenix-sync/">Phoenix Sync</a> for the full set of sync options, and <a href="../../guides/guidelines/">Enabling Guidelines</a> if you want to try <code>--guidelines-mode consistency</code> or <code>both</code> instead.</p>
+<p>See <a href="../../guides/phoenix-sync/">Phoenix Sync</a> for the full set of sync options, and <a href="../../guides/guidelines/">Enabling Guidelines</a> if you want to try <code>--guidelines-mode consistency</code> or <code>all</code> instead.</p>
 <h2 id="step-4-verify-guidelines-exist">Step 4: Verify guidelines exist<a class="headerlink" href="#step-4-verify-guidelines-exist" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>entities<span class="w"> </span>list<span class="w"> </span>guidelines-tutorial<span class="w"> </span>--type<span class="w"> </span>guideline
 </code></pre></div>
-<p>You should see one or more <code>guideline</code> entities, each carrying <code>metadata.creation_mode: "auto-phoenix"</code> and <code>metadata.generation_method: "regular"</code>.</p>
+<p>You should see one or more <code>guideline</code> entities, each carrying <code>metadata.creation_mode: "auto-phoenix"</code> and <code>metadata.generation_method: "standard"</code>.</p>
 <h2 id="step-5-retrieve-guidelines-and-re-run-the-agent-with-them-injected">Step 5: Retrieve guidelines and re-run the agent with them injected<a class="headerlink" href="#step-5-retrieve-guidelines-and-re-run-the-agent-with-them-injected" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>examples/low_code/guidelines_retrieval_demo.py<span class="w"> </span>--namespace<span class="w"> </span>guidelines-tutorial<span class="w"> </span>--task<span class="w"> </span><span class="s2">&quot;What is (5 * 5) + 10?&quot;</span>

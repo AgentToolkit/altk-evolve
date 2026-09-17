@@ -10,13 +10,9 @@
       
       
       
-        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/guides/configuration/">
+        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/guides/retention-scheduling/">
       
       
-        <link rel="prev" href="../../tutorials/guidelines-loop/">
-      
-      
-        <link rel="next" href="../guidelines/">
       
       
         
@@ -27,7 +23,7 @@
     
     
       
-        <title>Configuration - Agent Lifecycle Toolkit (ALTK)</title>
+        <title>Retention scheduling - Agent Lifecycle Toolkit (ALTK)</title>
       
     
     
@@ -100,7 +96,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#configuration" class="md-skip">
+        <a href="#retention-scheduling" class="md-skip">
           Skip to content
         </a>
       
@@ -133,7 +129,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Configuration
+              Retention scheduling
             
           </span>
         </div>
@@ -339,13 +335,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../configuration/" class="md-tabs__link">
           
   
   
@@ -744,10 +738,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -769,22 +761,19 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
             
   
   
@@ -802,7 +791,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -817,37 +806,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Configuration
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
         
   
   
@@ -863,204 +825,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#llm-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        LLM Configuration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="LLM Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#custom-llm-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Custom LLM Configuration
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#environment-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Environment Variables
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Environment Variables">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#general-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        General Settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#milvus-backend-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Milvus Backend Settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#filesystem-backend-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Filesystem Backend Settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#postgres-backend-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Postgres Backend Settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#storage-backends" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Storage Backends
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Storage Backends">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#switching-backends" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Switching Backends
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#filesystem-backend-details" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Filesystem Backend Details
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#low-code-tracing-phoenix-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Low-Code Tracing (Phoenix Integration)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Low-Code Tracing (Phoenix Integration)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Installation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Usage
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tracing-environment-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tracing Environment Variables
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1640,111 +1404,44 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#llm-configuration" class="md-nav__link">
+  <a href="#manage-retention-from-the-cli" class="md-nav__link">
     <span class="md-ellipsis">
       
-        LLM Configuration
+        Manage retention from the CLI
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="LLM Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#custom-llm-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Custom LLM Configuration
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#environment-variables" class="md-nav__link">
+  <a href="#service-lifecycle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Environment Variables
+        Service lifecycle
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Environment Variables">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#general-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        General Settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#milvus-backend-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Milvus Backend Settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#filesystem-backend-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Filesystem Backend Settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#postgres-backend-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Postgres Backend Settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#storage-backends" class="md-nav__link">
+  <a href="#updates-and-recovery" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Storage Backends
+        Updates and recovery
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Storage Backends">
+    <nav class="md-nav" aria-label="Updates and recovery">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#switching-backends" class="md-nav__link">
+  <a href="#postgresql-deployment-recovery" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Switching Backends
+        PostgreSQL deployment recovery
       
     </span>
   </a>
@@ -1752,60 +1449,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#filesystem-backend-details" class="md-nav__link">
+  <a href="#container-crash-validation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Filesystem Backend Details
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#low-code-tracing-phoenix-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Low-Code Tracing (Phoenix Integration)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Low-Code Tracing (Phoenix Integration)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Installation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Usage
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tracing-environment-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tracing Environment Variables
+        Container crash validation
       
     </span>
   </a>
@@ -1835,46 +1482,6 @@
   
 
 
-  <nav class="md-path" aria-label="Navigation" >
-    <ol class="md-path__list">
-      
-        
-  
-  
-    <li class="md-path__item">
-      <a href="../.." class="md-path__link">
-        
-  <span class="md-ellipsis">
-    Home
-  </span>
-
-      </a>
-    </li>
-  
-
-      
-      
-        
-  
-  
-    
-    
-      <li class="md-path__item">
-        <a href="./" class="md-path__link">
-          
-  <span class="md-ellipsis">
-    Guides
-  </span>
-
-        </a>
-      </li>
-    
-  
-
-      
-    </ol>
-  </nav>
-
               
               <article class="md-content__inner md-typeset">
                 
@@ -1885,321 +1492,144 @@
   
 
 
-<h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
-<p>Evolve uses environment variables for configuration. You can set these in a <code>.env</code> file or export them directly.</p>
-<h2 id="llm-configuration">LLM Configuration<a class="headerlink" href="#llm-configuration" title="Permanent link">&para;</a></h2>
-<p><strong>Required for OpenAI models:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-...
-</code></pre></div></p>
-<h3 id="custom-llm-configuration">Custom LLM Configuration<a class="headerlink" href="#custom-llm-configuration" title="Permanent link">&para;</a></h3>
-<p>Evolve uses <a href="https://docs.litellm.ai/">LiteLLM</a> and supports OpenAI-compatible proxy endpoints (including LiteLLM) via standard OpenAI environment variables:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># OpenAI-compatible endpoint configuration (works with LiteLLM)</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span><span class="s2">&quot;your-api-key&quot;</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_BASE_URL</span><span class="o">=</span><span class="s2">&quot;https://your-litellm-proxy.com/v1&quot;</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># Evolve Model Configuration</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_GUIDELINES_MODEL</span><span class="o">=</span><span class="s2">&quot;openai/gpt-4o-mini&quot;</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_CONFLICT_RESOLUTION_MODEL</span><span class="o">=</span><span class="s2">&quot;openai/gpt-4o-mini&quot;</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_FACT_EXTRACTION_MODEL</span><span class="o">=</span><span class="s2">&quot;openai/gpt-4o-mini&quot;</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_MODEL_NAME</span><span class="o">=</span><span class="s2">&quot;openai/gpt-4o-mini&quot;</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_CUSTOM_LLM_PROVIDER</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span>
+<h1 id="retention-scheduling">Retention scheduling<a class="headerlink" href="#retention-scheduling" title="Permanent link">&para;</a></h1>
+<p>Evolve owns retention policies, schedules, job claims, execution, and run history. All interfaces share the <a href="../retention-api/">public retention service</a>. Hosts can manage them through MCP or the <a href="../embedded-memory-api/">embedded REST router</a>, without maintaining their own retention tables.</p>
+<p>Create a policy first, then call <code>put_retention_schedule</code> with an explicit <code>namespace_id</code> (the host service-instance ID), <code>initiated_by</code> (the authenticated operator), <code>schedule_id</code>, and a JSON-encoded <code>definition</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">&quot;policy_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;standard-retention&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">&quot;agent_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;agent-1&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">&quot;dry_run&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">&quot;spec&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">&quot;schedule&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0 2 * * *&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="nt">&quot;timeZone&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;America/Los_Angeles&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">&quot;concurrencyPolicy&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Forbid&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">&quot;startingDeadlineSeconds&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="nt">&quot;suspend&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="p">}</span>
 </code></pre></div>
-<p>Model selection precedence:
-1. Task-specific models: <code>EVOLVE_GUIDELINES_MODEL</code>, <code>EVOLVE_CONFLICT_RESOLUTION_MODEL</code>, <code>EVOLVE_FACT_EXTRACTION_MODEL</code>
-2. Global Evolve fallback: <code>EVOLVE_MODEL_NAME</code>
-3. Built-in default: <code>gpt-4o</code></p>
-<p><code>EVOLVE_TIPS_MODEL</code> is still accepted as a deprecated fallback for one release cycle.</p>
-<p>If <code>EVOLVE_*_MODEL</code> are unset, set <code>EVOLVE_MODEL_NAME</code> to control all Evolve LLM calls.</p>
-<h2 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
-<p>All configuration variables are prefixed with <code>EVOLVE_</code>.</p>
-<h3 id="general-settings">General Settings<a class="headerlink" href="#general-settings" title="Permanent link">&para;</a></h3>
+<p>Omit <code>agent_id</code> for the entire namespace. Scheduled retention is administrative: it can process multiple users within that scope, and records the operator separately as <code>initiated_by</code>. Personal memory APIs still isolate by namespace and user. <code>dry_run</code> defaults to true; set it to false to apply the policy.</p>
+<p>The <code>spec</code> uses the timing fields of <a href="https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/">Kubernetes batch/v1 CronJobSpec</a>. It can later be copied into a CronJob alongside a host-provided <code>jobTemplate</code>. Evolve does not currently create Kubernetes resources.</p>
 <table>
 <thead>
 <tr>
-<th>Variable</th>
-<th>Description</th>
-<th>Default</th>
+<th>Field</th>
+<th>Behavior</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>EVOLVE_BACKEND</code></td>
-<td>Backend provider (<code>milvus</code>, <code>filesystem</code>, or <code>postgres</code>)</td>
-<td><code>milvus</code></td>
+<td><code>schedule</code></td>
+<td>Required five-field cron. Supports ranges, lists, steps, month/day names, <code>?</code> as <code>*</code>, and calendar descriptors such as <code>@daily</code>. Seconds, embedded <code>TZ</code> directives, and extensions such as <code>@every</code>, <code>L</code>, and <code>#</code> are rejected.</td>
 </tr>
 <tr>
-<td><code>EVOLVE_NAMESPACE_ID</code></td>
-<td>Namespace ID for isolation</td>
-<td><code>evolve</code></td>
+<td><code>timeZone</code></td>
+<td>IANA name. Defaults explicitly to <code>Etc/UTC</code>, unlike Kubernetes' controller-local default.</td>
 </tr>
 <tr>
-<td><code>EVOLVE_GUIDELINES_MODE</code></td>
-<td>Guideline generation pipeline: <code>standard</code>, <code>consistency</code>, or <code>all</code> — see <a href="../guidelines/">Enabling Guidelines</a></td>
-<td><code>standard</code></td>
+<td><code>concurrencyPolicy</code></td>
+<td><code>Allow</code> (default), <code>Forbid</code>, or <code>Replace</code>, applied per namespace/schedule.</td>
 </tr>
 <tr>
-<td><code>EVOLVE_CONSISTENCY_METHOD</code></td>
-<td>Consistency mode only: <code>fast</code> (LLM self-judged) or <code>accurate</code> (resampling based) — see <a href="../guidelines/#choosing-a-consistency-method">Enabling Guidelines</a></td>
-<td><code>fast</code></td>
+<td><code>startingDeadlineSeconds</code></td>
+<td>Optional nonnegative deadline from scheduled time to actual job claim. Omitting it leaves no deadline. Very short deadlines can be missed with the default ten-second polling interval.</td>
 </tr>
 <tr>
-<td><code>EVOLVE_GUIDELINES_MODEL</code></td>
-<td>Model for guideline generation only</td>
-<td><code>EVOLVE_MODEL_NAME</code> -&gt; <code>gpt-4o</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_CONFLICT_RESOLUTION_MODEL</code></td>
-<td>Model for conflict resolution only</td>
-<td><code>EVOLVE_MODEL_NAME</code> -&gt; <code>gpt-4o</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_FACT_EXTRACTION_MODEL</code></td>
-<td>Model for fact extraction only</td>
-<td><code>EVOLVE_MODEL_NAME</code> -&gt; <code>gpt-4o</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_MODEL_NAME</code></td>
-<td>Global fallback model for all Evolve LLM calls</td>
-<td><code>gpt-4o</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_CUSTOM_LLM_PROVIDER</code></td>
-<td>LiteLLM provider (use <code>openai</code> for OpenAI-compatible endpoints). Defaults to <code>openai</code> whenever <code>OPENAI_API_KEY</code> or <code>OPENAI_BASE_URL</code> is set, even if you never set this variable yourself — see the <a href="../guidelines/#choosing-a-consistency-method">consistency guide</a> for a case where that implicit default causes misrouting</td>
-<td><code>openai</code> if <code>OPENAI_API_KEY</code>/<code>OPENAI_BASE_URL</code> is set, else <code>None</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_EMBEDDING_MODEL</code></td>
-<td>Embedding model</td>
-<td><code>sentence-transformers/all-MiniLM-L6-v2</code></td>
+<td><code>suspend</code></td>
+<td>Stops new admission without cancelling existing jobs. Resuming retains the missed-occurrence window.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="milvus-backend-settings">Milvus Backend Settings<a class="headerlink" href="#milvus-backend-settings" title="Permanent link">&para;</a></h3>
-<p>When <code>EVOLVE_BACKEND=milvus</code>:</p>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>EVOLVE_URI</code></td>
-<td>Milvus URI (file path for Lite)</td>
-<td><code>entities.milvus.db</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_USER</code></td>
-<td>Milvus user (optional)</td>
-<td><code>""</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_PASSWORD</code></td>
-<td>Milvus password (optional)</td>
-<td><code>""</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_DB_NAME</code></td>
-<td>Milvus database name (optional)</td>
-<td><code>""</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_TOKEN</code></td>
-<td>Milvus token (optional)</td>
-<td><code>""</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_TIMEOUT</code></td>
-<td>Milvus timeout (optional)</td>
-<td><code>None</code></td>
-</tr>
-</tbody>
-</table>
-<h3 id="filesystem-backend-settings">Filesystem Backend Settings<a class="headerlink" href="#filesystem-backend-settings" title="Permanent link">&para;</a></h3>
-<p>When <code>EVOLVE_BACKEND=filesystem</code>:</p>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>EVOLVE_DATA_DIR</code></td>
-<td>Directory to store JSON data files</td>
-<td><code>evolve_data</code></td>
-</tr>
-</tbody>
-</table>
-<h3 id="postgres-backend-settings">Postgres Backend Settings<a class="headerlink" href="#postgres-backend-settings" title="Permanent link">&para;</a></h3>
-<p>When <code>EVOLVE_BACKEND=postgres</code>:</p>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>EVOLVE_PG_HOST</code></td>
-<td>PostgreSQL host</td>
-<td><code>localhost</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_PG_PORT</code></td>
-<td>PostgreSQL port</td>
-<td><code>5432</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_PG_USER</code></td>
-<td>PostgreSQL user</td>
-<td><code>postgres</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_PG_PASSWORD</code></td>
-<td>PostgreSQL password</td>
-<td><code>postgres</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_PG_DBNAME</code></td>
-<td>PostgreSQL database name</td>
-<td><code>evolve</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_PG_AUTO_CREATE_DB</code></td>
-<td>Automatically create <code>EVOLVE_PG_DBNAME</code> when missing</td>
-<td><code>false</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_PG_BOOTSTRAP_DB</code></td>
-<td>Existing database to connect to for <code>CREATE DATABASE</code> bootstrap</td>
-<td><code>postgres</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_PG_EMBEDDING_MODEL</code></td>
-<td>Embedding model used for pgvector-backed entities</td>
-<td><code>sentence-transformers/all-MiniLM-L6-v2</code></td>
-</tr>
-</tbody>
-</table>
-<h2 id="storage-backends">Storage Backends<a class="headerlink" href="#storage-backends" title="Permanent link">&para;</a></h2>
-<p>Evolve supports three storage backends:</p>
-<table>
-<thead>
-<tr>
-<th>Backend</th>
-<th>Description</th>
-<th>Search</th>
-<th>Best For</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Milvus</strong> (default)</td>
-<td>Vector database with embeddings</td>
-<td>Semantic similarity</td>
-<td>Production</td>
-</tr>
-<tr>
-<td><strong>Filesystem</strong></td>
-<td>JSON files, no embeddings</td>
-<td>Text substring match</td>
-<td>Development/testing</td>
-</tr>
-<tr>
-<td><strong>Postgres</strong></td>
-<td>PostgreSQL with pgvector embeddings</td>
-<td>Semantic similarity</td>
-<td>Teams already running PostgreSQL</td>
-</tr>
-</tbody>
-</table>
-<h3 id="switching-backends">Switching Backends<a class="headerlink" href="#switching-backends" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Use Milvus backend (default)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>milvus
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Use Filesystem backend</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Use Postgres backend</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>postgres
+<p>Nonexistent spring-forward wall times are skipped; repeated fall-back times can run twice. <code>get_retention_schedule</code> and REST schedule detail include the next five nominal UTC timestamps; suspended schedules return no upcoming times. More than 100 missed occurrences produces a persisted schedule condition; set a deadline or change the timing to reset the window. Evolve admits the most recent eligible occurrence rather than replaying every missed run.</p>
+<p><code>Forbid</code> waits while an earlier job is queued or running. <code>Replace</code> cancels queued work and requests cancellation of running work, then waits for acknowledgment before admitting the replacement. Cancellation is cooperative between mutations: it cannot interrupt a blocked backend call and cannot roll back completed changes. This differs from Kubernetes terminating a Job's pods.</p>
+<h2 id="manage-retention-from-the-cli">Manage retention from the CLI<a class="headerlink" href="#manage-retention-from-the-cli" title="Permanent link">&para;</a></h2>
+<p>All commands live under <code>evolve retention</code>. Catalog commands print JSON and require an explicit service-instance namespace. The CLI uses the configured backend credentials and is intended for trusted operators; <code>--initiated-by</code> records attribution, not authentication.</p>
+<p>Create the policy and rules directly, then reference the policy ID when scheduling:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>evolve<span class="w"> </span>retention<span class="w"> </span>policies<span class="w"> </span>create<span class="w"> </span>standard-retention<span class="w"> </span>--namespace<span class="w"> </span>service-1
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>evolve<span class="w"> </span>retention<span class="w"> </span>policies<span class="w"> </span>rules<span class="w"> </span>add<span class="w"> </span>standard-retention<span class="w"> </span>--name<span class="w"> </span>old-memories<span class="w"> </span>--namespace<span class="w"> </span>service-1<span class="w"> </span>--max-age-days<span class="w"> </span><span class="m">90</span><span class="w"> </span>--action<span class="w"> </span>delete
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>evolve<span class="w"> </span>retention<span class="w"> </span>schedules<span class="w"> </span>create<span class="w"> </span>nightly<span class="w"> </span>--namespace<span class="w"> </span>service-1<span class="w"> </span>--initiated-by<span class="w"> </span>alice<span class="w"> </span>--policy<span class="w"> </span>standard-retention<span class="w"> </span>--schedule<span class="w"> </span><span class="s1">&#39;0 2 * * *&#39;</span><span class="w"> </span>--time-zone<span class="w"> </span>America/Los_Angeles<span class="w"> </span>--concurrency-policy<span class="w"> </span>Forbid
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>evolve<span class="w"> </span>retention<span class="w"> </span>schedules<span class="w"> </span>list<span class="w"> </span>--namespace<span class="w"> </span>service-1
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>evolve<span class="w"> </span>retention<span class="w"> </span>schedules<span class="w"> </span>show<span class="w"> </span>nightly<span class="w"> </span>--namespace<span class="w"> </span>service-1
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1"># Updates change only supplied fields; use the revision returned by show/update.</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>evolve<span class="w"> </span>retention<span class="w"> </span>schedules<span class="w"> </span>stop<span class="w"> </span>nightly<span class="w"> </span>--namespace<span class="w"> </span>service-1<span class="w"> </span>--initiated-by<span class="w"> </span>alice<span class="w"> </span>--revision<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>evolve<span class="w"> </span>retention<span class="w"> </span>schedules<span class="w"> </span>delete<span class="w"> </span>nightly<span class="w"> </span>--namespace<span class="w"> </span>service-1<span class="w"> </span>--revision<span class="w"> </span><span class="m">2</span>
 </code></pre></div>
-<h3 id="filesystem-backend-details">Filesystem Backend Details<a class="headerlink" href="#filesystem-backend-details" title="Permanent link">&para;</a></h3>
-<p>The filesystem backend stores all data in JSON files - one file per namespace. This is ideal for:
-- Local development and testing
-- Debugging (you can inspect/edit the JSON files directly)
-- Environments where you don't want to run Milvus
-- Quick prototyping without embedding model overhead</p>
-<p><strong>JSON File Structure:</strong></p>
-<p>Each namespace is stored as <code>&lt;data_dir&gt;/&lt;namespace_id&gt;.json</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_guidelines&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:29:51.986882+00:00&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">&quot;entities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;guideline&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Always write tests before code&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">      </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:30:00.023283+00:00&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="p">],</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span><span class="nt">&quot;next_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="p">}</span>
+<p><code>schedules show</code> includes the next five scheduled times in UTC, calculated from the stored timezone-aware expression. Suspended schedules show an empty <code>next_runs</code> list. These are nominal times; deadlines and concurrency rules still determine actual execution.</p>
+<p>Schedule creation defaults to dry run. Use <code>--apply</code> to enforce; updates accept <code>--apply</code> or <code>--dry-run</code>. Updates also accept <code>--suspend</code> or <code>--resume</code>, <code>--clear-agent</code> to target the entire namespace, and <code>--clear-deadline</code> to remove the deadline. Omitted fields retain their stored values. Duplicate creates and stale updates/deletes fail with a nonzero exit status.</p>
+<p><code>policies create</code> creates an empty policy and rejects duplicate IDs. <code>policies update</code> changes name/status without changing rules. <code>policies delete</code> refuses policies referenced by schedules or active jobs. <code>policies show</code> and <code>policies list</code> inspect the catalog.</p>
+<p>Rules belong to policies: <code>policies rules add POLICY_ID --name RULE_NAME</code> appends a new rule; <code>rules update</code> changes supplied fields in place; <code>rules list</code> shows execution order; <code>rules remove</code> removes a named rule. Add rejects duplicate names and update rejects missing names. Supply <code>--max-age-days</code>, <code>--max-unused-days</code>, or both. Other options are <code>--entity-type</code>, <code>--action flag|delete</code>, <code>--on-missing-access-signal skip|flag|delete</code>, and <code>--cascade-derived</code>. Updates can clear thresholds with <code>--clear-age</code>/<code>--clear-unused</code> or remove the type restriction with <code>--all-types</code>. At least one threshold must remain. First matching rule wins.</p>
+<p><code>schedules start ID --namespace N --initiated-by USER --revision REV</code> enables a stored schedule. <code>schedules stop</code> suspends future admissions without cancelling queued or running jobs. Both preserve timing and scope and reject stale revisions. CLI schedule creation is enabled by default; use <code>--suspend</code> to stage it before starting.</p>
+<p>Inspect executions with <code>evolve retention jobs list --namespace service-1</code> and <code>jobs show JOB_ID --namespace service-1</code>; the latter includes the retention report when available. Use <code>jobs cancel JOB_ID --namespace service-1</code> to request cancellation. After confirming an interrupted job's owning worker stopped, use <code>jobs recover JOB_ID --namespace service-1 --worker-stopped</code>.</p>
+<p>Run a stored policy immediately with <code>evolve retention run standard-retention --namespace service-1 --initiated-by alice</code>. This defaults to dry run; add <code>--apply</code> to enforce. The report is persisted in Evolve. The running Evolve service executes enabled schedules using their persisted dry-run settings. Retention CLI commands take options and stored IDs; there are no policy or schedule file inputs.</p>
+<h2 id="service-lifecycle">Service lifecycle<a class="headerlink" href="#service-lifecycle" title="Permanent link">&para;</a></h2>
+<p>The <code>evolve-mcp</code> server starts the retention scheduler with its configured client and stops it when the server exits, for both stdio and SSE transports. There is no separate retention <code>execute</code> or <code>worker</code> command. A CLI <code>start</code>/<code>stop</code> changes persisted schedule state; the Evolve service must be running to execute it.</p>
+<p>Configuration uses the ordinary Evolve settings:</p>
+<ul>
+<li><code>EVOLVE_RETENTION_SCHEDULER_ENABLED</code> defaults to true; false disables this process's scheduler.</li>
+<li><code>EVOLVE_RETENTION_POLL_SECONDS</code> defaults to 10.</li>
+<li><code>EVOLVE_RETENTION_MAX_WORKERS</code> defaults to 1 concurrent execution per process.</li>
+</ul>
+<p>Embedded hosts can use <code>retention_runtime(client)</code> in their application lifespan; see the <a href="../embedded-memory-api/">embedded API guide</a>. Importing the library or running a catalog CLI command does not start background execution.</p>
+<p>Multiple service processes coordinate admission and claims through database transactions. They must share both the entity backend and retention catalog. PostgreSQL uses the configured PostgreSQL database; other backends use SQLite (<code>EVOLVE_RETENTION_STORE_PATH</code> can override its path). SQLite storage must support its locking semantics. Shutdown requests cooperative cancellation and waits for executing operations to finish.</p>
+<p>A future Kubernetes CronJob integration can translate the stored timing fields and supply a suitable job template. This PR does not create Kubernetes resources.</p>
+<h2 id="updates-and-recovery">Updates and recovery<a class="headerlink" href="#updates-and-recovery" title="Permanent link">&para;</a></h2>
+<p>Use <code>expected_revision: 0</code> to create, then the returned revision to update or delete. Updates affect future admissions; queued jobs retain the admitted definition and initiator. The referenced policy is resolved at execution time, so policy edits or disabling take effect before execution. Changing the cron expression or timezone resets the scheduling cursor. Deletion requires no active jobs; suspend and cancel them first.</p>
+<p><code>list_retention_jobs</code> exposes ownership, status, heartbeat, and scheduled time. A started job's ID is also its retention run ID. Use <code>list_retention_runs</code> for persisted reports. Cancel with <code>cancel_retention_job</code>.</p>
+<p>A crashed worker's destructive job is never automatically retried. Confirm that its owning worker has stopped, then call <code>acknowledge_interrupted_retention_job</code> with <code>worker_stopped: true</code>. This marks the job and any unfinished run interrupted, allowing later occurrences to proceed. A stale heartbeat alone is not proof that the worker stopped. Partial effects may exist; cancellation and recovery do not restore deleted entities.</p>
+<p>Scheduled runs evaluate Evolve policy rules. Criteria owned by another application, such as whether a CUGA conversation still exists, require the host to evaluate them and supply <code>additional_matches</code> to a manual run; the scheduler does not query host databases.</p>
+<h3 id="postgresql-deployment-recovery">PostgreSQL deployment recovery<a class="headerlink" href="#postgresql-deployment-recovery" title="Permanent link">&para;</a></h3>
+<p>For the current PostgreSQL collector, see <a href="../retention-api/#postgresql-collection">transactional mark and sweep</a>.
+An expired executor heartbeat interrupts the old run; a later scheduled run processes
+remaining durable candidates. The manual recovery procedure above applies to the
+legacy non-PostgreSQL executor. PostgreSQL jobs do not need partial-run reconstruction.</p>
+<h3 id="container-crash-validation">Container crash validation<a class="headerlink" href="#container-crash-validation" title="Permanent link">&para;</a></h3>
+<p>The opt-in <code>tests/e2e/test_retention_container_crashes.py</code> suite starts a disposable
+PostgreSQL container and independent scheduler containers on a private Docker network.
+It sends SIGKILL at three boundaries: during a second mark transaction, during a
+second deletion before its audit receipt commits, and immediately after a deletion
+transaction commits. Two replacement schedulers then compete for subsequent cron
+occurrences using the real 60-second heartbeat expiry. Assertions check durable
+marks, rollback of uncommitted deletion, unique committed deletion receipts, legal
+holds, and isolation of another service namespace. Each namespace contains memories
+from multiple users.</p>
+<p>A fourth case keeps the executor alive at a marking boundary for 65 seconds while
+two other schedulers poll. Its heartbeat must retain ownership and prevent another
+admission. The test then kills it and checks the same automatic recovery path.</p>
+<p>Use an image containing Evolve's Python dependencies (including <code>psycopg</code> and
+<code>croniter</code>) with a Python entrypoint. For example, an existing CUGA dependency image
+can use <code>ENTRYPOINT ["uv", "run", "--no-sync", "--project", "/app", "python"]</code>.
+The test mounts the current checkout read-only at <code>/evolve</code>; it does not use the
+image's installed Evolve source or call an LLM.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nv">EVOLVE_TEST_CONTAINER_IMAGE</span><span class="o">=</span>evolve:retention-crash-test<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>-m<span class="w"> </span>e2e<span class="w"> </span>tests/e2e/test_retention_container_crashes.py
 </code></pre></div>
-<h2 id="low-code-tracing-phoenix-integration">Low-Code Tracing (Phoenix Integration)<a class="headerlink" href="#low-code-tracing-phoenix-integration" title="Permanent link">&para;</a></h2>
-<p>Evolve provides easy integration with Phoenix for tracing LLM calls.</p>
-<h3 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>evolve<span class="o">[</span>tracing<span class="o">]</span>
+<p>The default database image is <code>pgvector/pgvector:pg16</code>; override it with
+<code>EVOLVE_TEST_POSTGRES_IMAGE</code>. The suite removes its containers and networks in
+fixture teardown. Allow several minutes for actual heartbeat expiry and cron ticks.
+This exercises the production scheduler, retention service, and collector against
+PostgreSQL with a minimal client adapter. It is not a packaged MCP/REST startup test
+or a Kubernetes deployment/readiness test.</p>
+<p>For local Kubernetes, <code>tests/e2e/test_retention_kubernetes_crashes.py</code> reuses these
+four scenarios with a PostgreSQL Pod and Service, a victim Pod, and a Deployment
+scaled to two surviving scheduler replicas. A test-only signal request kills the
+executor process with SIGKILL; the test checks the Pod's terminated container exit
+code is 137 before waiting for heartbeat expiry and subsequent cron execution.
+The heartbeat scenario runs all three scheduler processes together before killing
+the victim. Test instrumentation pauses the production collector at transaction
+boundaries and injects the signal; scheduling and retention use the real implementation.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">EVOLVE_TEST_KUBERNETES_CONTEXT</span><span class="o">=</span>rancher-desktop<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">EVOLVE_TEST_CONTAINER_IMAGE</span><span class="o">=</span>evolve:retention-crash-test<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>-m<span class="w"> </span>e2e<span class="w"> </span>tests/e2e/test_retention_kubernetes_crashes.py
 </code></pre></div>
-<h3 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h3>
-<p>First, enable auto-mode by setting the environment variable:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_AUTO_ENABLED</span><span class="o">=</span><span class="nb">true</span>
-</code></pre></div>
-<p>Then, add one import at the top of your agent to trigger the patching:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">altk_evolve.auto</span> <span class="c1"># noqa: F401</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="k">pass</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># Your existing code unchanged...</span>
-</code></pre></div>
-<h3 id="tracing-environment-variables">Tracing Environment Variables<a class="headerlink" href="#tracing-environment-variables" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>EVOLVE_AUTO_ENABLED</code></td>
-<td>Enable auto-patching on import</td>
-<td><code>false</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_TRACING_PROJECT</code></td>
-<td>Phoenix project name</td>
-<td><code>evolve-agent</code></td>
-</tr>
-<tr>
-<td><code>EVOLVE_TRACING_ENDPOINT</code></td>
-<td>Phoenix collector endpoint</td>
-<td><code>http://localhost:6006/v1/traces</code></td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p><strong>Note</strong>: Auto-patching skips if existing tracing is detected. Use <code>enable_tracing(force=True)</code> to override.</p>
-</blockquote>
+<p>This suite requires an explicit context, locally available images (<code>imagePullPolicy:
+Never</code>), and a node that can mount the checkout's absolute path through <code>hostPath</code>.
+The tested image provides <code>uv</code> and <code>/app/.venv</code> with Evolve's dependencies. Each
+scenario creates and deletes its own namespace. PostgreSQL uses disposable
+<code>emptyDir</code> storage; this validates executor crashes, not database or node failure.
+The cluster remains enabled after testing. Full packaged MCP/REST startup,
+production probes, and multi-node networking are separate checks.</p>
 
 
 
@@ -2234,44 +1664,6 @@
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer" >
-        
-          
-          <a href="../../tutorials/guidelines-loop/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Starter Example (Evolving Agent Loop)">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                Starter Example (Evolving Agent Loop)
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../guidelines/" class="md-footer__link md-footer__link--next" aria-label="Next: Enabling Guidelines">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                Enabling Guidelines
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">

@@ -10,13 +10,9 @@
       
       
       
-        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/guides/phoenix-sync/">
+        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/guides/embedded-memory-api/">
       
       
-        <link rel="prev" href="../low-code-tracing/">
-      
-      
-        <link rel="next" href="../extract-trajectories/">
       
       
         
@@ -27,7 +23,7 @@
     
     
       
-        <title>Phoenix Sync - Agent Lifecycle Toolkit (ALTK)</title>
+        <title>Embed the scoped memory REST API - Agent Lifecycle Toolkit (ALTK)</title>
       
     
     
@@ -100,7 +96,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#phoenix-sync" class="md-skip">
+        <a href="#embed-the-scoped-memory-rest-api" class="md-skip">
           Skip to content
         </a>
       
@@ -133,7 +129,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Phoenix Sync
+              Embed the scoped memory REST API
             
           </span>
         </div>
@@ -339,12 +335,10 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
+      <li class="md-tabs__item">
         <a href="../configuration/" class="md-tabs__link">
           
   
@@ -744,10 +738,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -769,22 +761,19 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
             
   
   
@@ -802,7 +791,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -901,37 +890,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Phoenix Sync
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../phoenix-sync/" class="md-nav__link">
         
   
   
@@ -947,298 +909,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Installation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#environment-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Environment Variables
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Usage
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Usage">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#cli" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CLI
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cli-options" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CLI Options
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#python-api" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Python API
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How It Works
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="How It Works">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-fetch-spans" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Fetch Spans
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-deduplication" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Deduplication
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-message-conversion" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Message Conversion
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#4-guideline-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        4. Guideline Generation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#5-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        5. Storage
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#data-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Data Flow
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#running-on-a-schedule" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Running on a Schedule
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Running on a Schedule">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#cron" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cron
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#systemd-timer" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Systemd Timer
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#connection-refused" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connection refused
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#no-spans-processed" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        No spans processed
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#guidelines-not-generating" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Guidelines not generating
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1734,274 +1404,13 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#embedded-scheduling-lifecycle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Embedded scheduling lifecycle
       
     </span>
   </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Installation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#environment-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Environment Variables
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Usage
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Usage">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#cli" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CLI
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cli-options" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CLI Options
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#python-api" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Python API
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How It Works
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="How It Works">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-fetch-spans" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Fetch Spans
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-deduplication" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Deduplication
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-message-conversion" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Message Conversion
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#4-guideline-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        4. Guideline Generation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#5-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        5. Storage
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#data-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Data Flow
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#running-on-a-schedule" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Running on a Schedule
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Running on a Schedule">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#cron" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cron
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#systemd-timer" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Systemd Timer
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#connection-refused" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connection refused
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#no-spans-processed" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        No spans processed
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#guidelines-not-generating" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Guidelines not generating
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2023,46 +1432,6 @@
   
 
 
-  <nav class="md-path" aria-label="Navigation" >
-    <ol class="md-path__list">
-      
-        
-  
-  
-    <li class="md-path__item">
-      <a href="../.." class="md-path__link">
-        
-  <span class="md-ellipsis">
-    Home
-  </span>
-
-      </a>
-    </li>
-  
-
-      
-      
-        
-  
-  
-    
-    
-      <li class="md-path__item">
-        <a href="../configuration/" class="md-path__link">
-          
-  <span class="md-ellipsis">
-    Guides
-  </span>
-
-        </a>
-      </li>
-    
-  
-
-      
-    </ol>
-  </nav>
-
               
               <article class="md-content__inner md-typeset">
                 
@@ -2073,230 +1442,96 @@
   
 
 
-<h1 id="phoenix-sync">Phoenix Sync<a class="headerlink" href="#phoenix-sync" title="Permanent link">&para;</a></h1>
-<p>Sync agent trajectories from Arize Phoenix to Evolve and automatically generate guidelines.</p>
-<p>This guide assumes traces are already reaching Phoenix — see <a href="../low-code-tracing/">Low-Code Tracing</a> to instrument your agent first. For choosing <em>how</em> guidelines get generated (standard vs. consistency), see <a href="../guidelines/">Enabling Guidelines</a>.</p>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The Phoenix sync module:
-1. Fetches agent trajectories from Phoenix's REST API
-2. Deduplicates already-processed trajectories (by <code>span_id</code>)
-3. Converts messages to OpenAI format
-4. Generates guidelines using LLM
-5. Stores both trajectories and guidelines in Evolve</p>
-<h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
-<p>No additional dependencies required - uses only stdlib for Phoenix API calls.</p>
-<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<h3 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>PHOENIX_URL</code></td>
-<td><code>http://localhost:6006</code></td>
-<td>Phoenix server URL</td>
-</tr>
-<tr>
-<td><code>PHOENIX_PROJECT</code></td>
-<td><code>default</code></td>
-<td>Phoenix project name</td>
-</tr>
-<tr>
-<td><code>EVOLVE_NAMESPACE_ID</code></td>
-<td><code>evolve</code></td>
-<td>Target namespace for stored entities</td>
-</tr>
-<tr>
-<td><code>EVOLVE_BACKEND</code></td>
-<td><code>milvus</code></td>
-<td>Backend provider (<code>milvus</code> or <code>filesystem</code>)</td>
-</tr>
-</tbody>
-</table>
-<h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
-<h3 id="cli">CLI<a class="headerlink" href="#cli" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Basic sync with defaults</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix
+<h1 id="embed-the-scoped-memory-rest-api">Embed the scoped memory REST API<a class="headerlink" href="#embed-the-scoped-memory-rest-api" title="Permanent link">&para;</a></h1>
+<p><code>build_memory_router</code> lets an integrating FastAPI application reuse Evolve's memory and retention operations. The host supplies the client and authenticated scope through ordinary dependency injection. It is opt-in and separate from the legacy standalone dashboard router.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">fastapi</span><span class="w"> </span><span class="kn">import</span> <span class="n">Depends</span><span class="p">,</span> <span class="n">FastAPI</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">altk_evolve.frontend.api.memory</span><span class="w"> </span><span class="kn">import</span> <span class="n">MemoryScope</span><span class="p">,</span> <span class="n">build_memory_router</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Custom Phoenix URL and namespace</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span>--url<span class="w"> </span>http://phoenix.example.com:6006<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--namespace<span class="w"> </span>my_namespace
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># Fetch more spans and include errors</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span>--limit<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span>--include-errors
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="c1"># Generate consistency guidelines instead of standard ones</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--guidelines-mode<span class="w"> </span>consistency
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1"># Use the accurate (resampling) consistency method instead of the fast default</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--guidelines-mode<span class="w"> </span>consistency<span class="w"> </span>--consistency-method<span class="w"> </span>accurate
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="c1"># Full options</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span>--url<span class="w"> </span>http://localhost:6006<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">  </span>--namespace<span class="w"> </span>production<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">  </span>--project<span class="w"> </span>my_project<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">  </span>--limit<span class="w"> </span><span class="m">200</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">  </span>--include-errors<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">  </span>--guidelines-mode<span class="w"> </span>all
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># These dependencies belong to the host application:</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># get_evolve_client returns its configured EvolveClient.</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># authenticated_principal verifies credentials.</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># authorized_service verifies access to the selected service and agent.</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="k">def</span><span class="w"> </span><span class="nf">memory_scope</span><span class="p">(</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">principal</span><span class="o">=</span><span class="n">Depends</span><span class="p">(</span><span class="n">authenticated_principal</span><span class="p">),</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">service</span><span class="o">=</span><span class="n">Depends</span><span class="p">(</span><span class="n">authorized_service</span><span class="p">),</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="p">):</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="k">return</span> <span class="n">MemoryScope</span><span class="p">(</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        <span class="n">namespace_id</span><span class="o">=</span><span class="n">service</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>        <span class="n">user_id</span><span class="o">=</span><span class="n">principal</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>        <span class="n">agent_id</span><span class="o">=</span><span class="n">service</span><span class="o">.</span><span class="n">selected_agent_id</span><span class="p">,</span>  <span class="c1"># optional, authorized by the host</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>        <span class="n">can_manage</span><span class="o">=</span><span class="n">principal</span><span class="o">.</span><span class="n">can_manage</span><span class="p">(</span><span class="n">service</span><span class="p">),</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="p">)</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">app</span> <span class="o">=</span> <span class="n">FastAPI</span><span class="p">()</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="n">app</span><span class="o">.</span><span class="n">include_router</span><span class="p">(</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>    <span class="n">build_memory_router</span><span class="p">(</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>        <span class="n">client_dependency</span><span class="o">=</span><span class="n">get_evolve_client</span><span class="p">,</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>        <span class="n">scope_dependency</span><span class="o">=</span><span class="n">memory_scope</span><span class="p">,</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>    <span class="p">),</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    <span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;/api/evolve&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="cli-options">CLI Options<a class="headerlink" href="#cli-options" title="Permanent link">&para;</a></h3>
+<p>The example assumes host-defined authentication dependencies; request headers or body IDs alone are not authentication. Enforce any feature flag in these dependencies too. Each operation uses the injected client without replacing the process-global MCP client.</p>
 <table>
 <thead>
 <tr>
-<th>Option</th>
-<th>Short</th>
-<th>Description</th>
+<th>Routes (relative to mount prefix)</th>
+<th>Scope</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>--url</code></td>
-<td><code>-u</code></td>
-<td>Phoenix server URL</td>
+<td><code>/memory/entities</code>, <code>/memory/entities/{id}</code></td>
+<td>Personal inventory/detail, delete, and <code>/metadata</code> patch, constrained by namespace, user, and optional agent.</td>
 </tr>
 <tr>
-<td><code>--namespace</code></td>
-<td><code>-n</code></td>
-<td>Target Evolve namespace</td>
+<td><code>/memory/access</code></td>
+<td>Record access to a deduplicated list of personally owned entity IDs.</td>
 </tr>
 <tr>
-<td><code>--project</code></td>
-<td><code>-p</code></td>
-<td>Phoenix project name</td>
+<td><code>/memory/facts</code></td>
+<td>Store/retrieve facts for the authenticated namespace/user and optional agent.</td>
 </tr>
 <tr>
-<td><code>--limit</code></td>
-<td></td>
-<td>Max spans to fetch (default: 100)</td>
+<td><code>/manage/memory/entities</code> and <code>/{id}</code></td>
+<td>Administrative inventory/detail; content and arbitrary metadata are omitted. <code>/metadata</code> patch permits title, category, and legal hold.</td>
 </tr>
 <tr>
-<td><code>--include-errors</code></td>
-<td></td>
-<td>Include failed/error spans</td>
+<td><code>/manage/retention/policies</code> and <code>/{id}</code></td>
+<td>Create, list, read, update, and delete namespace policies. Nested <code>/rules</code> routes manage ordered rules.</td>
 </tr>
 <tr>
-<td><code>--guidelines-mode</code></td>
-<td></td>
-<td>Guideline generation mode: <code>standard</code>, <code>consistency</code>, or <code>all</code> — see <a href="../guidelines/">Enabling Guidelines</a></td>
+<td><code>/manage/retention/runs</code> and <code>/{id}</code></td>
+<td>Run policies and read history, constrained by the authorized agent when supplied.</td>
 </tr>
 <tr>
-<td><code>--consistency-method</code></td>
-<td></td>
-<td>Consistency mode only: <code>fast</code> (default) or <code>accurate</code> — see <a href="../guidelines/#choosing-a-consistency-method">Enabling Guidelines</a></td>
+<td><code>/manage/retention/schedules</code> and <code>/{id}</code></td>
+<td>Revision-checked schedule CRUD, <code>/start</code>, and <code>/stop</code>. Detail includes upcoming UTC instants.</td>
+</tr>
+<tr>
+<td><code>/manage/retention/jobs</code> and <code>/{id}</code></td>
+<td>Job status; <code>/{id}/cancel</code> requests cancellation and <code>/{id}/acknowledge-interrupted</code> records confirmed worker failure.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">altk_evolve.sync.phoenix_sync</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhoenixSync</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># Initialize syncer</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">syncer</span> <span class="o">=</span> <span class="n">PhoenixSync</span><span class="p">(</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">phoenix_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:6006&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">namespace_id</span><span class="o">=</span><span class="s2">&quot;my_namespace&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">project</span><span class="o">=</span><span class="s2">&quot;default&quot;</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="p">)</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># Run sync</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="n">result</span> <span class="o">=</span> <span class="n">syncer</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">limit</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">include_errors</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processed: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">processed</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Skipped: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">skipped</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Guidelines generated: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">guidelines_generated</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Errors: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">errors</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<p>Administrative routes require <code>can_manage=True</code> and a real user identity; that identity becomes the run/schedule initiator. Policies are namespace-wide reusable definitions, while schedules and runs can target an agent. Personal routes reject absent and placeholder users, restrict edits to title/category, and reject identity/protection overrides in submitted fact metadata. The namespace and initiator come from trusted scope, not request payloads. Detail/inventory reads do not stamp access; call the explicit access route when memories are actually used.</p>
+<p>A schedule PUT body contains <code>definition</code> and <code>expected_revision</code> (zero for creation). See <a href="../retention-scheduling/">retention scheduling</a> for the definition, worker setup, timing semantics, and recovery. Mounting the router alone does not launch scheduling; attach the runtime to the host lifespan as below. The host can use friendly UI controls to generate cron and display the preview without asking end users to read cron expressions.</p>
+<p>MCP tools remain an application integration surface: their namespace, user, and initiator arguments must be supplied by a trusted caller. The embedded REST router supplies those values from authenticated host dependencies; it does not make the legacy dashboard or an independently exposed MCP server authenticated.</p>
+<h2 id="embedded-scheduling-lifecycle">Embedded scheduling lifecycle<a class="headerlink" href="#embedded-scheduling-lifecycle" title="Permanent link">&para;</a></h2>
+<p>The <code>evolve-mcp</code> launcher already owns the scheduler lifetime. A host embedding only the REST router must attach it to its application lifetime using the same client and storage as the router:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">asynccontextmanager</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">altk_evolve.retention.scheduler</span><span class="w"> </span><span class="kn">import</span> <span class="n">retention_runtime</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nd">@asynccontextmanager</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">lifespan</span><span class="p">(</span><span class="n">app</span><span class="p">):</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="k">with</span> <span class="n">retention_runtime</span><span class="p">(</span><span class="n">client</span><span class="p">):</span>  <span class="c1"># the host&#39;s shared EvolveClient</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        <span class="k">yield</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">app</span> <span class="o">=</span> <span class="n">FastAPI</span><span class="p">(</span><span class="n">lifespan</span><span class="o">=</span><span class="n">lifespan</span><span class="p">)</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># Mount build_memory_router with a client dependency returning that same client.</span>
 </code></pre></div>
-<h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<h3 id="1-fetch-spans">1. Fetch Spans<a class="headerlink" href="#1-fetch-spans" title="Permanent link">&para;</a></h3>
-<p>The syncer calls Phoenix's REST API:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>GET /v1/projects/{project}/spans?limit=N&amp;cursor=CURSOR
-</code></pre></div></p>
-<p>Only <code>litellm_request</code> spans with prompt messages are processed.</p>
-<h3 id="2-deduplication">2. Deduplication<a class="headerlink" href="#2-deduplication" title="Permanent link">&para;</a></h3>
-<p>Each processed trajectory stores <code>span_id</code> in its metadata. On subsequent syncs, already-processed span IDs are skipped.</p>
-<h3 id="3-message-conversion">3. Message Conversion<a class="headerlink" href="#3-message-conversion" title="Permanent link">&para;</a></h3>
-<p>Anthropic/Claude message format is converted to OpenAI format:
-- Tool use blocks → <code>tool_calls</code> array
-- Tool results → separate <code>tool</code> role messages
-- Thinking blocks → preserved in <code>thinking</code> field</p>
-<h3 id="4-guideline-generation">4. Guideline Generation<a class="headerlink" href="#4-guideline-generation" title="Permanent link">&para;</a></h3>
-<p>The <code>generate_guidelines()</code> function analyzes the trajectory and produces actionable guidelines using an LLM.</p>
-<h3 id="5-storage">5. Storage<a class="headerlink" href="#5-storage" title="Permanent link">&para;</a></h3>
-<p>Two entity types are stored:
-- <code>trajectory</code> - Individual messages with metadata (trace_id, span_id, model, role)
-- <code>guideline</code> - Generated guidelines with conflict resolution enabled</p>
-<h2 id="data-flow">Data Flow<a class="headerlink" href="#data-flow" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>┌─────────────┐      fetch      ┌───────────────────┐
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>│   Phoenix   │ ───────────────→│   PhoenixSync     │
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>│   (spans)   │                 │                   │
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>└─────────────┘                 └─────────┬─────────┘
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>                                          │
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>                    ┌─────────────────────┼─────────────────────┐
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>                    │                     │                     │
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>                    ▼                     ▼                     ▼
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>            ┌────────────────┐    ┌────────────────┐    ┌────────────────┐
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>            │  Deduplicate   │    │   Convert to   │    │   Generate     │
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>            │  (by span_id)  │    │ OpenAI format  │    │   Guidelines   │
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>            └────────────────┘    └────────────────┘    └────────┬───────┘
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>                                                                  │
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>                                                                  ▼
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>                                                        ┌───────────────┐
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>                                                        │    Evolve     │
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>                                                        │   Backend     │
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>                                                        └───────────────┘
-</code></pre></div>
-<h2 id="running-on-a-schedule">Running on a Schedule<a class="headerlink" href="#running-on-a-schedule" title="Permanent link">&para;</a></h2>
-<h3 id="cron">Cron<a class="headerlink" href="#cron" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Sync every hour</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="m">0</span><span class="w"> </span>*<span class="w"> </span>*<span class="w"> </span>*<span class="w"> </span>*<span class="w"> </span><span class="nb">cd</span><span class="w"> </span>/path/to/altk-evolve<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--limit<span class="w"> </span><span class="m">100</span>
-</code></pre></div>
-<h3 id="systemd-timer">Systemd Timer<a class="headerlink" href="#systemd-timer" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># /etc/systemd/system/evolve-sync.service</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">[Unit]</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="na">Description</span><span class="o">=</span><span class="s">Evolve Phoenix Sync</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="k">[Service]</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="na">Type</span><span class="o">=</span><span class="s">oneshot</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="na">WorkingDirectory</span><span class="o">=</span><span class="s">/path/to/altk-evolve</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="na">ExecStart</span><span class="o">=</span><span class="s">/path/to/uv run evolve sync phoenix</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="na">Environment</span><span class="o">=</span><span class="s">PHOENIX_URL=http://localhost:6006</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="na">Environment</span><span class="o">=</span><span class="s">EVOLVE_NAMESPACE_ID=production</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># /etc/systemd/system/evolve-sync.timer</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">[Unit]</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="na">Description</span><span class="o">=</span><span class="s">Run Evolve Phoenix Sync hourly</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="k">[Timer]</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="na">OnCalendar</span><span class="o">=</span><span class="s">hourly</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="na">Persistent</span><span class="o">=</span><span class="s">true</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="k">[Install]</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="na">WantedBy</span><span class="o">=</span><span class="s">timers.target</span>
-</code></pre></div>
-<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
-<h3 id="connection-refused">Connection refused<a class="headerlink" href="#connection-refused" title="Permanent link">&para;</a></h3>
-<p>Ensure Phoenix is running and accessible at the configured URL:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>curl<span class="w"> </span>http://localhost:6006/v1/projects/default/spans?limit<span class="o">=</span><span class="m">1</span>
-</code></pre></div></p>
-<h3 id="no-spans-processed">No spans processed<a class="headerlink" href="#no-spans-processed" title="Permanent link">&para;</a></h3>
-<ul>
-<li>Check that spans have <code>name="litellm_request"</code></li>
-<li>Verify spans contain <code>gen_ai.prompt.*</code> attributes</li>
-<li>Use <code>--include-errors</code> to include failed spans</li>
-</ul>
-<h3 id="guidelines-not-generating">Guidelines not generating<a class="headerlink" href="#guidelines-not-generating" title="Permanent link">&para;</a></h3>
-<p>Ensure LLM API key is configured:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-...
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># or for other providers</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>sk-...
-</code></pre></div></p>
+<p>The runtime stops and joins its scheduling thread on shutdown. Service replicas coordinate through durable database claims. The retention CLI manages stored resources; it does not start a scheduler in each CLI process.</p>
+<p>See the <a href="../retention-api/">retention API reference</a> for exact REST bodies and corresponding Python/MCP operations.</p>
 
 
 
@@ -2331,44 +1566,6 @@
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer" >
-        
-          
-          <a href="../low-code-tracing/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Low-Code Tracing">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                Low-Code Tracing
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../extract-trajectories/" class="md-footer__link md-footer__link--next" aria-label="Next: Extract Trajectories">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                Extract Trajectories
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">

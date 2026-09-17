@@ -1803,23 +1803,28 @@
 <a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>evolve<span class="w"> </span>entities<span class="w"> </span>delete<span class="w"> </span>my_namespace<span class="w"> </span><span class="m">12345</span>
 </code></pre></div>
 <h3 id="data-retention">Data Retention<a class="headerlink" href="#data-retention" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Dry run: report what the policy would flag or delete (nothing is mutated)</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>evolve<span class="w"> </span>retention<span class="w"> </span>run<span class="w"> </span>--policy<span class="w"> </span>retention.yaml
+<p>Manage policies, rules, and schedules directly in Evolve:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>evolve<span class="w"> </span>retention<span class="w"> </span>policies<span class="w"> </span>create<span class="w"> </span>standard<span class="w"> </span>--namespace<span class="w"> </span>my-service
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>evolve<span class="w"> </span>retention<span class="w"> </span>policies<span class="w"> </span>rules<span class="w"> </span>add<span class="w"> </span>standard<span class="w"> </span>--name<span class="w"> </span>old-memories<span class="w"> </span>--namespace<span class="w"> </span>my-service<span class="w"> </span>--max-age-days<span class="w"> </span><span class="m">90</span><span class="w"> </span>--action<span class="w"> </span>delete
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Sweep a specific namespace</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>evolve<span class="w"> </span>retention<span class="w"> </span>run<span class="w"> </span>--policy<span class="w"> </span>retention.yaml<span class="w"> </span>my_namespace
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Enforce the policy</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>evolve<span class="w"> </span>retention<span class="w"> </span>run<span class="w"> </span>--policy<span class="w"> </span>retention.yaml<span class="w"> </span>my_namespace<span class="w"> </span>--apply
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Immediate execution of the stored policy (dry run by default).</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>evolve<span class="w"> </span>retention<span class="w"> </span>run<span class="w"> </span>standard<span class="w"> </span>--namespace<span class="w"> </span>my-service<span class="w"> </span>--initiated-by<span class="w"> </span>alice
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>evolve<span class="w"> </span>retention<span class="w"> </span>run<span class="w"> </span>standard<span class="w"> </span>--namespace<span class="w"> </span>my-service<span class="w"> </span>--initiated-by<span class="w"> </span>alice<span class="w"> </span>--apply
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1"># Create a schedule for the running Evolve service.</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>evolve<span class="w"> </span>retention<span class="w"> </span>schedules<span class="w"> </span>create<span class="w"> </span>nightly<span class="w"> </span>--namespace<span class="w"> </span>my-service<span class="w"> </span>--initiated-by<span class="w"> </span>alice<span class="w"> </span>--policy<span class="w"> </span>standard<span class="w"> </span>--schedule<span class="w"> </span><span class="s1">&#39;0 2 * * *&#39;</span><span class="w"> </span>--time-zone<span class="w"> </span>America/Los_Angeles
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>evolve<span class="w"> </span>retention<span class="w"> </span>schedules<span class="w"> </span>stop<span class="w"> </span>nightly<span class="w"> </span>--namespace<span class="w"> </span>my-service<span class="w"> </span>--initiated-by<span class="w"> </span>alice<span class="w"> </span>--revision<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>evolve<span class="w"> </span>retention<span class="w"> </span>schedules<span class="w"> </span>start<span class="w"> </span>nightly<span class="w"> </span>--namespace<span class="w"> </span>my-service<span class="w"> </span>--initiated-by<span class="w"> </span>alice<span class="w"> </span>--revision<span class="w"> </span><span class="m">2</span>
 </code></pre></div>
-<p><strong>Options:</strong>
-- <code>--policy, -p</code>: Path to a retention policy file (YAML or JSON). Required.
-- <code>--apply</code>: Actually flag/delete. Without it the run is a dry run.
-- Positional namespace argument defaults to the configured <code>namespace_id</code>.</p>
-<p>The report lists every action with its reason (<code>age</code>, <code>unused</code>, <code>cascade:&lt;trace_id&gt;</code>),
-the rule that decided it, and the evidence behind it. See the
-<a href="../../guides/retention/">Data Retention guide</a> for the policy format and the
-<code>AccessStampPlugin</code> dependency of <code>max_unused_days</code> rules.</p>
+<p><code>policies</code> supports <code>create</code>, <code>list</code>, <code>show</code>, <code>update</code>, and <code>delete</code>.
+<code>policies rules</code> supports <code>add</code>, <code>list</code>, <code>update</code>, and <code>remove</code>; select a rule with <code>--name</code>.
+<code>schedules</code> supports <code>create</code>, <code>show</code>, <code>list</code>, <code>update</code>, <code>delete</code>, <code>start</code>, and <code>stop</code>. <code>show</code> includes the next five scheduled times alongside configuration, or no upcoming runs when suspended.
+<code>jobs</code> supports <code>list</code>, <code>show</code>, <code>cancel</code>, and <code>recover</code>.</p>
+<p>The Evolve service runs enabled schedules automatically. <code>start</code>/<code>stop</code> change persisted schedule state; stopping a schedule does not cancel admitted jobs.</p>
+<p>Catalog operations require <code>--namespace</code>. Immediate runs and schedule writes require <code>--initiated-by</code> for audit attribution. <code>run</code> takes a stored policy ID, and <code>--apply</code> enables mutations. Schedule updates take <code>--revision</code> and preserve omitted fields. Retention commands do not take policy or schedule files.</p>
+<p>Reports contain actions, reasons, deciding rules, and evidence. See the
+<a href="../../guides/retention/">Data Retention guide</a> for rule semantics and the
+<a href="../../guides/retention-scheduling/">Scheduling guide</a> for command options, execution, and recovery.</p>
 <h3 id="skill-management">Skill Management<a class="headerlink" href="#skill-management" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Package all skills from default location (plugins/evolve/skills → dist/)</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>evolve<span class="w"> </span>skills<span class="w"> </span>package
@@ -1889,6 +1894,10 @@ the rule that decided it, and the evidence behind it. See the
 <p>See the <a href="../../guides/viz/">Evolve Viz guide</a> for full usage.</p>
 <h2 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
 <p>The CLI uses the same environment variables as the MCP server. See the <a href="README.md#configuration">Configuration</a> section in the main README.</p>
+<p>PostgreSQL also supports <code>evolve retention mark POLICY</code>, <code>sweep POLICY</code>, <code>candidates</code>,
+and <code>audit</code>. Use <code>--namespace</code> for each and <code>--initiated-by</code> for mark/sweep. Marking
+never deletes; sweeping applies deletions only after rechecking eligibility and holds.
+See <a href="../../guides/retention-api/#postgresql-collection">collection semantics</a>.</p>
 
 
 

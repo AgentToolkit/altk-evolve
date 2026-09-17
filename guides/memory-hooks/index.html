@@ -1957,6 +1957,12 @@
 <td>Stamps <code>last_accessed</code> (ISO-8601 UTC) on read entities via the metadata-patch path</td>
 </tr>
 <tr>
+<td><code>LegalHoldMemoryPlugin</code> (native)</td>
+<td><code>memory_pre_delete</code></td>
+<td>sequential</td>
+<td>Refuses deletion while stored metadata contains <code>legal_hold: true</code></td>
+</tr>
+<tr>
 <td><code>PIIFilterMemoryPlugin</code> (<strong>raw CPEX</strong>)</td>
 <td><code>memory_pre_write</code>, <code>llm_pre_call</code></td>
 <td>sequential</td>
