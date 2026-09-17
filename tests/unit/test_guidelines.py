@@ -94,9 +94,35 @@ class TestParseGuidelineResponse:
         with caplog.at_level(logging.WARNING):
             guidelines = parse_guideline_response(raw, "standard")
         assert guidelines is None
-        assert "introduced control characters" in caplog.text
+        assert "control characters alongside a surviving literal backslash" in caplog.text
         # Must not be reported as a success.
         assert "Recovered" not in caplog.text
+
+    @pytest.mark.parametrize("indent", ["\n  ", "\n\t"])
+    def test_discards_corruption_in_a_pretty_printed_response(self, indent):
+        r"""The decision must come from the value, not the document. A pretty-printed or
+        tab-indented response contains literal newlines and tabs *between* tokens, so a
+        document-wide character set would whitelist \n and \t for every value and let exactly
+        this corruption through — while the identical single-line response was rejected."""
+        raw = (
+            "{" + indent + '"guidelines": [' + indent + '  {"content": "Write to C:\\new\\data", '
+            '"rationale": "r", "category": "strategy", "trigger": "t"}' + indent + "]" + "\n}"
+        )
+        assert parse_guideline_response(raw, "standard") is None
+
+    def test_a_legitimate_control_escape_survives_a_sibling_needing_repair(self):
+        r"""A guideline whose \t was correctly escaped has no stray backslash left, so it must
+        not be condemned by a *different* guideline's LaTeX. Before this was decided per value,
+        the pairing lost both guidelines."""
+        raw = (
+            '{"guidelines": ['
+            '{"content": "Emit rows as name\\tvalue", "rationale": "TSV", "category": "optimization", "trigger": "t"}, '
+            '{"content": "State bounds as \\( n \\le 10 \\)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        )
+        guidelines = parse_guideline_response(raw, "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == "Emit rows as name\tvalue"
+        assert guidelines[1].content == r"State bounds as \( n \le 10 \)"
 
     def test_repair_survives_a_correctly_escaped_backslash(self):
         r"""A response mixing a correct \\ with a raw \( is realistic. The escape scan has to

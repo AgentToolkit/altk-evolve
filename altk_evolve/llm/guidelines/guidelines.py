@@ -43,21 +43,42 @@ def _escape_lone_backslashes(text: str) -> str:
     return _JSON_ESCAPE_RE.sub(lambda m: m.group(0) if m.group(1) else "\\\\" + m.group(2), text)
 
 
-def _introduces_control_characters(guidelines: list[Guideline], raw: str) -> bool:
-    """Whether decoding produced C0 control characters the raw response never contained.
+def _looks_corrupted_by_escape_repair(value: str) -> bool:
+    """Whether this decoded value shows both symptoms of a misread backslash run.
 
     The escape repair only runs on a response the model failed to escape properly, so its
-    ``\\t``/``\\n``/``\\r`` almost certainly meant a literal backslash — a Windows path or a
-    regex — rather than a control character. Decoding them anyway yields a guideline that
-    looks valid but whose text is silently wrong, which then gets embedded and served on.
-    Detect that and reject, rather than reporting a successful recovery.
+    ``\\t``/``\\n``/``\\r`` may have meant a literal backslash — a Windows path or a regex —
+    rather than a control character. Decoding one anyway yields a guideline that looks valid
+    but whose text is silently wrong, which then gets embedded and served on.
+
+    Decided per value, from the value itself, on two pieces of evidence:
+
+    1. It contains a C0 control character. A JSON string cannot carry one literally, so it
+       can only have come from an escape sequence. (This is why the raw document is not
+       consulted: a pretty-printed response's newlines sit *between* tokens, never inside a
+       string, so a document-wide character set would whitelist ``\\n`` for every value and
+       let exactly this corruption through.)
+    2. It *still* contains a literal backslash after the repair — evidence that the model was
+       writing raw backslashes into **this** value, which makes its control escapes suspect.
+
+    Requiring both keeps a sibling honest: a guideline whose ``\\t`` was correctly escaped has
+    no stray backslash left, so it is not condemned by a different guideline's LaTeX.
+
+    Known imprecision, in the fail-closed direction: a value holding both an intended control
+    escape and a correctly-escaped ``\\\\`` trips both tests and is discarded. Distinguishing
+    that would need per-literal repair provenance.
     """
-    present_in_raw = {ch for ch in raw if ch in _C0_CONTROL}
-    for guideline in guidelines:
-        for value in (guideline.content, guideline.rationale, guideline.trigger, *guideline.implementation_steps):
-            if any(ch in _C0_CONTROL and ch not in present_in_raw for ch in value):
-                return True
-    return False
+    return any(ch in _C0_CONTROL for ch in value) and "\\" in value
+
+
+def _corrupted_guideline_values(guidelines: list[Guideline]) -> list[str]:
+    """The decoded values that look corrupted by the escape repair, for logging."""
+    return [
+        value
+        for guideline in guidelines
+        for value in (guideline.content, guideline.rationale, guideline.trigger, *guideline.implementation_steps)
+        if _looks_corrupted_by_escape_repair(value)
+    ]
 
 
 def parse_guideline_response(clean_response: str, context: str) -> list[Guideline] | None:
@@ -112,13 +133,16 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
                 first_error = first_error or e
                 continue
             repairs = [r for r in (parse_repair, shape_repair) if r]
-            if parse_repair and _introduces_control_characters(guidelines, clean_response):
+            corrupted = _corrupted_guideline_values(guidelines) if parse_repair else []
+            if corrupted:
                 # Fail closed: a plausible-looking guideline with silently corrupted text is
-                # worse than none, and the operator can regenerate.
+                # worse than none, and the operator can regenerate. Whole response, not just
+                # the offending value — a guideline set is generated as one unit, and dropping
+                # part of it would silently change what the model was asked to produce.
                 logger.warning(
-                    f"Discarding {context} guideline response: escaping lone backslashes made it parse, but decoding "
-                    f"introduced control characters absent from the response, so its text would be corrupted "
-                    f"(a Windows path or regex read as \\t/\\n/\\r). Response: {repr(clean_response[:500])}"
+                    f"Discarding {context} guideline response: escaping lone backslashes made it parse, but "
+                    f"{len(corrupted)} decoded value(s) carry control characters alongside a surviving literal "
+                    f"backslash, so a path or regex was read as \\t/\\n/\\r. First: {repr(corrupted[0][:200])}"
                 )
                 return None
             if repairs:
