@@ -168,13 +168,20 @@ class TestSegmentationFlag:
     deterministic regardless of what the developer has in their environment.
     """
 
-    # 1 user + 2 assistant turns, so num_steps == 2 and two single-step subtasks both slice
-    # validly. Fewer steps than that and the segmented path could not be reached at all.
+    # Four assistant turns, each carrying a marker string that appears nowhere else (not in the
+    # prompt template, not in a subtask description). Multi-step segments over this fixture are
+    # what make the scoping assertions falsifiable: with single-step segments, "each segment got
+    # its own steps" and "each segment got everything" are indistinguishable.
     MESSAGES = [
-        {"role": "user", "content": "Find config.yaml in /etc/acme and summarize it"},
-        {"role": "assistant", "content": "Searching /etc/acme for config.yaml."},
-        {"role": "assistant", "content": "It sets retries=3 and a 30s timeout."},
+        {"role": "user", "content": "Find the retry settings for the acme service and summarize them"},
+        {"role": "assistant", "content": "Listed the certificate directory to get my bearings."},
+        {"role": "assistant", "content": "Opened the retry policy file that directory pointed to."},
+        {"role": "assistant", "content": "Extracted the backoff ceiling it declares."},
+        {"role": "assistant", "content": "Reported the effective timeout to the caller."},
     ]
+    SEG1_MARKERS = ("certificate directory", "retry policy file")
+    SEG2_MARKERS = ("backoff ceiling", "effective timeout")
+
     PAYLOAD = {
         "guidelines": [
             {
@@ -187,6 +194,11 @@ class TestSegmentationFlag:
         ]
     }
 
+    @staticmethod
+    def _prompts(mock_completion) -> list[str]:
+        """The rendered prompt from each completion call, in call order."""
+        return [c.kwargs["messages"][-1]["content"] for c in mock_completion.call_args_list]
+
     @patch("altk_evolve.llm.guidelines.guidelines.completion")
     @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
@@ -197,7 +209,7 @@ class TestSegmentationFlag:
         mock_completion,
         monkeypatch,
     ):
-        """Flag off: one LLM call for the whole trajectory, the segmenter is never reached,
+        """Flag off: one LLM call that sees the whole trajectory, the segmenter is never reached,
         and task_description is the first user message verbatim. That last assertion is the
         documented cost of the default — task_description is both the clustering key
         (clustering.py) and the retrieval ranking key (retrieval.py), so it carries whatever
@@ -211,36 +223,46 @@ class TestSegmentationFlag:
         mock_segment.assert_not_called()
         mock_completion.assert_called_once()
         assert len(results) == 1
-        assert results[0].task_description == "Find config.yaml in /etc/acme and summarize it"
+        assert results[0].task_description == "Find the retry settings for the acme service and summarize them"
+        # The single call really does see every step, not a truncated view.
+        prompt = self._prompts(mock_completion)[0]
+        for m in self.SEG1_MARKERS + self.SEG2_MARKERS:
+            assert m in prompt
 
     @patch("altk_evolve.llm.guidelines.guidelines.completion")
     @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
-    def test_enabled_segments_and_carries_generalized_descriptions(
+    def test_enabled_scopes_each_call_to_its_own_subtask_steps(
         self,
         _mock_params,
         _mock_schema,
         mock_completion,
         monkeypatch,
     ):
-        """Flag on: the segmenter runs once over the raw messages and each subtask becomes its
-        own result carrying that subtask's generalized description. Proves the new default is
-        a gate rather than a kill switch — opting back in still works."""
+        """Flag on: the segmenter runs once over the raw messages, and each LLM call sees **only
+        its own subtask's steps**.
+
+        The step-scoping assertions are the point. Call count and description plumbing alone
+        stay true even if every segment is handed the entire trajectory — a mutation that keeps
+        all of segmentation's cost and removes all of its value. Scoping is also the load-bearing
+        claim in the docstring and in docs/guides/configuration.md: a segment cannot see the
+        correction in the segment next door, which is why segmentation can emit a guideline
+        asserting an approach that a later step already superseded."""
         monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", True)
         mock_completion.return_value = _mock_completion_response(self.PAYLOAD)
 
         subtasks = [
             SubtaskSegment(
-                generalized_description="Locate a named config file under a directory",
+                generalized_description="Locate a configuration file on disk",
                 purpose="Find the file to read",
                 start_step=1,
-                end_step=1,
+                end_step=2,
             ),
             SubtaskSegment(
-                generalized_description="Summarize the settings a config file declares",
+                generalized_description="Read the values a configuration file declares",
                 purpose="Report the configured values",
-                start_step=2,
-                end_step=2,
+                start_step=3,
+                end_step=4,
             ),
         ]
 
@@ -250,6 +272,14 @@ class TestSegmentationFlag:
         mock_segment.assert_called_once_with(self.MESSAGES)
         assert mock_completion.call_count == 2
         assert [r.task_description for r in results] == [s.generalized_description for s in subtasks]
+
+        first, second = self._prompts(mock_completion)
+        for m in self.SEG1_MARKERS:
+            assert m in first, f"segment 1 prompt is missing its own step: {m}"
+            assert m not in second, f"segment 2 prompt leaked a step from segment 1: {m}"
+        for m in self.SEG2_MARKERS:
+            assert m in second, f"segment 2 prompt is missing its own step: {m}"
+            assert m not in first, f"segment 1 prompt leaked a step from segment 2: {m}"
 
     @patch("altk_evolve.llm.guidelines.guidelines.completion")
     @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
@@ -272,5 +302,6 @@ class TestSegmentationFlag:
         ):
             results = generate_guidelines(self.MESSAGES)
 
+        mock_completion.assert_called_once()
         assert len(results) == 1
-        assert results[0].task_description == "Find config.yaml in /etc/acme and summarize it"
+        assert results[0].task_description == "Find the retry settings for the acme service and summarize them"
