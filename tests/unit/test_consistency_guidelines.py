@@ -1,5 +1,7 @@
 """Tests for trajectory-to-IR transformation in consistency_guidelines.py."""
 
+import json
+
 import pytest
 
 from altk_evolve.llm.guidelines.consistency_guidelines import (
@@ -558,6 +560,73 @@ class TestSegmentationGuard:
             assert mock_gen.call_count == 1
             _, kwargs = mock_gen.call_args
             assert kwargs.get("step_range") is None
+
+
+@pytest.mark.unit
+class TestConsistencyResponseRepair:
+    """Both consistency pipelines must route responses through the repairing parser.
+
+    The repairs themselves are covered in test_guidelines.py; these only prove the wiring,
+    so a future refactor can't silently drop the rescue from one pipeline.
+    """
+
+    _GUIDELINE = {
+        "content": "Re-read the tool output before answering",
+        "rationale": "Prevents answering from a stale assumption",
+        "category": "strategy",
+        "trigger": "After any tool call",
+    }
+
+    def _bare_array_response(self):
+        from unittest.mock import MagicMock
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps([self._GUIDELINE])
+        return response
+
+    def test_accurate_pipeline_recovers_a_bare_array_response(self, caplog):
+        import logging
+
+        from unittest.mock import patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import _generate_guideline_result
+
+        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion, caplog.at_level(logging.INFO):
+            mock_completion.return_value = self._bare_array_response()
+            result = _generate_guideline_result(
+                messages=[{"role": "assistant", "content": "step one"}],
+                consistency_data={"step_uncertainties": {1: 0.5}},
+                task_description="Answer a question",
+                step_range=None,
+                constrained_decoding_supported=False,
+                debug_suffix="",
+            )
+
+        assert [g.content for g in result.guidelines] == ["Re-read the tool output before answering"]
+        # The label is the only thing distinguishing the two consistency pipelines in logs,
+        # which is what the "keep off-contract models visible" rationale depends on.
+        assert "Recovered consistency guideline response" in caplog.text
+        assert "fast consistency" not in caplog.text
+
+    def test_fast_pipeline_recovers_a_bare_array_response(self, caplog):
+        import logging
+
+        from unittest.mock import patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import _generate_fast_guideline_result
+
+        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion, caplog.at_level(logging.INFO):
+            mock_completion.return_value = self._bare_array_response()
+            result = _generate_fast_guideline_result(
+                task_description="Answer a question",
+                trajectory_slice="Step 1 - Agent reasoning:\nstep one",
+                num_steps=1,
+                constrained_decoding_supported=False,
+            )
+
+        assert [g.content for g in result.guidelines] == ["Re-read the tool output before answering"]
+        assert "Recovered fast consistency guideline response" in caplog.text
 
 
 class TestGenerateConsistencyGuidelinesFast:
