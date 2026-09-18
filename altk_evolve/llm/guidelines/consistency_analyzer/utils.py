@@ -6,7 +6,24 @@ logger = logging.getLogger(__name__)
 from collections import defaultdict
 
 
-def extract_field_values_from_responses(flat_responses: list[dict], field: dict) -> list[str]:
+class _Unreadable:
+    """Type of the UNREADABLE sentinel."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<UNREADABLE>"
+
+
+#: Returned in place of a field value when the *response* could not be read as fields at
+#: all — it did not flatten to a dict, so no field of it can be located. Deliberately not
+#: "": an empty string means the field is absent from a response that WAS readable, which
+#: is ordinary disagreement, and collapsing the two lets a scorer drop an unreadable
+#: resample as though it merely lacked one field and report the remainder's agreement.
+UNREADABLE = _Unreadable()
+
+
+def extract_field_values_from_responses(flat_responses: list, field: dict) -> list:
     """
     Extract field values from flattened responses.
 
@@ -14,12 +31,17 @@ def extract_field_values_from_responses(flat_responses: list[dict], field: dict)
     multi-field names (e.g., ["action", "action_input"]), concatenating
     values from multiple fields with space separation.
 
+    A response that is not a dict yields the UNREADABLE sentinel rather than "", so
+    callers can tell "this field is absent from a readable response" from "this response
+    could not be read". See compute_json_step_consistency for what the scorer does with
+    it, and the UNREADABLE docstring for why the distinction matters.
+
     Args:
-        flat_responses: List of flattened response dictionaries
+        flat_responses: List of flattened responses (dicts; anything else is UNREADABLE)
         field: Field config dict with 'name' key (str or list[str])
 
     Returns:
-        List of field values, one per response
+        List of field values, one per response — a str, or UNREADABLE
     """
     field_samples = []
 
@@ -33,7 +55,7 @@ def extract_field_values_from_responses(flat_responses: list[dict], field: dict)
 
     for response in flat_responses:
         if not isinstance(response, dict):
-            field_samples.append("")
+            field_samples.append(UNREADABLE)
             continue
 
         # Concatenate values from all field names
@@ -150,8 +172,12 @@ def flatten_response(d, parent_key="", sep="_"):
     A top-level list is also left untouched when it is *ragged* — its element dicts do
     not share one key set. Inverting one misaligns element values, so two responses that
     attach the same value to different elements would flatten identically and score as
-    perfectly consistent; returning the list unchanged instead reaches the scorer as
-    unscorable and is honestly reported undefined.
+    perfectly consistent; returning the list unchanged keeps that false agreement out of
+    the score. Returning a non-dict is what marks the response unscorable, but nothing
+    here enforces that: compute_json_step_consistency is what refuses to score a step any
+    of whose responses failed to flatten to a dict. Callers that read a flattened response
+    field by field must make that check themselves — extract_field_values_from_responses
+    renders a non-dict as "", which is also how it renders an absent field.
 
     Known limits, both shared with the pre-flattening behaviour:
 

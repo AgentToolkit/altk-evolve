@@ -632,7 +632,13 @@ def extract_parsed_responses_from_trajectory(trajectory: dict, config: dict) -> 
                 elif agent_config["response_type"] in ["json", "react"]:
                     parsed_response = field_backfill(parsed_response, agent_config)
 
-                if parsed_response == {} or parsed_response == "":
+                # Any empty parse result, not only {} or "". parsed_response_backfill returns
+                # [] for tool_calls, which `== {}` does not match, so an unparseable
+                # tool_calls response survived this drop while the json/react {} equivalent
+                # did not — the same situation reaching the scorer on one response_type and
+                # being discarded on the other. A configured backfill is non-empty and so
+                # still survives, as before.
+                if not parsed_response:
                     logger.debug(
                         f"+++ Could not parse response ({response[:50]}) for {step['name']} with response type {agent_config['response_type']}"
                     )
