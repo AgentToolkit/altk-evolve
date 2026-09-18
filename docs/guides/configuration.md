@@ -47,12 +47,43 @@ All configuration variables are prefixed with `EVOLVE_`.
 | `EVOLVE_NAMESPACE_ID` | Namespace ID for isolation                                                    | `evolve`                                 |
 | `EVOLVE_GUIDELINES_MODE` | Guideline generation pipeline: `standard`, `consistency`, or `all` — see [Enabling Guidelines](guidelines.md) | `standard` |
 | `EVOLVE_CONSISTENCY_METHOD` | Consistency mode only: `fast` (LLM self-judged) or `accurate` (resampling based) — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method) | `fast` |
+| `EVOLVE_SEGMENTATION_ENABLED` | Segment trajectories into logical subtasks before generating guidelines. Governs all three generation paths (`standard`, and both `consistency` methods). Disabled by default — see [Trajectory segmentation](#trajectory-segmentation) | `false` |
 | `EVOLVE_GUIDELINES_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_FACT_EXTRACTION_MODEL` | Model for fact extraction only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_MODEL_NAME` | Global fallback model for all Evolve LLM calls | `gpt-4o` |
 | `EVOLVE_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for OpenAI-compatible endpoints). Defaults to `openai` whenever `OPENAI_API_KEY` or `OPENAI_BASE_URL` is set, even if you never set this variable yourself — see the [consistency guide](guidelines.md#choosing-a-consistency-method) for a case where that implicit default causes misrouting | `openai` if `OPENAI_API_KEY`/`OPENAI_BASE_URL` is set, else `None` |
 | `EVOLVE_EMBEDDING_MODEL` | Embedding model                                                               | `sentence-transformers/all-MiniLM-L6-v2` |
+
+### Trajectory segmentation
+
+`EVOLVE_SEGMENTATION_ENABLED` is **disabled by default**. With it enabled, a trajectory is
+split into subtasks and each subtask gets its own guideline-generation call.
+
+**Why it defaults to off.** A subtask boundary can fall between a failed attempt and the
+correction that followed it. The failing segment is then summarised on its own terms — its
+description asserts the wrong approach — and the generator writes confident guidelines from
+it, with no access to the correction in the neighbouring segment. Both segments' output is
+stored at equal `support_count`, so nothing marks one as the anti-lesson, and retrieval can
+rank the inverted rule above the correct one. In end-to-end measurement on a
+learning-episode trajectory, enabling segmentation produced directly contradictory ordering
+rules and cost roughly half of the achievable improvement on the affected cases; disabling
+it removed the contradiction at source.
+
+**What you give up by leaving it off.** `task_description` becomes the raw first user
+message, verbatim, shared by every guideline from that trajectory. It is the clustering key
+and the retrieval ranking key, so within a single trajectory it no longer separates
+subtasks, and it carries whatever user-specific values the original request contained into
+stored entity metadata. If your trajectories are single-purpose, this costs little; if one
+trajectory routinely spans unrelated subtasks, weigh enabling it.
+
+**Turning it on later (mixed corpora).** Entities written while segmentation was off carry
+verbatim request text as `task_description`; entities written with it on carry generalized
+subtask descriptions. Both are embedded in the same space, so a namespace written across a
+change of this setting holds two kinds of key. Nothing breaks and no migration is required
+— clustering and retrieval keep working — but similarity between the two kinds is lower
+than within either, so recurrence spanning the change may go undetected. To avoid the mix,
+use a fresh namespace when you change this setting.
 
 ### Milvus Backend Settings
 
