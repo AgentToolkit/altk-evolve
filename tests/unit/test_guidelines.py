@@ -94,35 +94,105 @@ class TestParseGuidelineResponse:
         with caplog.at_level(logging.WARNING):
             guidelines = parse_guideline_response(raw, "standard")
         assert guidelines is None
-        assert "control characters alongside a surviving literal backslash" in caplog.text
+        assert "single-backslash" in caplog.text
         # Must not be reported as a success.
         assert "Recovered" not in caplog.text
 
     @pytest.mark.parametrize("indent", ["\n  ", "\n\t"])
     def test_discards_corruption_in_a_pretty_printed_response(self, indent):
-        r"""The decision must come from the value, not the document. A pretty-printed or
-        tab-indented response contains literal newlines and tabs *between* tokens, so a
-        document-wide character set would whitelist \n and \t for every value and let exactly
-        this corruption through — while the identical single-line response was rejected."""
+        r"""The decision must come from the string literals, not from the document's
+        characters. A pretty-printed or tab-indented response carries literal newlines and
+        tabs *between* tokens, so a document-wide character scan would whitelist \n and \t
+        for every value and let exactly this corruption through — while the identical
+        single-line response was rejected. Scanning inside literals sees neither."""
         raw = (
             "{" + indent + '"guidelines": [' + indent + '  {"content": "Write to C:\\new\\data", '
             '"rationale": "r", "category": "strategy", "trigger": "t"}' + indent + "]" + "\n}"
         )
         assert parse_guideline_response(raw, "standard") is None
 
-    def test_a_legitimate_control_escape_survives_a_sibling_needing_repair(self):
-        r"""A guideline whose \t was correctly escaped has no stray backslash left, so it must
-        not be condemned by a *different* guideline's LaTeX. Before this was decided per value,
-        the pairing lost both guidelines."""
+    def test_an_intended_control_escape_is_discarded_alongside_a_sibling_needing_repair(self):
+        r"""The accepted cost of failing closed, pinned so the trade-off is on the record.
+
+        An intended \t is *indistinguishable* from a misread one. These two literals are the
+        same shape — one valid \t escape that the repair never touches:
+
+            "Emit rows as name\tvalue"      intended a tab
+            "Open C:\temp"                  intended a backslash
+
+        Nothing in the decoded value separates them either: the escape that corrupts consumes
+        its own backslash, so no backslash survives to key on. Requiring a surviving backslash
+        instead accepted *both*, which let the second be embedded with a tab spliced into it
+        and logged as a successful recovery.
+
+        So the whole response is discarded whenever the backslash repair ran and any literal
+        still carries a single-backslash control escape. A discarded response is regenerable;
+        corrupted text served into the entity store is not.
+        """
         raw = (
             '{"guidelines": ['
             '{"content": "Emit rows as name\\tvalue", "rationale": "TSV", "category": "optimization", "trigger": "t"}, '
             '{"content": "State bounds as \\( n \\le 10 \\)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
         )
+        assert parse_guideline_response(raw, "standard") is None
+
+    def test_an_intended_control_escape_survives_when_no_repair_was_needed(self):
+        r"""The scope that keeps failing closed tolerable: only a response that needed the
+        backslash repair is suspect, because that is the evidence the model was not escaping
+        backslashes. A well-formed response keeps its \t, sibling LaTeX and all — the LaTeX
+        here is correctly escaped, so no repair runs."""
+        raw = (
+            '{"guidelines": ['
+            '{"content": "Emit rows as name\\tvalue", "rationale": "TSV", "category": "optimization", "trigger": "t"}, '
+            '{"content": "State bounds as \\\\( n \\\\le 10 \\\\)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        )
         guidelines = parse_guideline_response(raw, "standard")
         assert guidelines is not None
         assert guidelines[0].content == "Emit rows as name\tvalue"
         assert guidelines[1].content == r"State bounds as \( n \le 10 \)"
+
+    @pytest.mark.parametrize(
+        "content,corrupted_as",
+        [
+            (r"Write to C:\newdir", "Write to C:\newdir"),
+            (r"Open C:\temp", "Open C:\temp"),
+            (r"Strip \r from input", "Strip \r from input"),
+            # \b and \f are equally ordinary path starts, and equally ambiguous
+            (r"Install to C:\bin", "Install to C:\bin"),
+            (r"Scan C:\files first", "Scan C:\files first"),
+        ],
+    )
+    def test_discards_a_single_backslash_path_or_regex(self, content, corrupted_as, caplog):
+        r"""The fail-open this guard exists to close. Each of these has exactly one backslash,
+        and the escape consumes it — so after decoding there is no backslash left to detect,
+        and requiring one waved them all through with a control character spliced in. Windows
+        paths and regex escapes are the common shapes, so this is the case that matters."""
+        raw = '{"guidelines": [{"content": "%s", "rationale": "bound \\( x \\)", "category": "strategy", "trigger": "t"}]}' % content
+        with caplog.at_level(logging.INFO):
+            guidelines = parse_guideline_response(raw, "standard")
+
+        assert guidelines is None, f"accepted with corruption: {corrupted_as!r}"
+        assert "Recovered" not in caplog.text, "a fail-open must not be reported as a success"
+
+    def test_a_correctly_escaped_backslash_before_t_is_not_read_as_a_tab(self):
+        r"""``\\t`` decodes to a backslash and a ``t``, never a tab, so it must survive even
+        in a repaired response. The scan has to *consume* the ``\\`` pair: stepping one
+        character at a time would re-read its second backslash as the start of ``\t`` and
+        discard a response that was correctly escaped all along."""
+        raw = r'{"guidelines": [{"content": "path \\temp and \( x \)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        guidelines = parse_guideline_response(raw, "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == r"path \temp and \( x \)"
+        assert "\t" not in guidelines[0].content, "no tab may be spliced in"
+
+    def test_a_spelled_out_unicode_escape_is_not_ambiguous(self):
+        r"""\u0009 encodes a tab deliberately — that is not what failing to escape a path
+        looks like — so it survives even in a response the repair ran on. Only the
+        single-backslash forms are ambiguous."""
+        raw = r'{"guidelines": [{"content": "Use \u0009 then \( x \)", "rationale": "r", "category": "strategy", "trigger": "t"}]}'
+        guidelines = parse_guideline_response(raw, "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == "Use \t then " + r"\( x \)"
 
     def test_repair_survives_a_correctly_escaped_backslash(self):
         r"""A response mixing a correct \\ with a raw \( is realistic. The escape scan has to
