@@ -175,7 +175,7 @@ See the [Evolve Viz guide](../guides/viz.md) for full usage.
 
 ## Environment Variables
 
-The CLI uses the same environment variables as the MCP server. See the [Configuration](README.md#configuration) section in the main README.
+The CLI uses the same environment variables as the MCP server. See the [configuration guide](../guides/configuration.md) for the full list.
 
 
 PostgreSQL also supports `evolve retention mark POLICY`, `sweep POLICY`, `candidates`,
