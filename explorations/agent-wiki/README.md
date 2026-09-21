@@ -18,6 +18,7 @@ explorations/agent-wiki/
 │   ├── agent-wiki-summarize/             trajectory → episodic summary
 │   ├── agent-wiki-extract-guidelines/    trajectory → atomic guidelines
 │   ├── agent-wiki-synthesize-skill/      trajectory → executable SKILL.md
+│   ├── agent-wiki-compare-outcomes/      success vs failed trajectories → contrastive guidelines
 │   ├── agent-wiki-consolidate-guidelines/ atomics → themed cluster pages
 │   ├── agent-wiki-tasks/                 cross-session task-comparison pages
 │   ├── agent-wiki-consult/               retrieval-time entry point
