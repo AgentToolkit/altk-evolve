@@ -154,6 +154,9 @@ raw trace ─┬─[convert]──▶ normalized JSON
            ├─[extract-guidelines]▶ guidelines/<slug>__<gid>.md  render-guidelines
            ├─[synthesize-skill]──▶ skills/<slug>/SKILL.md     render-skill --archive-covered
            │                                                  (per trace, above)
+           ├─[compare-outcomes]──▶ guidelines/<slug>__<gid>.md  render-guidelines
+           │                                                  (cross-corpus, conditional:
+           │                                                   only with success/failure contrast)
            ├─[consolidate]───────▶ guidelines/<slug>__cluster.md  render-cluster
            │                                                  (once, cross-corpus)
            └─[catalog]───────────▶ _index.jsonl, indexes, backrefs
@@ -165,6 +168,7 @@ raw trace ─┬─[convert]──▶ normalized JSON
 | Summarize | [`agent-wiki-summarize`](../skills/agent-wiki-summarize/SKILL.md) | `render-summary` | per trace |
 | Extract guidelines | [`agent-wiki-extract-guidelines`](../skills/agent-wiki-extract-guidelines/SKILL.md) | `render-guidelines` | per trace |
 | Synthesize skill | [`agent-wiki-synthesize-skill`](../skills/agent-wiki-synthesize-skill/SKILL.md) | `render-skill` | per trace |
+| Compare outcomes | [`agent-wiki-compare-outcomes`](../skills/agent-wiki-compare-outcomes/SKILL.md) | `render-guidelines` | **cross-corpus, conditional** |
 | Consolidate | [`agent-wiki-consolidate-guidelines`](../skills/agent-wiki-consolidate-guidelines/SKILL.md) | `render-cluster` | **cross-corpus, once** |
 | Catalog | (any) | `catalog` | bookkeeping |
 
@@ -173,6 +177,17 @@ claim recipe-level territory first (and archive the atomics they cover);
 consolidation then clusters only the surviving atomics. This matches the
 consolidate skill's own rule — don't propose a cluster overlapping a skill's
 territory.
+
+**Learning from contrast, not just from one trace.** The per-trace passes
+(summarize / extract / synthesize) each mine one trajectory. `compare-outcomes`
+is different: it contrasts *successful vs failed* runs of the same (or similar)
+task and promotes a **contrastive guideline** only when a rule is backed by a
+failed path, a successful path, and concrete trajectory evidence (task wording,
+observed tool/API calls, transcript/doc snippets). It can LLM-judge
+success/failure from the normalized transcript, so it doesn't depend on
+benchmark-specific outcome labels. It's **conditional** — it runs only when the
+corpus actually contains a success/failure contrast, and runs *before*
+consolidate so its contrastive atoms can join clusters.
 
 **`catalog` renders; `consolidate` proposes.** A sharp edge worth
 internalizing: `catalog` only *materializes* clusters already declared in
@@ -185,11 +200,13 @@ consolidation declared them first.
 
 [`agent-wiki-ingest`](../skills/agent-wiki-ingest/SKILL.md)
 orchestrates the whole pipeline end-to-end (convert → bootstrap → summarize
-→ extract → synthesize → consolidate → catalog) via subagent fan-out:
+→ extract → synthesize → compare-outcomes → consolidate → catalog) via subagent fan-out:
 summarize runs in parallel (independent file writes), extract and synthesize
-run sequentially (they mutate shared index/config state), consolidation runs
-once. It exists specifically so the **consolidation pass is never silently
-skipped** when ingesting a batch — the failure mode that motivated it.
+run sequentially (they mutate shared index/config state), compare-outcomes
+runs once over the corpus when there's a success/failure contrast (else it's
+skipped), and consolidation runs once. It exists specifically so the
+**consolidation pass is never silently skipped** when ingesting a batch — the
+failure mode that motivated it.
 
 ### Build patterns
 
