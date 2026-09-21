@@ -17,6 +17,7 @@ from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import
 from altk_evolve.llm.guidelines.consistency_analyzer.consistency_metric import get_consistency_by_metric
 from altk_evolve.llm.guidelines.consistency_analyzer.utils import (
     compute_weighted_sum_consistency,
+    UNREADABLE,
     extract_field_values_from_responses,
     find_matching_alternate,
     flatten_response,
@@ -29,6 +30,14 @@ MIN_FRACTION = 0.5
 def compute_json_step_consistency(parsed_responses: list, metric_config: dict, min_samples: int) -> tuple[float, dict]:
     """
     Compute step consistency for JSON/structured responses.
+
+    A step is scored undefined (-1) when any resample could not be read as fields at all —
+    extraction marks those with the UNREADABLE sentinel. That is narrower than "produced no
+    field values": a resample that is readable but shaped differently (a prose answer where
+    the others called a tool, a missing field) counts as *disagreement* and is handled by
+    the per-field min_samples tolerance below, because -1 is not a low score — it removes
+    the step from the score card and from the trajectory aggregate, which would silence the
+    pipeline on exactly the steps it exists to surface.
 
     Args:
         parsed_responses: List of parsed response dicts
@@ -50,6 +59,22 @@ def compute_json_step_consistency(parsed_responses: list, metric_config: dict, m
 
     for field in metric_config["fields"]:
         field_samples = extract_field_values_from_responses(flat_responses, field)
+
+        # UNREADABLE means the response never flattened to a dict, so no field of it can be
+        # located — a ragged JSON array that flatten_response declines to invert because
+        # inverting misaligns element values. Scoring the step would drop those resamples on
+        # the same test that drops an absent field and report the surviving samples'
+        # agreement, so two structurally different responses read as identical. Distinct
+        # from "" below, which is a readable response that simply lacks this field.
+        unreadable = [i for i, value in enumerate(field_samples) if value is UNREADABLE]
+        if unreadable:
+            logger.info(
+                f"+++ {len(unreadable)} of {len(field_samples)} resamples could not be read as fields "
+                f"(sample indices {unreadable}) - consistency undefined for step, so it is excluded "
+                "from the score card and the trajectory aggregate"
+            )
+            return -1, {"field_consistencies": {}}
+
         # Only count samples where the field was actually present (non-empty);
         # empty strings mean the field was absent in that resample, and passing
         # them to the metric skews results (e.g. jaccard treats "" as a match).
