@@ -1,22 +1,23 @@
-You are analyzing an AI agent's execution trajectory to generate actionable guidelines that improve the agent's consistency and performance on similar tasks in the future. 
+You are analyzing an AI agent's execution trajectory to generate actionable guidelines that improve the agent's consistency and performance on similar tasks in the future.
 
-# Uncertainty Scores
-The agent trajectory below includes uncertainty scores for steps where the agent was uncertain.  Uncertainty scores are for your use only and they range from 0 (no uncertainty and high consistency across multiple runs) to 1 (highest uncertainty and no consistency across multiple runs). Steps with HIGH uncertainty scores indicate areas where the agent behavior was uncertain and inconsistent across multiple runs.
+# Reading the Trajectory
+Steps below may be marked with ⚠️ and a number from 0 to 1 — e.g. "⚠️ HIGH UNCERTAINTY: 0.83" or "⚠️ ELEVATED UNCERTAINTY: 0.10". This is an uncertainty score: how inconsistent the agent's behavior was across multiple resampled runs of that step (0 = fully consistent, 1 = highly inconsistent). HIGH means the score itself is large; ELEVATED means it's merely the most uncertain step in an otherwise low-uncertainty trajectory, worth a look but not alarming on its own. It's for your analysis only — the agent being guided has no access to it.
 
-# Your task
-First, carefully analyze the trajectory step-by-step. Focus especially on steps with high uncertainty. Take note of both successful strategies used as well as what went wrong and how flawed or incomplete reasoning might have contributed to these failures.
-Then, based on your analysis, generate actionable and relevant guidelines for the agent to improve performance and consistent behavior in the future by either reinforcing successful behavior or preventing observed mistakes.  
-
-# Agent Trajectory  (Steps marked with ⚠️ have HIGH UNCERTAINTY scores)
+# Agent Trajectory
 Task: {{task_instruction}}
 {{trajectory_summary}}
 
-# Important Instructions:
-1. Only generate guidelines if they are truly needed, relevant, and generalizable to similar tasks.
-2. Don't refer to uncertainty scores in the guidelines as the agent does not have access to the scores. 
-3. **CRITICAL**: Avoid overfitting guidelines to specific data values: always ask yourselve whether a guideline would work with different data values
-4. Look for patterns in how the agent handled API discovery, API parameter usage, authentication, pagination, problem structure, error handling
-5. Don't generate guidelines if success seems coincidental rather than due to sound strategy, the approach would fail with slightly different data, or you cannot explain WHY the approach would work in general cases. 
+# Your Analysis
+First, analyze the trajectory step by step, paying special attention to steps flagged as uncertain. For steps that look wrong or suboptimal, work out why — an ambiguous input, multiple plausible approaches, or a dropped or misapplied constraint. For steps handled correctly, especially ones where a different approach could plausibly have been taken, note those too.
+
+Then, using that analysis, generate two kinds of guidelines: ones that guard against the mistakes or suboptimal choices you found, and ones that reinforce the correct decisions so they don't flip in future runs.
+
+# Instructions
+1. **Generate only what's needed.** Only generate guidelines that are truly helpful by guarding against mistakes or by locking in correct behavior for future runs.
+2. **Avoid overfitting.** A guideline must generalize: ask yourself whether it would still hold with different data values, not just the ones in this trajectory.
+3. **Don't credit coincidence.** A guideline should reflect a sound, repeatable strategy, not a success that only happened because of this specific data — would the same approach work with different inputs, and can you explain *why* it works in general?
+4. **Look for patterns in problem structure and error handling.** If — and only if — the agent's responses include code or API calls, also look at API discovery, parameter usage (pay particular attention to optional parameters), authentication, and pagination.
+5. **Never mention uncertainty scores in the guideline text.** The agent being guided does not have access to them.
 
 {% if not constrained_decoding_supported %}
 **Output Format (JSON):**

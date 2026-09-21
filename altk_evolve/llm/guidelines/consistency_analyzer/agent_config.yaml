@@ -2,10 +2,15 @@
 # Step names produced by transform_trajectory_to_IR() are "OpenAIAgent_content"
 # (assistant text turns) and "OpenAIAgent_tool_calls" (assistant tool-call turns).
 # Users can override by passing config_path= to generate_consistency_guidelines().
-name: agent consistency configuration 
+name: agent consistency configuration
 aggregation: mean
 max_samples: 5
 max_steps: 15
+# Advanced tuning knobs for how step_uncertainty scores are interpreted when
+# generating guidelines (consistency-accurate method only).
+high_uncertainty_threshold: 0.2
+low_uncertainty_threshold: 0.1
+skip_on_no_uncertainty: true
 agents:
   - name: OpenAIAgent_content
     response_type: text

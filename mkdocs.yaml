@@ -78,11 +78,15 @@ nav:
     - Starter Example (IBM Bob): examples/hello_world/bob.md
     - Starter Example (Claude Code): examples/hello_world/claude.md
     - Starter Example (Codex): examples/hello_world/codex.md
+    - Starter Example (Evolving Agent Loop): tutorials/guidelines-loop.md
   - Guides:
     - Configuration: guides/configuration.md
+    - Enabling Guidelines: guides/guidelines.md
+    - Low-Code Tracing: guides/low-code-tracing.md
     - Phoenix Sync: guides/phoenix-sync.md
     - Extract Trajectories: guides/extract-trajectories.md
-    - Low-Code Tracing: guides/low-code-tracing.md
+    - Memory Hooks: guides/memory-hooks.md
+    - Data Retention: guides/retention.md
   - Reference:
     - CLI: reference/cli.md
     - Policies: reference/policies.md
@@ -134,12 +138,13 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:materialx.emoji.to_svg
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.mark
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ["."]
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid

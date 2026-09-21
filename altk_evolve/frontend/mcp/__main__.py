@@ -7,6 +7,7 @@ import uvicorn
 
 from altk_evolve.frontend.mcp.mcp_server import app, get_client, mcp
 from altk_evolve.frontend.mcp.http_transport import create_resilient_sse_app
+from altk_evolve.retention.scheduler import retention_runtime
 
 logger = logging.getLogger("evolve-mcp")
 
@@ -82,14 +83,15 @@ def main():
     args = _build_parser().parse_args()
 
     try:
-        if args.transport == "stdio":
-            # Start the HTTP API/UI server in a daemon thread so it dies when the parent dies
-            api_thread = threading.Thread(target=run_api_server, daemon=True)
-            api_thread.start()
-            # Start FastMCP using stdio (which blocks)
-            mcp.run()
-        else:
-            run_sse_server(args.host, args.port)
+        with retention_runtime(get_client()):
+            if args.transport == "stdio":
+                # Start the HTTP API/UI server in a daemon thread so it dies when the parent dies
+                api_thread = threading.Thread(target=run_api_server, daemon=True)
+                api_thread.start()
+                # Start FastMCP using stdio (which blocks)
+                mcp.run()
+            else:
+                run_sse_server(args.host, args.port)
     except KeyboardInterrupt:
         logger.info("MCP server stopped by user (KeyboardInterrupt)")
         sys.exit(0)

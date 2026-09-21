@@ -14,16 +14,45 @@ Requires:
 """
 
 import json
+import os
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 from fastmcp.client import Client
 
 from altk_evolve.config.evolve import evolve_config
+from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 
 pytestmark = pytest.mark.e2e
+
+
+@contextmanager
+def _guidelines_env(**env_vars):
+    """Set EVOLVE_GUIDELINES_MODE/EVOLVE_CONSISTENCY_METHOD and force a reload.
+
+    guidelines_settings is a module-level singleton that reads os.environ only once,
+    at construction time. Mutating os.environ alone has no effect on a settings object
+    some earlier import already constructed (e.g. test_e2e_mcp_consistency.py imports it
+    at module level, so in a multi-file run it's already built by the time this test's
+    body runs) — save_trajectory would keep dispatching on stale values. Reinitializing
+    after the env mutation is required for the mode/method to actually reach
+    save_trajectory's dispatch logic. See test_e2e_mcp_consistency.py's identical helper.
+    """
+    originals = {key: os.environ.get(key) for key in env_vars}
+    os.environ.update(env_vars)
+    guidelines_settings.__init__()
+    try:
+        yield
+    finally:
+        for key, original in originals.items():
+            if original is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = original
+        guidelines_settings.__init__()
 
 
 def _consistency_available() -> bool:
@@ -135,7 +164,11 @@ async def test_smolagent_mcp_consistency_pipeline(mcp):
 
     debug_dir = Path(__file__).parent.parent.parent / "consistency_debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
-    for f in debug_dir.glob("guidelines_*.json"):
+    # consistency_debug/ is shared with every other consistency e2e test file, so only
+    # clear artifacts from a *previous run of this test* (debug filenames truncate
+    # trace_id — here always task_id's "smol-mcp" prefix — to 8 chars), not every
+    # guidelines_*.json in the directory.
+    for f in debug_dir.glob("guidelines_smol-mcp*.json"):
         f.unlink()
 
     # --- Step 1: Run the agent ---
@@ -150,11 +183,14 @@ async def test_smolagent_mcp_consistency_pipeline(mcp):
     task_id = f"smol-mcp-{uuid.uuid4().hex[:8]}"
     print(f"\n--- Step 2: Saving trajectory via MCP (task_id={task_id}) ---")
 
-    import os
-
-    os.environ["EVOLVE_DEBUG_DIR"] = str(debug_dir)
-    os.environ["EVOLVE_GUIDELINES_MODE"] = "consistency"
-    try:
+    # This test specifically verifies resampling behavior (score card written) and
+    # asserts the "consistency" (not "consistency-fast") tag below, so pin the accurate
+    # method explicitly rather than relying on the default (which is "fast").
+    with _guidelines_env(
+        EVOLVE_DEBUG_DIR=str(debug_dir),
+        EVOLVE_GUIDELINES_MODE="consistency",
+        EVOLVE_CONSISTENCY_METHOD="accurate",
+    ):
         async with Client(transport=mcp) as client:
             await client.call_tool_mcp(
                 "save_trajectory",
@@ -163,9 +199,6 @@ async def test_smolagent_mcp_consistency_pipeline(mcp):
                     "task_id": task_id,
                 },
             )
-    finally:
-        os.environ.pop("EVOLVE_DEBUG_DIR", None)
-        os.environ.pop("EVOLVE_GUIDELINES_MODE", None)
 
     # --- Step 3: Verify the full pipeline ran to completion ---
     # generate_consistency_guidelines always writes guidelines_*.json as its
@@ -176,13 +209,16 @@ async def test_smolagent_mcp_consistency_pipeline(mcp):
     all_files = list(debug_dir.iterdir())
     print(f"Debug artifacts: {[f.name for f in sorted(all_files)]}")
 
-    guidelines_files = list(debug_dir.glob("guidelines_*.json"))
+    # consistency_debug/ is shared with every other consistency e2e test file, so scope
+    # these globs to this test's own artifacts (see the "smol-mcp" prefix note above) —
+    # an unscoped glob could false-pass on another test's leftover files.
+    guidelines_files = list(debug_dir.glob("guidelines_smol-mcp*.json"))
     assert guidelines_files, (
         f"No guidelines file written — consistency pipeline did not complete. Debug dir contents: {[f.name for f in all_files]}"
     )
 
     # Print score cards for visibility
-    for sc_file in sorted(debug_dir.glob("consistency_score_card_*.json")):
+    for sc_file in sorted(debug_dir.glob("consistency_score_card_smol-mcp*.json")):
         sc = json.loads(sc_file.read_text())
         print(f"\nScore card ({sc_file.name}):")
         print(f"  task: {sc.get('task')}")

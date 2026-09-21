@@ -35,6 +35,93 @@ class TestParseOpenaiAgentsTrajectory:
         result = parse_openai_agents_trajectory([])
         assert result["task_instruction"] == "Task description unknown"
 
+    def test_extracts_native_chat_completions_tool_calls(self):
+        """Native Chat Completions / Phoenix shape: content is null, call list lives in
+        tool_calls. Regression for a step being silently dropped (empty content fell
+        through to the "skip empty assistant messages" branch)."""
+        messages = [
+            {"role": "user", "content": "What is the weather in Paris?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "18C sunny"},
+            {"role": "assistant", "content": "It is 18C and sunny in Paris."},
+        ]
+        result = parse_openai_agents_trajectory(messages)
+
+        assert result["num_steps"] == 2
+        assert len(result["function_calls"]) == 1
+        assert result["function_calls"][0]["name"] == "get_weather"
+        assert result["function_calls"][0]["call_id"] == "call_1"
+        assert 'get_weather(city="Paris")' in result["trajectory_summary"]
+
+    def test_native_tool_call_with_json_array_arguments_falls_back_to_raw(self):
+        """arguments decoding to a JSON array (not an object) must not crash — .items()
+        only applies to dict arguments, everything else uses the raw-string fallback."""
+        messages = [
+            {"role": "user", "content": "Log these values"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "log_values", "arguments": "[1, 2, 3]"}}],
+            },
+        ]
+        result = parse_openai_agents_trajectory(messages)
+
+        assert len(result["function_calls"]) == 1
+        assert "log_values([1, 2, 3])" in result["trajectory_summary"]
+
+    def test_native_tool_call_alongside_text_content_is_not_dropped(self):
+        """An Anthropic-shape turn `[{"type": "text", ...}, {"type": "tool_use", ...}]`
+        collapsed into one Chat Completions message carries both a non-empty `content`
+        string and `tool_calls`. Regression: the text/tool_calls branches were `elif`,
+        so the tool call was silently dropped whenever text content was also present."""
+        messages = [
+            {"role": "user", "content": "What is the weather in Paris?"},
+            {
+                "role": "assistant",
+                "content": "Let me check the weather for you.",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+                    }
+                ],
+            },
+        ]
+        result = parse_openai_agents_trajectory(messages)
+
+        assert len(result["function_calls"]) == 1
+        assert result["function_calls"][0]["name"] == "get_weather"
+        assert result["num_steps"] == 2
+        assert "Let me check the weather for you." in result["trajectory_summary"]
+        assert 'get_weather(city="Paris")' in result["trajectory_summary"]
+
+    def test_native_tool_call_with_non_string_arguments_falls_back_to_raw(self):
+        """arguments that aren't a string at all (already-parsed, non-mapping) must not
+        crash — falls back to the raw-string fallback rather than calling .items()."""
+        messages = [
+            {"role": "user", "content": "Set the count"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "set_count", "arguments": 5}}],
+            },
+        ]
+        result = parse_openai_agents_trajectory(messages)
+
+        assert len(result["function_calls"]) == 1
+        assert "set_count(5)" in result["trajectory_summary"]
+
     @patch("altk_evolve.llm.guidelines.guidelines.completion")
     @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])

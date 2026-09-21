@@ -251,7 +251,7 @@ class MilvusEntityBackend(BaseEntityBackend):
                 namespaces.append(namespace)
             return namespaces
 
-    def delete_namespace(self, namespace_id: str):
+    def _delete_namespace_impl(self, namespace_id: str):
         self.milvus.drop_collection(collection_name=namespace_id)
 
         with SQLiteManager(self.sqlite_uri) as db_manager:
@@ -288,9 +288,9 @@ class MilvusEntityBackend(BaseEntityBackend):
         )
 
     def _delete_entity(self, namespace_id: str, entity_id: str) -> None:
-        self.delete_entity_by_id(namespace_id=namespace_id, entity_id=entity_id)
+        self._delete_entity_by_id_impl(namespace_id=namespace_id, entity_id=entity_id)
 
-    def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+    def _update_entity_metadata_impl(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
         try:
             entity_id_int = int(entity_id)
         except ValueError:
@@ -319,7 +319,7 @@ class MilvusEntityBackend(BaseEntityBackend):
 
     # ── search / delete ──────────────────────────────────────────────
 
-    def search_entities(
+    def _search_entities_impl(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
     ) -> list[RecordedEntity]:
         self._validate_namespace(namespace_id)
@@ -376,7 +376,7 @@ class MilvusEntityBackend(BaseEntityBackend):
         filtered = [entity for entity in parsed if self._entity_matches_filter(entity, schema_filters, metadata_filters)]
         return filtered[:limit]
 
-    def delete_entity_by_id(self, namespace_id: str, entity_id: str):
+    def _delete_entity_by_id_impl(self, namespace_id: str, entity_id: str):
         try:
             entity_id_int = int(entity_id)
         except ValueError as exc:

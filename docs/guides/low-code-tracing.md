@@ -205,6 +205,8 @@ uv run evolve sync phoenix \
     --include-errors
 ```
 
+See the [Phoenix Sync](phoenix-sync.md) guide for the full set of sync options, and [Enabling Guidelines](guidelines.md) for choosing between standard, consistency, or all guideline generation modes.
+
 ### 5. Verify Generated Guidelines
 
 ```bash
@@ -288,7 +290,7 @@ This ensures the entire "Agent -> Traces -> Guidelines" loop is functional.
 
 Evolve.auto automatically instruments these frameworks when detected:
 
-- **OpenAI** ([Example](../examples/low_code/simple_openai.py)) - ChatCompletion, Completion, Embeddings
-- **LiteLLM** ([Example](../examples/low_code/litellm_demo.py)) - All providers (Azure, Anthropic, etc.)
-- **Smolagents** ([Example](../examples/low_code/smolagents_demo.py)) - HuggingFace agents
-- **OpenAI Agents SDK** ([Example](../examples/low_code/openai_agents_demo.py)) - OpenAI's agent framework
+- **OpenAI** ([Example](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/low_code/simple_openai.py)) - ChatCompletion, Completion, Embeddings
+- **LiteLLM** ([Example](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/low_code/litellm_demo.py)) - All providers (Azure, Anthropic, etc.)
+- **Smolagents** ([Example](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/low_code/smolagents_demo.py)) - HuggingFace agents
+- **OpenAI Agents SDK** ([Example](https://github.com/AgentToolkit/altk-evolve/blob/main/examples/low_code/openai_agents_demo.py)) - OpenAI's agent framework

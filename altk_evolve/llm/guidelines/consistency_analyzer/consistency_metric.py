@@ -415,7 +415,6 @@ class CategoricalEntropyConsistencyMetric(ConsistencyMetric):
         return 1.0 - self._get_distance(samples)
 
     def _get_distance(self, samples: list) -> float:
-
         # extract value series
         val_series = pd.Series(samples)
         unique_vals = val_series.value_counts(normalize=True)

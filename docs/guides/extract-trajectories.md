@@ -2,6 +2,8 @@
 
 A Python utility at `scripts/extract_trajectories.py` for extracting agent trajectories from Arize Phoenix traces and converting them to OpenAI chat completion message format.
 
+This is a standalone export/debugging tool — it prints trajectories to stdout or a file and does not talk to Evolve or generate guidelines. To pull trajectories into Evolve *and* generate guidelines from them, use [Phoenix Sync](phoenix-sync.md) instead.
+
 ## Features
 
 - Fetches spans from Phoenix's REST API with pagination support

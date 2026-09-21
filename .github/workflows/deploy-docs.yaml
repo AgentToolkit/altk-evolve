@@ -1,0 +1,52 @@
+name: Deploy Docs
+
+# Publishes the MkDocs site to the `gh-pages` branch (which GitHub Pages serves
+# at https://agenttoolkit.github.io/altk-evolve/) on every push to main that
+# touches documentation. Replaces the previous manual `mkdocs gh-deploy` step,
+# which let the published site drift out of date with main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'includes/**'
+      - 'mkdocs.yaml'
+      # Docs tooling (mkdocs + plugins) lives in the `docs` dependency group;
+      # rebuild when it or the lockfile changes so the site tracks main's build.
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/deploy-docs.yaml'
+  workflow_dispatch: {}
+
+# gh-deploy force-pushes the built site to the gh-pages branch.
+permissions:
+  contents: write
+
+# Never let two deploys race to force-push gh-pages; run them in order.
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Build and deploy to gh-pages
+        run: uv run --group docs mkdocs gh-deploy --force
