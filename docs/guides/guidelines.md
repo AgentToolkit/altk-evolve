@@ -67,7 +67,14 @@ Use `accurate` when you want uncertainty estimated by actually observing varianc
 
 `accurate` has further tuning knobs — the single uncertainty threshold that decides what counts as "high" (`high_uncertainty_threshold`; the most uncertain steps at or above it are flagged, up to a cap of five, and when no step clears it the single most-uncertain non-zero step is flagged as merely "elevated"), and whether to skip generation entirely when nothing looks uncertain (`skip_on_no_uncertainty`) — defined alongside the resampling config below; they're advanced settings, not something most readers need on a first pass. `fast` has no equivalent tunables today: it relies entirely on the prompt instructing the LLM to return no guidelines when it judges every step confident, rather than a pre-call numeric skip gate.
 
-**Only the first 50 agent steps are scored for markers.** The prompt renders at most 50 assistant steps, so uncertainty on a later step cannot be flagged. `accurate` therefore skips a trajectory whose only uncertain steps fall past that window, rather than generating against a prompt that explains markers it does not contain — a genuinely uncertain step at position 55 produces no guidelines instead of weakly-grounded ones.
+**Two separate bounds limit which steps can carry a marker**, and a long trajectory can hit either one:
+
+- **`max_steps` (15 by default) caps how many steps are scored at all.** Resampling measures only the first `max_steps` *scorable* steps — scorable meaning the step can be faithfully resampled, which excludes malformed turns and, on trajectories with no OpenAI tool schema, tool calls with nothing to rebind. An unscored step has no uncertainty value, so it can never be flagged. Raise `max_steps` to score deeper into a trajectory, at proportionally more resampling calls.
+- **Only steps at position 50 or below are rendered, and so only those can be marked.** The prompt renders at most the first 50 assistant turns.
+
+The second bound catches trajectories the first does not, because step positions count **every** assistant turn — including the unscorable ones that are never scored. Positions are therefore sparse rather than consecutive: 50 unscorable turns followed by 3 real ones yields scored steps at positions 51, 52 and 53, which are only the *first three* scorable steps and so well inside `max_steps`, yet all fall outside the render window.
+
+When a trajectory's only uncertain steps fall outside either bound, `accurate` skips it rather than generating against a prompt that explains markers it does not contain — producing no guidelines instead of weakly-grounded ones.
 
 The resampling behavior (sample count, per-step-type uncertainty metric) and the `accurate`-only tuning knobs above are all defined in a YAML config file shipped alongside the consistency pipeline (`consistency_analyzer/agent_config.yaml`); advanced users calling `generate_consistency_guidelines()` directly from Python can point it at a custom config via `config_path=`.
 

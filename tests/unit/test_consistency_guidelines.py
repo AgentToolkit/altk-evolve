@@ -1,6 +1,8 @@
 """Tests for trajectory-to-IR transformation in consistency_guidelines.py."""
 
 import json
+import logging
+from pathlib import Path
 
 import pytest
 
@@ -455,6 +457,22 @@ class TestFormatTrajectoryData:
         assert "ELEVATED UNCERTAINTY: 0.1029" in result
         assert "HIGH UNCERTAINTY" not in result
 
+    def test_a_peak_in_the_old_band_is_now_high_not_elevated(self):
+        """0.17 sits between the retired 0.2 and the current 0.15, so it is the one score
+        whose label depends on the threshold this PR changed: HIGH now, ELEVATED at 0.2.
+
+        Every other marker test uses scores well clear of both values, which left the
+        default free to drift back to 0.2 with the suite still green.
+        """
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+        ]
+        consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.17}}
+        result = format_trajectory_data(messages, consistency_data)
+        assert "HIGH UNCERTAINTY: 0.17" in result
+        assert "ELEVATED UNCERTAINTY" not in result
+
     def test_elevated_marks_only_the_top_step(self):
         """The ELEVATED fallback flags just the most-uncertain step, so a trajectory of
         uniformly-small scores doesn't end up marked end to end."""
@@ -795,24 +813,65 @@ class TestSkipGateWindow:
 
 
 @pytest.mark.unit
+class TestShippedConfigMatchesModuleDefaults:
+    """The shipped YAML and the DEFAULT_* constants are two sources of truth for one number.
+
+    Nothing else stops them drifting: the constant only applies when a key is absent, so a
+    YAML edit alone changes every default run while leaving the constant — and every test
+    that exercises the fallback path — quietly disagreeing about what the default is.
+    """
+
+    def _shipped_config(self):
+        import yaml
+
+        from altk_evolve.llm.guidelines import consistency_guidelines
+
+        path = Path(consistency_guidelines.__file__).parent / "consistency_analyzer" / "agent_config.yaml"
+        assert path.exists(), f"shipped analyzer config missing at {path}"
+        with open(path) as f:
+            return yaml.safe_load(f)
+
+    def test_high_uncertainty_threshold_agrees_with_the_constant(self):
+        from altk_evolve.llm.guidelines.consistency_guidelines import DEFAULT_HIGH_UNCERTAINTY_THRESHOLD
+
+        assert self._shipped_config()["high_uncertainty_threshold"] == DEFAULT_HIGH_UNCERTAINTY_THRESHOLD
+
+    def test_skip_on_no_uncertainty_agrees_with_the_constant(self):
+        from altk_evolve.llm.guidelines.consistency_guidelines import DEFAULT_SKIP_ON_NO_UNCERTAINTY
+
+        assert self._shipped_config()["skip_on_no_uncertainty"] == DEFAULT_SKIP_ON_NO_UNCERTAINTY
+
+    def test_shipped_threshold_passes_the_validator(self):
+        """The one config every default run loads must satisfy the bound the PR added."""
+        threshold = self._shipped_config()["high_uncertainty_threshold"]
+        assert not isinstance(threshold, bool)
+        assert isinstance(threshold, (int, float))
+        assert 0 < threshold <= 1
+
+    def test_the_retired_key_is_absent_from_the_shipped_config(self):
+        assert "low_uncertainty_threshold" not in self._shipped_config()
+
+
+@pytest.mark.unit
 class TestHighUncertaintyThresholdValidation:
     """A threshold outside [0, 1] must fail loudly rather than silently marking nothing HIGH."""
 
-    def _config(self, tmp_path, threshold):
+    def _config(self, tmp_path, threshold, extra=""):
         """Write a minimal analyzer config carrying `threshold`, and return its path."""
         body = "name: t\naggregation: mean\nmax_samples: 5\nmax_steps: 15\nagents: []\n"
         if threshold is not _UNSET:
             body += f"high_uncertainty_threshold: {threshold}\n"
+        body += extra
         path = tmp_path / "agent_config.yaml"
         path.write_text(body)
         return path
 
-    def _run(self, tmp_path, threshold):
+    def _run(self, tmp_path, threshold, extra=""):
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
         return generate_consistency_guidelines(
             {"messages": [{"role": "user", "content": "hi"}], "trace_id": "t"},
-            config_path=self._config(tmp_path, threshold),
+            config_path=self._config(tmp_path, threshold, extra),
         )
 
     @pytest.mark.parametrize("threshold", ["15", "-0.1", "1.5", "'0.15'", "true", "0", "0.0"])
@@ -832,6 +891,34 @@ class TestHighUncertaintyThresholdValidation:
         # The trajectory has no assistant turns, so generation fails *after* validation.
         with pytest.raises(EvolveException, match="no steps"):
             self._run(tmp_path, threshold)
+
+    def test_warns_on_a_retired_low_uncertainty_threshold_in_yaml(self, tmp_path, caplog):
+        """A stale `low_uncertainty_threshold` is silently dropped by `config.get`, so the
+        warning is the only signal a deployment carrying one gets. It is load-bearing for the
+        migration story rather than a nicety: deleting the block left the whole suite green.
+
+        YAML is the likelier place for the retired key to survive than the env var, and the
+        env-var warning's own text points users here.
+        """
+        from altk_evolve.schema.exceptions import EvolveException
+
+        with caplog.at_level(logging.WARNING):
+            # Fails on the empty trajectory, but only after the config has been read.
+            with pytest.raises(EvolveException, match="no steps"):
+                self._run(tmp_path, "0.15", extra="low_uncertainty_threshold: 0.1\n")
+
+        assert "low_uncertainty_threshold" in caplog.text
+        assert "high_uncertainty_threshold" in caplog.text
+
+    def test_no_retired_key_warning_when_the_key_is_absent(self, tmp_path, caplog):
+        """The warning must key off the retired name, not fire on every load."""
+        from altk_evolve.schema.exceptions import EvolveException
+
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(EvolveException, match="no steps"):
+                self._run(tmp_path, "0.15")
+
+        assert "low_uncertainty_threshold" not in caplog.text
 
 
 @pytest.mark.unit
