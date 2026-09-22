@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import datetime
 import logging
-from typing import TYPE_CHECKING, cast
+from threading import Lock
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.evolve import EvolveConfig
@@ -10,6 +13,8 @@ from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, Names
 from altk_evolve.schema.guidelines import ConsolidationResult
 
 if TYPE_CHECKING:
+    from altk_evolve.config.llm import LLMSettings
+    from altk_evolve.processing import ProcessingPlan, ProcessingResult, ProcessingManager, ProfileReference, Trajectory
     from altk_evolve.retention.service import RetentionService
     from altk_evolve.llm.guidelines.retrieval import GuidelineSelection, SimilarityKey
 
@@ -36,8 +41,17 @@ class EvolveClient:
 
         return RetentionService(self, namespace_id, agent_id=agent_id)
 
-    def __init__(self, config: EvolveConfig | None = None):
+    def __init__(
+        self,
+        config: EvolveConfig | None = None,
+        *,
+        processing: ProcessingManager | None = None,
+        processing_selector: Callable[[Any], ProcessingPlan | ProfileReference | str | None] | None = None,
+    ):
         """Initialize the Evolve client."""
+        self._processing = processing
+        self._processing_selector = processing_selector
+        self._processing_lock = Lock()
         self.config = config or EvolveConfig()
         self.backend: BaseEntityBackend
 
@@ -83,6 +97,40 @@ class EvolveClient:
 
         initialize_hooks(self.config.hooks)
 
+    @property
+    def processing(self) -> ProcessingManager:
+        """In-process processing API; inject a manager for custom registries/repositories."""
+        from altk_evolve.processing import ProcessingManager
+
+        with self._processing_lock:
+            if self._processing is None:
+                self._processing = ProcessingManager(repository=self.backend.profile_repository())
+            return self._processing
+
+    def process_trajectory(
+        self,
+        trajectory: Trajectory | dict,
+        *,
+        namespace_id: str | None = None,
+        plan: ProcessingPlan | None = None,
+        processing_profile: ProfileReference | str | None = None,
+        context: Any = None,
+    ) -> ProcessingResult:
+        """Process with an explicit plan or profile reference; no ownership hierarchy is imposed."""
+        from altk_evolve.processing import ProcessingPlan
+
+        if plan is not None and processing_profile is not None:
+            raise ValueError("Supply only one of plan or processing_profile")
+        if plan is None and processing_profile is None and self._processing_selector is not None:
+            selected = self._processing_selector(context)
+            if isinstance(selected, ProcessingPlan):
+                plan = selected
+            else:
+                processing_profile = selected
+        if plan is None:
+            plan = self.processing.resolve(processing_profile) if processing_profile is not None else self.processing.default_plan()
+        return self.processing.process(trajectory, plan=plan, client=self, namespace_id=namespace_id or self.config.namespace_id)
+
     def ready(self) -> bool:
         """Check if the backend is healthy."""
         return self.backend.ready()
@@ -107,9 +155,25 @@ class EvolveClient:
         """Delete a namespace that entities exist in."""
         self.backend.delete_namespace(namespace_id)
 
-    def update_entities(self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True) -> list[EntityUpdate]:
+    def update_entities(
+        self,
+        namespace_id: str,
+        entities: list[Entity],
+        enable_conflict_resolution: bool = True,
+        *,
+        conflict_settings: LLMSettings | None = None,
+        processing_provenance: dict | None = None,
+    ) -> list[EntityUpdate]:
         """Add multiple entities to a namespace."""
-        return self.backend.update_entities(namespace_id, entities, enable_conflict_resolution)
+        if conflict_settings is None and processing_provenance is None:
+            return self.backend.update_entities(namespace_id, entities, enable_conflict_resolution)
+        return self.backend.update_entities(
+            namespace_id,
+            entities,
+            enable_conflict_resolution,
+            conflict_settings=conflict_settings,
+            processing_provenance=processing_provenance,
+        )
 
     def search_entities(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10

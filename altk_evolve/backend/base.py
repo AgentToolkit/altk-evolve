@@ -1,7 +1,11 @@
 import datetime
 import logging
 from abc import ABC, abstractmethod
-from typing import Literal
+from contextlib import AbstractContextManager
+from typing import Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from altk_evolve.processing.repository import ProfileRepository
 
 from pydantic_settings import BaseSettings
 
@@ -27,6 +31,22 @@ logger = logging.getLogger("entities-db")
 class BaseEntityBackend(ABC):
     def __init__(self, config: BaseSettings | None = None):
         pass
+
+    def profile_repository(self) -> "ProfileRepository":
+        """Store profiles alongside existing SQLite metadata unless overridden."""
+        from altk_evolve.db.sqlite_manager import SQLiteManager
+        from altk_evolve.processing.repository import SQLiteProfileRepository
+
+        return SQLiteProfileRepository(SQLiteManager().db_path)
+
+    def transaction(self, namespace_id: str) -> AbstractContextManager[None]:
+        """Atomically commit or roll back entity mutations in one namespace.
+
+        Implementations must isolate concurrent writers and expose pending writes
+        to reads in the transaction. Unsupported backends fail before any work.
+        External side effects of hooks/processors are outside this contract.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support atomic namespace writes")
 
     @abstractmethod
     def ready(self) -> bool:
@@ -245,6 +265,9 @@ class BaseEntityBackend(ABC):
         namespace_id: str,
         entities: list[Entity],
         enable_conflict_resolution: bool = True,
+        *,
+        conflict_settings=None,
+        processing_provenance: dict | None = None,
     ) -> list[EntityUpdate]:
         from altk_evolve.llm.conflict_resolution.conflict_resolution import resolve_conflicts
 
@@ -294,10 +317,17 @@ class BaseEntityBackend(ABC):
                 )
 
             stored_by_id = {entity.id: entity for entity in old_entities}
-            updates = resolve_conflicts(old_entities, entities_with_temporary_ids)
+            updates = (
+                resolve_conflicts(old_entities, entities_with_temporary_ids)
+                if conflict_settings is None
+                else resolve_conflicts(old_entities, entities_with_temporary_ids, settings=conflict_settings)
+            )
             for update in updates:
                 content_str = serialize_content(update.content)
                 metadata = update.metadata or {}
+                if processing_provenance is not None and update.event in ("ADD", "UPDATE"):
+                    metadata = {**metadata, "processing": processing_provenance}
+                    update.metadata = metadata
                 match update.event:
                     case "ADD":
                         update.id = self._add_entity(namespace_id, entity_type, content_str, timestamp, metadata)
@@ -340,6 +370,8 @@ class BaseEntityBackend(ABC):
             for entity in entities:
                 content_str = serialize_content(entity.content)
                 metadata = entity.metadata or {}
+                if processing_provenance is not None:
+                    metadata = {**metadata, "processing": processing_provenance}
                 entity_id = self._add_entity(namespace_id, entity_type, content_str, timestamp, metadata)
                 updates.append(
                     EntityUpdate(
