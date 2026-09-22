@@ -6,7 +6,24 @@ logger = logging.getLogger(__name__)
 from collections import defaultdict
 
 
-def extract_field_values_from_responses(flat_responses: list[dict], field: dict) -> list[str]:
+class _Unreadable:
+    """Type of the UNREADABLE sentinel."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<UNREADABLE>"
+
+
+#: Returned in place of a field value when the *response* could not be read as fields at
+#: all — it did not flatten to a dict, so no field of it can be located. Deliberately not
+#: "": an empty string means the field is absent from a response that WAS readable, which
+#: is ordinary disagreement, and collapsing the two lets a scorer drop an unreadable
+#: resample as though it merely lacked one field and report the remainder's agreement.
+UNREADABLE = _Unreadable()
+
+
+def extract_field_values_from_responses(flat_responses: list, field: dict) -> list:
     """
     Extract field values from flattened responses.
 
@@ -14,12 +31,17 @@ def extract_field_values_from_responses(flat_responses: list[dict], field: dict)
     multi-field names (e.g., ["action", "action_input"]), concatenating
     values from multiple fields with space separation.
 
+    A response that is not a dict yields the UNREADABLE sentinel rather than "", so
+    callers can tell "this field is absent from a readable response" from "this response
+    could not be read". See compute_json_step_consistency for what the scorer does with
+    it, and the UNREADABLE docstring for why the distinction matters.
+
     Args:
-        flat_responses: List of flattened response dictionaries
+        flat_responses: List of flattened responses (dicts; anything else is UNREADABLE)
         field: Field config dict with 'name' key (str or list[str])
 
     Returns:
-        List of field values, one per response
+        List of field values, one per response — a str, or UNREADABLE
     """
     field_samples = []
 
@@ -33,7 +55,7 @@ def extract_field_values_from_responses(flat_responses: list[dict], field: dict)
 
     for response in flat_responses:
         if not isinstance(response, dict):
-            field_samples.append("")
+            field_samples.append(UNREADABLE)
             continue
 
         # Concatenate values from all field names
@@ -51,7 +73,7 @@ def extract_field_values_from_responses(flat_responses: list[dict], field: dict)
     return field_samples
 
 
-def find_matching_alternate(alternates: dict, parsed_actual: dict) -> dict:
+def find_matching_alternate(alternates: list[dict], parsed_actual: dict) -> dict:
     """
     Find the first alternate configuration that matches the actual parsed response.
 
@@ -65,6 +87,13 @@ def find_matching_alternate(alternates: dict, parsed_actual: dict) -> dict:
     Returns:
         The matching alternate configuration, or empty dict if no match found
     """
+    # A non-mapping response (a JSON primitive, null, or a list preserved by
+    # flatten_response) has no fields to match against, and the `name not in parsed_actual`
+    # test below raises TypeError for anything non-iterable. Report no-match instead: callers
+    # already treat that as the unsupported-response case and mark consistency undefined.
+    if not isinstance(parsed_actual, dict):
+        return {}
+
     # We consider it a match if we can find every field mentioned in the alternate config in the actual response
     for alternate in alternates:
         field_list = alternate["fields"]
@@ -104,12 +133,62 @@ def invert_list_of_dictionaries(list_of_dicts):
     return dict(inverted_dict)
 
 
+def _is_list_of_dicts(value) -> bool:
+    """True for a non-empty list whose every element is a dict.
+
+    Every element is checked, not just the first: invert_list_of_dictionaries calls
+    .items() on each one, so a mixed list like [{"a": 1}, 2] would raise AttributeError.
+    """
+    return isinstance(value, list) and bool(value) and all(isinstance(item, dict) for item in value)
+
+
+def _has_uniform_keys(list_of_dicts: list) -> bool:
+    """Whether every dict in the list carries the same key set.
+
+    invert_list_of_dictionaries appends per key with no positional padding, so a ragged
+    list loses the correspondence between an element and its values: [{"tool": "search",
+    "args": "q"}, {"tool": "write"}] and the same "args" attached to the *other* tool
+    both invert to {"tool": [...], "args": ["q"]}. Downstream that reads as perfect
+    consistency for two different responses, so a ragged list must not be inverted.
+    """
+    expected = list_of_dicts[0].keys()
+    return all(item.keys() == expected for item in list_of_dicts)
+
+
 def flatten_response(d, parent_key="", sep="_"):
     """
     Recursively flatten a nested dictionary structure.
 
     Converts nested dictionaries into a flat dictionary with concatenated keys.
     Handles lists of dictionaries by inverting them into dictionaries of lists.
+    When the top-level value is itself a list of dicts (e.g. a JSON-array
+    response), it is inverted first so field extraction works normally.
+
+    Only *homogeneous* lists of dicts are inverted. A mixed list (or a list of
+    non-dicts) is preserved as a plain value under its existing key: inverting one
+    would call .items() on a non-dict and raise, and consumers such as
+    single_step_consistency.py expect to receive such lists intact.
+
+    A top-level list is also left untouched when it is *ragged* — its element dicts do
+    not share one key set. Inverting one misaligns element values, so two responses that
+    attach the same value to different elements would flatten identically and score as
+    perfectly consistent; returning the list unchanged keeps that false agreement out of
+    the score. Returning a non-dict is what marks the response unscorable, but nothing
+    here enforces that: compute_json_step_consistency is what refuses to score a step any
+    of whose responses failed to flatten to a dict. Callers that read a flattened response
+    field by field must make that check themselves — extract_field_values_from_responses
+    renders a non-dict as "", which is also how it renders an absent field.
+
+    Known limits, both shared with the pre-flattening behaviour:
+
+    - A list whose inverted value is itself a *list of lists* of dicts is not
+      descended into, so those inner dicts stay raw under the intermediate key
+      (e.g. ``[{"y": [{"z": 1}]}, {"y": [{"z": 2}]}]`` keeps ``z`` unreachable).
+    - The raggedness guard above covers only the top level. A ragged list nested under a
+      key is still inverted and can still misalign, exactly as it did before flattening
+      handled top-level lists at all.
+    - Not idempotent: a retained intermediate key holds a live list of dicts, so
+      re-flattening the result descends into it. Every call site flattens once.
 
     Args:
         d: Dictionary to flatten (or non-dict value to return as-is)
@@ -119,6 +198,15 @@ def flatten_response(d, parent_key="", sep="_"):
     Returns:
         Flattened dictionary with concatenated keys
     """
+    # Top-level list of dicts: invert to dict of lists so field extraction works. A ragged
+    # list is returned untouched instead — inverting it silently misaligns element values
+    # and scores two different responses as identical, where an un-inverted list reaches the
+    # scorer as unscorable and is honestly reported undefined.
+    if isinstance(d, list):
+        if _is_list_of_dicts(d) and _has_uniform_keys(d):
+            d = invert_list_of_dictionaries(d)
+        else:
+            return d
     if not isinstance(d, dict):
         return d
 
@@ -128,15 +216,41 @@ def flatten_response(d, parent_key="", sep="_"):
         if isinstance(v, dict):
             items.extend(flatten_response(v, new_key, sep=sep).items())
         elif isinstance(v, list):
-            if v == [] or not isinstance(v[0], dict):
+            if not _is_list_of_dicts(v):
                 items.append((new_key, v))
             else:
-                # v is a list of dicts - invert it to a dict of lists
+                # v is a list of dicts - invert it to a dict of lists, then recurse
                 inverted_v = invert_list_of_dictionaries(v)
                 for in_k, in_v in inverted_v.items():
-                    items.append((new_key + sep + in_k, in_v))
+                    nested_key = new_key + sep + in_k
+                    # Always emit the intermediate key. A config field may be named for it —
+                    # agent_config.yaml's function_arguments is, whenever tool-call arguments
+                    # are dict-valued — and replacing it with deeper keys would resolve that
+                    # field to "" and drop it from scoring with no error.
+                    items.append((nested_key, in_v))
+                    # Descend only when the inner list will actually flatten to a dict. A
+                    # ragged one comes back from the guard above as a list, with no .items().
+                    if _is_list_of_dicts(in_v) and _has_uniform_keys(in_v):
+                        items.extend(flatten_response(in_v, nested_key, sep=sep).items())
         else:
             items.append((new_key, v))
+
+    # dict() keeps the last value for a repeated key, so a post-inversion collision (e.g. a
+    # literal "a_b" alongside a nested a -> b) drops one. Not resolvable here without
+    # changing the key scheme; this only records it.
+    #
+    # Deliberately debug, not warning, and only for differing values. Equal values lose
+    # nothing, and a differing collision is not reliably data loss either: the intermediate
+    # keys emitted above collide with their own deep projection, where the "dropped" value is
+    # still reachable under the intermediate key. Distinguishing that from real loss needs
+    # provenance this function doesn't track, so an alert here would cry wolf on its own
+    # normal output — once per sample per step — and get tuned out.
+    grouped: dict[str, list] = defaultdict(list)
+    for key, value in items:
+        grouped[key].append(value)
+    collisions = sorted(key for key, values in grouped.items() if len(values) > 1 and any(v != values[-1] for v in values))
+    if collisions:
+        logger.debug("flatten_response: flattened key collision on %s — only the last value for each is kept.", collisions)
     return dict(items)
 
 

@@ -1,7 +1,5 @@
 import json
 import logging
-import re
-from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Optional
 
@@ -9,11 +7,10 @@ import litellm
 import yaml
 from jinja2 import Template
 from litellm import completion, get_supported_openai_params, supports_response_schema
-from pydantic import ValidationError
 
 from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
 from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
-from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
+from altk_evolve.llm.guidelines.guidelines import parse_guideline_response, parse_openai_agents_trajectory
 
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.config.guidelines import guidelines_settings
@@ -413,22 +410,8 @@ def _generate_guideline_result(
         logger.warning(f"LLM returned empty response for consistency guideline generation. Model: {llm_settings.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
-    try:
-        guidelines = GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
-        return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
-    except JSONDecodeError:
-        # LLMs sometimes emit LaTeX-style \( \) in string values which are not valid JSON
-        # escape sequences. Escape lone backslashes and retry before giving up.
-        fixed = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", clean_response)
-        try:
-            guidelines = GuidelineGenerationResponse.model_validate(json.loads(fixed)).guidelines
-            return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
-        except (JSONDecodeError, ValidationError) as e:
-            logger.warning(f"Failed to parse consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-            return GuidelineGenerationResult(guidelines=[], task_description=task_description)
-    except ValidationError as e:
-        logger.warning(f"Failed to validate consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
+    guidelines = parse_guideline_response(clean_response, "consistency")
+    return GuidelineGenerationResult(guidelines=guidelines or [], task_description=task_description)
 
 
 def generate_consistency_guidelines(
@@ -651,22 +634,8 @@ def _generate_fast_guideline_result(
         logger.warning(f"LLM returned empty response for fast consistency guideline generation. Model: {llm_settings.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
-    try:
-        guidelines = GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
-        return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
-    except JSONDecodeError:
-        # LLMs sometimes emit LaTeX-style \( \) in string values which are not valid JSON
-        # escape sequences. Escape lone backslashes and retry before giving up.
-        fixed = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", clean_response)
-        try:
-            guidelines = GuidelineGenerationResponse.model_validate(json.loads(fixed)).guidelines
-            return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
-        except (JSONDecodeError, ValidationError) as e:
-            logger.warning(f"Failed to parse fast consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-            return GuidelineGenerationResult(guidelines=[], task_description=task_description)
-    except ValidationError as e:
-        logger.warning(f"Failed to validate fast consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
+    guidelines = parse_guideline_response(clean_response, "fast consistency")
+    return GuidelineGenerationResult(guidelines=guidelines or [], task_description=task_description)
 
 
 def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGenerationResult]:

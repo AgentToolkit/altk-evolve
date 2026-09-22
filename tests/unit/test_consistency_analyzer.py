@@ -54,11 +54,337 @@ class TestFlattenResponse:
         assert flatten_response("hello") == "hello"
         assert flatten_response(42) == 42
 
+    def test_top_level_list_of_dicts_inverted(self):
+        """A JSON-array response is inverted before flattening, so field extraction works on it."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        result = flatten_response([{"name": "add", "arg": 1}, {"name": "mul", "arg": 2}])
+        assert result == {"name": ["add", "mul"], "arg": [1, 2]}
+
+    def test_top_level_list_of_primitives_returned_as_is(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response([1, 2, 3]) == [1, 2, 3]
+
+    def test_top_level_empty_list_returned_as_is(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response([]) == []
+
+    def test_nested_list_of_dicts_is_flattened_without_losing_the_intermediate_key(self):
+        """Inverting a list of dicts can yield another list of dicts, which must be flattened
+        too — but the intermediate key has to survive alongside the deeper ones.
+
+        Replacing it would silently zero any config field named for it. agent_config.yaml's
+        `function_arguments` is exactly that, whenever tool-call arguments are dict-valued.
+        """
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        result = flatten_response({"steps": [{"call": {"name": "a"}}, {"call": {"name": "b"}}]})
+        assert result == {
+            "steps_call": [{"name": "a"}, {"name": "b"}],
+            "steps_call_name": ["a", "b"],
+        }
+
+    def test_configured_field_still_resolves_for_dict_valued_tool_arguments(self):
+        """End-to-end guard for the shipped config: `function_arguments` must keep
+        extracting a value when tool-call `arguments` arrive as dicts rather than JSON
+        strings, which is the shape resampling.py passes through unnormalised.
+
+        Two calls with *different* argument names make the inverted value ragged, so the
+        raggedness guard stops the descent and no deeper keys are produced. That is the
+        intended precedence: the configured field is what must not break, and misaligned
+        deeper keys are worse than absent ones.
+        """
+        from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import parse_tool_calls_response
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import extract_field_values_from_responses, flatten_response
+
+        raw = [
+            {"id": "c1", "type": "function", "function": {"name": "get_weather", "arguments": {"city": "NYC"}}},
+            {"id": "c2", "type": "function", "function": {"name": "get_time", "arguments": {"tz": "EST"}}},
+        ]
+        flat = flatten_response(parse_tool_calls_response(raw))
+
+        assert extract_field_values_from_responses([flat], {"name": "function_arguments"}) == ["{'city': 'NYC'} {'tz': 'EST'}"]
+        assert "function_arguments_city" not in flat
+
+    def test_deeper_keys_are_additive_for_uniform_tool_arguments(self):
+        """When both calls take the same argument name the inverted value is uniform, so the
+        descent runs and the deeper key is emitted *alongside* the intermediate one."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import parse_tool_calls_response
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import extract_field_values_from_responses, flatten_response
+
+        raw = [
+            {"id": "c1", "type": "function", "function": {"name": "get_weather", "arguments": {"city": "NYC"}}},
+            {"id": "c2", "type": "function", "function": {"name": "get_weather", "arguments": {"city": "Paris"}}},
+        ]
+        flat = flatten_response(parse_tool_calls_response(raw))
+
+        assert extract_field_values_from_responses([flat], {"name": "function_arguments"}) == ["{'city': 'NYC'} {'city': 'Paris'}"]
+        assert extract_field_values_from_responses([flat], {"name": "function_arguments_city"}) == ["NYC Paris"]
+
     def test_list_of_primitives_kept(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
 
         result = flatten_response({"items": [1, 2, 3]})
         assert result == {"items": [1, 2, 3]}
+
+    def test_ragged_top_level_list_is_not_inverted(self):
+        """Inverting appends per key without positional padding, so a ragged list loses which
+        element a value belonged to. Two responses attaching the same "args" to a *different*
+        "tool" would flatten identically and score as perfectly consistent."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        a = [{"tool": "search", "args": "q=cats"}, {"tool": "write"}]
+        b = [{"tool": "search"}, {"tool": "write", "args": "q=cats"}]
+
+        assert flatten_response(a) == a
+        assert flatten_response(b) == b
+        assert flatten_response(a) != flatten_response(b)
+
+    def test_ragged_top_level_list_scores_undefined_not_perfect(self):
+        """The reason the guard exists, asserted through the real scorer: without it these two
+        score a confident 1.0. -1 (undefined) is the honest answer and matches base."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        a = [{"tool": "search", "args": "q=cats"}, {"tool": "write"}]
+        b = [{"tool": "search"}, {"tool": "write", "args": "q=cats"}]
+        cfg = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+
+        consistency, _ = compute_json_step_consistency([a, b], cfg, 2)
+        assert consistency == -1
+
+    def test_uniform_top_level_list_still_scores_normally(self):
+        """The guard must not cost the case it was built for: same key set, so still inverted,
+        and genuine disagreement still lands below 1.0."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        cfg = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+        same = [{"tool": "search", "args": "q"}, {"tool": "write", "args": "x"}]
+        differing = [{"tool": "search", "args": "q"}, {"tool": "write", "args": "OTHER"}]
+
+        assert compute_json_step_consistency([same, list(same)], cfg, 2)[0] == 1.0
+        assert compute_json_step_consistency([same, differing], cfg, 2)[0] < 1.0
+
+    def test_mixed_readable_and_unreadable_resamples_score_undefined(self, caplog):
+        """The case a ragged-list guard alone does not reach: only *some* resamples are
+        ragged. Those flatten to a list, so no field of them can be located; extraction
+        marks them UNREADABLE. Were they rendered "" like an absent field, the per-field
+        filter would drop them and the agreeing remainder would score a confident 1.0 while
+        40% of resamples disagreed structurally. Undefined is honest, and matches base."""
+        import logging
+
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        uniform = [{"tool": "search", "args": "q=cats"}, {"tool": "write", "args": "f=out"}]
+        ragged = [{"tool": "search", "args": "q=cats"}, {"tool": "write"}]
+        cfg = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+
+        with caplog.at_level(logging.INFO):
+            consistency, metadata = compute_json_step_consistency([uniform] * 3 + [ragged] * 2, cfg, 2)
+
+        assert consistency == -1
+        assert metadata == {"field_consistencies": {}}
+        # info, not debug: the step leaves both the score card and the trajectory aggregate,
+        # so a silent trajectory scored on fewer steps than it had would have no signal
+        assert any(r.levelname == "INFO" and "could not be read as fields" in r.message for r in caplog.records)
+        assert "sample indices [3, 4]" in caplog.text
+
+    def test_only_unreadable_resamples_disqualify_not_mere_disagreement(self):
+        """The distinction the sentinel exists for. -1 removes the step from the score card
+        and the trajectory aggregate, so over-firing silences the pipeline on exactly the
+        steps it exists to surface. Only a resample that could not be read at all may do
+        that; a readable resample shaped differently is disagreement and must still score.
+        """
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        two = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+        one = {"fields": [{"name": "tool", "metric": "jaccard"}]}
+        scorable = {"tool": "a", "args": "b"}
+
+        # unreadable: no field of these can be located, so the step is undefined
+        for unreadable in ([{"tool": "s", "args": "q"}, {"tool": "w"}], [1, 2], "oops", None, 7):
+            assert compute_json_step_consistency([scorable] * 4 + [unreadable], two, 2)[0] == -1, unreadable
+
+        # readable but shaped differently: disagreement, still scored, all base-identical
+        assert compute_json_step_consistency([scorable] * 4 + [{"other": 1}], two, 2)[0] == 1.0
+        assert compute_json_step_consistency([{"tool": "a"}] * 4 + [{"other": 1}], one, 2)[0] == 1.0
+        assert compute_json_step_consistency([scorable] * 4 + [{"tool": "", "args": ""}], two, 2)[0] == 1.0
+        assert compute_json_step_consistency([scorable] * 4 + [{}], two, 2)[0] == 1.0
+
+    def test_empty_list_response_is_unreadable_but_unreachable_from_the_pipeline(self):
+        """`[]` has no dict to locate fields in, so at this level it is UNREADABLE and
+        disqualifies — where base scored 1.0. Recorded because that is a divergence from
+        base, and bounded: `[]` is what parsed_response_backfill returns for an unparseable
+        tool_calls response, and preprocessing now drops it before scoring, exactly as it
+        always dropped the json/react `{}`. So the two no longer diverge in the pipeline
+        even though they still differ by type here. Reachable only by calling this function
+        directly.
+        """
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        cfg = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+        scorable = {"tool": "a", "args": "b"}
+
+        assert compute_json_step_consistency([scorable] * 4 + [[]], cfg, 2)[0] == -1
+        assert compute_json_step_consistency([scorable] * 4 + [{}], cfg, 2)[0] == 1.0
+
+    def test_min_fraction_tolerance_still_applies(self):
+        """The guard must not pre-empt the per-field min_samples floor: a field absent from
+        a minority of resamples is still scored on the ones that have it."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        cfg = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+        responses = [{"tool": "search", "args": "q"}] * 3 + [{"tool": "search"}] * 2
+
+        consistency, metadata = compute_json_step_consistency(responses, cfg, 2)
+        assert consistency > 0
+        assert "tool" in metadata["field_consistencies"]
+
+    def test_backfilled_response_is_scorable_again(self):
+        """A configured backfill still does its job: `{}` carrying backfilled field values
+        contributes evidence, so the step scores rather than being written off."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        cfg = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+        scorable = {"tool": "a", "args": "b"}
+        backfilled = {"tool": "none", "args": "none"}
+
+        consistency, _ = compute_json_step_consistency([scorable] * 4 + [backfilled], cfg, 2)
+        assert consistency > 0
+        assert consistency < 1.0, "the backfilled sample disagrees, so it must not score perfect"
+
+    def test_shipped_tool_calls_config_survives_a_prose_resample(self):
+        """End to end on the only `fields` agent the library ships. A resample answering in
+        prose instead of calling a tool is the commonest way a tool-call step diverges; it
+        must not take the step out of the score card. Its unparseable `[]` is dropped in
+        preprocessing exactly as the json/react `{}` equivalent always was, so the step
+        scores on the resamples that did parse."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import (
+            extract_parsed_responses_from_trajectory,
+        )
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_step_consistency
+
+        config = {
+            "max_samples": 5,
+            "aggregation": "mean",
+            "agents": [
+                {
+                    "name": "A_tool_calls",
+                    "response_type": "tool_calls",
+                    "fields": [{"name": "function_name", "metric": "jaccard"}, {"name": "function_arguments", "metric": "jaccard"}],
+                }
+            ],
+        }
+        call = [{"function": {"name": "get_weather", "arguments": '{"city":"NYC"}'}}]
+        raw = [call] * 4 + ["I would check the weather first."]
+        trajectory = {"steps": [{"name": "A_tool_calls", "sampling": {"num_samples": 5, "raw_samples": raw}}]}
+
+        trajectory = extract_parsed_responses_from_trajectory(trajectory, config)
+        assert len(trajectory["steps"][0]["sampling"]["parsed_samples"]) == 4, "the prose resample should be dropped, not scored"
+
+        consistency = compute_step_consistency(trajectory, config)["steps"][0]["consistency"]
+        assert consistency["step_consistency"] == 1.0, "the step must stay in the score card"
+
+    def test_unparseable_tool_calls_and_json_responses_are_dropped_alike(self):
+        """`parsed_response_backfill` returns `[]` for tool_calls and `{}` for json/react.
+        The drop in preprocessing tested `== {}`, which `[]` does not match, so the same
+        situation — a resample that produced no parseable structure — was discarded on one
+        response_type and passed through on the other."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import (
+            extract_parsed_responses_from_trajectory,
+        )
+
+        for response_type in ("tool_calls", "json"):
+            config = {
+                "max_samples": 2,
+                "agents": [{"name": "A", "response_type": response_type, "fields": [{"name": "x", "metric": "jaccard"}]}],
+            }
+            trajectory = {"steps": [{"name": "A", "sampling": {"num_samples": 2, "raw_samples": ["prose", "more prose"]}}]}
+            trajectory = extract_parsed_responses_from_trajectory(trajectory, config)
+            assert trajectory["steps"][0]["sampling"]["parsed_samples"] == [], response_type
+
+    def test_known_limit_nested_ragged_list_still_misaligns(self):
+        """Characterisation test for a limit this fix does NOT close, pinned so it cannot
+        regress unnoticed and is not mistaken for something the disqualification covers.
+
+        The raggedness guard is on the *top-level* list only. A ragged list nested under a
+        key is still inverted, so the response flattens to a dict, yields values for the
+        configured fields, and is therefore scorable — while the inversion has already lost
+        which element each value came from. These two tool-call responses attach the same
+        arguments to *different* calls and flatten identically, scoring a false 1.0.
+
+        Byte-identical to base 3361a72: pre-existing, unchanged here, and reachable through
+        parse_tool_calls_response, which calls invert_list_of_dictionaries directly and so
+        never passes through flatten_response's guard at all. Fixing it needs the scorer to
+        distinguish "field absent" from "field unreadable" per field rather than per
+        response, which is a separate change.
+        """
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        a = {"function": [{"name": "search", "arguments": "q=cats"}, {"name": "write"}]}
+        b = {"function": [{"name": "search"}, {"name": "write", "arguments": "q=cats"}]}
+        cfg = {"fields": [{"name": "function_name", "metric": "jaccard"}, {"name": "function_arguments", "metric": "jaccard"}]}
+
+        # the misalignment itself: two different responses, one flattened form
+        assert flatten_response(a) == flatten_response(b)
+        assert flatten_response(a) == {"function_name": ["search", "write"], "function_arguments": ["q=cats"]}
+
+        # and so it scores perfect, which is wrong but is the documented pre-existing limit
+        assert compute_json_step_consistency([a, b], cfg, 2)[0] == 1.0
+
+    def test_all_resamples_scorable_is_unaffected(self):
+        """The disqualification must not touch the ordinary path: a field genuinely absent
+        from some resamples is still scored on the ones that have it."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.single_step_consistency import compute_json_step_consistency
+
+        cfg = {"fields": [{"name": "tool", "metric": "jaccard"}, {"name": "args", "metric": "jaccard"}]}
+        # every response is a dict (scorable); "args" is simply missing from two of them
+        responses = [{"tool": "search", "args": "q"}] * 3 + [{"tool": "search"}] * 2
+
+        consistency, metadata = compute_json_step_consistency(responses, cfg, 2)
+        assert consistency > 0
+        assert "tool" in metadata["field_consistencies"]
+
+    def test_collision_is_reported_only_when_values_differ(self, caplog):
+        """The report is debug-level and value-aware. Equal values lose nothing, and the
+        intermediate keys this function emits collide with their own deep projection — a
+        warning on those would fire on normal output once per sample per step."""
+        import logging
+
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        with caplog.at_level(logging.DEBUG):
+            flatten_response({"a": {"b": 1}, "a_b": 1})
+        assert "collision" not in caplog.text
+
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            flatten_response({"a": {"b": 1}, "a_b": 2})
+        assert "flattened key collision on ['a_b']" in caplog.text
+        # Never above debug: it is diagnostic, not actionable.
+        assert not [r for r in caplog.records if r.levelno > logging.DEBUG]
+
+    def test_mixed_top_level_list_is_preserved_not_inverted(self):
+        """Homogeneity is checked across every element, not just the first. Inverting a
+        mixed list would call .items() on a non-dict and raise AttributeError."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response([{"a": 1}, 2]) == [{"a": 1}, 2]
+
+    def test_mixed_nested_list_is_preserved_not_inverted(self):
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        assert flatten_response({"k": [{"a": 1}, 2]}) == {"k": [{"a": 1}, 2]}
+
+    def test_mixed_inverted_value_is_not_recursed_into(self):
+        """Inverting can yield a mixed list, which must stop at its key rather than
+        being handed back to the top-level list path."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import flatten_response
+
+        result = flatten_response({"steps": [{"call": {"n": "a"}}, {"call": 2}]})
+        assert result == {"steps_call": [{"n": "a"}, 2]}
 
 
 class TestExtractFieldValuesFromResponses:
@@ -83,11 +409,16 @@ class TestExtractFieldValuesFromResponses:
         result = extract_field_values_from_responses(responses, {"name": "action"})
         assert result == [""]
 
-    def test_non_dict_response_returns_empty_string(self):
-        from altk_evolve.llm.guidelines.consistency_analyzer.utils import extract_field_values_from_responses
+    def test_non_dict_response_is_marked_unreadable(self):
+        """Contract change: a non-dict response used to yield "", the same value as a field
+        absent from a readable response. The two are now distinguishable — "" still means
+        absent, UNREADABLE means the response could not be read as fields at all — so a
+        caller can drop the first and refuse the second rather than treating them alike."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import UNREADABLE, extract_field_values_from_responses
 
-        result = extract_field_values_from_responses(["not_a_dict"], {"name": "action"})
-        assert result == [""]
+        assert extract_field_values_from_responses(["not_a_dict"], {"name": "action"}) == [UNREADABLE]
+        # a readable response merely missing the field is still "", not UNREADABLE
+        assert extract_field_values_from_responses([{"other": 1}], {"name": "action"}) == [""]
 
     def test_list_value_joined(self):
         from altk_evolve.llm.guidelines.consistency_analyzer.utils import extract_field_values_from_responses
@@ -128,6 +459,31 @@ class TestFindMatchingAlternate:
         parsed = {"action": "click"}
         result = find_matching_alternate([alt1, alt2], parsed)
         assert result["id"] == 1
+
+    @pytest.mark.parametrize("parsed", [5, None, 1.5, True])
+    def test_non_iterable_response_reports_no_match(self, parsed):
+        """Without the guard these raise TypeError: `name not in 5` is not a valid test.
+        No-match is the signal callers already translate into 'consistency undefined'."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import find_matching_alternate
+
+        assert find_matching_alternate([{"fields": [{"name": "action"}]}], parsed) == {}
+
+    def test_string_response_does_not_substring_match_a_field_name(self):
+        """The more valuable half of the guard. A string never raised — `in` silently
+        degrades to a substring test, so a response *containing* a field name produced a
+        false alternate match and selected the wrong metric config. Worse than a crash,
+        because nothing signals it."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import find_matching_alternate
+
+        assert find_matching_alternate([{"fields": [{"name": "act"}]}], "the action") == {}
+
+    @pytest.mark.parametrize("parsed", [[], [{"a": 1}, 2], [1, 2, 3]])
+    def test_list_response_reports_no_match(self, parsed):
+        """Lists never raised and already reported no-match — kept as cover that adding
+        the guard did not change that."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.utils import find_matching_alternate
+
+        assert find_matching_alternate([{"fields": [{"name": "action"}]}], parsed) == {}
 
 
 class TestRescaleWeights:
@@ -767,6 +1123,15 @@ class TestInnerFieldBackfill:
         config = {"fields": [{"name": "action", "backfill": "none"}]}
         result = inner_field_backfill("not_a_dict", config)
         assert result["action"] == "none"
+
+    def test_list_response_survives_untouched(self):
+        """A JSON-array response is valid parsed output. Backfill doesn't apply to it, but it
+        must not be reset to {} either — that discarded the entire response."""
+        from altk_evolve.llm.guidelines.consistency_analyzer.sample_preprocessing import inner_field_backfill
+
+        config = {"fields": [{"name": "action", "backfill": "none"}]}
+        result = inner_field_backfill([{"action": "search"}, {"other": 1}], config)
+        assert result == [{"action": "search"}, {"other": 1}]
 
 
 # ---------------------------------------------------------------------------
