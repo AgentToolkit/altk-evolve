@@ -65,7 +65,16 @@ uv run evolve sync phoenix --guidelines-mode consistency --consistency-method ac
 
 Use `accurate` when you want uncertainty estimated by actually observing variance across resamples, not the LLM's own self-assessment of confidence, or when you're comfortable paying for the extra resampling calls in exchange for a measured signal. Use `fast` (the default) when `accurate`'s per-trajectory resampling cost is too expensive to run at the volume you need.
 
-`accurate` has further tuning knobs — the uncertainty thresholds that decide what counts as "high" vs "stable" (`high_uncertainty_threshold`, `low_uncertainty_threshold`), and whether to skip generation entirely when nothing looks uncertain (`skip_on_no_uncertainty`) — defined alongside the resampling config below; they're advanced settings, not something most readers need on a first pass. `fast` has no equivalent tunables today: it relies entirely on the prompt instructing the LLM to return no guidelines when it judges every step confident, rather than a pre-call numeric skip gate.
+`accurate` has further tuning knobs — the single uncertainty threshold that decides what counts as "high" (`high_uncertainty_threshold`; the most uncertain steps at or above it are flagged, up to a cap of five, and when no step clears it the single most-uncertain non-zero step is flagged as merely "elevated"), and whether to skip generation entirely when nothing looks uncertain (`skip_on_no_uncertainty`) — defined alongside the resampling config below; they're advanced settings, not something most readers need on a first pass. `fast` has no equivalent tunables today: it relies entirely on the prompt instructing the LLM to return no guidelines when it judges every step confident, rather than a pre-call numeric skip gate.
+
+**Two separate bounds limit which steps can carry a marker**, and a long trajectory can hit either one:
+
+- **`max_steps` (15 by default) caps how many steps are scored at all.** Resampling measures only the first `max_steps` *scorable* steps — scorable meaning the step can be faithfully resampled, which excludes malformed turns and, on trajectories with no OpenAI tool schema, tool calls with nothing to rebind. An unscored step has no uncertainty value, so it can never be flagged. Raise `max_steps` to score deeper into a trajectory, at proportionally more resampling calls.
+- **Only steps at position 50 or below are rendered, and so only those can be marked.** The prompt renders at most the first 50 assistant turns.
+
+The second bound catches trajectories the first does not, because step positions count **every** assistant turn — including the unscorable ones that are never scored. Positions are therefore sparse rather than consecutive: 50 unscorable turns followed by 3 real ones yields scored steps at positions 51, 52 and 53, which are only the *first three* scorable steps and so well inside `max_steps`, yet all fall outside the render window.
+
+When a trajectory's only uncertain steps fall outside either bound, `accurate` skips it rather than generating against a prompt that explains markers it does not contain — producing no guidelines instead of weakly-grounded ones.
 
 The resampling behavior (sample count, per-step-type uncertainty metric) and the `accurate`-only tuning knobs above are all defined in a YAML config file shipped alongside the consistency pipeline (`consistency_analyzer/agent_config.yaml`); advanced users calling `generate_consistency_guidelines()` directly from Python can point it at a custom config via `config_path=`.
 
