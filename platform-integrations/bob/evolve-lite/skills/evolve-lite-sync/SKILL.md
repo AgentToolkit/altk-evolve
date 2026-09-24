@@ -1,13 +1,13 @@
 ---
 name: evolve-lite:sync
-description: Pull the latest guidelines from every configured repo (read- and write-scope).
+description: Pull the latest guidelines, atomic skills, and skill flows from every configured repo (read- and write-scope).
 ---
 
 # Sync Repos
 
 ## Overview
 
-Pull the latest guidelines from every repo in `evolve.config.yaml`
+Pull the latest entities — guidelines, atomic skills, and skill flows — from every repo in `evolve.config.yaml`
 `repos:` list — both `scope: read` (subscribe-only) and `scope: write`
 (publish targets). Write-scope repos use a rebase strategy so any
 unpushed local publish commits are preserved.

@@ -43,10 +43,10 @@ sync:
   on_session_start: true
 ```
 
-Also ensure `.evolve/` is gitignored:
+Also ensure `.evolve/entities/subscribed/` is gitignored (the subscribed clones are managed by evolve-lite and should not be committed). Do **not** gitignore `.evolve/` or `.bob/` — those directories must remain tracked:
 
 ```bash
-grep -qxF '.evolve/' .gitignore 2>/dev/null || echo '.evolve/' >> .gitignore
+grep -qxF '.evolve/entities/subscribed/' .gitignore 2>/dev/null || echo '.evolve/entities/subscribed/' >> .gitignore
 ```
 
 ### Step 2: Gather details
