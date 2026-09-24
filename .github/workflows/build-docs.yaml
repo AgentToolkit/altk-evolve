@@ -1,0 +1,46 @@
+name: Build Docs
+
+# Verifies the MkDocs site builds cleanly on every pull request that touches
+# documentation, before it can be merged and picked up by deploy-docs.yaml.
+# Runs `mkdocs build --strict`, so broken internal links, missing nav entries,
+# and config deprecations fail the check instead of silently shipping to
+# https://agenttoolkit.github.io/altk-evolve/. This is a build-only gate: it
+# never deploys and needs no write access (contents: read below).
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'includes/**'
+      - 'mkdocs.yaml'
+      # Docs tooling (mkdocs + plugins) lives in the `docs` dependency group;
+      # rebuild when it or the lockfile changes so the check tracks the build.
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/build-docs.yaml'
+
+# Build-only: no deploy, so read-only access is all this needs.
+permissions:
+  contents: read
+
+# One in-flight build per PR branch; newer pushes cancel stale runs.
+concurrency:
+  group: build-docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: Build docs (strict)
+        run: uv run --group docs mkdocs build --strict
