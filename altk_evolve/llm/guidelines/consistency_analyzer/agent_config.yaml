@@ -8,8 +8,7 @@ max_samples: 5
 max_steps: 15
 # Advanced tuning knobs for how step_uncertainty scores are interpreted when
 # generating guidelines (consistency-accurate method only).
-high_uncertainty_threshold: 0.2
-low_uncertainty_threshold: 0.1
+high_uncertainty_threshold: 0.15
 skip_on_no_uncertainty: true
 agents:
   - name: OpenAIAgent_content
