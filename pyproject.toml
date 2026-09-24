@@ -263,6 +263,11 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 explicit_package_bases = true
+# tests/platform_integrations/ is not a package (no __init__.py, by pytest's
+# rootdir-conftest convention), so its top-level helper modules — _hermes_loader,
+# imported by the Hermes test modules — are only resolvable with the directory on
+# the search path.
+mypy_path = "tests/platform_integrations"
 exclude = [
     "build/",
     "platform-integrations/",

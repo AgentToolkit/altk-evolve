@@ -381,6 +381,47 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "metadata_target": None,
         "metadata_emit": None,
     },
+    # Hermes ships a Python MemoryProvider, not a prompt/skill bundle: its files
+    # are copied verbatim (no .j2), and its manifest is plugin.yaml rather than a
+    # rendered plugin.json, so metadata_target is None. From the shared tree it
+    # wants exactly one module: entity_io.py, imported by backend.py so the
+    # on-disk entity format has a single definition across integrations.
+    #
+    # The other four shared lib modules are excluded because nothing in this
+    # bundle can reach them. audit.py is a library for the skill scripts;
+    # audit_recall.py is a standalone CLI that EVOLVE.md tells a model to shell
+    # out to; config.py and retention.py are imported only by skills and by
+    # run_retention.py. Hermes has neither skills nor an EVOLVE.md (both
+    # excluded below) and writes its own recall row in-process from
+    # __init__.py's _append_audit, using audit_recall.py's exact schema so the
+    # provenance skill reads Hermes sessions with no Hermes-specific tooling.
+    # Shipping them would put ~1,245 unreachable lines in every user's
+    # $HERMES_HOME.
+    #
+    # Patterns match the source-side path (see PlatformConfig.excludes), i.e.
+    # plugin-source/lib/audit.py is `lib/audit.py` here, not the rendered
+    # `lib/evolve-lite/audit.py`.
+    #
+    # target_excludes is opt-out, not a lookahead: cfg.excludes() runs against
+    # every entry including the _hermes/ ones, so a blanket "^(?!lib/)" would
+    # exclude the provider's own flat files. Name the unwanted shared members
+    # instead; test_hermes.py pins the resulting file set so a future shared
+    # file cannot slip in silently.
+    "hermes": {
+        "plugin_root": "platform-integrations/hermes/plugins/evolve",
+        "context": {},
+        "target_rewrites": [],
+        "target_excludes": [
+            r"^skills/",
+            r"^EVOLVE\.md$",
+            r"^lib/audit\.py$",
+            r"^lib/audit_recall\.py$",
+            r"^lib/config\.py$",
+            r"^lib/retention\.py$",
+        ],
+        "metadata_target": None,
+        "metadata_emit": None,
+    },
 }
 
 
