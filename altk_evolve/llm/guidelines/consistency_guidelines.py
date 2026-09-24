@@ -1,7 +1,5 @@
 import json
 import logging
-import re
-from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Optional
 
@@ -9,11 +7,10 @@ import litellm
 import yaml
 from jinja2 import Template
 from litellm import completion, get_supported_openai_params, supports_response_schema
-from pydantic import ValidationError
 
 from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
 from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
-from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
+from altk_evolve.llm.guidelines.guidelines import parse_guideline_response, parse_openai_agents_trajectory
 
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.config.guidelines import guidelines_settings
@@ -36,9 +33,21 @@ _CONSISTENCY_GUIDELINES_FAST_TEMPLATE = Template(
 
 # Defaults for the advanced accurate-method tuning knobs, used when agent_config.yaml
 # (or a custom config_path=) doesn't set them.
-DEFAULT_HIGH_UNCERTAINTY_THRESHOLD = 0.2
-DEFAULT_LOW_UNCERTAINTY_THRESHOLD = 0.1
+DEFAULT_HIGH_UNCERTAINTY_THRESHOLD = 0.15
 DEFAULT_SKIP_ON_NO_UNCERTAINTY = True
+
+# How many steps may carry the HIGH marker. A cap rather than a threshold: the markers
+# exist to focus the model's attention, and flagging every step focuses it nowhere.
+HIGH_MARKER_CAP = 5
+
+# How many leading assistant steps the prompt renders. Steps past this are never shown, so
+# their uncertainty cannot be marked — the skip gate has to ignore them too, or a trajectory
+# whose only uncertain step falls outside the window generates with no marker at all.
+MAX_RENDERED_STEPS = 50
+
+# Shortest trajectory worth splitting into subtasks. Below this, segmentation costs an extra
+# LLM call and mostly yields per-step guidelines, so one whole-trajectory pass is better.
+SEGMENTATION_MIN_STEPS = 5
 
 
 def _strip_orphaned_tool_messages(messages: list[dict]) -> list[dict]:
@@ -231,10 +240,21 @@ def format_trajectory_data(
 ) -> str:
     """Render assistant steps (optionally scoped to step_range) into the text block the
     accurate-method prompt embeds, marking each step ⚠️ HIGH/ELEVATED UNCERTAINTY per the
-    high/low thresholds in config (falling back to the DEFAULT_* module constants)."""
+    high_uncertainty_threshold in config (falling back to the DEFAULT_* module constant).
+
+    The most-uncertain steps at or above the threshold are marked HIGH, up to
+    HIGH_MARKER_CAP of them. When no step clears the threshold, the single most-uncertain
+    step is marked ELEVATED instead, provided its score is non-zero — so any trajectory with
+    measurable uncertainty *among its first MAX_RENDERED_STEPS steps* carries at least one
+    marker. Uncertainty on a later step cannot be marked, because that step is never
+    rendered; the caller's skip gate applies the same window so such a trajectory is skipped
+    rather than generated with no markers at all.
+
+    Both limits keep the markers doing their job: they direct the model's attention, and a
+    trajectory marked end to end conveys no more than one marked nowhere.
+    """
     config = config or {}
     high_uncertainty_threshold = config.get("high_uncertainty_threshold", DEFAULT_HIGH_UNCERTAINTY_THRESHOLD)
-    low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
 
     step_uncertainties = consistency_data.get("step_uncertainties", {})
 
@@ -242,27 +262,31 @@ def format_trajectory_data(
         start, end = step_range
         step_uncertainties = {k: v for k, v in step_uncertainties.items() if start <= k <= end}
 
-    TOP_N = 3
-    top_steps = sorted(step_uncertainties.items(), key=lambda x: x[1], reverse=True)[:TOP_N]
-    high_uncertainty_steps = {step_num: score for step_num, score in top_steps if score >= high_uncertainty_threshold}
+    # Same window the loop below renders. Without this an out-of-window step can win a HIGH
+    # slot — or the single ELEVATED slot — and then never render, so a trajectory kept alive
+    # by an in-window step generates with no marker at all. With equal scores `sorted` is
+    # stable, which made insertion order decide whether a marker appeared.
+    step_uncertainties = {k: v for k, v in step_uncertainties.items() if k <= MAX_RENDERED_STEPS}
+    ranked_steps = sorted(step_uncertainties.items(), key=lambda x: x[1], reverse=True)
+    high_uncertainty_steps = {step_num: score for step_num, score in ranked_steps[:HIGH_MARKER_CAP] if score >= high_uncertainty_threshold}
 
-    # Fallback: no step cleared the high bar, but the single most-uncertain step still
-    # cleared the low bar — worth flagging, but honestly, not as "HIGH". Tracked
-    # separately so the marker text doesn't claim a threshold that was never met.
+    # Fallback: no step cleared the high bar, but the most-uncertain step still scored
+    # above zero — worth a look, but honestly, not "HIGH". Tracked separately so the
+    # marker text never claims a threshold that was not actually met. Just the one step:
+    # this fires only for an otherwise-quiet trajectory, where widening the marker would
+    # dilute the little signal there is. Rank 2 may be a near-tie the metric can't really
+    # separate from rank 1 — accepted, in exchange for pointing somewhere specific.
     elevated_uncertainty_steps: dict[int, float] = {}
-    if not high_uncertainty_steps and step_uncertainties:
-        highest = max(step_uncertainties.items(), key=lambda x: x[1])
-        if highest[1] > low_uncertainty_threshold:
-            elevated_uncertainty_steps = {highest[0]: highest[1]}
+    if not high_uncertainty_steps:
+        elevated_uncertainty_steps = {step_num: score for step_num, score in ranked_steps[:1] if score > 0}
 
-    MAX_STEPS = 50
     steps_text: list[str] = []
     step_num = 0
     for step in messages:
         if step.get("role") != "assistant":
             continue
         step_num += 1
-        if step_num > MAX_STEPS:
+        if step_num > MAX_RENDERED_STEPS:
             break
 
         if step_range:
@@ -352,18 +376,21 @@ def _generate_guideline_result(
     """
     config = config or {}
     skip_on_no_uncertainty = config.get("skip_on_no_uncertainty", DEFAULT_SKIP_ON_NO_UNCERTAINTY)
-    low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
 
     if skip_on_no_uncertainty:
         step_uncertainties = consistency_data.get("step_uncertainties", {})
         if step_range:
             start, end = step_range
             step_uncertainties = {k: v for k, v in step_uncertainties.items() if start <= k <= end}
-        has_uncertain_steps = bool(step_uncertainties) and max(step_uncertainties.values()) > low_uncertainty_threshold
+        # Only steps the prompt will actually render can carry a marker, so uncertainty
+        # beyond that window must not keep the trajectory alive — otherwise generation runs
+        # against a prompt that explains markers it does not contain.
+        step_uncertainties = {k: v for k, v in step_uncertainties.items() if k <= MAX_RENDERED_STEPS}
+        has_uncertain_steps = bool(step_uncertainties) and max(step_uncertainties.values()) > 0
         if not has_uncertain_steps:
             logger.info(
                 f"Skipping guideline generation{' for segment' + debug_suffix if debug_suffix else ''}: "
-                f"no steps above low_uncertainty_threshold ({low_uncertainty_threshold})"
+                f"no renderable step (1-{MAX_RENDERED_STEPS}) with non-zero uncertainty"
             )
             return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
@@ -413,22 +440,8 @@ def _generate_guideline_result(
         logger.warning(f"LLM returned empty response for consistency guideline generation. Model: {llm_settings.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
-    try:
-        guidelines = GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
-        return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
-    except JSONDecodeError:
-        # LLMs sometimes emit LaTeX-style \( \) in string values which are not valid JSON
-        # escape sequences. Escape lone backslashes and retry before giving up.
-        fixed = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", clean_response)
-        try:
-            guidelines = GuidelineGenerationResponse.model_validate(json.loads(fixed)).guidelines
-            return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
-        except (JSONDecodeError, ValidationError) as e:
-            logger.warning(f"Failed to parse consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-            return GuidelineGenerationResult(guidelines=[], task_description=task_description)
-    except ValidationError as e:
-        logger.warning(f"Failed to validate consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
+    guidelines = parse_guideline_response(clean_response, "consistency")
+    return GuidelineGenerationResult(guidelines=guidelines or [], task_description=task_description)
 
 
 def generate_consistency_guidelines(
@@ -465,12 +478,26 @@ def generate_consistency_guidelines(
         config = yaml.safe_load(f)
     logger.info(f"Loaded consistency configuration from {config_path}")
 
-    low_uncertainty_threshold = config.get("low_uncertainty_threshold", DEFAULT_LOW_UNCERTAINTY_THRESHOLD)
-    high_uncertainty_threshold = config.get("high_uncertainty_threshold", DEFAULT_HIGH_UNCERTAINTY_THRESHOLD)
-    if low_uncertainty_threshold > high_uncertainty_threshold:
+    # Fail loudly on a threshold outside the score range. Step uncertainty is normalised to
+    # [0, 1], so a value like 15 (meaning 15%) would clear no step for any trajectory and
+    # silently downgrade every run to a single ELEVATED marker. 0 is excluded at the other
+    # end: it marks every fully-consistent step HIGH, which the gate's own > 0 semantics call
+    # not uncertain at all. Bools are rejected explicitly because bool subclasses int and
+    # would otherwise pass the range test.
+    threshold = config.get("high_uncertainty_threshold", DEFAULT_HIGH_UNCERTAINTY_THRESHOLD)
+    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 < threshold <= 1:
         raise EvolveException(
-            f"Invalid consistency config at {config_path}: low_uncertainty_threshold "
-            f"({low_uncertainty_threshold}) must not exceed high_uncertainty_threshold ({high_uncertainty_threshold})."
+            f"Invalid consistency config at {config_path}: high_uncertainty_threshold must be a number in (0, 1] "
+            f"— uncertainty is normalised to that range, and 0 would mark every fully-consistent step HIGH. Got {threshold!r}."
+        )
+
+    # low_uncertainty_threshold was removed in favour of the single threshold above. A stale
+    # key in a custom config is silently ignored by config.get, and YAML is where it is most
+    # likely to survive — config/guidelines.py already warns for the retired env var.
+    if "low_uncertainty_threshold" in config:
+        logger.warning(
+            f"Ignoring retired low_uncertainty_threshold in {config_path}: the accurate method now uses a single "
+            f"high_uncertainty_threshold, and any step below it with non-zero uncertainty is marked ELEVATED."
         )
 
     messages = trajectory.get("messages", [])
@@ -540,7 +567,7 @@ def generate_consistency_guidelines(
     # Only attempt when every assistant message's content field allows a 1:1 step index
     # mapping between segment_trajectory and transform_trajectory_to_IR.
     subtasks = []
-    if n_scorable_steps >= 2 and _can_segment_trajectory(messages):
+    if n_scorable_steps >= SEGMENTATION_MIN_STEPS and _can_segment_trajectory(messages):
         try:
             from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
@@ -651,22 +678,8 @@ def _generate_fast_guideline_result(
         logger.warning(f"LLM returned empty response for fast consistency guideline generation. Model: {llm_settings.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
-    try:
-        guidelines = GuidelineGenerationResponse.model_validate(json.loads(clean_response)).guidelines
-        return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
-    except JSONDecodeError:
-        # LLMs sometimes emit LaTeX-style \( \) in string values which are not valid JSON
-        # escape sequences. Escape lone backslashes and retry before giving up.
-        fixed = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", clean_response)
-        try:
-            guidelines = GuidelineGenerationResponse.model_validate(json.loads(fixed)).guidelines
-            return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
-        except (JSONDecodeError, ValidationError) as e:
-            logger.warning(f"Failed to parse fast consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-            return GuidelineGenerationResult(guidelines=[], task_description=task_description)
-    except ValidationError as e:
-        logger.warning(f"Failed to validate fast consistency guideline response: {e}. Response: {repr(clean_response[:500])}")
-        return GuidelineGenerationResult(guidelines=[], task_description=task_description)
+    guidelines = parse_guideline_response(clean_response, "fast consistency")
+    return GuidelineGenerationResult(guidelines=guidelines or [], task_description=task_description)
 
 
 def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGenerationResult]:
@@ -729,7 +742,13 @@ def generate_consistency_guidelines_fast(trajectory: dict) -> list[GuidelineGene
     n_steps = len(steps_list)
 
     subtasks = []
-    if evolve_config.segmentation_enabled:
+    # No _can_segment_trajectory guard here: that checks alignment with
+    # transform_trajectory_to_IR's numbering, which is the accurate path's concern. This
+    # path builds steps_list from parse_openai_agents_trajectory, and segment_trajectory
+    # calls the same function on the same messages, so the index spaces agree by
+    # construction. Adding the guard would only disable segmentation for trajectory shapes
+    # it already handles — native tool_calls, and parallel function calls in one message.
+    if evolve_config.segmentation_enabled and n_steps >= SEGMENTATION_MIN_STEPS:
         from altk_evolve.llm.guidelines.segmentation import segment_trajectory  # avoid circular import
 
         try:

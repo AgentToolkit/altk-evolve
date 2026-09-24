@@ -18,6 +18,12 @@ Evolve is a system designed to help agents improve over time by learning from th
 
 <github-repo-card repo="agenttoolkit/altk-evolve"></github-repo-card>
 
+## Latest from Evolve
+
+Research, releases, and practical findings from the Evolve team.
+
+--8<-- "includes/latest-updates.md"
+
 === "Lite"
     When setting up API keys and extra services are too much
 

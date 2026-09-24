@@ -260,10 +260,10 @@ class TestConsolidateGuidelines:
         ]
 
         mock_backend = MagicMock()
-        # Consolidation reads via the INTERNAL seam (_search_entities_impl), not
+        # Consolidation reads via the administrative scan seam, not
         # public search_entities, so a redacting post_read plugin can't make it
         # persist the redacted view back to the store.
-        mock_backend._search_entities_impl.return_value = entities_cluster
+        mock_backend.scan_entities.return_value = entities_cluster
         client = _make_client(mock_backend)
 
         with patch.object(client, "_cluster_guideline_entities", return_value=[entities_cluster]):
@@ -271,7 +271,7 @@ class TestConsolidateGuidelines:
 
         # The read must NOT go through the public (post_read-firing) API.
         mock_backend.search_entities.assert_not_called()
-        mock_backend._search_entities_impl.assert_called_once()
+        mock_backend.scan_entities.assert_called_once_with("test-ns", filters={"type": "guideline"}, limit=10000)
 
         # Verify insert was called with correct args
         assert mock_backend.update_entities.call_count == 1

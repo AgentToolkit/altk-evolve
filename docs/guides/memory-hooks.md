@@ -99,6 +99,7 @@ Notes:
 |---|---|---|---|
 | `MetadataNormalizerPlugin` (native) | `memory_pre_write` | transform | Copies `task_id` → `trace_id` when only the former is present (MCP-saved trajectories vs Phoenix-synced ones) and stamps `created_at` |
 | `AccessStampPlugin` (native) | `memory_post_read` | fire_and_forget | Stamps `last_accessed` (ISO-8601 UTC) on read entities via the metadata-patch path |
+| `LegalHoldMemoryPlugin` (native) | `memory_pre_delete` | sequential | Refuses deletion while stored metadata contains `legal_hold: true` |
 | `PIIFilterMemoryPlugin` (**raw CPEX**) | `memory_pre_write`, `llm_pre_call` | sequential | Regex PII method (adapts the external `cpex-pii-filter` plugin onto Evolve's hook types); requires `pip install 'altk-evolve[pii-regex]'` |
 | `ReadiSemanticPIIPlugin` (native) | `memory_pre_write`, `llm_pre_call` | sequential | Semantic (NER) PII method via IBM READI — catches **names**, locations and organizations that regex cannot; requires `pip install 'altk-evolve[pii-semantic]'` |
 | `SecretsFilterMemoryPlugin` (native) | `memory_pre_write`, `llm_pre_call` | sequential | Structured **secrets** method (native plugin wrapping `cpex-secrets-detection`'s Rust core) — catches **credentials/tokens** (AWS keys, GitHub/Slack tokens, Stripe secrets, private-key blocks) that neither PII method targets; requires `pip install 'altk-evolve[secrets]'` |

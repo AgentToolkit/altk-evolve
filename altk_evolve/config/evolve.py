@@ -12,6 +12,9 @@ class EvolveConfig(BaseSettings):
     settings: BaseSettings | None = None
     clustering_threshold: float = 0.80
     segmentation_enabled: bool = True
+    retention_scheduler_enabled: bool = True
+    retention_poll_seconds: float = Field(default=10, gt=0)
+    retention_max_workers: int = Field(default=1, ge=1)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     # Consolidation dosage knobs (see docs: capability-dependent dosage).
     #   none     - skip consolidation entirely
