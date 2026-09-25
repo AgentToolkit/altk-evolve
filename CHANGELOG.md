@@ -4,6 +4,138 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-09-25)
+
+### Bug Fixes
+
+- **agent-wiki**: Add timeout to compare-outcomes LLM judge call
+  ([#274](https://github.com/AgentToolkit/altk-evolve/pull/274),
+  [`bc25f93`](https://github.com/AgentToolkit/altk-evolve/commit/bc25f93ac3a01b6abd9f5a77265c73f540b988e3))
+
+- **consistency**: Check list homogeneity before inverting
+  ([#317](https://github.com/AgentToolkit/altk-evolve/pull/317),
+  [`1a5122d`](https://github.com/AgentToolkit/altk-evolve/commit/1a5122ddb145bf92f5c9657ebcb168bdf97ae315))
+
+- **consistency**: Clamp the marker ranking too, and drop four stray prompt files
+  ([#319](https://github.com/AgentToolkit/altk-evolve/pull/319),
+  [`c296c10`](https://github.com/AgentToolkit/altk-evolve/commit/c296c1073d880b5a0098fc70baa4edde74084c1d))
+
+- **consistency**: Clamp the skip gate to the rendered window, drop the wrong fast-path guard
+  ([#319](https://github.com/AgentToolkit/altk-evolve/pull/319),
+  [`c296c10`](https://github.com/AgentToolkit/altk-evolve/commit/c296c1073d880b5a0098fc70baa4edde74084c1d))
+
+- **consistency**: Don't invert a ragged top-level list
+  ([#317](https://github.com/AgentToolkit/altk-evolve/pull/317),
+  [`1a5122d`](https://github.com/AgentToolkit/altk-evolve/commit/1a5122ddb145bf92f5c9657ebcb168bdf97ae315))
+
+- **consistency**: Keep the intermediate key when flattening deeper (H1)
+  ([#317](https://github.com/AgentToolkit/altk-evolve/pull/317),
+  [`1a5122d`](https://github.com/AgentToolkit/altk-evolve/commit/1a5122ddb145bf92f5c9657ebcb168bdf97ae315))
+
+- **consistency**: One uncertainty threshold, and never mark nothing
+  ([#319](https://github.com/AgentToolkit/altk-evolve/pull/319),
+  [`c296c10`](https://github.com/AgentToolkit/altk-evolve/commit/c296c1073d880b5a0098fc70baa4edde74084c1d))
+
+- **consistency**: Preserve JSON-array responses in the analyzer
+  ([#317](https://github.com/AgentToolkit/altk-evolve/pull/317),
+  [`1a5122d`](https://github.com/AgentToolkit/altk-evolve/commit/1a5122ddb145bf92f5c9657ebcb168bdf97ae315))
+
+- **consistency**: Report no-match for non-mapping alternate responses
+  ([#317](https://github.com/AgentToolkit/altk-evolve/pull/317),
+  [`1a5122d`](https://github.com/AgentToolkit/altk-evolve/commit/1a5122ddb145bf92f5c9657ebcb168bdf97ae315))
+
+- **consistency**: Tell an unreadable resample from a differently-shaped one
+  ([#317](https://github.com/AgentToolkit/altk-evolve/pull/317),
+  [`1a5122d`](https://github.com/AgentToolkit/altk-evolve/commit/1a5122ddb145bf92f5c9657ebcb168bdf97ae315))
+
+- **docs**: Point Codex tutorial at the install-script instructions
+  ([#325](https://github.com/AgentToolkit/altk-evolve/pull/325),
+  [`b81d64e`](https://github.com/AgentToolkit/altk-evolve/commit/b81d64ee56d29f7492eb666bad4e60642eb92add))
+
+- **docs**: Resolve mkdocs --strict build warnings
+  ([#325](https://github.com/AgentToolkit/altk-evolve/pull/325),
+  [`b81d64e`](https://github.com/AgentToolkit/altk-evolve/commit/b81d64ee56d29f7492eb666bad4e60642eb92add))
+
+- **guidelines**: Decide escape-repair corruption per value, not per document
+  ([#318](https://github.com/AgentToolkit/altk-evolve/pull/318),
+  [`4e14bf6`](https://github.com/AgentToolkit/altk-evolve/commit/4e14bf682c4f1956b597432516b553f798b72392))
+
+- **guidelines**: Detect a misread backslash from the escape, not the leftovers
+  ([#318](https://github.com/AgentToolkit/altk-evolve/pull/318),
+  [`4e14bf6`](https://github.com/AgentToolkit/altk-evolve/commit/4e14bf682c4f1956b597432516b553f798b72392))
+
+- **guidelines**: One repairing parser for LLM guideline responses
+  ([#318](https://github.com/AgentToolkit/altk-evolve/pull/318),
+  [`4e14bf6`](https://github.com/AgentToolkit/altk-evolve/commit/4e14bf682c4f1956b597432516b553f798b72392))
+
+- **guidelines**: Only treat \u as an escape when four hex digits follow
+  ([#318](https://github.com/AgentToolkit/altk-evolve/pull/318),
+  [`4e14bf6`](https://github.com/AgentToolkit/altk-evolve/commit/4e14bf682c4f1956b597432516b553f798b72392))
+
+- **guidelines**: Stop the escape repair corrupting text, and let it survive \\
+  ([#318](https://github.com/AgentToolkit/altk-evolve/pull/318),
+  [`4e14bf6`](https://github.com/AgentToolkit/altk-evolve/commit/4e14bf682c4f1956b597432516b553f798b72392))
+
+- **memory**: Preserve ownership and harden retention execution
+  ([#326](https://github.com/AgentToolkit/altk-evolve/pull/326),
+  [`0a3881b`](https://github.com/AgentToolkit/altk-evolve/commit/0a3881bf45422765f9caf59e1072eac5986be1f5))
+
+- **retention**: Address redaction and sweep review findings
+  ([#326](https://github.com/AgentToolkit/altk-evolve/pull/326),
+  [`0a3881b`](https://github.com/AgentToolkit/altk-evolve/commit/0a3881bf45422765f9caf59e1072eac5986be1f5))
+
+- **retention**: Replay completed runs before policy validation
+  ([#326](https://github.com/AgentToolkit/altk-evolve/pull/326),
+  [`0a3881b`](https://github.com/AgentToolkit/altk-evolve/commit/0a3881bf45422765f9caf59e1072eac5986be1f5))
+
+### Documentation
+
+- Add adversarial code review guide ([#292](https://github.com/AgentToolkit/altk-evolve/pull/292),
+  [`cec24dd`](https://github.com/AgentToolkit/altk-evolve/commit/cec24ddda3ebb4f4eaef4ee03235a60d795dc151))
+
+- Add consistency paper and blog post to latest updates
+  ([#322](https://github.com/AgentToolkit/altk-evolve/pull/322),
+  [`89d89da`](https://github.com/AgentToolkit/altk-evolve/commit/89d89da8bc59d6ea2d854bde0c99ed943214ea1f))
+
+- Address review feedback on the adversarial-review guide
+  ([#292](https://github.com/AgentToolkit/altk-evolve/pull/292),
+  [`cec24dd`](https://github.com/AgentToolkit/altk-evolve/commit/cec24ddda3ebb4f4eaef4ee03235a60d795dc151))
+
+- Pin the reviewed SHA and cut the network in the review sandbox
+  ([#292](https://github.com/AgentToolkit/altk-evolve/pull/292),
+  [`cec24dd`](https://github.com/AgentToolkit/altk-evolve/commit/cec24ddda3ebb4f4eaef4ee03235a60d795dc151))
+
+- Single-source "Latest from Evolve" updates across docs and README
+  ([#320](https://github.com/AgentToolkit/altk-evolve/pull/320),
+  [`125ba3b`](https://github.com/AgentToolkit/altk-evolve/commit/125ba3bfd64808c2143d547f2c18b9fa10f629ce))
+
+- Single-source "Latest from Evolve" updates in docs and README
+  ([#320](https://github.com/AgentToolkit/altk-evolve/pull/320),
+  [`125ba3b`](https://github.com/AgentToolkit/altk-evolve/commit/125ba3bfd64808c2143d547f2c18b9fa10f629ce))
+
+- **contributing**: Document docs preview and latest-updates single-sourcing
+  ([#320](https://github.com/AgentToolkit/altk-evolve/pull/320),
+  [`125ba3b`](https://github.com/AgentToolkit/altk-evolve/commit/125ba3bfd64808c2143d547f2c18b9fa10f629ce))
+
+### Features
+
+- **agent-wiki**: Add compare-outcomes pass + wire into ingest
+  ([#274](https://github.com/AgentToolkit/altk-evolve/pull/274),
+  [`bc25f93`](https://github.com/AgentToolkit/altk-evolve/commit/bc25f93ac3a01b6abd9f5a77265c73f540b988e3))
+
+- **agent-wiki**: Add compare-outcomes pass for contrastive guidelines
+  ([#274](https://github.com/AgentToolkit/altk-evolve/pull/274),
+  [`bc25f93`](https://github.com/AgentToolkit/altk-evolve/commit/bc25f93ac3a01b6abd9f5a77265c73f540b988e3))
+
+- **hooks**: Configure plugin labels and UI visibility
+  ([#326](https://github.com/AgentToolkit/altk-evolve/pull/326),
+  [`0a3881b`](https://github.com/AgentToolkit/altk-evolve/commit/0a3881bf45422765f9caf59e1072eac5986be1f5))
+
+- **memory**: Add plugin display metadata and harden retention
+  ([#326](https://github.com/AgentToolkit/altk-evolve/pull/326),
+  [`0a3881b`](https://github.com/AgentToolkit/altk-evolve/commit/0a3881bf45422765f9caf59e1072eac5986be1f5))
+
+
 ## v1.2.0 (2026-09-14)
 
 ### Bug Fixes
