@@ -227,6 +227,18 @@ class RetentionStore:
             rows = connection.execute(statement.format(namespace="?"), (namespace_id,)).fetchall()
             return [self._policy_record(row) for row in rows]
 
+    def get_run_request_hash(self, *, namespace_id: str, run_id: str) -> str | None:
+        """Look up a reservation without creating a new operation."""
+        sql = "SELECT request_hash FROM evolve_retention_requests WHERE namespace_id=%s AND run_id=%s"
+        if self._is_postgres:
+            with self._postgres.cursor() as cursor:
+                cursor.execute(sql, (namespace_id, run_id))
+                row = cursor.fetchone()
+        else:
+            with self._connect_sqlite() as connection:
+                row = connection.execute(sql.replace("%s", "?"), (namespace_id, run_id)).fetchone()
+        return row[0] if row is not None else None
+
     def claim_run(
         self, *, namespace_id: str, run_id: str, request_hash: str, policy_id: str, agent_id: str | None, initiated_by: str | None
     ) -> tuple[bool, str]:

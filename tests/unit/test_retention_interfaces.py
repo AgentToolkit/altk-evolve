@@ -278,3 +278,27 @@ def test_manual_run_cannot_claim_existing_history_without_request_record(interfa
     assert service.store.get_run(namespace_id="a", run_id="existing") == original
     with service.store._connect_sqlite() as conn:
         assert conn.execute("SELECT count(*) FROM evolve_retention_requests").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("policy_change", ["disable", "delete"])
+def test_manual_success_replays_after_policy_change(interfaces, policy_change):
+    client, http = interfaces
+    service = client.retention("a", agent_id="agent-a")
+    service.create_policy("p")
+    body = {"policy_id": "p", "dry_run": True, "run_id": "completed-before-change"}
+    first = http.post("/manage/retention/runs", json=body)
+    assert first.status_code == 200, first.text
+    if policy_change == "disable":
+        service.update_policy("p", enabled=False)
+    else:
+        service.delete_policy("p")
+    replay = http.post("/manage/retention/runs", json=body)
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == first.json()
+    assert http.post("/manage/retention/runs", json={**body, "dry_run": False}).status_code == 409
+    assert http.post("/manage/retention/runs", json=body, headers={"x-agent": "agent-b"}).status_code == 409
+    assert http.post("/manage/retention/runs", json=body, headers={"x-manage": "no"}).status_code == 403
+    fresh = http.post("/manage/retention/runs", json={**body, "run_id": "new-operation"})
+    assert fresh.status_code == (400 if policy_change == "disable" else 404)
+    assert service.store.get_run(namespace_id="a", run_id="new-operation") is None
+    assert service.store.get_run_request_hash(namespace_id="a", run_id="new-operation") is None

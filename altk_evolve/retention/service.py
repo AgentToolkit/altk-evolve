@@ -313,9 +313,6 @@ class RetentionService:
                 raise RetentionError(
                     "Durable sweeping uses current policy eligibility and namespace/agent scope; external matches, arbitrary filters, and historical execution are not supported"
                 )
-        policy = self.get_policy(policy_id)
-        if not policy["enabled"]:
-            raise RetentionError("Retention policy is disabled")
         run_id = run_id or str(uuid.uuid4())
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", run_id):
             raise RetentionError("Invalid run_id")
@@ -333,6 +330,12 @@ class RetentionService:
                 sort_keys=True,
             ).encode()
         ).hexdigest()
+        existing_hash = self.store.get_run_request_hash(namespace_id=self.namespace_id, run_id=run_id)
+        if existing_hash is not None:
+            return self._replay_run(run_id, request_hash, existing_hash)
+        policy = self.get_policy(policy_id)
+        if not policy["enabled"]:
+            raise RetentionError("Retention policy is disabled")
         claimed, existing_hash = self.store.claim_run(
             namespace_id=self.namespace_id,
             run_id=run_id,
@@ -342,15 +345,7 @@ class RetentionService:
             initiated_by=initiated_by,
         )
         if not claimed:
-            if existing_hash != request_hash:
-                raise RetentionError("Run ID already belongs to a different request", 409)
-            record = self.store.get_run(namespace_id=self.namespace_id, run_id=run_id)
-            status = record["status"] if record else "running"
-            if record is not None and status in {"completed", "cancelled"}:
-                return dict(record["report"])
-            raise RetentionError(
-                "Retention operation is already recorded; inspect its run history", 409, {"run_id": run_id, "status": status}
-            )
+            return self._replay_run(run_id, request_hash, existing_hash)
         try:
             return self._execute_run(
                 policy_id,
@@ -366,6 +361,15 @@ class RetentionService:
             raise
         except Exception as exc:
             raise RetentionError("Retention run failed; inspect its run history", 500, {"run_id": run_id}) from exc
+
+    def _replay_run(self, run_id: str, request_hash: str, existing_hash: str) -> dict[str, Any]:
+        if existing_hash != request_hash:
+            raise RetentionError("Run ID already belongs to a different request", 409)
+        record = self.store.get_run(namespace_id=self.namespace_id, run_id=run_id)
+        status = record["status"] if record else "running"
+        if record is not None and status in {"completed", "cancelled"}:
+            return dict(record["report"])
+        raise RetentionError("Retention operation is already recorded; inspect its run history", 409, {"run_id": run_id, "status": status})
 
     def _execute_run(
         self,
