@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import hashlib
+import json
+import uuid
 from functools import wraps
 from typing import Any, TYPE_CHECKING, ParamSpec, TypeVar
 from collections.abc import Callable
@@ -310,6 +313,73 @@ class RetentionService:
                 raise RetentionError(
                     "Durable sweeping uses current policy eligibility and namespace/agent scope; external matches, arbitrary filters, and historical execution are not supported"
                 )
+        policy = self.get_policy(policy_id)
+        if not policy["enabled"]:
+            raise RetentionError("Retention policy is disabled")
+        run_id = run_id or str(uuid.uuid4())
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", run_id):
+            raise RetentionError("Invalid run_id")
+        request_hash = hashlib.sha256(
+            json.dumps(
+                {
+                    "policy_id": policy_id,
+                    "initiated_by": initiated_by,
+                    "dry_run": dry_run,
+                    "as_of": now.isoformat() if now else None,
+                    "scan_limit": scan_limit,
+                    "metadata_filters": filters,
+                    "additional_matches": additional_matches or [],
+                },
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        claimed, existing_hash = self.store.claim_run(
+            namespace_id=self.namespace_id,
+            run_id=run_id,
+            request_hash=request_hash,
+            policy_id=policy_id,
+            agent_id=filters.get("agent_id"),
+            initiated_by=initiated_by,
+        )
+        if not claimed:
+            if existing_hash != request_hash:
+                raise RetentionError("Run ID already belongs to a different request", 409)
+            record = self.store.get_run(namespace_id=self.namespace_id, run_id=run_id)
+            status = record["status"] if record else "running"
+            if record is not None and status in {"completed", "cancelled"}:
+                return dict(record["report"])
+            raise RetentionError(
+                "Retention operation is already recorded; inspect its run history", 409, {"run_id": run_id, "status": status}
+            )
+        try:
+            return self._execute_run(
+                policy_id,
+                dry_run=dry_run,
+                initiated_by=initiated_by,
+                now=now,
+                scan_limit=scan_limit,
+                run_id=run_id,
+                filters=filters,
+                additional_matches=additional_matches,
+            )
+        except RetentionError:
+            raise
+        except Exception as exc:
+            raise RetentionError("Retention run failed; inspect its run history", 500, {"run_id": run_id}) from exc
+
+    def _execute_run(
+        self,
+        policy_id: str,
+        *,
+        dry_run: bool,
+        initiated_by: str | None,
+        now: dt.datetime | None,
+        scan_limit: int | None,
+        run_id: str,
+        filters: dict[str, Any],
+        additional_matches: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        if self.client.config.backend == "postgres" and not dry_run:
             from altk_evolve.retention.collection import Collection
 
             return Collection(self.client, self.namespace_id, filters.get("agent_id")).run(

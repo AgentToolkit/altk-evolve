@@ -290,3 +290,24 @@ def test_nested_rules_fail_closed_on_missing_or_duplicate(setup):
     assert updated["policy"]["rules"][0]["action"] == "delete"
     assert invoke("policies", "rules", "list", "p", "-n", "a")["items"][0]["max_age_days"] == 30
     assert invoke("policies", "rules", "list", "p", "-n", "a")["items"][0]["name"] == "old"
+
+
+def test_source_deletion_grace_can_be_configured(setup):
+    added = invoke(
+        "policies",
+        "rules",
+        "add",
+        "p",
+        "-n",
+        "a",
+        "--name",
+        "orphan",
+        "--source-deleted",
+        "--min-source-deleted-days",
+        "7",
+        "--action",
+        "delete",
+    )
+    assert added["policy"]["rules"][-1]["min_source_deleted_days"] == 7
+    updated = invoke("policies", "rules", "update", "p", "-n", "a", "--name", "orphan", "--min-source-deleted-days", "14")
+    assert updated["policy"]["rules"][-1]["min_source_deleted_days"] == 14

@@ -44,7 +44,7 @@ def _retention_item_payload(item: Any, entity: RecordedEntity | None, *, dry_run
 
 def audit_payload(report: dict[str, Any]) -> dict[str, Any]:
     """Keep durable run history useful without retaining deleted memory content."""
-    audit = {
+    audit: dict[str, Any] = {
         key: report[key]
         for key in (
             "run_id",
@@ -60,8 +60,8 @@ def audit_payload(report: dict[str, Any]) -> dict[str, Any]:
         )
         if key in report
     }
-    audit["error_count"] = len(report.get("errors", []))
-    audit["warning_count"] = len(report.get("warnings", []))
+    audit["error_count"] = report.get("error_count", len(report.get("errors", [])))
+    audit["warning_count"] = report.get("warning_count", len(report.get("warnings", [])))
     item_fields = {"entity_id", "entity_type", "created_at", "action", "outcome", "reason", "rule"}
     for bucket in ("flagged", "deleted", "skipped"):
         items = []
@@ -69,6 +69,9 @@ def audit_payload(report: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(item, dict):
                 continue
             projected = {key: item[key] for key in item_fields if key in item}
+            reason = projected.get("reason")
+            if isinstance(reason, str) and reason.startswith("cascade:"):
+                projected["reason"] = "cascade"
             items.append(projected)
         audit[bucket] = items
     return audit

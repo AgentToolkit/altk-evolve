@@ -193,3 +193,66 @@ def test_execution_failure_preserves_audit_without_exposing_exception_text(inter
     report = service.get_run(result.json()["detail"]["run_id"])
     assert report["status"] == "failed"
     assert report["report"]["failure"]["type"] == "RuntimeError"
+
+
+def test_manual_retry_reuses_run_without_repeating_work(interfaces, monkeypatch):
+    client, http = interfaces
+    service = client.retention("a", agent_id="agent-a")
+    service.put_policy("p", name="P", policy={"rules": [{"name": "old", "max_age_days": 1, "action": "delete"}]})
+    calls = []
+
+    def fail_scan(*args, **kwargs):
+        calls.append(True)
+        raise RuntimeError("PRIVATE provider failure")
+
+    monkeypatch.setattr(client, "scan_entities", fail_scan)
+    body = {"policy_id": "p", "dry_run": True, "run_id": "manual-retry-test"}
+    first = http.post("/manage/retention/runs", json=body)
+    assert first.status_code == 500
+    assert first.json()["detail"]["run_id"] == body["run_id"]
+    second = http.post("/manage/retention/runs", json=body)
+    assert second.status_code == 409
+    assert second.json()["detail"]["run_id"] == body["run_id"]
+    assert len(calls) == 1
+    runs = http.get("/manage/retention/runs").json()["items"]
+    assert len(runs) == 1
+    assert runs[0]["run_id"] == body["run_id"]
+    assert "PRIVATE" not in str(first.json()) + str(second.json()) + str(runs)
+
+
+def test_manual_success_is_replayed_and_key_cannot_change_scope(interfaces):
+    client, http = interfaces
+    client.retention("a", agent_id="agent-a").create_policy("p")
+    body = {"policy_id": "p", "dry_run": True, "run_id": "successful-operation"}
+    first = http.post("/manage/retention/runs", json=body)
+    assert first.status_code == 200, first.text
+    second = http.post("/manage/retention/runs", json=body)
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    changed = http.post("/manage/retention/runs", json={**body, "dry_run": False})
+    assert changed.status_code == 409
+
+
+def test_cascade_does_not_persist_source_task_text(interfaces):
+    client, http = interfaces
+    service = client.retention("a", agent_id="agent-a")
+    service.put_policy(
+        "p",
+        name="P",
+        policy={"rules": [{"name": "old", "entity_type": "trajectory", "max_age_days": 0, "action": "delete", "cascade_derived": True}]},
+    )
+    private = "PRIVATE customer escalation details"
+    entities = [
+        Entity(type="trajectory", content=private, metadata={"trace_id": private, "agent_id": "agent-a", "user_id": "alice"}),
+        Entity(type="guideline", content=private, metadata={"source_task_id": private, "agent_id": "agent-a", "user_id": "alice"}),
+    ]
+    for entity in entities:
+        client.update_entities("a", [entity], enable_conflict_resolution=False)
+    response = http.post("/manage/retention/runs", json={"policy_id": "p", "dry_run": False})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert len(report["deleted"]) == 2
+    assert any(item["reason"] == "cascade" for item in report["deleted"])
+    stored = service.store.get_run(namespace_id="a", run_id=report["run_id"])
+    assert private not in json.dumps(stored)
+    assert private not in response.text

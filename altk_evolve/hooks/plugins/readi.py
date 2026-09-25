@@ -43,6 +43,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any, Protocol, runtime_checkable
 
 from altk_evolve.hooks.plugin import HookContext, HookPluginBase
+from altk_evolve.hooks.plugins.identity import IDENTITY_METADATA_KEYS
 
 DEFAULT_REDACTION_TEXT = "[REDACTED]"
 DEFAULT_EXTRACTOR = "default"
@@ -160,7 +161,7 @@ def redact_entities(
             updated["content"] = content
             changed = True
         if redact_metadata and entity.get("metadata"):
-            metadata = _redact_value(entity["metadata"], detect, mask=mask)
+            metadata = _redact_value(entity["metadata"], detect, mask=mask, skip=IDENTITY_METADATA_KEYS)
             if metadata != entity["metadata"]:
                 updated["metadata"] = metadata
                 changed = True

@@ -57,10 +57,11 @@ class RetentionItem:
     entity_id: str
     entity_type: str
     action: str  # "flag" | "delete"
-    reason: str  # "age" | "unused" | "cascade:<trace_id>"
+    reason: str  # Controlled reason code; never embed source task text.
     rule: str
     #: Human-readable "why", including which signal was used and any fallback.
     detail: str = ""
+    cascade_source_id: str | None = None
 
 
 @dataclass
@@ -121,9 +122,12 @@ class RetentionEngine:
     #: How many entities to scan per namespace.
     FETCH_LIMIT = 100_000
 
-    def __init__(self, client: Any, *, source_deleted_ids: set[str] | None = None) -> None:
+    def __init__(
+        self, client: Any, *, source_deleted_ids: set[str] | None = None, source_deletion_times: dict[str, datetime.datetime] | None = None
+    ) -> None:
         self.client = client
         self.source_deleted_ids = source_deleted_ids or set()
+        self.source_deletion_times = source_deletion_times or {}
         self.source_deleted_lookup: Any = None
         self.last_scanned_entities: list[RecordedEntity] = []
 
@@ -171,12 +175,19 @@ class RetentionEngine:
         ``metadata.last_accessed`` stamp. ``on_missing_access_signal`` governs
         whether such a match is still allowed to delete.
         """
-        if (
-            rule.source_deleted
-            and entity.id not in self.source_deleted_ids
-            and not (self.source_deleted_lookup and self.source_deleted_lookup(entity))
-        ):
-            return None
+        if rule.source_deleted:
+            deleted_at = self.source_deletion_times.get(entity.id)
+            if deleted_at is None and self.source_deleted_lookup:
+                deleted_at = self.source_deleted_lookup(entity)
+            if entity.id not in self.source_deleted_ids and not deleted_at:
+                return None
+            if rule.min_source_deleted_days is not None:
+                if not isinstance(deleted_at, datetime.datetime):
+                    return None
+                if deleted_at.tzinfo is None:
+                    deleted_at = deleted_at.replace(tzinfo=datetime.UTC)
+                if now - deleted_at < datetime.timedelta(days=rule.min_source_deleted_days):
+                    return None
         if rule.entity_type is not None and entity.type != rule.entity_type:
             return None
         if rule.max_age_days is not None:
@@ -189,6 +200,8 @@ class RetentionEngine:
                 detail = f"not read for {idle:.1f}d > max_unused_days={rule.max_unused_days}"
                 detail += " (from metadata.last_accessed)" if stamped else f" — {NO_ACCESS_SIGNAL_HINT}"
                 return "unused", detail, not stamped
+        if rule.source_deleted and rule.min_source_deleted_days is not None and rule.max_age_days is None and rule.max_unused_days is None:
+            return "source_deleted", "confirmed source deletion grace period elapsed", False
         return None
 
     def _first_match(
@@ -318,9 +331,10 @@ class RetentionEngine:
                             did,
                             by_id[did].type,
                             "delete",
-                            f"cascade:{trace}",
+                            "cascade",
                             rule.name,
-                            f"derived from session {e.id} (metadata.{self.SOURCE_KEY} == {trace}), which this rule deletes",
+                            "derived from a source selected for deletion",
+                            cascade_source_id=e.id,
                         )
                     )
 

@@ -407,3 +407,24 @@ def test_core_usable_and_native_plugin_fails_closed_with_cpex_blocked():
     )
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
+
+
+def test_semantic_redaction_preserves_identity_but_redacts_free_text():
+    from altk_evolve.hooks.plugins.readi import redact_entities
+
+    subject = "alice@example.com"
+
+    def detect(text):
+        start = text.find(subject)
+        return [(start, start + len(subject))] if start >= 0 else []
+
+    entity = {
+        "content": f"Contact {subject}",
+        "metadata": {"owner_id": subject, "user_id": subject, "thread_id": subject, "title": subject},
+    }
+    result = redact_entities([entity], detect)[0]
+    assert result["metadata"]["user_id"] == subject
+    assert result["metadata"]["owner_id"] == subject
+    assert result["metadata"]["thread_id"] == subject
+    assert result["metadata"]["title"] == "[REDACTED]"
+    assert subject not in result["content"]
