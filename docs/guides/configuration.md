@@ -47,6 +47,7 @@ All configuration variables are prefixed with `EVOLVE_`.
 | `EVOLVE_NAMESPACE_ID` | Namespace ID for isolation                                                    | `evolve`                                 |
 | `EVOLVE_GUIDELINES_MODE` | Guideline generation pipeline: `standard`, `consistency`, or `all` — see [Enabling Guidelines](guidelines.md) | `standard` |
 | `EVOLVE_CONSISTENCY_METHOD` | Consistency mode only: `fast` (LLM self-judged) or `accurate` (resampling based) — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method) | `fast` |
+| `EVOLVE_CONSISTENCY_RESAMPLE_MAX_WORKERS` | `accurate` method only: how many resampling calls run in parallel when a provider won't return several completions in one call — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method). Raise it to cut resampling wall-clock, lower it to `1` if the provider rate-limits you | `4` |
 | `EVOLVE_GUIDELINES_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_FACT_EXTRACTION_MODEL` | Model for fact extraction only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
