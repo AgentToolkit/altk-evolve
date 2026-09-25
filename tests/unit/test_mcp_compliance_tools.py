@@ -380,6 +380,7 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
     )
     client.scan_entities.return_value = [entity]
     store = MagicMock()
+    store.get_run_request_hash.return_value = None
     store.claim_run.return_value = (True, "new-request")
     store.get_policy.return_value = {
         "policy_id": "standard",
@@ -441,6 +442,7 @@ def test_run_retention_applies_external_matches_in_scope(client):
     entity = _entity("orphan", metadata={"agent_id": "agent-a"})
     client.scan_entities.side_effect = [[], [entity]]
     store = MagicMock()
+    store.get_run_request_hash.return_value = None
     store.claim_run.return_value = (True, "new-request")
     store.get_policy.return_value = {
         "policy_id": "standard",
@@ -482,6 +484,7 @@ def test_run_retention_applies_external_matches_in_scope(client):
 def test_run_retention_persists_failed_status_when_execution_raises(client):
     client.scan_entities.side_effect = RuntimeError("database unavailable")
     store = MagicMock()
+    store.get_run_request_hash.return_value = None
     store.claim_run.return_value = (True, "new-request")
     store.get_policy.return_value = {
         "policy_id": "standard",
