@@ -9,7 +9,7 @@ gateway ignores `n` and returns one choice), so the fast path is only ever a fas
 from unittest.mock import Mock, patch
 
 import pytest
-from litellm.exceptions import UnsupportedParamsError
+from litellm.exceptions import BadRequestError, ContextWindowExceededError, UnsupportedParamsError
 
 from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.llm.guidelines.consistency_analyzer import inference_utils
@@ -34,6 +34,20 @@ def _response(count: int) -> Mock:
 
 def _unsupported() -> UnsupportedParamsError:
     return UnsupportedParamsError(message="n is not supported", model="anthropic/claude", llm_provider="anthropic")
+
+
+def _context_window_exceeded() -> ContextWindowExceededError:
+    """A 400 that subclasses BadRequestError but says nothing about `n`."""
+    return ContextWindowExceededError(
+        message="This model's maximum context length is 8192 tokens",
+        model="anthropic/claude",
+        llm_provider="anthropic",
+    )
+
+
+def _bad_request() -> BadRequestError:
+    """A plain 400 — malformed request, unknown field, etc. Also not about `n`."""
+    return BadRequestError(message="invalid value for 'temperature'", model="anthropic/claude", llm_provider="anthropic")
 
 
 def _sample(**overrides):
@@ -159,6 +173,36 @@ def test_short_batched_return_is_topped_up():
     assert mock_completion.call_count == 4
     assert mock_completion.call_args_list[0].kwargs["n"] == 5
     assert all("n" not in call.kwargs for call in mock_completion.call_args_list[1:])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "error, label",
+    [(_context_window_exceeded, "context window exceeded"), (_bad_request, "unrelated 400")],
+)
+def test_a_400_that_is_not_about_n_does_not_poison_the_capability_cache(error, label):
+    """Only an error naming `n` may disable batching for the process.
+
+    ContextWindowExceededError and ContentPolicyViolationError both subclass
+    BadRequestError, so catching the base class treated a prompt that was merely too long
+    as proof the provider refuses `n`. Every later step then took the loop route, which
+    re-bills the trajectory prompt per sample and caps samples at MAX_LOOP_SAMPLES —
+    a silent, process-wide cost increase triggered by an unrelated failure.
+    """
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=["n"]):
+        with patch.object(inference_utils, "completion") as mock_completion:
+            # Both batched attempts fail with the unrelated 400, then the loop supplies 5.
+            mock_completion.side_effect = [error()] + [_response(1)] * 5
+            first = _sample(model_id="anthropic/claude")
+            assert len(first) == 5, f"{label} should still fall back for this step"
+
+            # The next step must probe again rather than assume `n` is unsupported.
+            mock_completion.reset_mock()
+            mock_completion.side_effect = [_response(5)]
+            second = _sample(model_id="anthropic/claude")
+
+    assert len(second) == 5
+    assert mock_completion.call_count == 1, "the batched route must still be tried on the next step"
 
 
 # ── partial results ──────────────────────────────────────────────────

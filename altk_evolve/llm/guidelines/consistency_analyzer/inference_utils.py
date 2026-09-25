@@ -25,7 +25,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from litellm import completion, get_supported_openai_params
-from litellm.exceptions import BadRequestError
+from litellm.exceptions import BadRequestError, UnsupportedParamsError
 
 from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
@@ -119,19 +119,35 @@ def _completion_batched(kwargs: dict, samples: int, model_id: str, provider: str
     """Try to get all `samples` choices from one n=samples call.
 
     Returns whatever choices came back — possibly none, possibly fewer than asked —
-    and never raises. Records a negative result in _N_SUPPORT when the evidence is
-    about the request's shape rather than about a transient failure.
+    and never raises. Records a negative result in _N_SUPPORT only when the error
+    specifically identifies `n` as unsupported, never on a merely-failed request.
     """
     key = (model_id, provider)
     for attempt in range(_BATCHED_ATTEMPTS):
         try:
             choices = list(completion(**kwargs, n=samples).choices)
-        except BadRequestError as e:
-            # UnsupportedParamsError subclasses BadRequestError, so this covers both
-            # litellm's pre-flight refusal and the provider's own 400. Either way the
-            # request shape is wrong and retrying it cannot help.
+        except UnsupportedParamsError as e:
+            # litellm's pre-flight refusal: the parameter is definitively unsupported for
+            # this model, so record it and stop paying for the probe on later steps.
             _N_SUPPORT[key] = False
             logger.info(f"{model_id} does not support n>1 ({e}) — falling back to {samples} separate completions")
+            return []
+        except BadRequestError as e:
+            # A 400 that is *not* specifically about an unsupported parameter. Both
+            # ContextWindowExceededError and ContentPolicyViolationError subclass
+            # BadRequestError, and neither says anything about `n` — so caching a negative
+            # here would send every later step down the loop route, which re-bills the
+            # trajectory prompt once per sample and caps at MAX_LOOP_SAMPLES, for the rest
+            # of the process. Fall back for this step without recording a verdict.
+            #
+            # The cost of being conservative: a provider that rejects n>1 with a plain 400
+            # instead of a typed UnsupportedParamsError pays one rejected call per step
+            # rather than one per process. That is the cheaper mistake — a rejected request
+            # is not billed for tokens — and the alternative, matching on message text,
+            # would misclassify exactly the unrelated 400s this branch exists to protect.
+            # Providers known to behave that way belong in _PROVIDERS_WITHOUT_N, which is
+            # checked before any call is made.
+            logger.debug(f"Batched resampling rejected for {model_id} ({e}) — falling back for this step only")
             return []
         except Exception as e:
             # Timeout, rate limit, 5xx: says nothing about n>1 support, so don't
