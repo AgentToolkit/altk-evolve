@@ -187,7 +187,13 @@ def compute_step_consistency(trajectory: dict, config: dict) -> dict:
             step["consistency"] = get_undefined_consistency()
             continue
 
-        max_samples = config.get("max_samples", step["sampling"]["num_samples"])
+        # Never above the count actually obtained: a step can hold fewer samples than
+        # the config asked for (the resampler caps the per-sample fallback route, and
+        # drops samples that recorded no decision). Since max_samples only feeds the
+        # MIN_FRACTION field-presence threshold below, taking the config's figure on
+        # faith would demand more samples with a field present than the step even has,
+        # skipping every field and scoring the step undefined.
+        max_samples = min(config.get("max_samples", step["sampling"]["num_samples"]), step["sampling"]["num_samples"])
         logger.debug(f"+ [Mixed Consistency] with {max_samples} samples")
 
         # Validate samples and get error message if invalid

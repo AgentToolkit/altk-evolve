@@ -9,6 +9,7 @@ import pytest
 from altk_evolve.llm.guidelines.consistency_guidelines import (
     _can_segment_trajectory,
     _classify_step_response,
+    _drop_non_input_message_keys,
     _is_well_formed_tool_calls,
     _strip_orphaned_tool_messages,
     format_trajectory_data,
@@ -233,6 +234,79 @@ class TestStripOrphanedToolMessages:
         tool_messages = [m for m in result if m.get("role") == "tool"]
         assert len(tool_messages) == 1
         assert tool_messages[0]["content"] == "valid"
+
+
+class TestDropNonInputMessageKeys:
+    def test_producer_annotations_are_dropped(self):
+        """Groq rejects unknown properties outright:
+
+        'messages.2' : for 'role:tool' the following must be
+        satisfied[('messages.2' : property 'outcome' is unsupported)]
+
+        so a trajectory annotated by its producer would fail every sample of the
+        step it annotates rather than simply carrying extra context.
+        """
+        messages = [
+            {"role": "user", "content": "file it", "feedback": {"rating": "up"}},
+            {"role": "tool", "tool_call_id": "1", "content": "done", "outcome": {"status": "success"}},
+        ]
+
+        assert _drop_non_input_message_keys(messages) == [
+            {"role": "user", "content": "file it"},
+            {"role": "tool", "tool_call_id": "1", "content": "done"},
+        ]
+
+    def test_spec_keys_survive(self):
+        messages = [
+            {"role": "system", "content": "be helpful"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": "1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+            },
+            {"role": "tool", "tool_call_id": "1", "name": "f", "content": "5"},
+        ]
+
+        assert _drop_non_input_message_keys(messages) == messages
+
+    def test_list_content_is_passed_through_untouched(self):
+        """The Responses-API function_call shape lives inside `content`; filtering is
+        top-level only, or the parser would lose the calls it derives actions from."""
+        content = [{"type": "function_call", "id": "c1", "function": {"name": "f", "arguments": "{}"}}]
+        messages = [{"role": "assistant", "content": content, "trace_id": "t"}]
+
+        result = _drop_non_input_message_keys(messages)
+
+        assert result == [{"role": "assistant", "content": content}]
+
+    def test_untouched_messages_are_not_copied(self):
+        """A clean message is returned as-is, so the common path allocates nothing."""
+        messages = [{"role": "user", "content": "hi"}]
+
+        result = _drop_non_input_message_keys(messages)
+
+        assert result[0] is messages[0]
+
+    def test_empty_list(self):
+        assert _drop_non_input_message_keys([]) == []
+
+    def test_ir_step_prefixes_are_sanitised(self):
+        """The IR is what resampling replays, so the annotations must be gone by then."""
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "file it"},
+                {"role": "assistant", "content": "", "tool_calls": [{"id": "1", "function": {"name": "f"}}]},
+                {"role": "tool", "tool_call_id": "1", "content": "done", "outcome": {"status": "success"}},
+                {"role": "assistant", "content": "filed"},
+            ],
+            "trace_id": "t",
+            "tools": [{"type": "function", "function": {"name": "f"}}],
+        }
+
+        ir = transform_trajectory_to_IR(trajectory)
+
+        prefix_keys = {key for step in ir["steps"] for msg in step["messages"] for key in msg}
+        assert "outcome" not in prefix_keys
 
 
 class TestParseConsistencyScoreCard:
