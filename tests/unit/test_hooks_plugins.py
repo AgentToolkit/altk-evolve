@@ -85,7 +85,7 @@ def test_normalizer_copies_task_id_to_trace_id(tmp_path: Path):
     # Why this plugin exists: the MCP server's save_trajectory stamps task_id
     # while Phoenix sync stamps trace_id — downstream cascade cleanup keys on
     # trace_id, so MCP-saved sessions would otherwise miss it.
-    client = make_client(tmp_path, NORMALIZER_SPEC)
+    client = make_client(tmp_path, NORMALIZER_SPEC.model_copy(update={"show_in_ui": False, "display_name": "Memory metadata"}))
     client.create_namespace("ns")
     client.update_entities("ns", [Entity(content="x", type="trajectory", metadata={"task_id": "t-42"})], enable_conflict_resolution=False)
 
@@ -439,3 +439,23 @@ def test_readi_native_raises_without_readi():
     plugin = ReadiSemanticPIIPlugin()  # construction is cheap; READI loads lazily
     with pytest.raises(ImportError, match=r"altk-evolve\[pii-semantic\]"):
         plugin.llm_pre_call(LLMPreCallPayload(messages=[{"role": "user", "content": "x"}]), HookContext())
+
+
+@pytest.mark.unit
+def test_pii_redacts_free_text_without_changing_email_subject_or_provenance(tmp_path):
+    pytest.importorskip("cpex_pii_filter")
+    client = make_client(tmp_path, PII_SPEC, NORMALIZER_SPEC)
+    client.ensure_namespace("identity-test")
+    metadata = {
+        key: "alice@example.com" for key in ("user_id", "owner_id", "agent_id", "thread_id", "session_id", "task_id", "source_task_id")
+    }
+    metadata["title"] = "Contact alice@example.com"
+    updates = client.update_entities(
+        "identity-test", [Entity(type="fact", content="Email alice@example.com", metadata=metadata)], enable_conflict_resolution=False
+    )
+    entity = client.get_entity_by_id("identity-test", updates[0].id)
+    for key in metadata.keys() - {"title"}:
+        assert entity.metadata[key] == metadata[key]
+    assert entity.metadata["trace_id"] == "alice@example.com"
+    assert "alice@example.com" not in entity.content
+    assert "alice@example.com" not in entity.metadata["title"]

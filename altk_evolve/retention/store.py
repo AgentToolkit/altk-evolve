@@ -61,6 +61,9 @@ class RetentionStore:
 
     def _ensure_schema(self) -> None:
         statements = [
+            """CREATE TABLE IF NOT EXISTS evolve_retention_requests (
+                namespace_id TEXT NOT NULL, run_id TEXT NOT NULL, request_hash TEXT NOT NULL,
+                PRIMARY KEY (namespace_id, run_id))""",
             """
             CREATE TABLE IF NOT EXISTS evolve_retention_policies (
                 namespace_id TEXT NOT NULL,
@@ -223,6 +226,62 @@ class RetentionStore:
         with self._connect_sqlite() as connection:
             rows = connection.execute(statement.format(namespace="?"), (namespace_id,)).fetchall()
             return [self._policy_record(row) for row in rows]
+
+    def get_run_request_hash(self, *, namespace_id: str, run_id: str) -> str | None:
+        """Look up a reservation without creating a new operation."""
+        sql = "SELECT request_hash FROM evolve_retention_requests WHERE namespace_id=%s AND run_id=%s"
+        if self._is_postgres:
+            with self._postgres.cursor() as cursor:
+                cursor.execute(sql, (namespace_id, run_id))
+                row = cursor.fetchone()
+        else:
+            with self._connect_sqlite() as connection:
+                row = connection.execute(sql.replace("%s", "?"), (namespace_id, run_id)).fetchone()
+        return row[0] if row is not None else None
+
+    def claim_run(
+        self, *, namespace_id: str, run_id: str, request_hash: str, policy_id: str, agent_id: str | None, initiated_by: str | None
+    ) -> tuple[bool, str]:
+        """Reserve an operation atomically; duplicate callers never execute it again."""
+        sql = """INSERT INTO evolve_retention_requests (namespace_id,run_id,request_hash)
+                 VALUES (%s,%s,%s) ON CONFLICT (namespace_id,run_id) DO NOTHING"""
+        select = "SELECT request_hash FROM evolve_retention_requests WHERE namespace_id=%s AND run_id=%s"
+        started = _now()
+        running_sql = """INSERT INTO evolve_retention_runs
+            (namespace_id,run_id,policy_id,agent_id,initiated_by,status,report_json,created_at,updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (namespace_id,run_id) DO NOTHING"""
+        running_values = (
+            namespace_id,
+            run_id,
+            policy_id,
+            agent_id,
+            initiated_by,
+            "running",
+            json.dumps({"run_id": run_id, "started_at": started}),
+            started,
+            started,
+        )
+        if self._is_postgres:
+            import psycopg
+
+            with psycopg.connect(self._postgres.info.dsn, password=self._postgres.info.password) as conn:
+                cursor = conn.execute(sql, (namespace_id, run_id, request_hash))
+                claimed = cursor.rowcount == 1
+                if claimed and conn.execute(running_sql, running_values).rowcount != 1:
+                    conn.rollback()
+                    return False, ""
+                row = conn.execute(select, (namespace_id, run_id)).fetchone()
+                assert row is not None
+                saved_hash = row[0]
+        else:
+            with self._connect_sqlite() as conn:
+                sqlite_cursor = conn.execute(sql.replace("%s", "?"), (namespace_id, run_id, request_hash))
+                claimed = sqlite_cursor.rowcount == 1
+                if claimed and conn.execute(running_sql.replace("%s", "?"), running_values).rowcount != 1:
+                    conn.rollback()
+                    return False, ""
+                saved_hash = conn.execute(select.replace("%s", "?"), (namespace_id, run_id)).fetchone()[0]
+        return claimed, saved_hash
 
     def save_run(
         self,

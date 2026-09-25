@@ -34,8 +34,10 @@ plugins:
   # Requires: pip install 'altk-evolve[pii-semantic]'   (downloads model
   # weights, ~460MB for en_core_web_trf, on first use).
   - name: readi_semantic_pii
+    display_name: Personal information (READI)
+    show_in_ui: true
     kind: altk_evolve.hooks.plugins.readi.ReadiSemanticPIIPlugin
-    description: Semantic (NER) PII masking on memory writes and LLM egress
+    description: Detects and masks personal information, including names, before memories are saved or sent to the AI model.
     hooks:
       - memory_pre_write
       - llm_pre_call
@@ -63,8 +65,9 @@ plugins:
   # Requires: pip install 'altk-evolve[pii-regex]'   ([pii] is a back-compat alias)
   #
   # - name: pii_filter_memory
+  #   display_name: Personal identifiers
   #   kind: altk_evolve.hooks.plugins.pii.PIIFilterMemoryPlugin
-  #   description: Regex PII masking on memory writes and LLM egress
+  #   description: Masks detected email addresses, phone numbers and other structured personal identifiers.
   #   hooks:
   #     - memory_pre_write
   #     - llm_pre_call
@@ -87,6 +90,7 @@ plugins:
   # not proof of absence. Enable alongside a PII method; it chains the same way.
   #
   # - name: secrets_filter_memory
+  #   display_name: Credentials and secrets
   #   kind: altk_evolve.hooks.plugins.secrets.SecretsFilterMemoryPlugin
   #   description: Structured secrets (credential/token) masking on memory writes and LLM egress
   #   hooks:

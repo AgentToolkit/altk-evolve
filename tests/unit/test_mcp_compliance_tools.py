@@ -380,6 +380,8 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
     )
     client.scan_entities.return_value = [entity]
     store = MagicMock()
+    store.get_run_request_hash.return_value = None
+    store.claim_run.return_value = (True, "new-request")
     store.get_policy.return_value = {
         "policy_id": "standard",
         "name": "Standard retention",
@@ -411,6 +413,11 @@ def test_run_retention_returns_real_entity_references_and_predelete_snapshot(cli
 
     deleted = result["deleted"][0]
     assert result["run_id"] == "run-1"
+    claim = store.claim_run.call_args.kwargs
+    assert claim["run_id"] == "run-1"
+    assert claim["namespace_id"] == "tenant-a"
+    assert claim["agent_id"] == "agent-a"
+    assert claim["initiated_by"] == "operator-a"
     assert result["metadata_filters"] == {"agent_id": "agent-a"}
     client.scan_entities.assert_called_once_with(
         "tenant-a",
@@ -435,6 +442,8 @@ def test_run_retention_applies_external_matches_in_scope(client):
     entity = _entity("orphan", metadata={"agent_id": "agent-a"})
     client.scan_entities.side_effect = [[], [entity]]
     store = MagicMock()
+    store.get_run_request_hash.return_value = None
+    store.claim_run.return_value = (True, "new-request")
     store.get_policy.return_value = {
         "policy_id": "standard",
         "name": "Standard retention",
@@ -475,6 +484,8 @@ def test_run_retention_applies_external_matches_in_scope(client):
 def test_run_retention_persists_failed_status_when_execution_raises(client):
     client.scan_entities.side_effect = RuntimeError("database unavailable")
     store = MagicMock()
+    store.get_run_request_hash.return_value = None
+    store.claim_run.return_value = (True, "new-request")
     store.get_policy.return_value = {
         "policy_id": "standard",
         "name": "Standard retention",
@@ -545,6 +556,8 @@ def test_get_compliance_status_reports_configured_plugin_health(client):
 
     assert result["healthy"] is True
     assert result["retention_available"] is True
+    assert result["plugins"][0]["display_name"] == "access-stamp"
+    assert result["plugins"][0]["show_in_ui"] is True
     assert result["plugins"][0]["protection_class"] == "access"
     assert result["plugins"][0]["healthy"] is True
 
@@ -624,3 +637,37 @@ def test_compliance_health_requires_engine_only_for_enabled_plugins(client, mode
     ):
         result = json.loads(get_compliance_status(namespace_id="tenant-a"))
     assert result["healthy"] is (mode != "sequential" or engine_available)
+
+
+@pytest.mark.parametrize("from_yaml", [False, True])
+def test_plugin_display_metadata_does_not_hide_health_failures(client, tmp_path, monkeypatch, from_yaml):
+    from altk_evolve.config.hooks import HookPluginSpec, HooksConfig
+    from altk_evolve.frontend.mcp import mcp_server
+    import yaml
+
+    entry = {
+        "name": "metadata_normalizer",
+        "kind": "altk_evolve.hooks.plugins.normalizer.MetadataNormalizerPlugin",
+        "hooks": ["memory_pre_write"],
+        "display_name": "Memory metadata",
+        "description": "Keeps source references consistent.",
+        "show_in_ui": False,
+    }
+    if from_yaml:
+        path = tmp_path / "hooks.yaml"
+        path.write_text(yaml.safe_dump({"plugins": [entry]}))
+        config = HooksConfig(plugins_yaml=str(path))
+    else:
+        config = HooksConfig(plugins=[HookPluginSpec(**entry)])
+    monkeypatch.setattr(mcp_server.evolve_config, "hooks", config)
+    manager = MagicMock()
+    manager.has_hooks_for.return_value = False
+    with patch("altk_evolve.hooks.manager.get_plugin_manager", return_value=manager):
+        result = json.loads(get_compliance_status(namespace_id="tenant-a"))
+    plugin = result["plugins"][0]
+    assert plugin["name"] == "metadata_normalizer"
+    assert plugin["display_name"] == "Memory metadata"
+    assert plugin["description"] == entry["description"]
+    assert plugin["show_in_ui"] is False
+    assert plugin["enabled"] is True
+    assert result["healthy"] is False
