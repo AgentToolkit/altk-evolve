@@ -12,7 +12,6 @@ import threading
 import uuid
 import os
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -825,13 +824,9 @@ def _configured_hook_plugins() -> list[dict[str, Any]]:
     if not yaml_path and not specs:
         yaml_path = discover_hooks_config_path()
     if yaml_path:
-        loaded = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8")) or {}
-        if not isinstance(loaded, dict):
-            raise ValueError(f"hooks config {yaml_path} must hold a mapping with a 'plugins' list")
-        yaml_specs = loaded.get("plugins", []) or []
-        if not isinstance(yaml_specs, list) or any(not isinstance(spec, dict) for spec in yaml_specs):
-            raise ValueError(f"hooks config {yaml_path} must contain a 'plugins' list of mappings")
-        specs = yaml_specs + specs
+        from altk_evolve.hooks.manager import _parse_plugins_yaml
+
+        specs = [spec.model_dump(mode="json") for spec in _parse_plugins_yaml(yaml_path)] + specs
     return specs
 
 
@@ -857,6 +852,9 @@ def get_compliance_status(namespace_id: str | None = None) -> str:
         plugins.append(
             {
                 "name": str(spec.get("name") or spec.get("kind") or "unnamed"),
+                "display_name": spec.get("display_name") or spec.get("name") or "Unnamed filter",
+                "description": spec.get("description"),
+                "show_in_ui": spec.get("show_in_ui", True),
                 "kind": str(spec.get("kind") or ""),
                 "protection_class": _protection_class(
                     str(spec.get("name") or ""),

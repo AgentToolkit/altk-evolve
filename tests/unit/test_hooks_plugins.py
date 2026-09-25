@@ -85,7 +85,7 @@ def test_normalizer_copies_task_id_to_trace_id(tmp_path: Path):
     # Why this plugin exists: the MCP server's save_trajectory stamps task_id
     # while Phoenix sync stamps trace_id — downstream cascade cleanup keys on
     # trace_id, so MCP-saved sessions would otherwise miss it.
-    client = make_client(tmp_path, NORMALIZER_SPEC)
+    client = make_client(tmp_path, NORMALIZER_SPEC.model_copy(update={"show_in_ui": False, "display_name": "Memory metadata"}))
     client.create_namespace("ns")
     client.update_entities("ns", [Entity(content="x", type="trajectory", metadata={"task_id": "t-42"})], enable_conflict_resolution=False)
 

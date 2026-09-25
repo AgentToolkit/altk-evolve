@@ -553,6 +553,8 @@ def test_get_compliance_status_reports_configured_plugin_health(client):
 
     assert result["healthy"] is True
     assert result["retention_available"] is True
+    assert result["plugins"][0]["display_name"] == "access-stamp"
+    assert result["plugins"][0]["show_in_ui"] is True
     assert result["plugins"][0]["protection_class"] == "access"
     assert result["plugins"][0]["healthy"] is True
 
@@ -632,3 +634,37 @@ def test_compliance_health_requires_engine_only_for_enabled_plugins(client, mode
     ):
         result = json.loads(get_compliance_status(namespace_id="tenant-a"))
     assert result["healthy"] is (mode != "sequential" or engine_available)
+
+
+@pytest.mark.parametrize("from_yaml", [False, True])
+def test_plugin_display_metadata_does_not_hide_health_failures(client, tmp_path, monkeypatch, from_yaml):
+    from altk_evolve.config.hooks import HookPluginSpec, HooksConfig
+    from altk_evolve.frontend.mcp import mcp_server
+    import yaml
+
+    entry = {
+        "name": "metadata_normalizer",
+        "kind": "altk_evolve.hooks.plugins.normalizer.MetadataNormalizerPlugin",
+        "hooks": ["memory_pre_write"],
+        "display_name": "Memory metadata",
+        "description": "Keeps source references consistent.",
+        "show_in_ui": False,
+    }
+    if from_yaml:
+        path = tmp_path / "hooks.yaml"
+        path.write_text(yaml.safe_dump({"plugins": [entry]}))
+        config = HooksConfig(plugins_yaml=str(path))
+    else:
+        config = HooksConfig(plugins=[HookPluginSpec(**entry)])
+    monkeypatch.setattr(mcp_server.evolve_config, "hooks", config)
+    manager = MagicMock()
+    manager.has_hooks_for.return_value = False
+    with patch("altk_evolve.hooks.manager.get_plugin_manager", return_value=manager):
+        result = json.loads(get_compliance_status(namespace_id="tenant-a"))
+    plugin = result["plugins"][0]
+    assert plugin["name"] == "metadata_normalizer"
+    assert plugin["display_name"] == "Memory metadata"
+    assert plugin["description"] == entry["description"]
+    assert plugin["show_in_ui"] is False
+    assert plugin["enabled"] is True
+    assert result["healthy"] is False
