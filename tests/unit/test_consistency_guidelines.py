@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -1150,3 +1151,181 @@ class TestGenerateConsistencyGuidelinesFast:
             assert "judge" in prompt.lower()
             assert "⚠️" not in prompt
             assert "HIGH UNCERTAINTY" not in prompt
+
+
+@pytest.mark.unit
+class TestCallerSuppliedIR:
+    """`trajectory_ir=` lets a caller score the real per-step input.
+
+    `transform_trajectory_to_IR` rebuilds each step's prefix from one message list, which
+    is an approximation whenever the system message, bound tools or model differed between
+    steps — none of those are expressible in a single list. These tests pin that a supplied
+    IR is what gets scored, that `trajectory` still drives the prompt, and that supplying
+    one does not bypass the sanitisation the derived path applies.
+    """
+
+    def _trajectory(self):
+        return {
+            "messages": [
+                {"role": "user", "content": "do the thing"},
+                {"role": "assistant", "content": "step one"},
+                {"role": "assistant", "content": "step two"},
+            ],
+            "trace_id": "t",
+            "model": "gpt-4o",
+        }
+
+    def _ir(self, messages=None):
+        """One scorable step, with a prefix the caller captured itself."""
+        return {
+            "task": "caller task",
+            "name": "caller IR",
+            "steps": [
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 1,
+                    "raw_response": "step one",
+                    "raw_response_type": "content",
+                    "messages": messages if messages is not None else [{"role": "user", "content": "captured prefix"}],
+                    "llm_params": {"model": "gpt-4o"},
+                }
+            ],
+        }
+
+    def _run(self, monkeypatch, ir, on_resample):
+        """Run the accurate path with resampling/scoring stubbed, returning the LLM prompt."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        monkeypatch.setattr(module.evolve_config, "segmentation_enabled", False)
+        monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: on_resample(trajectory))
+        # analyze_consistency returns (score_card, ir), not just a card.
+        monkeypatch.setattr(
+            module,
+            "analyze_consistency",
+            lambda trajectory, **kwargs: ({"steps": [{"step_number": 1, "step_uncertainty": 0.4}]}, trajectory),
+        )
+
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps(
+            {"guidelines": [{"content": "c", "category": "strategy", "rationale": "r", "trigger": "t"}]}
+        )
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(self._trajectory(), trajectory_ir=ir)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    def test_the_supplied_ir_is_scored_instead_of_a_derived_one(self, monkeypatch):
+        """The caller's steps reach the resampler; nothing is rebuilt from `trajectory`."""
+        seen = {}
+
+        def on_resample(ir):
+            seen["steps"] = ir["steps"]
+            return ir
+
+        self._run(monkeypatch, self._ir(), on_resample)
+        assert len(seen["steps"]) == 1, "the derived IR would have had two scorable steps"
+        assert seen["steps"][0]["messages"][0]["content"] == "captured prefix"
+
+    def test_transform_is_not_called_when_an_ir_is_supplied(self, monkeypatch):
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        called = []
+        monkeypatch.setattr(module, "transform_trajectory_to_IR", lambda t: called.append(t) or {})
+        self._run(monkeypatch, self._ir(), lambda ir: ir)
+        assert called == [], "a supplied IR must not be overwritten by a derived one"
+
+    def test_the_prompt_still_renders_the_trajectory_not_the_ir(self, monkeypatch):
+        """Scoring uses the supplied steps, but the prompt shows the whole conversation —
+        the IR's single step must not silently narrow what the model is shown."""
+        prompt = self._run(monkeypatch, self._ir(), lambda ir: ir)
+        assert "step two" in prompt, "the prompt comes from `trajectory`, which has both steps"
+
+    def test_supplied_ir_messages_are_sanitised_too(self, monkeypatch):
+        """Otherwise this is the one route reaching the provider unfiltered — and a caller
+        precise enough to capture real input is exactly the kind whose messages carry
+        producer annotations."""
+        annotated = [{"role": "user", "content": "captured prefix", "outcome": "success", "feedback": 5}]
+        seen = {}
+
+        def on_resample(ir):
+            seen["messages"] = ir["steps"][0]["messages"]
+            return ir
+
+        self._run(monkeypatch, self._ir(annotated), on_resample)
+        assert seen["messages"] == [{"role": "user", "content": "captured prefix"}]
+
+    def test_an_ir_without_a_task_falls_back_rather_than_raising(self, monkeypatch):
+        """`task` is transform_trajectory_to_IR's own output, not something a caller owes."""
+        ir = self._ir()
+        del ir["task"]
+        prompt = self._run(monkeypatch, ir, lambda ir: ir)
+        assert prompt, "generation must still happen without a task key"
+
+    def test_a_step_without_messages_is_left_alone(self, monkeypatch):
+        """Sanitising must not invent a `messages` key on a step that has none."""
+        ir = self._ir()
+        del ir["steps"][0]["messages"]
+        seen = {}
+
+        def on_resample(i):
+            seen["steps"] = i["steps"]
+            return i
+
+        self._run(monkeypatch, ir, on_resample)
+        assert "messages" not in seen["steps"][0]
+
+
+@pytest.mark.unit
+class TestCallerSuppliedRenderer:
+    """`trajectory_renderer=` replaces how the trajectory block reads, not what is scored."""
+
+    def _run(self, monkeypatch, renderer):
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        monkeypatch.setattr(module.evolve_config, "segmentation_enabled", False)
+        monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: trajectory)
+        monkeypatch.setattr(
+            module,
+            "analyze_consistency",
+            lambda trajectory, **kwargs: ({"steps": [{"step_number": 1, "step_uncertainty": 0.4}]}, trajectory),
+        )
+
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps(
+            {"guidelines": [{"content": "c", "category": "strategy", "rationale": "r", "trigger": "t"}]}
+        )
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "do the thing"},
+                {"role": "assistant", "content": "step one"},
+            ],
+            "trace_id": "t",
+        }
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(trajectory, trajectory_renderer=renderer)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    def test_the_renderer_output_is_what_the_prompt_embeds(self, monkeypatch):
+        prompt = self._run(monkeypatch, lambda *a, **k: "RENDERED BY CALLER")
+        assert "RENDERED BY CALLER" in prompt
+        # The default renderer's output must be gone, not merely supplemented.
+        assert "Agent reasoning" not in prompt
+
+    def test_the_renderer_receives_post_scoring_data(self, monkeypatch):
+        """It is invoked after resampling and scoring, which is the whole reason it is a
+        callback rather than a string argument — the uncertainties do not exist earlier."""
+        seen = {}
+
+        def renderer(messages, consistency_data, step_range=None, config=None):
+            seen["consistency_data"] = consistency_data
+            seen["step_range"] = step_range
+            return "x"
+
+        self._run(monkeypatch, renderer)
+        assert seen["consistency_data"]["step_uncertainties"] == {1: 0.4}
+        assert seen["step_range"] is None
+
+    def test_the_default_renderer_is_used_when_none_is_given(self, monkeypatch):
+        prompt = self._run(monkeypatch, None)
+        assert "step one" in prompt

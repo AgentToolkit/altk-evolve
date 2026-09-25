@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
 
@@ -408,6 +409,7 @@ def _generate_guideline_result(
     config: Optional[dict] = None,
     debug_dir: Optional[Path] = None,
     trace_id: Any = "unknown",
+    trajectory_renderer: Optional[Callable[..., str]] = None,
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory).
 
@@ -435,7 +437,15 @@ def _generate_guideline_result(
             )
             return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
-    trajectory_summary = format_trajectory_data(messages, consistency_data, step_range=step_range, config=config)
+    # A caller-supplied renderer is invoked HERE rather than being handed a finished string
+    # by the caller, because rendering depends on results that do not exist until resampling
+    # and scoring have run: which steps carry a marker, their uncertainties, the per-field
+    # consistencies, and the samples themselves. A string argument would have to be built
+    # before any of that existed.
+    if trajectory_renderer is not None:
+        trajectory_summary = trajectory_renderer(messages, consistency_data, step_range=step_range, config=config)
+    else:
+        trajectory_summary = format_trajectory_data(messages, consistency_data, step_range=step_range, config=config)
 
     prompt = _CONSISTENCY_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
@@ -488,6 +498,8 @@ def _generate_guideline_result(
 def generate_consistency_guidelines(
     trajectory: dict,
     config_path: Optional[Path | str] = None,
+    trajectory_ir: Optional[dict] = None,
+    trajectory_renderer: Optional[Callable[..., str]] = None,
 ) -> list[GuidelineGenerationResult]:
     """Generate consistency-focused guidelines from an agent trajectory.
 
@@ -509,6 +521,27 @@ def generate_consistency_guidelines(
         trajectory: dict with keys messages, model, trace_id, and optionally tools.
         config_path: YAML config consumed by consistency_analyzer. Defaults to
             `consistency_analyzer/agent_config.yaml`.
+        trajectory_ir: a pre-built IR to score, instead of deriving one from `trajectory`.
+            `transform_trajectory_to_IR` can only reconstruct each step's prefix from the
+            single message list, which is an approximation whenever the system message,
+            bound tool list or model differed between steps — none of those are expressible
+            in one list. A caller that captured each inference's real input can pass the
+            steps directly here, one per inference, each carrying its own `messages`,
+            `llm_params` and `tools`. Steps the caller cannot score faithfully are simply
+            omitted. `trajectory` is still required and unchanged in role: it drives
+            segmentation and the generation prompt, so the prompt renders the whole
+            conversation while scoring uses only these steps. See `transform_trajectory_to_IR`
+            for the step shape.
+
+            Each step's `messages` are sanitised here exactly as the derived path sanitises
+            them, so a caller whose messages carry producer annotations is not penalised for
+            supplying its own IR — see `_drop_non_input_message_keys`.
+        trajectory_renderer: replaces `format_trajectory_data` when rendering the trajectory
+            block the prompt embeds. Called as
+            `renderer(messages, consistency_data, step_range=..., config=...)` and must
+            return the text to embed. For a caller that has more to say about a step than
+            the default renderer knows how to show; it cannot change which steps are scored,
+            only how they read.
     """
     config_path = Path(config_path) if config_path else Path(__file__).parent / "consistency_analyzer" / "agent_config.yaml"
     if not config_path.exists():
@@ -573,8 +606,24 @@ def generate_consistency_guidelines(
     is_groq = llm_settings.custom_llm_provider == "groq" or llm_settings.guidelines_model.startswith("groq/")
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
-    trajectory_ir = transform_trajectory_to_IR(trajectory)
-    logger.info(f"Created trajectory IR for {trajectory_ir.get('name', '')}")
+    if trajectory_ir is None:
+        trajectory_ir = transform_trajectory_to_IR(trajectory)
+        logger.info(f"Created trajectory IR for {trajectory_ir.get('name', '')}")
+    else:
+        # Sanitise here too. The derived path filters inside transform_trajectory_to_IR, so
+        # without this a caller-supplied IR would be the one route that reaches the provider
+        # unfiltered — and a caller precise enough to capture real per-step input is exactly
+        # the kind whose messages carry producer annotations.
+        trajectory_ir = {
+            **trajectory_ir,
+            "steps": [
+                {**step, "messages": _drop_non_input_message_keys(step["messages"])} if "messages" in step else step
+                for step in trajectory_ir.get("steps", [])
+            ],
+        }
+        logger.info(
+            f"Using caller-supplied trajectory IR for {trajectory_ir.get('name', '')} ({len(trajectory_ir.get('steps', []))} steps)"
+        )
 
     steps = trajectory_ir.get("steps", [])
     n_scorable_steps = len(steps)
@@ -602,7 +651,9 @@ def generate_consistency_guidelines(
     if debug_dir:
         _safe_write_debug(debug_dir / f"consistency_score_card_{str(trace_id)[:8]}.json", score_card)
 
-    task_description = trajectory_ir["task"] or DEFAULT_TASK_DESCRIPTION
+    # .get, not [], because a caller-supplied IR need not carry a task — the key is
+    # transform_trajectory_to_IR's own output, not part of what a caller must provide.
+    task_description = trajectory_ir.get("task") or DEFAULT_TASK_DESCRIPTION
 
     # --- Segmentation ---
     # Only attempt when every assistant message's content field allows a 1:1 step index
@@ -640,6 +691,7 @@ def generate_consistency_guidelines(
                 config=config,
                 debug_dir=debug_dir,
                 trace_id=trace_id,
+                trajectory_renderer=trajectory_renderer,
             )
             results.append(result)
         if debug_dir:
@@ -657,6 +709,7 @@ def generate_consistency_guidelines(
         config=config,
         debug_dir=debug_dir,
         trace_id=trace_id,
+        trajectory_renderer=trajectory_renderer,
     )
     if debug_dir:
         _write_guidelines_debug(debug_dir, trace_id, [result], "_consistency")
