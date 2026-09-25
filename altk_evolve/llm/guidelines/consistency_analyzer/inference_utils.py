@@ -25,7 +25,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from litellm import completion, get_supported_openai_params
-from litellm.exceptions import BadRequestError, UnsupportedParamsError
+from litellm.exceptions import BadRequestError
 
 from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
@@ -56,9 +56,11 @@ _SINGLE_ATTEMPTS = 3
 # clustering.py and consistency_guidelines.py.
 _PROVIDERS_WITHOUT_N = frozenset({"groq"})
 
-# (model_id, custom_llm_provider) -> whether n>1 is usable. Populated by the static
-# probe and corrected by runtime evidence, so a provider that rejects `n` costs one
-# wasted call per process rather than one per resampled step.
+# (model_id, custom_llm_provider) -> whether n>1 is usable. Populated by the static probe,
+# and corrected only by evidence that is specifically about `n`: a call that returned fewer
+# choices than it asked for. Errors are deliberately not evidence here — see
+# _completion_batched — because a 400 does not say which parameter it rejected, and a wrong
+# negative silently downgrades every later step for the rest of the process.
 _N_SUPPORT: dict[tuple[str, str | None], bool] = {}
 
 
@@ -119,34 +121,37 @@ def _completion_batched(kwargs: dict, samples: int, model_id: str, provider: str
     """Try to get all `samples` choices from one n=samples call.
 
     Returns whatever choices came back — possibly none, possibly fewer than asked —
-    and never raises. Records a negative result in _N_SUPPORT only when the error
-    specifically identifies `n` as unsupported, never on a merely-failed request.
+    and never raises. Never records a negative in _N_SUPPORT from an exception: see below
+    for why no 400 is trustworthy evidence about `n` specifically.
     """
     key = (model_id, provider)
     for attempt in range(_BATCHED_ATTEMPTS):
         try:
             choices = list(completion(**kwargs, n=samples).choices)
-        except UnsupportedParamsError as e:
-            # litellm's pre-flight refusal: the parameter is definitively unsupported for
-            # this model, so record it and stop paying for the probe on later steps.
-            _N_SUPPORT[key] = False
-            logger.info(f"{model_id} does not support n>1 ({e}) — falling back to {samples} separate completions")
-            return []
         except BadRequestError as e:
-            # A 400 that is *not* specifically about an unsupported parameter. Both
-            # ContextWindowExceededError and ContentPolicyViolationError subclass
-            # BadRequestError, and neither says anything about `n` — so caching a negative
-            # here would send every later step down the loop route, which re-bills the
-            # trajectory prompt once per sample and caps at MAX_LOOP_SAMPLES, for the rest
-            # of the process. Fall back for this step without recording a verdict.
+            # Fall back for this step, but record nothing about n>1 support, because no 400
+            # identifies `n` as the culprit reliably enough to act on for a whole process:
             #
-            # The cost of being conservative: a provider that rejects n>1 with a plain 400
-            # instead of a typed UnsupportedParamsError pays one rejected call per step
-            # rather than one per process. That is the cheaper mistake — a rejected request
-            # is not billed for tokens — and the alternative, matching on message text,
-            # would misclassify exactly the unrelated 400s this branch exists to protect.
-            # Providers known to behave that way belong in _PROVIDERS_WITHOUT_N, which is
-            # checked before any call is made.
+            #  * ContextWindowExceededError and ContentPolicyViolationError subclass
+            #    BadRequestError and are plainly unrelated to `n`;
+            #  * UnsupportedParamsError names *a* rejected parameter, not necessarily this
+            #    one. We also pass `tools`, and a model can support `n` while rejecting
+            #    `tools` (together_ai, at time of writing), so a tool-call step would teach
+            #    us the wrong lesson and then penalise every later content step;
+            #  * matching on message text to tell them apart is exactly the fragility this
+            #    avoids.
+            #
+            # Caching a wrong negative is costly and silent: every later step takes the loop
+            # route, which re-bills the trajectory prompt once per sample and caps samples at
+            # MAX_LOOP_SAMPLES, for the rest of the process.
+            #
+            # Nothing is lost by declining to learn here, because the two mechanisms that do
+            # establish it still run. _supports_n consults the same supported-params list
+            # litellm's own pre-flight check reads, so every provider that refuses `n`
+            # (anthropic, ollama, bedrock) is already caught before a call is made; and the
+            # short-return check below is direct evidence — we asked for k and got fewer.
+            # The residual cost is one rejected call per step for a provider that slips past
+            # both, which is unbilled and the cheaper mistake.
             logger.debug(f"Batched resampling rejected for {model_id} ({e}) — falling back for this step only")
             return []
         except Exception as e:

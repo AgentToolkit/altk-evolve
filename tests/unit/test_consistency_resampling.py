@@ -121,8 +121,18 @@ def test_groq_loops_despite_advertised_n_support(model_id, provider):
 
 
 @pytest.mark.unit
-def test_unsupported_params_error_falls_back_and_is_remembered():
-    """One wasted call per process, not per resampled step."""
+def test_unsupported_params_error_falls_back_without_being_remembered():
+    """An UnsupportedParamsError names *a* rejected parameter, not necessarily `n`.
+
+    We also send `tools`, and a model can support `n` while rejecting `tools`, so caching a
+    negative from this error would let one tool-call step penalise every later content step
+    for the rest of the process. The step still falls back; nothing is learned from it.
+
+    Declining to learn here costs nothing real, because the static probe already catches
+    every provider that refuses `n` — see
+    test_real_provider_metadata_already_excludes_n_for_providers_that_refuse_it — and a
+    short return is still treated as direct evidence.
+    """
     with patch.object(inference_utils, "get_supported_openai_params", return_value=["n"]):
         with patch.object(inference_utils, "completion") as mock_completion:
             mock_completion.side_effect = [_unsupported()] + [_response(1)] * 5
@@ -132,11 +142,50 @@ def test_unsupported_params_error_falls_back_and_is_remembered():
             assert mock_completion.call_count == 6  # 1 rejected batch + 5 loop calls
 
             mock_completion.reset_mock()
-            mock_completion.side_effect = [_response(1)] * 5
+            mock_completion.side_effect = [_response(5)]
             second = _sample(model_id="anthropic/claude")
 
     assert len(second) == 5
-    assert mock_completion.call_count == 5, "the batched attempt should not be retried once known to fail"
+    assert mock_completion.call_count == 1, "the batched route must still be tried on the next step"
+
+
+@pytest.mark.unit
+def test_an_unsupported_param_that_is_not_n_does_not_disable_batching():
+    """The concrete misattribution: a tool-call step on a model that supports `n` but not
+    `tools` must not teach us that `n` is unsupported, or every later content step — which
+    sends no `tools` at all — pays the loop route and the MAX_LOOP_SAMPLES cap."""
+    tools_rejected = UnsupportedParamsError(
+        message="together_ai does not support parameters: ['tools'], for model=x",
+        model="together_ai/x",
+        llm_provider="together_ai",
+    )
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=["n"]):
+        with patch.object(inference_utils, "completion") as mock_completion:
+            mock_completion.side_effect = [tools_rejected] + [_response(1)] * 5
+            _sample(model_id="together_ai/x", tools=[{"type": "function", "function": {"name": "f"}}])
+
+            mock_completion.reset_mock()
+            mock_completion.side_effect = [_response(5)]
+            later_step = _sample(model_id="together_ai/x")
+
+    assert len(later_step) == 5
+    assert mock_completion.call_count == 1, "a later step without `tools` must still batch"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("model_id", ["anthropic/claude-sonnet-4-5", "ollama/llama3", "bedrock/anthropic.claude-v2"])
+def test_real_provider_metadata_already_excludes_n_for_providers_that_refuse_it(model_id):
+    """Unpatched, against litellm's real metadata — this is the mechanism now carrying the
+    weight of avoiding a wasted probe per step, so it is asserted directly rather than
+    through a stub. litellm's own pre-flight check reads the same list, which is why an
+    UnsupportedParamsError about `n` is unreachable here and not worth caching on."""
+    assert inference_utils._supports_n(model_id, None) is False
+
+    with patch.object(inference_utils, "completion", return_value=_response(1)) as mock_completion:
+        choices = _sample(model_id=model_id)
+
+    assert len(choices) == 5
+    assert all("n" not in call.kwargs for call in mock_completion.call_args_list)
 
 
 @pytest.mark.unit
