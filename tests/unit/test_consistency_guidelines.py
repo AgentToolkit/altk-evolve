@@ -610,11 +610,19 @@ class TestSegmentationGuard:
             ],
         }
 
-    def test_single_step_trajectory_skips_segmentation(self):
+    def test_single_step_trajectory_skips_segmentation(self, monkeypatch):
         """A trajectory with too few scorable steps falls back to full-trajectory generation
-        instead of segmenting, even if the segmenter itself returns subtasks."""
+        instead of segmenting, even if the segmenter itself returns subtasks.
+
+        The flag is forced on deliberately: segmentation_enabled now short-circuits the same
+        `if`, so with the shipped default this test would pass even if the step-count guard
+        were deleted. Enabling it keeps the guard itself under test."""
         from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", True)
 
         mock_segment = MagicMock(
             return_value=[
@@ -730,11 +738,21 @@ class TestSegmentationFloorAndFastPathScope:
         mock_segment.assert_called_once()
 
     @pytest.mark.parametrize("n_scorable,should_segment", [(4, False), (5, True)])
-    def test_accurate_path_floor_boundary(self, n_scorable, should_segment):
-        """Pins the 2 -> 5 floor: reverting it left the whole suite green."""
+    def test_accurate_path_floor_boundary(self, n_scorable, should_segment, monkeypatch):
+        """Pins the 2 -> 5 floor: reverting it left the whole suite green.
+
+        segmentation_enabled is forced on for the same reason _run_fast does it, and it became
+        necessary in the merge that brought the two changes together: the accurate path now
+        checks that deployment flag as well, and it defaults off, so leaving it unset made both
+        parametrisations pass for the wrong reason — the segmenter going uncalled at n=5 because
+        the flag was off, not because the floor was respected.
+        """
         from unittest.mock import patch
 
+        from altk_evolve.llm.guidelines import consistency_guidelines as module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        monkeypatch.setattr(module.evolve_config, "segmentation_enabled", True)
 
         messages = [{"role": "user", "content": "go"}]
         messages += [{"role": "assistant", "content": f"step {i}"} for i in range(n_scorable)]
@@ -1076,3 +1094,215 @@ class TestGenerateConsistencyGuidelinesFast:
             assert "judge" in prompt.lower()
             assert "⚠️" not in prompt
             assert "HIGH UNCERTAINTY" not in prompt
+
+
+class _SegmentationFixture:
+    """Shared trajectory for the two consistency pipelines' segmentation tests.
+
+    Five assistant turns, each with a marker string that appears nowhere else, and subtask
+    segments spanning two and three steps. Multi-step segments are deliberate: with single-step
+    segments, `step_range=(start, end)` and `step_range=(start, start)` are indistinguishable,
+    and "each segment saw its own steps" and "each segment saw everything" both pass.
+
+    Five is also the minimum: SEGMENTATION_MIN_STEPS gates both consistency pipelines, so a
+    shorter trajectory never reaches the segmented branch at all and every assertion about
+    what that branch does would hold vacuously.
+    """
+
+    MESSAGES = [
+        {"role": "user", "content": "Find the retry settings for the acme service and summarize them"},
+        {"role": "assistant", "content": "Listed the certificate directory to get my bearings."},
+        {"role": "assistant", "content": "Opened the retry policy file that directory pointed to."},
+        {"role": "assistant", "content": "Extracted the backoff ceiling it declares."},
+        {"role": "assistant", "content": "Reported the effective timeout to the caller."},
+        {"role": "assistant", "content": "Double-checked the jitter window before replying."},
+    ]
+    TASK = "Find the retry settings for the acme service and summarize them"
+    SEG1_MARKERS = ("certificate directory", "retry policy file")
+    SEG2_MARKERS = ("backoff ceiling", "effective timeout", "jitter window")
+
+    @staticmethod
+    def subtasks():
+        from altk_evolve.schema.guidelines import SubtaskSegment
+
+        return [
+            SubtaskSegment(
+                generalized_description="Locate a configuration file on disk",
+                purpose="Find the file to read",
+                start_step=1,
+                end_step=2,
+            ),
+            SubtaskSegment(
+                generalized_description="Read the values a configuration file declares",
+                purpose="Report the configured values",
+                start_step=3,
+                end_step=5,
+            ),
+        ]
+
+
+class TestSegmentationFlagAccuratePipeline(_SegmentationFixture):
+    """The accurate consistency pipeline must honour EVOLVE_SEGMENTATION_ENABLED.
+
+    The standard path (guidelines.py) and the fast path both checked the flag; this third
+    generation path did not, so the flag silently failed to apply to
+    `generate_consistency_guidelines` — segmentation ran regardless of the setting.
+    """
+
+    def _make_sampled_ir(self):
+        def step(n, response):
+            return {
+                "name": "AnyAgent_content",
+                "step_number": n,
+                "raw_response": response,
+                "raw_response_type": "content",
+                "messages": [],
+                "llm_params": {"model": None},
+                "sampling": {"num_samples": 1, "raw_samples": [response]},
+            }
+
+        return {
+            "task": self.TASK,
+            "name": "Trajectory test",
+            "steps": [step(i, m["content"]) for i, m in enumerate(self.MESSAGES[1:], 1)],
+        }
+
+    def _run(self, monkeypatch, *, enabled, segmenter_raises=False):
+        """Drive generate_consistency_guidelines with resampling/scoring/LLM all stubbed.
+
+        Returns (mock_segment, mock_gen, results).
+        """
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", enabled)
+
+        if segmenter_raises:
+            mock_segment = MagicMock(side_effect=RuntimeError("segmenter unavailable"))
+        else:
+            mock_segment = MagicMock(return_value=self.subtasks())
+        sampled_ir = self._make_sampled_ir()
+
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.resample_trajectory") as mock_resample,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.analyze_consistency") as mock_analyze,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines._generate_guideline_result") as mock_gen,
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", mock_segment),
+        ):
+            mock_resample.return_value = sampled_ir
+            mock_analyze.return_value = ({"steps": [], "aggregate_trajectory_uncertainty": 0.5}, sampled_ir)
+            mock_gen.return_value = MagicMock(guidelines=[])
+            results = generate_consistency_guidelines({"trace_id": "test-seg-flag", "messages": self.MESSAGES})
+
+        return mock_segment, mock_gen, results
+
+    def test_disabled_skips_segmentation_on_a_segmentable_trajectory(self, monkeypatch):
+        """Flag off: the segmenter is never called even though the trajectory qualifies, and
+        generation runs once over the full trajectory with the IR task as its description."""
+        mock_segment, mock_gen, results = self._run(monkeypatch, enabled=False)
+
+        mock_segment.assert_not_called()
+        assert len(results) == 1
+        assert mock_gen.call_count == 1
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("step_range") is None
+        assert kwargs["task_description"] == self.TASK
+
+    def test_enabled_segments_the_same_trajectory_with_per_subtask_step_ranges(self, monkeypatch):
+        """Flag on: the same trajectory now segments, one result per subtask, each scoped to its
+        own **multi-step** range and carrying that subtask's generalized description.
+
+        The ranges are (1,2) and (3,5) rather than single steps so the assertion is falsifiable:
+        with (1,1)/(2,2) fixtures, a `step_range` built as `(start, start)` would pass too."""
+        mock_segment, mock_gen, results = self._run(monkeypatch, enabled=True)
+
+        mock_segment.assert_called_once_with(self.MESSAGES)
+        assert len(results) == 2
+        assert mock_gen.call_count == 2
+        assert [c.kwargs["step_range"] for c in mock_gen.call_args_list] == [(1, 2), (3, 5)]
+        assert [c.kwargs["task_description"] for c in mock_gen.call_args_list] == [
+            "Locate a configuration file on disk",
+            "Read the values a configuration file declares",
+        ]
+
+    def test_enabled_but_segmenter_raises_falls_back_to_full_trajectory(self, monkeypatch):
+        """Opting in must not make the accurate pipeline fail closed either: a segmenter error
+        degrades to one full-trajectory result rather than propagating. The standard path had
+        this covered; this path did not."""
+        _, mock_gen, results = self._run(monkeypatch, enabled=True, segmenter_raises=True)
+
+        assert len(results) == 1
+        assert mock_gen.call_count == 1
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("step_range") is None
+        assert kwargs["task_description"] == self.TASK
+
+
+class TestSegmentationFlagFastPipeline(_SegmentationFixture):
+    """The fast consistency pipeline's flag check needs a test that can reach the guarded branch.
+
+    Its two existing tests set the flag `False` as a *precondition* on a single-assistant-turn
+    trajectory, so neither can enter the segmented branch — replacing the guard with `if True:`
+    left the whole suite green. Same shape as the step-count guard that the accurate path's new
+    flag check had made unreachable.
+    """
+
+    def _mock_completion_response(self, payload: dict):
+        from unittest.mock import MagicMock
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = __import__("json").dumps(payload)
+        return response
+
+    def _run(self, monkeypatch, *, enabled):
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", enabled)
+        mock_segment = MagicMock(return_value=self.subtasks())
+
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", mock_segment),
+        ):
+            mock_completion.return_value = self._mock_completion_response({"guidelines": []})
+            results = generate_consistency_guidelines_fast({"trace_id": "test-fast-seg", "messages": self.MESSAGES})
+            prompts = [c.kwargs["messages"][-1]["content"] for c in mock_completion.call_args_list]
+
+        return mock_segment, prompts, results
+
+    def test_disabled_skips_segmentation_on_a_segmentable_trajectory(self, monkeypatch):
+        """Flag off: one call that sees every step, and the segmenter is never reached — asserted
+        on a trajectory that *would* segment, which is what makes the guard reachable."""
+        mock_segment, prompts, results = self._run(monkeypatch, enabled=False)
+
+        mock_segment.assert_not_called()
+        assert len(results) == 1
+        assert len(prompts) == 1
+        assert results[0].task_description == self.TASK
+        for m in self.SEG1_MARKERS + self.SEG2_MARKERS:
+            assert m in prompts[0]
+
+    def test_enabled_scopes_each_call_to_its_own_subtask_steps(self, monkeypatch):
+        """Flag on: the fast pipeline segments too, and each call sees only its own steps."""
+        mock_segment, prompts, results = self._run(monkeypatch, enabled=True)
+
+        mock_segment.assert_called_once_with(self.MESSAGES)
+        assert len(results) == 2
+        assert [r.task_description for r in results] == [
+            "Locate a configuration file on disk",
+            "Read the values a configuration file declares",
+        ]
+
+        first, second = prompts
+        for m in self.SEG1_MARKERS:
+            assert m in first and m not in second
+        for m in self.SEG2_MARKERS:
+            assert m in second and m not in first

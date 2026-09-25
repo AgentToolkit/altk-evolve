@@ -11,7 +11,7 @@ class EvolveConfig(BaseSettings):
     namespace_id: str = "evolve"
     settings: BaseSettings | None = None
     clustering_threshold: float = 0.80
-    segmentation_enabled: bool = True
+    segmentation_enabled: bool = False
     retention_scheduler_enabled: bool = True
     retention_poll_seconds: float = Field(default=10, gt=0)
     retention_max_workers: int = Field(default=1, ge=1)
