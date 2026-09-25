@@ -13,6 +13,7 @@ from litellm.exceptions import UnsupportedParamsError
 
 from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.llm.guidelines.consistency_analyzer import inference_utils
+from altk_evolve.llm.guidelines.consistency_analyzer.resampling import extract_raw_samples
 from altk_evolve.schema.exceptions import EvolveException
 
 
@@ -283,6 +284,145 @@ def test_parallel_calls_do_not_share_one_messages_list():
     sent = [call.kwargs["messages"] for call in mock_completion.call_args_list]
     assert len({id(m) for m in sent}) == 5, "each call needs its own messages list"
     assert len({id(m[0]) for m in sent}) == 5, "each call needs its own message dicts"
+
+
+# ── samples that record no decision ──────────────────────────────────
+
+
+def _text_choice(content, finish_reason="stop", reasoning=None):
+    """A choice as litellm returns one for a text response."""
+    choice = Mock()
+    choice.finish_reason = finish_reason
+    choice.message.tool_calls = None
+    choice.message.content = content
+    choice.message.reasoning_content = reasoning
+    return choice
+
+
+def _tool_call_choice(name="get_weather", args='{"city": "Paris"}'):
+    """A *successful* tool-call response — note content is legitimately empty."""
+    call = Mock()
+    call.model_dump.return_value = {"function": {"name": name, "arguments": args}, "type": "function"}
+    choice = Mock()
+    choice.finish_reason = "tool_calls"
+    choice.message.tool_calls = [call]
+    choice.message.content = ""
+    choice.message.reasoning_content = None
+    return choice
+
+
+@pytest.mark.unit
+def test_truncated_samples_are_dropped():
+    """A reasoning model that runs out of budget returns finish_reason='length' with
+    content='' — a successful response carrying no decision."""
+    choices = [_text_choice("", "length", reasoning="The user") for _ in range(5)]
+
+    assert extract_raw_samples(choices) == {"num_samples": 0, "raw_samples": []}
+
+
+@pytest.mark.unit
+def test_successful_tool_call_response_is_kept_despite_empty_content():
+    """The regression this fix must not cause: a tool-call response has content='' too,
+    so keying on blank content alone would discard every tool-call sample."""
+    result = extract_raw_samples([_tool_call_choice() for _ in range(3)])
+
+    assert result["num_samples"] == 3
+    assert result["raw_samples"][0] == [{"function": {"name": "get_weather", "arguments": '{"city": "Paris"}'}, "type": "function"}]
+
+
+@pytest.mark.unit
+def test_only_the_empty_samples_are_dropped():
+    """Partial truncation scores on the survivors rather than throwing the step away."""
+    choices = [
+        _text_choice("Book the flight."),
+        _text_choice("", "length"),
+        _text_choice("Cancel the order."),
+        _text_choice("   \n ", "length"),
+        _text_choice("", "length"),
+    ]
+
+    result = extract_raw_samples(choices)
+
+    assert result["num_samples"] == 2
+    assert result["raw_samples"] == ["Book the flight.", "Cancel the order."]
+
+
+@pytest.mark.unit
+def test_warning_names_the_truncation_cause(caplog):
+    """The log has to explain *why* the step lost its samples, or an operator sees only
+    a thinner score card with no cause."""
+    choices = [_text_choice("Book it."), _text_choice("", "length", reasoning="We need to")]
+
+    with caplog.at_level("WARNING"):
+        extract_raw_samples(choices)
+
+    assert "Discarded 1 of 2" in caplog.text
+    assert "finish_reason='length'" in caplog.text
+    assert "reasoning_content" in caplog.text
+
+
+@pytest.mark.unit
+def test_no_warning_when_every_sample_is_usable(caplog):
+    with caplog.at_level("WARNING"):
+        result = extract_raw_samples([_text_choice("Book it.")] * 3)
+
+    assert result["num_samples"] == 3
+    assert caplog.text == ""
+
+
+@pytest.mark.unit
+def test_none_content_still_skipped_without_being_counted_as_truncated():
+    """Pre-existing behaviour: a None content was always skipped."""
+    result = extract_raw_samples([_text_choice(None), _text_choice("Book it.")])
+
+    assert result == {"num_samples": 1, "raw_samples": ["Book it."]}
+
+
+@pytest.mark.unit
+def test_dict_shaped_choices_are_handled():
+    """Serialized/cached choices take the dict branch, which keys on tool_calls presence."""
+    choices = [
+        {"finish_reason": "stop", "message": {"content": "Book it."}},
+        {"finish_reason": "length", "message": {"content": ""}},
+        {"finish_reason": "tool_calls", "message": {"tool_calls": [{"function": {"name": "f"}}]}},
+        {"finish_reason": "length", "message": {"tool_calls": []}},
+    ]
+
+    result = extract_raw_samples(choices)
+
+    assert result["num_samples"] == 2
+    assert result["raw_samples"] == ["Book it.", [{"function": {"name": "f"}}]]
+
+
+@pytest.mark.unit
+def test_fully_truncated_step_scores_as_undefined_not_as_consistent():
+    """End of the chain: an all-truncated step must be excluded from the score card,
+    not reported as perfectly consistent with uncertainty 0.0."""
+    from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
+
+    config = {
+        "max_samples": 5,
+        "aggregation": "mean",
+        "agents": [{"name": "OpenAIAgent_content", "response_type": "text", "metric": "jaccard"}],
+    }
+    truncated = [_text_choice("", "length") for _ in range(5)]
+    divergent = [_text_choice(t) for t in ("Book the flight.", "Cancel it.", "Email Bob.", "Search hotels.", "Wait.")]
+    trajectory = {
+        "task": "t",
+        "steps": [
+            {"name": "OpenAIAgent_content", "step_number": 0, "sampling": extract_raw_samples(truncated)},
+            {"name": "OpenAIAgent_content", "step_number": 1, "sampling": extract_raw_samples(divergent)},
+        ],
+    }
+
+    card, scored = analyze_consistency(trajectory=trajectory, config=config)
+
+    assert scored["steps"][0]["consistency"]["step_consistency"] == -1, "truncated step must be undefined, not 1.0"
+    # Only the step with real samples reaches the score card; the truncated one is
+    # excluded rather than contributing uncertainty 0.0 and dragging the trajectory
+    # towards "nothing looked uncertain".
+    assert [s["step_number"] for s in card["steps"]] == [1]
+    assert card["steps"][0]["step_uncertainty"] > 0
 
 
 # ── the loop-route sample ceiling ─────────────────────────────────────
