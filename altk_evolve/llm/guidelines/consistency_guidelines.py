@@ -74,6 +74,47 @@ def _strip_orphaned_tool_messages(messages: list[dict]) -> list[dict]:
     return result
 
 
+# Top-level message keys the chat-completions API accepts as input. A resampled step
+# prefix is replayed verbatim as request input, so anything outside this set is a
+# request-validation error waiting to happen rather than harmless extra context.
+_CHAT_COMPLETIONS_MESSAGE_KEYS = frozenset({"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"})
+
+
+def _drop_non_input_message_keys(messages: list[dict]) -> list[dict]:
+    """Drop message keys the chat-completions API does not accept as input.
+
+    Trajectories arrive from tracing and agent frameworks that annotate messages with
+    their own fields — an outcome record on a tool result, a feedback rating on a user
+    turn, provider scratchpads echoed back on assistant turns. They are useful to
+    whoever produced the trajectory, and harmless while a trajectory is only ever
+    read. Resampling is different: it replays a step's prefix as literal request
+    input, and strict providers reject unknown properties outright rather than
+    ignoring them:
+
+        GroqException - 'messages.2' : for 'role:tool' the following must be
+        satisfied[('messages.2' : property 'outcome' is unsupported)]
+
+    Every sample for that step then fails, the step scores as undefined, and a
+    trajectory whose annotations are on the steps that matter yields no guidelines at
+    all — for a reason that looks like a model or network fault. Sanitising here keeps
+    that producer freedom without letting it reach the wire.
+
+    Only top-level keys are filtered: `content` is passed through untouched, since its
+    list form is the Responses-API function_call shape the parser relies on.
+    """
+    sanitized = []
+    dropped: set[str] = set()
+    for msg in messages:
+        extra = set(msg) - _CHAT_COMPLETIONS_MESSAGE_KEYS
+        if extra:
+            dropped |= extra
+            msg = {key: value for key, value in msg.items() if key in _CHAT_COMPLETIONS_MESSAGE_KEYS}
+        sanitized.append(msg)
+    if dropped:
+        logger.debug(f"Dropped non-input message keys before resampling: {sorted(dropped)}")
+    return sanitized
+
+
 def _is_well_formed_tool_calls(tool_calls: Any) -> bool:
     """Whether `tool_calls` is a clean OpenAI-format list (every entry names a function)."""
     return (
@@ -162,7 +203,7 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
                 "step_number": step_number,
                 "raw_response": raw_response,
                 "raw_response_type": raw_response_type,
-                "messages": _strip_orphaned_tool_messages(current_messages.copy()),
+                "messages": _drop_non_input_message_keys(_strip_orphaned_tool_messages(current_messages.copy())),
                 "llm_params": {"model": model},
             }
             if raw_response_type == "tool_calls":
