@@ -311,3 +311,32 @@ def test_source_deletion_grace_can_be_configured(setup):
     assert added["policy"]["rules"][-1]["min_source_deleted_days"] == 7
     updated = invoke("policies", "rules", "update", "p", "-n", "a", "--name", "orphan", "--min-source-deleted-days", "14")
     assert updated["policy"]["rules"][-1]["min_source_deleted_days"] == 14
+
+
+def test_source_deletion_grace_can_be_cleared_without_replacing_rule(setup):
+    invoke("policies", "rules", "update", "p", "-n", "a", "--name", "old", "--source-deleted", "--min-source-deleted-days", "7")
+    conflict = runner.invoke(
+        app,
+        [
+            "retention",
+            "policies",
+            "rules",
+            "update",
+            "p",
+            "-n",
+            "a",
+            "--name",
+            "old",
+            "--clear-source-deleted-days",
+            "--min-source-deleted-days",
+            "0",
+        ],
+    )
+    assert conflict.exit_code == 1
+    assert "Cannot set and clear min_source_deleted_days" in conflict.output
+    assert setup.retention("a").list_rules("p")["items"][0]["min_source_deleted_days"] == 7
+    updated = invoke("policies", "rules", "update", "p", "-n", "a", "--name", "old", "--clear-source-deleted-days", "--no-source-deleted")
+    rule = updated["policy"]["rules"][0]
+    assert rule["min_source_deleted_days"] is None
+    assert rule["source_deleted"] is False
+    assert rule["max_age_days"] == 0

@@ -256,3 +256,25 @@ def test_cascade_does_not_persist_source_task_text(interfaces):
     stored = service.store.get_run(namespace_id="a", run_id=report["run_id"])
     assert private not in json.dumps(stored)
     assert private not in response.text
+
+
+def test_manual_run_cannot_claim_existing_history_without_request_record(interfaces):
+    client, http = interfaces
+    service = client.retention("a", agent_id="agent-a")
+    service.create_policy("p")
+    original = service.store.save_run(
+        namespace_id="a",
+        run_id="existing",
+        policy_id="p",
+        agent_id="agent-a",
+        initiated_by="alice",
+        status="completed",
+        report={"run_id": "existing"},
+        created_at="2026-01-01T00:00:00+00:00",
+    )
+    for _ in range(2):
+        response = http.post("/manage/retention/runs", json={"policy_id": "p", "run_id": "existing"})
+        assert response.status_code == 409, response.text
+    assert service.store.get_run(namespace_id="a", run_id="existing") == original
+    with service.store._connect_sqlite() as conn:
+        assert conn.execute("SELECT count(*) FROM evolve_retention_requests").fetchone()[0] == 0

@@ -141,9 +141,9 @@ def redact_entities(
     """Return redacted copies of ``entities``, or ``None`` when nothing changed.
 
     ``content`` is always redacted; ``metadata`` values when ``redact_metadata``
-    is set — **default True, to match the shipped regex plugin**, which round-
-    trips the whole entity through cpex-pii-filter and so redacts metadata
-    unconditionally. Shipping the two PII plugins with opposite metadata defaults
+    is set — **default True, to match the shipped regex plugin**. Root metadata
+    identity fields are preserved; arbitrary nested metadata is redacted even
+    when its keys share those names. Shipping the two PII plugins with opposite metadata defaults
     would be a silent parity gap, and the fail-safe default for a redactor is to
     mask more. It is an opt-*out* (``redact_metadata=False``): metadata can hold
     ids/paths/trace keys that redaction would corrupt, so a deployment that keys
@@ -161,7 +161,10 @@ def redact_entities(
             updated["content"] = content
             changed = True
         if redact_metadata and entity.get("metadata"):
-            metadata = _redact_value(entity["metadata"], detect, mask=mask, skip=IDENTITY_METADATA_KEYS)
+            metadata = {
+                key: value if key in IDENTITY_METADATA_KEYS else _redact_value(value, detect, mask=mask)
+                for key, value in entity["metadata"].items()
+            }
             if metadata != entity["metadata"]:
                 updated["metadata"] = metadata
                 changed = True

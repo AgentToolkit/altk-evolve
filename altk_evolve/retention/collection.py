@@ -371,6 +371,16 @@ class Collection:
                     if parent:
                         if versions[parent.id] != dep["fingerprint"]:
                             outcome = "withdrawn"
+                        else:
+                            # Receipts and access signals can change independently
+                            # of the parent's row version after marking.
+                            engine = RetentionEngine(
+                                SimpleNamespace(scan_entities=lambda *a, **kw: [parent]),
+                                source_deletion_times=self.source_deletion_times(conn, [parent]),
+                            )
+                            actions = engine.evaluate(self.namespace, parsed, now=now)
+                            if not any(i.entity_id == parent.id and i.action == "delete" and i.rule == candidate["rule"] for i in actions):
+                                outcome = "withdrawn"
                     else:
                         receipt = conn.execute(
                             """SELECT 1 FROM evolve_retention_candidates WHERE namespace_id=%s AND policy_id=%s
@@ -385,7 +395,7 @@ class Collection:
                         source_deletion_times=self.source_deletion_times(conn, [entity]),
                     )
                     actions = engine.evaluate(self.namespace, parsed, now=now)
-                    if not any(i.entity_id == entity_id and i.action == "delete" for i in actions):
+                    if not any(i.entity_id == entity_id and i.action == "delete" and i.rule == candidate["rule"] for i in actions):
                         outcome = "withdrawn"
             if outcome == "deleted":
                 conn.execute(sql.SQL("DELETE FROM {} WHERE id=%s").format(self.table), (int(entity_id),))

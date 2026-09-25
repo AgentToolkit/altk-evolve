@@ -248,6 +248,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         source_deleted: Annotated[bool | None, typer.Option("--source-deleted/--no-source-deleted")] = None,
         clear_age: Annotated[bool, typer.Option()] = False,
         clear_unused: Annotated[bool, typer.Option()] = False,
+        clear_source_deleted_days: Annotated[bool, typer.Option()] = False,
         all_types: Annotated[bool, typer.Option()] = False,
     ):
         """Change supplied fields of a named rule, keeping its position."""
@@ -265,7 +266,12 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
             }.items()
             if value is not None
         }
-        for clear, key in [(clear_age, "max_age_days"), (clear_unused, "max_unused_days"), (all_types, "entity_type")]:
+        for clear, key in [
+            (clear_age, "max_age_days"),
+            (clear_unused, "max_unused_days"),
+            (clear_source_deleted_days, "min_source_deleted_days"),
+            (all_types, "entity_type"),
+        ]:
             if clear:
                 if key in values:
                     raise ValueError(f"Cannot set and clear {key} together")

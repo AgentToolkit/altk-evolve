@@ -420,7 +420,13 @@ def test_semantic_redaction_preserves_identity_but_redacts_free_text():
 
     entity = {
         "content": f"Contact {subject}",
-        "metadata": {"owner_id": subject, "user_id": subject, "thread_id": subject, "title": subject},
+        "metadata": {
+            "owner_id": subject,
+            "user_id": subject,
+            "thread_id": subject,
+            "title": subject,
+            "notes": {"owner_id": subject, "nested": [{"user_id": subject}]},
+        },
     }
     result = redact_entities([entity], detect)[0]
     assert result["metadata"]["user_id"] == subject
@@ -428,3 +434,5 @@ def test_semantic_redaction_preserves_identity_but_redacts_free_text():
     assert result["metadata"]["thread_id"] == subject
     assert result["metadata"]["title"] == "[REDACTED]"
     assert subject not in result["content"]
+    assert result["metadata"]["notes"] == {"owner_id": "[REDACTED]", "nested": [{"user_id": "[REDACTED]"}]}
+    assert entity["metadata"]["notes"]["owner_id"] == subject

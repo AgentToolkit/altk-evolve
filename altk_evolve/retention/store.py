@@ -237,7 +237,7 @@ class RetentionStore:
         started = _now()
         running_sql = """INSERT INTO evolve_retention_runs
             (namespace_id,run_id,policy_id,agent_id,initiated_by,status,report_json,created_at,updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (namespace_id,run_id) DO NOTHING"""
         running_values = (
             namespace_id,
             run_id,
@@ -255,8 +255,9 @@ class RetentionStore:
             with psycopg.connect(self._postgres.info.dsn, password=self._postgres.info.password) as conn:
                 cursor = conn.execute(sql, (namespace_id, run_id, request_hash))
                 claimed = cursor.rowcount == 1
-                if claimed:
-                    conn.execute(running_sql, running_values)
+                if claimed and conn.execute(running_sql, running_values).rowcount != 1:
+                    conn.rollback()
+                    return False, ""
                 row = conn.execute(select, (namespace_id, run_id)).fetchone()
                 assert row is not None
                 saved_hash = row[0]
@@ -264,8 +265,9 @@ class RetentionStore:
             with self._connect_sqlite() as conn:
                 sqlite_cursor = conn.execute(sql.replace("%s", "?"), (namespace_id, run_id, request_hash))
                 claimed = sqlite_cursor.rowcount == 1
-                if claimed:
-                    conn.execute(running_sql.replace("%s", "?"), running_values)
+                if claimed and conn.execute(running_sql.replace("%s", "?"), running_values).rowcount != 1:
+                    conn.rollback()
+                    return False, ""
                 saved_hash = conn.execute(select.replace("%s", "?"), (namespace_id, run_id)).fetchone()[0]
         return claimed, saved_hash
 
