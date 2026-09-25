@@ -147,7 +147,7 @@ def test_concurrent_hold_transaction_wins_before_sweep(collection):
 
     collector, conn = collection
     collector.mark("p", initiated_by="admin")
-    with psycopg.connect(conn.info.dsn) as hold:
+    with psycopg.connect(conn.info.dsn, password=conn.info.password) as hold:
         hold.execute("UPDATE ns_a SET metadata=jsonb_build_object('legal_hold',true)")
         with ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(collector.sweep, "p", initiated_by="admin")
@@ -336,3 +336,87 @@ def test_cascade_keeps_same_trace_owned_by_other_user_or_agent(collection):
     assert {x["entity_id"] for x in collector.mark("p", initiated_by="admin")["marked"]} == {"1", "2"}
     collector.sweep("p", initiated_by="admin")
     assert {row["id"] for row in conn.execute("SELECT id FROM ns_a").fetchall()} == {3, 4}
+
+
+def test_source_receipt_grace_is_rechecked_during_mark_and_sweep(collection):
+    collector, conn = collection
+    conn.execute("UPDATE ns_a SET metadata=%s WHERE id=1", ('{"user_id":"alice@example.com","agent_id":"agent","thread_id":"thread"}',))
+    collector.store.create_policy("a", "grace", "Source deletion grace")
+    collector.store.edit_rule("a", "grace", "orphan", "add", {"source_deleted": True, "min_source_deleted_days": 7, "action": "delete"})
+    collector.record_source_deletion(
+        "thread", "alice@example.com", "agent", conn.execute("SELECT now() AS now").fetchone()["now"].isoformat()
+    )
+    assert collector.mark("grace", initiated_by="admin")["marked"] == []
+    conn.execute("UPDATE evolve_retention_deleted_sources SET deleted_at=clock_timestamp()-interval '8 days'")
+    assert len(collector.mark("grace", initiated_by="admin")["marked"]) == 1
+    # Even an existing mark must not bypass a newer source receipt.
+    conn.execute("UPDATE evolve_retention_deleted_sources SET deleted_at=clock_timestamp()")
+    collector.sweep("grace", initiated_by="admin")
+    assert conn.execute("SELECT count(*) AS n FROM ns_a").fetchone()["n"] == 1
+
+
+def test_competing_postgres_manual_claims_leave_one_history_record(collection):
+    collector, conn = collection
+
+    def claim(_):
+        return collector.store.claim_run(
+            namespace_id="a", run_id="manual-operation", request_hash="request", policy_id="p", agent_id="agent", initiated_by="admin"
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(claim, range(4)))
+    assert sum(claimed for claimed, _ in results) == 1
+    assert {saved for _, saved in results} == {"request"}
+    record = conn.execute("SELECT * FROM evolve_retention_runs WHERE namespace_id=%s AND run_id=%s", ("a", "manual-operation")).fetchone()
+    assert record["status"] == "running"
+    assert record["initiated_by"] == "admin"
+
+
+@pytest.mark.parametrize("reset_receipt", [False, True])
+@pytest.mark.parametrize("child_first", [False, True])
+@pytest.mark.parametrize("fallback_rule", [False, True])
+def test_cascade_rechecks_parent_source_grace(collection, reset_receipt, child_first, fallback_rule):
+    collector, conn = collection
+    conn.execute(
+        "UPDATE ns_a SET type='trajectory',metadata=%s", ('{"trace_id":"trace","user_id":"alice","agent_id":"agent","thread_id":"thread"}',)
+    )
+    conn.execute(
+        "INSERT INTO ns_a(type,content,created_at,metadata) VALUES ('guideline','derived',0,%s)",
+        ('{"source_task_id":"trace","user_id":"alice","agent_id":"agent"}',),
+    )
+    collector.store.edit_rule(
+        "a",
+        "p",
+        "old",
+        "update",
+        {"entity_type": "trajectory", "cascade_derived": True, "source_deleted": True, "min_source_deleted_days": 7},
+    )
+    if fallback_rule:
+        collector.store.edit_rule("a", "p", "other", "add", {"entity_type": "trajectory", "max_age_days": 1, "action": "delete"})
+    deleted_at = conn.execute("SELECT now()-interval '8 days' AS t").fetchone()["t"]
+    collector.record_source_deletion("thread", "alice", "agent", deleted_at.isoformat())
+    assert len(collector.mark("p", initiated_by="admin")["marked"]) == 2
+    if reset_receipt:
+        collector.record_source_deletion("thread", "alice", "agent", conn.execute("SELECT now() AS t").fetchone()["t"].isoformat())
+    order = ["2", "1"] if child_first else ["1", "2"]
+    outcomes = [collector.sweep_one("p", entity_id, "sweep", "admin")["outcome"] for entity_id in order]
+    assert outcomes == (["withdrawn", "withdrawn"] if reset_receipt else ["deleted", "deleted"])
+    assert conn.execute("SELECT count(*) AS n FROM ns_a").fetchone()["n"] == (2 if reset_receipt else 0)
+
+
+def test_postgres_existing_run_does_not_leave_request_claim(collection):
+    collector, conn = collection
+    conn.execute(
+        "INSERT INTO evolve_retention_runs(namespace_id,run_id,policy_id,status,report_json,created_at,updated_at) "
+        "VALUES ('a','existing','p','completed','{}','original','original')"
+    )
+    for _ in range(2):
+        claimed, _ = collector.store.claim_run(
+            namespace_id="a", run_id="existing", request_hash="request", policy_id="p", agent_id="agent", initiated_by="admin"
+        )
+        assert claimed is False
+    assert conn.execute("SELECT count(*) AS n FROM evolve_retention_requests").fetchone()["n"] == 0
+    assert conn.execute("SELECT status,updated_at FROM evolve_retention_runs WHERE run_id='existing'").fetchone() == {
+        "status": "completed",
+        "updated_at": "original",
+    }

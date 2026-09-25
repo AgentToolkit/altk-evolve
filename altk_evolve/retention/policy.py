@@ -72,7 +72,13 @@ class RetentionRule(BaseModel):
         ),
     )
     source_deleted: bool = Field(
-        default=False, description="Require a durable, scoped source-deletion receipt in addition to the age threshold. PostgreSQL only."
+        default=False,
+        description="Require a durable, scoped source-deletion receipt in addition to any configured age threshold. PostgreSQL only.",
+    )
+    min_source_deleted_days: int | None = Field(
+        default=None,
+        ge=0,
+        description="Wait this many elapsed days after confirmed source deletion. Requires source_deleted.",
     )
     cascade_derived: bool = Field(
         default=False,
@@ -81,8 +87,10 @@ class RetentionRule(BaseModel):
 
     @model_validator(mode="after")
     def _require_a_threshold(self) -> RetentionRule:
-        if self.max_age_days is None and self.max_unused_days is None:
-            raise ValueError(f"retention rule {self.name!r} must set max_age_days and/or max_unused_days")
+        if self.min_source_deleted_days is not None and not self.source_deleted:
+            raise ValueError("min_source_deleted_days requires source_deleted")
+        if self.max_age_days is None and self.max_unused_days is None and self.min_source_deleted_days is None:
+            raise ValueError(f"retention rule {self.name!r} must set max_age_days, max_unused_days, or min_source_deleted_days")
         return self
 
 
