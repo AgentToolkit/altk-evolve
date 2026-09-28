@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,7 +32,21 @@ class GuidelinesSettings(BaseSettings):
     # rejects n>1, the k samples for a step are fetched as k separate completions.
     # A deployment-wide routing/rate-limit concern, like custom_llm_provider — not a
     # per-agent analysis knob, so it lives here rather than in agent_config.yaml.
-    consistency_resample_max_workers: int = Field(default=4, ge=1)
+    consistency_resample_max_workers: int = Field(default=4)
+
+    @field_validator("consistency_resample_max_workers", mode="before")
+    @classmethod
+    def coerce_invalid_workers(cls, v: Any) -> int:
+        """Fall back to 4 when EVOLVE_CONSISTENCY_RESAMPLE_MAX_WORKERS is < 1 or unparseable."""
+        try:
+            val = int(v)
+            if val < 1:
+                logger.warning(f"Invalid EVOLVE_CONSISTENCY_RESAMPLE_MAX_WORKERS '{v}' (must be >= 1), defaulting to 4")
+                return 4
+            return val
+        except (ValueError, TypeError):
+            logger.warning(f"Unrecognised EVOLVE_CONSISTENCY_RESAMPLE_MAX_WORKERS '{v}', defaulting to 4")
+            return 4
 
     @field_validator("guidelines_mode", mode="before")
     @classmethod

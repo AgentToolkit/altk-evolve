@@ -290,6 +290,16 @@ class TestDropNonInputMessageKeys:
     def test_empty_list(self):
         assert _drop_non_input_message_keys([]) == []
 
+    def test_original_messages_are_not_mutated_in_place(self):
+        """_drop_non_input_message_keys must not modify the caller's input dictionary."""
+        original_msg = {"role": "tool", "tool_call_id": "1", "content": "done", "outcome": {"status": "success"}}
+        messages = [original_msg]
+
+        result = _drop_non_input_message_keys(messages)
+
+        assert "outcome" in original_msg, "caller's message dict must not be mutated in-place"
+        assert "outcome" not in result[0]
+
     def test_ir_step_prefixes_are_sanitised(self):
         """The IR is what resampling replays, so the annotations must be gone by then."""
         trajectory = {
