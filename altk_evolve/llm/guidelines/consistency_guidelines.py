@@ -614,13 +614,16 @@ def generate_consistency_guidelines(
         # without this a caller-supplied IR would be the one route that reaches the provider
         # unfiltered — and a caller precise enough to capture real per-step input is exactly
         # the kind whose messages carry producer annotations.
-        trajectory_ir = {
-            **trajectory_ir,
-            "steps": [
-                {**step, "messages": _drop_non_input_message_keys(step["messages"])} if "messages" in step else step
-                for step in trajectory_ir.get("steps", [])
-            ],
-        }
+        #
+        # Mutate the step dicts in place rather than replacing them. A caller that passes
+        # trajectory_ir= and trajectory_renderer= closes the renderer over these same step
+        # dict objects so that scoring writes (step["consistency"] = ...) are visible to the
+        # renderer when it is called. Replacing the dicts with {**step, ...} copies would
+        # rebind trajectory_ir to new objects, leaving the renderer's closure pointing at the
+        # originals which never receive the consistency scores.
+        for step in trajectory_ir.get("steps", []):
+            if "messages" in step:
+                step["messages"] = _drop_non_input_message_keys(step["messages"])
         logger.info(
             f"Using caller-supplied trajectory IR for {trajectory_ir.get('name', '')} ({len(trajectory_ir.get('steps', []))} steps)"
         )
