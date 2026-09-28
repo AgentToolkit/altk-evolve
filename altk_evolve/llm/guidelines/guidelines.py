@@ -348,11 +348,25 @@ def _generate_guidelines_for_segment(
 def generate_guidelines(messages: list[dict]) -> list[GuidelineGenerationResult]:
     """Generate guidelines from a trajectory, optionally segmented into subtasks.
 
-    When segmentation is enabled (EVOLVE_SEGMENTATION_ENABLED=true, the default),
-    the trajectory is first segmented into logical subtasks. Guidelines are then generated
-    per subtask and each result carries the subtask's generalized description as
-    task_description — giving downstream clustering much more precise signal than
-    the raw first user message.
+    Segmentation is **disabled by default** (EVOLVE_SEGMENTATION_ENABLED=true enables it).
+    The two modes trade off against each other, so neither is strictly better:
+
+    - **Disabled (default).** One LLM call for the whole trajectory. A failed attempt and
+      the correction that followed stay in the same context, so the lesson is stated once,
+      consistently. The cost is that task_description is the raw first user message
+      verbatim — including any user-specific values it contains — and every guideline from
+      one trajectory shares it. Since task_description is the clustering key
+      (clustering.py) and the retrieval ranking key (retrieval.py), it no longer
+      distinguishes subtasks within a trajectory.
+    - **Enabled.** One LLM call per subtask, each result carrying the subtask's
+      generalized description as task_description. That is the more precise clustering
+      key, but a subtask boundary can fall between a failed attempt and its correction,
+      in which case the failing segment yields confident guidelines asserting the wrong
+      approach with no access to the correction.
+
+    The default is disabled because the contradictory-guideline failure is the more
+    damaging of the two in measured end-to-end runs. See docs/guides/configuration.md for
+    the evidence and for when to turn it back on.
 
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
     trajectory when segmentation is disabled or produces fewer than 2 subtasks).
