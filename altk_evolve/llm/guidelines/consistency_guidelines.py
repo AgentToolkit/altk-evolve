@@ -567,7 +567,7 @@ def generate_consistency_guidelines(
     # Only attempt when every assistant message's content field allows a 1:1 step index
     # mapping between segment_trajectory and transform_trajectory_to_IR.
     subtasks = []
-    if n_scorable_steps >= SEGMENTATION_MIN_STEPS and _can_segment_trajectory(messages):
+    if evolve_config.segmentation_enabled and n_scorable_steps >= SEGMENTATION_MIN_STEPS and _can_segment_trajectory(messages):
         try:
             from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
