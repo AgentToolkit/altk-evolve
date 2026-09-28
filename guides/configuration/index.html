@@ -1965,6 +1965,11 @@
 <td><code>fast</code></td>
 </tr>
 <tr>
+<td><code>EVOLVE_CONSISTENCY_RESAMPLE_MAX_WORKERS</code></td>
+<td><code>accurate</code> method only: how many resampling calls run in parallel when a provider won't return several completions in one call — see <a href="../guidelines/#choosing-a-consistency-method">Enabling Guidelines</a>. Raise it to cut resampling wall-clock, lower it to <code>1</code> if the provider rate-limits you</td>
+<td><code>4</code></td>
+</tr>
+<tr>
 <td><code>EVOLVE_SEGMENTATION_ENABLED</code></td>
 <td>Segment trajectories into logical subtasks before generating guidelines. Governs all three generation paths (<code>standard</code>, and both <code>consistency</code> methods). Disabled by default — see <a href="#trajectory-segmentation">Trajectory segmentation</a></td>
 <td><code>false</code></td>
