@@ -79,3 +79,27 @@ def test_retention_store_updates_policy_without_replacing_created_at(tmp_path):
     assert updated["name"] == "Updated"
     assert updated["enabled"] is False
     assert updated["created_at"] == original["created_at"]
+
+
+def test_competing_manual_requests_reserve_one_durable_run(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    stores = [RetentionStore(_client(tmp_path)) for _ in range(4)]
+
+    def claim(store):
+        return store.claim_run(
+            namespace_id="a", run_id="same", request_hash="request", policy_id="p", agent_id="agent", initiated_by="admin"
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(claim, stores))
+    assert sum(claimed for claimed, _ in results) == 1
+    assert {saved for _, saved in results} == {"request"}
+    # Even a crash before execution leaves a record that can be reconciled.
+    record = RetentionStore(_client(tmp_path)).get_run(namespace_id="a", run_id="same")
+    assert record["status"] == "running"
+    assert record["agent_id"] == "agent"
+    assert record["initiated_by"] == "admin"
+    assert stores[0].claim_run(
+        namespace_id="b", run_id="same", request_hash="request", policy_id="p", agent_id="agent", initiated_by="admin"
+    )[0]

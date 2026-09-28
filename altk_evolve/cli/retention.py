@@ -207,6 +207,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         name: Annotated[str, typer.Option(help="Unique rule name within the policy.")],
         max_age_days: Annotated[int | None, typer.Option(min=0)] = None,
         max_unused_days: Annotated[int | None, typer.Option(min=0)] = None,
+        min_source_deleted_days: Annotated[int | None, typer.Option(min=0, help="Elapsed days after confirmed source deletion.")] = None,
         entity_type: Annotated[str | None, typer.Option()] = None,
         action: Annotated[Action, typer.Option()] = Action.flag,
         on_missing_access_signal: Annotated[MissingAccess, typer.Option()] = MissingAccess.skip,
@@ -221,6 +222,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
                 {
                     "max_age_days": max_age_days,
                     "max_unused_days": max_unused_days,
+                    "min_source_deleted_days": min_source_deleted_days,
                     "entity_type": entity_type,
                     "action": action.value,
                     "on_missing_access_signal": on_missing_access_signal.value,
@@ -238,6 +240,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         name: Annotated[str, typer.Option(help="Existing rule name.")],
         max_age_days: Annotated[int | None, typer.Option(min=0)] = None,
         max_unused_days: Annotated[int | None, typer.Option(min=0)] = None,
+        min_source_deleted_days: Annotated[int | None, typer.Option(min=0, help="Elapsed days after confirmed source deletion.")] = None,
         entity_type: Annotated[str | None, typer.Option()] = None,
         action: Annotated[Action | None, typer.Option()] = None,
         on_missing_access_signal: Annotated[MissingAccess | None, typer.Option()] = None,
@@ -245,6 +248,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
         source_deleted: Annotated[bool | None, typer.Option("--source-deleted/--no-source-deleted")] = None,
         clear_age: Annotated[bool, typer.Option()] = False,
         clear_unused: Annotated[bool, typer.Option()] = False,
+        clear_source_deleted_days: Annotated[bool, typer.Option()] = False,
         all_types: Annotated[bool, typer.Option()] = False,
     ):
         """Change supplied fields of a named rule, keeping its position."""
@@ -253,6 +257,7 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
             for key, value in {
                 "max_age_days": max_age_days,
                 "max_unused_days": max_unused_days,
+                "min_source_deleted_days": min_source_deleted_days,
                 "entity_type": entity_type,
                 "action": action.value if action else None,
                 "on_missing_access_signal": on_missing_access_signal.value if on_missing_access_signal else None,
@@ -261,7 +266,12 @@ def register_retention_commands(app: typer.Typer, get_client: Callable[[], Evolv
             }.items()
             if value is not None
         }
-        for clear, key in [(clear_age, "max_age_days"), (clear_unused, "max_unused_days"), (all_types, "entity_type")]:
+        for clear, key in [
+            (clear_age, "max_age_days"),
+            (clear_unused, "max_unused_days"),
+            (clear_source_deleted_days, "min_source_deleted_days"),
+            (all_types, "entity_type"),
+        ]:
             if clear:
                 if key in values:
                     raise ValueError(f"Cannot set and clear {key} together")

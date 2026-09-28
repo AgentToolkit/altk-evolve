@@ -326,8 +326,9 @@ def test_cascade_delete_removes_derived_memories():
     assert deleted_ids == {"traj", "g1"}  # the young derived guideline goes with its session
     assert "g2" not in deleted_ids  # different trace, untouched
     cascade = next(i for i in report.deleted if i.entity_id == "g1")
-    assert cascade.reason == "cascade:T1"
-    assert "derived from session traj" in cascade.detail
+    assert cascade.reason == "cascade"
+    assert cascade.cascade_source_id == "traj"
+    assert cascade.detail == "derived from a source selected for deletion"
 
 
 def test_cascade_works_for_mcp_shaped_sessions_normalized_by_the_hook_seam():
@@ -367,7 +368,7 @@ def test_cascade_falls_back_to_task_id_for_pre_normalizer_sessions():
     report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
 
     assert {i.entity_id for i in report.deleted} == {"traj", "g1"}
-    assert next(i for i in report.deleted if i.entity_id == "g1").reason == "cascade:T5"
+    assert next(i for i in report.deleted if i.entity_id == "g1").reason == "cascade"
 
 
 def test_trace_id_wins_over_task_id_when_both_present():
@@ -380,7 +381,7 @@ def test_trace_id_wins_over_task_id_when_both_present():
 
     report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
 
-    assert next(i for i in report.deleted if i.entity_id == "g1").reason == "cascade:T1"
+    assert next(i for i in report.deleted if i.entity_id == "g1").reason == "cascade"
 
 
 def test_cascade_off_leaves_derived_memories():
@@ -444,7 +445,7 @@ def test_cascade_matches_int_trace_id_against_str_source_task_id():
     report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
 
     assert {i.entity_id for i in report.deleted} == {"traj", "g1"}
-    assert next(i for i in report.deleted if i.entity_id == "g1").reason == "cascade:1"
+    assert next(i for i in report.deleted if i.entity_id == "g1").reason == "cascade"
 
 
 def test_cascade_only_fires_for_trajectory_typed_deletes():
@@ -674,3 +675,31 @@ def test_shipped_example_policy_is_valid():
     unused = policy.rules[0]
     assert unused.action == "delete"
     assert unused.on_missing_access_signal == "skip"  # fail-safe default, explicit in the example
+
+
+@pytest.mark.parametrize("elapsed,expected", [(0, False), (6.999, False), (7, True), (8, True)])
+def test_source_deletion_grace_uses_receipt_time_not_memory_age(elapsed, expected):
+    entity = _entity("old", created_days_ago=90)
+    engine = RetentionEngine(FakeClient([entity]), source_deletion_times={"old": NOW - datetime.timedelta(days=elapsed)})
+    policy = RetentionPolicy(rules=[RetentionRule(name="orphan", source_deleted=True, min_source_deleted_days=7, action="delete")])
+    assert bool(engine.evaluate("ns", policy, now=NOW)) is expected
+
+
+def test_source_deletion_grace_requires_receipt_timestamp():
+    entity = _entity("old", created_days_ago=90)
+    engine = RetentionEngine(FakeClient([entity]), source_deleted_ids={"old"})
+    policy = RetentionPolicy(rules=[RetentionRule(name="orphan", source_deleted=True, min_source_deleted_days=7, action="delete")])
+    assert engine.evaluate("ns", policy, now=NOW) == []
+
+
+def test_cascade_reasons_use_opaque_source_reference():
+    secret = "CONFIDENTIAL acquisition of Project Heron"
+    parent = _entity("parent-id", type="trajectory", created_days_ago=400, metadata={"trace_id": secret})
+    child = _entity("child-id", metadata={"source_task_id": secret})
+    engine = RetentionEngine(FakeClient([parent, child]))
+    policy = RetentionPolicy(rules=[RetentionRule(name="old", max_age_days=365, action="delete", cascade_derived=True)])
+    items = engine.evaluate("ns", policy, now=NOW)
+    assert secret not in str(items)
+    cascade = next(item for item in items if item.entity_id == "child-id")
+    assert cascade.reason == "cascade"
+    assert cascade.cascade_source_id == "parent-id"

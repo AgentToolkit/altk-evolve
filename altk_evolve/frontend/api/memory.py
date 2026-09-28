@@ -70,6 +70,7 @@ class PolicyRequest(Body):
 
 
 class RunRequest(Body):
+    run_id: str | None = Field(default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     policy_id: str
     dry_run: bool = True
     additional_matches: list[dict[str, Any]] = Field(default_factory=list, max_length=10000)
@@ -304,7 +305,13 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
     @router.post("/manage/retention/runs")
     def run(body: RunRequest, pair=Depends(service)):
         result = retention_call(
-            pair, "run", body.policy_id, dry_run=body.dry_run, initiated_by=_manager(pair[1]), additional_matches=body.additional_matches
+            pair,
+            "run",
+            body.policy_id,
+            run_id=body.run_id,
+            dry_run=body.dry_run,
+            initiated_by=_manager(pair[1]),
+            additional_matches=body.additional_matches,
         )
         return audit_payload(result)
 

@@ -69,6 +69,9 @@ class HookPluginSpec(BaseModel):
     """
 
     name: str = Field(description="Unique plugin name.")
+    display_name: str | None = Field(default=None, description="Human-readable label for management interfaces; defaults to name.")
+    description: str | None = Field(default=None, description="Plain-language explanation of what the plugin does.")
+    show_in_ui: bool = Field(default=True, description="Show in management filter lists. Does not disable execution or health checks.")
     kind: str = Field(description="Dotted import path of the plugin class.")
     hooks: list[str] = Field(description="Hook types the plugin subscribes to (see altk_evolve.hooks.HookType).")
     mode: Literal["transform", "sequential", "concurrent", "audit", "fire_and_forget", "disabled"] = Field(
