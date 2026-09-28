@@ -3,12 +3,14 @@
 import json
 import logging
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from altk_evolve.llm.guidelines.consistency_guidelines import (
     _can_segment_trajectory,
     _classify_step_response,
+    _drop_non_input_message_keys,
     _is_well_formed_tool_calls,
     _strip_orphaned_tool_messages,
     format_trajectory_data,
@@ -233,6 +235,95 @@ class TestStripOrphanedToolMessages:
         tool_messages = [m for m in result if m.get("role") == "tool"]
         assert len(tool_messages) == 1
         assert tool_messages[0]["content"] == "valid"
+
+
+class TestDropNonInputMessageKeys:
+    def test_producer_annotations_are_dropped(self):
+        """Groq rejects unknown properties outright:
+
+        'messages.2' : for 'role:tool' the following must be
+        satisfied[('messages.2' : property 'outcome' is unsupported)]
+
+        so a trajectory annotated by its producer would fail every sample of the
+        step it annotates rather than simply carrying extra context.
+        """
+        messages = [
+            {"role": "user", "content": "file it", "feedback": {"rating": "up"}},
+            {"role": "tool", "tool_call_id": "1", "content": "done", "outcome": {"status": "success"}},
+        ]
+
+        assert _drop_non_input_message_keys(messages) == [
+            {"role": "user", "content": "file it"},
+            {"role": "tool", "tool_call_id": "1", "content": "done"},
+        ]
+
+    def test_spec_keys_survive(self):
+        messages = [
+            {"role": "system", "content": "be helpful", "name": "sys"},
+            {"role": "user", "content": "hello", "name": "alice"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": "1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+            },
+            {"role": "tool", "tool_call_id": "1", "content": "5"},
+        ]
+
+        assert _drop_non_input_message_keys(messages) == messages
+
+    def test_tool_role_drops_name_key(self):
+        """Tool messages must not have `name` on ChatCompletions API requests."""
+        messages = [{"role": "tool", "tool_call_id": "1", "name": "get_weather", "content": "5"}]
+        assert _drop_non_input_message_keys(messages) == [{"role": "tool", "tool_call_id": "1", "content": "5"}]
+
+    def test_list_content_is_passed_through_untouched(self):
+        """The Responses-API function_call shape lives inside `content`; filtering is
+        top-level only, or the parser would lose the calls it derives actions from."""
+        content = [{"type": "function_call", "id": "c1", "function": {"name": "f", "arguments": "{}"}}]
+        messages = [{"role": "assistant", "content": content, "trace_id": "t"}]
+
+        result = _drop_non_input_message_keys(messages)
+
+        assert result == [{"role": "assistant", "content": content}]
+
+    def test_untouched_messages_are_not_copied(self):
+        """A clean message is returned as-is, so the common path allocates nothing."""
+        messages = [{"role": "user", "content": "hi"}]
+
+        result = _drop_non_input_message_keys(messages)
+
+        assert result[0] is messages[0]
+
+    def test_empty_list(self):
+        assert _drop_non_input_message_keys([]) == []
+
+    def test_original_messages_are_not_mutated_in_place(self):
+        """_drop_non_input_message_keys must not modify the caller's input dictionary."""
+        original_msg = {"role": "tool", "tool_call_id": "1", "content": "done", "outcome": {"status": "success"}}
+        messages = [original_msg]
+
+        result = _drop_non_input_message_keys(messages)
+
+        assert "outcome" in original_msg, "caller's message dict must not be mutated in-place"
+        assert "outcome" not in result[0]
+
+    def test_ir_step_prefixes_are_sanitised(self):
+        """The IR is what resampling replays, so the annotations must be gone by then."""
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "file it"},
+                {"role": "assistant", "content": "", "tool_calls": [{"id": "1", "function": {"name": "f"}}]},
+                {"role": "tool", "tool_call_id": "1", "content": "done", "outcome": {"status": "success"}},
+                {"role": "assistant", "content": "filed"},
+            ],
+            "trace_id": "t",
+            "tools": [{"type": "function", "function": {"name": "f"}}],
+        }
+
+        ir = transform_trajectory_to_IR(trajectory)
+
+        prefix_keys = {key for step in ir["steps"] for msg in step["messages"] for key in msg}
+        assert "outcome" not in prefix_keys
 
 
 class TestParseConsistencyScoreCard:
@@ -1094,6 +1185,286 @@ class TestGenerateConsistencyGuidelinesFast:
             assert "judge" in prompt.lower()
             assert "⚠️" not in prompt
             assert "HIGH UNCERTAINTY" not in prompt
+
+
+@pytest.mark.unit
+class TestCallerSuppliedIR:
+    """`trajectory_ir=` lets a caller score the real per-step input.
+
+    `transform_trajectory_to_IR` rebuilds each step's prefix from one message list, which
+    is an approximation whenever the system message, bound tools or model differed between
+    steps — none of those are expressible in a single list. These tests pin that a supplied
+    IR is what gets scored, that `trajectory` still drives the prompt, and that supplying
+    one does not bypass the sanitisation the derived path applies.
+    """
+
+    def _trajectory(self):
+        return {
+            "messages": [
+                {"role": "user", "content": "do the thing"},
+                {"role": "assistant", "content": "step one"},
+                {"role": "assistant", "content": "step two"},
+            ],
+            "trace_id": "t",
+            "model": "gpt-4o",
+        }
+
+    def _ir(self, messages=None):
+        """One scorable step, with a prefix the caller captured itself."""
+        return {
+            "task": "caller task",
+            "name": "caller IR",
+            "steps": [
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 1,
+                    "raw_response": "step one",
+                    "raw_response_type": "content",
+                    "messages": messages if messages is not None else [{"role": "user", "content": "captured prefix"}],
+                    "llm_params": {"model": "gpt-4o"},
+                }
+            ],
+        }
+
+    def _run(self, monkeypatch, ir, on_resample):
+        """Run the accurate path with resampling/scoring stubbed, returning the LLM prompt."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: on_resample(trajectory))
+        # analyze_consistency returns (score_card, ir), not just a card.
+        monkeypatch.setattr(
+            module,
+            "analyze_consistency",
+            lambda trajectory, **kwargs: ({"steps": [{"step_number": 1, "step_uncertainty": 0.4}]}, trajectory),
+        )
+
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps(
+            {"guidelines": [{"content": "c", "category": "strategy", "rationale": "r", "trigger": "t"}]}
+        )
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(self._trajectory(), trajectory_ir=ir)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    def test_the_supplied_ir_is_scored_instead_of_a_derived_one(self, monkeypatch):
+        """The caller's steps reach the resampler; nothing is rebuilt from `trajectory`."""
+        seen = {}
+
+        def on_resample(ir):
+            seen["steps"] = ir["steps"]
+            return ir
+
+        self._run(monkeypatch, self._ir(), on_resample)
+        assert len(seen["steps"]) == 1, "the derived IR would have had two scorable steps"
+        assert seen["steps"][0]["messages"][0]["content"] == "captured prefix"
+
+    def test_transform_is_not_called_when_an_ir_is_supplied(self, monkeypatch):
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        called = []
+        monkeypatch.setattr(module, "transform_trajectory_to_IR", lambda t: called.append(t) or {})
+        self._run(monkeypatch, self._ir(), lambda ir: ir)
+        assert called == [], "a supplied IR must not be overwritten by a derived one"
+
+    def test_the_prompt_still_renders_the_trajectory_not_the_ir(self, monkeypatch):
+        """Scoring uses the supplied steps, but the prompt shows the whole conversation —
+        the IR's single step must not silently narrow what the model is shown."""
+        prompt = self._run(monkeypatch, self._ir(), lambda ir: ir)
+        assert "step two" in prompt, "the prompt comes from `trajectory`, which has both steps"
+
+    def test_supplied_ir_messages_are_sanitised_too(self, monkeypatch):
+        """Otherwise this is the one route reaching the provider unfiltered — and a caller
+        precise enough to capture real input is exactly the kind whose messages carry
+        producer annotations."""
+        annotated = [{"role": "user", "content": "captured prefix", "outcome": "success", "feedback": 5}]
+        seen = {}
+
+        def on_resample(ir):
+            seen["messages"] = ir["steps"][0]["messages"]
+            return ir
+
+        self._run(monkeypatch, self._ir(annotated), on_resample)
+        assert seen["messages"] == [{"role": "user", "content": "captured prefix"}]
+
+    def test_an_ir_without_a_task_falls_back_rather_than_raising(self, monkeypatch):
+        """`task` is transform_trajectory_to_IR's own output, not something a caller owes."""
+        ir = self._ir()
+        del ir["task"]
+        prompt = self._run(monkeypatch, ir, lambda ir: ir)
+        assert prompt, "generation must still happen without a task key"
+
+    def test_step_number_is_required_and_validated(self):
+        """Missing or invalid step_number must raise EvolveException."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+        from altk_evolve.schema.exceptions import EvolveException
+
+        trajectory = self._trajectory()
+
+        # Missing step_number
+        ir = self._ir()
+        del ir["steps"][0]["step_number"]
+        with pytest.raises(EvolveException, match="missing required 'step_number'"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        # Out-of-bounds step_number (e.g. 7 when there are 2 assistant messages)
+        ir = self._ir()
+        ir["steps"][0]["step_number"] = 7
+        with pytest.raises(EvolveException, match="is out of bounds"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        # 0 step_number (must be 1-based)
+        ir = self._ir()
+        ir["steps"][0]["step_number"] = 0
+        with pytest.raises(EvolveException, match="is out of bounds"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        # Duplicate step_number
+        ir = {
+            "steps": [
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 1,
+                    "messages": [{"role": "user", "content": "1"}],
+                    "llm_params": {"model": "gpt-4o"},
+                },
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 1,
+                    "messages": [{"role": "user", "content": "2"}],
+                    "llm_params": {"model": "gpt-4o"},
+                },
+            ]
+        }
+        with pytest.raises(EvolveException, match="Duplicate step_number"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+    def test_missing_or_invalid_agent_name_raises(self):
+        """Missing or invalid agent name must raise EvolveException."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+        from altk_evolve.schema.exceptions import EvolveException
+
+        trajectory = self._trajectory()
+
+        ir = self._ir()
+        del ir["steps"][0]["name"]
+        with pytest.raises(EvolveException, match="missing required 'name'"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        ir = self._ir()
+        ir["steps"][0]["name"] = "NonexistentAgent_foo"
+        with pytest.raises(EvolveException, match="unrecognized agent name"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+    def test_supplied_ir_integration_with_real_scoring(self):
+        """High-value integration test: supplied IR passes through real analyze_consistency
+        and the marker lands on the corresponding assistant message."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "turn 0"},
+                {"role": "assistant", "content": "first assistant response"},
+                {"role": "user", "content": "turn 2"},
+                {"role": "assistant", "content": "second assistant response"},
+            ],
+            "trace_id": "t",
+            "model": "gpt-4o",
+        }
+
+        # Step 2 corresponds to the second assistant message
+        ir = {
+            "task": "integration task",
+            "steps": [
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 2,
+                    "raw_response": "second assistant response",
+                    "raw_response_type": "text",
+                    "messages": [{"role": "user", "content": "turn 2"}],
+                    "llm_params": {"model": "gpt-4o"},
+                    "sampling": {
+                        "num_samples": 5,
+                        "raw_samples": ["diff 1", "diff 2", "diff 3", "diff 4", "diff 5"],
+                    },
+                }
+            ],
+        }
+
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps(
+            {"guidelines": [{"content": "c", "category": "strategy", "rationale": "r", "trigger": "t"}]}
+        )
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        _, kwargs = mock_completion.call_args
+        prompt = kwargs["messages"][-1]["content"]
+        # Step 2 should carry the uncertainty marker, and step 1 should not
+        assert "Step 1 - Agent reasoning:\nfirst assistant response" in prompt
+        assert "Step 2 [⚠️ HIGH UNCERTAINTY:" in prompt
+        assert "second assistant response" in prompt
+
+
+@pytest.mark.unit
+class TestCallerSuppliedRenderer:
+    """`trajectory_renderer=` replaces how the trajectory block reads, not what is scored."""
+
+    def _run(self, monkeypatch, renderer):
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: trajectory)
+        monkeypatch.setattr(
+            module,
+            "analyze_consistency",
+            lambda trajectory, **kwargs: ({"steps": [{"step_number": 1, "step_uncertainty": 0.4}]}, trajectory),
+        )
+
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps(
+            {"guidelines": [{"content": "c", "category": "strategy", "rationale": "r", "trigger": "t"}]}
+        )
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "do the thing"},
+                {"role": "assistant", "content": "step one"},
+            ],
+            "trace_id": "t",
+        }
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(trajectory, trajectory_renderer=renderer)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    def test_the_renderer_output_is_what_the_prompt_embeds(self, monkeypatch):
+        prompt = self._run(monkeypatch, lambda *a, **k: "RENDERED BY CALLER")
+        assert "RENDERED BY CALLER" in prompt
+        # The default renderer's output must be gone, not merely supplemented.
+        assert "Agent reasoning" not in prompt
+
+    def test_the_renderer_receives_post_scoring_data(self, monkeypatch):
+        """It is invoked after resampling and scoring, which is the whole reason it is a
+        callback rather than a string argument — the uncertainties do not exist earlier."""
+        seen = {}
+
+        def renderer(messages, consistency_data, step_range=None, config=None):
+            seen["consistency_data"] = consistency_data
+            seen["step_range"] = step_range
+            return "x"
+
+        self._run(monkeypatch, renderer)
+        assert seen["consistency_data"]["step_uncertainties"] == {1: 0.4}
+        assert seen["step_range"] is None
+
+    def test_the_default_renderer_is_used_when_none_is_given(self, monkeypatch):
+        prompt = self._run(monkeypatch, None)
+        assert "step one" in prompt
+
+    def test_renderer_returning_none_or_empty_string_does_not_render_none_literal(self, monkeypatch):
+        prompt = self._run(monkeypatch, lambda *a, **k: None)
+        assert "None" not in prompt
+        prompt_empty = self._run(monkeypatch, lambda *a, **k: "")
+        assert "Agent reasoning" not in prompt_empty
 
 
 class _SegmentationFixture:

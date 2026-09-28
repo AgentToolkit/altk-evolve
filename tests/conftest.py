@@ -17,12 +17,41 @@ def mock_sentence_transformer(request):
     # Only apply the mock for unit tests (check if test has the 'unit' marker)
     if request.node.get_closest_marker("unit"):
         with patch("sentence_transformers.SentenceTransformer") as mock_st:
+            from altk_evolve.llm.guidelines.consistency_analyzer import consistency_metric
+
+            consistency_metric.sentence_transformer_model_small = None
+            consistency_metric.sentence_transformer_model_large = None
+
             # Create a mock instance that will be returned when SentenceTransformer() is called
             mock_instance = Mock()
             # Mock the encode method to return dummy embeddings (list of floats)
-            mock_instance.encode.return_value = [[0.1] * 384]  # 384-dimensional dummy embedding
+            import numpy as np
+
+            def _mock_encode(texts, *args, **kwargs):
+                if isinstance(texts, list):
+                    # Return distinct orthogonal-ish vectors for distinct strings so divergent samples have similarity < 1
+                    arr = []
+                    for i, t in enumerate(texts):
+                        vec = [0.0] * 384
+                        # Use character sums to scatter across dimensions
+                        dim = abs(hash(t)) % 384
+                        vec[dim] = 1.0
+                        arr.append(vec)
+                    return np.array(arr)
+                return np.array([[0.1] * 384])
+
+            def _mock_similarity(e1, e2):
+                # Cosine similarity matrix between e1 and e2
+                e1_norm = e1 / (np.linalg.norm(e1, axis=-1, keepdims=True) + 1e-9)
+                e2_norm = e2 / (np.linalg.norm(e2, axis=-1, keepdims=True) + 1e-9)
+                return np.dot(e1_norm, e2_norm.T)
+
+            mock_instance.encode.side_effect = _mock_encode
+            mock_instance.similarity.side_effect = _mock_similarity
             mock_st.return_value = mock_instance
             yield mock_st
+            consistency_metric.sentence_transformer_model_small = None
+            consistency_metric.sentence_transformer_model_large = None
     else:
         # For non-unit tests, don't apply the mock
         yield None
