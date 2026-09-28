@@ -78,7 +78,10 @@ def _strip_orphaned_tool_messages(messages: list[dict]) -> list[dict]:
 # Top-level message keys the chat-completions API accepts as input. A resampled step
 # prefix is replayed verbatim as request input, so anything outside this set is a
 # request-validation error waiting to happen rather than harmless extra context.
+# Note that role="tool" messages only accept {role, content, tool_call_id}; OpenAI and
+# strict providers (e.g. Groq) reject `name` on tool-role messages.
 _CHAT_COMPLETIONS_MESSAGE_KEYS = frozenset({"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"})
+_TOOL_ROLE_MESSAGE_KEYS = frozenset({"role", "content", "tool_call_id"})
 
 
 def _drop_non_input_message_keys(messages: list[dict]) -> list[dict]:
@@ -106,10 +109,11 @@ def _drop_non_input_message_keys(messages: list[dict]) -> list[dict]:
     sanitized = []
     dropped: set[str] = set()
     for msg in messages:
-        extra = set(msg) - _CHAT_COMPLETIONS_MESSAGE_KEYS
+        allowed = _TOOL_ROLE_MESSAGE_KEYS if msg.get("role") == "tool" else _CHAT_COMPLETIONS_MESSAGE_KEYS
+        extra = set(msg) - allowed
         if extra:
             dropped |= extra
-            msg = {key: value for key, value in msg.items() if key in _CHAT_COMPLETIONS_MESSAGE_KEYS}
+            msg = {key: value for key, value in msg.items() if key in allowed}
         sanitized.append(msg)
     if dropped:
         logger.debug(f"Dropped non-input message keys before resampling: {sorted(dropped)}")

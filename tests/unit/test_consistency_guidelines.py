@@ -259,16 +259,22 @@ class TestDropNonInputMessageKeys:
 
     def test_spec_keys_survive(self):
         messages = [
-            {"role": "system", "content": "be helpful"},
+            {"role": "system", "content": "be helpful", "name": "sys"},
+            {"role": "user", "content": "hello", "name": "alice"},
             {
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [{"id": "1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
             },
-            {"role": "tool", "tool_call_id": "1", "name": "f", "content": "5"},
+            {"role": "tool", "tool_call_id": "1", "content": "5"},
         ]
 
         assert _drop_non_input_message_keys(messages) == messages
+
+    def test_tool_role_drops_name_key(self):
+        """Tool messages must not have `name` on ChatCompletions API requests."""
+        messages = [{"role": "tool", "tool_call_id": "1", "name": "get_weather", "content": "5"}]
+        assert _drop_non_input_message_keys(messages) == [{"role": "tool", "tool_call_id": "1", "content": "5"}]
 
     def test_list_content_is_passed_through_untouched(self):
         """The Responses-API function_call shape lives inside `content`; filtering is
