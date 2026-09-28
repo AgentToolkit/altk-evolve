@@ -143,7 +143,10 @@ def _completion_batched(kwargs: dict, samples: int, model_id: str, provider: str
     for attempt in range(_BATCHED_ATTEMPTS):
         try:
             choices = list(completion(**kwargs, n=samples).choices)
-        except _NON_RETRYABLE_EXCEPTIONS as e:
+        except (AuthenticationError, PermissionDeniedError) as e:
+            logger.debug(f"Batched resampling fatal error for {model_id}: {e}")
+            raise EvolveException(f"Resampling {model_id} failed with a non-retryable error: {e}") from e
+        except ContextWindowExceededError as e:
             logger.debug(f"Batched resampling fatal error for {model_id}: {e}")
             return [], e
         except BadRequestError as e:

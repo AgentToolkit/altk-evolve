@@ -313,8 +313,8 @@ def test_raises_when_fewer_than_two_samples_survive_and_preserves_cause():
 
 
 @pytest.mark.unit
-def test_deterministic_error_stops_retry_immediately():
-    """AuthenticationError or ContextWindowExceededError should not be retried."""
+def test_authentication_error_stops_immediately_without_fallback():
+    """AuthenticationError fails fast on the initial attempt without falling back to loop calls."""
     from litellm.exceptions import AuthenticationError
 
     auth_err = AuthenticationError(message="invalid api key", model="gpt-4o", llm_provider="openai")
@@ -323,8 +323,20 @@ def test_deterministic_error_stops_retry_immediately():
             with pytest.raises(EvolveException) as exc_info:
                 _sample()
             assert exc_info.value.__cause__ is auth_err
-            # 1 batched call fails fast without retry + 5 loop calls each fail fast without retry = 6 total calls (instead of 17)
-            assert mock_completion.call_count == 6
+            # 1 batched call fails fast with immediate raise — no loop fallback fan-out
+            assert mock_completion.call_count == 1
+
+
+@pytest.mark.unit
+def test_deterministic_error_in_loop_stops_retry_immediately():
+    """ContextWindowExceededError on fallback loop should not retry 3x per worker."""
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
+        with patch.object(inference_utils, "completion", side_effect=_context_window_exceeded()) as mock_completion:
+            with pytest.raises(EvolveException) as exc_info:
+                _sample()
+            assert isinstance(exc_info.value.__cause__, ContextWindowExceededError)
+            # 5 loop calls each fail fast without retry = 5 total calls (instead of 15)
+            assert mock_completion.call_count == 5
 
 
 # ── concurrency ──────────────────────────────────────────────────────
