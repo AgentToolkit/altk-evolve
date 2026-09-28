@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
 
@@ -271,7 +272,8 @@ def parse_consistency_score_card(score_card: dict) -> dict:
 
     return {
         "task": score_card.get("task"),
-        "consistency_steps": score_card.get("consistency_steps"),
+        "total_steps": score_card.get("total_steps"),
+        "aggregation": score_card.get("aggregation"),
         "aggregate_trajectory_uncertainty": score_card.get("aggregate_trajectory_uncertainty"),
         "step_uncertainties": step_uncertainties,
     }
@@ -412,6 +414,7 @@ def _generate_guideline_result(
     config: Optional[dict] = None,
     debug_dir: Optional[Path] = None,
     trace_id: Any = "unknown",
+    trajectory_renderer: Optional[Callable[..., str]] = None,
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory).
 
@@ -445,7 +448,16 @@ def _generate_guideline_result(
                 )
             return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
-    trajectory_summary = format_trajectory_data(messages, consistency_data, step_range=step_range, config=config)
+    # A caller-supplied renderer is invoked HERE rather than being handed a finished string
+    # by the caller, because rendering depends on results that do not exist until resampling
+    # and scoring have run: which steps carry a marker, their uncertainties, the per-field
+    # consistencies, and the samples themselves. A string argument would have to be built
+    # before any of that existed.
+    if trajectory_renderer is not None:
+        rendered = trajectory_renderer(messages, consistency_data, step_range=step_range, config=config)
+        trajectory_summary = rendered if rendered is not None else ""
+    else:
+        trajectory_summary = format_trajectory_data(messages, consistency_data, step_range=step_range, config=config)
 
     prompt = _CONSISTENCY_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
@@ -498,6 +510,8 @@ def _generate_guideline_result(
 def generate_consistency_guidelines(
     trajectory: dict,
     config_path: Optional[Path | str] = None,
+    trajectory_ir: Optional[dict] = None,
+    trajectory_renderer: Optional[Callable[..., str]] = None,
 ) -> list[GuidelineGenerationResult]:
     """Generate consistency-focused guidelines from an agent trajectory.
 
@@ -519,6 +533,29 @@ def generate_consistency_guidelines(
         trajectory: dict with keys messages, model, trace_id, and optionally tools.
         config_path: YAML config consumed by consistency_analyzer. Defaults to
             `consistency_analyzer/agent_config.yaml`.
+        trajectory_ir: a pre-built IR dictionary to score, instead of deriving one from `trajectory`.
+            `transform_trajectory_to_IR` can only reconstruct each step's prefix from the
+            single message list, which is an approximation whenever the system message,
+            bound tool list or model differed between steps — none of those are expressible
+            in one list. A caller that captured each inference's real input can pass the
+            steps directly here, each carrying its own `name`, `step_number`, `messages`,
+            `llm_params`, and optionally `tools`. `step_number` is required, must be unique,
+            and must be the 1-based position corresponding to the assistant turn in `trajectory['messages']`
+            (1 <= step_number <= number of assistant messages). Steps the caller cannot score
+            faithfully are simply omitted. `trajectory` is still required and unchanged in role:
+            it drives segmentation and the generation prompt, so the prompt renders the whole
+            conversation while scoring uses only these steps. See `transform_trajectory_to_IR`
+            for the step shape.
+
+            Non-input top-level message keys in `messages` are sanitised before resampling,
+            so a caller whose messages carry producer annotations is not penalised for
+            supplying its own IR — see `_drop_non_input_message_keys`.
+        trajectory_renderer: replaces `format_trajectory_data` when rendering the trajectory
+            block the prompt embeds. Called as
+            `renderer(messages, consistency_data, step_range=..., config=...)` and must
+            return the text to embed (or ""/None). For a caller that has more to say about
+            a step than the default renderer knows how to show; it cannot change which steps
+            are scored, only how they read.
     """
     config_path = Path(config_path) if config_path else Path(__file__).parent / "consistency_analyzer" / "agent_config.yaml"
     if not config_path.exists():
@@ -583,16 +620,66 @@ def generate_consistency_guidelines(
     is_groq = llm_settings.custom_llm_provider == "groq" or llm_settings.guidelines_model.startswith("groq/")
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
-    trajectory_ir = transform_trajectory_to_IR(trajectory)
-    logger.info(f"Created trajectory IR for {trajectory_ir.get('name', '')}")
+    # Positional count of all assistant messages — used to validate segment_trajectory
+    # step ranges, which are 1-indexed over every assistant turn (including skipped ones).
+    n_positional_steps = sum(1 for msg in messages if msg.get("role") == "assistant")
+
+    if trajectory_ir is None:
+        trajectory_ir = transform_trajectory_to_IR(trajectory)
+        logger.info(f"Created trajectory IR for {trajectory_ir.get('name', '')}")
+    else:
+        if not isinstance(trajectory_ir, dict):
+            raise EvolveException(f"trajectory_ir must be a dict, got {type(trajectory_ir).__name__}")
+        raw_steps = trajectory_ir.get("steps")
+        if not isinstance(raw_steps, list):
+            raise EvolveException(f"trajectory_ir['steps'] must be a list, got {type(raw_steps).__name__}")
+        if len(raw_steps) == 0:
+            raise EvolveException("trajectory_ir['steps'] cannot be empty")
+
+        known_agent_names = {a.get("name") for a in config.get("agents", []) if a.get("name")}
+        seen_step_numbers: set[int] = set()
+
+        for idx, step in enumerate(raw_steps):
+            if not isinstance(step, dict):
+                raise EvolveException(f"Step {idx} in trajectory_ir['steps'] must be a dict, got {type(step).__name__}")
+            if "name" not in step or not step["name"]:
+                raise EvolveException(f"Step {idx} in trajectory_ir['steps'] missing required 'name'")
+            if known_agent_names and step["name"] not in known_agent_names:
+                raise EvolveException(
+                    f"Step {idx} has unrecognized agent name '{step['name']}' not present in consistency config "
+                    f"(known names: {sorted(known_agent_names)})"
+                )
+            if "step_number" not in step:
+                raise EvolveException(
+                    f"Step {idx} ('{step['name']}') missing required 'step_number' "
+                    f"(1-based index among the {n_positional_steps} assistant turns in trajectory['messages'])"
+                )
+            step_num = step["step_number"]
+            if not isinstance(step_num, int) or isinstance(step_num, bool):
+                raise EvolveException(f"Step {idx} 'step_number' must be an integer, got {step_num!r}")
+            if not (1 <= step_num <= n_positional_steps):
+                raise EvolveException(
+                    f"Step {idx} 'step_number' {step_num} is out of bounds; "
+                    f"must be between 1 and {n_positional_steps} (total assistant turns in trajectory)"
+                )
+            if step_num in seen_step_numbers:
+                raise EvolveException(f"Duplicate step_number {step_num} in trajectory_ir['steps']")
+            seen_step_numbers.add(step_num)
+
+            if "messages" not in step or not isinstance(step["messages"], list):
+                raise EvolveException(f"Step {idx} ('{step['name']}') missing required 'messages' list")
+            if "llm_params" not in step or not isinstance(step["llm_params"], dict):
+                raise EvolveException(f"Step {idx} ('{step['name']}') missing required 'llm_params' dict")
+
+            # Sanitise messages in place
+            step["messages"] = _drop_non_input_message_keys(step["messages"])
+
+        logger.info(f"Using caller-supplied trajectory IR for {trajectory_ir.get('name', '')} ({len(raw_steps)} steps)")
 
     steps = trajectory_ir.get("steps", [])
     n_scorable_steps = len(steps)
     if n_scorable_steps == 0:
         raise EvolveException("generate_consistency_guidelines called on trajectory with no steps")
-    # Positional count of all assistant messages — used to validate segment_trajectory
-    # step ranges, which are 1-indexed over every assistant turn (including skipped ones).
-    n_positional_steps = sum(1 for msg in messages if msg.get("role") == "assistant")
 
     logger.info("Resampling trajectory IR")
     trajectory_ir = resample_trajectory(
@@ -612,7 +699,9 @@ def generate_consistency_guidelines(
     if debug_dir:
         _safe_write_debug(debug_dir / f"consistency_score_card_{str(trace_id)[:8]}.json", score_card)
 
-    task_description = trajectory_ir["task"] or DEFAULT_TASK_DESCRIPTION
+    # .get, not [], because a caller-supplied IR need not carry a task — the key is
+    # transform_trajectory_to_IR's own output, not part of what a caller must provide.
+    task_description = trajectory_ir.get("task") or DEFAULT_TASK_DESCRIPTION
 
     # --- Segmentation ---
     # Only attempt when every assistant message's content field allows a 1:1 step index
@@ -650,6 +739,7 @@ def generate_consistency_guidelines(
                 config=config,
                 debug_dir=debug_dir,
                 trace_id=trace_id,
+                trajectory_renderer=trajectory_renderer,
             )
             results.append(result)
         if debug_dir:
@@ -667,6 +757,7 @@ def generate_consistency_guidelines(
         config=config,
         debug_dir=debug_dir,
         trace_id=trace_id,
+        trajectory_renderer=trajectory_renderer,
     )
     if debug_dir:
         _write_guidelines_debug(debug_dir, trace_id, [result], "_consistency")
