@@ -931,6 +931,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#trajectory-segmentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trajectory segmentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#milvus-backend-settings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1691,6 +1702,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#trajectory-segmentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trajectory segmentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#milvus-backend-settings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1943,6 +1965,11 @@
 <td><code>fast</code></td>
 </tr>
 <tr>
+<td><code>EVOLVE_SEGMENTATION_ENABLED</code></td>
+<td>Segment trajectories into logical subtasks before generating guidelines. Governs all three generation paths (<code>standard</code>, and both <code>consistency</code> methods). Disabled by default — see <a href="#trajectory-segmentation">Trajectory segmentation</a></td>
+<td><code>false</code></td>
+</tr>
+<tr>
 <td><code>EVOLVE_GUIDELINES_MODEL</code></td>
 <td>Model for guideline generation only</td>
 <td><code>EVOLVE_MODEL_NAME</code> -&gt; <code>gpt-4o</code></td>
@@ -1974,6 +2001,31 @@
 </tr>
 </tbody>
 </table>
+<h3 id="trajectory-segmentation">Trajectory segmentation<a class="headerlink" href="#trajectory-segmentation" title="Permanent link">&para;</a></h3>
+<p><code>EVOLVE_SEGMENTATION_ENABLED</code> is <strong>disabled by default</strong>. With it enabled, a trajectory is
+split into subtasks and each subtask gets its own guideline-generation call.</p>
+<p><strong>Why it defaults to off.</strong> A subtask boundary can fall between a failed attempt and the
+correction that followed it. The failing segment is then summarised on its own terms — its
+description asserts the wrong approach — and the generator writes confident guidelines from
+it, with no access to the correction in the neighbouring segment. Both segments' output is
+stored at equal <code>support_count</code>, so nothing marks one as the anti-lesson, and retrieval can
+rank the inverted rule above the correct one. In end-to-end measurement on a
+learning-episode trajectory, enabling segmentation produced directly contradictory ordering
+rules and cost roughly half of the achievable improvement on the affected cases; disabling
+it removed the contradiction at source.</p>
+<p><strong>What you give up by leaving it off.</strong> <code>task_description</code> becomes the raw first user
+message, verbatim, shared by every guideline from that trajectory. It is the clustering key
+and the retrieval ranking key, so within a single trajectory it no longer separates
+subtasks, and it carries whatever user-specific values the original request contained into
+stored entity metadata. If your trajectories are single-purpose, this costs little; if one
+trajectory routinely spans unrelated subtasks, weigh enabling it.</p>
+<p><strong>Turning it on later (mixed corpora).</strong> Entities written while segmentation was off carry
+verbatim request text as <code>task_description</code>; entities written with it on carry generalized
+subtask descriptions. Both are embedded in the same space, so a namespace written across a
+change of this setting holds two kinds of key. Nothing breaks and no migration is required
+— clustering and retrieval keep working — but similarity between the two kinds is lower
+than within either, so recurrence spanning the change may go undetected. To avoid the mix,
+use a fresh namespace when you change this setting.</p>
 <h3 id="milvus-backend-settings">Milvus Backend Settings<a class="headerlink" href="#milvus-backend-settings" title="Permanent link">&para;</a></h3>
 <p>When <code>EVOLVE_BACKEND=milvus</code>:</p>
 <table>
