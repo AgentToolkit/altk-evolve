@@ -431,10 +431,16 @@ def _generate_guideline_result(
         step_uncertainties = {k: v for k, v in step_uncertainties.items() if k <= MAX_RENDERED_STEPS}
         has_uncertain_steps = bool(step_uncertainties) and max(step_uncertainties.values()) > 0
         if not has_uncertain_steps:
-            logger.info(
-                f"Skipping guideline generation{' for segment' + debug_suffix if debug_suffix else ''}: "
-                f"no renderable step (1-{MAX_RENDERED_STEPS}) with non-zero uncertainty"
-            )
+            if not step_uncertainties:
+                logger.info(
+                    f"Skipping guideline generation{' for segment' + debug_suffix if debug_suffix else ''}: "
+                    f"all renderable steps (1-{MAX_RENDERED_STEPS}) had undefined consistency (no valid decisions recorded)"
+                )
+            else:
+                logger.info(
+                    f"Skipping guideline generation{' for segment' + debug_suffix if debug_suffix else ''}: "
+                    f"no renderable step (1-{MAX_RENDERED_STEPS}) with non-zero uncertainty"
+                )
             return GuidelineGenerationResult(guidelines=[], task_description=task_description)
 
     # A caller-supplied renderer is invoked HERE rather than being handed a finished string

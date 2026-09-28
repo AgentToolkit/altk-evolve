@@ -22,10 +22,17 @@ batched attempt produced — so that asking for k samples yields k samples anywh
 """
 
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from litellm import completion, get_supported_openai_params
-from litellm.exceptions import BadRequestError
+from litellm.exceptions import (
+    AuthenticationError,
+    BadRequestError,
+    ContextWindowExceededError,
+    PermissionDeniedError,
+)
 
 from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
@@ -50,6 +57,13 @@ MAX_LOOP_SAMPLES = 5
 # behind it); an individual loop call is the last chance at that sample.
 _BATCHED_ATTEMPTS = 2
 _SINGLE_ATTEMPTS = 3
+
+# Non-retryable exceptions: deterministic errors where retrying will never succeed.
+_NON_RETRYABLE_EXCEPTIONS = (
+    AuthenticationError,
+    PermissionDeniedError,
+    ContextWindowExceededError,
+)
 
 # Providers that advertise `n` through get_supported_openai_params but reject n>1 at
 # the API. Same special-casing as the constrained-decoding checks in guidelines.py,
@@ -117,17 +131,21 @@ def _supports_n(model_id: str, custom_llm_provider: str | None) -> bool:
     return supported
 
 
-def _completion_batched(kwargs: dict, samples: int, model_id: str, provider: str | None) -> list:
+def _completion_batched(kwargs: dict, samples: int, model_id: str, provider: str | None) -> tuple[list, Exception | None]:
     """Try to get all `samples` choices from one n=samples call.
 
-    Returns whatever choices came back — possibly none, possibly fewer than asked —
+    Returns whatever choices came back and the last exception encountered (if any),
     and never raises. Never records a negative in _N_SUPPORT from an exception: see below
     for why no 400 is trustworthy evidence about `n` specifically.
     """
     key = (model_id, provider)
+    last_error: Exception | None = None
     for attempt in range(_BATCHED_ATTEMPTS):
         try:
             choices = list(completion(**kwargs, n=samples).choices)
+        except _NON_RETRYABLE_EXCEPTIONS as e:
+            logger.debug(f"Batched resampling fatal error for {model_id}: {e}")
+            return [], e
         except BadRequestError as e:
             # Fall back for this step, but record nothing about n>1 support, because no 400
             # identifies `n` as the culprit reliably enough to act on for a whole process:
@@ -153,42 +171,52 @@ def _completion_batched(kwargs: dict, samples: int, model_id: str, provider: str
             # The residual cost is one rejected call per step for a provider that slips past
             # both, which is unbilled and the cheaper mistake.
             logger.debug(f"Batched resampling rejected for {model_id} ({e}) — falling back for this step only")
-            return []
+            return [], e
         except Exception as e:
             # Timeout, rate limit, 5xx: says nothing about n>1 support, so don't
             # poison the cache for the rest of the process.
+            last_error = e
             logger.debug(f"Batched resampling attempt {attempt + 1}/{_BATCHED_ATTEMPTS} failed for {model_id}: {e}")
             continue
 
-        if len(choices) < samples:
-            # Provider accepted `n` and ignored it (or litellm dropped it).
+        if 0 < len(choices) < samples:
+            # Provider accepted `n` and returned a positive number of choices fewer than asked
+            # (ignoring n>1 or dropping it).
             _N_SUPPORT[key] = False
             logger.info(f"{model_id} returned {len(choices)} choices for n={samples} — topping up with separate completions")
-        return choices
+        return choices, None
 
-    return []
+    return [], last_error
 
 
-def _completion_single(kwargs: dict, model_id: str, index: int):
-    """One completion, retried independently. Returns a choice, or None if it never landed."""
+def _completion_single(kwargs: dict, model_id: str, index: int) -> tuple[Any | None, Exception | None]:
+    """One completion, retried independently with backoff. Returns (choice, last_error)."""
     # Every parallel call would otherwise share one messages list, and litellm rewrites
     # messages in place on some provider paths (system-message hoisting, cache_control
     # tagging). Copy the list and each message so k concurrent calls can't corrupt each
     # other's prompt. Values are shared, but nothing downstream mutates them.
     call_kwargs = {**kwargs, "messages": [dict(m) for m in kwargs["messages"]]}
+    last_error: Exception | None = None
     for attempt in range(_SINGLE_ATTEMPTS):
+        if attempt > 0:
+            # Short exponential backoff (0.2s, 0.4s) before retry to avoid hammering on rate limits
+            time.sleep(0.2 * (2 ** (attempt - 1)))
         try:
             choices = completion(**call_kwargs).choices
+        except _NON_RETRYABLE_EXCEPTIONS as e:
+            logger.debug(f"Sample {index} non-retryable error for {model_id}: {e}")
+            return None, e
         except Exception as e:
+            last_error = e
             logger.debug(f"Sample {index} attempt {attempt + 1}/{_SINGLE_ATTEMPTS} failed for {model_id}: {e}")
             continue
         if choices:
-            return choices[0]
+            return choices[0], None
         logger.debug(f"Sample {index} returned no choices for {model_id}")
-    return None
+    return None, last_error
 
 
-def _completion_loop(kwargs: dict, count: int, model_id: str) -> list:
+def _completion_loop(kwargs: dict, count: int, model_id: str) -> tuple[list, Exception | None]:
     """Get `count` samples as `count` separate single-completion calls.
 
     Bounded-parallel, since resampling a trajectory can mean max_samples × max_steps
@@ -202,10 +230,11 @@ def _completion_loop(kwargs: dict, count: int, model_id: str) -> list:
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="resample") as pool:
             results = list(pool.map(lambda i: _completion_single(kwargs, model_id, i), range(count)))
 
-    choices = [c for c in results if c is not None]
+    choices = [c for c, _ in results if c is not None]
+    last_error = next((err for _, err in reversed(results) if err is not None), None)
     if len(choices) < count:
         logger.warning(f"{count - len(choices)} of {count} resampling calls to {model_id} failed after retries")
-    return choices
+    return choices, last_error
 
 
 def get_response_sampling(
@@ -251,8 +280,9 @@ def get_response_sampling(
         kwargs["tools"] = tools
 
     choices: list = []
+    last_error: Exception | None = None
     if samples > 1 and _supports_n(model_id, custom_llm_provider):
-        choices = _completion_batched(kwargs, samples, model_id, custom_llm_provider)
+        choices, last_error = _completion_batched(kwargs, samples, model_id, custom_llm_provider)
 
     target = samples
     if len(choices) < samples:
@@ -266,14 +296,20 @@ def get_response_sampling(
         if len(choices) < target:
             # No `seed` here on purpose: pinning one would collapse the very diversity
             # the consistency metric is measuring.
-            choices += _completion_loop(kwargs, target - len(choices), model_id)
+            loop_choices, loop_error = _completion_loop(kwargs, target - len(choices), model_id)
+            choices += loop_choices
+            if loop_error is not None:
+                last_error = loop_error
 
     required = min(MIN_USABLE_SAMPLES, target)
     if len(choices) < required:
-        raise EvolveException(
+        msg = (
             f"Requested {target} samples from {model_id} but only obtained {len(choices)}. "
             f"Consistency scoring requires at least {required}."
         )
+        if last_error is not None:
+            raise EvolveException(msg) from last_error
+        raise EvolveException(msg)
     if len(choices) < target:
         logger.warning(
             f"Requested {target} samples from {model_id} but obtained {len(choices)}. "

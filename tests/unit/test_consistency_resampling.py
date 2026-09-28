@@ -118,6 +118,7 @@ def test_groq_loops_despite_advertised_n_support(model_id, provider):
 
     assert len(choices) == 5
     assert mock_completion.call_count == 5
+    assert all("n" not in call.kwargs for call in mock_completion.call_args_list)
 
 
 @pytest.mark.unit
@@ -225,6 +226,27 @@ def test_short_batched_return_is_topped_up():
 
 
 @pytest.mark.unit
+def test_short_batched_return_is_remembered_for_next_step():
+    """When a provider ignores n>1 and returns fewer choices, subsequent steps skip the batched attempt."""
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=["n"]):
+        with patch.object(inference_utils, "completion") as mock_completion:
+            # Step 1: n=5 returns 1 choice, 4 more fetched via loop
+            mock_completion.side_effect = [_response(1)] + [_response(1)] * 4
+            first = _sample(model_id="openai/custom-gateway")
+            assert len(first) == 5
+            assert mock_completion.call_count == 5
+            assert mock_completion.call_args_list[0].kwargs["n"] == 5
+
+            # Step 2: should take the loop route directly without sending n=5
+            mock_completion.reset_mock()
+            mock_completion.side_effect = [_response(1)] * 5
+            second = _sample(model_id="openai/custom-gateway")
+            assert len(second) == 5
+            assert mock_completion.call_count == 5
+            assert all("n" not in call.kwargs for call in mock_completion.call_args_list)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "error, label",
     [(_context_window_exceeded, "context window exceeded"), (_bad_request, "unrelated 400")],
@@ -280,12 +302,29 @@ def test_partial_loop_results_are_accepted_with_a_warning(caplog):
 
 
 @pytest.mark.unit
-def test_raises_when_fewer_than_two_samples_survive():
-    """Below two samples there is no variance to measure, so surface a real error."""
+def test_raises_when_fewer_than_two_samples_survive_and_preserves_cause():
+    """Below two samples there is no variance to measure, so surface a real error with __cause__."""
+    err = RuntimeError("boom")
     with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
-        with patch.object(inference_utils, "completion", side_effect=RuntimeError("boom")):
-            with pytest.raises(EvolveException, match="only obtained 0"):
+        with patch.object(inference_utils, "completion", side_effect=err):
+            with pytest.raises(EvolveException, match="only obtained 0") as exc_info:
                 _sample()
+            assert exc_info.value.__cause__ is err
+
+
+@pytest.mark.unit
+def test_deterministic_error_stops_retry_immediately():
+    """AuthenticationError or ContextWindowExceededError should not be retried."""
+    from litellm.exceptions import AuthenticationError
+
+    auth_err = AuthenticationError(message="invalid api key", model="gpt-4o", llm_provider="openai")
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=["n"]):
+        with patch.object(inference_utils, "completion", side_effect=auth_err) as mock_completion:
+            with pytest.raises(EvolveException) as exc_info:
+                _sample()
+            assert exc_info.value.__cause__ is auth_err
+            # 1 batched call fails fast without retry + 5 loop calls each fail fast without retry = 6 total calls (instead of 17)
+            assert mock_completion.call_count == 6
 
 
 # ── concurrency ──────────────────────────────────────────────────────
@@ -347,6 +386,17 @@ def test_loop_results_keep_submission_order_when_parallel(monkeypatch):
 
 
 # ── redaction seam ───────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_invalid_max_workers_setting_coerces_to_default(caplog):
+    """Setting EVOLVE_CONSISTENCY_RESAMPLE_MAX_WORKERS < 1 falls back to 4 with a warning."""
+    from altk_evolve.config.guidelines import GuidelinesSettings
+
+    with caplog.at_level("WARNING"):
+        settings = GuidelinesSettings(consistency_resample_max_workers=0)
+    assert settings.consistency_resample_max_workers == 4
+    assert "Invalid EVOLVE_CONSISTENCY_RESAMPLE_MAX_WORKERS '0'" in caplog.text
 
 
 @pytest.mark.unit
@@ -444,14 +494,20 @@ def test_only_the_empty_samples_are_dropped():
 def test_warning_names_the_truncation_cause(caplog):
     """The log has to explain *why* the step lost its samples, or an operator sees only
     a thinner score card with no cause."""
-    choices = [_text_choice("Book it."), _text_choice("", "length", reasoning="We need to")]
+    choices = [
+        _text_choice("Book it."),
+        _text_choice("", "length", reasoning="We need to"),
+        _text_choice("", "length"),
+        _text_choice("   ", "stop"),
+    ]
 
     with caplog.at_level("WARNING"):
         extract_raw_samples(choices)
 
-    assert "Discarded 1 of 2" in caplog.text
-    assert "finish_reason='length'" in caplog.text
-    assert "reasoning_content" in caplog.text
+    assert (
+        "Discarded 3 of 4 samples that recorded no decision (2 truncated with finish_reason='length', 1 having spent the token budget on reasoning_content)"
+        in caplog.text
+    )
 
 
 @pytest.mark.unit
@@ -488,15 +544,17 @@ def test_dict_shaped_choices_are_handled():
 
 
 @pytest.mark.unit
-def test_fully_truncated_step_scores_as_undefined_not_as_consistent():
+@pytest.mark.parametrize("metric", ["jaccard", "sbert_small"])
+def test_fully_truncated_step_scores_as_undefined_not_as_consistent(metric):
     """End of the chain: an all-truncated step must be excluded from the score card,
-    not reported as perfectly consistent with uncertainty 0.0."""
+    not reported as perfectly consistent with uncertainty 0.0. Under sbert_small,
+    5 identical empty strings would have scored 1.0 (uncertainty 0.0)."""
     from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
 
     config = {
         "max_samples": 5,
         "aggregation": "mean",
-        "agents": [{"name": "OpenAIAgent_content", "response_type": "text", "metric": "jaccard"}],
+        "agents": [{"name": "OpenAIAgent_content", "response_type": "text", "metric": metric}],
     }
     truncated = [_text_choice("", "length") for _ in range(5)]
     divergent = [_text_choice(t) for t in ("Book the flight.", "Cancel it.", "Email Bob.", "Search hotels.", "Wait.")]
@@ -516,6 +574,31 @@ def test_fully_truncated_step_scores_as_undefined_not_as_consistent():
     # towards "nothing looked uncertain".
     assert [s["step_number"] for s in card["steps"]] == [1]
     assert card["steps"][0]["step_uncertainty"] > 0
+
+
+@pytest.mark.unit
+def test_all_truncated_steps_trajectory_skips_generation_with_undefined_logging(caplog):
+    """When every step in a trajectory is truncated/empty, generate_consistency_guidelines skips
+    and logs that all steps were undefined rather than confident."""
+    from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+    truncated_choices = [_text_choice("", "length") for _ in range(5)]
+    trajectory = {
+        "task": "Do task",
+        "model": "gpt-4o",
+        "messages": [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "step 0"},
+        ],
+    }
+
+    with patch("altk_evolve.llm.guidelines.consistency_analyzer.resampling.get_response_sampling", return_value=truncated_choices):
+        with caplog.at_level("INFO"):
+            res = generate_consistency_guidelines(trajectory=trajectory)
+
+    assert len(res) == 1
+    assert res[0].guidelines == []
+    assert "had undefined consistency (no valid decisions recorded)" in caplog.text
 
 
 # ── the loop-route sample ceiling ─────────────────────────────────────
