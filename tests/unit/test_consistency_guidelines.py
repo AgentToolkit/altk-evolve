@@ -1206,7 +1206,6 @@ class TestCallerSuppliedIR:
         """Run the accurate path with resampling/scoring stubbed, returning the LLM prompt."""
         import altk_evolve.llm.guidelines.consistency_guidelines as module
 
-        monkeypatch.setattr(module.evolve_config, "segmentation_enabled", False)
         monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: on_resample(trajectory))
         # analyze_consistency returns (score_card, ir), not just a card.
         monkeypatch.setattr(
@@ -1271,18 +1270,116 @@ class TestCallerSuppliedIR:
         prompt = self._run(monkeypatch, ir, lambda ir: ir)
         assert prompt, "generation must still happen without a task key"
 
-    def test_a_step_without_messages_is_left_alone(self, monkeypatch):
-        """Sanitising must not invent a `messages` key on a step that has none."""
+    def test_step_number_is_required_and_validated(self):
+        """Missing or invalid step_number must raise EvolveException."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+        from altk_evolve.schema.exceptions import EvolveException
+
+        trajectory = self._trajectory()
+
+        # Missing step_number
         ir = self._ir()
-        del ir["steps"][0]["messages"]
-        seen = {}
+        del ir["steps"][0]["step_number"]
+        with pytest.raises(EvolveException, match="missing required 'step_number'"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
 
-        def on_resample(i):
-            seen["steps"] = i["steps"]
-            return i
+        # Out-of-bounds step_number (e.g. 7 when there are 2 assistant messages)
+        ir = self._ir()
+        ir["steps"][0]["step_number"] = 7
+        with pytest.raises(EvolveException, match="is out of bounds"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
 
-        self._run(monkeypatch, ir, on_resample)
-        assert "messages" not in seen["steps"][0]
+        # 0 step_number (must be 1-based)
+        ir = self._ir()
+        ir["steps"][0]["step_number"] = 0
+        with pytest.raises(EvolveException, match="is out of bounds"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        # Duplicate step_number
+        ir = {
+            "steps": [
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 1,
+                    "messages": [{"role": "user", "content": "1"}],
+                    "llm_params": {"model": "gpt-4o"},
+                },
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 1,
+                    "messages": [{"role": "user", "content": "2"}],
+                    "llm_params": {"model": "gpt-4o"},
+                },
+            ]
+        }
+        with pytest.raises(EvolveException, match="Duplicate step_number"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+    def test_missing_or_invalid_agent_name_raises(self):
+        """Missing or invalid agent name must raise EvolveException."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+        from altk_evolve.schema.exceptions import EvolveException
+
+        trajectory = self._trajectory()
+
+        ir = self._ir()
+        del ir["steps"][0]["name"]
+        with pytest.raises(EvolveException, match="missing required 'name'"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        ir = self._ir()
+        ir["steps"][0]["name"] = "NonexistentAgent_foo"
+        with pytest.raises(EvolveException, match="unrecognized agent name"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+    def test_supplied_ir_integration_with_real_scoring(self):
+        """High-value integration test: supplied IR passes through real analyze_consistency
+        and the marker lands on the corresponding assistant message."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "turn 0"},
+                {"role": "assistant", "content": "first assistant response"},
+                {"role": "user", "content": "turn 2"},
+                {"role": "assistant", "content": "second assistant response"},
+            ],
+            "trace_id": "t",
+            "model": "gpt-4o",
+        }
+
+        # Step 2 corresponds to the second assistant message
+        ir = {
+            "task": "integration task",
+            "steps": [
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 2,
+                    "raw_response": "second assistant response",
+                    "raw_response_type": "text",
+                    "messages": [{"role": "user", "content": "turn 2"}],
+                    "llm_params": {"model": "gpt-4o"},
+                    "sampling": {
+                        "num_samples": 5,
+                        "raw_samples": ["diff 1", "diff 2", "diff 3", "diff 4", "diff 5"],
+                    },
+                }
+            ],
+        }
+
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps(
+            {"guidelines": [{"content": "c", "category": "strategy", "rationale": "r", "trigger": "t"}]}
+        )
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        _, kwargs = mock_completion.call_args
+        prompt = kwargs["messages"][-1]["content"]
+        # Step 2 should carry the uncertainty marker, and step 1 should not
+        assert "Step 1 - Agent reasoning:\nfirst assistant response" in prompt
+        assert "Step 2 [⚠️ HIGH UNCERTAINTY:" in prompt
+        assert "second assistant response" in prompt
 
 
 @pytest.mark.unit
@@ -1292,7 +1389,6 @@ class TestCallerSuppliedRenderer:
     def _run(self, monkeypatch, renderer):
         import altk_evolve.llm.guidelines.consistency_guidelines as module
 
-        monkeypatch.setattr(module.evolve_config, "segmentation_enabled", False)
         monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: trajectory)
         monkeypatch.setattr(
             module,
@@ -1339,3 +1435,9 @@ class TestCallerSuppliedRenderer:
     def test_the_default_renderer_is_used_when_none_is_given(self, monkeypatch):
         prompt = self._run(monkeypatch, None)
         assert "step one" in prompt
+
+    def test_renderer_returning_none_or_empty_string_does_not_render_none_literal(self, monkeypatch):
+        prompt = self._run(monkeypatch, lambda *a, **k: None)
+        assert "None" not in prompt
+        prompt_empty = self._run(monkeypatch, lambda *a, **k: "")
+        assert "Agent reasoning" not in prompt_empty
