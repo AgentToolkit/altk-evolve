@@ -59,7 +59,7 @@ def execute_policy(
 
             def source_deleted(entity):
                 with collection.store.transaction() as connection:
-                    return entity.id in collection.source_deleted_ids(connection, [entity])
+                    return collection.source_deletion_times(connection, [entity]).get(entity.id)
 
             engine.source_deleted_lookup = source_deleted
         report = engine.apply(resolved_ns, normalized_policy, now=now, dry_run=dry_run, scan_limit=scan_limit, filters=backend_filters)

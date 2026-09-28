@@ -201,7 +201,7 @@ def _parse_plugins_yaml(yaml_path: str) -> list[Any]:
     altk_evolve owns config parsing now — cpex is only the executor. We do NOT
     hand the YAML to cpex's loader (which would instantiate every ``kind`` as a
     cpex plugin and break native plugins). Uses ``yaml`` only, so this stays off
-    the cpex import path. Unknown keys (e.g. ``description``) are dropped
+    the cpex import path. Unknown keys are dropped
     cleanly; ``$EVOLVE_HOOKS_CONFIG`` typos surface here as a clear read error.
 
     Mode default: an entry that OMITS ``mode`` defaults to ``sequential``, NOT
@@ -221,7 +221,11 @@ def _parse_plugins_yaml(yaml_path: str) -> list[Any]:
     from altk_evolve.config.hooks import HookPluginSpec
 
     data = yaml.safe_load(Path(yaml_path).read_text()) or {}
+    if not isinstance(data, dict):
+        raise ValueError("hooks config must hold a mapping with a 'plugins' list")
     entries = data.get("plugins", []) or []
+    if not isinstance(entries, list) or any(not isinstance(entry, dict) for entry in entries):
+        raise ValueError("hooks config must contain a 'plugins' list of mappings")
     specs: list[Any] = []
     for entry in entries:
         fields = {k: entry[k] for k in HookPluginSpec.model_fields if k in entry}
