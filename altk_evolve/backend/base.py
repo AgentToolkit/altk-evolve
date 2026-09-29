@@ -327,6 +327,15 @@ class BaseEntityBackend(ABC):
                 content_str = serialize_content(update.content)
                 metadata = update.metadata or {}
                 if processing_provenance is not None and update.event in ("ADD", "UPDATE"):
+                    previous = stored_by_id.get(update.id) if update.event == "UPDATE" else None
+                    if previous is not None:
+                        prior_metadata = previous.metadata or {}
+                        history = deepcopy(prior_metadata.get("processing_history", []))
+                        prior = prior_metadata.get("processing")
+                        if prior is not None:
+                            history.append(deepcopy(prior))
+                        if history:
+                            metadata = {**metadata, "processing_history": history}
                     metadata = {**metadata, "processing": deepcopy(processing_provenance)}
                     update.metadata = metadata
                 match update.event:

@@ -412,7 +412,7 @@ class PostgresEntityBackend(BaseEntityBackend):
     def close(self):
         """Close PostgreSQL connection."""
         try:
-            if hasattr(self, "conn") and self.conn and not self.conn.closed:
-                self.conn.close()
+            if hasattr(self, "_conn") and self._conn and not self._conn.closed:
+                self._conn.close()
         except Exception as e:
             logger.warning(f"Error closing PostgreSQL connection: {e}")

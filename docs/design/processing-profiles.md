@@ -81,9 +81,12 @@ result = client.process_trajectory(
 
 Without an explicit manager, `EvolveClient.processing` uses the backend's profile
 repository in the existing configured database. PostgreSQL stores a `processing_profiles`
-table alongside the entity tables, using the same connection settings. Filesystem uses SQLite for profiles while its namespace catalog remains in JSON files.
-Milvus uses SQLite alongside its collections. The default profile SQLite file is selected by `EVOLVE_SQLITE_PATH` /
-`EVOLVE_SQLITE_URI` (default `entities.sqlite.db`). No separate profile database setting
+table alongside the entity tables, using the same connection settings. Filesystem profiles default to `entities.sqlite.db` inside the configured data directory;
+its namespace catalog remains in JSON files. `EVOLVE_SQLITE_PATH` / `EVOLVE_SQLITE_URI`
+can explicitly select another file. Milvus profiles use the backend's `sqlite_uri`,
+including its existing `EVOLVE_SQLITE_PATH` override. Use absolute shared paths when
+clients run from different working directories. Previously published filesystem
+profiles in a CWD-relative file can be retained by explicitly selecting that file. No separate profile database setting
 is needed. Repository injection remains available for custom integrations.
 
 ## Python: saved profiles and application selection
@@ -322,14 +325,16 @@ concurrent deliveries of the same trace, cannot append output again. As with exi
 Phoenix ingestion, completion is per trace, independent of later profile changes.
 
 Filesystem stages namespace changes in memory and publishes them with one atomic file
-replacement. A reentrant SQLite writer lock coordinates filesystem readers and writers
+replacement. A reentrant SQLite writer lock coordinates filesystem writers
 across threads, clients, and processes; it is released by the OS after process failure.
 Synchronous hook callbacks retain operation ownership across the async-to-sync
-thread bridge, while unrelated threads wait. Plugins must finish backend callbacks
+thread bridge, while unrelated writers wait. Readers outside the operation read the last committed
+JSON snapshot without acquiring the writer lock. Plugins must finish backend callbacks
 before returning; detached concurrent backend work is not part of the transaction.
 Completion-marker reads bypass read filters. Marker writes still run write hooks;
 if a hook drops or changes the marker so it cannot be found, the transaction rolls back.
-The lock covers the data directory, so unrelated namespaces in that directory also wait.
+The lock covers the data directory, so other writers in that directory also wait;
+ordinary reads remain available during generation. Read-only transactions do not rewrite JSON.
 PostgreSQL uses a dedicated connection and a namespace-table write lock for each transaction;
 exceptions roll back output mutations and the marker together. Locks span processing,
 including model calls. This favors consistency over write concurrency for now.
@@ -370,3 +375,7 @@ and agent descriptors. Profile sampling is limited to 1–100 samples and 1–10
 to bound each invocation; these are profile API limits. Analyzer-specific metric
 configuration remains extensible. Configurations must also survive JSON serialization
 and revalidation identically before a revision is written.
+
+Conflict-resolution updates keep the latest `processing` stamp and append the prior
+stamp to `processing_history`, sourced from stored entities rather than LLM output.
+History retains complete manifests so unpublished/ad-hoc plans remain traceable.

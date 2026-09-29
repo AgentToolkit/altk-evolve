@@ -1110,6 +1110,7 @@ def save_trajectory(
     _validate_processing_revision(profile_revision)
     processing_plan = None
     if processing_profile is not None:
+        # Profile failures propagate for retry; legacy generation below is best-effort.
         processing_plan = get_client().processing.resolve(processing_profile, revision=profile_revision)
     elif profile_revision is not None:
         raise ValueError("profile_revision requires processing_profile")

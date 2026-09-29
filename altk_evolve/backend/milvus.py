@@ -24,6 +24,11 @@ class MilvusEntityBackend(BaseEntityBackend):
     embedding_model: SentenceTransformer
     _schema_filter_fields = {"id", "type", "content", "created_at"}
 
+    def profile_repository(self):
+        from altk_evolve.processing.repository import SQLiteProfileRepository
+
+        return SQLiteProfileRepository(self.sqlite_uri)
+
     def __init__(self, config: BaseSettings | None = None):
         super().__init__(config)
         resolved_config = config if isinstance(config, MilvusDBSettings) else milvus_client_settings

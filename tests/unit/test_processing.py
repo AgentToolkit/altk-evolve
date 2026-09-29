@@ -1093,6 +1093,7 @@ def test_async_write_hook_reentrancy_preserves_unrelated_thread_isolation(tmp_pa
             for transactional in (False, True):
                 started, finished = Event(), Event()
                 observed = []
+                before = backend.scan_entities("ns")[0].metadata.copy()
                 def independent_reader():
                     started.set()
                     observed.extend(backend.scan_entities("ns"))
@@ -1101,7 +1102,7 @@ def test_async_write_hook_reentrancy_preserves_unrelated_thread_isolation(tmp_pa
                 async def hook():
                     reader.start()
                     assert started.wait(2)
-                    assert not finished.wait(0.05)
+                    assert finished.wait(2)
                     backend.update_entity_metadata("ns", "1", {"seen": transactional})
                     assert backend.scan_entities("ns")[0].metadata["seen"] == transactional
                     return [Entity(type="note", content="added")]
@@ -1112,10 +1113,143 @@ def test_async_write_hook_reentrancy_preserves_unrelated_thread_isolation(tmp_pa
                         backend.update_entities("ns", [Entity(type="note", content="input")], enable_conflict_resolution=False)
                 reader.join(2)
                 assert finished.is_set()
-                assert observed[0].metadata["seen"] == transactional
+                assert observed[0].metadata == before
+                assert backend.scan_entities("ns")[0].metadata["seen"] == transactional
         asyncio.run(main())
     """)
     root = str(Path(__file__).resolve().parents[2])
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [root, os.environ.get("PYTHONPATH", "")])), "EVOLVE_HOOKS_CONFIG": ""}
     result = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_filesystem_reads_committed_snapshot_across_processes(client, tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    backend = client.backend
+    backend.update_entities("memories", [Entity(type="note", content="before")], enable_conflict_resolution=False)
+    script = """
+import sys
+from altk_evolve.backend.filesystem import FilesystemEntityBackend
+from altk_evolve.config.filesystem import FilesystemSettings
+b = FilesystemEntityBackend(FilesystemSettings(data_dir=sys.argv[1]))
+assert [e.content for e in b.scan_entities("memories")] == ["before"]
+assert b.get_namespace_details("memories").num_entities == 1
+assert b.search_namespaces()[0].num_entities == 1
+"""
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(filter(None, [str(Path(__file__).resolve().parents[2]), os.environ.get("PYTHONPATH", "")])),
+    }
+    with backend.transaction("memories"):
+        backend.update_entities("memories", [Entity(type="note", content="staged")], enable_conflict_resolution=False)
+        result = subprocess.run(
+            [sys.executable, "-c", script, str(backend.data_dir)], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=15
+        )
+        assert result.returncode == 0, result.stderr
+        assert len(backend.scan_entities("memories")) == 2
+    assert len(backend.scan_entities("memories")) == 2
+
+
+def test_noop_filesystem_transaction_does_not_rewrite(client, monkeypatch):
+    save = Mock(wraps=client.backend._save_namespace_data)
+    monkeypatch.setattr(client.backend, "_save_namespace_data", save)
+    with client.backend.transaction("memories"):
+        client.backend.scan_entities("memories")
+    save.assert_not_called()
+
+
+def test_filesystem_profiles_follow_data_dir_across_working_directories(tmp_path, monkeypatch):
+    from altk_evolve.backend.filesystem import FilesystemEntityBackend
+
+    monkeypatch.delenv("EVOLVE_SQLITE_PATH", raising=False)
+    monkeypatch.delenv("EVOLVE_SQLITE_URI", raising=False)
+    settings = FilesystemSettings(data_dir=str(tmp_path / "data"))
+    first = FilesystemEntityBackend(settings)
+    manager = make_manager(first.profile_repository())
+    manager.put("p", definition(), expected_revision=0)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    second = FilesystemEntityBackend(settings)
+    assert make_manager(second.profile_repository()).resolve("p").revision == 1
+    assert not (elsewhere / "entities.sqlite.db").exists()
+
+
+def test_milvus_profiles_use_backend_metadata_path(tmp_path):
+    from altk_evolve.backend.milvus import MilvusEntityBackend
+
+    backend = object.__new__(MilvusEntityBackend)
+    backend.sqlite_uri = str(tmp_path / "configured.sqlite")
+    assert backend.profile_repository().path == backend.sqlite_uri
+
+
+def test_conflict_update_preserves_authoritative_processing_history(client, monkeypatch):
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+
+    first = {"profile_id": "one", "revision": 1, "manifest": {"original": True}}
+    client.backend.update_entities(
+        "memories", [Entity(type="note", content="same")], enable_conflict_resolution=False, processing_provenance=first
+    )
+
+    def merge(old, new, **kwargs):
+        return [EntityUpdate(id=old[0].id, type="note", content="same", event="UPDATE", metadata={"processing_history": ["forged"]})]
+
+    monkeypatch.setattr("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", merge)
+    for revision in (2, 3):
+        client.backend.update_entities(
+            "memories", [Entity(type="note", content="same")], processing_provenance={"profile_id": "one", "revision": revision}
+        )
+    metadata = client.backend.scan_entities("memories")[0].metadata
+    assert metadata["processing"]["revision"] == 3
+    assert [p["revision"] for p in metadata["processing_history"]] == [1, 2]
+    assert metadata["processing_history"][0] == first
+
+
+def test_duplicate_discovery_isolated_from_builtins(monkeypatch):
+    from altk_evolve.processing.builtin import GuidelineProcessor
+
+    entries = [Mock(), Mock(), Mock()]
+    entries[0].name = entries[1].name = "broken"
+    entries[2].name = "evolve.guidelines"
+    monkeypatch.setattr("altk_evolve.processing.registry.entry_points", lambda **kwargs: entries)
+    registry = ProcessorRegistry.discover()
+    assert registry.get("evolve.guidelines") is GuidelineProcessor
+    with pytest.raises(ProcessingError, match="Duplicate"):
+        registry.get("broken")
+    assert all("error" in item for item in registry.inventory())
+    for entry in entries:
+        entry.load.assert_not_called()
+
+
+def test_postgres_close_targets_long_lived_connection():
+    from contextvars import ContextVar
+    from altk_evolve.backend.postgres import PostgresEntityBackend
+
+    backend = object.__new__(PostgresEntityBackend)
+    backend._conn = Mock(closed=False)
+    transaction = Mock(closed=False)
+    backend._transaction_connection = ContextVar("test_connection", default=transaction)
+    backend.close()
+    backend._conn.close.assert_called_once()
+    transaction.close.assert_not_called()
+
+
+def test_phoenix_race_skip_is_counted_as_skipped(client, monkeypatch):
+    from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    client.processing.put("p", definition(), expected_revision=0)
+    monkeypatch.setattr("altk_evolve.sync.phoenix_sync.EvolveClient", lambda: client)
+    sync = PhoenixSync(namespace_id="memories", processing_profile="p")
+    trajectory = dict(messages=[dict(role="user", content="hello")], trace_id="trace", span_id="span", model="unknown", timestamp=0)
+    sync._process_trajectory(trajectory)
+    monkeypatch.setattr(sync, "_fetch_spans", lambda *a, **kw: [{"context": {"trace_id": "trace"}}])
+    monkeypatch.setattr(sync, "_get_processed_trace_ids", lambda: set())
+    monkeypatch.setattr(sync, "_is_llm_span", lambda _: True)
+    monkeypatch.setattr(sync, "_build_trajectory_for_trace", lambda *args: trajectory)
+    monkeypatch.setattr(sync, "_clean_trajectory", lambda t: t)
+    result = sync.sync()
+    assert result.processed == 0 and result.skipped == 1

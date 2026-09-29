@@ -14,6 +14,7 @@ class ProcessorRegistry:
     def __init__(self):
         self._processors: dict[str, type[Processor]] = {}
         self._entries: dict = {}
+        self._errors: dict[str, str] = {}
 
     @classmethod
     def discover(cls, *, include_builtins: bool = True, installed: bool = True):
@@ -25,7 +26,8 @@ class ProcessorRegistry:
         if installed:
             for entry in entry_points(group="altk_evolve.processors"):
                 if entry.name in registry._entries or entry.name in registry._processors:
-                    raise ProcessingError(f"Duplicate processor: {entry.name}")
+                    registry._errors[entry.name] = f"Duplicate processor: {entry.name}"
+                    continue
                 registry._entries[entry.name] = entry
         return registry
 
@@ -58,6 +60,8 @@ class ProcessorRegistry:
 
     def get(self, name: str) -> type[Processor]:
         try:
+            if name in self._errors and name not in self._processors:
+                raise ProcessingError(self._errors[name])
             if name in self._processors:
                 return self._processors[name]
             processor_type = cast(type[Processor], self._entries[name].load())
@@ -68,7 +72,7 @@ class ProcessorRegistry:
             raise ProcessingError(f"Cannot load processor {name}: {exc}") from exc
 
     def inventory(self) -> list[dict]:
-        items = []
+        items: list[dict] = []
         for name in sorted(self._processors.keys() | self._entries.keys()):
             try:
                 processor = self.get(name)
@@ -82,4 +86,7 @@ class ProcessorRegistry:
                 )
             except ProcessingError as exc:
                 items.append({"id": name, "error": str(exc)})
+        for item in items:
+            if item["id"] in self._errors:
+                item["error"] = self._errors[item["id"]]
         return items

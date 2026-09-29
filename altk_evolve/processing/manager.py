@@ -173,6 +173,7 @@ class ProcessingManager:
         updates: list[dict[str, Any]] = []
         if client is not None:
             # All processors complete before writes. Backends can still fail partway through persistence.
+            conflict_settings = LLMSettings(**json.loads(plan.conflict_settings_json))
             for result, stamp in batches:
                 groups = defaultdict(list)
                 for entity in result.entities:
@@ -182,7 +183,7 @@ class ProcessingManager:
                         namespace_id,
                         group,
                         enable_conflict_resolution=result.enable_conflict_resolution,
-                        conflict_settings=LLMSettings(**json.loads(plan.conflict_settings_json)),
+                        conflict_settings=conflict_settings,
                         processing_provenance=stamp,
                     )
                     updates.extend(item.model_dump(mode="json") for item in written)

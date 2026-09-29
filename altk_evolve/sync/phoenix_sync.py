@@ -792,7 +792,7 @@ class PhoenixSync:
 
         return {**trajectory, "messages": cleaned_messages}
 
-    def _process_trajectory(self, trajectory: dict) -> int:
+    def _process_trajectory(self, trajectory: dict) -> int | None:
         """Process a single trajectory: store it and generate guidelines.
 
         The trajectory entity is written only after guideline generation succeeds,
@@ -832,7 +832,7 @@ class PhoenixSync:
                     filters={"type": "trajectory", "metadata.trace_id": trajectory["trace_id"]},
                     limit=1,
                 ):
-                    return 0
+                    return None  # Another worker already committed this trace.
                 plan = self.processing_plan or self.client.processing.resolve(self.processing_profile)
                 result = self.client.process_trajectory(
                     {
@@ -1023,6 +1023,9 @@ class PhoenixSync:
 
                 if trajectory["messages"]:
                     guidelines_count = self._process_trajectory(trajectory)
+                    if guidelines_count is None:
+                        skipped += 1
+                        continue
                     processed += 1
                     guidelines_generated += guidelines_count
                     logger.info(f"Processed trace {trajectory['trace_id'][:12]}... - generated {guidelines_count} guidelines")
