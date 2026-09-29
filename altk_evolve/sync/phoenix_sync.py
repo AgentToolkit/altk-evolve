@@ -795,6 +795,7 @@ class PhoenixSync:
                     if self._is_llm_span(ancestor)
                     and (identity := self._span_id(ancestor))
                     and self._is_ancestor(parents, identity, self._span_id(span))
+                    and sum(self._is_ancestor(parents, identity, self._span_id(call)) for call in calls) == 1
                 ]
                 trajectory["messages"] = self._assemble_openai_messages(
                     [message for message in extracted if message["type"] == "completion"]

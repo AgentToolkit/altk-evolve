@@ -1412,6 +1412,9 @@ def test_phoenix_remembers_nested_span_aliases_between_polls(client, monkeypatch
     fetched[:] = [span("sibling")]
     assert sync.sync().processed == 1
     assert len(client.backend.scan_entities("memories")) == 2
+    # A branching ancestor is not an alias for two independent descendant calls.
+    fetched[:] = [span("branch"), span("child-a", "branch"), span("child-b", "branch")]
+    assert sync.sync().processed == 2
 
 
 def test_accurate_generation_receives_history_separately_from_scored_steps(monkeypatch):
