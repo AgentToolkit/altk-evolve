@@ -23,6 +23,7 @@ from altk_evolve.hooks.manager import (
 from altk_evolve.hooks.types import HookType
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.provenance import identity, attach_sources, sources
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.utils.utils import serialize_content
 
@@ -318,28 +319,89 @@ class BaseEntityBackend(ABC):
             )
 
         if enable_conflict_resolution:
-            old_entities: list[RecordedEntity] = []
-            for entity in entities:
-                query_str = serialize_content(entity.content)
-                # Internal pre-read for conflict resolution — must not fire
-                # memory_post_read (public-API reads only).
-                old_entities.extend(
-                    self._search_entities_impl(
-                        namespace_id=namespace_id,
-                        query=query_str,
-                        filters={"type": entity_type},
-                        limit=10,
-                    )
+            groups: dict[tuple, list[RecordedEntity]] = {}
+            for incoming in entities_with_temporary_ids:
+                groups.setdefault(identity(incoming), []).append(incoming)
+            updates = []
+            stored_by_id = {}
+            for scope, incoming_group in groups.items():
+                candidates: dict[str, RecordedEntity] = {}
+                for incoming in incoming_group:
+                    filters = {
+                        "type": entity_type,
+                        **{
+                            f"metadata.{key}": value
+                            for key, value in zip(("user_id", "owner_id", "agent_id", "visibility"), scope)
+                            if value is not None
+                        },
+                    }
+                    for stored in self._search_entities_impl(
+                        namespace_id=namespace_id, query=serialize_content(incoming.content), filters=filters, limit=10
+                    ):
+                        if identity(stored) == scope:
+                            candidates[stored.id] = stored
+                incoming_by_id = {value.id: value for value in incoming_group}
+                model_candidates = [value.model_copy(deep=True) for value in candidates.values()]
+                for value in model_candidates:
+                    value.metadata = proposed_metadata(self, value.id, value.metadata)
+                decisions = (
+                    resolve_conflicts(model_candidates, incoming_group)
+                    if conflict_settings is None
+                    else resolve_conflicts(model_candidates, incoming_group, settings=conflict_settings)
                 )
+                associated = {identifier for decision in decisions for identifier in decision.incoming_ids}
+                associated.update(
+                    decision.id
+                    for decision in decisions
+                    if decision.event == "ADD" or (decision.event == "NONE" and decision.id in incoming_by_id)
+                )
+                unmatched_sources = any(sources(value) and value.id not in associated for value in incoming_group)
+                for decision in decisions:
+                    if decision.type != entity_type:
+                        raise EvolveException("Conflict resolution changed entity type")
+                    if decision.event == "ADD":
+                        if decision.id not in incoming_by_id:
+                            raise EvolveException("Conflict resolution returned an unknown incoming ID")
+                        original = incoming_by_id[decision.id]
+                        decision.metadata = attach_sources(original.metadata, None, [original])
+                        if decision.metadata.get("sources"):
+                            decision.metadata["memory_revision"] = 1
+                    else:
+                        if decision.event == "NONE" and decision.id in incoming_by_id and not decision.incoming_ids:
+                            continue
+                        if decision.id not in candidates:
+                            raise EvolveException("Conflict resolution returned an out-of-scope entity ID")
+                        if any(value not in incoming_by_id for value in decision.incoming_ids):
+                            raise EvolveException("Conflict resolution returned an unknown source ID")
+                        old = candidates[decision.id]
+                        contributors = [incoming_by_id[value] for value in dict.fromkeys(decision.incoming_ids)]
+                        # Older/custom prompts may omit associations. Preserve known provenance,
+                        # but never treat guessed sources as sufficient for retention.
+                        metadata = {**old.metadata, **decision.metadata}
+                        if len(contributors) == 1:
+                            metadata.update(contributors[0].metadata)
+                        if "generation_method" in old.metadata:
+                            metadata["generation_method"] = old.metadata["generation_method"]
+                        for key in ("user_id", "owner_id", "agent_id", "visibility"):
+                            metadata.pop(key, None)
+                            if key in old.metadata:
+                                metadata[key] = old.metadata[key]
+                        decision.metadata = attach_sources(
+                            metadata, old, contributors, supersedes=decision.supersedes and bool(contributors)
+                        )
+                        if decision.metadata.get("sources"):
+                            decision.metadata["memory_revision"] = int(old.metadata.get("memory_revision", 1)) + (
+                                decision.event == "UPDATE"
+                            )
+                        if (decision.event == "UPDATE" and not contributors) or unmatched_sources:
+                            decision.metadata["provenance_incomplete"] = True
+                        if old.metadata.get("legal_hold"):
+                            decision.metadata["legal_hold"] = old.metadata["legal_hold"]
+                        if decision.event == "NONE":
+                            decision.content = old.content
+                    updates.append(decision)
+                stored_by_id.update(candidates)
 
-            stored_by_id = {entity.id: entity.model_copy(deep=True) for entity in old_entities}
-            for entity in old_entities:
-                entity.metadata = proposed_metadata(self, entity.id, entity.metadata)
-            updates = (
-                resolve_conflicts(old_entities, entities_with_temporary_ids)
-                if conflict_settings is None
-                else resolve_conflicts(old_entities, entities_with_temporary_ids, settings=conflict_settings)
-            )
             for update in updates:
                 metadata = update.metadata or {}
                 if processing_provenance is not None and update.event in ("ADD", "UPDATE"):
@@ -393,11 +455,15 @@ class BaseEntityBackend(ABC):
                                 },
                             }
                     case "NONE":
-                        pass
+                        if update.incoming_ids or update.metadata.get("provenance_incomplete"):
+                            prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
+
         else:
             updates = []
             for entity in entities:
-                metadata = entity.metadata or {}
+                metadata = attach_sources(entity.metadata or {}, None, [entity])
+                if metadata.get("sources"):
+                    metadata["memory_revision"] = 1
                 if processing_provenance is not None:
                     metadata = {**metadata, "processing": deepcopy(processing_provenance)}
                 entity_id = ""
@@ -446,6 +512,13 @@ class BaseEntityBackend(ABC):
                     self._update_entity(
                         namespace_id, update.id, update.type, serialize_content(update.content), prepared.timestamp, update.metadata
                     )
+                case "NONE":
+                    if update.incoming_ids or update.metadata.get("provenance_incomplete"):
+                        stored = prepared.expected[update.id]
+                        self._patch_entity(
+                            namespace_id, update.id, update.type, serialize_content(stored.content),
+                            int(stored.created_at.timestamp()), update.metadata,
+                        )
                 case "DELETE":
                     self._delete_entity(namespace_id, update.id)
         self._post_update(namespace_id)

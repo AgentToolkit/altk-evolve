@@ -16,7 +16,8 @@ from sentence_transformers import SentenceTransformer
 from altk_evolve.backend.base import BaseEntityBackend, BaseSettings
 from altk_evolve.config.postgres import PostgresDBSettings, postgres_db_settings
 from altk_evolve.db.sqlite_manager import SQLiteManager
-from altk_evolve.schema.core import Namespace, RecordedEntity
+from altk_evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
 from altk_evolve.utils.utils import deserialize_content, serialize_content
 

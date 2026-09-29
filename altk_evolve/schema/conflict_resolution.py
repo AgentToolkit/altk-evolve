@@ -24,3 +24,8 @@ class EntityUpdate(BaseModel):
     event: Literal["ADD", "UPDATE", "DELETE", "NONE"] = Field(description="The type of update operation to perform.")
     old_entity: str | None = Field(default=None, description="The entity before it was updated.")
     metadata: dict = Field(default_factory=dict, description="Arbitrary metadata which is related to the entity.")
+
+    incoming_ids: list[str] = Field(
+        default_factory=list, description="IDs of incoming entities supporting this decision; empty for unrelated NONE results."
+    )
+    supersedes: bool = Field(default=False, description="True only when new evidence replaces rather than supplements the old memory.")

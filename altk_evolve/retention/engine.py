@@ -260,7 +260,18 @@ class RetentionEngine:
         # every entity that merely lacks provenance.
         derived_by_trace: dict[tuple[tuple[str | None, str | None], str], list[str]] = {}
         for e in entities:
-            src = (e.metadata or {}).get(self.SOURCE_KEY)
+            # Multi-source memories use receipt-based retention; a single trajectory
+            # cannot own a memory still supported by another conversation.
+            metadata = e.metadata or {}
+            if "sources" in metadata:
+                from altk_evolve.schema.provenance import sources
+
+                supporting = [source for source in sources(e) if source.get("status") == "supporting"]
+                if metadata.get("provenance_incomplete") or len(supporting) != 1:
+                    continue
+                src = supporting[0].get("task_id")
+            else:
+                src = metadata.get(self.SOURCE_KEY)
             if not src:
                 continue
             derived_by_trace.setdefault((self.provenance_scope(e), str(src)), []).append(e.id)

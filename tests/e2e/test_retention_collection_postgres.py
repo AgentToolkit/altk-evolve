@@ -420,3 +420,75 @@ def test_postgres_existing_run_does_not_leave_request_claim(collection):
         "status": "completed",
         "updated_at": "original",
     }
+
+
+def test_multiple_sources_wait_for_last_receipt_and_grace(collection):
+    from datetime import datetime, UTC, timedelta
+    import json
+
+    collector, conn = collection
+    now = datetime.now(UTC)
+    metadata = {
+        "user_id": "alice",
+        "agent_id": "a",
+        "sources": [{"conversation_id": source, "user_id": "alice", "agent_id": "a", "status": "supporting"} for source in ["one", "two"]],
+    }
+    conn.execute("UPDATE ns_a SET metadata=%s::jsonb WHERE id=1", (json.dumps(metadata),))
+    collector.store.edit_rule("a", "p", "old", "update", {"source_deleted": True, "min_source_deleted_days": 7, "max_age_days": None})
+    collector.record_source_deletion("one", "alice", "a", (now - timedelta(days=20)).isoformat())
+    assert collector.mark("p", initiated_by="admin")["marked"] == []
+    collector.record_source_deletion("two", "alice", "a", (now - timedelta(days=1)).isoformat())
+    assert collector.mark("p", initiated_by="admin")["marked"] == []
+
+
+def test_postgres_reconciliation_serializes_sources_and_rolls_back(collection, monkeypatch):
+    import json
+    import psycopg
+    from datetime import UTC, datetime
+    from altk_evolve.backend.postgres import PostgresEntityBackend
+    from altk_evolve.schema.core import Entity, RecordedEntity
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+    from altk_evolve.schema.exceptions import EvolveException
+
+    collector, conn = collection
+    schema = conn.execute("SHOW search_path").fetchone()["search_path"]
+    scope = {"user_id": "alice", "agent_id": "a", "thread_id": "original"}
+    conn.execute("UPDATE ns_a SET metadata=%s::jsonb WHERE id=1", (json.dumps(scope),))
+
+    def reconcile(old, new):
+        return [EntityUpdate(id=old[0].id, type="fact", content=old[0].content, event="NONE", incoming_ids=[new[0].id])]
+
+    monkeypatch.setattr("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", reconcile)
+
+    def write(source):
+        with psycopg.connect(conn.info.dsn, password=conn.info.password, options=f"-csearch_path={schema}", autocommit=True) as db:
+            backend = object.__new__(PostgresEntityBackend)
+            backend.conn = db
+            backend._table_name = lambda ns: "ns_a"
+            backend._validate_namespace = lambda ns: None
+
+            def search(**kwargs):
+                row = db.execute("SELECT id, content, metadata FROM ns_a WHERE id=1").fetchone()
+                return [
+                    RecordedEntity(id=str(row[0]), type="fact", content=row[1], metadata=row[2], created_at=datetime.fromtimestamp(0, UTC))
+                ]
+
+            backend._search_entities_impl = search
+
+            def persist(ns, eid, kind, content, timestamp, metadata):
+                db.execute("UPDATE ns_a SET metadata=%s::jsonb WHERE id=%s", (json.dumps(metadata), int(eid)))
+
+            backend._patch_entity = persist
+            backend.update_entities("a", [Entity(type="fact", content="private memory", metadata={**scope, "thread_id": source})])
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(write, ["one", "two"]))
+    metadata = conn.execute("SELECT metadata FROM ns_a WHERE id=1").fetchone()["metadata"]
+    assert {s["conversation_id"] for s in metadata["sources"]} == {"original", "one", "two"}
+    monkeypatch.setattr(
+        "altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts",
+        lambda old, new: [EntityUpdate(id="999", type="fact", content="bad", event="UPDATE")],
+    )
+    with pytest.raises(EvolveException):
+        write("rejected")
+    assert conn.execute("SELECT metadata FROM ns_a WHERE id=1").fetchone()["metadata"] == metadata

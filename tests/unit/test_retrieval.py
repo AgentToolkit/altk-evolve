@@ -261,6 +261,7 @@ class TestAttributedGuidelines:
         assert out == {
             "text": "# Guidelines for: prepare an update\n\n1. Keep summaries concise\n2. Name the action owner",
             "entity_ids": ["g-1", "g-2"],
+            "entity_revisions": {"g-1": None, "g-2": None},
             "namespace_id": "ns",
         }
 

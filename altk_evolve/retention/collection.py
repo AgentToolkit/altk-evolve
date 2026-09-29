@@ -85,18 +85,30 @@ class Collection:
         result = {}
         for entity in entities:
             metadata = entity.metadata or {}
-            source = metadata.get("thread_id") or metadata.get("session_id")
-            user = metadata.get("user_id")
-            agent = metadata.get("agent_id")
-            if not all(isinstance(v, str) and v.strip() for v in (source, user, agent)):
+            from altk_evolve.schema.provenance import sources
+
+            if metadata.get("provenance_incomplete"):
                 continue
-            receipt = conn.execute(
-                """SELECT deleted_at FROM evolve_retention_deleted_sources WHERE namespace_id=%s
-                AND user_id=%s AND agent_id=%s AND source_id=%s AND date_trunc('second',deleted_at)>%s""",
-                (self.namespace, user, agent, source, entity.created_at),
-            ).fetchone()
-            if receipt:
-                result[entity.id] = receipt["deleted_at"]
+            supporting = [source for source in sources(entity) if source.get("status") == "supporting"]
+            if not supporting:
+                continue
+            dates = []
+            for source in supporting:
+                reference = source.get("conversation_id")
+                user = source.get("user_id")
+                agent = source.get("agent_id")
+                if not all(isinstance(v, str) and v.strip() for v in (reference, user, agent)):
+                    break
+                receipt = conn.execute(
+                    """SELECT deleted_at FROM evolve_retention_deleted_sources WHERE namespace_id=%s
+                    AND user_id=%s AND agent_id=%s AND source_id=%s AND date_trunc('second',deleted_at)>%s""",
+                    (self.namespace, user, agent, reference, entity.created_at),
+                ).fetchone()
+                if not receipt:
+                    break
+                dates.append(receipt["deleted_at"])
+            else:
+                result[entity.id] = max(dates)
         return result
 
     def run(self, policy_id: str, *, initiated_by: str | None, run_id: str | None = None, limit: int = 1000) -> dict[str, Any]:

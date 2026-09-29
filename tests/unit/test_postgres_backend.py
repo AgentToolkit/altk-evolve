@@ -496,7 +496,7 @@ def test_delete_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
 @pytest.mark.unit
 def test_update_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
     """Test updating entities."""
-    entity_update = EntityUpdate(id="12345", type="Test entity content", content="fact", event="ADD")
+    entity_update = EntityUpdate(id="Unprocessed_Entity_0", type="Test entity content", content="fact", event="ADD")
 
     def _search_entities_impl(self, namespace_id, query, filters=None, limit=10):
         return []
