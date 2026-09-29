@@ -353,9 +353,7 @@ def test_hard_error_not_overwritten_by_later_soft_error():
     from litellm.exceptions import AuthenticationError, BadRequestError
 
     auth_err = AuthenticationError(message="invalid api key", model="gpt-4o", llm_provider="openai")
-    soft_err = BadRequestError(
-        message='{"error":{"code":"tool_use_failed"}}', model="gpt-4o", llm_provider="openai"
-    )
+    soft_err = BadRequestError(message='{"error":{"code":"tool_use_failed"}}', model="gpt-4o", llm_provider="openai")
     # Sample 0 gets the hard auth error; samples 1-4 get the soft tool_use_failed.
     side_effects = [auth_err] + [soft_err] * 4
     call_count = 0

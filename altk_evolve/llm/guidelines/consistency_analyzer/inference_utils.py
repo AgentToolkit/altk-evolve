@@ -84,6 +84,7 @@ def _prefer_hard_error(a: Exception | None, b: Exception | None) -> Exception | 
         return b
     return a
 
+
 # Providers that advertise `n` through get_supported_openai_params but reject n>1 at
 # the API. Same special-casing as the constrained-decoding checks in guidelines.py,
 # clustering.py and consistency_guidelines.py.
