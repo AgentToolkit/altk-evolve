@@ -8,7 +8,9 @@ import uuid
 import math
 from copy import deepcopy
 from collections import defaultdict
-from dataclasses import replace
+from contextlib import ExitStack
+from altk_evolve.backend.base import ConcurrentNamespaceUpdate
+from dataclasses import dataclass, replace
 from typing import Any
 
 from altk_evolve.config.llm import LLMSettings
@@ -39,6 +41,15 @@ def _reject_nonfinite(value):
     elif isinstance(value, (list, tuple, set, frozenset)):
         for item in value:
             _reject_nonfinite(item)
+
+
+@dataclass
+class GeneratedProcessing:
+    """Processor output captured once, reusable when persistence must retry."""
+
+    result: ProcessingResult
+    batches: list[tuple[ProcessorResult, dict]]
+    conflict_settings_json: str
 
 
 class ProcessingManager:
@@ -147,6 +158,31 @@ class ProcessingManager:
         trajectory = Trajectory.model_validate(trajectory)
         if client is not None:
             client.get_namespace_details(namespace_id)
+        generated = self.generate(trajectory, plan=plan)
+        if client is None:
+            return generated.result
+        assert namespace_id is not None
+        if client.backend.in_transaction:
+            return self.persist(generated, client=client, namespace_id=namespace_id)
+        for attempt in range(3):
+            try:
+                with ExitStack() as stack:
+                    try:
+                        stack.enter_context(client.backend.transaction(namespace_id))
+                    except NotImplementedError:
+                        # Preserve ordinary processing on non-transactional backends.
+                        # Phoenix requires atomic completion and does not fall back.
+                        pass
+                    result = self.persist(generated, client=client, namespace_id=namespace_id)
+                return result
+            except ConcurrentNamespaceUpdate:
+                if attempt == 2:
+                    raise
+        raise AssertionError("unreachable")
+
+    def generate(self, trajectory: Trajectory | dict, *, plan: ProcessingPlan) -> GeneratedProcessing:
+        """Execute plugins once without acquiring an entity-storage transaction."""
+        trajectory = Trajectory.model_validate(trajectory)
         operation_id = str(uuid.uuid4())
         context = ProcessorContext(operation_id)
         manifest = plan.manifest()
@@ -170,21 +206,28 @@ class ProcessingManager:
                 entity.metadata = {**entity.metadata, "processing": deepcopy(stamp)}
             entities.extend(result.entities)
             batches.append((result, stamp))
+        return GeneratedProcessing(
+            ProcessingResult(operation_id=operation_id, manifest=manifest, entities=entities, diagnostics=diagnostics),
+            batches,
+            plan.conflict_settings_json,
+        )
+
+    def persist(self, generated: GeneratedProcessing, *, client: Any, namespace_id: str) -> ProcessingResult:
+        """Apply output to the caller's storage snapshot; no processor is rerun."""
         updates: list[dict[str, Any]] = []
-        if client is not None:
-            # All processors complete before writes. Backends can still fail partway through persistence.
-            conflict_settings = LLMSettings(**json.loads(plan.conflict_settings_json))
-            for result, stamp in batches:
-                groups = defaultdict(list)
-                for entity in result.entities:
-                    groups[entity.type].append(entity)
-                for group in groups.values():
-                    written = client.update_entities(
-                        namespace_id,
-                        group,
-                        enable_conflict_resolution=result.enable_conflict_resolution,
-                        conflict_settings=conflict_settings,
-                        processing_provenance=stamp,
-                    )
-                    updates.extend(item.model_dump(mode="json") for item in written)
-        return ProcessingResult(operation_id=operation_id, manifest=manifest, entities=entities, updates=updates, diagnostics=diagnostics)
+        conflict_settings = LLMSettings(**json.loads(generated.conflict_settings_json))
+        # Hooks and conflict resolution may mutate arguments; every attempt starts fresh.
+        for result, stamp in deepcopy(generated.batches):
+            groups = defaultdict(list)
+            for entity in result.entities:
+                groups[entity.type].append(entity)
+            for group in groups.values():
+                written = client.update_entities(
+                    namespace_id,
+                    group,
+                    enable_conflict_resolution=result.enable_conflict_resolution,
+                    conflict_settings=conflict_settings,
+                    processing_provenance=stamp,
+                )
+                updates.extend(item.model_dump(mode="json") for item in written)
+        return generated.result.model_copy(deep=True, update={"updates": updates})

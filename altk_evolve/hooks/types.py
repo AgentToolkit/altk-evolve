@@ -106,9 +106,8 @@ class EvolveBasePayload(_PayloadBase):
     """Frozen base for all altk_evolve hook payloads.
 
     ``backend_kind`` names the backend class handling the operation (empty for
-    LLM-egress hooks). The live backend object rides in
-    ``GlobalContext.state["backend"]`` for plugins that need to call back into
-    the store (e.g. access stamping).
+    LLM-egress hooks). ``GlobalContext.state["backend"]`` carries HookBackend,
+    the read/metadata-patch capability available to hooks (e.g. access stamping).
     """
 
     backend_kind: str = ""

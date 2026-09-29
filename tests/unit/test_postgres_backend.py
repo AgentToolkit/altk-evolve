@@ -742,6 +742,16 @@ def test_transaction_uses_dedicated_connection_and_restores_it(postgres_backend,
             outcomes.append("commit")
 
     connection.transaction.side_effect = transaction
+
+    def execute(statement, *args):
+        result = MagicMock()
+        if isinstance(statement, str) and "regclass" in statement:
+            result.fetchone.return_value = (42,)
+        else:
+            result.fetchone.return_value = (False,)
+        return result
+
+    connection.execute.side_effect = execute
     with patch.object(postgres_backend, "_connect", return_value=connection), patch("altk_evolve.backend.postgres.register_vector"):
         try:
             with postgres_backend.transaction("memories"):
@@ -751,5 +761,8 @@ def test_transaction_uses_dedicated_connection_and_restores_it(postgres_backend,
         except RuntimeError:
             assert fail
     assert postgres_backend.conn is original
-    assert outcomes == ["rollback" if fail else "commit"]
-    connection.cursor.return_value.__enter__.return_value.execute.assert_called_once()
+    # Preparation commits only private temporary tables. A body failure never
+    # reaches the second (live-storage) transaction.
+    assert outcomes == (["commit"] if fail else ["commit", "commit"])
+    assert postgres_backend._table_name("memories") == "ns_memories"
+    assert not postgres_backend.in_transaction

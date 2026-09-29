@@ -29,6 +29,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db")
 
 
+class ConcurrentNamespaceUpdate(EvolveException):
+    """A prepared namespace no longer matches storage; retry against a fresh snapshot."""
+
+    def __init__(self, namespace_id: str):
+        super().__init__(f"Namespace {namespace_id!r} changed during preparation; retry the operation")
+
+
 class BaseEntityBackend(ABC):
     def __init__(self, config: BaseSettings | None = None):
         pass
@@ -40,11 +47,17 @@ class BaseEntityBackend(ABC):
 
         return SQLiteProfileRepository(SQLiteManager().db_path)
 
+    @property
+    def in_transaction(self) -> bool:
+        """Whether the current operation already owns a namespace working copy."""
+        return False
+
     def transaction(self, namespace_id: str) -> AbstractContextManager[None]:
         """Atomically commit or roll back entity mutations in one namespace.
 
-        Implementations must isolate concurrent writers and expose pending writes
-        to reads in the transaction. Unsupported backends fail before any work.
+        Implementations expose pending writes to reads in the transaction. They may
+        reject a stale snapshot with ConcurrentNamespaceUpdate at commit; callers
+        must retry the whole transaction. Unsupported backends fail before any work.
         External side effects of hooks/processors are outside this contract.
         """
         raise NotImplementedError(f"{type(self).__name__} does not support atomic namespace writes")
@@ -75,8 +88,9 @@ class BaseEntityBackend(ABC):
     # ── hook-wrapped template methods ────────────────────────────────
     #
     # The public methods below are template methods: they fire the memory
-    # hooks and delegate to protected ``_*_impl`` methods. Backends override
-    # the ``_impl`` variants ONLY, so an override can never skip a hook.
+    # hooks and delegate to protected ``_*_impl`` methods. Storage-specific
+    # implementations belong in the ``_impl`` variants. A transaction/retry
+    # wrapper must delegate to the complete public template so hooks still run.
 
     def delete_namespace(self, namespace_id: str):
         """Delete a namespace. Fires memory_pre_namespace_delete; do not override — override _delete_namespace_impl."""
@@ -223,7 +237,8 @@ class BaseEntityBackend(ABC):
 
         Template method: fires memory_pre_metadata_patch (which may transform
         or block the patch) and delegates to ``_update_entity_metadata_impl``.
-        Do not override — override _update_entity_metadata_impl.
+        Override _update_entity_metadata_impl for native storage. A retry wrapper
+        may delegate to this entire method to include hook work in the attempt.
 
         The impl returns a full RecordedEntity WITH content, which callers echo
         back to the caller (e.g. MCP publish/unpublish -> the MCP client). Run

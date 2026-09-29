@@ -324,30 +324,47 @@ inside the same transaction, so a retry after rollback or a lost acknowledgement
 concurrent deliveries of the same trace, cannot append output again. As with existing
 Phoenix ingestion, completion is per trace, independent of later profile changes.
 
-Filesystem stages namespace changes in memory and publishes them with one atomic file
-replacement. A reentrant SQLite writer lock coordinates filesystem writers
-across threads, clients, and processes; it is released by the OS after process failure.
-Synchronous hook callbacks retain operation ownership across the async-to-sync
-thread bridge, while unrelated writers wait. Readers outside the operation read the last committed
-JSON snapshot without acquiring the writer lock. Plugins must finish backend callbacks
-before returning; detached concurrent backend work is not part of the transaction.
+Preparation runs against a private namespace snapshot. Filesystem keeps that snapshot
+in memory; PostgreSQL uses connection-local temporary tables that preserve its vector
+search and pending-write behavior. Model calls, embeddings, and hooks run before the
+live-storage commit lock is acquired. Other writers and readers remain available.
+
+At commit, the backend briefly locks, verifies that the stored namespace still matches
+the snapshot, and publishes all changes. Filesystem compares the namespace contents and
+uses one atomic file replacement; PostgreSQL compares the table identity, IDs, and row
+versions before applying the prepared inserts, updates, and deletes. A concurrent write,
+including a metadata-only update, raises `ConcurrentNamespaceUpdate` instead of applying
+stale conflict decisions. Phoenix and direct processing retry persistence up to three
+times, with the original processor output and captured profile revision. Conflict
+resolution and hooks rerun against fresh storage; processors do not rerun on a commit
+retry. Concurrent initial deliveries can both generate output, but only one commits.
+
+The filesystem commit lock uses standard `threading.Lock` and SQLite's process-shared
+writer lock; no cross-thread lock borrowing remains. PostgreSQL owns the temporary
+storage and transaction cleanup; the database role needs TEMP privilege. Namespace snapshots cost O(namespace size) in memory
+or temporary storage, and any namespace write invalidates a pending snapshot. This is
+a conservative correctness baseline; large or frequently written namespaces need
+measurement before adopting it. A backend can implement a more selective read-set
+validation strategy under the same transaction contract.
+
+Hooks receive `HookBackend`, exposing entity search, namespace details, and metadata
+patches. Connections, transactions, namespace lifecycle, and recursive batch writes are
+not exposed. Inside processing, hook patches affect only the private snapshot. Hook
+transforms must tolerate retries; external side effects cannot be rolled back. Plugins
+must finish callbacks before returning; detached backend work is unsupported.
 Completion-marker reads bypass read filters. Marker writes still run write hooks;
-if a hook drops or changes the marker so it cannot be found, the transaction rolls back.
-The lock covers the data directory, so other writers in that directory also wait;
-ordinary reads remain available during generation. Read-only transactions do not rewrite JSON.
-PostgreSQL uses a dedicated connection and a namespace-table write lock for each transaction;
-exceptions roll back output mutations and the marker together. Locks span processing,
-including model calls. This favors consistency over write concurrency for now.
+a missing or changed marker aborts the whole preparation. Read-only transactions do
+not rewrite entities. Existing JSON deployments and database locations are preserved.
 
 Backends opt into the transaction capability by overriding `BaseEntityBackend.transaction`.
 Milvus and third-party backends without this capability reject Phoenix profile sync before
 processor execution or writes. Other existing ingestion paths remain available. External
 side effects performed by processors or hooks are not part of the entity transaction.
 
-Direct processing and MCP ingestion do not automatically open this transaction. Their
-multi-batch persistence may still leave partial writes on storage failure; applications
-can use the backend transaction explicitly where supported. MCP validates profile input
-before its early raw writes. Effective settings are inspectable, but model outputs are
+Direct processing also uses the transaction when supported, joining an explicit caller
+transaction when present. Backends without the capability retain ordinary non-atomic
+processing. MCP save-trajectory still performs its early raw writes separately, after
+validating profile input. Effective settings are inspectable, but model outputs are
 not deterministic. Keep credentials out of profile config; inject deployment resources
 instead.
 

@@ -12,7 +12,7 @@ from psycopg import sql
 from pgvector.psycopg import register_vector
 from sentence_transformers import SentenceTransformer
 
-from altk_evolve.backend.base import BaseEntityBackend, BaseSettings
+from altk_evolve.backend.base import BaseEntityBackend, BaseSettings, ConcurrentNamespaceUpdate
 from altk_evolve.config.postgres import PostgresDBSettings, postgres_db_settings
 from altk_evolve.db.sqlite_manager import SQLiteManager
 from altk_evolve.schema.core import Namespace, RecordedEntity
@@ -52,6 +52,7 @@ class PostgresEntityBackend(BaseEntityBackend):
         super().__init__(config)
         self._settings = config if isinstance(config, type(postgres_db_settings)) else postgres_db_settings
         self._transaction_connection: ContextVar[psycopg.Connection | None] = ContextVar("postgres_transaction", default=None)
+        self._transaction_table: ContextVar[tuple[str, str] | None] = ContextVar("postgres_working_table", default=None)
         self.conn = self._connect_target_db()
         try:
             self._ensure_pgvector_extension()
@@ -82,23 +83,74 @@ class PostgresEntityBackend(BaseEntityBackend):
     def conn(self, value: psycopg.Connection):
         self._conn = value
 
+    @property
+    def in_transaction(self) -> bool:
+        return self._transaction_connection.get() is not None
+
     @contextmanager
     def transaction(self, namespace_id: str):
-        """Use an operation-local connection; ordinary concurrent writes also wait."""
+        """Prepare against a private table, then validate and apply under a short lock.
+
+        PostgreSQL owns isolation and cleanup of the temporary tables. Model calls,
+        embeddings, and hooks touch only the private table. xmin detects intervening
+        updates, including metadata-only writes; the full ID set detects phantoms.
+        """
         if self._transaction_connection.get() is not None:
             raise EvolveException("Nested processing transactions are not supported")
+        source = sql.Identifier(self._table_name(namespace_id))
+        working_name = "evolve_work_" + uuid.uuid4().hex
+        working = sql.Identifier(working_name)
+        baseline = sql.Identifier("evolve_base_" + uuid.uuid4().hex)
         with self._connect(self._settings.dbname) as connection:
             register_vector(connection)
             with connection.transaction():
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        sql.SQL("LOCK TABLE {} IN SHARE ROW EXCLUSIVE MODE").format(sql.Identifier(self._table_name(namespace_id)))
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+                # LIKE retains the real sequence default: reserved IDs remain unique
+                # across concurrent preparations. Rollbacks may leave sequence gaps.
+                connection.execute(
+                    sql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS INCLUDING CONSTRAINTS)").format(working, source)
+                )
+                connection.execute(sql.SQL("INSERT INTO {} SELECT * FROM {}").format(working, source))
+                connection.execute(sql.SQL("CREATE TEMP TABLE {} AS SELECT id, xmin::text AS version FROM {}").format(baseline, source))
+                row = connection.execute("SELECT to_regclass(quote_ident(%s))::oid", (self._table_name(namespace_id),)).fetchone()
+                assert row is not None
+                source_oid = row[0]
+            token = self._transaction_connection.set(connection)
+            table_token = self._transaction_table.set((namespace_id, working_name))
+            try:
+                yield
+            finally:
+                self._transaction_table.reset(table_token)
+                self._transaction_connection.reset(token)
+            with connection.transaction():
+                connection.execute(sql.SQL("LOCK TABLE {} IN SHARE ROW EXCLUSIVE MODE").format(source))
+                current_oid = connection.execute("SELECT to_regclass(quote_ident(%s))::oid", (self._table_name(namespace_id),)).fetchone()
+                assert current_oid is not None
+                changed = connection.execute(
+                    sql.SQL(
+                        "SELECT EXISTS (SELECT 1 FROM {} s FULL JOIN {} b ON s.id = b.id "
+                        "WHERE s.id IS NULL OR b.id IS NULL OR s.xmin::text <> b.version)"
+                    ).format(source, baseline)
+                ).fetchone()
+                assert changed is not None
+                if current_oid[0] != source_oid or changed[0]:
+                    raise ConcurrentNamespaceUpdate(namespace_id)
+                connection.execute(
+                    sql.SQL("DELETE FROM {} s WHERE NOT EXISTS (SELECT 1 FROM {} w WHERE w.id = s.id)").format(source, working)
+                )
+                connection.execute(
+                    sql.SQL(
+                        "UPDATE {} s SET type=w.type, content=w.content, created_at=w.created_at, embedding=w.embedding, metadata=w.metadata "
+                        "FROM {} w WHERE s.id=w.id AND "
+                        "(s.type, s.content, s.created_at, s.embedding::text, s.metadata) IS DISTINCT FROM "
+                        "(w.type, w.content, w.created_at, w.embedding::text, w.metadata)"
+                    ).format(source, working)
+                )
+                connection.execute(
+                    sql.SQL("INSERT INTO {} SELECT w.* FROM {} w WHERE NOT EXISTS (SELECT 1 FROM {} b WHERE b.id = w.id)").format(
+                        source, working, baseline
                     )
-                token = self._transaction_connection.set(connection)
-                try:
-                    yield
-                finally:
-                    self._transaction_connection.reset(token)
+                )
 
     def _connect(self, dbname: str) -> psycopg.Connection:
         return psycopg.connect(
@@ -188,6 +240,11 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     def _table_name(self, namespace_id: str) -> str:
         """Return a safe table name for a namespace."""
+        staged = self._transaction_table.get()
+        if staged is not None:
+            if staged[0] != namespace_id:
+                raise EvolveException("PostgreSQL transactions cannot access other namespaces")
+            return staged[1]
         return f"ns_{namespace_id}"
 
     def _table_exists(self, namespace_id: str) -> bool:
@@ -216,6 +273,8 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         """Create a new namespace (PostgreSQL table) for entities."""
+        if self._transaction_connection.get() is not None:
+            raise EvolveException("Cannot create a namespace inside an entity transaction")
         namespace_id = namespace_id or "ns_" + str(uuid.uuid4()).replace("-", "_")
         table = self._table_name(namespace_id)
 
@@ -270,6 +329,8 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     def _delete_namespace_impl(self, namespace_id: str):
         """Delete a namespace and its table."""
+        if self._transaction_connection.get() is not None:
+            raise EvolveException("Cannot delete a namespace inside an entity transaction")
         table = self._table_name(namespace_id)
         with self.conn.cursor() as cur:
             cur.execute(sql.SQL("DROP TABLE IF EXISTS {table}").format(table=sql.Identifier(table)))
