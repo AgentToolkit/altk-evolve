@@ -324,6 +324,11 @@ Phoenix ingestion, completion is per trace, independent of later profile changes
 Filesystem stages namespace changes in memory and publishes them with one atomic file
 replacement. A reentrant SQLite writer lock coordinates filesystem readers and writers
 across threads, clients, and processes; it is released by the OS after process failure.
+Synchronous hook callbacks retain operation ownership across the async-to-sync
+thread bridge, while unrelated threads wait. Plugins must finish backend callbacks
+before returning; detached concurrent backend work is not part of the transaction.
+Completion-marker reads bypass read filters. Marker writes still run write hooks;
+if a hook drops or changes the marker so it cannot be found, the transaction rolls back.
 The lock covers the data directory, so unrelated namespaces in that directory also wait.
 PostgreSQL uses a dedicated connection and a namespace-table write lock for each transaction;
 exceptions roll back output mutations and the marker together. Locks span processing,

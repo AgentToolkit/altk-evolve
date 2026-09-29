@@ -21,7 +21,7 @@ from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines
 from altk_evolve.schema.core import Entity
-from altk_evolve.schema.exceptions import NamespaceNotFoundException
+from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("evolve.sync.phoenix")
@@ -827,7 +827,7 @@ class PhoenixSync:
             with self.client.backend.transaction(self.namespace_id):
                 # The initial sync scan is only an optimization. Recheck while
                 # holding the transaction lock so concurrent/restarted syncs agree.
-                if self.client.search_entities(
+                if self.client.backend.scan_entities(
                     self.namespace_id,
                     filters={"type": "trajectory", "metadata.trace_id": trajectory["trace_id"]},
                     limit=1,
@@ -851,6 +851,12 @@ class PhoenixSync:
                 )
                 if trajectory_entity:
                     self.client.update_entities(self.namespace_id, [trajectory_entity], enable_conflict_resolution=False)
+                    if not self.client.backend.scan_entities(
+                        self.namespace_id,
+                        filters={"type": "trajectory", "metadata.trace_id": trajectory["trace_id"]},
+                        limit=1,
+                    ):
+                        raise EvolveException("Trajectory completion marker was removed or changed by a write hook")
                 return sum(entity.type == "guideline" for entity in result.entities)
 
         # Build entity lists per pipeline so each carries its own generation_method tag,

@@ -48,7 +48,8 @@ class GuidelineConfig(GuidelineRuntime):
             for agent in data["agents"]:
                 if not isinstance(agent, dict) or not agent.get("name") or not agent.get("response_type"):
                     raise ValueError("Each agent requires name and response_type")
-                if agent["response_type"] in ("text", "code"):
+                structured = agent["response_type"] in ("json", "react", "react_aw", "thought_code", "tool_calls")
+                if agent["response_type"] in ("text", "code") or (structured and "fields" not in agent and "alternates" not in agent):
                     metric = agent.get("metric")
                     if not isinstance(metric, str) or not metric.strip():
                         raise ValueError(f"Agent {agent['name']} with response_type {agent['response_type']} requires a metric")

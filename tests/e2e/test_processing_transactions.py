@@ -149,3 +149,26 @@ def test_postgres_profile_updates_reject_stale_writers_and_roll_back(sync):
         assert client.processing.get(name)["revision"] == 3
     finally:
         peer.backend.close()
+
+
+def test_postgres_hooks_cannot_hide_or_drop_completion_marker(sync, monkeypatch):
+    from altk_evolve.schema.exceptions import EvolveException
+
+    client = sync.client
+    ns = sync.namespace_id
+    monkeypatch.setattr(
+        "altk_evolve.backend.base.dispatch_memory_post_read",
+        lambda backend, namespace, entities, **kwargs: [e for e in entities if e.type != "trajectory"],
+    )
+    sync._process_trajectory(trajectory())
+    sync._process_trajectory(trajectory())
+    assert sorted(e.type for e in client.backend.scan_entities(ns)) == ["note", "trajectory"]
+    monkeypatch.setattr(
+        "altk_evolve.backend.base.dispatch_memory_pre_write",
+        lambda backend, namespace, entities: [e for e in entities if e.type != "trajectory"],
+    )
+    other = {**trajectory(), "trace_id": "other"}
+    for _ in range(2):
+        with pytest.raises(EvolveException, match="completion marker"):
+            sync._process_trajectory(other)
+    assert sorted(e.type for e in client.backend.scan_entities(ns)) == ["note", "trajectory"]

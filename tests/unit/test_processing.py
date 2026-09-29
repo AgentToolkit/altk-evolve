@@ -1024,3 +1024,98 @@ def test_mcp_transport_profile_revision_errors_and_valid_pins(client, monkeypatc
                 assert json.loads(result.content[0].text)["entities"][0]["content"] == expected
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("response_type", ["json", "react", "react_aw", "thought_code", "tool_calls"])
+def test_structured_agent_requires_scoring_config(response_type):
+    from altk_evolve.processing.builtin import GuidelineConfig
+
+    agent = {"name": "agent", "response_type": response_type}
+    kwargs = {"guidelines_mode": "consistency", "consistency_method": "accurate"}
+    with pytest.raises(ValueError, match="requires a metric"):
+        GuidelineConfig(**kwargs, analysis_config={"agents": [agent]})
+    for scoring in (
+        {"metric": "jaccard"},
+        {"fields": [{"name": "x", "metric": "jaccard"}]},
+        {"alternates": [{"fields": [{"name": "x", "metric": "jaccard"}]}]},
+    ):
+        GuidelineConfig(**kwargs, analysis_config={"agents": [{**agent, **scoring}]})
+
+
+def test_phoenix_marker_checks_bypass_read_filters_and_verify_writes(client, monkeypatch):
+    from altk_evolve.sync.phoenix_sync import PhoenixSync
+    from altk_evolve.schema.exceptions import EvolveException
+
+    client.processing.put("review", definition(), expected_revision=0)
+    monkeypatch.setattr("altk_evolve.sync.phoenix_sync.EvolveClient", lambda: client)
+    sync = PhoenixSync(namespace_id="memories", processing_profile="review")
+    trajectory = dict(messages=[dict(role="user", content="hello")], trace_id="trace", span_id="span", model="unknown", timestamp=0)
+    monkeypatch.setattr(
+        "altk_evolve.backend.base.dispatch_memory_post_read",
+        lambda backend, ns, entities, **kwargs: [e for e in entities if e.type != "trajectory"],
+    )
+    sync._process_trajectory(trajectory)
+    sync._process_trajectory(trajectory)
+    assert sorted(e.type for e in client.backend.scan_entities("memories")) == ["note", "trajectory"]
+    monkeypatch.setattr(
+        "altk_evolve.backend.base.dispatch_memory_pre_write", lambda backend, ns, entities: [e for e in entities if e.type != "trajectory"]
+    )
+    trajectory["trace_id"] = "new-trace"
+    for _ in range(2):
+        with pytest.raises(EvolveException, match="completion marker"):
+            sync._process_trajectory(trajectory)
+    assert sorted(e.type for e in client.backend.scan_entities("memories")) == ["note", "trajectory"]
+
+
+def test_async_write_hook_reentrancy_preserves_unrelated_thread_isolation(tmp_path):
+    # A subprocess timeout makes a lock regression fail instead of hanging pytest.
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    from textwrap import dedent
+
+    script = dedent("""
+        import asyncio
+        from contextlib import nullcontext
+        from threading import Thread, Event
+        from unittest.mock import patch
+        from altk_evolve.backend.filesystem import FilesystemEntityBackend
+        from altk_evolve.config.filesystem import FilesystemSettings
+        from altk_evolve.schema.core import Entity
+        from altk_evolve.hooks.manager import _run_sync
+
+        backend = FilesystemEntityBackend(FilesystemSettings(data_dir="entities"))
+        backend.create_namespace("ns")
+        backend.update_entities("ns", [Entity(type="note", content="seed")], enable_conflict_resolution=False)
+
+        async def main():
+            for transactional in (False, True):
+                started, finished = Event(), Event()
+                observed = []
+                def independent_reader():
+                    started.set()
+                    observed.extend(backend.scan_entities("ns"))
+                    finished.set()
+                reader = Thread(target=independent_reader)
+                async def hook():
+                    reader.start()
+                    assert started.wait(2)
+                    assert not finished.wait(0.05)
+                    backend.update_entity_metadata("ns", "1", {"seen": transactional})
+                    assert backend.scan_entities("ns")[0].metadata["seen"] == transactional
+                    return [Entity(type="note", content="added")]
+                def dispatch(*args):
+                    return _run_sync(hook())
+                with backend.transaction("ns") if transactional else nullcontext():
+                    with patch("altk_evolve.backend.base.dispatch_memory_pre_write", dispatch):
+                        backend.update_entities("ns", [Entity(type="note", content="input")], enable_conflict_resolution=False)
+                reader.join(2)
+                assert finished.is_set()
+                assert observed[0].metadata["seen"] == transactional
+        asyncio.run(main())
+    """)
+    root = str(Path(__file__).resolve().parents[2])
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [root, os.environ.get("PYTHONPATH", "")])), "EVOLVE_HOOKS_CONFIG": ""}
+    result = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr

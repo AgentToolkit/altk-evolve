@@ -5,8 +5,9 @@ import os
 import uuid
 import sqlite3
 from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from pathlib import Path
-from threading import RLock
+from threading import RLock, get_ident
 
 from pydantic import Field, ValidationError
 
@@ -25,10 +26,12 @@ logger = logging.getLogger("entities-db.filesystem")
 
 
 class _DirectoryLock:
-    """Reentrant thread lock plus a process-shared SQLite writer lock.
+    """Operation-reentrant thread lock plus a process-shared SQLite writer lock.
 
     Every filesystem backend reader/writer uses this lock. The separate lock
     file carries no entity data; OS/SQLite cleanup releases it after a crash.
+    The synchronous hook bridge may borrow ownership via its copied context
+    while the owning thread waits. Background concurrent callbacks are not supported.
     """
 
     def __init__(self, directory: Path):
@@ -36,8 +39,20 @@ class _DirectoryLock:
         self._path = directory / ".evolve-write-lock.sqlite"
         self._depth = 0
         self._connection = None
+        self._owner: object | None = None
+        self._owner_thread: int | None = None
+        self._operation: ContextVar[object | None] = ContextVar("filesystem_lock_operation", default=None)
+        self._token: Token | None = None
+
+    def _borrowed(self) -> bool:
+        # The synchronous hook bridge copies context while the owning thread
+        # waits for its callback. Unrelated threads and stale contexts cannot
+        # access this operation's in-flight state.
+        return self._owner is not None and self._operation.get() is self._owner and get_ident() != self._owner_thread
 
     def __enter__(self):
+        if self._borrowed():
+            return self
         self._thread_lock.acquire()
         try:
             if self._depth == 0:
@@ -48,6 +63,9 @@ class _DirectoryLock:
                     connection.close()
                     raise
                 self._connection = connection
+                self._owner = object()
+                self._owner_thread = get_ident()
+                self._token = self._operation.set(self._owner)
             self._depth += 1
             return self
         except BaseException:
@@ -55,12 +73,19 @@ class _DirectoryLock:
             raise
 
     def __exit__(self, *exc):
+        if self._borrowed():
+            return
         try:
             self._depth -= 1
             if self._depth == 0:
                 assert self._connection is not None
                 self._connection.close()
                 self._connection = None
+                assert self._token is not None
+                self._operation.reset(self._token)
+                self._owner = None
+                self._owner_thread = None
+                self._token = None
         finally:
             self._thread_lock.release()
 
