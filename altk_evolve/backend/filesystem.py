@@ -13,10 +13,9 @@ from typing import Callable, TypeVar
 
 from pydantic import Field, ValidationError
 
-from altk_evolve.backend.base import BaseEntityBackend, ConcurrentNamespaceUpdate
+from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.filesystem import FilesystemSettings, filesystem_settings
-from altk_evolve.schema.conflict_resolution import EntityUpdate
-from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.core import Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import (
     EvolveException,
     NamespaceAlreadyExistsException,
@@ -28,7 +27,7 @@ logger = logging.getLogger("entities-db.filesystem")
 
 
 class _DirectoryLock:
-    """Serialize only compare-and-publish; never run hooks under this lock."""
+    """Serialize only storage commits; never run hooks under this lock."""
 
     def __init__(self, directory: Path):
         self._thread_lock = Lock()
@@ -61,6 +60,7 @@ class FilesystemNamespace(Namespace):
     """Extended Namespace with additional fields for filesystem storage."""
 
     entities: list[dict] = Field(default_factory=list, description="List of entity dictionaries")
+    processing_checkpoints: dict[str, dict] = Field(default_factory=dict)
     next_id: int = Field(default=1, description="Next available entity ID")
 
 
@@ -80,6 +80,8 @@ class FilesystemEntityBackend(BaseEntityBackend):
 
     This backend uses simple text matching for search (no embeddings).
     """
+
+    supports_atomic_writes = True
 
     def __init__(self, config: FilesystemSettings | None = None):
         self.config = config or filesystem_settings
@@ -117,29 +119,19 @@ class FilesystemEntityBackend(BaseEntityBackend):
 
     @contextmanager
     def transaction(self, namespace_id: str):
-        """Prepare privately; compare and atomically publish without callbacks under the lock.
-
-        A concurrent write invalidates the entire snapshot. The caller must retry
-        the transaction on ConcurrentNamespaceUpdate. Detached hook tasks are not
-        supported; the synchronous bridge shares this operation's working copy.
-        """
+        """Load current JSON under the writer lock and publish prepared writes in one rename."""
         if self._current_work() is not None:
             raise EvolveException("Nested filesystem transactions are not supported")
-        before = self._load_namespace_data(namespace_id)
-        work = _NamespaceWork(before.model_copy(deep=True))
-        token = self._work.set(work)
-        try:
-            yield
-        finally:
-            work.closed = True
-            self._work.reset(token)
+        self._validate_namespace(namespace_id)
         with self._lock:
+            data = FilesystemNamespace.model_validate_json(self._namespace_file(namespace_id).read_text())
+            work = _NamespaceWork(data)
+            token = self._work.set(work)
             try:
-                current = FilesystemNamespace.model_validate_json(self._namespace_file(namespace_id).read_text())
-            except (FileNotFoundError, ValidationError) as exc:
-                raise ConcurrentNamespaceUpdate(namespace_id) from exc
-            if current != before:
-                raise ConcurrentNamespaceUpdate(namespace_id)
+                yield
+            finally:
+                work.closed = True
+                self._work.reset(token)
             if work.dirty:
                 self._save_namespace_data(namespace_id, work.data)
 
@@ -149,15 +141,28 @@ class FilesystemEntityBackend(BaseEntityBackend):
             if work.data.id != namespace_id:
                 raise EvolveException("Filesystem transactions cannot write other namespaces")
             return operation()
-        for attempt in range(3):
-            try:
-                with self.transaction(namespace_id):
-                    result = operation()
-                return result
-            except ConcurrentNamespaceUpdate:
-                if attempt == 2:
-                    raise
-        raise AssertionError("unreachable")
+        with self.transaction(namespace_id):
+            return operation()
+
+    def get_processing_checkpoint(self, namespace_id: str, key: str) -> dict | None:
+        return self._load_namespace_data(namespace_id).processing_checkpoints.get(key)
+
+    def _save_processing_checkpoint(self, namespace_id: str, key: str, value: dict) -> None:
+        data = self._load_namespace_data(namespace_id)
+        data.processing_checkpoints[key] = value
+        self._save_namespace_data(namespace_id, data)
+
+    def _update_entity_metadata_impl(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+        return self._write(
+            namespace_id, lambda: super(FilesystemEntityBackend, self)._update_entity_metadata_impl(namespace_id, entity_id, metadata_patch)
+        )
+
+    def _apply_prepared(self, namespace_id, prepared):
+        self._active_data = self._load_namespace_data(namespace_id)
+        try:
+            return super()._apply_prepared(namespace_id, prepared)
+        finally:
+            self._active_data = None
 
     def _namespace_file(self, namespace_id: str) -> Path:
         """Get the path to a namespace's JSON file."""
@@ -352,41 +357,6 @@ class FilesystemEntityBackend(BaseEntityBackend):
                 self._active_data = None
 
         self._write(namespace_id, patch)
-
-    def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
-        # Include the read/merge and both hooks in the optimistic operation.
-        return self._write(
-            namespace_id,
-            lambda: super(FilesystemEntityBackend, self).update_entity_metadata(namespace_id, entity_id, metadata_patch),
-        )
-
-    def update_entities(
-        self,
-        namespace_id: str,
-        entities: list[Entity],
-        enable_conflict_resolution: bool = True,
-        *,
-        conflict_settings=None,
-        processing_provenance: dict | None = None,
-    ) -> list[EntityUpdate]:
-        """Prepare hooks/conflicts outside the writer lock, then publish atomically."""
-
-        def update():
-            if self._active_data is not None:
-                raise EvolveException("Recursive entity batch writes are not supported")
-            self._active_data = self._load_namespace_data(namespace_id)
-            try:
-                return super(FilesystemEntityBackend, self).update_entities(
-                    namespace_id,
-                    entities,
-                    enable_conflict_resolution,
-                    conflict_settings=conflict_settings,
-                    processing_provenance=processing_provenance,
-                )
-            finally:
-                self._active_data = None
-
-        return self._write(namespace_id, update)
 
     # ── search ───────────────────────────────────────────────────────
 

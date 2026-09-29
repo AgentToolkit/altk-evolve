@@ -45,7 +45,7 @@ change under a running job. Debug-output location remains deployment-controlled.
 
 `GuidelineProcessor.from_config()` selects the generation functions and captures their
 runtime options when each processor instance is constructed. `process()` only runs
-those selected steps. A profile update is picked up when the next trajectory resolves
+those selected steps. A profile update is picked up when the next input batch resolves
 its plan and constructs fresh processors; in-flight instances and pinned plans keep
 their original selection.
 
@@ -283,7 +283,7 @@ uv run evolve sync phoenix --processing-profile support-review
 uv run evolve sync phoenix --processing-profile support-review --profile-revision 1
 ```
 
-Without a revision, Phoenix sync resolves before each trajectory; a pinned revision
+Without a revision, Phoenix sync resolves before each completed LLM span; a pinned revision
 is resolved once when the syncer is constructed. A profile cannot be combined with
 legacy `--guidelines-mode` or `--consistency-method` flags. Existing invocations without
 a profile remain compatible. Profiles are activated explicitly, so installing an
@@ -318,55 +318,81 @@ resolution so model-returned metadata cannot replace it. Unchanged entities reta
 prior provenance. Results expose proposed entities and actual persistence updates
 separately; an update may consolidate into an existing entity.
 
-Phoenix profile sync commits every processor's entity mutations and the raw trajectory
-completion marker in one `backend.transaction(namespace_id)`. It checks for the marker
-inside the same transaction, so a retry after rollback or a lost acknowledgement, or
-concurrent deliveries of the same trace, cannot append output again. As with existing
-Phoenix ingestion, completion is per trace, independent of later profile changes.
+## Incremental input and checkpoints
 
-Preparation runs against a private namespace snapshot. Filesystem keeps that snapshot
-in memory; PostgreSQL uses connection-local temporary tables that preserve its vector
-search and pending-write behavior. Model calls, embeddings, and hooks run before the
-live-storage commit lock is acquired. Other writers and readers remain available.
+A conversation can remain open indefinitely. Supply `Trajectory.batch` to identify a
+bounded contribution; `messages` contains new material and `context_messages` contains
+supporting history. For example, the same chat can submit events 1–120, then 121–140:
 
-At commit, the backend briefly locks, verifies that the stored namespace still matches
-the snapshot, and publishes all changes. Filesystem compares the namespace contents and
-uses one atomic file replacement; PostgreSQL compares the table identity, IDs, and row
-versions before applying the prepared inserts, updates, and deletes. A concurrent write,
-including a metadata-only update, raises `ConcurrentNamespaceUpdate` instead of applying
-stale conflict decisions. Phoenix and direct processing retry persistence up to three
-times, with the original processor output and captured profile revision. Conflict
-resolution and hooks rerun against fresh storage; processors do not rerun on a commit
-retry. Concurrent initial deliveries can both generate output, but only one commits.
+```python
+result = client.process_trajectory(
+    {
+        "batch": {
+            "source": "my-app",
+            "conversation_id": "chat-42",
+            "batch_id": "events-121-140",
+            "revision": "1",
+            "scope": "agent:researcher",
+        },
+        "messages": new_messages,
+        "context_messages": earlier_messages,
+    },
+    namespace_id="memories",
+    processing_profile="support-review",
+)
+```
 
-The filesystem commit lock uses standard `threading.Lock` and SQLite's process-shared
-writer lock; no cross-thread lock borrowing remains. PostgreSQL owns the temporary
-storage and transaction cleanup; the database role needs TEMP privilege. Namespace snapshots cost O(namespace size) in memory
-or temporary storage, and any namespace write invalidates a pending snapshot. This is
-a conservative correctness baseline; large or frequently written namespaces need
-measurement before adopting it. A backend can implement a more selective read-set
-validation strategy under the same transaction contract.
+REST's trajectory object, MCP `process_trajectory`, and the CLI input JSON accept the
+same fields. The source adapter owns stable, non-overlapping batch IDs and changes
+`revision` when that input is corrected. Message count is not a source identity.
+Scope is application-owned: choose it to separate agent/user consumers sharing a
+namespace, or keep the default for namespace-wide processing. Use a new scope for an
+explicit replay. Changing a profile revision does not replay completed contributions.
+Without `batch`, calls remain untracked and repeated calls may generate new outputs.
 
-Hooks receive `HookBackend`, exposing entity search, namespace details, and metadata
-patches. Connections, transactions, namespace lifecycle, and recursive batch writes are
-not exposed. Inside processing, hook patches affect only the private snapshot. Hook
-transforms must tolerate retries; external side effects cannot be rolled back. Plugins
-must finish callbacks before returning; detached backend work is unsupported.
-Completion-marker reads bypass read filters. Marker writes still run write hooks;
-a missing or changed marker aborts the whole preparation. Read-only transactions do
-not rewrite entities. Existing JSON deployments and database locations are preserved.
+Each processor instance has independent progress, keyed by namespace, scope, source,
+conversation, processor ID, batch ID, and source revision. Processing captures the
+configuration once per invocation. After generation, hooks, reconciliation and embedding
+computation, a short commit stores that processor's outputs and checkpoint together.
+Completed processors are skipped on redelivery. If persistence fails for a later
+processor, earlier commits stay complete; a subsequent invocation processes only the
+unfinished instances. Its selected profile is captured for that invocation.
+`completed_processors` and `skipped_processors` distinguish committed work from proposals
+in `entities`; `updates` reports actual storage mutations.
 
-Backends opt into the transaction capability by overriding `BaseEntityBackend.transaction`.
-Milvus and third-party backends without this capability reject Phoenix profile sync before
-processor execution or writes. Other existing ingestion paths remain available. External
-side effects performed by processors or hooks are not part of the entity transaction.
+Unrelated namespace changes do not invalidate processing. Reads for semantic
+reconciliation can be slightly stale. Only replacement/deletion targets are compared
+before destructive writes; a changed target raises `ConcurrentEntityUpdate`, leaving
+that contribution uncommitted and eligible for redelivery. There is no namespace-wide
+validation or automatic model retry. Concurrent deliveries can both run a processor,
+but only one can commit the same checkpoint.
 
-Direct processing also uses the transaction when supported, joining an explicit caller
-transaction when present. Backends without the capability retain ordinary non-atomic
-processing. MCP save-trajectory still performs its early raw writes separately, after
-validating profile input. Effective settings are inspectable, but model outputs are
-not deterministic. Keep credentials out of profile config; inject deployment resources
-instead.
+Profile-enabled Phoenix sync processes each completed innermost LLM span independently,
+using its span ID and a hash of its processing payload as batch identity and revision.
+The completion is new material and the prompt is supporting context. This handles late
+spans, corrected content, and additional calls in the same trace without declaring the
+trace permanently done. Running spans wait until `end_time` is present. Each poll still
+observes only the configured fetched span window (`limit`); configure it to cover the
+arrival rate. The legacy no-profile sync path is unchanged. Profile sync leaves raw
+transcripts in Phoenix rather than creating a trajectory entity as a completion marker.
+
+Filesystem stores checkpoints in the namespace JSON, publishing output and progress
+with one atomic rename under its existing process-shared writer lock. PostgreSQL stores
+`processing_checkpoints(namespace_id, key, value)` alongside entity tables in the same
+database, committing both on a dedicated connection. No temporary table or whole-namespace
+snapshot is taken during generation. The backend transaction is a storage-only boundary;
+call processing outside it.
+
+Hooks receive `HookBackend` for reads and metadata-patch proposals. During preparation,
+patches are collected and applied with the output commit; no hook is invoked under the
+commit lock. Callbacks must finish before returning. External side effects are outside
+the storage guarantee and must tolerate duplicate execution.
+
+An atomic backend declares `supports_atomic_writes` and implements `transaction`,
+`get_processing_checkpoint`, and `_save_processing_checkpoint`. Checkpoint reads are
+internal storage operations, independent of entity hooks. Milvus and other backends
+without this capability reject identified batches before processor execution; untracked
+processing remains available with its existing non-atomic storage behavior.
 
 ## Validation and remaining scope
 
@@ -378,8 +404,7 @@ separate CLI invocations, and verifies pinned/latest results in filesystem stora
 Existing guideline, consistency, backend, hook, and CLI tests remain regression gates.
 
 Not implemented: namespace binding storage, remote CLI management, execution DAGs,
-parallel processors, plugin hot code reload, automatic retries/cancellation, and
-multi-worker guarantees for entity backends. SQLite and PostgreSQL profile publication use
+parallel processors, plugin hot code reload, and automatic retries/cancellation. SQLite and PostgreSQL profile publication use
 atomic revision checks. A caller may inject another profile repository; none of the
 processing interfaces require namespace-specific SQL or a fixed user/agent model.
 

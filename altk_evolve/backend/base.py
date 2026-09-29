@@ -2,7 +2,8 @@ from copy import deepcopy
 import datetime
 import logging
 from abc import ABC, abstractmethod
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
+from altk_evolve.backend.writes import PreparedWrites
 from typing import Literal, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -29,14 +30,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db")
 
 
-class ConcurrentNamespaceUpdate(EvolveException):
-    """A prepared namespace no longer matches storage; retry against a fresh snapshot."""
-
-    def __init__(self, namespace_id: str):
-        super().__init__(f"Namespace {namespace_id!r} changed during preparation; retry the operation")
+class ConcurrentEntityUpdate(EvolveException):
+    """A specific merge/delete target changed after preparation; nothing was committed."""
 
 
 class BaseEntityBackend(ABC):
+    supports_atomic_writes = False
+
     def __init__(self, config: BaseSettings | None = None):
         pass
 
@@ -49,18 +49,24 @@ class BaseEntityBackend(ABC):
 
     @property
     def in_transaction(self) -> bool:
-        """Whether the current operation already owns a namespace working copy."""
+        """Whether the current caller is inside the storage commit boundary."""
         return False
 
     def transaction(self, namespace_id: str) -> AbstractContextManager[None]:
-        """Atomically commit or roll back entity mutations in one namespace.
+        """Commit prepared writes and checkpoints together; run no model or hook work here.
 
-        Implementations expose pending writes to reads in the transaction. They may
-        reject a stale snapshot with ConcurrentNamespaceUpdate at commit; callers
-        must retry the whole transaction. Unsupported backends fail before any work.
-        External side effects of hooks/processors are outside this contract.
+        Implementations serialize the short storage operation and roll it back on
+        failure. Unrelated writes during preparation do not invalidate a batch.
         """
         raise NotImplementedError(f"{type(self).__name__} does not support atomic namespace writes")
+
+    def get_processing_checkpoint(self, namespace_id: str, key: str) -> dict | None:
+        """Read internal progress without entity hooks; None means not committed."""
+        raise NotImplementedError("This backend does not support processing checkpoints")
+
+    def _save_processing_checkpoint(self, namespace_id: str, key: str, value: dict) -> None:
+        """Insert progress inside the same transaction as its processor outputs."""
+        raise NotImplementedError("This backend does not support processing checkpoints")
 
     @abstractmethod
     def ready(self) -> bool:
@@ -276,7 +282,7 @@ class BaseEntityBackend(ABC):
         self._patch_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged)
         return RecordedEntity(**{**entity.model_dump(), "metadata": merged})
 
-    def update_entities(
+    def _prepare_updates(
         self,
         namespace_id: str,
         entities: list[Entity],
@@ -284,13 +290,13 @@ class BaseEntityBackend(ABC):
         *,
         conflict_settings=None,
         processing_provenance: dict | None = None,
-    ) -> list[EntityUpdate]:
+    ) -> PreparedWrites:
         from altk_evolve.llm.conflict_resolution.conflict_resolution import resolve_conflicts
 
         self._validate_namespace(namespace_id)
         if not entities:
             logger.warning("No entities to update.")
-            return []
+            return PreparedWrites(int(datetime.datetime.now(datetime.UTC).timestamp()))
 
         entity_type = entities[0].type
         if not all(entity.type == entity_type for entity in entities):
@@ -303,6 +309,7 @@ class BaseEntityBackend(ABC):
 
         now = datetime.datetime.now(datetime.UTC)
         timestamp = int(now.timestamp())
+        prepared = PreparedWrites(timestamp)
 
         entities_with_temporary_ids: list[RecordedEntity] = []
         for i, entity in enumerate(entities):
@@ -332,14 +339,13 @@ class BaseEntityBackend(ABC):
                     )
                 )
 
-            stored_by_id = {entity.id: entity for entity in old_entities}
+            stored_by_id = {entity.id: entity.model_copy(deep=True) for entity in old_entities}
             updates = (
                 resolve_conflicts(old_entities, entities_with_temporary_ids)
                 if conflict_settings is None
                 else resolve_conflicts(old_entities, entities_with_temporary_ids, settings=conflict_settings)
             )
             for update in updates:
-                content_str = serialize_content(update.content)
                 metadata = update.metadata or {}
                 if processing_provenance is not None and update.event in ("ADD", "UPDATE"):
                     previous = stored_by_id.get(update.id) if update.event == "UPDATE" else None
@@ -355,17 +361,18 @@ class BaseEntityBackend(ABC):
                     update.metadata = metadata
                 match update.event:
                     case "ADD":
-                        update.id = self._add_entity(namespace_id, entity_type, content_str, timestamp, metadata)
+                        update.type = entity_type
                     case "UPDATE":
-                        self._update_entity(namespace_id, update.id, entity_type, content_str, timestamp, metadata)
+                        if update.id not in stored_by_id:
+                            raise EvolveException(f"Conflict resolution selected an unknown entity: {update.id}")
+                        update.type = entity_type
+                        prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
                     case "DELETE":
                         try:
-                            self._guarded_delete(
-                                namespace_id,
-                                update.id,
-                                stored_entity=stored_by_id.get(update.id),
-                                source="conflict_resolution",
-                            )
+                            if update.id not in stored_by_id:
+                                raise EvolveException(f"Conflict resolution selected an unknown entity: {update.id}")
+                            dispatch_memory_pre_delete(self, namespace_id, update.id, metadata=stored_by_id[update.id].metadata)
+                            prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
                         except MemoryPolicyViolation as violation:
                             # A policy veto (e.g. legal hold) must not abort
                             # the write: skip this delete — the stored entity
@@ -393,11 +400,10 @@ class BaseEntityBackend(ABC):
         else:
             updates = []
             for entity in entities:
-                content_str = serialize_content(entity.content)
                 metadata = entity.metadata or {}
                 if processing_provenance is not None:
                     metadata = {**metadata, "processing": deepcopy(processing_provenance)}
-                entity_id = self._add_entity(namespace_id, entity_type, content_str, timestamp, metadata)
+                entity_id = ""
                 updates.append(
                     EntityUpdate(
                         id=entity_id,
@@ -408,5 +414,96 @@ class BaseEntityBackend(ABC):
                     )
                 )
 
+        prepared.updates = updates
+        return prepared
+
+    def prepare_updates(
+        self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True, **kwargs
+    ) -> PreparedWrites:
+        """Run policy hooks and optional semantic reconciliation against available memory.
+
+        Hook metadata patches are collected, not persisted. Reads need not describe
+        one namespace revision; only destructive targets are checked at commit.
+        """
+        from altk_evolve.hooks.backend import collect_metadata_patches
+
+        with collect_metadata_patches(self, namespace_id) as patches:
+            prepared = self._prepare_updates(namespace_id, entities, enable_conflict_resolution, **kwargs)
+            prepared.patches = deepcopy(patches)
+        self._prepare_storage(prepared)
+        return prepared
+
+    def _prepare_storage(self, prepared: PreparedWrites) -> None:
+        """Backend-specific expensive preparation, such as computing embeddings."""
+
+    def _apply_prepared(self, namespace_id: str, prepared: PreparedWrites) -> list[EntityUpdate]:
+        updates = deepcopy(prepared.updates)
+        for update in updates:
+            match update.event:
+                case "ADD":
+                    update.id = self._add_entity(
+                        namespace_id, update.type, serialize_content(update.content), prepared.timestamp, update.metadata
+                    )
+                case "UPDATE":
+                    self._update_entity(
+                        namespace_id, update.id, update.type, serialize_content(update.content), prepared.timestamp, update.metadata
+                    )
+                case "DELETE":
+                    self._delete_entity(namespace_id, update.id)
         self._post_update(namespace_id)
         return updates
+
+    def commit_prepared(
+        self, namespace_id: str, batches: list[PreparedWrites], *, checkpoint: tuple[str, dict] | None = None
+    ) -> list[EntityUpdate] | None:
+        """Atomically publish one processor's outputs and checkpoint; None means already committed.
+
+        Models, hooks, and embeddings must have finished in prepare_updates().
+        A checkpoint requires an atomic backend; ordinary untracked writes retain
+        support for non-transactional backends. Only touched replacement/delete
+        targets are compared, so unrelated namespace changes never cause retries.
+        """
+        if checkpoint is not None and not self.supports_atomic_writes:
+            raise NotImplementedError("Incremental processing requires atomic namespace writes")
+        context = self.transaction(namespace_id) if self.supports_atomic_writes and not self.in_transaction else nullcontext()
+        with context:
+            if checkpoint is not None and self.get_processing_checkpoint(namespace_id, checkpoint[0]) is not None:
+                return None
+            expected: dict[str, RecordedEntity] = {}
+            for batch in batches:
+                for entity_id, entity in batch.expected.items():
+                    if entity_id in expected and expected[entity_id] != entity:
+                        raise ConcurrentEntityUpdate(f"Conflicting prepared versions of entity {entity_id}")
+                    expected[entity_id] = entity
+            for entity_id, entity in expected.items():
+                current = self.scan_entities(namespace_id, filters={"id": entity_id}, limit=1)
+                if current != [entity]:
+                    raise ConcurrentEntityUpdate(f"Entity {entity_id} changed during preparation")
+            updates = [update for batch in batches for update in self._apply_prepared(namespace_id, batch)]
+            deleted = {update.id for update in updates if update.event == "DELETE"}
+            for batch in batches:
+                for patch in batch.patches:
+                    # A prepared deletion also removes any proposed metadata for that entity.
+                    if patch.entity_id not in deleted:
+                        self._update_entity_metadata_impl(patch.namespace_id, patch.entity_id, patch.patch)
+            if checkpoint is not None:
+                self._save_processing_checkpoint(namespace_id, *checkpoint)
+            return updates
+
+    def update_entities(
+        self,
+        namespace_id: str,
+        entities: list[Entity],
+        enable_conflict_resolution: bool = True,
+        *,
+        conflict_settings=None,
+        processing_provenance: dict | None = None,
+    ) -> list[EntityUpdate]:
+        prepared = self.prepare_updates(
+            namespace_id,
+            entities,
+            enable_conflict_resolution,
+            conflict_settings=conflict_settings,
+            processing_provenance=processing_provenance,
+        )
+        return self.commit_prepared(namespace_id, [prepared]) or []

@@ -43,7 +43,7 @@ from typing import Any, Protocol, runtime_checkable
 class HookContext:
     """Engine-agnostic execution context handed to a native plugin.
 
-    - ``backend`` — the live entity backend for plugins that call back into the
+    - ``backend`` — the read/metadata-patch capability for plugins that call back into the
       store (e.g. access stamping); ``None`` for hooks with no backend (LLM
       egress) or when unavailable.
     - ``state`` — the raw context state dict (``backend``, ``backend_kind``, …).

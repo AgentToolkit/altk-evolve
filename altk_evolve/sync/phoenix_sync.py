@@ -21,7 +21,7 @@ from altk_evolve.config.evolve import evolve_config
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines
 from altk_evolve.schema.core import Entity
-from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
+from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("evolve.sync.phoenix")
@@ -48,7 +48,14 @@ class SyncResult:
 
 
 class PhoenixSync:
-    """Sync trajectories from Arize Phoenix to Evolve."""
+    """Ingest Phoenix LLM calls without requiring their conversation to finish.
+
+    Profile processing uses each completed, innermost LLM span as a batch. Its
+    completion is new material; prompt history is context. Checkpoints use the
+    source/project, trace, span and payload revision per processor, so late spans
+    and corrected spans remain eligible. The no-profile path retains trace-based
+    ingestion for compatibility.
+    """
 
     def __init__(
         self,
@@ -765,6 +772,26 @@ class PhoenixSync:
         representative = self._select_representative_span(llm_spans)
         return self._extract_trajectory(representative)
 
+    def _incremental_trajectories(self, spans: list[dict], include_errors: bool):
+        """Yield completed source events; never infer progress from a message count."""
+        for trace_id, trace_spans in self._group_spans_by_trace(spans).items():
+            parents = {sid: span.get("parent_id") for span in trace_spans if (sid := self._span_id(span)) is not None}
+            calls = self._dedupe_nested_llm_spans([span for span in trace_spans if self._is_llm_span(span)], parents)
+            for span in sorted(calls, key=lambda value: (str(value.get("start_time", "")), self._span_id(value) or "")):
+                if not span.get("end_time") or not self._span_id(span):
+                    continue
+                if not include_errors and span.get("status_code") == "ERROR":
+                    continue
+                extracted = self._extract_messages_from_span(span)
+                trajectory = self._extract_trajectory(span)
+                trajectory["messages"] = self._assemble_openai_messages(
+                    [message for message in extracted if message["type"] == "completion"]
+                )
+                trajectory["context_messages"] = self._assemble_openai_messages(
+                    [message for message in extracted if message["type"] == "prompt"]
+                )
+                yield self._clean_trajectory(trajectory)
+
     def _clean_trajectory(self, trajectory: dict) -> dict:
         """Clean up a trajectory by removing system reminders."""
         import re
@@ -793,13 +820,7 @@ class PhoenixSync:
         return {**trajectory, "messages": cleaned_messages}
 
     def _process_trajectory(self, trajectory: dict) -> int | None:
-        """Process a single trajectory: store it and generate guidelines.
-
-        The trajectory entity is written only after guideline generation succeeds,
-        so a generation failure leaves the trace unprocessed and eligible for retry.
-
-        Returns the number of guidelines generated.
-        """
+        """Process one source contribution; profile progress is stored by the manager."""
         messages = trajectory.get("messages", [])
 
         # Build trajectory entity but defer the write until after generation succeeds.
@@ -820,50 +841,45 @@ class PhoenixSync:
             else None
         )
 
-        # Generate guidelines from the trajectory (returns one result per subtask).
         if self.processing_profile is not None:
-            if trajectory_entity is None:
-                return 0
-            from altk_evolve.backend.base import ConcurrentNamespaceUpdate
+            import hashlib
+            from altk_evolve.processing import TrajectoryBatch
 
-            generated = None
-            for attempt in range(3):
-                try:
-                    with self.client.backend.transaction(self.namespace_id):
-                        if self.client.backend.scan_entities(
-                            self.namespace_id,
-                            filters={"type": "trajectory", "metadata.trace_id": trajectory["trace_id"]},
-                            limit=1,
-                        ):
-                            return None
-                        if generated is None:
-                            plan = self.processing_plan or self.client.processing.resolve(self.processing_profile)
-                            generated = self.client.processing.generate(
-                                {
-                                    "messages": trajectory["messages"],
-                                    "tools": trajectory.get("tools"),
-                                    "trace_id": trajectory["trace_id"],
-                                    "model": trajectory.get("model"),
-                                    "metadata": {
-                                        "source_task_id": trajectory["trace_id"],
-                                        "source_span_id": trajectory["span_id"],
-                                        "creation_mode": "auto-phoenix",
-                                    },
-                                },
-                                plan=plan,
-                            )
-                        result = self.client.processing.persist(generated, client=self.client, namespace_id=self.namespace_id)
-                        self.client.update_entities(self.namespace_id, [trajectory_entity], enable_conflict_resolution=False)
-                        if not self.client.backend.scan_entities(
-                            self.namespace_id,
-                            filters={"type": "trajectory", "metadata.trace_id": trajectory["trace_id"]},
-                            limit=1,
-                        ):
-                            raise EvolveException("Trajectory completion marker was removed or changed by a write hook")
-                    return sum(entity.type == "guideline" for entity in result.entities)
-                except ConcurrentNamespaceUpdate:
-                    if attempt == 2:
-                        raise
+            if not messages:
+                return None
+            payload = {
+                "messages": messages,
+                "context_messages": trajectory.get("context_messages", []),
+                "tools": trajectory.get("tools"),
+                "model": trajectory.get("model"),
+            }
+            revision = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            plan = self.processing_plan or self.client.processing.resolve(self.processing_profile)
+            result = self.client.process_trajectory(
+                {
+                    **payload,
+                    "trace_id": trajectory["trace_id"],
+                    "batch": TrajectoryBatch(
+                        source=f"phoenix:{self.phoenix_url.rstrip('/')}:{self.project}",
+                        conversation_id=trajectory["trace_id"],
+                        batch_id=trajectory["span_id"],
+                        revision=revision,
+                    ),
+                    "metadata": {
+                        "source_task_id": trajectory["trace_id"],
+                        "source_span_id": trajectory["span_id"],
+                        "creation_mode": "auto-phoenix",
+                    },
+                },
+                namespace_id=self.namespace_id,
+                plan=plan,
+            )
+            if not result.completed_processors:
+                return None
+            completed = set(result.completed_processors)
+            return sum(
+                entity.type == "guideline" and entity.metadata["processing"]["processor_id"] in completed for entity in result.entities
+            )
 
         # Build entity lists per pipeline so each carries its own generation_method tag,
         # then merge before the single update_entities call.
@@ -987,6 +1003,22 @@ class PhoenixSync:
         # Fetch spans from Phoenix
         spans = self._fetch_spans(limit)
         logger.info(f"Fetched {len(spans)} spans from Phoenix")
+
+        if self.processing_profile is not None:
+            processed = skipped = guidelines_generated = 0
+            errors = []
+            for trajectory in self._incremental_trajectories(spans, include_errors):
+                try:
+                    count = self._process_trajectory(trajectory)
+                    if count is None:
+                        skipped += 1
+                    else:
+                        processed += 1
+                        guidelines_generated += count
+                except Exception as exc:
+                    errors.append(f"Error processing span {trajectory['span_id']}: {exc}")
+                    logger.exception(errors[-1])
+            return SyncResult(processed, skipped, guidelines_generated, errors)
 
         # Get already processed trace IDs (one trajectory entity stored per trace)
         processed_trace_ids = self._get_processed_trace_ids()

@@ -85,3 +85,9 @@ class Processor:
     assert pinned["entities"][0]["content"] == "first"
     stored = json.loads((tmp_path / "entities" / "memories.json").read_text())
     assert {e["metadata"]["processing"]["revision"] for e in stored["entities"]} == {1, 2}
+
+    trajectory.write_text(json.dumps({"messages": [], "batch": {"source": "cli-test", "conversation_id": "chat", "batch_id": "event-1"}}))
+    assert json.loads(run(*args))["completed_processors"] == ["review"]
+    assert json.loads(run(*args, "--revision", "1"))["skipped_processors"] == ["review"]
+    stored = json.loads((tmp_path / "entities" / "memories.json").read_text())
+    assert len(stored["processing_checkpoints"]) == 1

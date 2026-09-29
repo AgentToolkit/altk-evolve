@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from altk_evolve.processing import ProcessingError, ProfileConflict, ProfileDefinition, ProfileNotFound, ProfileReference, Trajectory
 
 from altk_evolve.schema.exceptions import NamespaceNotFoundException
+from altk_evolve.backend.base import ConcurrentEntityUpdate
 
 router = APIRouter()
 
@@ -19,7 +20,13 @@ def manager():
 
 
 def _http_error(exc):
-    status = 409 if isinstance(exc, ProfileConflict) else 404 if isinstance(exc, (ProfileNotFound, NamespaceNotFoundException)) else 422
+    status = (
+        409
+        if isinstance(exc, (ProfileConflict, ConcurrentEntityUpdate))
+        else 404
+        if isinstance(exc, (ProfileNotFound, NamespaceNotFoundException))
+        else 422
+    )
     return HTTPException(status_code=status, detail=str(exc))
 
 
@@ -77,6 +84,6 @@ def process_trajectory(request: ProcessRequest) -> dict[str, Any]:
         result = get_client().process_trajectory(
             request.trajectory, namespace_id=request.namespace_id, processing_profile=request.processing_profile
         )
-    except (ProcessingError, NamespaceNotFoundException) as exc:
+    except (ProcessingError, NamespaceNotFoundException, ConcurrentEntityUpdate) as exc:
         raise _http_error(exc) from exc
     return result.model_dump(mode="json")

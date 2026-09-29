@@ -1521,7 +1521,10 @@ def set_processing_profile(profile_id: str, definition: dict, expected_revision:
 
 @mcp.tool()
 def process_trajectory(trajectory: dict, namespace_id: str, processing_profile: str, revision: int | None = None) -> dict:
-    """Run a profile and persist derived entities. Does not store the raw trajectory."""
+    """Process new messages with optional batch identity and supporting context_messages.
+
+    Repeated identified batches skip completed processors; raw input is not stored.
+    """
     from altk_evolve.processing import ProfileReference
 
     _validate_processing_revision(revision)

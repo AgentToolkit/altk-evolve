@@ -8,8 +8,6 @@ import uuid
 import math
 from copy import deepcopy
 from collections import defaultdict
-from contextlib import ExitStack
-from altk_evolve.backend.base import ConcurrentNamespaceUpdate
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -23,6 +21,7 @@ from altk_evolve.processing.models import (
     ProfileDefinition,
     ProfileReference,
     Trajectory,
+    TrajectoryBatch,
 )
 from altk_evolve.processing.registry import ProcessorRegistry
 from altk_evolve.processing.repository import InMemoryProfileRepository, ProfileRepository
@@ -45,11 +44,12 @@ def _reject_nonfinite(value):
 
 @dataclass
 class GeneratedProcessing:
-    """Processor output captured once, reusable when persistence must retry."""
+    """Processor proposals awaiting per-processor output/checkpoint commits."""
 
     result: ProcessingResult
     batches: list[tuple[ProcessorResult, dict]]
     conflict_settings_json: str
+    batch: TrajectoryBatch | None = None
 
 
 class ProcessingManager:
@@ -153,34 +153,34 @@ class ProcessingManager:
     def process(
         self, trajectory: Trajectory | dict, *, plan: ProcessingPlan, client: Any = None, namespace_id: str | None = None
     ) -> ProcessingResult:
+        """Process one bounded input with a fixed plan and independent processor checkpoints.
+
+        Generation, hooks, and reconciliation run outside storage transactions.
+        Each processor commits its outputs and checkpoint together; completed
+        processors are skipped on redelivery even after a profile update. New
+        batches resolve the latest profile in EvolveClient.process_trajectory().
+        """
         if client is not None and namespace_id is None:
             raise ProcessingError("namespace_id is required for persistence")
         trajectory = Trajectory.model_validate(trajectory)
+        skipped = set()
         if client is not None:
             client.get_namespace_details(namespace_id)
-        generated = self.generate(trajectory, plan=plan)
+            if client.backend.in_transaction:
+                raise ProcessingError("Process trajectories outside storage transactions")
+            if trajectory.batch is not None:
+                if not client.backend.supports_atomic_writes:
+                    raise NotImplementedError("Incremental processing requires atomic namespace writes")
+                for spec in plan.manifest()["processors"]:
+                    if client.backend.get_processing_checkpoint(namespace_id, trajectory.batch.checkpoint_key(spec["id"])) is not None:
+                        skipped.add(spec["id"])
+        generated = self.generate(trajectory, plan=plan, skipped=skipped)
         if client is None:
             return generated.result
         assert namespace_id is not None
-        if client.backend.in_transaction:
-            return self.persist(generated, client=client, namespace_id=namespace_id)
-        for attempt in range(3):
-            try:
-                with ExitStack() as stack:
-                    try:
-                        stack.enter_context(client.backend.transaction(namespace_id))
-                    except NotImplementedError:
-                        # Preserve ordinary processing on non-transactional backends.
-                        # Phoenix requires atomic completion and does not fall back.
-                        pass
-                    result = self.persist(generated, client=client, namespace_id=namespace_id)
-                return result
-            except ConcurrentNamespaceUpdate:
-                if attempt == 2:
-                    raise
-        raise AssertionError("unreachable")
+        return self.persist(generated, client=client, namespace_id=namespace_id)
 
-    def generate(self, trajectory: Trajectory | dict, *, plan: ProcessingPlan) -> GeneratedProcessing:
+    def generate(self, trajectory: Trajectory | dict, *, plan: ProcessingPlan, skipped: set[str] | None = None) -> GeneratedProcessing:
         """Execute plugins once without acquiring an entity-storage transaction."""
         trajectory = Trajectory.model_validate(trajectory)
         operation_id = str(uuid.uuid4())
@@ -193,10 +193,14 @@ class ProcessingManager:
             "digest": hashlib.sha256(plan.manifest_json.encode()).hexdigest(),
             "manifest": manifest,
         }
+        if trajectory.batch is not None:
+            provenance["source_batch"] = trajectory.batch.model_dump()
         batches = []
         diagnostics = {} if plan.processor_types else {"processing": {"warning": "No processors configured; no entities will be generated"}}
         entities = []
         for processor_type, spec in zip(plan.processor_types, manifest["processors"], strict=True):
+            if skipped and spec["id"] in skipped:
+                continue
             config = processor_type.config_model.model_validate_json(_encode(spec["config"]))
             processor = processor_type.from_config(config)
             result = ProcessorResult.model_validate(processor.process(trajectory.model_copy(deep=True), context=context))
@@ -207,27 +211,61 @@ class ProcessingManager:
             entities.extend(result.entities)
             batches.append((result, stamp))
         return GeneratedProcessing(
-            ProcessingResult(operation_id=operation_id, manifest=manifest, entities=entities, diagnostics=diagnostics),
+            ProcessingResult(
+                operation_id=operation_id,
+                manifest=manifest,
+                entities=entities,
+                diagnostics=diagnostics,
+                skipped_processors=sorted(skipped or []),
+            ),
             batches,
             plan.conflict_settings_json,
+            trajectory.batch,
         )
 
     def persist(self, generated: GeneratedProcessing, *, client: Any, namespace_id: str) -> ProcessingResult:
-        """Apply output to the caller's storage snapshot; no processor is rerun."""
+        """Prepare against available memory, then commit each processor's contribution.
+
+        Unrelated writes never invalidate preparation. A changed replacement or
+        deletion target aborts that commit, leaving its checkpoint absent for a
+        later delivery. Already committed processors remain complete.
+        """
         updates: list[dict[str, Any]] = []
+        completed = []
+        skipped = list(generated.result.skipped_processors)
         conflict_settings = LLMSettings(**json.loads(generated.conflict_settings_json))
-        # Hooks and conflict resolution may mutate arguments; every attempt starts fresh.
         for result, stamp in deepcopy(generated.batches):
+            processor_id = stamp["processor_id"]
+            checkpoint = None
+            if generated.batch is not None:
+                checkpoint = (generated.batch.checkpoint_key(processor_id), stamp)
+                if client.backend.get_processing_checkpoint(namespace_id, checkpoint[0]) is not None:
+                    skipped.append(processor_id)
+                    continue
             groups = defaultdict(list)
             for entity in result.entities:
                 groups[entity.type].append(entity)
-            for group in groups.values():
-                written = client.update_entities(
+            prepared = [
+                client.backend.prepare_updates(
                     namespace_id,
                     group,
                     enable_conflict_resolution=result.enable_conflict_resolution,
                     conflict_settings=conflict_settings,
                     processing_provenance=stamp,
                 )
+                for group in groups.values()
+            ]
+            written = client.backend.commit_prepared(namespace_id, prepared, checkpoint=checkpoint)
+            if written is None:
+                skipped.append(processor_id)
+            else:
+                completed.append(processor_id)
                 updates.extend(item.model_dump(mode="json") for item in written)
-        return generated.result.model_copy(deep=True, update={"updates": updates})
+        return generated.result.model_copy(
+            deep=True,
+            update={
+                "updates": updates,
+                "completed_processors": completed,
+                "skipped_processors": skipped,
+            },
+        )

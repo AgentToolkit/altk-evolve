@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from collections.abc import Callable
 from typing import ClassVar, Literal, Self, cast
 
@@ -87,6 +88,15 @@ class GuidelineProcessor:
         return cls(tuple(steps))
 
     def process(self, trajectory: Trajectory, *, context: ProcessorContext) -> ProcessorResult:
+        """Learn from new steps; render supporting history as task context, not additional steps."""
+        if trajectory.context_messages:
+            task_context = {
+                "role": "user",
+                "content": "The following is supporting conversation context, not new steps to learn from. "
+                "Derive guidelines only from the new steps that follow, using this context to interpret them.\n"
+                + json.dumps(trajectory.context_messages, ensure_ascii=False),
+            }
+            trajectory = trajectory.model_copy(update={"messages": [task_context, *trajectory.messages]})
         batches = [(method, generate(trajectory)) for method, generate in self._steps]
         entities = [
             Entity(

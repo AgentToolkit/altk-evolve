@@ -28,6 +28,7 @@ def postgres_backend() -> PostgresEntityBackend:
         mock_psycopg.connect.return_value = mock_conn
         mock_transformer.return_value.get_sentence_embedding_dimension.return_value = 384
         backend = PostgresEntityBackend()
+        mock_conn.__enter__.return_value = mock_conn
         return backend
 
 
@@ -515,6 +516,8 @@ def test_update_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
         patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts),
+        patch("altk_evolve.backend.postgres.register_vector"),
+        patch.object(postgres_backend, "_connect", return_value=postgres_backend.conn),
     ):
         entities = [Entity(type=entity_update.type, content=entity_update.content, metadata={"key": "value"})]
         result = postgres_backend.update_entities(namespace_id="test_namespace", entities=entities, enable_conflict_resolution=True)
@@ -761,8 +764,6 @@ def test_transaction_uses_dedicated_connection_and_restores_it(postgres_backend,
         except RuntimeError:
             assert fail
     assert postgres_backend.conn is original
-    # Preparation commits only private temporary tables. A body failure never
-    # reaches the second (live-storage) transaction.
-    assert outcomes == (["commit"] if fail else ["commit", "commit"])
+    assert outcomes == (["rollback"] if fail else ["commit"])
     assert postgres_backend._table_name("memories") == "ns_memories"
     assert not postgres_backend.in_transaction

@@ -116,7 +116,12 @@ class EvolveClient:
         processing_profile: ProfileReference | str | None = None,
         context: Any = None,
     ) -> ProcessingResult:
-        """Process with an explicit plan or profile reference; no ownership hierarchy is imposed."""
+        """Resolve configuration once for this input batch, then invoke the manager.
+
+        Applications assign Trajectory.batch.scope to separate user/agent progress
+        in a shared namespace. Explicit plans pin configuration; unpinned profile
+        references and selectors are evaluated on every call.
+        """
         from altk_evolve.processing import ProcessingPlan
 
         if plan is not None and processing_profile is not None:

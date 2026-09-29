@@ -12,6 +12,7 @@ from altk_evolve.processing.models import (
     ProfileNotFound,
     ProfileReference,
     Trajectory,
+    TrajectoryBatch,
 )
 from altk_evolve.processing.registry import ProcessorRegistry
 from altk_evolve.processing.repository import (
@@ -34,6 +35,7 @@ __all__ = [
     "ProfileNotFound",
     "ProfileReference",
     "Trajectory",
+    "TrajectoryBatch",
     "ProcessorRegistry",
     "InMemoryProfileRepository",
     "ProfileRepository",

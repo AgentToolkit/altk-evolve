@@ -79,27 +79,25 @@ def trajectory():
 
 def test_postgres_marker_failure_rolls_back_and_retry_commits_once(sync, monkeypatch):
     client = sync.client
-    original = client.update_entities
+    original = client.backend._save_processing_checkpoint
 
-    def fail_marker(namespace, entities, **kwargs):
-        if entities[0].type == "trajectory":
-            raise OSError("marker failed")
-        return original(namespace, entities, **kwargs)
+    def fail_marker(*args):
+        raise OSError("marker failed")
 
-    monkeypatch.setattr(client, "update_entities", fail_marker)
+    monkeypatch.setattr(client.backend, "_save_processing_checkpoint", fail_marker)
     with pytest.raises(OSError, match="marker failed"):
         sync._process_trajectory(trajectory())
     assert client.get_all_entities(sync.namespace_id) == []
-    monkeypatch.setattr(client, "update_entities", original)
+    monkeypatch.setattr(client.backend, "_save_processing_checkpoint", original)
     sync._process_trajectory(trajectory())
     sync._process_trajectory(trajectory())
-    assert sorted(e.type for e in client.get_all_entities(sync.namespace_id)) == ["note", "trajectory"]
+    assert sorted(e.type for e in client.get_all_entities(sync.namespace_id)) == ["note"]
 
 
 def test_postgres_concurrent_duplicate_deliveries_commit_once(sync):
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: sync._process_trajectory(trajectory()), range(2)))
-    assert sorted(e.type for e in sync.client.get_all_entities(sync.namespace_id)) == ["note", "trajectory"]
+    assert sorted(e.type for e in sync.client.get_all_entities(sync.namespace_id)) == ["note"]
 
 
 def test_profiles_share_postgres_database_and_survive_new_client(sync):
@@ -151,24 +149,12 @@ def test_postgres_profile_updates_reject_stale_writers_and_roll_back(sync):
         peer.backend.close()
 
 
-def test_postgres_hooks_cannot_hide_or_drop_completion_marker(sync, monkeypatch):
-    from altk_evolve.schema.exceptions import EvolveException
-
+def test_postgres_checkpoints_are_independent_of_entity_hooks(sync, monkeypatch):
     client = sync.client
-    ns = sync.namespace_id
-    monkeypatch.setattr(
-        "altk_evolve.backend.base.dispatch_memory_post_read",
-        lambda backend, namespace, entities, **kwargs: [e for e in entities if e.type != "trajectory"],
-    )
-    sync._process_trajectory(trajectory())
-    sync._process_trajectory(trajectory())
-    assert sorted(e.type for e in client.backend.scan_entities(ns)) == ["note", "trajectory"]
-    monkeypatch.setattr(
-        "altk_evolve.backend.base.dispatch_memory_pre_write",
-        lambda backend, namespace, entities: [e for e in entities if e.type != "trajectory"],
-    )
-    other = {**trajectory(), "trace_id": "other"}
-    for _ in range(2):
-        with pytest.raises(EvolveException, match="completion marker"):
-            sync._process_trajectory(other)
-    assert sorted(e.type for e in client.backend.scan_entities(ns)) == ["note", "trajectory"]
+    monkeypatch.setattr("altk_evolve.backend.base.dispatch_memory_post_read", lambda *args, **kw: [])
+    assert sync._process_trajectory(trajectory()) == 0
+    assert sync._process_trajectory(trajectory()) is None
+    assert len(client.backend.scan_entities(sync.namespace_id)) == 1
+    assert client.backend.conn.execute(
+        "SELECT count(*) FROM processing_checkpoints WHERE namespace_id=%s", (sync.namespace_id,)
+    ).fetchone() == (1,)

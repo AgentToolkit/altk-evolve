@@ -264,6 +264,17 @@ def test_rest_mcp_cli_share_profile_manager(client, monkeypatch, tmp_path):
     )
     assert response.status_code == 200, response.text
     assert response.json()["entities"][0]["content"] == "cli"
+    tracked = {"messages": [], "batch": {"source": "app", "conversation_id": "chat", "batch_id": "event"}}
+    body = {"namespace_id": "memories", "trajectory": tracked, "processing_profile": {"id": "review"}}
+    assert http.post("/trajectories", json=body).json()["completed_processors"] == ["first"]
+    assert mcp_server.process_trajectory(tracked, "memories", "review")["skipped_processors"] == ["first"]
+    tracked_path = tmp_path / "tracked.json"
+    tracked_path.write_text(json.dumps(tracked))
+    repeated = CliRunner().invoke(
+        cli, ["processing", "run", "--file", str(tracked_path), "--namespace", "memories", "--processing-profile", "review"]
+    )
+    assert repeated.exit_code == 0
+    assert json.loads(repeated.output)["skipped_processors"] == ["first"]
     assert mcp_server.get_processing_profile("review")["revision"] == 3
     assert mcp_server.list_processors()[0]["id"] == "tests.echo"
     assert client.get_all_entities("memories")[0].metadata["processing"]["revision"] == 3
@@ -475,22 +486,20 @@ def test_phoenix_marker_failure_rolls_back_outputs_and_retry_is_safe(client, mon
     with patch("altk_evolve.sync.phoenix_sync.EvolveClient", return_value=client):
         sync = PhoenixSync(namespace_id="memories", processing_profile="review")
     trajectory = dict(messages=[dict(role="user", content="hello")], trace_id="trace", span_id="span", model="unknown", timestamp=0)
-    original = client.update_entities
+    original = client.backend._save_processing_checkpoint
 
-    def fail_marker(namespace, entities, **kwargs):
-        if entities[0].type == "trajectory":
-            raise OSError("marker failed")
-        return original(namespace, entities, **kwargs)
+    def fail_marker(*args):
+        raise OSError("marker failed")
 
-    monkeypatch.setattr(client, "update_entities", fail_marker)
+    monkeypatch.setattr(client.backend, "_save_processing_checkpoint", fail_marker)
     with pytest.raises(OSError, match="marker failed"):
         sync._process_trajectory(trajectory)
     assert client.get_all_entities("memories") == []
-    monkeypatch.setattr(client, "update_entities", original)
+    monkeypatch.setattr(client.backend, "_save_processing_checkpoint", original)
     sync._process_trajectory(trajectory)
     # A repeat delivery (including a lost acknowledgement) must not rerun plugins.
     sync._process_trajectory(trajectory)
-    assert sorted(e.type for e in client.get_all_entities("memories")) == ["note", "trajectory"]
+    assert sorted(e.type for e in client.get_all_entities("memories")) == ["note"]
 
 
 def test_filesystem_transaction_rolls_back_updates_deletes_and_commit_failure(client, monkeypatch):
@@ -528,20 +537,19 @@ def test_concurrent_phoenix_retries_use_one_commit(client, monkeypatch):
     trajectory = dict(messages=[dict(role="user", content="hello")], trace_id="trace", span_id="span", model="unknown", timestamp=0)
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda sync: sync._process_trajectory(trajectory), syncs))
-    assert sorted(e.type for e in client.get_all_entities("memories")) == ["note", "trajectory"]
+    assert sorted(e.type for e in client.get_all_entities("memories")) == ["note"]
 
 
 def test_unsupported_atomic_backend_fails_before_processing(client, monkeypatch):
-    from altk_evolve.backend.base import BaseEntityBackend
     from altk_evolve.sync.phoenix_sync import PhoenixSync
     from unittest.mock import patch
 
     client.processing.put("review", definition(), expected_revision=0)
-    monkeypatch.setattr(client.backend, "transaction", lambda namespace: BaseEntityBackend.transaction(client.backend, namespace))
+    monkeypatch.setattr(client.backend, "supports_atomic_writes", False)
     with patch("altk_evolve.sync.phoenix_sync.EvolveClient", return_value=client):
         sync = PhoenixSync(namespace_id="memories", processing_profile="review")
     process = Mock(side_effect=AssertionError("must not run"))
-    monkeypatch.setattr(client, "process_trajectory", process)
+    monkeypatch.setattr(EchoProcessor, "process", process)
     with pytest.raises(NotImplementedError, match="atomic namespace writes"):
         sync._process_trajectory(
             dict(messages=[dict(role="user", content="hi")], trace_id="trace", span_id="span", model="unknown", timestamp=0)
@@ -1042,29 +1050,17 @@ def test_structured_agent_requires_scoring_config(response_type):
         GuidelineConfig(**kwargs, analysis_config={"agents": [{**agent, **scoring}]})
 
 
-def test_phoenix_marker_checks_bypass_read_filters_and_verify_writes(client, monkeypatch):
+def test_phoenix_checkpoints_are_independent_of_entity_read_hooks(client, monkeypatch):
     from altk_evolve.sync.phoenix_sync import PhoenixSync
-    from altk_evolve.schema.exceptions import EvolveException
 
     client.processing.put("review", definition(), expected_revision=0)
     monkeypatch.setattr("altk_evolve.sync.phoenix_sync.EvolveClient", lambda: client)
     sync = PhoenixSync(namespace_id="memories", processing_profile="review")
     trajectory = dict(messages=[dict(role="user", content="hello")], trace_id="trace", span_id="span", model="unknown", timestamp=0)
-    monkeypatch.setattr(
-        "altk_evolve.backend.base.dispatch_memory_post_read",
-        lambda backend, ns, entities, **kwargs: [e for e in entities if e.type != "trajectory"],
-    )
-    sync._process_trajectory(trajectory)
-    sync._process_trajectory(trajectory)
-    assert sorted(e.type for e in client.backend.scan_entities("memories")) == ["note", "trajectory"]
-    monkeypatch.setattr(
-        "altk_evolve.backend.base.dispatch_memory_pre_write", lambda backend, ns, entities: [e for e in entities if e.type != "trajectory"]
-    )
-    trajectory["trace_id"] = "new-trace"
-    for _ in range(2):
-        with pytest.raises(EvolveException, match="completion marker"):
-            sync._process_trajectory(trajectory)
-    assert sorted(e.type for e in client.backend.scan_entities("memories")) == ["note", "trajectory"]
+    monkeypatch.setattr("altk_evolve.backend.base.dispatch_memory_post_read", lambda *args, **kw: [])
+    assert sync._process_trajectory(trajectory) == 0
+    assert sync._process_trajectory(trajectory) is None
+    assert len(client.backend.scan_entities("memories")) == 1
 
 
 def test_async_write_hook_reentrancy_preserves_unrelated_thread_isolation(tmp_path):
@@ -1249,7 +1245,97 @@ def test_phoenix_race_skip_is_counted_as_skipped(client, monkeypatch):
     monkeypatch.setattr(sync, "_fetch_spans", lambda *a, **kw: [{"context": {"trace_id": "trace"}}])
     monkeypatch.setattr(sync, "_get_processed_trace_ids", lambda: set())
     monkeypatch.setattr(sync, "_is_llm_span", lambda _: True)
-    monkeypatch.setattr(sync, "_build_trajectory_for_trace", lambda *args: trajectory)
+    monkeypatch.setattr(sync, "_incremental_trajectories", lambda *args: iter([trajectory]))
     monkeypatch.setattr(sync, "_clean_trajectory", lambda t: t)
     result = sync.sync()
     assert result.processed == 0 and result.skipped == 1
+
+
+def test_phoenix_processes_new_late_and_corrected_spans_in_an_open_trace(client, monkeypatch):
+    from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    seen = []
+
+    class Capture(EchoProcessor):
+        def process(self, trajectory, *, context):
+            seen.append(trajectory.model_copy(deep=True))
+            return super().process(trajectory, context=context)
+
+    client._processing = make_manager(processor_type=Capture)
+    client.processing.put("incremental", definition(), expected_revision=0)
+    monkeypatch.setattr("altk_evolve.sync.phoenix_sync.EvolveClient", lambda: client)
+    sync = PhoenixSync(namespace_id="memories", processing_profile="incremental")
+
+    def span(identity, output, *, completed=True, context="question", time="2026-01-01T00:00:00Z"):
+        return {
+            "context": {"trace_id": "open-trace", "span_id": identity},
+            "span_kind": "LLM",
+            "start_time": time,
+            "end_time": "2026-01-01T00:01:00Z" if completed else None,
+            "attributes": {
+                "llm.input_messages": [{"role": "user", "content": context}],
+                "llm.output_messages": [{"role": "assistant", "content": output}],
+            },
+        }
+
+    first, second = span("one", "old answer"), span("two", "new answer", completed=False)
+    fetched = [first, second]
+    monkeypatch.setattr(sync, "_fetch_spans", lambda *_: fetched)
+    assert sync.sync().processed == 1
+    assert seen[0].messages == [{"role": "assistant", "content": "old answer"}]
+    assert seen[0].context_messages == [{"role": "user", "content": "question"}]
+    client.processing.put("incremental", definition("new mode"), expected_revision=1)
+    second["end_time"] = "2026-01-01T00:02:00Z"
+    result = sync.sync()
+    assert (result.processed, result.skipped) == (1, 1)
+    assert seen[-1].batch.batch_id == "two"
+    assert client.backend.scan_entities("memories")[-1].content == "new mode"
+    # Same number of messages, different output: source revision changes.
+    first["attributes"]["llm.output_messages"][0]["content"] = "corrected"
+    fetched.reverse()
+    assert sync.sync().processed == 1
+    assert seen[-1].messages[0]["content"] == "corrected"
+    assert seen[-1].batch.revision != seen[0].batch.revision
+    fetched.append(span("late", "arrived late", time="2025-12-31T23:59:00Z"))
+    assert sync.sync().processed == 1
+    assert sync.sync().processed == 0
+    assert len(seen) == 4
+
+
+def test_batch_scope_separates_consumers_without_using_profile_revision(client):
+    from altk_evolve.processing import TrajectoryBatch
+
+    client.processing.put("p", definition(), expected_revision=0)
+    batch = TrajectoryBatch(source="app", conversation_id="chat", batch_id="event")
+    trajectory = {"messages": [], "batch": batch}
+    first = client.process_trajectory(trajectory, namespace_id="memories", processing_profile="p")
+    client.processing.put("p", definition("new"), expected_revision=1)
+    repeated = client.process_trajectory(trajectory, namespace_id="memories", processing_profile="p")
+    other = client.process_trajectory(
+        {**trajectory, "batch": batch.model_copy(update={"scope": "other-agent"})}, namespace_id="memories", processing_profile="p"
+    )
+    assert first.completed_processors == ["first"]
+    assert repeated.skipped_processors == ["first"]
+    assert other.completed_processors == ["first"]
+    assert [e.content for e in client.get_all_entities("memories")] == ["old", "new"]
+
+
+def test_builtin_counts_only_new_steps_when_supporting_context_is_present(monkeypatch):
+    from altk_evolve.processing.builtin import GuidelineProcessor, GuidelineConfig
+    from altk_evolve.processing import Trajectory, ProcessorContext
+    from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
+
+    messages = []
+    monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.generate_guidelines", lambda value, **kwargs: messages.extend(value) or [])
+    processor = GuidelineProcessor.from_config(GuidelineConfig(guidelines_mode="standard"))
+    processor.process(
+        Trajectory(
+            messages=[{"role": "assistant", "content": "new answer"}],
+            context_messages=[{"role": "user", "content": "question"}, {"role": "assistant", "content": "old answer"}],
+        ),
+        context=ProcessorContext("operation"),
+    )
+    parsed = parse_openai_agents_trajectory(messages)
+    assert parsed["num_steps"] == 1
+    assert "old answer" in parsed["task_instruction"]
+    assert "new answer" in parsed["trajectory_summary"]
