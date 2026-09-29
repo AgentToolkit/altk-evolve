@@ -31,6 +31,7 @@ over the file.
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import json
 import logging
 import os
@@ -226,6 +227,21 @@ def _save_config(values: Dict[str, Any], hermes_home: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _bucket_name(key: str) -> str:
+    """Directory name for one scoped store — legible, but keyed on the digest.
+
+    ``slugify`` is lossy by design: it folds every character outside
+    ``[a-z0-9-]`` and truncates. So ``alice.b`` and ``alice/b`` both slug to
+    ``alice-b``, and two ids sharing a 40-character prefix collide outright.
+    An id with nothing sluggable in it — all punctuation, or entirely non-Latin
+    — comes back as the literal ``entity``. Under ``EVOLVE_SCOPE`` any of these
+    collisions merges two users' stores, which is the one outcome scoping exists
+    to prevent. So the slug is decoration, there to keep the directory
+    recognisable; a truncated SHA-256 of the *original* id is what identifies it.
+    """
+    return f"{slugify(key, max_length=40)}-{hashlib.sha256(key.encode('utf-8')).hexdigest()[:12]}"
+
+
 def _flatten(text: str) -> str:
     """Collapse a stored field to one escaped line, safe to inject.
 
@@ -404,7 +420,13 @@ class EvolveMemoryProvider(MemoryProvider):
         self._expose_tools = cfg["expose_tools"]
 
         store_root = Path(cfg["dir"]) if cfg["dir"] else Path(self._hermes_home) / "evolve"
-        store_root = self._scoped_root(store_root)
+        store_root, unattributable = self._scoped_root(store_root)
+        if unattributable:
+            # Recall from the shared store still runs -- reading what is already
+            # there harms nobody. Writing does not: an unattributable session
+            # depositing into the shared store is exactly the leak EVOLVE_SCOPE
+            # was set to prevent, and it would look partitioned while doing it.
+            self._capture_allowed = False
 
         if self._mode == "server":
             # Phase 1 stub -- not functional yet. Disable rather than crash
@@ -426,7 +448,7 @@ class EvolveMemoryProvider(MemoryProvider):
             self._backend = None
             self._active = False
 
-    def _scoped_root(self, root: Path) -> Path:
+    def _scoped_root(self, root: Path) -> Tuple[Path, bool]:
         """Partition the store by user or chat when ``EVOLVE_SCOPE`` asks for it.
 
         ``global`` (the default) is a single shared store: guidelines are meant
@@ -436,18 +458,26 @@ class EvolveMemoryProvider(MemoryProvider):
         produces is injected into everyone else's. ``user`` and ``chat`` give
         those deployments a partition without changing the default.
 
-        Scoping falls back to ``global`` rather than to a shared "unknown"
-        bucket when the id is missing: a bucket keyed on nothing would pool
-        exactly the users this is meant to separate.
+        Returns the store root and whether the session is *unattributable* — a
+        scope was asked for but the host supplied no id for it. Reads still come
+        from the shared root in that case; the caller refuses writes. Neither a
+        shared "unknown" bucket nor a silent write to the shared root is safe:
+        both pool exactly the users the scope exists to separate, behind a
+        directory layout that looks partitioned.
         """
         if self._scope == "global":
-            return root
+            return root, False
         key = self._user_id if self._scope == "user" else self._chat_id
         if not key:
-            logger.debug("evolve: EVOLVE_SCOPE=%s but no id was supplied; using the global store", self._scope)
-            return root
+            logger.warning(
+                "evolve: EVOLVE_SCOPE=%s but the host supplied no %s_id; "
+                "recalling from the shared store and disabling capture for this session",
+                self._scope,
+                self._scope,
+            )
+            return root, True
         bucket = "users" if self._scope == "user" else "chats"
-        return root / bucket / (slugify(key) or "unknown")
+        return root / bucket / _bucket_name(key), False
 
     def _identity(self) -> Dict[str, Any]:
         """Attribution recorded with a captured trajectory."""

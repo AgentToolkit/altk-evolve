@@ -655,8 +655,9 @@ class TestStoreScoping:
         bob.shutdown()
 
         assert got["count"] == 0
-        assert list((tmp_path / "evolve" / "users" / "alice" / "entities").glob("**/*.md"))
-        assert not (tmp_path / "evolve" / "users" / "bob" / "entities").exists()
+        # Only alice's bucket exists -- bob never wrote -- and it is named for her.
+        assert [d.name for d in (tmp_path / "evolve" / "users").iterdir()] == [hermes_module._bucket_name("alice")]
+        assert list((tmp_path / "evolve" / "users").glob("*/entities/**/*.md"))
 
     def test_chat_scope_partitions_by_chat(self, hermes_module, noop_generator, tmp_path, monkeypatch):
         monkeypatch.setenv("EVOLVE_SCOPE", "chat")
@@ -664,18 +665,58 @@ class TestStoreScoping:
         p.handle_tool_call("evolve_save_guideline", {"content": "Channel guideline."})
         p.shutdown()
 
-        assert list((tmp_path / "evolve" / "chats" / "channel-42" / "entities").glob("**/*.md"))
+        bucket = tmp_path / "evolve" / "chats" / hermes_module._bucket_name("Channel #42")
+        assert bucket.name.startswith("channel-42-"), "the slug should stay legible"
+        assert list((bucket / "entities").glob("**/*.md"))
 
-    def test_a_missing_id_falls_back_to_the_global_store(self, hermes_module, noop_generator, tmp_path, monkeypatch):
-        """Not to a shared "unknown" bucket — that would pool exactly the users
-        the scope is meant to separate, while looking partitioned."""
+    def test_ids_that_slug_to_the_same_string_do_not_share_a_bucket(self, hermes_module):
+        """``slugify`` folds punctuation and truncates, so it cannot carry
+        identity on its own: a collision here would merge two users' stores,
+        which is the one thing scoping exists to prevent."""
+        assert hermes_module.slugify("alice.b") == hermes_module.slugify("alice/b")
+        assert hermes_module._bucket_name("alice.b") != hermes_module._bucket_name("alice/b")
+
+        # Ids differing only past the slug's length cap.
+        long_a, long_b = "u" * 44 + "-one", "u" * 44 + "-two"
+        assert hermes_module.slugify(long_a, max_length=40) == hermes_module.slugify(long_b, max_length=40)
+        assert hermes_module._bucket_name(long_a) != hermes_module._bucket_name(long_b)
+
+    def test_an_id_with_nothing_sluggable_still_gets_its_own_bucket(self, hermes_module):
+        # entity_io.slugify has no empty return -- it falls back to "entity" --
+        # so these two ids share a slug and are told apart by the digest alone.
+        assert hermes_module.slugify("!!!") == hermes_module.slugify("你好") == "entity"
+        bang, hello = hermes_module._bucket_name("!!!"), hermes_module._bucket_name("你好")
+        assert bang.startswith("entity-") and hello.startswith("entity-")
+        assert bang != hello
+
+    def test_a_missing_id_disables_capture_rather_than_writing_anywhere(self, hermes_module, noop_generator, tmp_path, monkeypatch):
+        """Neither a shared "unknown" bucket nor a quiet write to the shared
+        root. Both pool exactly the users the scope is meant to separate, behind
+        a layout that still looks partitioned."""
         monkeypatch.setenv("EVOLVE_SCOPE", "user")
         p = _make_provider(hermes_module, tmp_path)
-        p.handle_tool_call("evolve_save_guideline", {"content": "Use make check."})
+        refusal = p.handle_tool_call("evolve_save_guideline", {"content": "Use make check."})
+        p.on_session_end(_FOUR_MESSAGES)
+        _join(p)
         p.shutdown()
 
-        assert list((tmp_path / "evolve" / "entities").glob("**/*.md"))
+        assert "disabled" in refusal
+        assert not list((tmp_path / "evolve").glob("**/*.md"))
         assert not (tmp_path / "evolve" / "users").exists()
+
+    def test_an_unattributable_session_still_recalls_from_the_shared_store(self, hermes_module, noop_generator, tmp_path, monkeypatch):
+        """Reading what is already there harms nobody, and silently losing
+        recall would look like the provider had stopped working."""
+        seeded = _make_provider(hermes_module, tmp_path)
+        seeded.handle_tool_call("evolve_save_guideline", {"content": "Use make check.", "trigger": "running tests"})
+        seeded.shutdown()
+
+        monkeypatch.setenv("EVOLVE_SCOPE", "user")
+        p = _make_provider(hermes_module, tmp_path)
+        got = json.loads(p.handle_tool_call("evolve_get_guidelines", {"task": "running tests"}))
+        p.shutdown()
+
+        assert got["count"] == 1
 
     def test_an_unknown_scope_value_is_ignored(self, hermes_module, tmp_path, monkeypatch):
         monkeypatch.setenv("EVOLVE_SCOPE", "galaxy")
