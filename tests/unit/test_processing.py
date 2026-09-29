@@ -704,3 +704,201 @@ def test_default_profiles_share_existing_sqlite_metadata_database(tmp_path, monk
         assert database.execute("SELECT id FROM namespaces").fetchone()[0] == "existing-metadata"
         assert database.execute("SELECT id, revision FROM processing_profiles").fetchone() == ("review", 1)
     assert not (tmp_path / "entities.sqlite.db").exists()
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_builtin_rejects_nonfinite_without_publishing(value):
+    from altk_evolve.processing.builtin import GuidelineProcessor
+
+    manager = make_manager(processor_type=GuidelineProcessor)
+    profile = {
+        "processors": [
+            {
+                "id": "g",
+                "plugin": "evolve.guidelines",
+                "config": {
+                    "guidelines_mode": "consistency",
+                    "consistency_method": "accurate",
+                    "analysis_config": {"low_uncertainty_threshold": value},
+                },
+            }
+        ]
+    }
+    with pytest.raises(ProcessingError, match="non-finite"):
+        manager.put("bad", profile, expected_revision=0)
+    with pytest.raises(ProfileNotFound):
+        manager.get("bad")
+
+
+def test_builtin_profile_roundtrip_and_independent_version(monkeypatch):
+    import altk_evolve
+    from altk_evolve.processing.builtin import GuidelineProcessor
+
+    manager = make_manager(processor_type=GuidelineProcessor)
+    profile = {
+        "processors": [
+            {
+                "id": "g",
+                "plugin": "evolve.guidelines",
+                "config": {
+                    "guidelines_mode": "consistency",
+                    "consistency_method": "accurate",
+                    "analysis_config": {},
+                },
+            }
+        ]
+    }
+    saved = manager.put("review", profile, expected_revision=0)
+    monkeypatch.setattr(altk_evolve, "__version__", "999.0.0")
+    assert GuidelineProcessor.version == "1"
+    assert manager.resolve("review").manifest() == saved["manifest"]
+    assert saved["manifest"]["processors"][0]["config"]["analysis_config"]["agents"]
+    monkeypatch.setattr(GuidelineProcessor, "version", "2")
+    with pytest.raises(ProcessingError, match="version changed"):
+        manager.resolve("review")
+
+
+@pytest.mark.parametrize(
+    "config", [{"max_samples": 100000}, {"max_samples": 1.5}, {"max_steps": 0}, {"agents": []}, {"high_uncertainty_threshold": 2}]
+)
+def test_analysis_config_rejects_invalid_controls(config):
+    from altk_evolve.processing.builtin import GuidelineConfig
+
+    with pytest.raises(ValueError):
+        GuidelineConfig(guidelines_mode="consistency", consistency_method="accurate", analysis_config=config)
+
+
+def test_reference_revision_argument_is_honored():
+    manager = make_manager()
+    manager.put("p", definition(), expected_revision=0)
+    manager.put("p", definition("new"), expected_revision=1)
+    assert manager.resolve(ProfileReference(id="p"), revision=1).revision == 1
+    with pytest.raises(ProcessingError, match="Conflicting"):
+        manager.resolve(ProfileReference(id="p", revision=2), revision=1)
+    with pytest.raises(ValueError):
+        manager.get("p", 0)
+
+
+@pytest.mark.parametrize("manifest", [{}, {"processors": None}, {"processors": [{}]}, {"processors": [], "conflict_resolution": []}])
+def test_malformed_stored_profile_is_processing_error(manifest):
+    manager = make_manager()
+    manager.repository.put("bad", manifest, expected_revision=0)
+    with pytest.raises(ProcessingError):
+        manager.resolve("bad")
+
+
+def test_builtin_metadata_pins_support_and_matches_generation_fields():
+    from altk_evolve.processing.builtin import GuidelineProcessor
+    from altk_evolve.processing.models import ProcessorContext, Trajectory
+    from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResult
+
+    guideline = Guideline(content="check", rationale="why", category="strategy", trigger="when", support=7, evidence="success")
+    processor = GuidelineProcessor((("standard", lambda _: [GuidelineGenerationResult(task_description="task", guidelines=[guideline])]),))
+    result = processor.process(Trajectory(messages=[], trace_id="trace"), context=ProcessorContext("operation"))
+    assert result.entities[0].metadata == {
+        "source_task_id": "trace",
+        "task_description": "task",
+        "category": guideline.category,
+        "rationale": guideline.rationale,
+        "trigger": guideline.trigger,
+        "implementation_steps": guideline.implementation_steps,
+        "generation_method": "standard",
+        "support": 1,
+    }
+
+
+def test_provenance_is_independent_and_empty_plan_warns():
+    manager = make_manager()
+    profile = definition()
+    profile["processors"].append({"id": "second", "plugin": "tests.echo"})
+    result = manager.process({"messages": []}, plan=manager.validate(profile))
+    result.entities[0].metadata["processing"]["manifest"]["processors"].clear()
+    assert result.entities[1].metadata["processing"]["manifest"]["processors"]
+    assert result.manifest["processors"]
+    assert manager.process({"messages": []}, plan=manager.validate({"processors": []})).diagnostics["processing"]["warning"]
+
+
+def test_plugin_system_exit_is_reported_and_inventory_needs_no_database(monkeypatch):
+    from typer.testing import CliRunner
+    from altk_evolve.cli.cli import app
+
+    entry = Mock(name="entry")
+    entry.name = "broken"
+    entry.load.side_effect = SystemExit(2)
+    monkeypatch.setattr("altk_evolve.processing.registry.entry_points", lambda **_: [entry])
+    monkeypatch.setattr("altk_evolve.cli.processing.client", Mock(side_effect=AssertionError("database not needed")))
+    result = CliRunner().invoke(app, ["processors", "list"])
+    assert result.exit_code == 0, result.output
+    assert "Cannot load processor broken" in result.output
+
+
+def test_phoenix_validates_latest_profile_before_sync(client, monkeypatch):
+    from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    monkeypatch.setattr("altk_evolve.sync.phoenix_sync.EvolveClient", lambda: client)
+    with pytest.raises(ProfileNotFound):
+        PhoenixSync(processing_profile="typo")
+    client.processing.put("p", definition(), expected_revision=0)
+    sync = PhoenixSync(processing_profile="p")
+    assert sync.processing_plan is None  # Still follows latest per trajectory.
+
+
+def test_processor_completion_applies_egress_hook(monkeypatch):
+    from altk_evolve.processing.models import ProcessorContext
+
+    hook = Mock(return_value=[{"role": "user", "content": "redacted"}])
+    completion = Mock(return_value="response")
+    monkeypatch.setattr("altk_evolve.hooks.manager.dispatch_llm_pre_call", hook)
+    monkeypatch.setattr("litellm.completion", completion)
+    messages = [{"role": "user", "content": "private"}]
+    assert ProcessorContext("op").complete(messages=messages, model="model", temperature=0) == "response"
+    hook.assert_called_once_with(messages, purpose="trajectory_processor", model="model")
+    completion.assert_called_once_with(messages=hook.return_value, model="model", temperature=0)
+
+
+def test_non_roundtripping_plugin_config_never_publishes():
+    from pydantic import field_validator
+
+    class DriftingConfig(BaseModel):
+        value: int
+
+        @field_validator("value")
+        @classmethod
+        def increment(cls, value):
+            return value + 1
+
+    class DriftingProcessor(EchoProcessor):
+        config_model = DriftingConfig
+
+    manager = make_manager(processor_type=DriftingProcessor)
+    with pytest.raises(ProcessingError, match="round-trip"):
+        manager.put("bad", {"processors": [{"id": "p", "plugin": "tests.echo", "config": {"value": 1}}]}, expected_revision=0)
+    with pytest.raises(ProfileNotFound):
+        manager.get("bad")
+
+
+def test_read_seams_reject_invalid_revision(client, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from typer.testing import CliRunner
+    from altk_evolve.frontend.api.processing import router
+    from altk_evolve.cli.cli import app
+
+    api = FastAPI()
+    api.include_router(router)
+    for revision in (0, -3):
+        assert TestClient(api).get(f"/processing-profiles/p?revision={revision}").status_code == 422
+        result = CliRunner().invoke(app, ["processing-profiles", "get", "p", "--revision", str(revision)])
+        assert result.exit_code != 0
+        assert "not in the range" in result.output
+
+
+def test_cli_unknown_latest_profile_fails_before_fetch(client, monkeypatch):
+    from typer.testing import CliRunner
+    from altk_evolve.cli.cli import app
+
+    monkeypatch.setattr("altk_evolve.sync.phoenix_sync.EvolveClient", lambda: client)
+    result = CliRunner().invoke(app, ["sync", "phoenix", "--processing-profile", "typo"])
+    assert result.exit_code == 1
+    assert "Sync failed" in result.output
+    assert "Profile not found" in result.output

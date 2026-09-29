@@ -64,7 +64,7 @@ class ProcessorRegistry:
             self._check(processor_type, name)
             self._processors[name] = processor_type
             return processor_type
-        except Exception as exc:
+        except (Exception, SystemExit) as exc:
             raise ProcessingError(f"Cannot load processor {name}: {exc}") from exc
 
     def inventory(self) -> list[dict]:

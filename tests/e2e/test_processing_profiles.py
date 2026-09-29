@@ -61,6 +61,8 @@ class Processor:
             [sys.executable, "-m", "altk_evolve.cli.cli", *args], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60
         )
         assert (result.returncode == 0) == success, result.stdout + result.stderr
+        if not success:
+            assert "changed; current revision is 2" in result.stdout + result.stderr
         return result.stdout
 
     inventory = json.loads(run("processors", "list"))

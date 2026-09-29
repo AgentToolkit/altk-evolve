@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Response
+from fastapi import APIRouter, Header, HTTPException, Response, Query
 from pydantic import BaseModel, ConfigDict
 
 from altk_evolve.processing import ProcessingError, ProfileConflict, ProfileDefinition, ProfileNotFound, ProfileReference, Trajectory
@@ -29,7 +29,7 @@ def list_processors():
 
 
 @router.get("/processing-profiles/{profile_id}")
-def get_profile(profile_id: str, response: Response, revision: int | None = None):
+def get_profile(profile_id: str, response: Response, revision: int | None = Query(default=None, ge=1)):
     try:
         result = manager().get(profile_id, revision)
     except ProcessingError as exc:

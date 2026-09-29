@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 
-from altk_evolve.processing import ProfileReference
+from altk_evolve.processing import ProfileReference, ProcessorRegistry
 
 profiles_app = typer.Typer(help="Manage processing profiles in the configured database.")
 processors_app = typer.Typer(help="Discover installed trajectory processors.")
@@ -21,11 +21,14 @@ def client():
 
 @processors_app.command("list")
 def list_processors():
-    typer.echo(json.dumps(client().processing.registry.inventory(), indent=2))
+    try:
+        typer.echo(json.dumps(ProcessorRegistry.discover().inventory(), indent=2))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @profiles_app.command("get")
-def get_profile(name: str, revision: int | None = None):
+def get_profile(name: str, revision: Annotated[int | None, typer.Option(min=1)] = None):
     try:
         typer.echo(json.dumps(client().processing.get(name, revision), indent=2))
     except ValueError as exc:

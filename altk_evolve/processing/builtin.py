@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from altk_evolve import __version__
 from pathlib import Path
 from collections.abc import Callable
 from typing import ClassVar, Literal, Self, cast
@@ -32,11 +31,26 @@ class GuidelineConfig(GuidelineRuntime):
     @model_validator(mode="after")
     def capture_analysis(self):
         if self.guidelines_mode != "standard" and self.consistency_method == "accurate":
-            data = _analysis_defaults() if self.analysis_config is None else dict(self.analysis_config)
+            data = {**_analysis_defaults(), **(self.analysis_config or {})}
+            for key, limit in (("max_samples", 100), ("max_steps", 1000)):
+                value = data[key]
+                if type(value) is not int or not 1 <= value <= limit:
+                    raise ValueError(f"{key} must be an integer between 1 and {limit}")
+            for key in ("low_uncertainty_threshold", "high_uncertainty_threshold"):
+                value = data[key]
+                if not isinstance(value, (int, float)) or not 0 <= value <= 1:
+                    raise ValueError(f"{key} must be between 0 and 1")
+            if data["aggregation"] not in ("mean", "rms", "geo_mean", "product"):
+                raise ValueError("Unknown consistency aggregation")
+            if type(data["skip_on_no_uncertainty"]) is not bool:
+                raise ValueError("skip_on_no_uncertainty must be a boolean")
+            if not isinstance(data["agents"], list) or not data["agents"]:
+                raise ValueError("agents must be a nonempty list")
+            for agent in data["agents"]:
+                if not isinstance(agent, dict) or not agent.get("name") or not agent.get("response_type"):
+                    raise ValueError("Each agent requires name and response_type")
             if data.get("low_uncertainty_threshold", 0.1) > data.get("high_uncertainty_threshold", 0.5):
                 raise ValueError("low_uncertainty_threshold must not exceed high_uncertainty_threshold")
-            if data.get("max_samples", 10) < 1:
-                raise ValueError("max_samples must be positive")
             object.__setattr__(self, "analysis_config", data)
         return self
 
@@ -44,7 +58,7 @@ class GuidelineConfig(GuidelineRuntime):
 class GuidelineProcessor:
     id: ClassVar[str] = "evolve.guidelines"
     api_version: ClassVar[int] = 1
-    version: ClassVar[str] = __version__
+    version: ClassVar[str] = "1"  # Bump for incompatible processor changes, independently of package releases.
     config_model: ClassVar[type[BaseModel]] = GuidelineConfig
 
     def __init__(self, steps: tuple[tuple[str, Callable[[Trajectory], list[GuidelineGenerationResult]]], ...]):
@@ -81,7 +95,7 @@ class GuidelineProcessor:
                     "source_task_id": trajectory.trace_id or context.operation_id,
                     "task_description": result.task_description,
                     "support": 1,
-                    **guideline.model_dump(exclude={"content"}),
+                    **guideline.model_dump(exclude={"content", "support", "evidence"}),
                     "generation_method": method,
                 },
             )

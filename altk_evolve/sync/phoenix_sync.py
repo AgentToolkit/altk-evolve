@@ -65,11 +65,11 @@ class PhoenixSync:
         if profile_revision is not None and processing_profile is None:
             raise ValueError("profile_revision requires processing_profile")
         self.processing_profile = processing_profile
-        self.processing_plan = (
-            self.client.processing.resolve(processing_profile, revision=profile_revision)
-            if processing_profile is not None and profile_revision is not None
-            else None
-        )
+        self.processing_plan = None
+        if processing_profile is not None:
+            initial_plan = self.client.processing.resolve(processing_profile, revision=profile_revision)
+            if profile_revision is not None:
+                self.processing_plan = initial_plan
 
     def _ensure_namespace(self):
         """Ensure the target namespace exists."""

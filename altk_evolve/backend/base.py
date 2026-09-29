@@ -1,3 +1,4 @@
+from copy import deepcopy
 import datetime
 import logging
 from abc import ABC, abstractmethod
@@ -326,7 +327,7 @@ class BaseEntityBackend(ABC):
                 content_str = serialize_content(update.content)
                 metadata = update.metadata or {}
                 if processing_provenance is not None and update.event in ("ADD", "UPDATE"):
-                    metadata = {**metadata, "processing": processing_provenance}
+                    metadata = {**metadata, "processing": deepcopy(processing_provenance)}
                     update.metadata = metadata
                 match update.event:
                     case "ADD":
@@ -371,7 +372,7 @@ class BaseEntityBackend(ABC):
                 content_str = serialize_content(entity.content)
                 metadata = entity.metadata or {}
                 if processing_provenance is not None:
-                    metadata = {**metadata, "processing": processing_provenance}
+                    metadata = {**metadata, "processing": deepcopy(processing_provenance)}
                 entity_id = self._add_entity(namespace_id, entity_type, content_str, timestamp, metadata)
                 updates.append(
                     EntityUpdate(

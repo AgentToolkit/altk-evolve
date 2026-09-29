@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+import math
+from copy import deepcopy
 from collections import defaultdict
 from dataclasses import replace
 from typing import Any
@@ -28,6 +30,17 @@ def _encode(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def _reject_nonfinite(value):
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("Configuration must not contain non-finite numbers")
+    if isinstance(value, dict):
+        for item in value.values():
+            _reject_nonfinite(item)
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            _reject_nonfinite(item)
+
+
 class ProcessingManager:
     """Coordinate profile storage, plugin resolution, and execution in the caller’s process."""
 
@@ -42,8 +55,15 @@ class ProcessingManager:
         for spec in definition.processors:
             descriptor = self.registry.get(spec.plugin)
             try:
-                config = descriptor.config_model.model_validate(spec.config).model_dump(mode="json")
-                _encode(config)  # Reject non-JSON/non-finite values before publication.
+                _reject_nonfinite(spec.config)
+                validated = descriptor.config_model.model_validate(spec.config)
+                _reject_nonfinite(validated.model_dump())
+                config = validated.model_dump(mode="json")
+                encoded = _encode(config)
+                restored = descriptor.config_model.model_validate(config).model_dump(mode="json")
+                executable = descriptor.config_model.model_validate_json(encoded).model_dump(mode="json")
+                if _encode(restored) != encoded or _encode(executable) != encoded:
+                    raise ValueError("Configuration does not round-trip through JSON identically")
             except Exception as exc:
                 raise ProcessingError(f"Invalid config for {spec.id} ({spec.plugin}): {exc}") from exc
             processors.append(descriptor)
@@ -89,24 +109,34 @@ class ProcessingManager:
         return {"id": name, "revision": revision, "manifest": plan.manifest()}
 
     def get(self, name: str, revision: int | None = None) -> dict:
+        ProfileReference(id=name, revision=revision)
         number, manifest = self.repository.get(name, revision)
         return {"id": name, "revision": number, "manifest": manifest}
 
     def resolve(self, reference: ProfileReference | str, *, revision: int | None = None) -> ProcessingPlan:
         if isinstance(reference, str):
             reference = ProfileReference(id=reference, revision=revision)
+        elif revision is not None:
+            if reference.revision is not None and reference.revision != revision:
+                raise ProcessingError("Conflicting profile revision arguments")
+            reference = ProfileReference(id=reference.id, revision=revision)
         record = self.get(reference.id, reference.revision)
         manifest = record["manifest"]
-        for item in manifest["processors"]:
-            descriptor = self.registry.get(item["plugin"])
-            if descriptor.version != item["version"] or descriptor.api_version != item["api_version"]:
-                raise ProcessingError(f"Processor version changed: {item['plugin']}; publish a new profile revision")
-        plan = self.validate(
-            {"processors": [{k: p[k] for k in ("id", "plugin", "config")} for p in manifest["processors"]]},
-            conflict_settings=manifest["conflict_resolution"],
-        )
-        if plan.manifest() != manifest:
-            raise ProcessingError("Stored profile no longer resolves identically; publish a new revision")
+        try:
+            for item in manifest["processors"]:
+                descriptor = self.registry.get(item["plugin"])
+                if descriptor.version != item["version"] or descriptor.api_version != item["api_version"]:
+                    raise ProcessingError(f"Processor version changed: {item['plugin']}; publish a new profile revision")
+            plan = self.validate(
+                {"processors": [{k: p[k] for k in ("id", "plugin", "config")} for p in manifest["processors"]]},
+                conflict_settings=manifest["conflict_resolution"],
+            )
+            if plan.manifest() != manifest:
+                raise ProcessingError("Stored profile no longer resolves identically; publish a new revision")
+        except ProcessingError:
+            raise
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProcessingError(f"Invalid stored profile {reference.id}: {exc}") from exc
         return replace(plan, profile_id=reference.id, revision=record["revision"])
 
     def process(
@@ -128,7 +158,7 @@ class ProcessingManager:
             "manifest": manifest,
         }
         batches = []
-        diagnostics = {}
+        diagnostics = {} if plan.processor_types else {"processing": {"warning": "No processors configured; no entities will be generated"}}
         entities = []
         for processor_type, spec in zip(plan.processor_types, manifest["processors"], strict=True):
             config = processor_type.config_model.model_validate_json(_encode(spec["config"]))
@@ -137,7 +167,7 @@ class ProcessingManager:
             diagnostics[spec["id"]] = result.diagnostics
             stamp = {**provenance, "processor_id": spec["id"]}
             for entity in result.entities:
-                entity.metadata = {**entity.metadata, "processing": stamp}
+                entity.metadata = {**entity.metadata, "processing": deepcopy(stamp)}
             entities.extend(result.entities)
             batches.append((result, stamp))
         updates: list[dict[str, Any]] = []

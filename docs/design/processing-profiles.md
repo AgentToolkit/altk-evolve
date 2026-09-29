@@ -50,7 +50,7 @@ its plan and constructs fresh processors; in-flight instances and pinned plans k
 their original selection.
 
 Each instance ID is unique within the profile. Multiple instances may use the same
-plugin. The processor list is ordered; an empty list explicitly runs no processors.
+plugin. The processor list is ordered; an empty list explicitly runs no processors and returns a warning in processing diagnostics.
 Updates replace the definition, so removed config fields return to plugin defaults.
 Plugin validation runs before publication. Invalid modes do not silently fall back.
 
@@ -81,8 +81,8 @@ result = client.process_trajectory(
 
 Without an explicit manager, `EvolveClient.processing` uses the backend's profile
 repository in the existing configured database. PostgreSQL stores a `processing_profiles`
-table alongside the entity tables, using the same connection settings. Filesystem and
-Milvus use the existing SQLite metadata database selected by `EVOLVE_SQLITE_PATH` /
+table alongside the entity tables, using the same connection settings. Filesystem uses SQLite for profiles while its namespace catalog remains in JSON files.
+Milvus uses SQLite alongside its collections. The default profile SQLite file is selected by `EVOLVE_SQLITE_PATH` /
 `EVOLVE_SQLITE_URI` (default `entities.sqlite.db`). No separate profile database setting
 is needed. Repository injection remains available for custom integrations.
 
@@ -151,8 +151,9 @@ calls the class's `from_config(config)` factory to create a fresh processor inst
 plugins receive isolated trajectory copies.
 
 Profiles store normalized defaults and plugin versions. Resolving a saved profile
-rejects incompatible installed versions or configuration drift; publish a new revision
-explicitly after upgrades. A retained in-process plan keeps its processor class references.
+rejects changed processor versions or configuration drift; publish a new revision
+when processor compatibility changes. The built-in owns version `1`, independently
+of the Evolve package version; ordinary package releases do not invalidate profiles. A retained in-process plan keeps its processor class references.
 Hot replacement of installed Python code is unsupported.
 
 ## Built-ins, discovered packages, and local plugins
@@ -290,7 +291,9 @@ extension does not change existing sync behavior.
 Processors execute sequentially against the same original input, without consuming
 each other's results. All must succeed before derived writes begin. Failures stop the
 profile operation rather than silently discarding a processor's output. This differs
-intentionally from the legacy `all` mode's best-effort consistency branch.
+intentionally from the legacy MCP `save_trajectory` path, which catches generation
+errors and skips failed standard/consistency generation. Profile processing propagates
+those errors, including transient LLM failures, so the caller can retry.
 
 Persistence groups outputs by entity type and uses the normal backend path. Existing
 memory hooks still run; built-in generation preserves LLM-egress hooks. Third parties
@@ -352,3 +355,13 @@ parallel processors, plugin hot code reload, automatic retries/cancellation, and
 multi-worker guarantees for entity backends. SQLite and PostgreSQL profile publication use
 atomic revision checks. A caller may inject another profile repository; none of the
 processing interfaces require namespace-specific SQL or a fixed user/agent model.
+
+### Accurate consistency configuration validation
+
+Partial `analysis_config` dictionaries merge over the bundled analyzer defaults,
+so `{}` preserves its agent metrics and sampling behavior. Profile publication checks
+finite numbers, threshold ordering/range (0–1), aggregation, boolean skip behavior,
+and agent descriptors. Profile sampling is limited to 1–100 samples and 1–1000 steps
+to bound each invocation; these are profile API limits. Analyzer-specific metric
+configuration remains extensible. Configurations must also survive JSON serialization
+and revalidation identically before a revision is written.
