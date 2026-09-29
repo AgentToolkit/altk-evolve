@@ -1,3 +1,5 @@
+- **2026-09-25** · Paper — **[Memory as Middleware for Self-Improving AI Agents](https://arxiv.org/abs/2609.32091)**
+  The case for agent memory as a pluggable middleware layer, with Evolve as the reference implementation (conditionally accepted to Middleware 2026).
 - **2026-09-15** · Article — **[Your Agent Aced the Task. Will It Do It Again?](https://huggingface.co/blog/ibm-research/altk-evolve-consistency)**
   Diagnosing where an agent's decisions wobble and stabilizing them so success repeats.
 - **2026-09-08** · Paper — **[Closing the Consistency Gap: Self-Evolving Agents That Learn to Stay on Course](https://arxiv.org/abs/2609.08832)**
