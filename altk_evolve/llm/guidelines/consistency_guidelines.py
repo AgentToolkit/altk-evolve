@@ -155,6 +155,8 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
 
     Produces a task + list-of-steps structure where each step carries the messages
     that preceded it, the assistant's raw response, and the LLM params used.
+    context_messages seeds each replay prefix in its original roles/order, but
+    only assistant turns in messages receive step numbers and are scored.
 
     Steps are named with an "OpenAIAgent" prefix when the trajectory carries a real OpenAI
     tools JSON schema (`trajectory["tools"]` populated) — meaning its tool_calls came from
@@ -164,6 +166,7 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
     prefix instead, since we can't assume the same resampling behavior is safe for them.
     """
     messages = trajectory.get("messages", [])
+    context_messages = trajectory.get("context_messages", [])
     raw_model = trajectory.get("model")
     model = raw_model if raw_model and raw_model != "unknown" else None
     tools = trajectory.get("tools")
@@ -171,14 +174,14 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
     step_name = "OpenAIAgent" if tools else "AnyAgent"
 
     task = "Unknown task"
-    for msg in messages:
+    for msg in [*context_messages, *messages]:
         if msg.get("role") == "user":
             task = msg.get("content", "Unknown task")
             break
 
     steps: list[dict] = []
     step_number = 0
-    current_messages: list[dict] = []
+    current_messages: list[dict] = list(context_messages)
 
     for msg in messages:
         role = msg.get("role")
@@ -417,6 +420,7 @@ def _generate_guideline_result(
     *,
     options: GuidelineRuntime,
     trajectory_renderer: Optional[Callable[..., str]] = None,
+    context_messages: list[dict] | None = None,
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory).
 
@@ -464,6 +468,7 @@ def _generate_guideline_result(
     prompt = _CONSISTENCY_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         trajectory_summary=trajectory_summary,
+        supporting_context=json.dumps(context_messages, ensure_ascii=False) if context_messages else "",
         constrained_decoding_supported=constrained_decoding_supported,
     )
 
@@ -749,6 +754,7 @@ def generate_consistency_guidelines(
                 trace_id=trace_id,
                 options=options,
                 trajectory_renderer=trajectory_renderer,
+                context_messages=trajectory.get("context_messages"),
             )
             results.append(result)
         if debug_dir:
@@ -768,6 +774,7 @@ def generate_consistency_guidelines(
         trace_id=trace_id,
         options=options,
         trajectory_renderer=trajectory_renderer,
+        context_messages=trajectory.get("context_messages"),
     )
     if debug_dir:
         _write_guidelines_debug(debug_dir, trace_id, [result], "_consistency")

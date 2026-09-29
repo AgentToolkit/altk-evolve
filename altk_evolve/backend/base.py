@@ -292,6 +292,7 @@ class BaseEntityBackend(ABC):
         processing_provenance: dict | None = None,
     ) -> PreparedWrites:
         from altk_evolve.llm.conflict_resolution.conflict_resolution import resolve_conflicts
+        from altk_evolve.hooks.backend import proposed_metadata
 
         self._validate_namespace(namespace_id)
         if not entities:
@@ -340,6 +341,8 @@ class BaseEntityBackend(ABC):
                 )
 
             stored_by_id = {entity.id: entity.model_copy(deep=True) for entity in old_entities}
+            for entity in old_entities:
+                entity.metadata = proposed_metadata(self, entity.id, entity.metadata)
             updates = (
                 resolve_conflicts(old_entities, entities_with_temporary_ids)
                 if conflict_settings is None
@@ -371,7 +374,9 @@ class BaseEntityBackend(ABC):
                         try:
                             if update.id not in stored_by_id:
                                 raise EvolveException(f"Conflict resolution selected an unknown entity: {update.id}")
-                            dispatch_memory_pre_delete(self, namespace_id, update.id, metadata=stored_by_id[update.id].metadata)
+                            dispatch_memory_pre_delete(
+                                self, namespace_id, update.id, metadata=proposed_metadata(self, update.id, stored_by_id[update.id].metadata)
+                            )
                             prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
                         except MemoryPolicyViolation as violation:
                             # A policy veto (e.g. legal hold) must not abort
@@ -454,10 +459,16 @@ class BaseEntityBackend(ABC):
         return updates
 
     def commit_prepared(
-        self, namespace_id: str, batches: list[PreparedWrites], *, checkpoint: tuple[str, dict] | None = None
+        self,
+        namespace_id: str,
+        batches: list[PreparedWrites],
+        *,
+        checkpoint: tuple[str, dict] | None = None,
+        checkpoint_aliases: tuple[str, ...] = (),
     ) -> list[EntityUpdate] | None:
         """Atomically publish one processor's outputs and checkpoint; None means already committed.
 
+        Source aliases are linked atomically, including on duplicate delivery.
         Models, hooks, and embeddings must have finished in prepare_updates().
         A checkpoint requires an atomic backend; ordinary untracked writes retain
         support for non-transactional backends. Only touched replacement/delete
@@ -467,7 +478,13 @@ class BaseEntityBackend(ABC):
             raise NotImplementedError("Incremental processing requires atomic namespace writes")
         context = self.transaction(namespace_id) if self.supports_atomic_writes and not self.in_transaction else nullcontext()
         with context:
-            if checkpoint is not None and self.get_processing_checkpoint(namespace_id, checkpoint[0]) is not None:
+            checkpoint_keys = list(dict.fromkeys((checkpoint[0], *checkpoint_aliases))) if checkpoint is not None else []
+            existing = {key: self.get_processing_checkpoint(namespace_id, key) for key in checkpoint_keys}
+            committed = next((value for value in existing.values() if value is not None), None)
+            if committed is not None:
+                for key, value in existing.items():
+                    if value is None:
+                        self._save_processing_checkpoint(namespace_id, key, committed)
                 return None
             expected: dict[str, RecordedEntity] = {}
             for batch in batches:
@@ -487,7 +504,8 @@ class BaseEntityBackend(ABC):
                     if patch.entity_id not in deleted:
                         self._update_entity_metadata_impl(patch.namespace_id, patch.entity_id, patch.patch)
             if checkpoint is not None:
-                self._save_processing_checkpoint(namespace_id, *checkpoint)
+                for key in checkpoint_keys:
+                    self._save_processing_checkpoint(namespace_id, key, checkpoint[1])
             return updates
 
     def update_entities(

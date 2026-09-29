@@ -172,7 +172,10 @@ class ProcessingManager:
                 if not client.backend.supports_atomic_writes:
                     raise NotImplementedError("Incremental processing requires atomic namespace writes")
                 for spec in plan.manifest()["processors"]:
-                    if client.backend.get_processing_checkpoint(namespace_id, trajectory.batch.checkpoint_key(spec["id"])) is not None:
+                    keys = trajectory.batch.checkpoint_keys(spec["id"])
+                    if any(client.backend.get_processing_checkpoint(namespace_id, key) is not None for key in keys):
+                        if len(keys) > 1:
+                            client.backend.commit_prepared(namespace_id, [], checkpoint=(keys[0], {}), checkpoint_aliases=tuple(keys[1:]))
                         skipped.add(spec["id"])
         generated = self.generate(trajectory, plan=plan, skipped=skipped)
         if client is None:
@@ -237,9 +240,13 @@ class ProcessingManager:
         for result, stamp in deepcopy(generated.batches):
             processor_id = stamp["processor_id"]
             checkpoint = None
+            aliases: tuple[str, ...] = ()
             if generated.batch is not None:
-                checkpoint = (generated.batch.checkpoint_key(processor_id), stamp)
-                if client.backend.get_processing_checkpoint(namespace_id, checkpoint[0]) is not None:
+                keys = generated.batch.checkpoint_keys(processor_id)
+                checkpoint = (keys[0], stamp)
+                aliases = tuple(keys[1:])
+                if any(client.backend.get_processing_checkpoint(namespace_id, key) is not None for key in keys):
+                    client.backend.commit_prepared(namespace_id, [], checkpoint=checkpoint, checkpoint_aliases=aliases)
                     skipped.append(processor_id)
                     continue
             groups = defaultdict(list)
@@ -255,7 +262,7 @@ class ProcessingManager:
                 )
                 for group in groups.values()
             ]
-            written = client.backend.commit_prepared(namespace_id, prepared, checkpoint=checkpoint)
+            written = client.backend.commit_prepared(namespace_id, prepared, checkpoint=checkpoint, checkpoint_aliases=aliases)
             if written is None:
                 skipped.append(processor_id)
             else:

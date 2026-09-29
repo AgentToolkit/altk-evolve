@@ -1339,3 +1339,116 @@ def test_builtin_counts_only_new_steps_when_supporting_context_is_present(monkey
     assert parsed["num_steps"] == 1
     assert "old answer" in parsed["task_instruction"]
     assert "new answer" in parsed["trajectory_summary"]
+
+
+@pytest.mark.parametrize("with_history", [False, True])
+def test_accurate_processor_replays_original_prefix_and_scores_only_new_steps(monkeypatch, with_history):
+    from altk_evolve.processing.builtin import GuidelineProcessor, GuidelineConfig
+    from altk_evolve.processing import Trajectory, ProcessorContext
+    from altk_evolve.llm.guidelines.consistency_guidelines import transform_trajectory_to_IR
+    from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
+
+    tool_call = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{"id": "call", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}],
+    }
+    history = [{"role": "system", "content": "Answer with one number."}, {"role": "user", "content": "What is the current value?"}]
+    if with_history:
+        history += [tool_call, {"role": "tool", "tool_call_id": "call", "content": "4"}]
+    new = [{"role": "assistant", "content": "4"}, {"role": "user", "content": "And plus one?"}, {"role": "assistant", "content": "5"}]
+    prompts = []
+    monkeypatch.setattr(
+        "altk_evolve.llm.guidelines.consistency_analyzer.resampling.get_response_sampling", lambda **kw: prompts.append(kw["prompt"]) or []
+    )
+
+    def generate(trajectory, **kwargs):
+        ir = transform_trajectory_to_IR(trajectory)
+        assert [s["step_number"] for s in ir["steps"]] == [1, 2]
+        assert ir["task"] == "What is the current value?"
+        resample_trajectory(ir, samples=1, model_name="test")
+        return []
+
+    monkeypatch.setattr("altk_evolve.llm.guidelines.consistency_guidelines.generate_consistency_guidelines", generate)
+    processor = GuidelineProcessor.from_config(GuidelineConfig(guidelines_mode="consistency", consistency_method="accurate"))
+    trajectory = Trajectory(messages=new if with_history else history + new, context_messages=history if with_history else [])
+    before = trajectory.model_dump()
+    processor.process(trajectory, context=ProcessorContext("operation"))
+    assert prompts == [history, history + new[:2]]
+    assert trajectory.model_dump() == before
+
+
+@pytest.mark.parametrize("first_id", ["outer", "inner"])
+def test_phoenix_remembers_nested_span_aliases_between_polls(client, monkeypatch, first_id):
+    from altk_evolve.sync.phoenix_sync import PhoenixSync
+
+    client.processing.put("incremental", definition(), expected_revision=0)
+    monkeypatch.setattr("altk_evolve.sync.phoenix_sync.EvolveClient", lambda: client)
+    sync = PhoenixSync(namespace_id="memories", processing_profile="incremental")
+
+    def span(identity, parent=None):
+        return {
+            "context": {"trace_id": "trace", "span_id": identity},
+            "parent_id": parent,
+            "span_kind": "LLM",
+            "end_time": "2026-01-01T00:00:00Z",
+            "attributes": {
+                "llm.input_messages": [{"role": "user", "content": "question"}],
+                "llm.output_messages": [{"role": "assistant", "content": "answer"}],
+            },
+        }
+
+    outer, inner = span("outer"), span("inner", "outer")
+    fetched = [outer if first_id == "outer" else inner]
+    monkeypatch.setattr(sync, "_fetch_spans", lambda *_: fetched)
+    assert sync.sync().processed == 1
+    fetched[:] = [outer, inner]
+    assert sync.sync().processed == 0
+    # The relationship is durable even if a subsequent fetch omits either wrapper.
+    for remaining in (outer, inner):
+        fetched[:] = [remaining]
+        assert sync.sync().processed == 0
+    # Separate sibling calls must still contribute even with identical text.
+    fetched[:] = [span("sibling")]
+    assert sync.sync().processed == 1
+    assert len(client.backend.scan_entities("memories")) == 2
+
+
+def test_accurate_generation_receives_history_separately_from_scored_steps(monkeypatch):
+    from types import SimpleNamespace
+    from altk_evolve.processing.builtin import GuidelineProcessor, GuidelineConfig
+    from altk_evolve.processing import Trajectory, ProcessorContext
+
+    prefix = [
+        {"role": "system", "content": "Preserve the original task."},
+        {"role": "user", "content": "question"},
+        {"role": "assistant", "content": "historical answer"},
+        {"role": "user", "content": "follow-up"},
+    ]
+    replayed, generated = [], []
+    monkeypatch.setattr(
+        "altk_evolve.llm.guidelines.consistency_analyzer.resampling.get_response_sampling", lambda **kw: replayed.append(kw["prompt"]) or []
+    )
+    module = "altk_evolve.llm.guidelines.consistency_guidelines."
+    monkeypatch.setattr(
+        module + "analyze_consistency", lambda trajectory, config: ({"steps": [{"step_number": 1, "step_uncertainty": 0.5}]}, trajectory)
+    )
+    monkeypatch.setattr(module + "get_supported_openai_params", lambda **kw: [])
+    monkeypatch.setattr(module + "supports_response_schema", lambda **kw: False)
+
+    def complete(**kwargs):
+        generated.append(kwargs["messages"][0]["content"])
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"guidelines": []}'))])
+
+    monkeypatch.setattr(module + "completion", complete)
+    processor = GuidelineProcessor.from_config(
+        GuidelineConfig(guidelines_mode="consistency", consistency_method="accurate", segmentation_enabled=False)
+    )
+    processor.process(
+        Trajectory(context_messages=prefix, messages=[{"role": "assistant", "content": "new answer"}]),
+        context=ProcessorContext("operation"),
+    )
+    assert replayed == [prefix]
+    assert len(generated) == 1
+    assert json.dumps(prefix, ensure_ascii=False) in generated[0]
+    assert "new answer" in generated[0]

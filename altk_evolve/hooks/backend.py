@@ -38,6 +38,17 @@ def collect_metadata_patches(backend: BaseEntityBackend, namespace_id: str):
         _pending.reset(token)
 
 
+def proposed_metadata(backend: BaseEntityBackend, entity_id: str, metadata: dict) -> dict:
+    """Overlay this preparation's patches for policy decisions, leaving stored versions intact."""
+    result = deepcopy(metadata)
+    pending = _pending.get()
+    if pending is not None and pending.backend is backend:
+        for patch in pending.patches:
+            if patch.entity_id == entity_id:
+                result.update(patch.patch)
+    return result
+
+
 class HookBackend:
     """Hooks may read memory and propose metadata patches, not control storage.
 

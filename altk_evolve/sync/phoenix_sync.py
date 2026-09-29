@@ -773,7 +773,12 @@ class PhoenixSync:
         return self._extract_trajectory(representative)
 
     def _incremental_trajectories(self, spans: list[dict], include_errors: bool):
-        """Yield completed source events; never infer progress from a message count."""
+        """Yield completed source events and alias observed nested LLM instrumentation.
+
+        Checkpoints retain discovered aliases across polls. Ancestry must be present
+        in the fetched window to discover a relationship; unrelated spans are never
+        deduplicated merely because they returned identical content.
+        """
         for trace_id, trace_spans in self._group_spans_by_trace(spans).items():
             parents = {sid: span.get("parent_id") for span in trace_spans if (sid := self._span_id(span)) is not None}
             calls = self._dedupe_nested_llm_spans([span for span in trace_spans if self._is_llm_span(span)], parents)
@@ -784,6 +789,13 @@ class PhoenixSync:
                     continue
                 extracted = self._extract_messages_from_span(span)
                 trajectory = self._extract_trajectory(span)
+                trajectory["batch_aliases"] = [
+                    identity
+                    for ancestor in trace_spans
+                    if self._is_llm_span(ancestor)
+                    and (identity := self._span_id(ancestor))
+                    and self._is_ancestor(parents, identity, self._span_id(span))
+                ]
                 trajectory["messages"] = self._assemble_openai_messages(
                     [message for message in extracted if message["type"] == "completion"]
                 )
@@ -863,6 +875,7 @@ class PhoenixSync:
                         source=f"phoenix:{self.phoenix_url.rstrip('/')}:{self.project}",
                         conversation_id=trajectory["trace_id"],
                         batch_id=trajectory["span_id"],
+                        aliases=tuple(trajectory.get("batch_aliases", [])),
                         revision=revision,
                     ),
                     "metadata": {

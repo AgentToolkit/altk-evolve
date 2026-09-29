@@ -421,3 +421,17 @@ and revalidation identically before a revision is written.
 Conflict-resolution updates keep the latest `processing` stamp and append the prior
 stamp to `processing_history`, sourced from stored entities rather than LLM output.
 History retains complete manifests so unpublished/ad-hoc plans remain traceable.
+
+
+Accurate consistency preserves `context_messages` as the original structured inference
+prefix, including system instructions and tool exchanges. Only assistant turns in
+`messages` are numbered and resampled. Guideline generation receives historical context
+separately from those scored steps; rendering history for extraction must never alter
+the replay prompt.
+
+Phoenix records observed ancestor LLM span IDs as batch aliases, so discovering an inner
+instrumentation span later does not repeat an already committed contribution with the
+same payload revision. Alias links commit atomically and survive subsequent polls and
+restarts. Discovery requires the span ancestry to be present in the fetched window;
+configure the fetch limit accordingly. Independent calls with identical content remain
+independent batches.

@@ -295,9 +295,9 @@ class FilesystemEntityBackend(BaseEntityBackend):
     def _delete_namespace_impl(self, namespace_id: str):
         """Delete a namespace and all its entities."""
         file_path = self._namespace_file(namespace_id)
+        if self._current_work() is not None:
+            raise EvolveException("Cannot delete a namespace inside an entity transaction")
         with self._lock:
-            if self._current_work() is not None:
-                raise EvolveException("Cannot delete a namespace inside an entity transaction")
             if not file_path.exists():
                 return  # Already deleted, no-op
             file_path.unlink()

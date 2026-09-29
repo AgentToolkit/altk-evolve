@@ -283,3 +283,70 @@ def test_metadata_proposal_for_deleted_entity_does_not_abort_commit(storage, mon
     client.backend.commit_prepared(ns, [prepared], checkpoint=("delete-batch", {}))
     assert peer.backend.scan_entities(ns) == []
     assert peer.backend.get_processing_checkpoint(ns, "delete-batch") == {}
+
+
+def test_queued_legal_hold_is_enforced_before_conflict_delete(storage, monkeypatch):
+    from altk_evolve.hooks.backend import HookBackend
+    from altk_evolve.hooks.manager import MemoryPolicyViolation
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+
+    client, peer, ns = storage
+    seed = client.backend.scan_entities(ns)[0]
+
+    def before_write(backend, namespace, entities):
+        HookBackend(backend).update_entity_metadata(namespace, seed.id, {"legal_hold": True})
+        return entities
+
+    def before_delete(backend, namespace, entity_id, *, metadata):
+        assert metadata["legal_hold"] is True
+        raise MemoryPolicyViolation(plugin_name="hold", hook_type="memory_pre_delete", code="hold", reason="held")
+
+    def resolve(old, new, **kwargs):
+        assert old[0].metadata["legal_hold"] is True
+        return [EntityUpdate(id=seed.id, type="note", content=seed.content, event="DELETE")]
+
+    monkeypatch.setattr("altk_evolve.backend.base.dispatch_memory_pre_write", before_write)
+    monkeypatch.setattr("altk_evolve.backend.base.dispatch_memory_pre_delete", before_delete)
+    monkeypatch.setattr("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve)
+    client.update_entities(ns, [Entity(type="note", content="seed")])
+    assert peer.backend.scan_entities(ns)[0].metadata["legal_hold"] is True
+
+
+def test_namespace_delete_in_transaction_fails_before_reacquiring_lock(storage):
+    from altk_evolve.schema.exceptions import EvolveException
+    from threading import Thread
+
+    client, _, ns = storage
+    errors = []
+
+    def delete():
+        try:
+            with client.backend.transaction(ns):
+                client.backend.delete_namespace(ns)
+        except EvolveException as exc:
+            errors.append(str(exc))
+
+    thread = Thread(target=delete, daemon=True)
+    thread.start()
+    thread.join(timeout=3)
+    assert not thread.is_alive(), "nested delete deadlocked"
+    assert len(errors) == 1 and "transaction" in errors[0]
+
+
+def test_alias_checkpoint_linking_is_atomic_and_preserves_original_provenance(storage, monkeypatch):
+    client, peer, ns = storage
+    client.backend.commit_prepared(ns, [], checkpoint=("outer", {"revision": 1}))
+    save = client.backend._save_processing_checkpoint
+
+    def fail_last(namespace, key, value):
+        if key == "last":
+            raise RuntimeError("checkpoint failure")
+        save(namespace, key, value)
+
+    monkeypatch.setattr(client.backend, "_save_processing_checkpoint", fail_last)
+    with pytest.raises(RuntimeError, match="checkpoint failure"):
+        client.backend.commit_prepared(ns, [], checkpoint=("inner", {}), checkpoint_aliases=("outer", "last"))
+    assert peer.backend.get_processing_checkpoint(ns, "inner") is None
+    monkeypatch.setattr(client.backend, "_save_processing_checkpoint", save)
+    assert client.backend.commit_prepared(ns, [], checkpoint=("inner", {}), checkpoint_aliases=("outer",)) is None
+    assert peer.backend.get_processing_checkpoint(ns, "inner") == {"revision": 1}

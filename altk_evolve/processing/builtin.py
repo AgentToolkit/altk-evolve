@@ -22,6 +22,19 @@ def _analysis_defaults() -> dict:
     return cast(dict, yaml.safe_load(path.read_text()))
 
 
+def _generation_view(trajectory: Trajectory) -> Trajectory:
+    """Render history for guideline extraction only; never use this view for resampling."""
+    if trajectory.context_messages:
+        task_context = {
+            "role": "user",
+            "content": "The following is supporting conversation context, not new steps to learn from. "
+            "Derive guidelines only from the new steps that follow, using this context to interpret them.\n"
+            + json.dumps(trajectory.context_messages, ensure_ascii=False),
+        }
+        trajectory = trajectory.model_copy(update={"messages": [task_context, *trajectory.messages]})
+    return trajectory
+
+
 class GuidelineConfig(GuidelineRuntime):
     guidelines_mode: Literal["standard", "consistency", "all"] = "standard"
     consistency_method: Literal["fast", "accurate"] = "fast"
@@ -77,26 +90,21 @@ class GuidelineProcessor:
         options = GuidelineRuntime.model_validate(config.model_dump(include=set(GuidelineRuntime.model_fields)))
         steps: list[tuple[str, Callable[[Trajectory], list[GuidelineGenerationResult]]]] = []
         if config.guidelines_mode in ("standard", "all"):
-            steps.append(("standard", lambda trajectory: generate_guidelines(trajectory.messages, options=options)))
+            steps.append(("standard", lambda trajectory: generate_guidelines(_generation_view(trajectory).messages, options=options)))
         if config.guidelines_mode in ("consistency", "all"):
-            method, generate = (
-                ("consistency-fast", generate_consistency_guidelines_fast)
-                if config.consistency_method == "fast"
-                else ("consistency", generate_consistency_guidelines)
-            )
-            steps.append((method, lambda trajectory: generate(trajectory.model_dump(), options=options)))
+            if config.consistency_method == "fast":
+                steps.append(
+                    (
+                        "consistency-fast",
+                        lambda trajectory: generate_consistency_guidelines_fast(_generation_view(trajectory).model_dump(), options=options),
+                    )
+                )
+            else:
+                steps.append(("consistency", lambda trajectory: generate_consistency_guidelines(trajectory.model_dump(), options=options)))
         return cls(tuple(steps))
 
     def process(self, trajectory: Trajectory, *, context: ProcessorContext) -> ProcessorResult:
-        """Learn from new steps; render supporting history as task context, not additional steps."""
-        if trajectory.context_messages:
-            task_context = {
-                "role": "user",
-                "content": "The following is supporting conversation context, not new steps to learn from. "
-                "Derive guidelines only from the new steps that follow, using this context to interpret them.\n"
-                + json.dumps(trajectory.context_messages, ensure_ascii=False),
-            }
-            trajectory = trajectory.model_copy(update={"messages": [task_context, *trajectory.messages]})
+        """Run the selected generators on this bounded contribution."""
         batches = [(method, generate(trajectory)) for method, generate in self._steps]
         entities = [
             Entity(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 from dataclasses import dataclass
-from typing import Any, ClassVar, Protocol, Self, cast
+from typing import Annotated, Any, ClassVar, Protocol, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -59,7 +59,9 @@ class TrajectoryBatch(BaseModel):
     range) and a revision that changes when that input is corrected. Scope
     separates application consumers sharing a namespace. Profile revisions are
     provenance, not identity: changing modes does not replay completed input.
-    Use a new scope for an intentional replay of historical batches.
+    Use a new scope for an intentional replay of historical batches. Aliases
+    identify additional source IDs for the same contribution and revision;
+    adapters must never alias independent events.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -68,10 +70,18 @@ class TrajectoryBatch(BaseModel):
     batch_id: str = Field(min_length=1)
     revision: str = Field(default="1", min_length=1)
     scope: str = Field(default="default", min_length=1)
+    aliases: tuple[Annotated[str, Field(min_length=1)], ...] = ()
 
     def checkpoint_key(self, processor_id: str) -> str:
         value = [self.scope, self.source, self.conversation_id, processor_id, self.batch_id, self.revision]
         return hashlib.sha256(json.dumps(value, ensure_ascii=False).encode()).hexdigest()
+
+    def checkpoint_keys(self, processor_id: str) -> list[str]:
+        return list(
+            dict.fromkeys(
+                self.model_copy(update={"batch_id": identity}).checkpoint_key(processor_id) for identity in (self.batch_id, *self.aliases)
+            )
+        )
 
 
 class Trajectory(BaseModel):
