@@ -341,6 +341,39 @@ def test_deterministic_error_in_loop_stops_retry_immediately():
             assert mock_completion.call_count == 5
 
 
+@pytest.mark.unit
+def test_hard_error_not_overwritten_by_later_soft_error():
+    """A hard error on an early sample must not be displaced by a later soft error.
+
+    Without _prefer_hard_error, _completion_loop picks the *last* error in arrival
+    order, so a tool_use_failed on sample 5 would overwrite an AuthenticationError on
+    sample 1. get_response_sampling would then see a soft error and fall through to the
+    graceful-degradation path instead of raising EvolveException.
+    """
+    from litellm.exceptions import AuthenticationError, BadRequestError
+
+    auth_err = AuthenticationError(message="invalid api key", model="gpt-4o", llm_provider="openai")
+    soft_err = BadRequestError(
+        message='{"error":{"code":"tool_use_failed"}}', model="gpt-4o", llm_provider="openai"
+    )
+    # Sample 0 gets the hard auth error; samples 1-4 get the soft tool_use_failed.
+    side_effects = [auth_err] + [soft_err] * 4
+    call_count = 0
+
+    def side_effect(**kwargs):
+        nonlocal call_count
+        err = side_effects[min(call_count, len(side_effects) - 1)]
+        call_count += 1
+        raise err
+
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
+        with patch.object(inference_utils, "completion", side_effect=side_effect):
+            with pytest.raises(EvolveException) as exc_info:
+                _sample()
+            # The hard auth error must be the __cause__, not the soft tool_use_failed.
+            assert isinstance(exc_info.value.__cause__, AuthenticationError)
+
+
 # ── concurrency ──────────────────────────────────────────────────────
 
 

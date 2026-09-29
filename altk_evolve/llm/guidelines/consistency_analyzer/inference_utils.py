@@ -65,6 +65,25 @@ _NON_RETRYABLE_EXCEPTIONS = (
     ContextWindowExceededError,
 )
 
+
+def _prefer_hard_error(a: Exception | None, b: Exception | None) -> Exception | None:
+    """Return whichever of `a` and `b` is a hard non-retryable error, preferring `a`.
+
+    A hard error (auth, permission, context window) must not be overwritten by a later
+    soft error (tool_use_failed, transient 400, rate-limit) when selecting the error to
+    surface for a failed sampling attempt. Without this, a soft error on a later sample
+    can displace an earlier hard error, causing the caller to fall through to the
+    graceful-degradation path instead of raising EvolveException.
+    """
+    if a is None:
+        return b
+    if b is None:
+        return a
+    # Prefer the hard error regardless of arrival order.
+    if isinstance(b, _NON_RETRYABLE_EXCEPTIONS) and not isinstance(a, _NON_RETRYABLE_EXCEPTIONS):
+        return b
+    return a
+
 # Providers that advertise `n` through get_supported_openai_params but reject n>1 at
 # the API. Same special-casing as the constrained-decoding checks in guidelines.py,
 # clustering.py and consistency_guidelines.py.
@@ -245,7 +264,9 @@ def _completion_loop(kwargs: dict, count: int, model_id: str) -> tuple[list, Exc
             results = list(pool.map(lambda i: _completion_single(kwargs, model_id, i), range(count)))
 
     choices = [c for c, _ in results if c is not None]
-    last_error = next((err for _, err in reversed(results) if err is not None), None)
+    last_error = None
+    for _, err in results:
+        last_error = _prefer_hard_error(last_error, err)
     if len(choices) < count:
         logger.warning(f"{count - len(choices)} of {count} resampling calls to {model_id} failed after retries")
     return choices, last_error
@@ -316,7 +337,7 @@ def get_response_sampling(
             loop_choices, loop_error = _completion_loop(kwargs, target - len(choices), model_id)
             choices += loop_choices
             if loop_error is not None:
-                last_error = loop_error
+                last_error = _prefer_hard_error(last_error, loop_error)
 
     required = min(MIN_USABLE_SAMPLES, target)
     if len(choices) < required:
