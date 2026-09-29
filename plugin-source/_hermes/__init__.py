@@ -17,32 +17,43 @@ Config via environment variables (see ``get_config_schema`` / README.md
 for the full table):
   EVOLVE_MODE                    -- "lite" (default) or "server" (Phase 1 stub)
   EVOLVE_DIR                     -- storage root override
+  EVOLVE_SCOPE                   -- "global" (default), "user", or "chat"
   EVOLVE_PREFETCH_LIMIT          -- max guidelines recalled per turn (default 5)
   EVOLVE_CAPTURE_EVERY_N_TURNS   -- periodic capture cadence (default 0 = off)
   EVOLVE_MIN_TURNS               -- min turns before session-end capture (default 2)
   EVOLVE_EXPOSE_TOOLS            -- expose evolve_* tools (default true)
 
-Or via ``$HERMES_HOME/evolve/config.json`` (keys: mode, dir, prefetch_limit,
-capture_every_n_turns, min_turns, expose_tools). Env vars win over the file.
+Or via ``$HERMES_HOME/evolve/config.json`` (keys: mode, dir, scope,
+prefetch_limit, capture_every_n_turns, min_turns, expose_tools). Env vars win
+over the file.
 """
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from agent.memory_provider import MemoryProvider
 from tools.registry import tool_error
 
-from .backend import EvolveBackend, LiteBackend, ServerBackend, slugify
+from .backend import EvolveBackend, LiteBackend, ServerBackend, ensure_private_dir, slugify
 from .guideline_gen import generate_guidelines
 
 logger = logging.getLogger(__name__)
+
+try:  # pragma: no cover - absent on Hermes builds that predate the recall indicator
+    from agent.memory_provider import RecallStatus
+except Exception:  # pragma: no cover
+    RecallStatus = None  # type: ignore[assignment]
+
 
 try:  # pragma: no cover - exercised indirectly; keep provider importable in isolation
     from agent.memory_manager import sanitize_context
@@ -52,12 +63,30 @@ except Exception:  # pragma: no cover
         return text
 
 
+try:  # pragma: no cover - exercised via the injected screen; see _screen_stored_guideline
+    from tools.threat_patterns import scan_for_threats
+except Exception:  # pragma: no cover
+
+    def scan_for_threats(content: str, scope: str = "context") -> List[str]:
+        return []
+
+
 _PREFETCH_HEADER = "Guidelines learned from previous sessions (apply when relevant):"
 
 _DEFAULT_PREFETCH_LIMIT = 5
 _DEFAULT_CAPTURE_EVERY_N_TURNS = 0
 _DEFAULT_MIN_TURNS = 2
 _DEFAULT_EXPOSE_TOOLS = True
+_DEFAULT_SCOPE = "global"
+_SCOPES = ("global", "user", "chat")
+
+# ``agent_context`` absent vs. present-and-"primary" are different situations:
+# the first means the host never told us, the second that it did. A sentinel
+# keeps them apart so the first can be logged.
+_CONTEXT_UNSET = "<unset>"
+
+# How long prefetch waits on a queued worker before doing the lookup itself.
+_PREFETCH_JOIN_SECS = 3.0
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +183,13 @@ def _load_config(hermes_home: str) -> Dict[str, Any]:
     if mode not in {"lite", "server"}:
         mode = "lite"
 
+    scope = str(_resolve("EVOLVE_SCOPE", "scope", _DEFAULT_SCOPE)).strip().lower()
+    if scope not in _SCOPES:
+        scope = _DEFAULT_SCOPE
+
     return {
         "mode": mode,
+        "scope": scope,
         "dir": str(_resolve("EVOLVE_DIR", "dir", "")).strip(),
         "prefetch_limit": max(
             1, _as_int(_resolve("EVOLVE_PREFETCH_LIMIT", "prefetch_limit", _DEFAULT_PREFETCH_LIMIT), _DEFAULT_PREFETCH_LIMIT)
@@ -174,7 +208,7 @@ def _load_config(hermes_home: str) -> Dict[str, Any]:
 
 def _save_config(values: Dict[str, Any], hermes_home: str) -> None:
     config_path = Path(hermes_home) / "evolve" / "config.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(config_path.parent)
     existing: Dict[str, Any] = {}
     if config_path.exists():
         try:
@@ -192,18 +226,54 @@ def _save_config(values: Dict[str, Any], hermes_home: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _flatten(text: str) -> str:
+    """Collapse a stored field to one escaped line, safe to inject.
+
+    Two things happen here, both about the fact that guideline text is model
+    output that was written to disk and is now going back into a prompt:
+
+    - ``<`` and ``>`` are escaped, so stored content cannot spell a tag. The
+      host's ``sanitize_context`` strips ``<memory-context>`` fences, but it is
+      a single pass with no re-scan, so a nested or split fence survives it.
+    - all whitespace collapses to single spaces, so one guideline cannot span
+      lines and forge a header or a list item of its own. The numbered-list
+      structure then belongs to this function alone.
+    """
+    return re.sub(r"\s+", " ", (text or "").strip()).replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _format_guidelines(entries: List[Dict[str, Any]]) -> str:
     """Render entities as a numbered guideline list under the recall header."""
     lines = [_PREFETCH_HEADER]
     for i, entry in enumerate(entries, 1):
-        content = (entry.get("content") or "").strip()
+        content = _flatten(entry.get("content") or "")
         if not content:
             continue
-        trigger = (entry.get("trigger") or "").strip()
+        trigger = _flatten(entry.get("trigger") or "")
         lines.append(f"{i}. [{trigger}] {content}" if trigger else f"{i}. {content}")
     if len(lines) == 1:
         return ""
     return "\n".join(lines)
+
+
+def _screen_stored_guideline(text: str) -> List[str]:
+    """Threat-pattern ids in a guideline about to be written, or ``[]``.
+
+    ``scope="context"`` is the set Hermes applies to memory entries and tool
+    results — which is what a recalled guideline becomes. Screening at write
+    time rather than read time is the point: a guideline that trips these
+    patterns would be stripped on the way into the prompt anyway, so storing it
+    only banks an entry that can never be used, and hides the fact that
+    generation produced something unusable.
+
+    Injected into ``LiteBackend`` rather than imported there, because
+    ``backend.py`` stays stdlib-only.
+    """
+    try:
+        return list(scan_for_threats(text, scope="context") or [])
+    except Exception:
+        logger.debug("evolve: threat scan failed; allowing the write", exc_info=True)
+        return []
 
 
 def _entity_slug(entry: Dict[str, Any]) -> str:
@@ -227,8 +297,11 @@ class EvolveMemoryProvider(MemoryProvider):
         self._agent_context = "primary"
         self._capture_allowed = True
         self._active = True
+        self._user_id = ""
+        self._chat_id = ""
 
         self._mode = "lite"
+        self._scope = _DEFAULT_SCOPE
         self._prefetch_limit = _DEFAULT_PREFETCH_LIMIT
         self._capture_every_n_turns = _DEFAULT_CAPTURE_EVERY_N_TURNS
         self._min_turns = _DEFAULT_MIN_TURNS
@@ -239,9 +312,18 @@ class EvolveMemoryProvider(MemoryProvider):
         self._last_messages: Optional[List[Dict[str, Any]]] = None
 
         self._prefetch_lock = threading.Lock()
-        self._prefetch_cache: List[Dict[str, Any]] = []
+        # Tagged with the (session_id, query) it was fetched for: a result
+        # scored against a different question, or against a session that has
+        # since been replaced by /new, is not a cache hit. See prefetch().
+        self._prefetch_cache: Optional[Tuple[str, str, List[Dict[str, Any]]]] = None
         self._prefetch_thread: Optional[threading.Thread] = None
         self._capture_thread: Optional[threading.Thread] = None
+
+        # How many guidelines the LAST prefetch handed to the agent. Read by
+        # recall_status() for the per-turn indicator, and reset at the top of
+        # every prefetch so a turn that recalls nothing cannot report the
+        # previous turn's count.
+        self._last_recall_count = 0
 
     @property
     def name(self) -> str:
@@ -261,6 +343,12 @@ class EvolveMemoryProvider(MemoryProvider):
                 "choices": ["lite", "server"],
             },
             {"key": "dir", "description": "Storage directory override (default: $HERMES_HOME/evolve)"},
+            {
+                "key": "scope",
+                "description": "Partition the store: 'global' (one shared store), 'user', or 'chat'",
+                "default": "global",
+                "choices": list(_SCOPES),
+            },
             {"key": "prefetch_limit", "description": "Max guidelines recalled per turn", "default": "5"},
             {
                 "key": "capture_every_n_turns",
@@ -290,19 +378,33 @@ class EvolveMemoryProvider(MemoryProvider):
         self._hermes_home = kwargs.get("hermes_home") or default_home
         self._session_id = session_id
         self._turn_count = 0
-        self._prefetch_cache = []
+        self._prefetch_cache = None
+        self._user_id = str(kwargs.get("user_id") or "")
+        self._chat_id = str(kwargs.get("chat_id") or "")
 
-        self._agent_context = kwargs.get("agent_context") or "primary"
+        # Fail open when the host says nothing. Hermes passes agent_context on
+        # every initialize (hard-coded "primary" for the main agent in
+        # agent/agent_init.py), and honcho and supermemory both treat an absent
+        # value as capture-allowed too. Failing closed here would silently stop
+        # all capture the day Hermes stopped sending it — a quiet regression is
+        # worse than the write we are gating. A value we *do* receive and do not
+        # recognise is still refused.
+        raw_context = kwargs.get("agent_context") or _CONTEXT_UNSET
+        if raw_context == _CONTEXT_UNSET:
+            logger.debug("evolve: no agent_context from the host; treating the session as primary")
+        self._agent_context = "primary" if raw_context == _CONTEXT_UNSET else str(raw_context)
         self._capture_allowed = self._agent_context == "primary"
 
         cfg = _load_config(self._hermes_home)
         self._mode = cfg["mode"]
+        self._scope = cfg["scope"]
         self._prefetch_limit = cfg["prefetch_limit"]
         self._capture_every_n_turns = cfg["capture_every_n_turns"]
         self._min_turns = cfg["min_turns"]
         self._expose_tools = cfg["expose_tools"]
 
         store_root = Path(cfg["dir"]) if cfg["dir"] else Path(self._hermes_home) / "evolve"
+        store_root = self._scoped_root(store_root)
 
         if self._mode == "server":
             # Phase 1 stub -- not functional yet. Disable rather than crash
@@ -313,12 +415,43 @@ class EvolveMemoryProvider(MemoryProvider):
             return
 
         try:
-            self._backend = LiteBackend(store_root, guideline_generator=generate_guidelines)
+            self._backend = LiteBackend(
+                store_root,
+                guideline_generator=generate_guidelines,
+                content_screen=_screen_stored_guideline,
+            )
             self._active = True
         except Exception:
             logger.warning("evolve: failed to initialize lite backend", exc_info=True)
             self._backend = None
             self._active = False
+
+    def _scoped_root(self, root: Path) -> Path:
+        """Partition the store by user or chat when ``EVOLVE_SCOPE`` asks for it.
+
+        ``global`` (the default) is a single shared store: guidelines are meant
+        to be generalized procedures with no user-specific content, so sharing
+        them is the design. That stops being true when strangers share one
+        install — a Discord gateway, say — where anything one user's session
+        produces is injected into everyone else's. ``user`` and ``chat`` give
+        those deployments a partition without changing the default.
+
+        Scoping falls back to ``global`` rather than to a shared "unknown"
+        bucket when the id is missing: a bucket keyed on nothing would pool
+        exactly the users this is meant to separate.
+        """
+        if self._scope == "global":
+            return root
+        key = self._user_id if self._scope == "user" else self._chat_id
+        if not key:
+            logger.debug("evolve: EVOLVE_SCOPE=%s but no id was supplied; using the global store", self._scope)
+            return root
+        bucket = "users" if self._scope == "user" else "chats"
+        return root / bucket / (slugify(key) or "unknown")
+
+    def _identity(self) -> Dict[str, Any]:
+        """Attribution recorded with a captured trajectory."""
+        return {"user_id": self._user_id, "chat_id": self._chat_id, "agent_context": self._agent_context}
 
     def system_prompt_block(self) -> str:
         if not self._active:
@@ -334,43 +467,101 @@ class EvolveMemoryProvider(MemoryProvider):
     # -- recall -----------------------------------------------------------
 
     def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+        """Warm the cache for the next turn. Best-effort — ``prefetch`` can do it itself."""
         if not self._active or not self._backend:
             return
+        tag = (session_id or self._session_id, query)
 
         def _run() -> None:
             try:
                 entries = self._backend.get_guidelines(query, self._prefetch_limit)
             except Exception:
                 logger.debug("evolve: queue_prefetch failed", exc_info=True)
-                entries = []
+                return
             with self._prefetch_lock:
-                self._prefetch_cache = entries
+                self._prefetch_cache = (tag[0], tag[1], entries)
 
         try:
-            self._prefetch_thread = threading.Thread(target=_run, daemon=True, name="evolve-prefetch")
+            # copy_context so a profile HERMES_HOME override set in a contextvar
+            # reaches the worker; a bare Thread would read the process default
+            # and search the wrong store.
+            self._prefetch_thread = threading.Thread(
+                target=partial(contextvars.copy_context().run, _run),
+                daemon=True,
+                name="evolve-prefetch",
+            )
             self._prefetch_thread.start()
         except Exception:
             logger.debug("evolve: failed to start prefetch thread", exc_info=True)
 
+    def _take_cached(self, session_id: str, query: str) -> Optional[List[Dict[str, Any]]]:
+        """Consume the queued result if it was fetched for this session and query."""
+        with self._prefetch_lock:
+            cached = self._prefetch_cache
+            if cached is None:
+                return None
+            cached_session, cached_query, entries = cached
+            if cached_session != session_id or cached_query != query:
+                # Stale: a different question, or a session that /new replaced.
+                # Drop it rather than inject guidelines scored against something
+                # the user is no longer asking.
+                self._prefetch_cache = None
+                return None
+            self._prefetch_cache = None
+            return entries
+
     def prefetch(self, query: str, *, session_id: str = "") -> str:
-        if not self._active:
+        """Return the guideline block for *this* turn's query.
+
+        The queued worker is only a cache. When it has nothing for this exact
+        (session, query) — the first turn of a session, a turn after ``/new``, a
+        worker that has not finished — the lookup happens here instead of
+        silently serving the previous turn's guidelines or nothing at all.
+        Retrieval is a filesystem scan of sub-kilobyte files, so doing it inline
+        is cheap; the sibling mem0 provider recalls synchronously for the same
+        reason.
+        """
+        # Reset before anything else: the indicator must describe THIS turn,
+        # including on the early-return paths below.
+        self._last_recall_count = 0
+        if not self._active or not self._backend:
             return ""
+        sid = session_id or self._session_id
         try:
             if self._prefetch_thread and self._prefetch_thread.is_alive():
-                self._prefetch_thread.join(timeout=3.0)
-            with self._prefetch_lock:
-                entries = self._prefetch_cache
-                self._prefetch_cache = []
+                self._prefetch_thread.join(timeout=_PREFETCH_JOIN_SECS)
+            entries = self._take_cached(sid, query)
+            if entries is None:
+                entries = self._backend.get_guidelines(query, self._prefetch_limit)
             if not entries:
                 return ""
             text = sanitize_context(_format_guidelines(entries))
             if not text.strip():
                 return ""
-            self._append_audit(session_id or self._session_id, entries)
+            self._append_audit(sid, entries)
+            self._last_recall_count = len(entries)
             return text
         except Exception:
             logger.warning("evolve: prefetch failed", exc_info=True)
             return ""
+
+    def recall_status(self) -> Optional["RecallStatus"]:
+        """Describe what the last ``prefetch`` injected, for Hermes's indicator.
+
+        Hermes calls this right after ``prefetch`` on the turn thread and renders
+        ``🧠 Evolve — recalled 3 memories`` from it
+        (``agent.memory_manager.describe_recall``), so the user sees that recall
+        happened whether or not the model mentions it. Without this the automatic
+        half of the loop is invisible: guidelines arrive in the context with
+        nothing on screen to say so.
+
+        Returns ``None`` when this turn injected nothing, and on Hermes builds
+        that predate ``RecallStatus`` — an older host simply shows no indicator
+        rather than failing to load the provider.
+        """
+        if RecallStatus is None or not self._last_recall_count:
+            return None
+        return RecallStatus(provider_label="Evolve", count=self._last_recall_count)
 
     def _append_audit(self, session_id: str, entries: List[Dict[str, Any]]) -> None:
         """Append a recall event to $HERMES_HOME/evolve/audit.log.
@@ -438,16 +629,23 @@ class EvolveMemoryProvider(MemoryProvider):
     def _capture_async(self, messages: List[Dict[str, Any]], session_id: str) -> None:
         if not self._backend:
             return
+        identity = self._identity()
 
         def _run() -> None:
             try:
-                self._backend.save_trajectory(messages, session_id)
+                self._backend.save_trajectory(messages, session_id, identity=identity)
             except Exception:
                 logger.warning("evolve: save_trajectory failed", exc_info=True)
 
         if self._capture_thread and self._capture_thread.is_alive():
             self._capture_thread.join(timeout=5.0)
-        self._capture_thread = threading.Thread(target=_run, daemon=True, name="evolve-capture")
+        # copy_context for the same reason as the prefetch worker: capture writes
+        # to the store, and a profile HERMES_HOME override lives in a contextvar.
+        self._capture_thread = threading.Thread(
+            target=partial(contextvars.copy_context().run, _run),
+            daemon=True,
+            name="evolve-capture",
+        )
         self._capture_thread.start()
 
     def on_session_switch(
@@ -473,8 +671,9 @@ class EvolveMemoryProvider(MemoryProvider):
                         self._capture_async(pending, old_session_id)
                 self._turn_count = 0
             self._session_id = new_session_id
+            self._last_recall_count = 0
             with self._prefetch_lock:
-                self._prefetch_cache = []
+                self._prefetch_cache = None
         except Exception:
             logger.debug("evolve: on_session_switch failed", exc_info=True)
 
@@ -518,6 +717,18 @@ class EvolveMemoryProvider(MemoryProvider):
             return tool_error("Guideline capture is disabled for this session context")
         trigger = str(args.get("trigger") or "")
         rationale = str(args.get("rationale") or "")
+        # scope="strict" — the same set tools/memory_tool.py applies to writes
+        # the model asks for. Broader than the "context" scope used on generated
+        # guidelines, and the extra false positives are acceptable here because
+        # the model gets the refusal back and can rewrite.
+        #
+        # Unguarded, unlike the generated path's screen: a scanner that raises
+        # here surfaces through handle_tool_call as a tool error the model can
+        # retry, rather than a write nobody ever hears about.
+        findings = scan_for_threats("\n".join(p for p in (content, trigger, rationale) if p), scope="strict")
+        if findings:
+            logger.warning("evolve: evolve_save_guideline refused (%s)", ", ".join(sorted(findings)))
+            return tool_error(f"Guideline refused by the content screen: {', '.join(sorted(findings))}. Rewrite it without that content.")
         path = self._backend.save_guideline(content=content, trigger=trigger, rationale=rationale)
         return json.dumps({"saved": True, "path": path})
 

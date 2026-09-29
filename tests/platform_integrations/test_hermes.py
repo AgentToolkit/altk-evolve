@@ -300,3 +300,54 @@ class TestHermesProviderImports:
             "from agent.memory_provider import MemoryProvider",
             "from tools.registry import tool_error",
         ], f"unexpected module-level host imports: {host_imports}"
+
+
+class TestHermesProviderContract:
+    """Every overridden hook must keep the host base class's call signature.
+
+    Hermes calls these by keyword (``prefetch(query, session_id=...)``,
+    ``on_session_switch(sid, reset=True)``), so a renamed parameter or a lost
+    keyword-only marker is a ``TypeError`` in production that no behavioural
+    test here would catch — the tests call the overrides directly, with whatever
+    names the override happens to use. The stub base class carries the host's
+    real signatures (see its docstring); this compares against them.
+
+    Only parameter names, kinds, and defaults are compared. Annotations are not
+    part of the call contract, and the two files need not agree on whether they
+    are strings or objects.
+    """
+
+    @staticmethod
+    def _shape(func):
+        import inspect
+
+        return [(p.name, p.kind, p.default) for p in inspect.signature(func).parameters.values() if p.name != "self"]
+
+    def test_overridden_hooks_match_the_host_signatures(self):
+        import inspect
+
+        module = _load_module(
+            "_hermes_provider_contract",
+            _HERMES_PLUGIN_ROOT / "__init__.py",
+            extra_syspath=[_HOST_STUBS],
+        )
+        base = sys.modules["agent.memory_provider"].MemoryProvider
+        provider = module.EvolveMemoryProvider
+
+        overrides = {
+            attr_name
+            for attr_name, value in vars(provider).items()
+            if not attr_name.startswith("_") and (inspect.isfunction(value) or isinstance(value, property))
+        }
+        # Every public override must exist on the base — a hook Hermes does not
+        # define is a hook Hermes will never call.
+        assert overrides <= set(dir(base)), f"not hooks on the host base class: {sorted(overrides - set(dir(base)))}"
+
+        mismatches = {}
+        for attr_name in sorted(overrides):
+            ours, theirs = vars(provider)[attr_name], inspect.getattr_static(base, attr_name)
+            if isinstance(theirs, property):
+                ours, theirs = ours.fget, theirs.fget
+            if self._shape(ours) != self._shape(theirs):
+                mismatches[attr_name] = (self._shape(ours), self._shape(theirs))
+        assert not mismatches, f"signatures drifted from the host base class: {mismatches}"

@@ -26,6 +26,7 @@ Two modes:
 
 import glob
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -90,6 +91,10 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
 
     1. Legacy ``.evolve/trajectories/`` files:
        * ``claude-transcript_<sid>.jsonl`` — stop-hook transcript dump.
+       * ``<sid>.jsonl`` — the Hermes memory provider's capture output, which
+         names the file after the session and appends one JSON record per
+         capture. No other harness writes this shape, so the direct path is
+         unambiguous.
        * ``trajectory_<ts>_<sid>.json`` — save-trajectory skill output; the sid
          is the filename slice after the timestamp.
        * ``trajectory_<ts>.json`` — open and match the inner ``session_id``.
@@ -119,6 +124,13 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
         direct = traj_dir / f"claude-transcript_{session_id}.jsonl"
         if direct.is_file():
             return direct
+
+        # Hermes: trajectories/<sid>.jsonl. The provider replaces any character
+        # outside [A-Za-z0-9_.-] when it builds the filename, so apply the same
+        # mapping here rather than trusting the id to be path-safe.
+        hermes = traj_dir / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', str(session_id))}.jsonl"
+        if hermes.is_file():
+            return hermes
 
         # trajectory_<ts>_<sid>.json — match on the filename sid slice.
         for path in sorted(traj_dir.glob("trajectory_*_*.json")):

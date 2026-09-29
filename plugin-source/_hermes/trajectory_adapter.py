@@ -53,6 +53,45 @@ def _stringify(content: Any) -> str:
     return str(content)
 
 
+def _truncate_tool_result(content: str, budget: int) -> str:
+    """Shorten an oversized tool result, keeping both ends.
+
+    Head-only truncation drops exactly the part that matters most: a failing
+    command's error usually lands at the *end* of its output, and an
+    error-and-recovery pair is the most valuable thing in a trajectory. So keep
+    the head (what was run, the first rows of output) and the tail (how it
+    ended), and say how much came out of the middle.
+    """
+    if budget <= 0 or len(content) <= budget:
+        return content
+    tail = max(1, budget // 3)
+    head = budget - tail
+    dropped = len(content) - head - tail
+    return f"{content[:head]}\n…[{dropped} chars truncated]…\n{content[-tail:]}"
+
+
+def _tool_call_names(messages: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Map ``tool_call_id`` -> tool name across every assistant message.
+
+    A tool result on its own says nothing about which call produced it, which
+    makes an error hard to attribute when the turn made several calls. hermes
+    puts the name on the result message sometimes and only the id others, so
+    build the lookup once from the assistant side.
+    """
+    names: Dict[str, str] = {}
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        for call in msg.get("tool_calls") or []:
+            if not isinstance(call, dict):
+                continue
+            call_id = call.get("id") or call.get("tool_call_id")
+            name = (call.get("function") or {}).get("name") or call.get("name")
+            if call_id and name:
+                names[str(call_id)] = str(name)
+    return names
+
+
 def _render_tool_calls(tool_calls: Any) -> str:
     """Render assistant tool_calls compactly as ``[tool_call] name(args)``."""
     rendered: List[str] = []
@@ -78,10 +117,15 @@ def to_openai_trajectory(
     - Keeps user / assistant / tool roles; drops system + everything else.
     - Strips injected ``<memory-context>`` blocks from every content field.
     - Inlines assistant tool_calls as readable text.
-    - Truncates oversized tool results so trajectories stay parseable.
+    - Labels each tool result with the tool that produced it.
+    - Truncates oversized tool results from the middle, keeping both ends.
     - Drops messages that end up empty after stripping.
+
+    The emitted shape stays ``{"role", "content"}`` — the attribution goes into
+    the text, because that is all Evolve reads.
     """
     out: List[Dict[str, str]] = []
+    call_names = _tool_call_names(messages)
     for msg in messages or []:
         if not isinstance(msg, dict):
             continue
@@ -95,8 +139,11 @@ def to_openai_trajectory(
             calls = _render_tool_calls(msg.get("tool_calls"))
             content = f"{content}\n{calls}".strip() if content else calls
 
-        if role == "tool" and max_tool_result_chars and len(content) > max_tool_result_chars:
-            content = content[:max_tool_result_chars] + "\n…[truncated]"
+        if role == "tool":
+            content = _truncate_tool_result(content, max_tool_result_chars)
+            name = msg.get("name") or call_names.get(str(msg.get("tool_call_id") or ""))
+            if content and name:
+                content = f"[tool_result] {name}\n{content}"
 
         if not content:
             continue

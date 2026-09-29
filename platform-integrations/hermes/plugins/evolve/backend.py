@@ -69,6 +69,7 @@ _entity_io = _load_bundled("entity_io")
 entity_to_markdown = _entity_io.entity_to_markdown
 markdown_to_entity = _entity_io.markdown_to_entity
 _slugify = _entity_io.slugify
+_sanitize_type = _entity_io.sanitize_type
 _write_entity_file = _entity_io.write_entity_file
 
 _STOPWORDS = {
@@ -102,12 +103,48 @@ _STOPWORDS = {
     "could",
     "not",
 }
-_WORD_RE = re.compile(r"[a-z0-9]+")
+# ``[^\W_]+`` rather than ``[a-z0-9]+``: word characters minus the underscore,
+# which keeps accented and non-Latin words instead of shredding them into
+# nothing. A guideline written in French or Japanese was previously unreachable
+# by a query in the same language — every token dropped on both sides, so the
+# overlap was always zero.
+_WORD_RE = re.compile(r"[^\W_]+")
 
 
 def _tokenize(text: str) -> List[str]:
     """Lowercase word tokens, stopwords and single-char tokens dropped."""
     return [w for w in _WORD_RE.findall((text or "").lower()) if w not in _STOPWORDS and len(w) > 1]
+
+
+def ensure_private_dir(path: Path) -> Path:
+    """Create *path* (and parents) owner-only, leaving an existing dir's mode alone.
+
+    The store holds session-derived content, so a directory this code creates
+    should not be group- or world-readable. ``mkdir(mode=...)`` is masked by the
+    process umask — set by a host we do not control — so the mode is applied
+    with an explicit ``chmod``.
+
+    Only on creation, though: a directory that already exists may have been
+    given a deliberate mode (an ``EVOLVE_DIR`` store shared between accounts,
+    say), and silently narrowing it would be a surprise. A ``chmod`` failure is
+    not fatal either — a readable store beats a provider that cannot write.
+    """
+    existed = path.is_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    if not existed:
+        try:
+            path.chmod(0o700)
+        except OSError:
+            logger.debug("evolve: could not tighten permissions on %s", path, exc_info=True)
+    return path
+
+
+def make_private(path: Path) -> None:
+    """Make an existing file owner-only. Never raises — see ``ensure_private_dir``."""
+    try:
+        path.chmod(0o600)
+    except OSError:
+        logger.debug("evolve: could not tighten permissions on %s", path, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -151,8 +188,17 @@ class EvolveBackend:
         """Persist a guideline; return an id/path identifying it."""
         raise NotImplementedError
 
-    def save_trajectory(self, messages: List[Dict[str, Any]], session_id: str) -> Dict[str, Any]:
+    def save_trajectory(
+        self,
+        messages: List[Dict[str, Any]],
+        session_id: str,
+        *,
+        identity: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Persist a trajectory and (if configured) generate + save guidelines from it.
+
+        ``identity`` carries optional attribution fields (``user_id``,
+        ``chat_id``) recorded alongside the trajectory.
 
         Returns a summary dict, e.g. ``{"trajectory_path": ..., "guidelines": [...]}``.
         """
@@ -178,7 +224,13 @@ class ServerBackend(EvolveBackend):
     def save_guideline(self, content: str, trigger: str = "", rationale: str = "", type: str = "guideline") -> str:
         raise NotImplementedError("ServerBackend is a Phase 1 stub; use EVOLVE_MODE=lite.")
 
-    def save_trajectory(self, messages: List[Dict[str, Any]], session_id: str) -> Dict[str, Any]:
+    def save_trajectory(
+        self,
+        messages: List[Dict[str, Any]],
+        session_id: str,
+        *,
+        identity: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         raise NotImplementedError("ServerBackend is a Phase 1 stub; use EVOLVE_MODE=lite.")
 
 
@@ -197,6 +249,12 @@ class LiteBackend(EvolveBackend):
     injected ``guideline_generator(messages) -> list[dict]`` callable and
     saves each returned guideline as an entity. Generation failures never
     propagate — capture must not break a session.
+
+    ``content_screen`` is an injected ``(text) -> list[str]`` callable that
+    returns threat-pattern ids found in a guideline about to be written; a
+    non-empty result refuses the write. It is injected rather than imported so
+    this module stays stdlib-only — the provider wires in Hermes'
+    ``tools.threat_patterns.scan_for_threats``.
     """
 
     def __init__(
@@ -204,12 +262,19 @@ class LiteBackend(EvolveBackend):
         root: Any,
         *,
         guideline_generator: Optional[Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]]] = None,
+        content_screen: Optional[Callable[[str], List[str]]] = None,
     ) -> None:
         self.root = Path(root)
         self.entities_dir = self.root / "entities"
         self.trajectories_dir = self.root / "trajectories"
         self._guideline_generator = guideline_generator
+        self._content_screen = content_screen
         self._write_lock = threading.Lock()
+
+    def _ensure_dir(self, path: Path) -> Path:
+        """Create a store subdirectory, tightening the store root on the way in."""
+        ensure_private_dir(self.root)
+        return ensure_private_dir(path)
 
     # -- retrieval ------------------------------------------------------
 
@@ -240,8 +305,11 @@ class LiteBackend(EvolveBackend):
 
         query_tokens = set(_tokenize(query))
         if not query_tokens:
-            # No usable query terms — return entities in stable (path) order.
-            return entities[:limit]
+            # No usable query terms (blank, or nothing but stopwords). Returning
+            # the first N entities in path order would inject whichever
+            # guidelines happen to sort first — unrelated to anything the user
+            # asked. Nothing scored, so return nothing.
+            return []
 
         scored = []
         for entity in entities:
@@ -255,22 +323,56 @@ class LiteBackend(EvolveBackend):
 
     # -- writes -----------------------------------------------------------
 
+    def screen(self, content: str, trigger: str = "", rationale: str = "") -> List[str]:
+        """Return threat-pattern ids found in a candidate guideline, or ``[]``.
+
+        All three fields are screened: every one of them is injected verbatim on
+        recall, so a clean ``content`` with a hostile ``trigger`` is still a way
+        in. No screen injected means no findings.
+        """
+        if self._content_screen is None:
+            return []
+        try:
+            return list(self._content_screen("\n".join(p for p in (content, trigger, rationale) if p)) or [])
+        except Exception:
+            # A broken screen must not become a way to block every write.
+            logger.warning("evolve: content screen raised; allowing the write", exc_info=True)
+            return []
+
     def save_guideline(self, content: str, trigger: str = "", rationale: str = "", type: str = "guideline") -> str:
         content = (content or "").strip()
         if not content:
             raise ValueError("content is required")
+        trigger = (trigger or "").strip()
+        rationale = (rationale or "").strip()
+        findings = self.screen(content, trigger, rationale)
+        if findings:
+            raise ValueError(f"guideline rejected by content screen: {', '.join(sorted(findings))}")
+        entity_type = type or "guideline"
         entity = {
-            "type": type or "guideline",
-            "trigger": (trigger or "").strip(),
+            "type": entity_type,
+            "trigger": trigger,
             "content": content,
-            "rationale": (rationale or "").strip(),
+            "rationale": rationale,
             "source": "hermes-evolve-lite",
         }
         with self._write_lock:
+            self._ensure_dir(self.entities_dir)
+            # The shared writer creates the per-type subdirectory itself, and it
+            # is shared with four other harnesses — so create it here first,
+            # with the mode we want, and let the writer find it already there.
+            self._ensure_dir(self.entities_dir / (_sanitize_type(entity_type) or "guideline"))
             path = write_entity_file(self.entities_dir, entity)
+            make_private(path)
         return str(path)
 
-    def save_trajectory(self, messages: List[Dict[str, Any]], session_id: str) -> Dict[str, Any]:
+    def save_trajectory(
+        self,
+        messages: List[Dict[str, Any]],
+        session_id: str,
+        *,
+        identity: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         try:
             from .trajectory_adapter import to_openai_trajectory
         except Exception:
@@ -281,16 +383,22 @@ class LiteBackend(EvolveBackend):
 
         traj_path: Optional[Path] = None
         try:
-            self.trajectories_dir.mkdir(parents=True, exist_ok=True)
+            self._ensure_dir(self.trajectories_dir)
             safe_session = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "session")
             traj_path = self.trajectories_dir / f"{safe_session}.jsonl"
-            line = json.dumps(
-                {"ts": time.time(), "session_id": session_id, "messages": trajectory},
-                ensure_ascii=False,
-            )
+            record: Dict[str, Any] = {"ts": time.time(), "session_id": session_id}
+            # Who produced this trajectory. Recorded so an existing store stays
+            # attributable after the fact, whatever EVOLVE_SCOPE was set to when
+            # it was written. Absent keys are omitted rather than written null.
+            for key, value in (identity or {}).items():
+                if value:
+                    record[key] = value
+            record["messages"] = trajectory
+            line = json.dumps(record, ensure_ascii=False)
             with self._write_lock:
                 with open(traj_path, "a", encoding="utf-8") as f:
                     f.write(line + "\n")
+                make_private(traj_path)
         except Exception:
             logger.warning("evolve: failed to write trajectory for session %s", session_id, exc_info=True)
             traj_path = None
@@ -309,11 +417,24 @@ class LiteBackend(EvolveBackend):
                 content = str(g.get("content") or "").strip()
                 if not content:
                     continue
+                trigger = str(g.get("trigger") or "")
+                rationale = str(g.get("rationale") or "")
+                # Screened before the write, not scrubbed after the read: a
+                # guideline that trips the host's threat patterns would be
+                # stripped at recall anyway, so storing it only guarantees a
+                # store entry that can never be used.
+                findings = self.screen(content, trigger, rationale)
+                if findings:
+                    logger.warning(
+                        "evolve: generated guideline rejected by content screen (%s)",
+                        ", ".join(sorted(findings)),
+                    )
+                    continue
                 try:
                     path = self.save_guideline(
                         content=content,
-                        trigger=str(g.get("trigger") or ""),
-                        rationale=str(g.get("rationale") or ""),
+                        trigger=trigger,
+                        rationale=rationale,
                         type="guideline",
                     )
                     saved_guidelines.append({"path": path, "content": content})
