@@ -302,14 +302,16 @@ def test_partial_loop_results_are_accepted_with_a_warning(caplog):
 
 
 @pytest.mark.unit
-def test_raises_when_fewer_than_two_samples_survive_and_preserves_cause():
-    """Below two samples there is no variance to measure, so surface a real error with __cause__."""
+def test_soft_failure_returns_empty_list_with_warning():
+    """Generic errors (transient 400s, rate limits, etc.) degrade gracefully: return []
+    rather than raising, so the step scores as consistency undefined (-1) and the
+    pipeline continues with the remaining steps.  Only hard non-retryable errors
+    (auth, permission, context window) still raise."""
     err = RuntimeError("boom")
     with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
         with patch.object(inference_utils, "completion", side_effect=err):
-            with pytest.raises(EvolveException, match="only obtained 0") as exc_info:
-                _sample()
-            assert exc_info.value.__cause__ is err
+            result = _sample()
+    assert result == []
 
 
 @pytest.mark.unit

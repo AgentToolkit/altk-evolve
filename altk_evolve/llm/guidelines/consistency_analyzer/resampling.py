@@ -129,6 +129,13 @@ def resample_trajectory(
         # `model` is) — it's always a deployment-wide routing setting, so it applies
         # regardless of which model name is used for this step.
         tools = step.get("tools", None)
+        # Pin the response modality to match the original inference. A content step's
+        # prefix often contains prior tool calls in the message history, which can lead
+        # the model to call a tool even when no schemas are offered — triggering a
+        # provider-side rejection (e.g. Groq's tool_use_failed 400). Setting
+        # tool_choice="none" makes the "no tool call" constraint explicit. For tool-call
+        # steps the default ("auto") is correct: the model should be free to call tools.
+        tool_choice = "none" if step.get("raw_response_type") == "content" else None
 
         response_samples = get_response_sampling(
             prompt=prompt,
@@ -136,6 +143,7 @@ def resample_trajectory(
             temperature=temperature,
             samples=samples,
             tools=tools,
+            tool_choice=tool_choice,
             custom_llm_provider=custom_llm_provider,
         )
 

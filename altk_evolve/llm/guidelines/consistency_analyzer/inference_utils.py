@@ -209,6 +209,17 @@ def _completion_single(kwargs: dict, model_id: str, index: int) -> tuple[Any | N
         except _NON_RETRYABLE_EXCEPTIONS as e:
             logger.debug(f"Sample {index} non-retryable error for {model_id}: {e}")
             return None, e
+        except BadRequestError as e:
+            # tool_use_failed means the model called a tool when tool_choice="none" was set
+            # (or no tools were offered). Retrying the identical prompt will produce the same
+            # result every time, so treat it as a non-retryable discard rather than burning
+            # the retry budget.
+            if "tool_use_failed" in str(e):
+                logger.debug(f"Sample {index} tool_use_failed for {model_id} — discarding without retry")
+                return None, e
+            last_error = e
+            logger.debug(f"Sample {index} attempt {attempt + 1}/{_SINGLE_ATTEMPTS} failed for {model_id}: {e}")
+            continue
         except Exception as e:
             last_error = e
             logger.debug(f"Sample {index} attempt {attempt + 1}/{_SINGLE_ATTEMPTS} failed for {model_id}: {e}")
@@ -249,6 +260,7 @@ def get_response_sampling(
     stop=None,
     logprobs: bool = False,
     tools: list | None = None,
+    tool_choice: str | None = None,
     custom_llm_provider: str | None = None,
 ) -> list:
     """Get `samples` sampled responses, whether or not the provider supports n>1.
@@ -281,6 +293,8 @@ def get_response_sampling(
         kwargs["logprobs"] = logprobs
     if tools:
         kwargs["tools"] = tools
+    if tool_choice is not None:
+        kwargs["tool_choice"] = tool_choice
 
     choices: list = []
     last_error: Exception | None = None
@@ -310,9 +324,15 @@ def get_response_sampling(
             f"Requested {target} samples from {model_id} but only obtained {len(choices)}. "
             f"Consistency scoring requires at least {required}."
         )
-        if last_error is not None:
+        # Hard errors (auth, permission, context window) are always fatal — retrying a
+        # different step won't help and the trajectory is unscoreable.
+        if last_error is not None and isinstance(last_error, _NON_RETRYABLE_EXCEPTIONS):
             raise EvolveException(msg) from last_error
-        raise EvolveException(msg)
+        # Soft failures (tool_use_failed, transient 400s, rate limits that exhausted
+        # retries): return an empty list so the step scores as consistency undefined (-1)
+        # and the pipeline continues with the remaining steps rather than crashing.
+        logger.warning(msg + " — step will score as consistency undefined.")
+        return []
     if len(choices) < target:
         logger.warning(
             f"Requested {target} samples from {model_id} but obtained {len(choices)}. "
