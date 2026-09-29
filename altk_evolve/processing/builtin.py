@@ -36,10 +36,9 @@ class GuidelineConfig(GuidelineRuntime):
                 value = data[key]
                 if type(value) is not int or not 1 <= value <= limit:
                     raise ValueError(f"{key} must be an integer between 1 and {limit}")
-            for key in ("low_uncertainty_threshold", "high_uncertainty_threshold"):
-                value = data[key]
-                if not isinstance(value, (int, float)) or not 0 <= value <= 1:
-                    raise ValueError(f"{key} must be between 0 and 1")
+            threshold = data["high_uncertainty_threshold"]
+            if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 < threshold <= 1:
+                raise ValueError("high_uncertainty_threshold must be in (0, 1]")
             if data["aggregation"] not in ("mean", "rms", "geo_mean", "product"):
                 raise ValueError("Unknown consistency aggregation")
             if type(data["skip_on_no_uncertainty"]) is not bool:
@@ -49,8 +48,6 @@ class GuidelineConfig(GuidelineRuntime):
             for agent in data["agents"]:
                 if not isinstance(agent, dict) or not agent.get("name") or not agent.get("response_type"):
                     raise ValueError("Each agent requires name and response_type")
-            if data.get("low_uncertainty_threshold", 0.1) > data.get("high_uncertainty_threshold", 0.5):
-                raise ValueError("low_uncertainty_threshold must not exceed high_uncertainty_threshold")
             object.__setattr__(self, "analysis_config", data)
         return self
 

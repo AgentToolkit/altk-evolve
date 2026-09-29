@@ -902,3 +902,25 @@ def test_cli_unknown_latest_profile_fails_before_fetch(client, monkeypatch):
     assert result.exit_code == 1
     assert "Sync failed" in result.output
     assert "Profile not found" in result.output
+
+
+@pytest.mark.parametrize("threshold", [0, True, False])
+def test_profile_threshold_matches_accurate_generation_validation(threshold):
+    from altk_evolve.processing.builtin import GuidelineConfig
+
+    with pytest.raises(ValueError, match="high_uncertainty_threshold"):
+        GuidelineConfig(
+            guidelines_mode="consistency", consistency_method="accurate", analysis_config={"high_uncertainty_threshold": threshold}
+        )
+
+
+def test_profile_accepts_single_threshold_below_retired_low_default():
+    from altk_evolve.processing.builtin import GuidelineConfig
+    from altk_evolve.config.guideline_runtime import GuidelineRuntime
+
+    config = GuidelineConfig(
+        guidelines_mode="consistency", consistency_method="accurate", analysis_config={"high_uncertainty_threshold": 0.05}
+    )
+    assert config.analysis_config["high_uncertainty_threshold"] == 0.05
+    assert "low_uncertainty_threshold" not in config.analysis_config
+    assert GuidelineRuntime().segmentation_enabled is False

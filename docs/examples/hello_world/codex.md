@@ -29,7 +29,7 @@ npm i -g @openai/codex
 ```
 
 ## Step 1: Install Evolve-Lite Plugin Repo
-Install Evolve by following the [installation instructions →](../../installation/index.md#codex-code-plugin-marketplace) or run:
+Install Evolve by following the [installation instructions →](../../installation/index.md#download-install-script) or run:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform codex --mode lite
 ```

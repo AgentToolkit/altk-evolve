@@ -100,6 +100,33 @@ Evolve builds on Agent Lifecycle Toolkit concepts with a focus on agent evolutio
 5. Add tests alongside the module in `tests/`.
 6. Update relevant documentation files for discoverability.
 
+## Working on the documentation
+
+The site is built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/). MkDocs and its plugins live in the `docs` dependency group, so serve the site with:
+
+```bash
+uv run --group docs mkdocs serve
+```
+
+This starts a live-reloading server at <http://127.0.0.1:8000> (add `-a 127.0.0.1:8001` if the port is busy). Edits to `docs/`, `includes/`, or `mkdocs.yaml` refresh the page automatically. Use plain `mkdocs serve` for local previews — do **not** add `--strict`, since the build currently emits some pre-existing warnings unrelated to your change.
+
+### "Latest from Evolve" updates (single source)
+
+The updates feed appears in **two** places — the docs landing page (`docs/index.md`) and the project `README.md` — but is edited in **one**:
+
+- **`includes/latest-updates.md`** is the single source of truth: a plain-Markdown timeline. It lives outside `docs/` on purpose, so MkDocs does not build it as its own orphan page.
+- **`docs/index.md`** pulls it in at build time via a [pymdownx snippet](https://facelessuser.github.io/pymdown-extensions/extensions/snippets/): `--8<-- "includes/latest-updates.md"`.
+- **`README.md`** cannot include files (GitHub renders it as static Markdown), so the snippet is copied verbatim into a marker-delimited block (`<!-- BEGIN LATEST-UPDATES -->` … `<!-- END LATEST-UPDATES -->`).
+
+**To add or change an update, edit only `includes/latest-updates.md`, then regenerate the README block:**
+
+```bash
+uv run python scripts/sync_latest_updates.py          # rewrite the README block
+uv run python scripts/sync_latest_updates.py check    # verify it is in sync (exits non-zero on drift)
+```
+
+A `latest-updates-synced` pre-commit hook runs the `check` and fails the commit if the README block has drifted from the snippet, so the two can never fall out of sync. Keep the timeline plain Markdown (bold, links, list items) so it renders identically on GitHub and in MkDocs.
+
 ## Detecting secrets
 
 ```bash

@@ -10,7 +10,7 @@ class GuidelineRuntime(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     guidelines_model: str = "gpt-4o"
     custom_llm_provider: str | None = None
-    segmentation_enabled: bool = True
+    segmentation_enabled: bool = False
     analysis_config: dict[str, Any] | None = None
 
     @classmethod

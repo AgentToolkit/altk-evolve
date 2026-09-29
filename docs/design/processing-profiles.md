@@ -218,7 +218,7 @@ Use `discover(installed=False)` to exclude installed extensions, or
 only a plan/profile activates it.
 
 A complete no-LLM package example is in
-[examples/processing_plugin](../../examples/processing_plugin/pyproject.toml).
+[examples/processing_plugin](https://github.com/AgentToolkit/altk-evolve/blob/codex/processing-profiles-design/examples/processing_plugin/pyproject.toml).
 Install it into the same environment as the CLI, then run:
 
 ```sh
@@ -360,7 +360,7 @@ processing interfaces require namespace-specific SQL or a fixed user/agent model
 
 Partial `analysis_config` dictionaries merge over the bundled analyzer defaults,
 so `{}` preserves its agent metrics and sampling behavior. Profile publication checks
-finite numbers, threshold ordering/range (0–1), aggregation, boolean skip behavior,
+finite numbers, the uncertainty threshold range (0, 1], aggregation, boolean skip behavior,
 and agent descriptors. Profile sampling is limited to 1–100 samples and 1–1000 steps
 to bound each invocation; these are profile API limits. Analyzer-specific metric
 configuration remains extensible. Configurations must also survive JSON serialization

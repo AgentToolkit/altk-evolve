@@ -24,13 +24,23 @@ On the AppWorld benchmark, Evolve improved agent reliability by +8.9 points over
 
 Research, releases, and practical findings from the Evolve team.
 
-| Date | Type | Update |
-|---|---|---|
-| 2026-08-18 | Article | [How Much Memory Does Your Agent Actually Need?](https://huggingface.co/blog/ibm-research/altk-evolve-hmm) — Why agent memory should be calibrated to the model instead of simply increased. |
-| 2026-08-11 | Article | [Thinking of ACE? We Can Do It with Fewer Tokens](https://huggingface.co/blog/ibm-research/altk-evolve-sldd) — Comparing Evolve’s targeted guideline retrieval with ACE’s playbook approach and token usage. |
-| 2026-04-08 | Article | [ALTK‑Evolve: On‑the‑Job Learning for AI Agents](https://huggingface.co/blog/ibm-research/altk-evolve) — An introduction to learning reusable guidance from agent trajectories. |
-| 2026-04-07 | Announcement | [IBM introduces ALTK Evolve](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) — Evolve is opened to builders creating agents that learn from experience. |
-| 2026-03-11 | Paper | [Trajectory-Informed Memory Generation for Self-Improving Agent Systems](https://arxiv.org/abs/2603.10600) — The research framework and evaluation underlying Evolve. |
+<!-- BEGIN LATEST-UPDATES (generated; edit includes/latest-updates.md then run scripts/sync_latest_updates.py) -->
+- **2026-09-15** · Article — **[Your Agent Aced the Task. Will It Do It Again?](https://huggingface.co/blog/ibm-research/altk-evolve-consistency)**
+  Diagnosing where an agent's decisions wobble and stabilizing them so success repeats.
+- **2026-09-08** · Paper — **[Closing the Consistency Gap: Self-Evolving Agents That Learn to Stay on Course](https://arxiv.org/abs/2609.08832)**
+  Turning unstable trajectory steps into episodic memory to keep agents consistent across repeated runs.
+- **2026-08-18** · Article — **[How Much Memory Does Your Agent Actually Need?](https://huggingface.co/blog/ibm-research/altk-evolve-hmm)**
+  Why agent memory should be calibrated to the model instead of simply increased.
+- **2026-08-11** · Article — **[Thinking of ACE? We Can Do It with Fewer Tokens](https://huggingface.co/blog/ibm-research/altk-evolve-sldd)**
+  Comparing Evolve's targeted guideline retrieval with ACE's playbook approach and token usage.
+- **2026-04-08** · Article — **[ALTK‑Evolve: On‑the‑Job Learning for AI Agents](https://huggingface.co/blog/ibm-research/altk-evolve)**
+  An introduction to learning reusable guidance from agent trajectories.
+- **2026-04-07** · Announcement — **[IBM introduces ALTK Evolve](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents)**
+  Evolve is opened to builders creating agents that learn from experience.
+- **2026-03-11** · Paper — **[Trajectory-Informed Memory Generation for Self-Improving Agent Systems](https://arxiv.org/abs/2603.10600)**
+  The research framework and evaluation underlying Evolve.
+<!-- END LATEST-UPDATES -->
+
 
 ## Quick Start (Lite)
 [IBM Bob →](https://agenttoolkit.github.io/altk-evolve/examples/hello_world/bob/)

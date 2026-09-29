@@ -6,9 +6,49 @@ logger = logging.getLogger(__name__)
 from altk_evolve.llm.guidelines.consistency_analyzer.inference_utils import get_response_sampling
 
 
+def _finish_reason(choice) -> str | None:
+    if isinstance(choice, dict):
+        return choice.get("finish_reason")
+    return getattr(choice, "finish_reason", None)
+
+
+def _reasoning_content(choice) -> str:
+    """Reasoning-model scratchpad, returned alongside `content` and billed against the
+    same max_tokens. Only read to explain an empty sample in the log — never scored."""
+    if isinstance(choice, dict):
+        return (choice.get("message") or {}).get("reasoning_content") or ""
+    return getattr(getattr(choice, "message", None), "reasoning_content", None) or ""
+
+
+def _carries_no_decision(response) -> bool:
+    """True when a sample records no decision at all: blank text, or no tool calls.
+
+    NOT the same as "content is empty" — a successful tool-call response legitimately
+    has `content == ""`, which is why the extraction below must consult tool_calls
+    first and only fall through to content when there are none.
+    """
+    if isinstance(response, str):
+        return not response.strip()
+    return not response
+
+
 def extract_raw_samples(choices: list) -> dict:
-    """Extract raw samples from response choices."""
+    """Extract raw samples from response choices, dropping any that record no decision.
+
+    A reasoning model spends its max_tokens budget on `reasoning_content` before
+    emitting any `content`, so a step whose budget runs out returns
+    `finish_reason='length'` with `content=''` — a successful HTTP response carrying
+    nothing. Kept as samples, k of those are k *identical* empties, which scores as
+    consistency 1.0 / uncertainty 0.0: a step the model could not answer would be
+    read as one it is perfectly confident about, and `skip_on_no_uncertainty` would
+    then suppress guidelines for the whole trajectory.
+
+    Dropping them instead lets a step left with no samples fall through
+    check_sample_validity to consistency -1 ("undefined"), which the score card
+    excludes — an honest "we don't know" rather than a confident wrong answer.
+    """
     response_list = []
+    dropped = []
 
     for choice in choices:
         if isinstance(choice, dict):
@@ -25,7 +65,22 @@ def extract_raw_samples(choices: list) -> dict:
         if response is None:
             continue
 
+        if _carries_no_decision(response):
+            dropped.append(choice)
+            continue
+
         response_list.append(response)
+
+    if dropped:
+        truncated = sum(1 for c in dropped if _finish_reason(c) == "length")
+        reasoned = sum(1 for c in dropped if _reasoning_content(c).strip())
+        logger.warning(
+            f"Discarded {len(dropped)} of {len(choices)} samples that recorded no decision "
+            f"({truncated} truncated with finish_reason='length'"
+            + (f", {reasoned} having spent the token budget on reasoning_content" if reasoned else "")
+            + f"); scoring the {len(response_list)} that remain. A step left with none scores as "
+            "consistency undefined rather than as perfectly consistent."
+        )
 
     return {"num_samples": len(response_list), "raw_samples": response_list}
 

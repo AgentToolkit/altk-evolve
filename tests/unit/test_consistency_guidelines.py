@@ -1,10 +1,18 @@
 """Tests for trajectory-to-IR transformation in consistency_guidelines.py."""
 
+from altk_evolve.config.guideline_runtime import GuidelineRuntime
+
+import json
+import logging
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from altk_evolve.llm.guidelines.consistency_guidelines import (
     _can_segment_trajectory,
     _classify_step_response,
+    _drop_non_input_message_keys,
     _is_well_formed_tool_calls,
     _strip_orphaned_tool_messages,
     format_trajectory_data,
@@ -12,7 +20,12 @@ from altk_evolve.llm.guidelines.consistency_guidelines import (
     transform_trajectory_to_IR,
 )
 
+from altk_evolve.schema.guidelines import GuidelineGenerationResult
+
 pytestmark = pytest.mark.unit
+
+# Sentinel for "omit the key entirely", distinct from any value the key could hold.
+_UNSET = object()
 
 
 SAMPLE_TOOLS = [{"type": "function", "function": {"name": "add", "parameters": {}}}]
@@ -226,6 +239,95 @@ class TestStripOrphanedToolMessages:
         assert tool_messages[0]["content"] == "valid"
 
 
+class TestDropNonInputMessageKeys:
+    def test_producer_annotations_are_dropped(self):
+        """Groq rejects unknown properties outright:
+
+        'messages.2' : for 'role:tool' the following must be
+        satisfied[('messages.2' : property 'outcome' is unsupported)]
+
+        so a trajectory annotated by its producer would fail every sample of the
+        step it annotates rather than simply carrying extra context.
+        """
+        messages = [
+            {"role": "user", "content": "file it", "feedback": {"rating": "up"}},
+            {"role": "tool", "tool_call_id": "1", "content": "done", "outcome": {"status": "success"}},
+        ]
+
+        assert _drop_non_input_message_keys(messages) == [
+            {"role": "user", "content": "file it"},
+            {"role": "tool", "tool_call_id": "1", "content": "done"},
+        ]
+
+    def test_spec_keys_survive(self):
+        messages = [
+            {"role": "system", "content": "be helpful", "name": "sys"},
+            {"role": "user", "content": "hello", "name": "alice"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": "1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+            },
+            {"role": "tool", "tool_call_id": "1", "content": "5"},
+        ]
+
+        assert _drop_non_input_message_keys(messages) == messages
+
+    def test_tool_role_drops_name_key(self):
+        """Tool messages must not have `name` on ChatCompletions API requests."""
+        messages = [{"role": "tool", "tool_call_id": "1", "name": "get_weather", "content": "5"}]
+        assert _drop_non_input_message_keys(messages) == [{"role": "tool", "tool_call_id": "1", "content": "5"}]
+
+    def test_list_content_is_passed_through_untouched(self):
+        """The Responses-API function_call shape lives inside `content`; filtering is
+        top-level only, or the parser would lose the calls it derives actions from."""
+        content = [{"type": "function_call", "id": "c1", "function": {"name": "f", "arguments": "{}"}}]
+        messages = [{"role": "assistant", "content": content, "trace_id": "t"}]
+
+        result = _drop_non_input_message_keys(messages)
+
+        assert result == [{"role": "assistant", "content": content}]
+
+    def test_untouched_messages_are_not_copied(self):
+        """A clean message is returned as-is, so the common path allocates nothing."""
+        messages = [{"role": "user", "content": "hi"}]
+
+        result = _drop_non_input_message_keys(messages)
+
+        assert result[0] is messages[0]
+
+    def test_empty_list(self):
+        assert _drop_non_input_message_keys([]) == []
+
+    def test_original_messages_are_not_mutated_in_place(self):
+        """_drop_non_input_message_keys must not modify the caller's input dictionary."""
+        original_msg = {"role": "tool", "tool_call_id": "1", "content": "done", "outcome": {"status": "success"}}
+        messages = [original_msg]
+
+        result = _drop_non_input_message_keys(messages)
+
+        assert "outcome" in original_msg, "caller's message dict must not be mutated in-place"
+        assert "outcome" not in result[0]
+
+    def test_ir_step_prefixes_are_sanitised(self):
+        """The IR is what resampling replays, so the annotations must be gone by then."""
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "file it"},
+                {"role": "assistant", "content": "", "tool_calls": [{"id": "1", "function": {"name": "f"}}]},
+                {"role": "tool", "tool_call_id": "1", "content": "done", "outcome": {"status": "success"}},
+                {"role": "assistant", "content": "filed"},
+            ],
+            "trace_id": "t",
+            "tools": [{"type": "function", "function": {"name": "f"}}],
+        }
+
+        ir = transform_trajectory_to_IR(trajectory)
+
+        prefix_keys = {key for step in ir["steps"] for msg in step["messages"] for key in msg}
+        assert "outcome" not in prefix_keys
+
+
 class TestParseConsistencyScoreCard:
     def test_extracts_step_uncertainties(self):
         score_card = {
@@ -436,9 +538,9 @@ class TestFormatTrajectoryData:
         assert "step two" in result
 
     def test_marks_elevated_not_high_when_below_high_threshold(self):
-        """A score that only clears the low threshold (not the high one) must be
-        labeled ELEVATED, not HIGH — the label must never claim a threshold that
-        wasn't actually met (default high=0.2, low=0.1)."""
+        """A non-zero score below the high threshold must be labeled ELEVATED, not
+        HIGH — the label must never claim a threshold that wasn't actually met
+        (default high=0.15)."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
@@ -448,16 +550,99 @@ class TestFormatTrajectoryData:
         assert "ELEVATED UNCERTAINTY: 0.1029" in result
         assert "HIGH UNCERTAINTY" not in result
 
-    def test_no_marker_when_nothing_clears_low_threshold(self):
-        """No ⚠️ marker at all when every step's uncertainty stays below the low threshold."""
+    def test_a_peak_in_the_old_band_is_now_high_not_elevated(self):
+        """0.17 sits between the retired 0.2 and the current 0.15, so it is the one score
+        whose label depends on the threshold this PR changed: HIGH now, ELEVATED at 0.2.
+
+        Every other marker test uses scores well clear of both values, which left the
+        default free to drift back to 0.2 with the suite still green.
+        """
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+        ]
+        consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.17}}
+        result = format_trajectory_data(messages, consistency_data)
+        assert "HIGH UNCERTAINTY: 0.17" in result
+        assert "ELEVATED UNCERTAINTY" not in result
+
+    def test_elevated_marks_only_the_top_step(self):
+        """The ELEVATED fallback flags just the most-uncertain step, so a trajectory of
+        uniformly-small scores doesn't end up marked end to end."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
         ]
         consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.05}}
         result = format_trajectory_data(messages, consistency_data)
+        assert result.count("ELEVATED UNCERTAINTY") == 1
+        assert "ELEVATED UNCERTAINTY: 0.05" in result
+        assert "ELEVATED UNCERTAINTY: 0.02" not in result
+        assert "HIGH UNCERTAINTY" not in result
+
+    def test_elevated_stays_single_across_many_sub_threshold_steps(self):
+        """Adding more sub-threshold steps never widens the ELEVATED marker past the top one."""
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(1, 6)]
+        consistency_data = {"step_uncertainties": {1: 0.01, 2: 0.02, 3: 0.03, 4: 0.04, 5: 0.05}}
+        result = format_trajectory_data(messages, consistency_data)
+        assert result.count("ELEVATED UNCERTAINTY") == 1
+        assert "ELEVATED UNCERTAINTY: 0.05" in result
+        assert "HIGH UNCERTAINTY" not in result
+
+    def test_no_marker_when_every_step_is_fully_consistent(self):
+        """Zero is the only score that earns no marker at all — with one threshold left,
+        every trajectory carrying measurable uncertainty gets at least one flag."""
+        messages = [
+            {"role": "assistant", "content": "step one"},
+            {"role": "assistant", "content": "step two"},
+        ]
+        consistency_data = {"step_uncertainties": {1: 0.0, 2: 0.0}}
+        result = format_trajectory_data(messages, consistency_data)
         assert "HIGH UNCERTAINTY" not in result
         assert "ELEVATED UNCERTAINTY" not in result
+
+    def test_caps_high_markers_at_five(self):
+        """At most HIGH_MARKER_CAP steps carry the HIGH marker, even when more clear the
+        threshold — the lowest-scoring ones above the bar go unmarked."""
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(1, 8)]
+        consistency_data = {"step_uncertainties": {1: 0.9, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.5, 6: 0.4, 7: 0.3}}
+        result = format_trajectory_data(messages, consistency_data)
+        assert result.count("HIGH UNCERTAINTY") == 5
+        assert "HIGH UNCERTAINTY: 0.4" not in result
+        assert "HIGH UNCERTAINTY: 0.3" not in result
+        # The ELEVATED fallback stays silent whenever any step cleared the threshold.
+        assert "ELEVATED UNCERTAINTY" not in result
+
+    def test_out_of_window_step_cannot_steal_a_marker_slot(self):
+        """The ranking is clamped to the rendered window, like the loop. Otherwise an
+        out-of-window step wins the HIGH slot — or the single ELEVATED slot — and then never
+        renders, so a trajectory kept alive by an in-window step shows no marker at all."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
+
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
+        out_of_window = MAX_RENDERED_STEPS + 5
+
+        for label, scores in [
+            ("out-of-window would take HIGH", {5: 0.02, out_of_window: 0.9}),
+            ("out-of-window would take ELEVATED", {5: 0.02, out_of_window: 0.09}),
+        ]:
+            result = format_trajectory_data(messages, {"step_uncertainties": scores})
+            markers = result.count("HIGH UNCERTAINTY") + result.count("ELEVATED UNCERTAINTY")
+            assert markers == 1, label
+
+    def test_marker_does_not_depend_on_uncertainty_insertion_order(self):
+        """`sorted` is stable, so with equal scores an unclamped ranking let dict insertion
+        order decide whether a marker appeared at all."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
+
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
+        far = MAX_RENDERED_STEPS + 5
+
+        in_first = format_trajectory_data(messages, {"step_uncertainties": {5: 0.02, far: 0.02}})
+        out_first = format_trajectory_data(messages, {"step_uncertainties": {far: 0.02, 5: 0.02}})
+
+        assert in_first.count("ELEVATED UNCERTAINTY") == 1
+        assert out_first.count("ELEVATED UNCERTAINTY") == 1
 
     def test_tool_calls_none_does_not_crash(self):
         # Raw OpenAI message dumps always carry tool_calls: null
@@ -518,11 +703,18 @@ class TestSegmentationGuard:
             ],
         }
 
-    def test_single_step_trajectory_skips_segmentation(self):
+    def test_single_step_trajectory_skips_segmentation(self, monkeypatch):
         """A trajectory with too few scorable steps falls back to full-trajectory generation
-        instead of segmenting, even if the segmenter itself returns subtasks."""
+        instead of segmenting, even if the segmenter itself returns subtasks.
+
+        The flag is forced on deliberately: segmentation_enabled now short-circuits the same
+        `if`, so with the shipped default this test would pass even if the step-count guard
+        were deleted. Enabling it keeps the guard itself under test."""
         from unittest.mock import MagicMock, patch
+
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
 
         mock_segment = MagicMock(
             return_value=[
@@ -560,6 +752,353 @@ class TestSegmentationGuard:
             assert kwargs.get("step_range") is None
 
 
+@pytest.mark.unit
+class TestSegmentationFloorAndFastPathScope:
+    """The two segmentation changes, each of which survived a full-suite mutation before."""
+
+    def _fast_trajectory(self, n_steps, with_tool_calls=False):
+        """A trajectory whose parse_openai_agents_trajectory steps_list has n_steps entries."""
+        messages = [{"role": "user", "content": "do the thing"}]
+        for i in range(n_steps):
+            if with_tool_calls:
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {"id": f"c{i}", "type": "function", "function": {"name": "act", "arguments": "{}"}},
+                            {"id": f"d{i}", "type": "function", "function": {"name": "also", "arguments": "{}"}},
+                        ],
+                    }
+                )
+                messages.append({"role": "tool", "tool_call_id": f"c{i}", "content": "ok"})
+            else:
+                messages.append({"role": "assistant", "content": f"reasoning step {i}"})
+        return {"trace_id": "t", "messages": messages}
+
+    def _run_fast(self, trajectory, subtasks, monkeypatch):
+        """Run the fast pipeline with segment_trajectory stubbed; return its mock.
+
+        segmentation_enabled is forced on: it is a deployment setting that a local .env can
+        switch off, and these tests are about the gate's own conditions, not that setting.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+
+        with (
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks) as mock_segment,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            generate_consistency_guidelines_fast(trajectory)
+        return mock_segment
+
+    def _subtask(self, start, end):
+        from altk_evolve.schema.guidelines import SubtaskSegment
+
+        return SubtaskSegment(generalized_description="d", start_step=start, end_step=end, purpose="p")
+
+    def test_fast_path_segments_a_native_tool_calls_trajectory(self, monkeypatch):
+        """Regression for a capability, not a bug: `_can_segment_trajectory` guards alignment
+        with transform_trajectory_to_IR, which the fast path never builds. Gating on it here
+        disabled segmentation for native tool_calls and for parallel calls in one message —
+        both of which parse_openai_agents_trajectory handles."""
+        trajectory = self._fast_trajectory(3, with_tool_calls=True)  # 3 msgs x 2 calls = 6 steps
+        mock_segment = self._run_fast(trajectory, [self._subtask(1, 3), self._subtask(4, 6)], monkeypatch)
+        mock_segment.assert_called_once()
+
+    def test_fast_path_floor_does_not_segment_below_the_minimum(self, monkeypatch):
+        from altk_evolve.llm.guidelines.consistency_guidelines import SEGMENTATION_MIN_STEPS
+
+        mock_segment = self._run_fast(self._fast_trajectory(SEGMENTATION_MIN_STEPS - 1), [], monkeypatch)
+        mock_segment.assert_not_called()
+
+    def test_fast_path_floor_segments_at_the_minimum(self, monkeypatch):
+        from altk_evolve.llm.guidelines.consistency_guidelines import SEGMENTATION_MIN_STEPS
+
+        n = SEGMENTATION_MIN_STEPS
+        mock_segment = self._run_fast(self._fast_trajectory(n), [self._subtask(1, 2), self._subtask(3, n)], monkeypatch)
+        mock_segment.assert_called_once()
+
+    @pytest.mark.parametrize("n_scorable,should_segment", [(4, False), (5, True)])
+    def test_accurate_path_floor_boundary(self, n_scorable, should_segment, monkeypatch):
+        """Pins the 2 -> 5 floor: reverting it left the whole suite green.
+
+        segmentation_enabled is forced on for the same reason _run_fast does it, and it became
+        necessary in the merge that brought the two changes together: the accurate path now
+        checks that deployment flag as well, and it defaults off, so leaving it unset made both
+        parametrisations pass for the wrong reason — the segmenter going uncalled at n=5 because
+        the flag was off, not because the floor was respected.
+        """
+        from unittest.mock import patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+
+        messages = [{"role": "user", "content": "go"}]
+        messages += [{"role": "assistant", "content": f"step {i}"} for i in range(n_scorable)]
+        ir = {
+            "task": "go",
+            "name": "T",
+            "steps": [{"name": "AnyAgent_content", "step_number": i + 1, "sampling": {"num_samples": 2}} for i in range(n_scorable)],
+        }
+        score_card = {"steps": [{"step_number": i + 1, "step_uncertainty": 0.5} for i in range(n_scorable)]}
+
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.transform_trajectory_to_IR", return_value=ir),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.resample_trajectory", return_value=ir),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.analyze_consistency", return_value=(score_card, ir)),
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=[]) as mock_segment,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines._generate_guideline_result") as mock_gen,
+        ):
+            mock_gen.return_value = GuidelineGenerationResult(guidelines=[], task_description="go")
+            generate_consistency_guidelines({"trace_id": "t", "messages": messages})
+
+        assert mock_segment.called is should_segment
+
+
+@pytest.mark.unit
+class TestSkipGateWindow:
+    """The skip gate must agree with what the prompt can actually render."""
+
+    def _run_gate(self, step_uncertainties, n_messages):
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import _generate_guideline_result
+
+        messages = [{"role": "assistant", "content": f"s{i}"} for i in range(n_messages)]
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion:
+            _generate_guideline_result(
+                options=GuidelineRuntime.from_settings(),
+                messages=messages,
+                consistency_data={"step_uncertainties": step_uncertainties},
+                task_description="t",
+                step_range=None,
+                constrained_decoding_supported=False,
+                debug_suffix="",
+            )
+        return mock_completion.called
+
+    def test_skips_when_the_only_uncertain_step_is_past_the_rendered_window(self):
+        """MAX_RENDERED_STEPS stops the renderer, so uncertainty beyond it can never be
+        marked. Generating anyway sends a prompt that explains markers it does not contain."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
+
+        assert self._run_gate({MAX_RENDERED_STEPS + 5: 0.5}, n_messages=MAX_RENDERED_STEPS + 10) is False
+
+    def test_generates_when_the_uncertain_step_is_inside_the_window(self):
+        from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
+
+        assert self._run_gate({5: 0.5}, n_messages=MAX_RENDERED_STEPS + 10) is True
+
+    def test_an_in_window_step_keeps_a_mixed_trajectory_alive(self):
+        """Mixed in-window and out-of-window uncertainty: the gate must key on the in-window
+        step alone, and format_trajectory_data must then actually mark it."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS, format_trajectory_data
+
+        scores = {5: 0.02, MAX_RENDERED_STEPS + 5: 0.9}
+        assert self._run_gate(scores, n_messages=MAX_RENDERED_STEPS + 10) is True
+
+        messages = [{"role": "assistant", "content": f"s{i}"} for i in range(MAX_RENDERED_STEPS + 10)]
+        rendered = format_trajectory_data(messages, {"step_uncertainties": scores})
+        assert rendered.count("HIGH UNCERTAINTY") + rendered.count("ELEVATED UNCERTAINTY") == 1
+
+    def test_skips_only_on_all_zero_uncertainty(self):
+        """Pins the gate's `> 0`: raising it to a threshold left the whole suite green."""
+        assert self._run_gate({1: 0.0, 2: 0.0}, n_messages=3) is False
+        assert self._run_gate({1: 0.0, 2: 0.05}, n_messages=3) is True
+
+
+@pytest.mark.unit
+class TestShippedConfigMatchesModuleDefaults:
+    """The shipped YAML and the DEFAULT_* constants are two sources of truth for one number.
+
+    Nothing else stops them drifting: the constant only applies when a key is absent, so a
+    YAML edit alone changes every default run while leaving the constant — and every test
+    that exercises the fallback path — quietly disagreeing about what the default is.
+    """
+
+    def _shipped_config(self):
+        import yaml
+
+        from altk_evolve.llm.guidelines import consistency_guidelines
+
+        path = Path(consistency_guidelines.__file__).parent / "consistency_analyzer" / "agent_config.yaml"
+        assert path.exists(), f"shipped analyzer config missing at {path}"
+        with open(path) as f:
+            return yaml.safe_load(f)
+
+    def test_high_uncertainty_threshold_agrees_with_the_constant(self):
+        from altk_evolve.llm.guidelines.consistency_guidelines import DEFAULT_HIGH_UNCERTAINTY_THRESHOLD
+
+        assert self._shipped_config()["high_uncertainty_threshold"] == DEFAULT_HIGH_UNCERTAINTY_THRESHOLD
+
+    def test_skip_on_no_uncertainty_agrees_with_the_constant(self):
+        from altk_evolve.llm.guidelines.consistency_guidelines import DEFAULT_SKIP_ON_NO_UNCERTAINTY
+
+        assert self._shipped_config()["skip_on_no_uncertainty"] == DEFAULT_SKIP_ON_NO_UNCERTAINTY
+
+    def test_shipped_threshold_passes_the_validator(self):
+        """The one config every default run loads must satisfy the bound the PR added."""
+        threshold = self._shipped_config()["high_uncertainty_threshold"]
+        assert not isinstance(threshold, bool)
+        assert isinstance(threshold, (int, float))
+        assert 0 < threshold <= 1
+
+    def test_the_retired_key_is_absent_from_the_shipped_config(self):
+        assert "low_uncertainty_threshold" not in self._shipped_config()
+
+
+@pytest.mark.unit
+class TestHighUncertaintyThresholdValidation:
+    """A threshold outside [0, 1] must fail loudly rather than silently marking nothing HIGH."""
+
+    def _config(self, tmp_path, threshold, extra=""):
+        """Write a minimal analyzer config carrying `threshold`, and return its path."""
+        body = "name: t\naggregation: mean\nmax_samples: 5\nmax_steps: 15\nagents: []\n"
+        if threshold is not _UNSET:
+            body += f"high_uncertainty_threshold: {threshold}\n"
+        body += extra
+        path = tmp_path / "agent_config.yaml"
+        path.write_text(body)
+        return path
+
+    def _run(self, tmp_path, threshold, extra=""):
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        return generate_consistency_guidelines(
+            {"messages": [{"role": "user", "content": "hi"}], "trace_id": "t"},
+            config_path=self._config(tmp_path, threshold, extra),
+        )
+
+    @pytest.mark.parametrize("threshold", ["15", "-0.1", "1.5", "'0.15'", "true", "0", "0.0"])
+    def test_rejects_out_of_range_or_non_numeric(self, tmp_path, threshold):
+        """0 is rejected at the low end: it marks every fully-consistent step HIGH, which the
+        gate's own > 0 semantics treat as not uncertain at all."""
+        from altk_evolve.schema.exceptions import EvolveException
+
+        with pytest.raises(EvolveException, match="high_uncertainty_threshold must be a number"):
+            self._run(tmp_path, threshold)
+
+    @pytest.mark.parametrize("threshold", ["0.0001", "0.15", "1", _UNSET])
+    def test_accepts_in_range_values_and_an_absent_key(self, tmp_path, threshold):
+        """Valid thresholds get past validation — the later failure proves it wasn't the threshold."""
+        from altk_evolve.schema.exceptions import EvolveException
+
+        # The trajectory has no assistant turns, so generation fails *after* validation.
+        with pytest.raises(EvolveException, match="no steps"):
+            self._run(tmp_path, threshold)
+
+    def test_warns_on_a_retired_low_uncertainty_threshold_in_yaml(self, tmp_path, caplog):
+        """A stale `low_uncertainty_threshold` is silently dropped by `config.get`, so the
+        warning is the only signal a deployment carrying one gets. It is load-bearing for the
+        migration story rather than a nicety: deleting the block left the whole suite green.
+
+        YAML is the likelier place for the retired key to survive than the env var, and the
+        env-var warning's own text points users here.
+        """
+        from altk_evolve.schema.exceptions import EvolveException
+
+        with caplog.at_level(logging.WARNING):
+            # Fails on the empty trajectory, but only after the config has been read.
+            with pytest.raises(EvolveException, match="no steps"):
+                self._run(tmp_path, "0.15", extra="low_uncertainty_threshold: 0.1\n")
+
+        assert "low_uncertainty_threshold" in caplog.text
+        assert "high_uncertainty_threshold" in caplog.text
+
+    def test_no_retired_key_warning_when_the_key_is_absent(self, tmp_path, caplog):
+        """The warning must key off the retired name, not fire on every load."""
+        from altk_evolve.schema.exceptions import EvolveException
+
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(EvolveException, match="no steps"):
+                self._run(tmp_path, "0.15")
+
+        assert "low_uncertainty_threshold" not in caplog.text
+
+
+@pytest.mark.unit
+class TestConsistencyResponseRepair:
+    """Both consistency pipelines must route responses through the repairing parser.
+
+    The repairs themselves are covered in test_guidelines.py; these only prove the wiring,
+    so a future refactor can't silently drop the rescue from one pipeline.
+    """
+
+    _GUIDELINE = {
+        "content": "Re-read the tool output before answering",
+        "rationale": "Prevents answering from a stale assumption",
+        "category": "strategy",
+        "trigger": "After any tool call",
+    }
+
+    def _bare_array_response(self):
+        from unittest.mock import MagicMock
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps([self._GUIDELINE])
+        return response
+
+    def test_accurate_pipeline_recovers_a_bare_array_response(self, caplog):
+        import logging
+
+        from unittest.mock import patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import _generate_guideline_result
+
+        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion, caplog.at_level(logging.INFO):
+            mock_completion.return_value = self._bare_array_response()
+            result = _generate_guideline_result(
+                options=GuidelineRuntime.from_settings(),
+                messages=[{"role": "assistant", "content": "step one"}],
+                consistency_data={"step_uncertainties": {1: 0.5}},
+                task_description="Answer a question",
+                step_range=None,
+                constrained_decoding_supported=False,
+                debug_suffix="",
+            )
+
+        assert [g.content for g in result.guidelines] == ["Re-read the tool output before answering"]
+        # The label is the only thing distinguishing the two consistency pipelines in logs,
+        # which is what the "keep off-contract models visible" rationale depends on.
+        assert "Recovered consistency guideline response" in caplog.text
+        assert "fast consistency" not in caplog.text
+
+    def test_fast_pipeline_recovers_a_bare_array_response(self, caplog):
+        import logging
+
+        from unittest.mock import patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import _generate_fast_guideline_result
+
+        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion, caplog.at_level(logging.INFO):
+            mock_completion.return_value = self._bare_array_response()
+            result = _generate_fast_guideline_result(
+                options=GuidelineRuntime.from_settings(),
+                task_description="Answer a question",
+                trajectory_slice="Step 1 - Agent reasoning:\nstep one",
+                num_steps=1,
+                constrained_decoding_supported=False,
+            )
+
+        assert [g.content for g in result.guidelines] == ["Re-read the tool output before answering"]
+        assert "Recovered fast consistency guideline response" in caplog.text
+
+
 class TestGenerateConsistencyGuidelinesFast:
     """The fast consistency pipeline must never resample or score externally."""
 
@@ -576,10 +1115,9 @@ class TestGenerateConsistencyGuidelinesFast:
         """The fast pipeline calls the LLM once and never touches resample_trajectory/analyze_consistency."""
         from unittest.mock import patch
 
-        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
 
-        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", False)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
 
         trajectory = {
             "trace_id": "test-fast-1",
@@ -622,10 +1160,9 @@ class TestGenerateConsistencyGuidelinesFast:
         resampling-derived uncertainty markers (those belong to the accurate pipeline only)."""
         from unittest.mock import patch
 
-        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
 
-        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", False)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
 
         trajectory = {
             "messages": [
@@ -648,3 +1185,493 @@ class TestGenerateConsistencyGuidelinesFast:
             assert "judge" in prompt.lower()
             assert "⚠️" not in prompt
             assert "HIGH UNCERTAINTY" not in prompt
+
+
+@pytest.mark.unit
+class TestCallerSuppliedIR:
+    """`trajectory_ir=` lets a caller score the real per-step input.
+
+    `transform_trajectory_to_IR` rebuilds each step's prefix from one message list, which
+    is an approximation whenever the system message, bound tools or model differed between
+    steps — none of those are expressible in a single list. These tests pin that a supplied
+    IR is what gets scored, that `trajectory` still drives the prompt, and that supplying
+    one does not bypass the sanitisation the derived path applies.
+    """
+
+    def _trajectory(self):
+        return {
+            "messages": [
+                {"role": "user", "content": "do the thing"},
+                {"role": "assistant", "content": "step one"},
+                {"role": "assistant", "content": "step two"},
+            ],
+            "trace_id": "t",
+            "model": "gpt-4o",
+        }
+
+    def _ir(self, messages=None):
+        """One scorable step, with a prefix the caller captured itself."""
+        return {
+            "task": "caller task",
+            "name": "caller IR",
+            "steps": [
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 1,
+                    "raw_response": "step one",
+                    "raw_response_type": "content",
+                    "messages": messages if messages is not None else [{"role": "user", "content": "captured prefix"}],
+                    "llm_params": {"model": "gpt-4o"},
+                }
+            ],
+        }
+
+    def _run(self, monkeypatch, ir, on_resample):
+        """Run the accurate path with resampling/scoring stubbed, returning the LLM prompt."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: on_resample(trajectory))
+        # analyze_consistency returns (score_card, ir), not just a card.
+        monkeypatch.setattr(
+            module,
+            "analyze_consistency",
+            lambda trajectory, **kwargs: ({"steps": [{"step_number": 1, "step_uncertainty": 0.4}]}, trajectory),
+        )
+
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps(
+            {"guidelines": [{"content": "c", "category": "strategy", "rationale": "r", "trigger": "t"}]}
+        )
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(self._trajectory(), trajectory_ir=ir)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    def test_the_supplied_ir_is_scored_instead_of_a_derived_one(self, monkeypatch):
+        """The caller's steps reach the resampler; nothing is rebuilt from `trajectory`."""
+        seen = {}
+
+        def on_resample(ir):
+            seen["steps"] = ir["steps"]
+            return ir
+
+        self._run(monkeypatch, self._ir(), on_resample)
+        assert len(seen["steps"]) == 1, "the derived IR would have had two scorable steps"
+        assert seen["steps"][0]["messages"][0]["content"] == "captured prefix"
+
+    def test_transform_is_not_called_when_an_ir_is_supplied(self, monkeypatch):
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        called = []
+        monkeypatch.setattr(module, "transform_trajectory_to_IR", lambda t: called.append(t) or {})
+        self._run(monkeypatch, self._ir(), lambda ir: ir)
+        assert called == [], "a supplied IR must not be overwritten by a derived one"
+
+    def test_the_prompt_still_renders_the_trajectory_not_the_ir(self, monkeypatch):
+        """Scoring uses the supplied steps, but the prompt shows the whole conversation —
+        the IR's single step must not silently narrow what the model is shown."""
+        prompt = self._run(monkeypatch, self._ir(), lambda ir: ir)
+        assert "step two" in prompt, "the prompt comes from `trajectory`, which has both steps"
+
+    def test_supplied_ir_messages_are_sanitised_too(self, monkeypatch):
+        """Otherwise this is the one route reaching the provider unfiltered — and a caller
+        precise enough to capture real input is exactly the kind whose messages carry
+        producer annotations."""
+        annotated = [{"role": "user", "content": "captured prefix", "outcome": "success", "feedback": 5}]
+        seen = {}
+
+        def on_resample(ir):
+            seen["messages"] = ir["steps"][0]["messages"]
+            return ir
+
+        self._run(monkeypatch, self._ir(annotated), on_resample)
+        assert seen["messages"] == [{"role": "user", "content": "captured prefix"}]
+
+    def test_an_ir_without_a_task_falls_back_rather_than_raising(self, monkeypatch):
+        """`task` is transform_trajectory_to_IR's own output, not something a caller owes."""
+        ir = self._ir()
+        del ir["task"]
+        prompt = self._run(monkeypatch, ir, lambda ir: ir)
+        assert prompt, "generation must still happen without a task key"
+
+    def test_step_number_is_required_and_validated(self):
+        """Missing or invalid step_number must raise EvolveException."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+        from altk_evolve.schema.exceptions import EvolveException
+
+        trajectory = self._trajectory()
+
+        # Missing step_number
+        ir = self._ir()
+        del ir["steps"][0]["step_number"]
+        with pytest.raises(EvolveException, match="missing required 'step_number'"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        # Out-of-bounds step_number (e.g. 7 when there are 2 assistant messages)
+        ir = self._ir()
+        ir["steps"][0]["step_number"] = 7
+        with pytest.raises(EvolveException, match="is out of bounds"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        # 0 step_number (must be 1-based)
+        ir = self._ir()
+        ir["steps"][0]["step_number"] = 0
+        with pytest.raises(EvolveException, match="is out of bounds"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        # Duplicate step_number
+        ir = {
+            "steps": [
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 1,
+                    "messages": [{"role": "user", "content": "1"}],
+                    "llm_params": {"model": "gpt-4o"},
+                },
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 1,
+                    "messages": [{"role": "user", "content": "2"}],
+                    "llm_params": {"model": "gpt-4o"},
+                },
+            ]
+        }
+        with pytest.raises(EvolveException, match="Duplicate step_number"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+    def test_missing_or_invalid_agent_name_raises(self):
+        """Missing or invalid agent name must raise EvolveException."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+        from altk_evolve.schema.exceptions import EvolveException
+
+        trajectory = self._trajectory()
+
+        ir = self._ir()
+        del ir["steps"][0]["name"]
+        with pytest.raises(EvolveException, match="missing required 'name'"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        ir = self._ir()
+        ir["steps"][0]["name"] = "NonexistentAgent_foo"
+        with pytest.raises(EvolveException, match="unrecognized agent name"):
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+    def test_supplied_ir_integration_with_real_scoring(self):
+        """High-value integration test: supplied IR passes through real analyze_consistency
+        and the marker lands on the corresponding assistant message."""
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "turn 0"},
+                {"role": "assistant", "content": "first assistant response"},
+                {"role": "user", "content": "turn 2"},
+                {"role": "assistant", "content": "second assistant response"},
+            ],
+            "trace_id": "t",
+            "model": "gpt-4o",
+        }
+
+        # Step 2 corresponds to the second assistant message
+        ir = {
+            "task": "integration task",
+            "steps": [
+                {
+                    "name": "OpenAIAgent_content",
+                    "step_number": 2,
+                    "raw_response": "second assistant response",
+                    "raw_response_type": "text",
+                    "messages": [{"role": "user", "content": "turn 2"}],
+                    "llm_params": {"model": "gpt-4o"},
+                    "sampling": {
+                        "num_samples": 5,
+                        "raw_samples": ["diff 1", "diff 2", "diff 3", "diff 4", "diff 5"],
+                    },
+                }
+            ],
+        }
+
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps(
+            {"guidelines": [{"content": "c", "category": "strategy", "rationale": "r", "trigger": "t"}]}
+        )
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(trajectory, trajectory_ir=ir)
+
+        _, kwargs = mock_completion.call_args
+        prompt = kwargs["messages"][-1]["content"]
+        # Step 2 should carry the uncertainty marker, and step 1 should not
+        assert "Step 1 - Agent reasoning:\nfirst assistant response" in prompt
+        assert "Step 2 [⚠️ HIGH UNCERTAINTY:" in prompt
+        assert "second assistant response" in prompt
+
+
+@pytest.mark.unit
+class TestCallerSuppliedRenderer:
+    """`trajectory_renderer=` replaces how the trajectory block reads, not what is scored."""
+
+    def _run(self, monkeypatch, renderer):
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: trajectory)
+        monkeypatch.setattr(
+            module,
+            "analyze_consistency",
+            lambda trajectory, **kwargs: ({"steps": [{"step_number": 1, "step_uncertainty": 0.4}]}, trajectory),
+        )
+
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps(
+            {"guidelines": [{"content": "c", "category": "strategy", "rationale": "r", "trigger": "t"}]}
+        )
+        trajectory = {
+            "messages": [
+                {"role": "user", "content": "do the thing"},
+                {"role": "assistant", "content": "step one"},
+            ],
+            "trace_id": "t",
+        }
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(trajectory, trajectory_renderer=renderer)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    def test_the_renderer_output_is_what_the_prompt_embeds(self, monkeypatch):
+        prompt = self._run(monkeypatch, lambda *a, **k: "RENDERED BY CALLER")
+        assert "RENDERED BY CALLER" in prompt
+        # The default renderer's output must be gone, not merely supplemented.
+        assert "Agent reasoning" not in prompt
+
+    def test_the_renderer_receives_post_scoring_data(self, monkeypatch):
+        """It is invoked after resampling and scoring, which is the whole reason it is a
+        callback rather than a string argument — the uncertainties do not exist earlier."""
+        seen = {}
+
+        def renderer(messages, consistency_data, step_range=None, config=None):
+            seen["consistency_data"] = consistency_data
+            seen["step_range"] = step_range
+            return "x"
+
+        self._run(monkeypatch, renderer)
+        assert seen["consistency_data"]["step_uncertainties"] == {1: 0.4}
+        assert seen["step_range"] is None
+
+    def test_the_default_renderer_is_used_when_none_is_given(self, monkeypatch):
+        prompt = self._run(monkeypatch, None)
+        assert "step one" in prompt
+
+    def test_renderer_returning_none_or_empty_string_does_not_render_none_literal(self, monkeypatch):
+        prompt = self._run(monkeypatch, lambda *a, **k: None)
+        assert "None" not in prompt
+        prompt_empty = self._run(monkeypatch, lambda *a, **k: "")
+        assert "Agent reasoning" not in prompt_empty
+
+
+class _SegmentationFixture:
+    """Shared trajectory for the two consistency pipelines' segmentation tests.
+
+    Five assistant turns, each with a marker string that appears nowhere else, and subtask
+    segments spanning two and three steps. Multi-step segments are deliberate: with single-step
+    segments, `step_range=(start, end)` and `step_range=(start, start)` are indistinguishable,
+    and "each segment saw its own steps" and "each segment saw everything" both pass.
+
+    Five is also the minimum: SEGMENTATION_MIN_STEPS gates both consistency pipelines, so a
+    shorter trajectory never reaches the segmented branch at all and every assertion about
+    what that branch does would hold vacuously.
+    """
+
+    MESSAGES = [
+        {"role": "user", "content": "Find the retry settings for the acme service and summarize them"},
+        {"role": "assistant", "content": "Listed the certificate directory to get my bearings."},
+        {"role": "assistant", "content": "Opened the retry policy file that directory pointed to."},
+        {"role": "assistant", "content": "Extracted the backoff ceiling it declares."},
+        {"role": "assistant", "content": "Reported the effective timeout to the caller."},
+        {"role": "assistant", "content": "Double-checked the jitter window before replying."},
+    ]
+    TASK = "Find the retry settings for the acme service and summarize them"
+    SEG1_MARKERS = ("certificate directory", "retry policy file")
+    SEG2_MARKERS = ("backoff ceiling", "effective timeout", "jitter window")
+
+    @staticmethod
+    def subtasks():
+        from altk_evolve.schema.guidelines import SubtaskSegment
+
+        return [
+            SubtaskSegment(
+                generalized_description="Locate a configuration file on disk",
+                purpose="Find the file to read",
+                start_step=1,
+                end_step=2,
+            ),
+            SubtaskSegment(
+                generalized_description="Read the values a configuration file declares",
+                purpose="Report the configured values",
+                start_step=3,
+                end_step=5,
+            ),
+        ]
+
+
+class TestSegmentationFlagAccuratePipeline(_SegmentationFixture):
+    """The accurate consistency pipeline must honour EVOLVE_SEGMENTATION_ENABLED.
+
+    The standard path (guidelines.py) and the fast path both checked the flag; this third
+    generation path did not, so the flag silently failed to apply to
+    `generate_consistency_guidelines` — segmentation ran regardless of the setting.
+    """
+
+    def _make_sampled_ir(self):
+        def step(n, response):
+            return {
+                "name": "AnyAgent_content",
+                "step_number": n,
+                "raw_response": response,
+                "raw_response_type": "content",
+                "messages": [],
+                "llm_params": {"model": None},
+                "sampling": {"num_samples": 1, "raw_samples": [response]},
+            }
+
+        return {
+            "task": self.TASK,
+            "name": "Trajectory test",
+            "steps": [step(i, m["content"]) for i, m in enumerate(self.MESSAGES[1:], 1)],
+        }
+
+    def _run(self, monkeypatch, *, enabled, segmenter_raises=False):
+        """Drive generate_consistency_guidelines with resampling/scoring/LLM all stubbed.
+
+        Returns (mock_segment, mock_gen, results).
+        """
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", enabled)
+
+        if segmenter_raises:
+            mock_segment = MagicMock(side_effect=RuntimeError("segmenter unavailable"))
+        else:
+            mock_segment = MagicMock(return_value=self.subtasks())
+        sampled_ir = self._make_sampled_ir()
+
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.resample_trajectory") as mock_resample,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.analyze_consistency") as mock_analyze,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines._generate_guideline_result") as mock_gen,
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", mock_segment),
+        ):
+            mock_resample.return_value = sampled_ir
+            mock_analyze.return_value = ({"steps": [], "aggregate_trajectory_uncertainty": 0.5}, sampled_ir)
+            mock_gen.return_value = MagicMock(guidelines=[])
+            results = generate_consistency_guidelines({"trace_id": "test-seg-flag", "messages": self.MESSAGES})
+
+        return mock_segment, mock_gen, results
+
+    def test_disabled_skips_segmentation_on_a_segmentable_trajectory(self, monkeypatch):
+        """Flag off: the segmenter is never called even though the trajectory qualifies, and
+        generation runs once over the full trajectory with the IR task as its description."""
+        mock_segment, mock_gen, results = self._run(monkeypatch, enabled=False)
+
+        mock_segment.assert_not_called()
+        assert len(results) == 1
+        assert mock_gen.call_count == 1
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("step_range") is None
+        assert kwargs["task_description"] == self.TASK
+
+    def test_enabled_segments_the_same_trajectory_with_per_subtask_step_ranges(self, monkeypatch):
+        """Flag on: the same trajectory now segments, one result per subtask, each scoped to its
+        own **multi-step** range and carrying that subtask's generalized description.
+
+        The ranges are (1,2) and (3,5) rather than single steps so the assertion is falsifiable:
+        with (1,1)/(2,2) fixtures, a `step_range` built as `(start, start)` would pass too."""
+        mock_segment, mock_gen, results = self._run(monkeypatch, enabled=True)
+
+        mock_segment.assert_called_once_with(self.MESSAGES, options=GuidelineRuntime.from_settings())
+        assert len(results) == 2
+        assert mock_gen.call_count == 2
+        assert [c.kwargs["step_range"] for c in mock_gen.call_args_list] == [(1, 2), (3, 5)]
+        assert [c.kwargs["task_description"] for c in mock_gen.call_args_list] == [
+            "Locate a configuration file on disk",
+            "Read the values a configuration file declares",
+        ]
+
+    def test_enabled_but_segmenter_raises_falls_back_to_full_trajectory(self, monkeypatch):
+        """Opting in must not make the accurate pipeline fail closed either: a segmenter error
+        degrades to one full-trajectory result rather than propagating. The standard path had
+        this covered; this path did not."""
+        _, mock_gen, results = self._run(monkeypatch, enabled=True, segmenter_raises=True)
+
+        assert len(results) == 1
+        assert mock_gen.call_count == 1
+        _, kwargs = mock_gen.call_args
+        assert kwargs.get("step_range") is None
+        assert kwargs["task_description"] == self.TASK
+
+
+class TestSegmentationFlagFastPipeline(_SegmentationFixture):
+    """The fast consistency pipeline's flag check needs a test that can reach the guarded branch.
+
+    Its two existing tests set the flag `False` as a *precondition* on a single-assistant-turn
+    trajectory, so neither can enter the segmented branch — replacing the guard with `if True:`
+    left the whole suite green. Same shape as the step-count guard that the accurate path's new
+    flag check had made unreachable.
+    """
+
+    def _mock_completion_response(self, payload: dict):
+        from unittest.mock import MagicMock
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = __import__("json").dumps(payload)
+        return response
+
+    def _run(self, monkeypatch, *, enabled):
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", enabled)
+        mock_segment = MagicMock(return_value=self.subtasks())
+
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", mock_segment),
+        ):
+            mock_completion.return_value = self._mock_completion_response({"guidelines": []})
+            results = generate_consistency_guidelines_fast({"trace_id": "test-fast-seg", "messages": self.MESSAGES})
+            prompts = [c.kwargs["messages"][-1]["content"] for c in mock_completion.call_args_list]
+
+        return mock_segment, prompts, results
+
+    def test_disabled_skips_segmentation_on_a_segmentable_trajectory(self, monkeypatch):
+        """Flag off: one call that sees every step, and the segmenter is never reached — asserted
+        on a trajectory that *would* segment, which is what makes the guard reachable."""
+        mock_segment, prompts, results = self._run(monkeypatch, enabled=False)
+
+        mock_segment.assert_not_called()
+        assert len(results) == 1
+        assert len(prompts) == 1
+        assert results[0].task_description == self.TASK
+        for m in self.SEG1_MARKERS + self.SEG2_MARKERS:
+            assert m in prompts[0]
+
+    def test_enabled_scopes_each_call_to_its_own_subtask_steps(self, monkeypatch):
+        """Flag on: the fast pipeline segments too, and each call sees only its own steps."""
+        mock_segment, prompts, results = self._run(monkeypatch, enabled=True)
+
+        mock_segment.assert_called_once_with(self.MESSAGES, options=GuidelineRuntime.from_settings())
+        assert len(results) == 2
+        assert [r.task_description for r in results] == [
+            "Locate a configuration file on disk",
+            "Read the values a configuration file declares",
+        ]
+
+        first, second = prompts
+        for m in self.SEG1_MARKERS:
+            assert m in first and m not in second
+        for m in self.SEG2_MARKERS:
+            assert m in second and m not in first

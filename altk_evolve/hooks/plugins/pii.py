@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 from altk_evolve.hooks.types import HookType
+from altk_evolve.hooks.plugins.identity import IDENTITY_METADATA_KEYS
 
 try:
     from cpex.framework.hooks.tools import ToolPreInvokePayload
@@ -104,7 +105,33 @@ if _HAS_PII_FILTER:
             )
 
         async def memory_pre_write(self, payload: Any, context: Any) -> Any:
-            return await self._delegate(payload, context, "entities")
+            # Keep identifiers out of the detector altogether: besides changing
+            # ownership, regex redaction can otherwise block valid subject IDs.
+            originals = payload.entities
+            entities = [
+                {
+                    **entity,
+                    "metadata": {key: value for key, value in entity.get("metadata", {}).items() if key not in IDENTITY_METADATA_KEYS},
+                }
+                for entity in originals
+            ]
+            result = await self._delegate(payload.model_copy(update={"entities": entities}), context, "entities")
+            modified = result.modified_payload
+            if modified is not None:
+                if len(modified.entities) != len(originals):
+                    raise ValueError("PII filter changed the entity count")
+                restored = [
+                    {
+                        **entity,
+                        "metadata": {
+                            **entity.get("metadata", {}),
+                            **{key: value for key, value in original.get("metadata", {}).items() if key in IDENTITY_METADATA_KEYS},
+                        },
+                    }
+                    for original, entity in zip(originals, modified.entities, strict=True)
+                ]
+                result.modified_payload = payload.model_copy(update={"entities": restored})
+            return result
 
         async def llm_pre_call(self, payload: Any, context: Any) -> Any:
             return await self._delegate(payload, context, "messages")
