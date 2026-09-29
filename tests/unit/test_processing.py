@@ -924,3 +924,103 @@ def test_profile_accepts_single_threshold_below_retired_low_default():
     assert config.analysis_config["high_uncertainty_threshold"] == 0.05
     assert "low_uncertainty_threshold" not in config.analysis_config
     assert GuidelineRuntime().segmentation_enabled is False
+
+
+@pytest.mark.parametrize("response_type", ["text", "code"])
+@pytest.mark.parametrize("metric", [None, "", " ", 1])
+def test_agent_metric_required_before_profile_publication(response_type, metric):
+    from altk_evolve.processing.builtin import GuidelineProcessor
+
+    manager = make_manager(processor_type=GuidelineProcessor)
+    agent = {"name": "agent", "response_type": response_type}
+    if metric is not None:
+        agent["metric"] = metric
+    profile = {
+        "processors": [
+            {
+                "id": "g",
+                "plugin": "evolve.guidelines",
+                "config": {
+                    "guidelines_mode": "consistency",
+                    "consistency_method": "accurate",
+                    "analysis_config": {"agents": [agent]},
+                },
+            }
+        ]
+    }
+    with pytest.raises(ProcessingError, match="requires a metric"):
+        manager.put("review", profile, expected_revision=0)
+    with pytest.raises(ProfileNotFound):
+        manager.get("review")
+
+
+@pytest.mark.parametrize(
+    "agent",
+    [
+        {"name": "agent", "response_type": "text", "metric": "jaccard"},
+        {"name": "agent", "response_type": "code", "metric": "sbert_large"},
+        {"name": "agent", "response_type": "tool_calls", "fields": [{"name": "function_name", "metric": "jaccard"}]},
+    ],
+)
+def test_valid_agent_metric_profiles_roundtrip(agent):
+    from altk_evolve.processing.builtin import GuidelineProcessor
+
+    manager = make_manager(processor_type=GuidelineProcessor)
+    profile = {
+        "processors": [
+            {
+                "id": "g",
+                "plugin": "evolve.guidelines",
+                "config": {
+                    "guidelines_mode": "consistency",
+                    "consistency_method": "accurate",
+                    "analysis_config": {"agents": [agent]},
+                },
+            }
+        ]
+    }
+    published = manager.put("review", profile, expected_revision=0)
+    assert manager.resolve("review").manifest() == published["manifest"]
+
+
+@pytest.mark.e2e
+def test_mcp_transport_profile_revision_errors_and_valid_pins(client, monkeypatch):
+    import asyncio
+    from fastmcp import Client
+    from altk_evolve.frontend.mcp import mcp_server as server
+
+    monkeypatch.setattr(server, "get_client", lambda: client)
+    client.processing.put("review", definition("old"), expected_revision=0)
+    client.processing.put("review", definition("new"), expected_revision=1)
+
+    async def exercise():
+        async with Client(server.mcp) as mcp:
+            for revision in (0, -1):
+                for name, args in (
+                    (
+                        "process_trajectory",
+                        {"trajectory": {"messages": []}, "namespace_id": "memories", "processing_profile": "review", "revision": revision},
+                    ),
+                    ("get_processing_profile", {"profile_id": "review", "revision": revision}),
+                    (
+                        "save_trajectory",
+                        {"trajectory_data": "[]", "namespace_id": "memories", "processing_profile": "review", "profile_revision": revision},
+                    ),
+                ):
+                    result = await mcp.call_tool_mcp(name, args)
+                    assert result.isError
+                    assert "revision must be at least 1" in result.content[0].text
+            for extra, expected in (({}, "new"), ({"revision": 1}, "old")):
+                result = await mcp.call_tool_mcp(
+                    "process_trajectory",
+                    {
+                        "trajectory": {"messages": []},
+                        "namespace_id": "memories",
+                        "processing_profile": "review",
+                        **extra,
+                    },
+                )
+                assert not result.isError
+                assert json.loads(result.content[0].text)["entities"][0]["content"] == expected
+
+    asyncio.run(exercise())

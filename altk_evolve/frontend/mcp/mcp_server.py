@@ -16,6 +16,7 @@ from typing import Any
 
 import yaml
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
@@ -1106,6 +1107,7 @@ def save_trajectory(
     )
     logger.debug(f"save_trajectory identifiers: user_id={effective_user_id}, session_id={session_id}")
 
+    _validate_processing_revision(profile_revision)
     processing_plan = None
     if processing_profile is not None:
         processing_plan = get_client().processing.resolve(processing_profile, revision=profile_revision)
@@ -1498,9 +1500,15 @@ def list_processors() -> list[dict]:
     return get_client().processing.registry.inventory()
 
 
+def _validate_processing_revision(revision: int | None) -> None:
+    if revision is not None and revision < 1:
+        raise ToolError("revision must be at least 1")
+
+
 @mcp.tool()
 def get_processing_profile(profile_id: str, revision: int | None = None) -> dict:
     """Read a processing profile; omit revision for latest."""
+    _validate_processing_revision(revision)
     return get_client().processing.get(profile_id, revision)
 
 
@@ -1515,6 +1523,7 @@ def process_trajectory(trajectory: dict, namespace_id: str, processing_profile: 
     """Run a profile and persist derived entities. Does not store the raw trajectory."""
     from altk_evolve.processing import ProfileReference
 
+    _validate_processing_revision(revision)
     return (
         get_client()
         .process_trajectory(
