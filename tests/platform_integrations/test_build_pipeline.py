@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import filecmp
 import importlib.util
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -370,6 +371,54 @@ class TestRecallLearnExcludedFromClaudeCodexBob:
             assert (claw_root / "skills/evolve-lite" / skill / "SKILL.md").is_file(), (
                 f"claw-code must still ship the `{skill}` skill — its PreToolUse hook consumes it"
             )
+
+
+@pytest.mark.platform_integrations
+@pytest.mark.unit
+class TestMarketplaceGeneration:
+    """The repo-root .claude-plugin/marketplace.json is generated from
+    plugin.toml, not hand-maintained. Its target sits outside every
+    `plugin_root`, so it flows through `_marketplace_targets()` — the same
+    mechanism bob's commands use. Refs #335: the entry's version silently drifted
+    from plugin.json's (1.0.0 vs 1.1.0) precisely because `check` could not see
+    this file."""
+
+    def test_marketplace_is_rendered(self, rendered_repo, build_module):
+        rendered = rendered_repo / build_module.MARKETPLACE_TARGET
+        assert rendered.is_file(), "render did not emit the repo-root marketplace.json"
+
+    def test_entry_version_matches_plugin_toml(self, rendered_repo, build_module):
+        """`claude plugin validate` warns when the marketplace entry's version
+        disagrees with plugin.json's, and plugin.json wins at install time. Both
+        now read `[plugin].version`, so they cannot diverge."""
+        metadata = build_module._load_metadata()
+        entry = json.loads((rendered_repo / build_module.MARKETPLACE_TARGET).read_text())["plugins"][0]
+        assert entry["version"] == metadata.plugin.version
+        assert entry["name"] == metadata.plugin.name
+
+    def test_entry_version_matches_rendered_plugin_json(self, rendered_repo, build_module):
+        manifest = build_module.load_manifest()
+        plugin_json = json.loads((_plugin_root(manifest, "claude") / ".claude-plugin" / "plugin.json").read_text())
+        entry = json.loads((rendered_repo / build_module.MARKETPLACE_TARGET).read_text())["plugins"][0]
+        assert entry["version"] == plugin_json["version"], "marketplace entry and plugin.json disagree on version"
+
+    def test_perturbed_marketplace_is_detected_as_drift(self, rendered_repo, build_module, capsys):
+        target = rendered_repo / build_module.MARKETPLACE_TARGET
+        target.write_bytes(target.read_bytes().replace(b'"version"', b'"verzion"'))
+
+        rc = build_module.check_drift()
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "drift:" in captured.err
+        assert "marketplace.json" in captured.err
+
+    def test_missing_marketplace_is_detected(self, rendered_repo, build_module, capsys):
+        (rendered_repo / build_module.MARKETPLACE_TARGET).unlink()
+
+        rc = build_module.check_drift()
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "missing managed file:" in captured.err
 
 
 @pytest.mark.platform_integrations
