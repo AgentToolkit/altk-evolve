@@ -33,16 +33,19 @@ def sources(entity: Entity) -> list[dict]:
     ]
 
 
-def attach_sources(metadata: dict, old: Entity | None, incoming: Sequence[Entity], *, supersedes: bool = False) -> dict:
+def attach_sources(
+    metadata: dict, old: Entity | None, incoming: Sequence[Entity], *, supersedes: bool = False, associated_at: datetime | None = None
+) -> dict:
     result = deepcopy(metadata)
     if old is None and not any(sources(entity) for entity in incoming):
         return result
     # Each association ages independently of later content revisions. Legacy
     # associations conservatively start at the last known entity timestamp.
-    now = datetime.now(UTC).isoformat()
+    observed_at = associated_at if associated_at is not None else datetime.now(UTC)
+    now = observed_at.isoformat()
     associations = sources(old) if old is not None else []
     for association in associations:
-        association.setdefault("associated_at", getattr(old, "created_at", datetime.now(UTC)).isoformat())
+        association.setdefault("associated_at", getattr(old, "created_at", observed_at).isoformat())
     complete = bool(associations) and not (old.metadata or {}).get("provenance_incomplete", False) if old is not None else True
     if supersedes:
         for association in associations:

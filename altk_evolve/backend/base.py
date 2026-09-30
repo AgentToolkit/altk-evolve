@@ -23,7 +23,7 @@ from altk_evolve.hooks.manager import (
 from altk_evolve.hooks.types import HookType
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
-from altk_evolve.schema.provenance import identity, attach_sources, sources
+from altk_evolve.schema.provenance import identity
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.utils.utils import serialize_content
 
@@ -284,201 +284,135 @@ class BaseEntityBackend(ABC):
         conflict_settings=None,
         processing_provenance: dict | None = None,
     ) -> PreparedWrites:
-        from altk_evolve.llm.conflict_resolution.conflict_resolution import resolve_conflicts
-        from altk_evolve.hooks.backend import proposed_metadata
+        from altk_evolve.backend.reconciliation import prepare_additions, attach_processing_provenance
 
         self._validate_namespace(namespace_id)
         if not entities:
             logger.warning("No entities to update.")
             return PreparedWrites(int(datetime.datetime.now(datetime.UTC).timestamp()))
-
         entity_type = entities[0].type
         if not all(entity.type == entity_type for entity in entities):
             raise EvolveException("All entities must have the same type.")
 
-        # Fire memory_pre_write BEFORE conflict resolution so transform
-        # plugins (normalization, PII redaction, ...) run before any entity
-        # content is sent to an LLM.
-        entities = dispatch_memory_pre_write(self, namespace_id, entities)
-
-        now = datetime.datetime.now(datetime.UTC)
-        timestamp = int(now.timestamp())
-        prepared = PreparedWrites(timestamp)
-
-        entities_with_temporary_ids: list[RecordedEntity] = []
-        for i, entity in enumerate(entities):
-            entity_data = entity.model_dump()
-            if entity_data.get("metadata") is None:
-                entity_data["metadata"] = {}
-            entities_with_temporary_ids.append(
-                RecordedEntity(
-                    **entity_data,
-                    created_at=datetime.datetime.now(datetime.UTC),
-                    id=f"Unprocessed_Entity_{i}",
-                )
-            )
-
+        # Transform/redact incoming content before any model sees it.
+        incoming = dispatch_memory_pre_write(self, namespace_id, entities)
+        observed_at = datetime.datetime.now(datetime.UTC)
         if enable_conflict_resolution:
-            groups: dict[tuple, list[RecordedEntity]] = {}
-            for incoming in entities_with_temporary_ids:
-                groups.setdefault(identity(incoming), []).append(incoming)
-            updates = []
-            stored_by_id = {}
-            for scope, incoming_group in groups.items():
-                candidates: dict[str, RecordedEntity] = {}
-                for incoming in incoming_group:
-                    filters = {
-                        "type": entity_type,
-                        **{
-                            f"metadata.{key}": value
-                            for key, value in zip(("user_id", "owner_id", "agent_id", "visibility"), scope)
-                            if value is not None
-                        },
-                    }
-                    for stored in self._search_entities_impl(
-                        namespace_id=namespace_id, query=serialize_content(incoming.content), filters=filters, limit=10
-                    ):
-                        if identity(stored) == scope:
-                            candidates[stored.id] = stored
-                incoming_by_id = {value.id: value for value in incoming_group}
-                model_candidates = [value.model_copy(deep=True) for value in candidates.values()]
-                for value in model_candidates:
-                    value.metadata = proposed_metadata(self, value.id, value.metadata)
-                decisions = (
-                    resolve_conflicts(model_candidates, incoming_group)
-                    if conflict_settings is None
-                    else resolve_conflicts(model_candidates, incoming_group, settings=conflict_settings)
-                )
-                associated = {identifier for decision in decisions for identifier in decision.incoming_ids}
-                associated.update(
-                    decision.id
-                    for decision in decisions
-                    if decision.event == "ADD" or (decision.event == "NONE" and decision.id in incoming_by_id)
-                )
-                unmatched_sources = any(sources(value) and value.id not in associated for value in incoming_group)
-                for decision in decisions:
-                    if decision.type != entity_type:
-                        raise EvolveException("Conflict resolution changed entity type")
-                    if any(value not in incoming_by_id for value in decision.incoming_ids):
-                        raise EvolveException("Conflict resolution returned an unknown source ID")
-                    if decision.event == "ADD":
-                        if decision.id not in incoming_by_id:
-                            raise EvolveException("Conflict resolution returned an unknown incoming ID")
-                        original = incoming_by_id[decision.id]
-                        contributors = [incoming_by_id[value] for value in dict.fromkeys([decision.id, *decision.incoming_ids])]
-                        decision.metadata = attach_sources(original.metadata, None, contributors)
-                        if decision.metadata.get("sources"):
-                            decision.metadata["memory_revision"] = 1
-                    else:
-                        if decision.event == "NONE" and decision.id in incoming_by_id and not decision.incoming_ids:
-                            continue
-                        if decision.id not in candidates:
-                            raise EvolveException("Conflict resolution returned an out-of-scope entity ID")
-                        old = candidates[decision.id]
-                        contributors = [incoming_by_id[value] for value in dict.fromkeys(decision.incoming_ids)]
-                        # Older/custom prompts may omit associations. Preserve known provenance,
-                        # but never treat guessed sources as sufficient for retention.
-                        metadata = {**old.metadata, **decision.metadata}
-                        if len(contributors) == 1:
-                            metadata.update(contributors[0].metadata)
-                        if "generation_method" in old.metadata:
-                            metadata["generation_method"] = old.metadata["generation_method"]
-                        for key in ("user_id", "owner_id", "agent_id", "visibility"):
-                            metadata.pop(key, None)
-                            if key in old.metadata:
-                                metadata[key] = old.metadata[key]
-                        decision.metadata = attach_sources(
-                            metadata, old, contributors, supersedes=decision.supersedes and bool(contributors)
-                        )
-                        if decision.metadata.get("sources"):
-                            decision.metadata["memory_revision"] = int(old.metadata.get("memory_revision", 1)) + (
-                                decision.event == "UPDATE"
-                            )
-                        if (decision.event == "UPDATE" and not contributors) or unmatched_sources:
-                            decision.metadata["provenance_incomplete"] = True
-                        if old.metadata.get("legal_hold"):
-                            decision.metadata["legal_hold"] = old.metadata["legal_hold"]
-                        if decision.event == "NONE":
-                            decision.content = old.content
-                    updates.append(decision)
-                stored_by_id.update(candidates)
+            changes, stored = self._reconcile_entities(namespace_id, incoming, entity_type, observed_at, conflict_settings)
+        else:
+            changes, stored = prepare_additions(incoming, entity_type, observed_at), {}
+        changes = attach_processing_provenance(changes, stored, processing_provenance)
+        return self._prepare_checked_writes(namespace_id, changes, stored, int(observed_at.timestamp()))
 
-            for update in updates:
-                metadata = update.metadata or {}
-                if processing_provenance is not None and update.event in ("ADD", "UPDATE"):
-                    previous = stored_by_id.get(update.id) if update.event == "UPDATE" else None
-                    if previous is not None:
-                        prior_metadata = previous.metadata or {}
-                        history = deepcopy(prior_metadata.get("processing_history", []))
-                        prior = prior_metadata.get("processing")
-                        if prior is not None:
-                            history.append(deepcopy(prior))
-                        if history:
-                            metadata = {**metadata, "processing_history": history}
-                    metadata = {**metadata, "processing": deepcopy(processing_provenance)}
-                    update.metadata = metadata
-                match update.event:
-                    case "ADD":
-                        update.type = entity_type
-                    case "UPDATE":
+    def _reconcile_entities(
+        self,
+        namespace_id: str,
+        entities: list[Entity],
+        entity_type: str,
+        observed_at: datetime.datetime,
+        conflict_settings,
+    ) -> tuple[list[EntityUpdate], dict[str, RecordedEntity]]:
+        from altk_evolve.backend.reconciliation import group_incoming, reconcile_decisions
+        from altk_evolve.llm.conflict_resolution.conflict_resolution import resolve_conflicts
+        from altk_evolve.hooks.backend import proposed_metadata
+
+        changes: list[EntityUpdate] = []
+        stored: dict[str, RecordedEntity] = {}
+        for group in group_incoming(entities, observed_at):
+            candidates = self._find_reconciliation_candidates(namespace_id, group, entity_type)
+            model_candidates = [
+                entity.model_copy(deep=True, update={"metadata": proposed_metadata(self, entity.id, deepcopy(entity.metadata))})
+                for entity in candidates.values()
+            ]
+            decisions = (
+                resolve_conflicts(model_candidates, group)
+                if conflict_settings is None
+                else resolve_conflicts(model_candidates, group, settings=conflict_settings)
+            )
+            changes.extend(reconcile_decisions(group, candidates, decisions, entity_type, observed_at))
+            stored.update(candidates)
+        return changes, stored
+
+    def _find_reconciliation_candidates(
+        self,
+        namespace_id: str,
+        group: list[RecordedEntity],
+        entity_type: str,
+    ) -> dict[str, RecordedEntity]:
+        """Use scoped search, then enforce exact identity even for absent scope fields."""
+        scope = identity(group[0])
+        filters = {
+            "type": entity_type,
+            **{
+                f"metadata.{key}": value
+                for key, value in zip(("user_id", "owner_id", "agent_id", "visibility"), scope)
+                if value is not None
+            },
+        }
+        candidates = {}
+        for incoming in group:
+            for stored in self._search_entities_impl(
+                namespace_id=namespace_id,
+                query=serialize_content(incoming.content),
+                filters=filters,
+                limit=10,
+            ):
+                if identity(stored) == scope:
+                    candidates[stored.id] = stored
+        return candidates
+
+    def _prepare_checked_writes(
+        self,
+        namespace_id: str,
+        changes: list[EntityUpdate],
+        stored_by_id: dict[str, RecordedEntity],
+        timestamp: int,
+    ) -> PreparedWrites:
+        """Check delete policy and capture the original versions required at commit."""
+        from altk_evolve.hooks.backend import proposed_metadata
+
+        prepared = PreparedWrites(timestamp, updates=deepcopy(changes))
+        for update in prepared.updates:
+            match update.event:
+                case "ADD":
+                    pass
+                case "UPDATE":
+                    if update.id not in stored_by_id:
+                        raise EvolveException(f"Conflict resolution selected an unknown entity: {update.id}")
+                    prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
+                case "DELETE":
+                    try:
                         if update.id not in stored_by_id:
                             raise EvolveException(f"Conflict resolution selected an unknown entity: {update.id}")
-                        update.type = entity_type
+                        dispatch_memory_pre_delete(
+                            self, namespace_id, update.id, metadata=proposed_metadata(self, update.id, stored_by_id[update.id].metadata)
+                        )
                         prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
-                    case "DELETE":
-                        try:
-                            if update.id not in stored_by_id:
-                                raise EvolveException(f"Conflict resolution selected an unknown entity: {update.id}")
-                            dispatch_memory_pre_delete(
-                                self, namespace_id, update.id, metadata=proposed_metadata(self, update.id, stored_by_id[update.id].metadata)
-                            )
-                            prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
-                        except MemoryPolicyViolation as violation:
-                            # A policy veto (e.g. legal hold) must not abort
-                            # the write: skip this delete — the stored entity
-                            # survives alongside its replacement — and keep
-                            # processing the rest of the batch.
-                            logger.warning(
-                                "memory_pre_delete plugin %r vetoed conflict-resolution DELETE of entity '%s' in namespace '%s': %s. Keeping the stored entity and continuing.",
-                                violation.plugin_name,
-                                update.id,
-                                namespace_id,
-                                violation,
-                            )
-                            update.event = "NONE"
-                            update.metadata = {
-                                **(update.metadata or {}),
-                                "skipped_delete": {
-                                    "hook": violation.hook_type,
-                                    "plugin": violation.plugin_name,
-                                    "code": violation.code,
-                                    "reason": violation.reason,
-                                },
-                            }
-                    case "NONE":
-                        if update.incoming_ids or update.metadata.get("provenance_incomplete"):
-                            prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
-
-        else:
-            updates = []
-            for entity in entities:
-                metadata = attach_sources(entity.metadata or {}, None, [entity])
-                if metadata.get("sources"):
-                    metadata["memory_revision"] = 1
-                if processing_provenance is not None:
-                    metadata = {**metadata, "processing": deepcopy(processing_provenance)}
-                entity_id = ""
-                updates.append(
-                    EntityUpdate(
-                        id=entity_id,
-                        type=entity_type,
-                        content=entity.content,
-                        event="ADD",
-                        metadata=metadata,
-                    )
-                )
-
-        prepared.updates = updates
+                    except MemoryPolicyViolation as violation:
+                        # A policy veto (e.g. legal hold) must not abort
+                        # the write: skip this delete — the stored entity
+                        # survives alongside its replacement — and keep
+                        # processing the rest of the batch.
+                        logger.warning(
+                            "memory_pre_delete plugin %r vetoed conflict-resolution DELETE of entity '%s' in namespace '%s': %s. Keeping the stored entity and continuing.",
+                            violation.plugin_name,
+                            update.id,
+                            namespace_id,
+                            violation,
+                        )
+                        update.event = "NONE"
+                        update.metadata = {
+                            **(update.metadata or {}),
+                            "skipped_delete": {
+                                "hook": violation.hook_type,
+                                "plugin": violation.plugin_name,
+                                "code": violation.code,
+                                "reason": violation.reason,
+                            },
+                        }
+                case "NONE":
+                    if update.incoming_ids or update.metadata.get("provenance_incomplete"):
+                        prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
         return prepared
 
     def prepare_updates(
