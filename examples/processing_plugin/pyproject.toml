@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evolve-example-word-count"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["altk-evolve"]
+
+[project.entry-points."altk_evolve.processors"]
+"example.word_count" = "word_count:WordCountProcessor"
+
+[tool.setuptools]
+py-modules = ["word_count"]

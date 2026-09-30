@@ -212,3 +212,15 @@ except ImportError:
 | `EVOLVE_TRACING_ENDPOINT` | Phoenix collector endpoint | `http://localhost:6006/v1/traces` |
 
 > **Note**: Auto-patching skips if existing tracing is detected. Use `enable_tracing(force=True)` to override.
+
+## Runtime processing profiles
+
+Processing profiles select built-in or installed trajectory processors with validated,
+versioned configuration. Profiles use the existing configured database: PostgreSQL
+for the PostgreSQL backend, or SQLite for filesystem and Milvus. Milvus already uses SQLite
+for namespace metadata; filesystem namespaces remain in JSON and profile SQLite defaults to
+`entities.sqlite.db` inside `EVOLVE_DATA_DIR`. Explicit `EVOLVE_SQLITE_PATH` /
+`EVOLVE_SQLITE_URI` overrides are respected. Milvus profiles use its configured
+`sqlite_uri` (or `EVOLVE_SQLITE_PATH` override). No separate profile database configuration is required; applications
+can still inject a custom repository. See [processing profiles](../design/processing-profiles.md)
+for Python, REST, MCP, CLI, and plugin-discovery examples.

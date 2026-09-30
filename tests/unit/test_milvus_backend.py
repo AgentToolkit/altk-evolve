@@ -14,10 +14,11 @@ from altk_evolve.schema.exceptions import NamespaceNotFoundException, EvolveExce
 
 
 @pytest.fixture(scope="module")
-def milvus_backend() -> MilvusEntityBackend:
+def milvus_backend(tmp_path_factory) -> MilvusEntityBackend:
     """Create a MilvusEntityBackend instance for testing."""
     with patch("altk_evolve.backend.milvus.MilvusClient"), patch("altk_evolve.backend.milvus.SentenceTransformer"):
         backend = MilvusEntityBackend()
+        backend.sqlite_uri = str(tmp_path_factory.mktemp("milvus-metadata") / "metadata.db")
         return backend
 
 
@@ -342,8 +343,8 @@ def test_search_entities_filters_metadata_in_python(milvus_backend: MilvusEntity
 
 
 @pytest.mark.unit
-def test_search_entities_overfetches_before_python_filter(milvus_backend: MilvusEntityBackend, monkeypatch):
-    """Test filtered queries still return matches when backend ignores filter and truncates by limit."""
+def test_search_entities_filters_in_database_before_limit(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """The engine receives the full predicate and only the requested limit."""
 
     def query(collection_name, filter="", output_fields=None, timeout=None, ids=None, partition_names=None, limit=10, **kwargs):
         now = int(datetime.datetime.now(datetime.UTC).timestamp())
@@ -369,8 +370,9 @@ def test_search_entities_overfetches_before_python_filter(milvus_backend: Milvus
                 for i in range(1, 6)
             ]
         )
-        # Simulate backend truncation before applying filter.
-        return records[:limit]
+        assert filter == 'id > 0 and type == "guideline"'
+        assert limit == 10
+        return [record for record in records if record["type"] == "guideline"][:limit]
 
     monkeypatch.setattr(milvus_backend.milvus, "has_collection", always_has_collection)
     monkeypatch.setattr(milvus_backend.milvus, "query", query)
@@ -422,6 +424,7 @@ def test_update_entity_metadata_merges_and_returns(milvus_backend: MilvusEntityB
         "content": "be concise",
         "created_at": now_ts,
         "metadata": {"creation_mode": "manual"},
+        "embedding": [0.1] * 384,
     }
 
     query = Mock(return_value=[raw_entity])
@@ -442,8 +445,9 @@ def test_update_entity_metadata_merges_and_returns(milvus_backend: MilvusEntityB
     query.assert_called_once_with(
         collection_name="test_namespace",
         filter="id == 42",
-        output_fields=["id", "type", "content", "created_at", "metadata"],
+        output_fields=["id", "type", "content", "created_at", "metadata", "embedding"],
         limit=1,
+        consistency_level="Strong",
     )
 
     # upsert must carry merged metadata
@@ -486,3 +490,66 @@ def test_parse_milvus_entity_accepts_epoch_zero_created_at():
     )
 
     assert parsed.created_at == datetime.datetime.fromtimestamp(0, datetime.UTC)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("event", ["UPDATE", "DELETE"])
+def test_nonatomic_milvus_writes_do_not_require_a_bounded_scan(milvus_backend, monkeypatch, event):
+    seed = RecordedEntity(id="1201", type="note", content="seed", metadata={}, created_at=datetime.datetime.now(datetime.UTC))
+    monkeypatch.setattr(milvus_backend, "_validate_namespace", lambda ns: None)
+    monkeypatch.setattr(milvus_backend, "_search_entities_impl", lambda *a, **kw: [seed])
+    monkeypatch.setattr(
+        milvus_backend, "scan_entities", Mock(side_effect=AssertionError("non-atomic backend cannot validate a CAS snapshot"))
+    )
+    monkeypatch.setattr(
+        "altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts",
+        lambda *a, **kw: [
+            EntityUpdate(id="1201", type="note", content="replacement", event=event),
+            EntityUpdate(id="new", type="note", content="addition", event="ADD"),
+        ],
+    )
+    write = Mock()
+    monkeypatch.setattr(milvus_backend, "_update_entity" if event == "UPDATE" else "_delete_entity", write)
+    monkeypatch.setattr(milvus_backend, "_add_entity", lambda *a, **kw: "1202")
+    results = milvus_backend.update_entities("ns", [Entity(type="note", content="incoming")])
+    assert [r.event for r in results] == [event, "ADD"]
+    write.assert_called_once()
+
+
+@pytest.mark.unit
+def test_missing_policy_snapshot_cannot_reach_delete(milvus_backend, monkeypatch):
+    delete = Mock()
+    dispatch = Mock()
+    monkeypatch.setattr("altk_evolve.backend.base.hooks_active", lambda _: True)
+    monkeypatch.setattr("altk_evolve.backend.base.dispatch_memory_pre_delete", dispatch)
+    monkeypatch.setattr(milvus_backend, "_search_entities_impl", lambda *a, **kw: [])
+    monkeypatch.setattr(milvus_backend, "_delete_entity_by_id_impl", delete)
+    with pytest.raises(EvolveException, match="cannot evaluate deletion policy"):
+        milvus_backend.delete_entity_by_id("test_namespace", "1201")
+    delete.assert_not_called()
+    dispatch.assert_not_called()
+
+
+@pytest.mark.unit
+def test_engine_read_failure_is_not_an_empty_result(milvus_backend, monkeypatch):
+    from pymilvus.exceptions import MilvusException
+
+    monkeypatch.setattr(milvus_backend.milvus, "has_collection", always_has_collection)
+    monkeypatch.setattr(milvus_backend.milvus, "query", Mock(side_effect=MilvusException(message="HasRawData")))
+    with pytest.raises(MilvusException):
+        milvus_backend.scan_entities("test_namespace")
+
+
+@pytest.mark.unit
+def test_metadata_lock_coordinates_other_processes(milvus_backend):
+    import subprocess
+    import sys
+
+    program = "import sqlite3,sys; c=sqlite3.connect(sys.argv[1], timeout=0); c.execute('BEGIN IMMEDIATE'); c.close()"
+    command = [sys.executable, "-c", program, milvus_backend.sqlite_uri]
+    with milvus_backend._metadata_write():
+        blocked = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        assert blocked.returncode != 0
+        assert "database is locked" in blocked.stderr
+    released = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    assert released.returncode == 0, released.stderr

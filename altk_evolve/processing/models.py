@@ -1,0 +1,176 @@
+"""Transport-neutral processing definitions and immutable execution plans."""
+
+from __future__ import annotations
+
+import json
+import hashlib
+from dataclasses import dataclass
+from typing import Annotated, Any, ClassVar, Protocol, Self, cast
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from altk_evolve.schema.core import Entity
+
+
+class ProcessingError(ValueError):
+    """An invalid definition, unavailable processor, or failed profile lookup."""
+
+
+class ProfileConflict(ProcessingError):
+    """A profile changed since the caller read it."""
+
+
+class ProfileNotFound(ProcessingError):
+    """The requested profile/revision does not exist."""
+
+
+class ProcessorSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
+    plugin: str = Field(min_length=1)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProfileDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: int = Field(default=1, ge=1, le=1)
+    processors: list[ProcessorSpec]
+
+    @model_validator(mode="after")
+    def unique_ids(self):
+        ids = [p.id for p in self.processors]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Processor instance IDs must be unique")
+        return self
+
+
+class ProfileReference(BaseModel):
+    """No revision means follow latest at each processing batch boundary."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str = Field(min_length=1)
+    revision: int | None = Field(default=None, ge=1)
+
+
+class TrajectoryBatch(BaseModel):
+    """Source-owned identity for one bounded contribution to an ongoing conversation.
+
+    Adapters choose stable, non-overlapping batch IDs (an event ID or immutable
+    range) and a revision that changes when that input is corrected. Scope
+    separates application consumers sharing a namespace. Profile revisions are
+    provenance, not identity: changing modes does not replay completed input.
+    Use a new scope for an intentional replay of historical batches. Aliases
+    identify additional source IDs for the same contribution and revision;
+    adapters must never alias independent events. alias_revisions records the
+    revision of each alternate representation when its payload differs.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    source: str = Field(min_length=1)
+    conversation_id: str = Field(min_length=1)
+    batch_id: str = Field(min_length=1)
+    revision: str = Field(default="1", min_length=1)
+    scope: str = Field(default="default", min_length=1)
+    aliases: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+    alias_revisions: dict[str, str] = Field(default_factory=dict)
+
+    def checkpoint_key(self, processor_id: str) -> str:
+        value = [self.scope, self.source, self.conversation_id, processor_id, self.batch_id, self.revision]
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False).encode()).hexdigest()
+
+    def checkpoint_keys(self, processor_id: str) -> list[str]:
+        return list(
+            dict.fromkeys(
+                self.model_copy(
+                    update={"batch_id": identity, "revision": self.alias_revisions.get(identity, self.revision)}
+                ).checkpoint_key(processor_id)
+                for identity in (self.batch_id, *self.aliases)
+            )
+        )
+
+
+class Trajectory(BaseModel):
+    """A processing input, not necessarily a finished conversation.
+
+    messages contains this batch's new material; context_messages is supporting
+    history and must not be counted as another contribution. A batch identity
+    enables per-processor durable deduplication. Without it, calls are untracked.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    messages: list[dict[str, Any]]
+    context_messages: list[dict[str, Any]] = Field(default_factory=list)
+    batch: TrajectoryBatch | None = None
+    tools: list[dict[str, Any]] | None = None
+    trace_id: str | None = None
+    model: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProcessorContext:
+    operation_id: str
+
+    def complete(self, *, messages: list[dict], model: str, **kwargs):
+        """LLM service preserving the deployment's egress hooks."""
+        from litellm import completion
+        from altk_evolve.hooks.manager import dispatch_llm_pre_call
+
+        messages = dispatch_llm_pre_call(messages, purpose="trajectory_processor", model=model)
+        return completion(messages=messages, model=model, **kwargs)
+
+
+class ProcessorResult(BaseModel):
+    entities: list[Entity] = Field(default_factory=list)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    enable_conflict_resolution: bool = False
+
+
+class Processor(Protocol):
+    """Construct from captured config and process a bounded contribution.
+
+    Return any entity types; choose whether semantic reconciliation is useful.
+    Concurrent deliveries can execute a plugin more than once, although only one
+    output commit per batch/processor succeeds. External effects must be idempotent.
+    """
+
+    id: ClassVar[str]
+    api_version: ClassVar[int]
+    version: ClassVar[str]
+    config_model: ClassVar[type[BaseModel]]
+
+    @classmethod
+    def from_config(cls, config: BaseModel) -> Self: ...
+
+    def process(self, trajectory: Trajectory, *, context: ProcessorContext) -> ProcessorResult: ...
+
+
+@dataclass(frozen=True)
+class ProcessingPlan:
+    """Execution snapshot: captured plugin classes plus one serialized configuration manifest.
+
+    Classes correspond positionally to the manifest's ordered processor entries.
+    The runner validates a fresh config and calls each class's from_config for every
+    trajectory. No running instances or separately duplicated config records are kept.
+    """
+
+    processor_types: tuple[type[Processor], ...]
+    manifest_json: str
+    conflict_settings_json: str
+    profile_id: str | None = None
+    revision: int | None = None
+
+    def manifest(self) -> dict:
+        return cast(dict, json.loads(self.manifest_json))
+
+
+class ProcessingResult(BaseModel):
+    """Entities are proposals; updates and processor completion lists report persistence."""
+
+    operation_id: str
+    manifest: dict[str, Any]
+    entities: list[Entity]
+    updates: list[dict[str, Any]] = Field(default_factory=list)
+    completed_processors: list[str] = Field(default_factory=list)
+    skipped_processors: list[str] = Field(default_factory=list)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)

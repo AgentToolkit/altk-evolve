@@ -1,5 +1,7 @@
 """Tests for guideline generation utilities."""
 
+from altk_evolve.config.guideline_runtime import GuidelineRuntime
+
 import json
 import logging
 from unittest.mock import MagicMock, patch
@@ -349,7 +351,7 @@ class TestParseOpenaiAgentsTrajectory:
     ):
         monkeypatch.setattr(guidelines_module.llm_settings, "guidelines_model", "groq/openai/gpt-oss-120b")
         monkeypatch.setattr(guidelines_module.llm_settings, "custom_llm_provider", "groq")
-        monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", False)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
         mock_completion.return_value = _mock_completion_response(
             {
                 "guidelines": [
@@ -384,7 +386,7 @@ class TestParseOpenaiAgentsTrajectory:
         caplog,
     ):
         """The standard pipeline is wired to the repairing parser, not a strict one."""
-        monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", False)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
         mock_completion.return_value = _mock_completion_response([_GUIDELINE])
 
         with caplog.at_level(logging.INFO):
@@ -451,7 +453,7 @@ class TestSegmentationFlag:
         documented cost of the default — task_description is both the clustering key
         (clustering.py) and the retrieval ranking key (retrieval.py), so it carries whatever
         the user typed, user-specific values included."""
-        monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", False)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
         mock_completion.return_value = _mock_completion_response(self.PAYLOAD)
 
         with patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory") as mock_segment:
@@ -485,7 +487,7 @@ class TestSegmentationFlag:
         claim in the docstring and in docs/guides/configuration.md: a segment cannot see the
         correction in the segment next door, which is why segmentation can emit a guideline
         asserting an approach that a later step already superseded."""
-        monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", True)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
         mock_completion.return_value = _mock_completion_response(self.PAYLOAD)
 
         subtasks = [
@@ -506,7 +508,7 @@ class TestSegmentationFlag:
         with patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks) as mock_segment:
             results = generate_guidelines(self.MESSAGES)
 
-        mock_segment.assert_called_once_with(self.MESSAGES)
+        mock_segment.assert_called_once_with(self.MESSAGES, options=GuidelineRuntime.from_settings())
         assert mock_completion.call_count == 2
         assert [r.task_description for r in results] == [s.generalized_description for s in subtasks]
 
@@ -530,7 +532,7 @@ class TestSegmentationFlag:
     ):
         """Opting in must not make generation fail closed: a segmenter error degrades to the
         full-trajectory path instead of propagating."""
-        monkeypatch.setattr(guidelines_module.evolve_config, "segmentation_enabled", True)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
         mock_completion.return_value = _mock_completion_response(self.PAYLOAD)
 
         with patch(

@@ -106,9 +106,8 @@ class EvolveBasePayload(_PayloadBase):
     """Frozen base for all altk_evolve hook payloads.
 
     ``backend_kind`` names the backend class handling the operation (empty for
-    LLM-egress hooks). The live backend object rides in
-    ``GlobalContext.state["backend"]`` for plugins that need to call back into
-    the store (e.g. access stamping).
+    LLM-egress hooks). ``GlobalContext.state["backend"]`` carries HookBackend,
+    the read/metadata-patch capability available to hooks (e.g. access stamping).
     """
 
     backend_kind: str = ""
@@ -140,7 +139,7 @@ class MemoryPreDeletePayload(EvolveBasePayload):
 
     Fires on BOTH delete paths: the public ``delete_entity_by_id`` and
     conflict-resolution DELETE verdicts inside ``update_entities`` (all
-    routed through ``BaseEntityBackend._guarded_delete``).
+    checked during preparation and bound to an unchanged commit receipt).
 
     ``metadata`` carries the stored entity's metadata when it could be
     resolved (``None`` when the entity was not found), so policy plugins can
