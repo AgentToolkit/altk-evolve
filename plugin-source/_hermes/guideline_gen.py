@@ -75,7 +75,7 @@ _JSON_SCHEMA: Dict[str, Any] = {
 
 
 def _default_llm_call(trajectory_json: str) -> Optional[str]:
-    """Call ``PluginLlm.complete_structured``; return raw text or None on failure."""
+    """Call ``PluginLlm.complete_structured``; return JSON text or None on failure."""
     try:
         from agent.plugin_llm import PluginLlm, PluginLlmTextInput
     except Exception:
@@ -90,7 +90,20 @@ def _default_llm_call(trajectory_json: str) -> Optional[str]:
             json_schema=_JSON_SCHEMA,
             purpose="evolve-guideline-generation",
         )
-        return result.text
+        # ``parsed`` before ``text``: the host strips ``` fences only on the way
+        # into ``parsed`` (``agent/plugin_llm.py``, ``json.loads`` of
+        # ``_strip_code_fences(text)``), leaving ``text`` as the raw reply. Since
+        # a ``json_schema`` is always passed, that parse always runs -- so a
+        # fenced reply, which is what most models return, has valid JSON in
+        # ``parsed`` and fences in ``text``. Returning ``text`` made
+        # ``generate_guidelines``' ``json.loads`` fail and yield zero guidelines
+        # with nothing logged above debug.
+        parsed = getattr(result, "parsed", None)
+        if parsed is not None:
+            # Hosts that hand back an already-serialized value are passed
+            # through; anything else is re-serialized for the shared str contract.
+            return parsed if isinstance(parsed, str) else json.dumps(parsed)
+        return getattr(result, "text", None)
     except Exception:
         logger.warning("evolve: guideline generation LLM call failed", exc_info=True)
         return None

@@ -250,11 +250,18 @@ class LiteBackend(EvolveBackend):
     saves each returned guideline as an entity. Generation failures never
     propagate — capture must not break a session.
 
-    ``content_screen`` is an injected ``(text) -> list[str]`` callable that
-    returns threat-pattern ids found in a guideline about to be written; a
-    non-empty result refuses the write. It is injected rather than imported so
-    this module stays stdlib-only — the provider wires in Hermes'
+    ``content_screen`` is an injected
+    ``(content, trigger, rationale) -> list[str]`` callable that returns
+    threat-pattern ids found in a guideline about to be written; a non-empty
+    result refuses the write. It is injected rather than imported so this module
+    stays stdlib-only — the provider wires in Hermes'
     ``tools.threat_patterns.scan_for_threats``.
+
+    It takes the three fields rather than one pre-joined string because how they
+    are *combined* is what decides whether a pattern matches: recall renders
+    ``trigger`` and ``content`` onto one line, so a payload split across them
+    only matches after joining. That knowledge belongs to the provider, which
+    does the rendering, not here.
     """
 
     def __init__(
@@ -262,7 +269,7 @@ class LiteBackend(EvolveBackend):
         root: Any,
         *,
         guideline_generator: Optional[Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]]] = None,
-        content_screen: Optional[Callable[[str], List[str]]] = None,
+        content_screen: Optional[Callable[[str, str, str], List[str]]] = None,
     ) -> None:
         self.root = Path(root)
         self.entities_dir = self.root / "entities"
@@ -333,7 +340,7 @@ class LiteBackend(EvolveBackend):
         if self._content_screen is None:
             return []
         try:
-            return list(self._content_screen("\n".join(p for p in (content, trigger, rationale) if p)) or [])
+            return list(self._content_screen(content, trigger, rationale) or [])
         except Exception:
             # A broken screen must not become a way to block every write.
             logger.warning("evolve: content screen raised; allowing the write", exc_info=True)

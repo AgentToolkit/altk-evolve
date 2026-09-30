@@ -40,7 +40,7 @@ import threading
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from agent.memory_provider import MemoryProvider
 from tools.registry import tool_error
@@ -66,7 +66,17 @@ except Exception:  # pragma: no cover
 
 try:  # pragma: no cover - exercised via the injected screen; see _screen_stored_guideline
     from tools.threat_patterns import scan_for_threats
+
+    _THREAT_SCAN_AVAILABLE = True
 except Exception:  # pragma: no cover
+    # WARNING, not a silent pass-through: without the host scanner *both* write
+    # paths store unscanned model output, and a screen that finds nothing looks
+    # exactly like a store with nothing wrong in it. The README says writes are
+    # screened unconditionally, so the one state where that stops being true has
+    # to be visible in the log rather than inferred from its absence.
+    logger.warning("evolve: tools.threat_patterns unavailable -- stored guidelines will NOT be screened for threat patterns")
+
+    _THREAT_SCAN_AVAILABLE = False
 
     def scan_for_threats(content: str, scope: str = "context") -> List[str]:
         return []
@@ -88,6 +98,14 @@ _CONTEXT_UNSET = "<unset>"
 
 # How long prefetch waits on a queued worker before doing the lookup itself.
 _PREFETCH_JOIN_SECS = 3.0
+
+# Longest guideline field the content screen will accept. Well under the host's
+# MAX_SCAN_CHARS (65_536) so nothing we pass it is ever silently truncated --
+# see _scan_strict for why the cap is a refusal rather than a chunked scan.
+_MAX_FIELD_CHARS = 4000
+
+# Reported like a threat-pattern id so one refusal path covers both reasons.
+_OVERSIZED_FIELD = "oversized_field"
 
 
 # ---------------------------------------------------------------------------
@@ -272,23 +290,68 @@ def _format_guidelines(entries: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _screen_stored_guideline(text: str) -> List[str]:
-    """Threat-pattern ids in a guideline about to be written, or ``[]``.
+def _screen_candidates(content: str, trigger: str, rationale: str) -> List[str]:
+    """Every string a stored guideline can turn into, for the threat screen.
 
-    ``scope="context"`` is the set Hermes applies to memory entries and tool
-    results — which is what a recalled guideline becomes. Screening at write
-    time rather than read time is the point: a guideline that trips these
-    patterns would be stripped on the way into the prompt anyway, so storing it
-    only banks an entry that can never be used, and hides the fact that
-    generation produced something unusable.
+    Scanning the fields newline-joined is not enough on its own. Most of the
+    host's patterns are ``[^\\n]``-bounded, while ``_format_guidelines`` renders
+    ``[trigger] content`` onto a *single* line — so a payload split across the
+    two fields scans clean as separate lines and matches once recall joins them.
+    A ``curl -X POST ... -d`` trigger with a ``"k=$OPENAI_API_KEY"`` content is
+    the worked example: two innocent lines, one ``exfil_curl`` on the way in.
 
-    Injected into ``LiteBackend`` rather than imported there, because
-    ``backend.py`` stays stdlib-only.
+    So all three shapes are screened: the raw newline-joined fields (what the
+    entity file holds), the same joined after ``_flatten`` (whitespace collapsed,
+    tags escaped), and the rendered recall line itself.
+    """
+    fields = [p for p in (content, trigger, rationale) if p]
+    flat_trigger, flat_content = _flatten(trigger), _flatten(content)
+    rendered = f"[{flat_trigger}] {flat_content}" if flat_trigger else flat_content
+    return ["\n".join(fields), "\n".join(_flatten(p) for p in fields), rendered]
+
+
+def _scan_strict(content: str, trigger: str = "", rationale: str = "") -> List[str]:
+    """Threat-pattern ids across every shape of a guideline. Raises through.
+
+    ``scope="strict"`` — the set the host applies to *memory entries*, on write
+    and again on load (``tools/memory_tool_store.py``). Its own comment gives
+    the reason that applies here with more force than it does there: a memory
+    entry enters the system prompt as a frozen snapshot and persists until
+    explicitly removed, and a guideline is recalled into *every* later session.
+    The host's other reason — that a flagged entry can be rewritten — does not
+    hold for generated guidelines, since capture runs after the session ends.
+    That asymmetry argues for the narrower ``context`` set, and it is the wrong
+    trade: losing one generated guideline to a false positive costs a guideline,
+    while storing an exfil instruction costs every session that recalls it.
+    """
+    if max(len(content), len(trigger), len(rationale)) > _MAX_FIELD_CHARS:
+        # The host truncates at MAX_SCAN_CHARS (65_536) and returns findings only
+        # from the head, so padding a field walks a payload past the scanner
+        # entirely. Refusing is cheaper than chunk-scanning and keeps every
+        # screened byte actually screened -- a guideline is a sentence or two by
+        # design, so a field this long is already outside what capture produces.
+        return [_OVERSIZED_FIELD]
+    findings: Set[str] = set()
+    for candidate in _screen_candidates(content, trigger, rationale):
+        findings.update(scan_for_threats(candidate, scope="strict") or [])
+    return sorted(findings)
+
+
+def _screen_stored_guideline(content: str, trigger: str = "", rationale: str = "") -> List[str]:
+    """``_scan_strict``, fail-open, for injection into ``LiteBackend``.
+
+    Injected rather than imported there because ``backend.py`` stays
+    stdlib-only. Screening on write rather than scrubbing on read is the point:
+    a guideline that trips these patterns would be blocked on its way into the
+    prompt anyway, so storing it only banks an entry that can never be used and
+    hides the fact that generation produced something unusable.
     """
     try:
-        return list(scan_for_threats(text, scope="context") or [])
+        return _scan_strict(content, trigger, rationale)
     except Exception:
-        logger.debug("evolve: threat scan failed; allowing the write", exc_info=True)
+        # WARNING, not DEBUG: this write went to disk unscreened, which is the
+        # one outcome this function exists to prevent.
+        logger.warning("evolve: threat scan failed; allowing the write", exc_info=True)
         return []
 
 
@@ -747,18 +810,13 @@ class EvolveMemoryProvider(MemoryProvider):
             return tool_error("Guideline capture is disabled for this session context")
         trigger = str(args.get("trigger") or "")
         rationale = str(args.get("rationale") or "")
-        # scope="strict" — the same set tools/memory_tool.py applies to writes
-        # the model asks for. Broader than the "context" scope used on generated
-        # guidelines, and the extra false positives are acceptable here because
-        # the model gets the refusal back and can rewrite.
-        #
         # Unguarded, unlike the generated path's screen: a scanner that raises
         # here surfaces through handle_tool_call as a tool error the model can
         # retry, rather than a write nobody ever hears about.
-        findings = scan_for_threats("\n".join(p for p in (content, trigger, rationale) if p), scope="strict")
+        findings = _scan_strict(content, trigger, rationale)
         if findings:
-            logger.warning("evolve: evolve_save_guideline refused (%s)", ", ".join(sorted(findings)))
-            return tool_error(f"Guideline refused by the content screen: {', '.join(sorted(findings))}. Rewrite it without that content.")
+            logger.warning("evolve: evolve_save_guideline refused (%s)", ", ".join(findings))
+            return tool_error(f"Guideline refused by the content screen: {', '.join(findings)}. Rewrite it and try again.")
         path = self._backend.save_guideline(content=content, trigger=trigger, rationale=rationale)
         return json.dumps({"saved": True, "path": path})
 
