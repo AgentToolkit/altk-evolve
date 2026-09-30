@@ -423,6 +423,46 @@ class TestMarketplaceGeneration:
 
 @pytest.mark.platform_integrations
 @pytest.mark.unit
+class TestReadmesDoNotInvokeExcludedSkills:
+    """The regression guard for #335: each platform's README must not tell the
+    reader to invoke a skill that platform's `target_excludes` builds out.
+
+    The Claude README documented `/evolve-lite:learn` and `/evolve-lite:recall`
+    for months after both were excluded from the Claude plugin — `check_drift`
+    could not catch it, because the README rendered exactly as its source said.
+    Only the *invocable* token forms are forbidden; prose may still discuss an
+    absent skill in words (the rewritten READMEs say so explicitly).
+    """
+
+    def _invocation_tokens(self, skill: str) -> list[str]:
+        return [
+            f"evolve-lite:{skill}",
+            f"/evolve-lite:{skill}",
+            f"$evolve-lite:{skill}",
+            f"evolve-lite-{skill}",
+        ]
+
+    def test_no_readme_invokes_an_excluded_skill(self, rendered_repo, build_module):
+        manifest = build_module.load_manifest()
+        skills = [p.name for p in build_module._discover_skills()]
+        checked = 0
+        for platform, cfg in manifest.platforms.items():
+            readme = _plugin_root(manifest, platform) / "README.md"
+            if not readme.is_file():
+                continue
+            checked += 1
+            text = readme.read_text()
+            for skill in skills:
+                # `excludes` matches the source-side path, as PlatformConfig documents.
+                if not cfg.excludes(Path(f"skills/evolve-lite/{skill}/SKILL.md")):
+                    continue
+                for token in self._invocation_tokens(skill):
+                    assert token not in text, f"{platform}'s README invokes `{token}`, but {platform} excludes the `{skill}` skill"
+        assert checked, "no rendered READMEs were found — the guard checked nothing"
+
+
+@pytest.mark.platform_integrations
+@pytest.mark.unit
 class TestJinjaTemplating:
     def test_template_renders_with_per_platform_context(self, rendered_repo, build_module):
         """A .j2 source rendered for two non-excluded platforms produces platform-specific output."""

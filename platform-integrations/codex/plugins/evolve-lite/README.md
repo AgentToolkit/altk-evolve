@@ -6,12 +6,21 @@ A plugin that helps Codex save, recall, and share reusable entities across works
 
 ## Features
 
-- Automatic recall through a repo-level Codex `UserPromptSubmit` hook when Codex hooks are enabled
-- Manual `evolve-lite:learn` skill to save reusable entities into `.evolve/entities/`
-- Manual `evolve-lite:recall` skill to inspect everything stored for the current repo
-- Manual `evolve-lite:publish` skill to publish private guidelines to your public repo
-- Manual `evolve-lite:subscribe` and `evolve-lite:unsubscribe` skills to manage shared guideline repos
-- Automatic or manual `evolve-lite:sync` to mirror subscribed repos into local recall storage
+Recall and save are driven by instructions, not skills and not hooks. The
+installer writes `EVOLVE.md` — a self-directed memory contract telling the agent
+to read `./.evolve/entities/` as its first action on a non-trivial task, and to
+write an entity near the end only when it learned something durable — and points
+`~/.codex/AGENTS.md` at it. This plugin installs **no hooks** on any platform.
+
+The skills cover everything around that loop:
+
+- `evolve-lite:adapt-memory` — mirror a saved memory into the shared store
+- `evolve-lite:publish` — publish a private guideline to a write-scope repo
+- `evolve-lite:subscribe` / `evolve-lite:unsubscribe` — manage shared guideline repos
+- `evolve-lite:sync` — pull the latest from every configured repo
+- `evolve-lite:provenance` — report whether recalled entities influenced past sessions
+- `evolve-lite:retention` — flag or delete stale entities (dry-run by default)
+- `evolve-lite:save`, `evolve-lite:save-trajectory`, `evolve-lite:synthesize-skill` — capture a session's workflow
 
 ## Storage
 
@@ -58,20 +67,11 @@ sync:
 
 ## Source Layout
 
-This source tree intentionally omits `lib/`.
-
-The shared library lives in:
-
-```text
-platform-integrations/claude/plugins/evolve-lite/lib/
-```
-
-`platform-integrations/install.sh` installs Codex in this order:
-
-1. copy the Codex plugin source into `plugins/evolve-lite/`
-2. copy the shared `lib/` from the Claude plugin into `plugins/evolve-lite/lib/`
-3. wire the marketplace entry
-4. wire the Codex hooks
+This tree is generated. Do not edit it — the source of truth is
+`plugin-source/`, rendered by `plugin-source/build_plugins.py` (`just
+compile-plugins`). Files under `plugin-source/_codex/` ship to Codex only;
+everything else — the skills, `EVOLVE.md`, and the shared `lib/evolve-lite/` —
+is shared across hosts and rendered into each one's tree, including this one.
 
 ## Installation
 
@@ -81,24 +81,17 @@ Use the platform installer from the repo root:
 platform-integrations/install.sh install --platform codex
 ```
 
-That installs:
+That does four things:
 
-- `plugins/evolve-lite/`
-- `.agents/plugins/marketplace.json`
-- `.codex/hooks.json`
+1. copies the plugin to `plugins/evolve-lite/` (including `lib/evolve-lite/`)
+2. upserts the `evolve-lite` entry in `.agents/plugins/marketplace.json`
+3. writes `~/.codex/evolve-lite/EVOLVE.md` and injects a single pointer line
+   into `~/.codex/AGENTS.md` — Codex reads `AGENTS.md` verbatim and has no
+   `@`-import, so the pointer tells the agent to read that file on demand
+4. installs `~/.codex/evolve-lite/audit_recall.py` at that global path, because
+   `EVOLVE.md` names it absolutely
 
-Automatic recall requires Codex hooks to be enabled in `~/.codex/config.toml`:
-
-```toml
-[features]
-codex_hooks = true
-```
-
-If you do not want to enable Codex hooks, you can still invoke the installed `evolve-lite:recall` skill manually to load or inspect the saved guidance for the current repo.
-
-The installed Codex hook does not require `git`. It walks upward from the current working directory until it finds the repo-local `plugins/evolve-lite/.../retrieve_entities.py` script.
-
-The installer always registers a `SessionStart` hook with matcher `startup|resume`; it runs on every Codex session start or resume and exits quickly unless `sync.on_session_start` is enabled and at least one repo is configured in `evolve.config.yaml`.
+No hooks are registered and no `~/.codex/config.toml` changes are needed.
 
 ## Sharing Guidelines
 
@@ -188,15 +181,29 @@ See the [Codex example walkthrough](../../../../docs/examples/hello_world/codex.
 
 ## Included Skills
 
-### `evolve-lite:learn`
+There is no `learn` or `recall` skill — `EVOLVE.md` drives both directly, so a
+skill would be redundant double-delivery of the same instructions.
 
-Analyze the current session and save proactive Evolve entities as markdown files.
+### `evolve-lite:adapt-memory`
 
-### `evolve-lite:recall`
+Mirror a just-saved memory into the shared Evolve store so it becomes shareable
+and auditable alongside every other entity.
 
-Show the entities already stored for the current workspace, including
-guidelines pulled from any write- or read-scope repo under
-`.evolve/entities/subscribed/`.
+### `evolve-lite:provenance`
+
+Analyze saved trajectories and recall-audit events offline to record whether
+recalled entities influenced completed sessions.
+
+### `evolve-lite:retention`
+
+Apply data-retention rules to the local store — flag or delete stale and unused
+entities and expired sessions. Dry-run by default.
+
+### `evolve-lite:save` / `evolve-lite:save-trajectory` / `evolve-lite:synthesize-skill`
+
+Capture the current session: as a reusable skill, as a trajectory JSON file in
+OpenAI chat-completion format, or by promoting a saved trajectory into an
+executable skill.
 
 ### `evolve-lite:publish`
 
@@ -227,9 +234,10 @@ repos use hard reset to mirror the remote exactly.
 
 After installation, verify that:
 
-- `plugins/evolve-lite/` exists in the repo
+- `plugins/evolve-lite/` exists in the repo, with `lib/evolve-lite/entity_io.py` inside it
 - `.agents/plugins/marketplace.json` contains the `evolve-lite` entry
-- `.codex/hooks.json` contains the Evolve `UserPromptSubmit` and `SessionStart` hooks
+- `~/.codex/AGENTS.md` contains the Evolve pointer line, and
+  `~/.codex/evolve-lite/` holds `EVOLVE.md` plus `audit_recall.py`
 
 You can also run:
 
@@ -243,31 +251,26 @@ platform-integrations/install.sh status
 evolve-lite/
 ├── .codex-plugin/
 │   └── plugin.json
+├── EVOLVE.md                        # self-directed memory contract; copied to
+│                                    # ~/.codex/evolve-lite/ at install time
+├── lib/
+│   └── evolve-lite/                 # shared helpers used by the skill scripts
+│       ├── audit_recall.py
+│       ├── audit.py
+│       ├── config.py
+│       ├── entity_io.py
+│       └── retention.py
 ├── skills/
-│   ├── learn/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── save_entities.py
-│   ├── recall/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── retrieve_entities.py
-│   ├── publish/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── publish.py
-│   ├── subscribe/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── subscribe.py
-│   ├── unsubscribe/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── unsubscribe.py
-│   └── sync/
-│       ├── SKILL.md
-│       └── scripts/
-│           └── sync.py
-├── README.md
-└── lib/                       # copied in at install time from the Claude plugin
+│   └── evolve-lite/                 # namespace dir → skills are `evolve-lite:<name>`
+│       ├── adapt-memory/
+│       ├── provenance/
+│       ├── publish/
+│       ├── retention/
+│       ├── save/
+│       ├── save-trajectory/
+│       ├── subscribe/
+│       ├── sync/
+│       ├── synthesize-skill/
+│       └── unsubscribe/             # each: SKILL.md [+ scripts/]
+└── README.md
 ```
