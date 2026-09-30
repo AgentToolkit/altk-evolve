@@ -11,7 +11,7 @@ import hashlib
 import json
 import uuid
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from altk_evolve.retention.engine import RetentionEngine
 from altk_evolve.frontend.services.context import cancellation_requested
@@ -81,35 +81,56 @@ class Collection:
         return set(self.source_deletion_times(conn, entities))
 
     def source_deletion_times(self, conn: Any, entities: list[RecordedEntity]) -> dict[str, dt.datetime]:
-        """Resolve only exact provenance and exclude memories created after deletion."""
-        result = {}
-        for entity in entities:
-            metadata = entity.metadata or {}
-            from altk_evolve.schema.provenance import sources
+        """Require a later deletion receipt for every supporting source association.
 
-            if metadata.get("provenance_incomplete"):
+        Legacy associations without timestamps use the entity timestamp conservatively.
+        """
+        from altk_evolve.schema.provenance import sources
+
+        requirements: dict[str, dict[tuple[str, str, str], dt.datetime]] = {}
+        keys: set[tuple[str, str, str]] = set()
+        for entity in entities:
+            if (entity.metadata or {}).get("provenance_incomplete"):
                 continue
             supporting = [source for source in sources(entity) if source.get("status") == "supporting"]
             if not supporting:
                 continue
-            dates = []
+            required: dict[tuple[str, str, str], dt.datetime] = {}
             for source in supporting:
-                reference = source.get("conversation_id")
-                user = source.get("user_id")
-                agent = source.get("agent_id")
-                if not all(isinstance(v, str) and v.strip() for v in (reference, user, agent)):
+                key = (source.get("user_id"), source.get("agent_id"), source.get("conversation_id"))
+                if not all(isinstance(value, str) and value.strip() for value in key):
                     break
-                receipt = conn.execute(
-                    """SELECT deleted_at FROM evolve_retention_deleted_sources WHERE namespace_id=%s
-                    AND user_id=%s AND agent_id=%s AND source_id=%s AND date_trunc('second',deleted_at)>%s""",
-                    (self.namespace, user, agent, reference, entity.created_at),
-                ).fetchone()
-                if not receipt:
+                try:
+                    associated = dt.datetime.fromisoformat(source["associated_at"]) if "associated_at" in source else entity.created_at
+                    if associated.tzinfo is None:
+                        break
+                except (ValueError, TypeError):
                     break
-                dates.append(receipt["deleted_at"])
+                receipt_key = cast(tuple[str, str, str], key)
+                required[receipt_key] = max(required.get(receipt_key, associated), associated)
             else:
-                result[entity.id] = max(dates)
-        return result
+                requirements[entity.id] = required
+                keys.update(required)
+
+        # A conversation receipt covers all of its task contributions. Bound SQL
+        # parameters and fetch each distinct receipt once per collection page.
+        receipts = {}
+        ordered = sorted(keys)
+        for offset in range(0, len(ordered), 500):
+            batch = ordered[offset : offset + 500]
+            rows = conn.execute(
+                """SELECT user_id, agent_id, source_id, deleted_at FROM evolve_retention_deleted_sources
+                WHERE namespace_id=%s AND (user_id,agent_id,source_id) IN
+                (SELECT * FROM unnest(%s::text[], %s::text[], %s::text[]))""",
+                (self.namespace, [key[0] for key in batch], [key[1] for key in batch], [key[2] for key in batch]),
+            ).fetchall()
+            for row in rows:
+                receipts[(row["user_id"], row["agent_id"], row["source_id"])] = row["deleted_at"]
+        return {
+            entity_id: max(receipts[key] for key in required)
+            for entity_id, required in requirements.items()
+            if all(key in receipts and receipts[key].replace(microsecond=0) > associated for key, associated in required.items())
+        }
 
     def run(self, policy_id: str, *, initiated_by: str | None, run_id: str | None = None, limit: int = 1000) -> dict[str, Any]:
         run_id = run_id or str(uuid.uuid4())

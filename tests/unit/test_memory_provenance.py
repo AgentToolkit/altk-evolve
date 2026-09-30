@@ -85,8 +85,11 @@ def test_all_supporting_sources_must_have_receipts():
 
     class Connection:
         def execute(self, sql, values):
-            value = receipts.get(values[3])
-            return SimpleNamespace(fetchone=lambda: {"deleted_at": value} if value else None)
+            return SimpleNamespace(
+                fetchall=lambda: [
+                    {"user_id": "alice", "agent_id": "a", "source_id": source, "deleted_at": when} for source, when in receipts.items()
+                ]
+            )
 
     collection = object.__new__(Collection)
     collection.namespace = "n"
@@ -253,3 +256,22 @@ def test_source_reaffirmation_preserves_newer_access_stamp(backend):
     stored = backend.scan_entities("n")[0]
     assert stored.metadata["last_accessed"] == "2026-02-01"
     assert len(stored.metadata["sources"]) == 2
+
+
+def test_source_times_survive_content_updates_but_refresh_on_reaffirmation(backend):
+    backend.update_entities("n", [fact("original")], False)
+    old = backend.scan_entities("n")[0]
+    original_time = old.metadata["sources"][0]["associated_at"]
+
+    def reconcile(stored, incoming):
+        return [EntityUpdate(id=stored[0].id, type="fact", content=stored[0].content, event="UPDATE", incoming_ids=[incoming[0].id])]
+
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
+        backend.update_entities("n", [fact("second")])
+    sources = backend.scan_entities("n")[0].metadata["sources"]
+    assert sources[0]["associated_at"] == original_time
+    assert sources[1]["associated_at"] > original_time
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
+        backend.update_entities("n", [fact("original")])
+    sources = backend.scan_entities("n")[0].metadata["sources"]
+    assert next(s for s in sources if s["conversation_id"] == "original")["associated_at"] > original_time

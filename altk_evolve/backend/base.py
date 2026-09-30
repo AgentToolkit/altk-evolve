@@ -501,6 +501,12 @@ class BaseEntityBackend(ABC):
     def _prepare_storage(self, prepared: PreparedWrites) -> None:
         """Backend-specific expensive preparation, such as computing embeddings."""
 
+    def _reaffirm_entity(self, namespace_id: str, entity_id: str, metadata: dict, expected: RecordedEntity) -> None:
+        """Apply checked provenance; non-atomic backends must supply their own guard."""
+        if not self.supports_atomic_writes:
+            raise EvolveException("This backend cannot safely reaffirm source associations")
+        self._update_entity_metadata_impl(namespace_id, entity_id, metadata)
+
     def _apply_prepared(self, namespace_id: str, prepared: PreparedWrites) -> list[EntityUpdate]:
         updates = deepcopy(prepared.updates)
         for update in updates:
@@ -515,7 +521,7 @@ class BaseEntityBackend(ABC):
                     )
                 case "NONE":
                     if update.id in prepared.expected:
-                        self._update_entity_metadata_impl(namespace_id, update.id, update.metadata)
+                        self._reaffirm_entity(namespace_id, update.id, update.metadata, prepared.expected[update.id])
                 case "DELETE":
                     self._delete_entity(namespace_id, update.id)
         self._post_update(namespace_id)

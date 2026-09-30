@@ -553,3 +553,55 @@ def test_metadata_lock_coordinates_other_processes(milvus_backend):
         assert "database is locked" in blocked.stderr
     released = subprocess.run(command, capture_output=True, text=True, timeout=10)
     assert released.returncode == 0, released.stderr
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("change", ["sources", "legal_hold", "last_accessed"])
+def test_reaffirmation_checks_current_metadata_under_write_lock(milvus_backend, monkeypatch, change):
+    from contextlib import contextmanager
+
+    raw = {
+        "id": 1,
+        "type": "fact",
+        "content": "seed",
+        "created_at": 100,
+        "embedding": [0.1] * 384,
+        "metadata": {"sources": [{"conversation_id": "original"}], "legal_hold": False, "last_accessed": "old"},
+    }
+    expected = parse_milvus_entity(raw)
+    current = {
+        **raw,
+        "metadata": {
+            **raw["metadata"],
+            change: {"sources": [{"conversation_id": "concurrent"}], "legal_hold": True, "last_accessed": "new"}[change],
+        },
+    }
+    locked = False
+
+    @contextmanager
+    def lock():
+        nonlocal locked
+        locked = True
+        try:
+            yield
+        finally:
+            locked = False
+
+    def query(**kwargs):
+        assert locked
+        return [current]
+
+    write = Mock()
+    monkeypatch.setattr(milvus_backend, "_metadata_write", lock)
+    monkeypatch.setattr(milvus_backend, "_validate_namespace", lambda _: None)
+    monkeypatch.setattr(milvus_backend.milvus, "query", query)
+    monkeypatch.setattr(milvus_backend.milvus, "upsert", write)
+    monkeypatch.setattr(milvus_backend, "_post_update", lambda _: None)
+    patch_metadata = {**expected.metadata, "sources": [{"conversation_id": "incoming"}]}
+    if change == "last_accessed":
+        milvus_backend._reaffirm_entity("n", "1", patch_metadata, expected)
+        assert write.call_args.kwargs["data"]["metadata"]["last_accessed"] == "new"
+    else:
+        with pytest.raises(EvolveException, match="changed during provenance"):
+            milvus_backend._reaffirm_entity("n", "1", patch_metadata, expected)
+        write.assert_not_called()

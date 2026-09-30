@@ -1,6 +1,7 @@
 """Content-free source associations maintained alongside a memory's current value."""
 
 from copy import deepcopy
+from datetime import UTC, datetime
 from typing import Any
 from collections.abc import Sequence
 
@@ -36,7 +37,12 @@ def attach_sources(metadata: dict, old: Entity | None, incoming: Sequence[Entity
     result = deepcopy(metadata)
     if old is None and not any(sources(entity) for entity in incoming):
         return result
+    # Each association ages independently of later content revisions. Legacy
+    # associations conservatively start at the last known entity timestamp.
+    now = datetime.now(UTC).isoformat()
     associations = sources(old) if old is not None else []
+    for association in associations:
+        association.setdefault("associated_at", getattr(old, "created_at", datetime.now(UTC)).isoformat())
     complete = bool(associations) and not (old.metadata or {}).get("provenance_incomplete", False) if old is not None else True
     if supersedes:
         for association in associations:
@@ -46,6 +52,7 @@ def attach_sources(metadata: dict, old: Entity | None, incoming: Sequence[Entity
         additions = sources(entity)
         complete = complete and bool(additions) and not (entity.metadata or {}).get("provenance_incomplete", False)
         for source in additions:
+            source["associated_at"] = now
             key = tuple(source.get(k) for k in ("conversation_id", "task_id", "user_id", "agent_id"))
             associations = [
                 v for v in associations if tuple(v.get(k) for k in ("conversation_id", "task_id", "user_id", "agent_id")) != key

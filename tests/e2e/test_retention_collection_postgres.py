@@ -439,3 +439,47 @@ def test_multiple_sources_wait_for_last_receipt_and_grace(collection):
     assert collector.mark("p", initiated_by="admin")["marked"] == []
     collector.record_source_deletion("two", "alice", "a", (now - timedelta(days=1)).isoformat())
     assert collector.mark("p", initiated_by="admin")["marked"] == []
+
+
+def test_source_receipts_use_association_times_and_deduplicate_tasks(collection):
+    import json
+
+    collector, conn = collection
+    from datetime import datetime, UTC, timedelta
+
+    now = datetime.now(UTC)
+    metadata = {
+        "sources": [
+            {
+                "conversation_id": conversation,
+                "task_id": str(task),
+                "user_id": "alice",
+                "agent_id": "a",
+                "status": "supporting",
+                "associated_at": (now - timedelta(days=days)).isoformat(),
+            }
+            for conversation, days in [("old", 30), ("new", 10)]
+            for task in range(100)
+        ]
+    }
+    conn.execute(
+        "UPDATE ns_a SET created_at=%s,metadata=%s::jsonb WHERE id=1", (int((now - timedelta(days=10)).timestamp()), json.dumps(metadata))
+    )
+    collector.record_source_deletion("old", "alice", "a", (now - timedelta(days=20)).isoformat())
+    collector.record_source_deletion("new", "alice", "a", (now - timedelta(days=2)).isoformat())
+    entity = collector.entity(conn.execute("SELECT * FROM ns_a WHERE id=1").fetchone())
+
+    class Count:
+        calls = 0
+
+        def execute(self, *args):
+            self.calls += 1
+            return conn.execute(*args)
+
+    counted = Count()
+    times = collector.source_deletion_times(counted, [entity])
+    assert times == {"1": now - timedelta(days=2)}
+    assert counted.calls == 1
+    # Reusing a deleted conversation requires a new receipt; old evidence is not permission.
+    entity.metadata["sources"][0]["associated_at"] = now.isoformat()
+    assert collector.source_deletion_times(conn, [entity]) == {}

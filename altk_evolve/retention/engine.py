@@ -263,6 +263,8 @@ class RetentionEngine:
             # Multi-source memories use receipt-based retention; a single trajectory
             # cannot own a memory still supported by another conversation.
             metadata = e.metadata or {}
+            if e.type == "trajectory" and not metadata.get(self.SOURCE_KEY):
+                continue
             if "sources" in metadata:
                 from altk_evolve.schema.provenance import sources
 
