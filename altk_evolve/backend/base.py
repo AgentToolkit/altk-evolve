@@ -486,7 +486,7 @@ class BaseEntityBackend(ABC):
         """Run policy hooks and optional semantic reconciliation against available memory.
 
         Hook metadata patches are collected, not persisted. Reads need not describe
-        one namespace revision; only destructive targets are checked at commit.
+        one namespace revision; targets with content or metadata changes are checked at commit.
         """
         from altk_evolve.hooks.backend import collect_metadata_patches
 
@@ -533,7 +533,7 @@ class BaseEntityBackend(ABC):
         Source aliases are linked atomically, including on duplicate delivery.
         Models, hooks, and embeddings must have finished in prepare_updates().
         A checkpoint requires an atomic backend; ordinary untracked writes retain
-        support for non-transactional backends. Only touched replacement/delete
+        support for non-transactional backends. Only touched content/metadata/delete
         targets are compared on atomic backends; advisory access stamps are rebased.
         Non-atomic backends retain best-effort writes without pretending to offer CAS.
         Only unchanged receipts from prepare_updates() may enter this method.
