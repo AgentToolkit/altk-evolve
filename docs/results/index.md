@@ -28,4 +28,4 @@ For full details on the architecture, experiments, and analysis, see:
 For the systems framing — why agent memory belongs in a pluggable middleware layer, and the six
 challenges Evolve is a reference implementation for — see:
 
-> [Memory as Middleware for Self-Improving AI Agents](https://arxiv.org/abs/2609.32091) (arXiv:2609.32091) — conditionally accepted to Middleware 2026
+> [Memory as Middleware for Self-Improving AI Agents](https://arxiv.org/abs/2609.32091) (arXiv:2609.32091) — to appear at Middleware 2026
