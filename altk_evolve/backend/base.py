@@ -359,11 +359,14 @@ class BaseEntityBackend(ABC):
                 for decision in decisions:
                     if decision.type != entity_type:
                         raise EvolveException("Conflict resolution changed entity type")
+                    if any(value not in incoming_by_id for value in decision.incoming_ids):
+                        raise EvolveException("Conflict resolution returned an unknown source ID")
                     if decision.event == "ADD":
                         if decision.id not in incoming_by_id:
                             raise EvolveException("Conflict resolution returned an unknown incoming ID")
                         original = incoming_by_id[decision.id]
-                        decision.metadata = attach_sources(original.metadata, None, [original])
+                        contributors = [incoming_by_id[value] for value in dict.fromkeys([decision.id, *decision.incoming_ids])]
+                        decision.metadata = attach_sources(original.metadata, None, contributors)
                         if decision.metadata.get("sources"):
                             decision.metadata["memory_revision"] = 1
                     else:
@@ -371,8 +374,6 @@ class BaseEntityBackend(ABC):
                             continue
                         if decision.id not in candidates:
                             raise EvolveException("Conflict resolution returned an out-of-scope entity ID")
-                        if any(value not in incoming_by_id for value in decision.incoming_ids):
-                            raise EvolveException("Conflict resolution returned an unknown source ID")
                         old = candidates[decision.id]
                         contributors = [incoming_by_id[value] for value in dict.fromkeys(decision.incoming_ids)]
                         # Older/custom prompts may omit associations. Preserve known provenance,
@@ -544,7 +545,7 @@ class BaseEntityBackend(ABC):
         for batch in batches:
             batch._assert_authorized(self, namespace_id)
             for update in batch.updates:
-                if update.event in ("UPDATE", "DELETE"):
+                if update.event in ("UPDATE", "DELETE") or (update.event == "NONE" and update.id in batch.expected):
                     if update.id in targets:
                         raise EvolveException(f"Multiple prepared mutations target entity {update.id}")
                     targets.add(update.id)
@@ -585,7 +586,7 @@ class BaseEntityBackend(ABC):
 
                 applied = replace(batch, updates=deepcopy(batch.updates))
                 for update in applied.updates:
-                    if update.event == "UPDATE" and update.id in current_targets:
+                    if update.event in ("UPDATE", "NONE") and update.id in current_targets:
                         metadata = current_targets[update.id].metadata
                         if "last_accessed" in metadata:
                             update.metadata = {**(update.metadata or {}), "last_accessed": metadata["last_accessed"]}

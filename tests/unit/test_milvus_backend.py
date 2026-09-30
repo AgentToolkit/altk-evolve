@@ -505,7 +505,7 @@ def test_nonatomic_milvus_writes_do_not_require_a_bounded_scan(milvus_backend, m
         "altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts",
         lambda *a, **kw: [
             EntityUpdate(id="1201", type="note", content="replacement", event=event),
-            EntityUpdate(id="new", type="note", content="addition", event="ADD"),
+            EntityUpdate(id=a[1][0].id, type="note", content="addition", event="ADD"),
         ],
     )
     write = Mock()

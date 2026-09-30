@@ -204,3 +204,52 @@ def test_stale_prepared_sources_do_not_commit_checkpoint(backend):
         fresh = backend.prepare_updates("n", [fact("third")])
         backend.commit_prepared("n", [fresh], checkpoint=("two", {}))
     assert {s["conversation_id"] for s in backend.scan_entities("n")[0].metadata["sources"]} == {"first", "second", "third"}
+
+
+def test_add_preserves_all_explicit_sources_and_rejects_unknown_ids(backend):
+    def reconcile(old, new):
+        return [EntityUpdate(id=new[0].id, type="fact", content="combined", event="ADD", incoming_ids=[new[1].id])]
+
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
+        backend.update_entities("n", [fact("one"), fact("two")])
+    assert {s["conversation_id"] for s in backend.scan_entities("n")[0].metadata["sources"]} == {"one", "two"}
+
+    def invalid(old, new):
+        return [EntityUpdate(id=new[0].id, type="fact", content="bad", event="ADD", incoming_ids=["unknown"])]
+
+    before = backend.scan_entities("n")
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=invalid):
+        with pytest.raises(EvolveException, match="unknown source ID"):
+            backend.update_entities("n", [fact("three")])
+    assert backend.scan_entities("n") == before
+
+
+def test_source_only_batches_cannot_overwrite_each_other(backend):
+    backend.update_entities("n", [fact("original")], False)
+
+    def reconcile(old, new):
+        return [EntityUpdate(id=old[0].id, type="fact", content=old[0].content, event="NONE", incoming_ids=[new[0].id])]
+
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
+        batches = [backend.prepare_updates("n", [fact(source)]) for source in ["one", "two"]]
+    with pytest.raises(EvolveException, match="Multiple prepared mutations"):
+        backend.commit_prepared("n", batches, checkpoint=("batch", {}))
+    assert backend.get_processing_checkpoint("n", "batch") is None
+    assert len(backend.scan_entities("n")[0].metadata["sources"]) == 1
+
+
+def test_source_reaffirmation_preserves_newer_access_stamp(backend):
+    backend.update_entities("n", [fact("original")], False)
+    entity_id = backend.scan_entities("n")[0].id
+    backend.update_entity_metadata("n", entity_id, {"last_accessed": "2026-01-01"})
+
+    def reconcile(old, new):
+        return [EntityUpdate(id=old[0].id, type="fact", content=old[0].content, event="NONE", incoming_ids=[new[0].id])]
+
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
+        prepared = backend.prepare_updates("n", [fact("second")])
+    backend.update_entity_metadata("n", entity_id, {"last_accessed": "2026-02-01"})
+    backend.commit_prepared("n", [prepared])
+    stored = backend.scan_entities("n")[0]
+    assert stored.metadata["last_accessed"] == "2026-02-01"
+    assert len(stored.metadata["sources"]) == 2
