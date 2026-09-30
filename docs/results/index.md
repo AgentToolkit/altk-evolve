@@ -19,13 +19,8 @@ A ReAct agent received the task instruction plus the top 5 retrieved guidelines 
 - **Complexity scaling:** The harder the task, the more the agent benefits from learned guidelines. Hard tasks saw a 74% relative increase in success rate.
 - **Consistency:** SGC gains exceeded raw pass-rate improvements, reducing "flaky" behavior across scenario variants. Guidelines help the agent solve tasks reliably, not just occasionally.
 
-## Papers
+## Paper
 
 For full details on the architecture, experiments, and analysis, see:
 
 > [Trajectory-Informed Memory Generation for Self-Improving Agent Systems](https://arxiv.org/abs/2603.10600) (arXiv:2603.10600)
-
-For the systems framing — why agent memory belongs in a pluggable middleware layer, and the six
-challenges Evolve is a reference implementation for — see:
-
-> [Memory as Middleware for Self-Improving AI Agents](https://arxiv.org/abs/2609.32091) (arXiv:2609.32091) — to appear at Middleware 2026
