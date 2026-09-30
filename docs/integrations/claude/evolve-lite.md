@@ -100,7 +100,7 @@ This example shows how Evolve Lite helps an agent avoid dead ends it encountered
 To run it, first build the Docker image:
 
 ```bash
-just sandbox-build target=claude
+just sandbox-build claude
 ```
 
 Then run a task to extract metadata from an image:
