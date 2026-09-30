@@ -211,7 +211,12 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
                 "messages": _drop_non_input_message_keys(_strip_orphaned_tool_messages(current_messages.copy())),
                 "llm_params": {"model": model},
             }
-            if raw_response_type == "tool_calls":
+            # Pass the tool schemas for all OpenAIAgent steps, not only tool_calls steps.
+            # Content steps from a tool-equipped agent are resampled with the same bound tools
+            # the original inference had; without them the model may infer tool names from
+            # message history and generate a tool call with no schema to validate against,
+            # causing providers such as Groq to return tool_use_failed (400).
+            if tools and step_name == "OpenAIAgent":
                 step["tools"] = tools
 
             steps.append(step)

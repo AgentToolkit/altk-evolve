@@ -187,6 +187,51 @@ class TestTransformTrajectoryToIR:
 
         assert ir["steps"][0]["tools"] == SAMPLE_TOOLS
 
+    def test_content_step_also_carries_tools_schema_for_openai_agent(self):
+        """Content steps from a tool-equipped agent must also receive the tools schema.
+
+        Without it the model can infer tool names from message history and generate a
+        tool call with no schema to validate against, causing providers such as Groq to
+        return tool_use_failed (400).
+        """
+        trajectory = {
+            "trace_id": "trace_content_tools",
+            "model": "gpt-4o",
+            "tools": SAMPLE_TOOLS,
+            "messages": [
+                {"role": "user", "content": "What is 2+3?"},
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "1", "type": "function", "function": {"name": "add", "arguments": "{}"}}],
+                },
+                {"role": "tool", "tool_call_id": "1", "content": "5"},
+                {"role": "assistant", "content": "The answer is 5."},
+            ],
+        }
+
+        ir = transform_trajectory_to_IR(trajectory)
+
+        tool_calls_step, content_step = ir["steps"]
+        assert tool_calls_step["raw_response_type"] == "tool_calls"
+        assert content_step["raw_response_type"] == "content"
+        assert content_step["tools"] == SAMPLE_TOOLS, "content step must carry tools too"
+
+    def test_content_step_does_not_carry_tools_for_any_agent(self):
+        """AnyAgent trajectories have no tools schema; content steps must not get a tools key."""
+        trajectory = {
+            "trace_id": "trace_any_agent_no_tools",
+            "model": "gpt-4o",
+            "tools": None,
+            "messages": [
+                {"role": "user", "content": "What is 2+3?"},
+                {"role": "assistant", "content": "The answer is 5."},
+            ],
+        }
+
+        ir = transform_trajectory_to_IR(trajectory)
+
+        assert "tools" not in ir["steps"][0]
+
 
 class TestStripOrphanedToolMessages:
     def test_keeps_tool_message_preceded_by_tool_calls(self):

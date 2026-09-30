@@ -220,6 +220,7 @@ def _completion_single(kwargs: dict, model_id: str, index: int) -> tuple[Any | N
     # other's prompt. Values are shared, but nothing downstream mutates them.
     call_kwargs = {**kwargs, "messages": [dict(m) for m in kwargs["messages"]]}
     last_error: Exception | None = None
+    no_tools_in_request = "tools" not in kwargs
     for attempt in range(_SINGLE_ATTEMPTS):
         if attempt > 0:
             # Short exponential backoff (0.2s, 0.4s) before retry to avoid hammering on rate limits
@@ -230,12 +231,14 @@ def _completion_single(kwargs: dict, model_id: str, index: int) -> tuple[Any | N
             logger.debug(f"Sample {index} non-retryable error for {model_id}: {e}")
             return None, e
         except BadRequestError as e:
-            # tool_use_failed means the model called a tool when tool_choice="none" was set
-            # (or no tools were offered). Retrying the identical prompt will produce the same
-            # result every time, so treat it as a non-retryable discard rather than burning
-            # the retry budget.
-            if "tool_use_failed" in str(e):
-                logger.debug(f"Sample {index} tool_use_failed for {model_id} — discarding without retry")
+            # tool_use_failed on a request that carried no tools means the model generated
+            # a tool call from message-history context with no schema to validate against.
+            # No schema was offered, so every retry will produce the same rejection — skip
+            # the retry budget. When tools *are* in the request, tool_use_failed indicates
+            # a malformed call (wrong args, unknown name) that a temperature-0.5 retry
+            # often recovers from, so we fall through to the normal retry path in that case.
+            if "tool_use_failed" in str(e) and no_tools_in_request:
+                logger.debug(f"Sample {index} tool_use_failed (no tools in request) for {model_id} — discarding without retry")
                 return None, e
             last_error = e
             logger.debug(f"Sample {index} attempt {attempt + 1}/{_SINGLE_ATTEMPTS} failed for {model_id}: {e}")
@@ -293,8 +296,10 @@ def get_response_sampling(
     with extract_raw_samples() in resampling.py (handles both the .message.tool_calls
     and .message.content paths).
 
-    Raises EvolveException only when fewer than two samples could be obtained at all
-    (or none, for samples=1) — a partial result is scoreable, just noisier.
+    Raises EvolveException when fewer than the required minimum samples could be
+    obtained, unless the failure was specifically tool_use_failed on a request that
+    carried no tools (structural mismatch — returns [] so the step scores as
+    consistency undefined). Hard errors (auth, permission, context window) always raise.
     """
     messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
     # Dispatched once, OUTSIDE every attempt below, so retries and the k parallel
@@ -350,11 +355,19 @@ def get_response_sampling(
         # different step won't help and the trajectory is unscoreable.
         if last_error is not None and isinstance(last_error, _NON_RETRYABLE_EXCEPTIONS):
             raise EvolveException(msg) from last_error
-        # Soft failures (tool_use_failed, transient 400s, rate limits that exhausted
-        # retries): return an empty list so the step scores as consistency undefined (-1)
-        # and the pipeline continues with the remaining steps rather than crashing.
-        logger.warning(msg + " — step will score as consistency undefined.")
-        return []
+        # tool_use_failed with no tools in the request: the model generated a tool call
+        # from message-history context with no schema offered — a structural mismatch that
+        # the resampling layer will score as undefined (-1). Degrade gracefully so the
+        # pipeline continues with the remaining steps rather than crashing.
+        # When tools *are* present, tool_use_failed means something else (malformed call,
+        # wrong args) and should surface as a real error.
+        if last_error is not None and isinstance(last_error, BadRequestError) and "tool_use_failed" in str(last_error) and not tools:
+            logger.warning(msg + " — step will score as consistency undefined (tool_use_failed with no tools in request).")
+            return []
+        # All other failures (wrong model name, bad api_base, rate limits that exhaust
+        # retries, 5xx, generic 400s): these indicate a real configuration or
+        # infrastructure problem that should not be silently swallowed.
+        raise EvolveException(msg) from last_error
     if len(choices) < target:
         logger.warning(
             f"Requested {target} samples from {model_id} but obtained {len(choices)}. "
