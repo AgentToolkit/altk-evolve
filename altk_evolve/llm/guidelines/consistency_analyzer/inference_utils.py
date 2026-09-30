@@ -65,6 +65,44 @@ _NON_RETRYABLE_EXCEPTIONS = (
     ContextWindowExceededError,
 )
 
+
+def _is_tool_use_failed(e: Exception) -> bool:
+    """True when `e` is the specific tool_use_failed BadRequestError used for graceful degradation."""
+    return isinstance(e, BadRequestError) and "tool_use_failed" in str(e)
+
+
+def _prefer_hard_error(a: Exception | None, b: Exception | None) -> Exception | None:
+    """Return the more severe of two errors, using a three-tier priority.
+
+    Priority (highest wins):
+    1. Hard non-retryable errors (auth, permission, context window) — always fatal.
+    2. Any other error that is not tool_use_failed — indicates a real infrastructure
+       or configuration problem that should surface rather than be silently swallowed.
+    3. tool_use_failed BadRequestError — the one soft failure eligible for graceful
+       degradation; loses to any harder error so that a RuntimeError on a later sample
+       cannot be hidden behind an earlier tool_use_failed.
+
+    Preference is given to `a` when both errors have the same tier.
+    """
+    if a is None:
+        return b
+    if b is None:
+        return a
+    # Tier 1: prefer hard non-retryable errors regardless of arrival order.
+    a_hard = isinstance(a, _NON_RETRYABLE_EXCEPTIONS)
+    b_hard = isinstance(b, _NON_RETRYABLE_EXCEPTIONS)
+    if b_hard and not a_hard:
+        return b
+    if a_hard and not b_hard:
+        return a
+    # Both hard or neither hard: prefer the one that is NOT tool_use_failed.
+    a_tuf = _is_tool_use_failed(a)
+    b_tuf = _is_tool_use_failed(b)
+    if a_tuf and not b_tuf:
+        return b
+    return a
+
+
 # Providers that advertise `n` through get_supported_openai_params but reject n>1 at
 # the API. Same special-casing as the constrained-decoding checks in guidelines.py,
 # clustering.py and consistency_guidelines.py.
@@ -200,6 +238,7 @@ def _completion_single(kwargs: dict, model_id: str, index: int) -> tuple[Any | N
     # other's prompt. Values are shared, but nothing downstream mutates them.
     call_kwargs = {**kwargs, "messages": [dict(m) for m in kwargs["messages"]]}
     last_error: Exception | None = None
+    no_tools_in_request = "tools" not in kwargs
     for attempt in range(_SINGLE_ATTEMPTS):
         if attempt > 0:
             # Short exponential backoff (0.2s, 0.4s) before retry to avoid hammering on rate limits
@@ -209,6 +248,19 @@ def _completion_single(kwargs: dict, model_id: str, index: int) -> tuple[Any | N
         except _NON_RETRYABLE_EXCEPTIONS as e:
             logger.debug(f"Sample {index} non-retryable error for {model_id}: {e}")
             return None, e
+        except BadRequestError as e:
+            # tool_use_failed on a request that carried no tools means the model generated
+            # a tool call from message-history context with no schema to validate against.
+            # No schema was offered, so every retry will produce the same rejection — skip
+            # the retry budget. When tools *are* in the request, tool_use_failed indicates
+            # a malformed call (wrong args, unknown name) that a temperature-0.5 retry
+            # often recovers from, so we fall through to the normal retry path in that case.
+            if "tool_use_failed" in str(e) and no_tools_in_request:
+                logger.debug(f"Sample {index} tool_use_failed (no tools in request) for {model_id} — discarding without retry")
+                return None, e
+            last_error = e
+            logger.debug(f"Sample {index} attempt {attempt + 1}/{_SINGLE_ATTEMPTS} failed for {model_id}: {e}")
+            continue
         except Exception as e:
             last_error = e
             logger.debug(f"Sample {index} attempt {attempt + 1}/{_SINGLE_ATTEMPTS} failed for {model_id}: {e}")
@@ -234,7 +286,9 @@ def _completion_loop(kwargs: dict, count: int, model_id: str) -> tuple[list, Exc
             results = list(pool.map(lambda i: _completion_single(kwargs, model_id, i), range(count)))
 
     choices = [c for c, _ in results if c is not None]
-    last_error = next((err for _, err in reversed(results) if err is not None), None)
+    last_error = None
+    for _, err in results:
+        last_error = _prefer_hard_error(last_error, err)
     if len(choices) < count:
         logger.warning(f"{count - len(choices)} of {count} resampling calls to {model_id} failed after retries")
     return choices, last_error
@@ -249,6 +303,7 @@ def get_response_sampling(
     stop=None,
     logprobs: bool = False,
     tools: list | None = None,
+    tool_choice: str | None = None,
     custom_llm_provider: str | None = None,
 ) -> list:
     """Get `samples` sampled responses, whether or not the provider supports n>1.
@@ -259,8 +314,11 @@ def get_response_sampling(
     with extract_raw_samples() in resampling.py (handles both the .message.tool_calls
     and .message.content paths).
 
-    Raises EvolveException only when fewer than two samples could be obtained at all
-    (or none, for samples=1) — a partial result is scoreable, just noisier.
+    Returns [] without raising when the only failures were tool_use_failed on a request
+    that carried no tools (structural mismatch — the step scores as consistency undefined).
+    Raises EvolveException for all other failures: hard errors (auth, permission, context
+    window), infrastructure problems (wrong model, bad api_base, exhausted rate limits),
+    and tool_use_failed when tools *are* present (malformed call, wrong args).
     """
     messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
     # Dispatched once, OUTSIDE every attempt below, so retries and the k parallel
@@ -281,6 +339,8 @@ def get_response_sampling(
         kwargs["logprobs"] = logprobs
     if tools:
         kwargs["tools"] = tools
+    if tool_choice is not None:
+        kwargs["tool_choice"] = tool_choice
 
     choices: list = []
     last_error: Exception | None = None
@@ -302,7 +362,7 @@ def get_response_sampling(
             loop_choices, loop_error = _completion_loop(kwargs, target - len(choices), model_id)
             choices += loop_choices
             if loop_error is not None:
-                last_error = loop_error
+                last_error = _prefer_hard_error(last_error, loop_error)
 
     required = min(MIN_USABLE_SAMPLES, target)
     if len(choices) < required:
@@ -310,9 +370,23 @@ def get_response_sampling(
             f"Requested {target} samples from {model_id} but only obtained {len(choices)}. "
             f"Consistency scoring requires at least {required}."
         )
-        if last_error is not None:
+        # Hard errors (auth, permission, context window) are always fatal — retrying a
+        # different step won't help and the trajectory is unscoreable.
+        if last_error is not None and isinstance(last_error, _NON_RETRYABLE_EXCEPTIONS):
             raise EvolveException(msg) from last_error
-        raise EvolveException(msg)
+        # tool_use_failed with no tools in the request: the model generated a tool call
+        # from message-history context with no schema offered — a structural mismatch that
+        # the resampling layer will score as undefined (-1). Degrade gracefully so the
+        # pipeline continues with the remaining steps rather than crashing.
+        # When tools *are* present, tool_use_failed means something else (malformed call,
+        # wrong args) and should surface as a real error.
+        if last_error is not None and isinstance(last_error, BadRequestError) and "tool_use_failed" in str(last_error) and not tools:
+            logger.warning(msg + " — step will score as consistency undefined (tool_use_failed with no tools in request).")
+            return []
+        # All other failures (wrong model name, bad api_base, rate limits that exhaust
+        # retries, 5xx, generic 400s): these indicate a real configuration or
+        # infrastructure problem that should not be silently swallowed.
+        raise EvolveException(msg) from last_error
     if len(choices) < target:
         logger.warning(
             f"Requested {target} samples from {model_id} but obtained {len(choices)}. "

@@ -302,14 +302,21 @@ def test_partial_loop_results_are_accepted_with_a_warning(caplog):
 
 
 @pytest.mark.unit
-def test_raises_when_fewer_than_two_samples_survive_and_preserves_cause():
-    """Below two samples there is no variance to measure, so surface a real error with __cause__."""
-    err = RuntimeError("boom")
+def test_tool_use_failed_without_tools_returns_empty_list():
+    """tool_use_failed when no tools were in the request returns [] so the step scores
+    as consistency undefined (-1) rather than crashing the pipeline.  This is the one
+    soft failure that degrades gracefully; all other generic errors still raise."""
+    from litellm.exceptions import BadRequestError
+
+    err = BadRequestError(
+        message='{"error":{"code":"tool_use_failed","message":"Tool choice is none, but model called a tool"}}',
+        model="gpt-4o",
+        llm_provider="openai",
+    )
     with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
         with patch.object(inference_utils, "completion", side_effect=err):
-            with pytest.raises(EvolveException, match="only obtained 0") as exc_info:
-                _sample()
-            assert exc_info.value.__cause__ is err
+            result = _sample()  # no tools= kwarg
+    assert result == []
 
 
 @pytest.mark.unit
@@ -337,6 +344,75 @@ def test_deterministic_error_in_loop_stops_retry_immediately():
             assert isinstance(exc_info.value.__cause__, ContextWindowExceededError)
             # 5 loop calls each fail fast without retry = 5 total calls (instead of 15)
             assert mock_completion.call_count == 5
+
+
+@pytest.mark.unit
+def test_hard_error_not_overwritten_by_later_soft_error():
+    """A hard error on an early sample must not be displaced by a later soft error.
+
+    Without _prefer_hard_error, _completion_loop picks the *last* error in arrival
+    order, so a tool_use_failed on sample 5 would overwrite an AuthenticationError on
+    sample 1. get_response_sampling would then see a soft error and fall through to the
+    graceful-degradation path instead of raising EvolveException.
+    """
+    from litellm.exceptions import AuthenticationError, BadRequestError
+
+    auth_err = AuthenticationError(message="invalid api key", model="gpt-4o", llm_provider="openai")
+    soft_err = BadRequestError(message='{"error":{"code":"tool_use_failed"}}', model="gpt-4o", llm_provider="openai")
+    # Sample 0 gets the hard auth error; samples 1-4 get the soft tool_use_failed.
+    side_effects = [auth_err] + [soft_err] * 4
+    call_count = 0
+
+    def side_effect(**kwargs):
+        nonlocal call_count
+        err = side_effects[min(call_count, len(side_effects) - 1)]
+        call_count += 1
+        raise err
+
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
+        with patch.object(inference_utils, "completion", side_effect=side_effect):
+            with pytest.raises(EvolveException) as exc_info:
+                _sample()
+            # The hard auth error must be the __cause__, not the soft tool_use_failed.
+            assert isinstance(exc_info.value.__cause__, AuthenticationError)
+
+
+@pytest.mark.unit
+def test_tool_use_failed_then_runtime_error_raises_not_degrades():
+    """A tool_use_failed on sample 0 must not hide a RuntimeError on later samples.
+
+    Before the three-tier _prefer_hard_error fix, _completion_loop would keep the
+    first error it accumulated (tool_use_failed) because _prefer_hard_error only
+    promoted _NON_RETRYABLE_EXCEPTIONS.  get_response_sampling then saw a
+    tool_use_failed with no tools and returned [], masking the real failure.
+
+    After the fix, RuntimeError (tier 2) beats tool_use_failed (tier 3), so the
+    accumulated error is RuntimeError and get_response_sampling raises EvolveException.
+    """
+    from litellm.exceptions import BadRequestError
+
+    tuf_err = BadRequestError(
+        message='{"error":{"code":"tool_use_failed","message":"Tool choice is none, but model called a tool"}}',
+        model="gpt-4o",
+        llm_provider="openai",
+    )
+    infra_err = RuntimeError("connection timeout")
+    # Sample 0 → tool_use_failed (no retry); samples 1-4 → RuntimeError (retried 3× each).
+    call_count = 0
+
+    def side_effect(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise tuf_err
+        raise infra_err
+
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
+        with patch.object(inference_utils, "completion", side_effect=side_effect):
+            with pytest.raises(EvolveException) as exc_info:
+                _sample()  # no tools= kwarg
+            # The infrastructure error must be the __cause__, not the soft tool_use_failed.
+            assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
 # ── concurrency ──────────────────────────────────────────────────────
@@ -717,3 +793,198 @@ def test_capped_sample_count_does_not_break_tool_call_scoring():
         scored = compute_step_consistency(trajectory, {"max_samples": config_max, "aggregation": "mean", "agents": agents})
         consistency = scored["steps"][0]["consistency"]["step_consistency"]
         assert consistency > 0, f"config max_samples={config_max} with 5 real samples scored {consistency}"
+
+
+# ── kind-mismatch filtering in resample_trajectory ───────────────────
+
+
+@pytest.mark.unit
+def test_kind_mismatched_tool_call_samples_dropped_from_content_step(caplog):
+    """When a content step's samples come back as tool calls, they must be dropped.
+
+    After tools are passed to content steps, the model may still choose to call a tool.
+    Scoring a list-shaped tool-call sample with the text metric yields ~0.998 falsely
+    high consistency. Dropping them lets the step fall back to -1 (undefined).
+    """
+    from unittest.mock import MagicMock
+
+    from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
+
+    # Build a mock choice that looks like a tool call response
+    def _tool_call_choice():
+        tc = MagicMock()
+        tc.model_dump.return_value = {"function": {"name": "get_data", "arguments": "{}"}, "type": "function"}
+        choice = MagicMock()
+        choice.finish_reason = "tool_calls"
+        choice.message.tool_calls = [tc]
+        choice.message.content = ""
+        choice.message.reasoning_content = None
+        return choice
+
+    tool_samples = [_tool_call_choice() for _ in range(3)]
+
+    with patch("altk_evolve.llm.guidelines.consistency_analyzer.resampling.get_response_sampling", return_value=tool_samples):
+        with caplog.at_level("WARNING"):
+            result = resample_trajectory(
+                trajectory={
+                    "name": "test",
+                    "steps": [
+                        {
+                            "name": "OpenAIAgent_content",
+                            "raw_response_type": "content",
+                            "messages": [{"role": "user", "content": "hello"}],
+                            "llm_params": {"model": "gpt-4o"},
+                        }
+                    ],
+                },
+                samples=3,
+                model_name="gpt-4o",
+            )
+
+    step = result["steps"][0]
+    assert step["sampling"]["num_samples"] == 0, "tool-call samples must be dropped from a content step"
+    assert step["sampling"]["raw_samples"] == []
+    assert "did not match the recorded response type 'content'" in caplog.text
+
+
+@pytest.mark.unit
+def test_kind_mismatched_content_samples_dropped_from_tool_calls_step(caplog):
+    """The mirror case: text samples on a tool_calls step are also dropped."""
+    from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
+
+    def _text_choice_mock(content):
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message.tool_calls = None
+        choice.message.content = content
+        choice.message.reasoning_content = None
+        return choice
+
+    from unittest.mock import MagicMock
+
+    text_samples = [_text_choice_mock("Some text") for _ in range(3)]
+
+    with patch("altk_evolve.llm.guidelines.consistency_analyzer.resampling.get_response_sampling", return_value=text_samples):
+        with caplog.at_level("WARNING"):
+            result = resample_trajectory(
+                trajectory={
+                    "name": "test",
+                    "steps": [
+                        {
+                            "name": "OpenAIAgent_tool_calls",
+                            "raw_response_type": "tool_calls",
+                            "messages": [{"role": "user", "content": "hello"}],
+                            "llm_params": {"model": "gpt-4o"},
+                            "tools": [{"type": "function", "function": {"name": "f"}}],
+                        }
+                    ],
+                },
+                samples=3,
+                model_name="gpt-4o",
+            )
+
+    step = result["steps"][0]
+    assert step["sampling"]["num_samples"] == 0
+    assert "did not match the recorded response type 'tool_calls'" in caplog.text
+
+
+@pytest.mark.unit
+def test_matching_samples_are_not_dropped():
+    """Samples whose kind matches the step's raw_response_type must pass through unchanged."""
+    from unittest.mock import MagicMock
+
+    from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
+
+    def _text_choice_mock(content):
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message.tool_calls = None
+        choice.message.content = content
+        choice.message.reasoning_content = None
+        return choice
+
+    text_samples = [_text_choice_mock(f"response {i}") for i in range(3)]
+
+    with patch("altk_evolve.llm.guidelines.consistency_analyzer.resampling.get_response_sampling", return_value=text_samples):
+        result = resample_trajectory(
+            trajectory={
+                "name": "test",
+                "steps": [
+                    {
+                        "name": "OpenAIAgent_content",
+                        "raw_response_type": "content",
+                        "messages": [{"role": "user", "content": "hello"}],
+                        "llm_params": {"model": "gpt-4o"},
+                    }
+                ],
+            },
+            samples=3,
+            model_name="gpt-4o",
+        )
+
+    step = result["steps"][0]
+    assert step["sampling"]["num_samples"] == 3
+
+
+# ── tool_use_failed retry scoping ────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_tool_use_failed_without_tools_skips_retry():
+    """tool_use_failed on a request with no tools must not burn the retry budget.
+
+    The model generated a tool call from message history with no schema offered;
+    retrying the identical prompt will produce the same rejection every time.
+    Exactly 1 call should be made per sample (no retries).
+    """
+    from litellm.exceptions import BadRequestError
+
+    err = BadRequestError(
+        message='{"error":{"code":"tool_use_failed","message":"Tool choice is none, but model called a tool"}}',
+        model="gpt-4o",
+        llm_provider="openai",
+    )
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
+        with patch.object(inference_utils, "completion", side_effect=err) as mock_completion:
+            result = _sample()  # no tools= kwarg → no tools in request
+
+    # 5 samples × 1 attempt each (no retries) = 5 calls
+    assert mock_completion.call_count == 5
+    # All samples discarded without tools → graceful degradation → empty list
+    assert result == []
+
+
+@pytest.mark.unit
+def test_tool_use_failed_with_tools_does_retry():
+    """tool_use_failed when tools ARE in the request means a malformed call — retries may recover.
+
+    Must not be treated as a no-retry discard; must burn the full retry budget.
+    """
+    from litellm.exceptions import BadRequestError
+
+    err = BadRequestError(
+        message='{"error":{"code":"tool_use_failed","message":"Tool choice is none, but model called a tool"}}',
+        model="gpt-4o",
+        llm_provider="openai",
+    )
+    tools = [{"type": "function", "function": {"name": "get_data", "parameters": {}}}]
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
+        with patch.object(inference_utils, "completion", side_effect=err) as mock_completion:
+            with pytest.raises(EvolveException):
+                _sample(tools=tools)
+
+    # 5 samples × 3 retry attempts each = 15 calls (retries not skipped)
+    assert mock_completion.call_count == 15
+
+
+@pytest.mark.unit
+def test_generic_error_raises_evolve_exception():
+    """Errors other than tool_use_failed (NotFoundError, APIConnectionError, etc.) must
+    raise EvolveException rather than returning [] silently."""
+    from litellm.exceptions import NotFoundError
+
+    err = NotFoundError(message="model not found", model="gpt-4o", llm_provider="openai")
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
+        with patch.object(inference_utils, "completion", side_effect=err):
+            with pytest.raises(EvolveException):
+                _sample()

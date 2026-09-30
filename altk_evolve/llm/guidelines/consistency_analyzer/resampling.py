@@ -139,6 +139,30 @@ def resample_trajectory(
             custom_llm_provider=custom_llm_provider,
         )
 
-        step["sampling"] = extract_raw_samples(response_samples)
+        sampling = extract_raw_samples(response_samples)
+
+        # Drop samples whose response kind doesn't match what the agent actually did.
+        # When tools are now passed to a content step, the model may still choose to call
+        # a tool — producing a list-shaped sample against a step whose recorded response
+        # is text (and vice-versa). Scoring a tool-call sample with the text metric would
+        # yield artificially high consistency (~0.998); scoring it as a kind mismatch is
+        # more honest. Dropping mismatched samples lets the step fall back to consistency
+        # -1 (undefined) when all samples mismatch, rather than reporting false certainty.
+        raw_response_type = step.get("raw_response_type")
+        if raw_response_type in ("content", "tool_calls"):
+            expected_list = raw_response_type == "tool_calls"
+            matched = [s for s in sampling["raw_samples"] if isinstance(s, list) == expected_list]
+            n_dropped = len(sampling["raw_samples"]) - len(matched)
+            if n_dropped:
+                logger.warning(
+                    f"Step {step['name']}: dropped {n_dropped} of {sampling['num_samples']} samples "
+                    f"whose response kind ({'content' if expected_list else 'tool_calls'} vs "
+                    f"{'tool_calls' if expected_list else 'content'}) did not match the recorded "
+                    f"response type '{raw_response_type}'. "
+                    f"{len(matched)} remain; step scores as consistency undefined if none remain."
+                )
+                sampling = {"num_samples": len(matched), "raw_samples": matched}
+
+        step["sampling"] = sampling
 
     return trajectory
