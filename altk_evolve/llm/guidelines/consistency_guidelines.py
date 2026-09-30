@@ -405,6 +405,12 @@ def _safe_write_text_debug(path: Path, text: str) -> None:
 
 
 def _write_guidelines_debug(debug_dir: Path, trace_id: Any, results: list[GuidelineGenerationResult], suffix: str = "") -> None:
+    """Serialise guideline results to a JSON debug artifact in `debug_dir`.
+
+    Uses the trace_id prefix and optional suffix to distinguish per-segment artifacts
+    (e.g. "_seg1") from full-trajectory artifacts. Best-effort: delegates to
+    _safe_write_debug so any write failure is logged and swallowed.
+    """
     data = [{"task_description": r.task_description, "guidelines": [g.model_dump() for g in r.guidelines]} for r in results]
     _safe_write_debug(debug_dir / f"guidelines_{str(trace_id)[:8]}{suffix}.json", data)
 

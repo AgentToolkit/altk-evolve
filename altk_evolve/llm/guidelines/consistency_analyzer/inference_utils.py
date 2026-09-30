@@ -66,21 +66,39 @@ _NON_RETRYABLE_EXCEPTIONS = (
 )
 
 
-def _prefer_hard_error(a: Exception | None, b: Exception | None) -> Exception | None:
-    """Return whichever of `a` and `b` is a hard non-retryable error, preferring `a`.
+def _is_tool_use_failed(e: Exception) -> bool:
+    """True when `e` is the specific tool_use_failed BadRequestError used for graceful degradation."""
+    return isinstance(e, BadRequestError) and "tool_use_failed" in str(e)
 
-    A hard error (auth, permission, context window) must not be overwritten by a later
-    soft error (tool_use_failed, transient 400, rate-limit) when selecting the error to
-    surface for a failed sampling attempt. Without this, a soft error on a later sample
-    can displace an earlier hard error, causing the caller to fall through to the
-    graceful-degradation path instead of raising EvolveException.
+
+def _prefer_hard_error(a: Exception | None, b: Exception | None) -> Exception | None:
+    """Return the more severe of two errors, using a three-tier priority.
+
+    Priority (highest wins):
+    1. Hard non-retryable errors (auth, permission, context window) — always fatal.
+    2. Any other error that is not tool_use_failed — indicates a real infrastructure
+       or configuration problem that should surface rather than be silently swallowed.
+    3. tool_use_failed BadRequestError — the one soft failure eligible for graceful
+       degradation; loses to any harder error so that a RuntimeError on a later sample
+       cannot be hidden behind an earlier tool_use_failed.
+
+    Preference is given to `a` when both errors have the same tier.
     """
     if a is None:
         return b
     if b is None:
         return a
-    # Prefer the hard error regardless of arrival order.
-    if isinstance(b, _NON_RETRYABLE_EXCEPTIONS) and not isinstance(a, _NON_RETRYABLE_EXCEPTIONS):
+    # Tier 1: prefer hard non-retryable errors regardless of arrival order.
+    a_hard = isinstance(a, _NON_RETRYABLE_EXCEPTIONS)
+    b_hard = isinstance(b, _NON_RETRYABLE_EXCEPTIONS)
+    if b_hard and not a_hard:
+        return b
+    if a_hard and not b_hard:
+        return a
+    # Both hard or neither hard: prefer the one that is NOT tool_use_failed.
+    a_tuf = _is_tool_use_failed(a)
+    b_tuf = _is_tool_use_failed(b)
+    if a_tuf and not b_tuf:
         return b
     return a
 
@@ -296,10 +314,11 @@ def get_response_sampling(
     with extract_raw_samples() in resampling.py (handles both the .message.tool_calls
     and .message.content paths).
 
-    Raises EvolveException when fewer than the required minimum samples could be
-    obtained, unless the failure was specifically tool_use_failed on a request that
-    carried no tools (structural mismatch — returns [] so the step scores as
-    consistency undefined). Hard errors (auth, permission, context window) always raise.
+    Returns [] without raising when the only failures were tool_use_failed on a request
+    that carried no tools (structural mismatch — the step scores as consistency undefined).
+    Raises EvolveException for all other failures: hard errors (auth, permission, context
+    window), infrastructure problems (wrong model, bad api_base, exhausted rate limits),
+    and tool_use_failed when tools *are* present (malformed call, wrong args).
     """
     messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
     # Dispatched once, OUTSIDE every attempt below, so retries and the k parallel

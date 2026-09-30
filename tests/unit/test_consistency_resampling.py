@@ -377,6 +377,44 @@ def test_hard_error_not_overwritten_by_later_soft_error():
             assert isinstance(exc_info.value.__cause__, AuthenticationError)
 
 
+@pytest.mark.unit
+def test_tool_use_failed_then_runtime_error_raises_not_degrades():
+    """A tool_use_failed on sample 0 must not hide a RuntimeError on later samples.
+
+    Before the three-tier _prefer_hard_error fix, _completion_loop would keep the
+    first error it accumulated (tool_use_failed) because _prefer_hard_error only
+    promoted _NON_RETRYABLE_EXCEPTIONS.  get_response_sampling then saw a
+    tool_use_failed with no tools and returned [], masking the real failure.
+
+    After the fix, RuntimeError (tier 2) beats tool_use_failed (tier 3), so the
+    accumulated error is RuntimeError and get_response_sampling raises EvolveException.
+    """
+    from litellm.exceptions import BadRequestError
+
+    tuf_err = BadRequestError(
+        message='{"error":{"code":"tool_use_failed","message":"Tool choice is none, but model called a tool"}}',
+        model="gpt-4o",
+        llm_provider="openai",
+    )
+    infra_err = RuntimeError("connection timeout")
+    # Sample 0 → tool_use_failed (no retry); samples 1-4 → RuntimeError (retried 3× each).
+    call_count = 0
+
+    def side_effect(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise tuf_err
+        raise infra_err
+
+    with patch.object(inference_utils, "get_supported_openai_params", return_value=[]):
+        with patch.object(inference_utils, "completion", side_effect=side_effect):
+            with pytest.raises(EvolveException) as exc_info:
+                _sample()  # no tools= kwarg
+            # The infrastructure error must be the __cause__, not the soft tool_use_failed.
+            assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
 # ── concurrency ──────────────────────────────────────────────────────
 
 
