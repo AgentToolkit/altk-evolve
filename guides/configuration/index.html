@@ -1068,6 +1068,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#runtime-processing-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime processing profiles
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1839,6 +1850,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#runtime-processing-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime processing profiles
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2257,6 +2279,16 @@ use a fresh namespace when you change this setting.</p>
 <blockquote>
 <p><strong>Note</strong>: Auto-patching skips if existing tracing is detected. Use <code>enable_tracing(force=True)</code> to override.</p>
 </blockquote>
+<h2 id="runtime-processing-profiles">Runtime processing profiles<a class="headerlink" href="#runtime-processing-profiles" title="Permanent link">&para;</a></h2>
+<p>Processing profiles select built-in or installed trajectory processors with validated,
+versioned configuration. Profiles use the existing configured database: PostgreSQL
+for the PostgreSQL backend, or SQLite for filesystem and Milvus. Milvus already uses SQLite
+for namespace metadata; filesystem namespaces remain in JSON and profile SQLite defaults to
+<code>entities.sqlite.db</code> inside <code>EVOLVE_DATA_DIR</code>. Explicit <code>EVOLVE_SQLITE_PATH</code> /
+<code>EVOLVE_SQLITE_URI</code> overrides are respected. Milvus profiles use its configured
+<code>sqlite_uri</code> (or <code>EVOLVE_SQLITE_PATH</code> override). No separate profile database configuration is required; applications
+can still inject a custom repository. See <a href="../../design/processing-profiles/">processing profiles</a>
+for Python, REST, MCP, CLI, and plugin-discovery examples.</p>
 
 
 

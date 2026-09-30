@@ -1663,6 +1663,28 @@
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>brew<span class="w"> </span>install<span class="w"> </span>postgresql<span class="w"> </span>pgvector
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>brew<span class="w"> </span>services<span class="w"> </span>start<span class="w"> </span>postgresql
 </code></pre></div></p>
+<p><strong>Search indexes:</strong></p>
+<p>New namespaces receive a B-tree index on <code>type</code> and a GIN index on JSONB metadata.
+For existing namespaces, run maintenance explicitly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">altk_evolve.frontend.client.evolve_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">EvolveClient</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">client</span> <span class="o">=</span> <span class="n">EvolveClient</span><span class="p">()</span>  <span class="c1"># EVOLVE_BACKEND=postgres</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">client</span><span class="o">.</span><span class="n">backend</span><span class="o">.</span><span class="n">create_search_indexes</span><span class="p">(</span><span class="s2">&quot;my_namespace&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># Optional: approximate cosine search for queries without filters.</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">client</span><span class="o">.</span><span class="n">backend</span><span class="o">.</span><span class="n">create_search_indexes</span><span class="p">(</span><span class="s2">&quot;my_namespace&quot;</span><span class="p">,</span> <span class="n">approximate</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p>Index construction runs concurrently with ordinary reads/writes and refreshes
+planner statistics. It is idempotent and repairs invalid indexes left by an
+interrupted build. Run it outside entity transactions. After bulk imports,
+refresh statistics with PostgreSQL <code>ANALYZE</code> (or rerun this maintenance operation).</p>
+<p>HNSW is opt-in because nearest-neighbor results are approximate; it supports
+embedding dimensions up to 2,000. Filtered searches stay exact and can use the
+metadata/type indexes before ranking, so rare filtered matches are not lost to
+an approximate candidate window. Exact, unfiltered vector queries still scan the
+namespace unless an approximate index is enabled. Processing validates namespace
+existence without counting entities; explicit namespace-detail requests still
+return a count.</p>
 <p><strong>Bootstrap Database Fallback:</strong></p>
 <p>When <code>EVOLVE_PG_AUTO_CREATE_DB=true</code>, Evolve will automatically create the target database if it doesn't exist. It tries multiple bootstrap databases in order:</p>
 <ol>
@@ -1685,21 +1707,33 @@
 - Requires Milvus server (or Milvus Lite)
 - Requires sentence-transformers model (downloaded on first use)</p>
 <p><strong>Configuration:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># In .env file</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>milvus
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nv">EVOLVE_NAMESPACE_ID</span><span class="o">=</span>evolve
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># In .env file</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>milvus
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nv">EVOLVE_NAMESPACE_ID</span><span class="o">=</span>evolve
 </code></pre></div></p>
 <p><strong>Installation:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Install with Milvus support</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>milvus
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Install with Milvus support</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>milvus
 </code></pre></div></p>
+<p><strong>Concurrent writers:</strong></p>
+<p>All Evolve workers writing the same Milvus database must use the same file-backed
+<code>EVOLVE_SQLITE_PATH</code> (or configured <code>sqlite_uri</code>). Evolve uses that existing metadata
+database to serialize entity read/merge/upsert operations across local processes.
+Metadata patches reuse the stored embedding and read with strong consistency.
+This prevents one worker's metadata patch from overwriting another's patch.</p>
+<p>Independent metadata databases on separate hosts, direct Milvus writers, and
+external applications are outside that coordination boundary. Use PostgreSQL for
+multi-host transactional processing; Milvus does not support Evolve's atomic
+output/checkpoint contract. Query filters run inside Milvus before the result
+limit. Read failures propagate, and deletion with an active policy hook fails
+closed if its metadata snapshot cannot be loaded.</p>
 <h2 id="switching-backends">Switching Backends<a class="headerlink" href="#switching-backends" title="Permanent link">&para;</a></h2>
 <p>You can switch backends at any time by changing the <code>EVOLVE_BACKEND</code> environment variable. Note that data is not automatically migrated between backends.</p>
 <h2 id="recommendations">Recommendations<a class="headerlink" href="#recommendations" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Development/Testing</strong>: Use <code>filesystem</code> for simplicity (note: no vector search)</li>
 <li><strong>Production (Single Server)</strong>: Use <code>postgres</code> for reliability, ACID guarantees, and semantic search</li>
-<li><strong>Production (High Scale)</strong>: Use <code>milvus</code> for optimized vector search at scale</li>
+<li><strong>Production (High Scale)</strong>: Use <code>postgres</code> for transactional multi-worker processing, or <code>milvus</code> for vector search with the writer-coordination constraints above</li>
 <li><strong>Quick Start</strong>: Use <code>filesystem</code> (default) - no setup required, but limited to text matching</li>
 <li><strong>Semantic Search Required</strong>: Use <code>postgres</code> or <code>milvus</code> for vector-based similarity search</li>
 </ul>
@@ -1764,13 +1798,13 @@
 <tr>
 <td><strong><code>user_id</code> index</strong></td>
 <td>None (in-memory scan)</td>
-<td>None (JSONB GIN possible but not created)</td>
+<td>GIN on JSONB metadata (new namespaces; explicit maintenance for existing ones)</td>
 <td>None (scan within collection)</td>
 </tr>
 <tr>
 <td><strong><code>session_id</code> index</strong></td>
 <td>None (in-memory scan)</td>
-<td>None (JSONB GIN possible but not created)</td>
+<td>GIN on JSONB metadata (new namespaces; explicit maintenance for existing ones)</td>
 <td>None (scan within collection)</td>
 </tr>
 <tr>
@@ -1793,12 +1827,12 @@
 <p><strong>Namespace is the only hard boundary.</strong> Data in different namespaces is physically separated across all backends. There is no way to accidentally query across namespaces without explicitly iterating over them.</p>
 </li>
 <li>
-<p><strong><code>user_id</code> and <code>session_id</code> are soft filters.</strong> They rely on query-time filtering against the <code>metadata</code> dict. There are no dedicated columns, foreign keys, or indexes — a missing filter silently returns all entities in the namespace regardless of owner.</p>
+<p><strong><code>user_id</code> and <code>session_id</code> are soft filters.</strong> They rely on query-time filtering against the <code>metadata</code> dict. There are no dedicated columns or foreign keys — a missing filter silently returns all entities in the namespace regardless of owner.</p>
 </li>
 <li>
-<p><strong>No indexes on identity metadata.</strong> For small-to-medium namespaces this is fine. For large namespaces with frequent per-user queries, consider adding:</p>
+<p><strong>Index support depends on the backend.</strong> For large namespaces with frequent per-user queries:</p>
 </li>
-<li><strong>PostgreSQL:</strong> A GIN index on the <code>metadata</code> JSONB column, or a partial index on <code>(metadata-&gt;&gt;'user_id')</code>.</li>
+<li><strong>PostgreSQL:</strong> New namespaces have a GIN index on <code>metadata</code> for containment predicates; run <code>create_search_indexes()</code> for older namespaces.</li>
 <li><strong>Milvus:</strong> A scalar index on <code>metadata["user_id"]</code> (supported in Milvus 2.3+).</li>
 <li>
 <p><strong>Filesystem:</strong> Not applicable — the backend scans in memory regardless.</p>
