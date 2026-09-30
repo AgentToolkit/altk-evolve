@@ -3,15 +3,19 @@ import json
 import logging
 import os
 import uuid
+import sqlite3
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from threading import RLock
+from threading import Lock
+from dataclasses import dataclass
+from typing import Callable, TypeVar
 
 from pydantic import Field, ValidationError
 
 from altk_evolve.backend.base import BaseEntityBackend
 from altk_evolve.config.filesystem import FilesystemSettings, filesystem_settings
-from altk_evolve.schema.conflict_resolution import EntityUpdate
-from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
+from altk_evolve.schema.core import Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import (
     EvolveException,
     NamespaceAlreadyExistsException,
@@ -22,11 +26,53 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db.filesystem")
 
 
+class _DirectoryLock:
+    """Serialize only storage commits; never run hooks under this lock."""
+
+    def __init__(self, directory: Path):
+        self._thread_lock = Lock()
+        self._path = directory / ".evolve-write-lock.sqlite"
+        self._connection = None
+
+    def __enter__(self):
+        self._thread_lock.acquire()
+        try:
+            self._connection = sqlite3.connect(self._path, timeout=300)
+            self._connection.execute("BEGIN IMMEDIATE")
+            return self
+        except BaseException:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
+            self._thread_lock.release()
+            raise
+
+    def __exit__(self, *exc):
+        try:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
+        finally:
+            self._thread_lock.release()
+
+
 class FilesystemNamespace(Namespace):
     """Extended Namespace with additional fields for filesystem storage."""
 
     entities: list[dict] = Field(default_factory=list, description="List of entity dictionaries")
+    processing_checkpoints: dict[str, dict] = Field(default_factory=dict)
     next_id: int = Field(default=1, description="Next available entity ID")
+
+
+@dataclass
+class _NamespaceWork:
+    data: FilesystemNamespace
+    active: FilesystemNamespace | None = None
+    dirty: bool = False
+    closed: bool = False
+
+
+_T = TypeVar("_T")
 
 
 class FilesystemEntityBackend(BaseEntityBackend):
@@ -35,17 +81,93 @@ class FilesystemEntityBackend(BaseEntityBackend):
     This backend uses simple text matching for search (no embeddings).
     """
 
+    supports_atomic_writes = True
+
     def __init__(self, config: FilesystemSettings | None = None):
         self.config = config or filesystem_settings
-        self.data_dir = Path(self.config.data_dir)
+        self.data_dir = Path(self.config.data_dir).resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        # Re-entrant: write hooks dispatch while update_entities holds this lock,
-        # and the seam hands the live backend to plugins, so a plugin calling
-        # back into a lock-taking backend method (e.g. update_entity_metadata)
-        # must not self-deadlock.
-        self._lock = RLock()
-        # Holds the loaded namespace data during update_entities so hooks can access it.
-        self._active_data: FilesystemNamespace | None = None
+        self._lock = _DirectoryLock(self.data_dir)
+        self._work: ContextVar[_NamespaceWork | None] = ContextVar("filesystem_work", default=None)
+
+    def _current_work(self) -> _NamespaceWork | None:
+        work = self._work.get()
+        if work is not None and work.closed:
+            raise EvolveException("The namespace transaction has finished")
+        return work
+
+    @property
+    def _active_data(self) -> FilesystemNamespace | None:
+        work = self._current_work()
+        return work.active if work else None
+
+    @_active_data.setter
+    def _active_data(self, value: FilesystemNamespace | None):
+        work = self._current_work()
+        assert work is not None
+        work.active = value
+
+    def profile_repository(self):
+        from altk_evolve.processing.repository import SQLiteProfileRepository
+
+        path = os.getenv("EVOLVE_SQLITE_PATH") or os.getenv("EVOLVE_SQLITE_URI") or self.data_dir / "entities.sqlite.db"
+        return SQLiteProfileRepository(path)
+
+    @property
+    def in_transaction(self) -> bool:
+        return self._current_work() is not None
+
+    @contextmanager
+    def transaction(self, namespace_id: str):
+        """Load current JSON under the writer lock and publish prepared writes in one rename."""
+        if self._current_work() is not None:
+            raise EvolveException("Nested filesystem transactions are not supported")
+        self._validate_namespace(namespace_id)
+        with self._lock:
+            path = self._namespace_file(namespace_id)
+            try:
+                data = FilesystemNamespace.model_validate_json(path.read_text())
+            except (ValidationError, FileNotFoundError) as exc:
+                path.unlink(missing_ok=True)
+                raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found") from exc
+            work = _NamespaceWork(data)
+            token = self._work.set(work)
+            try:
+                yield
+            finally:
+                work.closed = True
+                self._work.reset(token)
+            if work.dirty:
+                self._save_namespace_data(namespace_id, work.data)
+
+    def _write(self, namespace_id: str, operation: Callable[[], _T]) -> _T:
+        work = self._current_work()
+        if work is not None:
+            if work.data.id != namespace_id:
+                raise EvolveException("Filesystem transactions cannot write other namespaces")
+            return operation()
+        with self.transaction(namespace_id):
+            return operation()
+
+    def get_processing_checkpoint(self, namespace_id: str, key: str) -> dict | None:
+        return self._load_namespace_data(namespace_id).processing_checkpoints.get(key)
+
+    def _save_processing_checkpoint(self, namespace_id: str, key: str, value: dict) -> None:
+        data = self._load_namespace_data(namespace_id)
+        data.processing_checkpoints[key] = value
+        self._save_namespace_data(namespace_id, data)
+
+    def _update_entity_metadata_impl(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+        return self._write(
+            namespace_id, lambda: super(FilesystemEntityBackend, self)._update_entity_metadata_impl(namespace_id, entity_id, metadata_patch)
+        )
+
+    def _apply_prepared(self, namespace_id, prepared):
+        self._active_data = self._load_namespace_data(namespace_id)
+        try:
+            return super()._apply_prepared(namespace_id, prepared)
+        finally:
+            self._active_data = None
 
     def _namespace_file(self, namespace_id: str) -> Path:
         """Get the path to a namespace's JSON file."""
@@ -58,19 +180,31 @@ class FilesystemEntityBackend(BaseEntityBackend):
         create_namespace() call does not trip on the stale file and raise
         NamespaceAlreadyExistsException, which would leave ensure_namespace() stuck.
         """
+        work = self._current_work()
+        if work is not None:
+            if work.data.id != namespace_id:
+                raise EvolveException("Filesystem transactions cannot read other namespaces")
+            return work.data.model_copy(deep=True)
         file_path = self._namespace_file(namespace_id)
         if not file_path.exists():
             raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
-        raw = file_path.read_text()
+        try:
+            raw = file_path.read_text()
+        except FileNotFoundError as exc:
+            raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found") from exc
         if not raw.strip():
             logger.warning("Namespace file %s is empty (likely an interrupted write); removing and treating as missing.", file_path)
-            file_path.unlink(missing_ok=True)
+            with self._lock:
+                if file_path.exists() and file_path.read_text() == raw:
+                    file_path.unlink(missing_ok=True)
             raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
         try:
             return FilesystemNamespace.model_validate(json.loads(raw))
         except (json.JSONDecodeError, ValidationError) as e:
             logger.warning("Namespace file %s is corrupt (%s); removing and treating as missing.", file_path, e)
-            file_path.unlink(missing_ok=True)
+            with self._lock:
+                if file_path.exists() and file_path.read_text() == raw:
+                    file_path.unlink(missing_ok=True)
             raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found") from e
 
     def _save_namespace_data(self, namespace_id: str, data: FilesystemNamespace):
@@ -83,6 +217,13 @@ class FilesystemEntityBackend(BaseEntityBackend):
         (e.g. CLI + MCP server) from clobbering each other's tmp file, which would cause
         FileNotFoundError at os.replace time.
         """
+        work = self._current_work()
+        if work is not None:
+            if work.data.id != namespace_id:
+                raise EvolveException("Filesystem transactions cannot write other namespaces")
+            work.data = data.model_copy(deep=True)
+            work.dirty = True
+            return
         file_path = self._namespace_file(namespace_id)
         tmp_path = file_path.with_suffix(f"{file_path.suffix}.tmp.{uuid.uuid4().hex}")
         try:
@@ -107,6 +248,8 @@ class FilesystemEntityBackend(BaseEntityBackend):
 
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         """Create a new namespace for entities to exist in."""
+        if self._current_work() is not None:
+            raise EvolveException("Cannot create a namespace inside an entity transaction")
         namespace_id = namespace_id or "ns_" + str(uuid.uuid4()).replace("-", "_")
         file_path = self._namespace_file(namespace_id)
 
@@ -128,37 +271,37 @@ class FilesystemEntityBackend(BaseEntityBackend):
 
     def get_namespace_details(self, namespace_id: str) -> Namespace:
         """Get details about a specific namespace."""
-        with self._lock:
-            data = self._load_namespace_data(namespace_id)
-            return Namespace(
-                id=data.id,
-                created_at=data.created_at,
-                num_entities=len(data.entities),
-            )
+        data = self._load_namespace_data(namespace_id)
+        return Namespace(
+            id=data.id,
+            created_at=data.created_at,
+            num_entities=len(data.entities),
+        )
 
     def search_namespaces(self, limit: int = 10) -> list[Namespace]:
         """Search for namespaces."""
         namespaces = []
-        with self._lock:
-            for file_path in self.data_dir.glob("*.json"):
-                try:
-                    data = json.loads(file_path.read_text())
-                    namespaces.append(
-                        Namespace(
-                            id=data["id"],
-                            created_at=datetime.datetime.fromisoformat(data["created_at"]),
-                            num_entities=len(data["entities"]),
-                        )
+        for file_path in self.data_dir.glob("*.json"):
+            try:
+                data = json.loads(file_path.read_text())
+                namespaces.append(
+                    Namespace(
+                        id=data["id"],
+                        created_at=datetime.datetime.fromisoformat(data["created_at"]),
+                        num_entities=len(data["entities"]),
                     )
-                except (json.JSONDecodeError, KeyError):
-                    continue
-                if len(namespaces) >= limit:
-                    break
+                )
+            except (json.JSONDecodeError, KeyError, FileNotFoundError):
+                continue
+            if len(namespaces) >= limit:
+                break
         return namespaces
 
     def _delete_namespace_impl(self, namespace_id: str):
         """Delete a namespace and all its entities."""
         file_path = self._namespace_file(namespace_id)
+        if self._current_work() is not None:
+            raise EvolveException("Cannot delete a namespace inside an entity transaction")
         with self._lock:
             if not file_path.exists():
                 return  # Already deleted, no-op
@@ -203,47 +346,22 @@ class FilesystemEntityBackend(BaseEntityBackend):
         self._active_data = None
 
     def _patch_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
-        """Override to load namespace data, call _update_entity, then persist.
-
-        Re-entrant path: when called from inside an in-flight update_entities
-        (e.g. a memory_pre_write plugin calling back into update_entity_metadata),
-        ``_active_data`` is already loaded and the OUTER op owns persistence.
-        RLock alone is insufficient here — doing our own _load/_save would clobber
-        the outer op's in-flight ``_active_data``. So mutate the active data in
-        place and let the outer ``_post_update`` persist it. Only when
-        ``_active_data`` is None (a normal standalone call) do we load/lock/save.
-        """
+        """Patch the current working copy; the outer operation owns publication."""
         if not entity_id:
             raise ValueError(f"entity_id must be a non-empty string, got {entity_id!r}")
-        if self._active_data is not None:
-            self._update_entity(namespace_id, entity_id, entity_type, content_str, timestamp, metadata)
-            return
-        with self._lock:
+
+        def patch():
+            if self._active_data is not None:
+                self._update_entity(namespace_id, entity_id, entity_type, content_str, timestamp, metadata)
+                return
             self._active_data = self._load_namespace_data(namespace_id)
             try:
                 self._update_entity(namespace_id, entity_id, entity_type, content_str, timestamp, metadata)
                 self._post_update(namespace_id)
-            except Exception:
-                self._active_data = None
-                raise
-
-    def update_entities(
-        self,
-        namespace_id: str,
-        entities: list[Entity],
-        enable_conflict_resolution: bool = True,
-    ) -> list[EntityUpdate]:
-        """Override to wrap the base template in a lock with loaded data."""
-        with self._lock:
-            self._active_data = self._load_namespace_data(namespace_id)
-            try:
-                return super().update_entities(namespace_id, entities, enable_conflict_resolution)
             finally:
-                # Clear in-flight state even if a write hook halts the batch
-                # (raises): _post_update runs only on the success path, so
-                # without this a halted write leaves stale _active_data for the
-                # next operation on this backend.
                 self._active_data = None
+
+        self._write(namespace_id, patch)
 
     # ── search ───────────────────────────────────────────────────────
 
@@ -314,16 +432,17 @@ class FilesystemEntityBackend(BaseEntityBackend):
         limit: int = 10,
     ) -> list[RecordedEntity]:
         """Search for entities in a namespace."""
-        # If called during update_entities (inside the lock), use the active data
-        if self._active_data is not None:
+        # Only the owning operation sees staged state; other readers see the
+        # last atomically published JSON snapshot without waiting on generation.
+        if self._active_data is not None and self._active_data.id == namespace_id:
             return self._search_entities_internal(self._active_data, query, filters, limit)
-        with self._lock:
-            data = self._load_namespace_data(namespace_id)
-            return self._search_entities_internal(data, query, filters, limit)
+        data = self._load_namespace_data(namespace_id)
+        return self._search_entities_internal(data, query, filters, limit)
 
     def _delete_entity_by_id_impl(self, namespace_id: str, entity_id: str):
         """Delete a specific entity by its ID."""
-        with self._lock:
+
+        def delete():
             data = self._load_namespace_data(namespace_id)
             original_count = len(data.entities)
             data.entities = [e for e in data.entities if str(e["id"]) != entity_id]
@@ -331,3 +450,5 @@ class FilesystemEntityBackend(BaseEntityBackend):
                 raise EvolveException(f"Entity `{entity_id}` not found")
             data.num_entities = len(data.entities)
             self._save_namespace_data(namespace_id, data)
+
+        self._write(namespace_id, delete)

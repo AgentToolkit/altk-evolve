@@ -2,6 +2,9 @@ import datetime
 import json
 import logging
 import uuid
+import hashlib
+from contextlib import contextmanager
+from contextvars import ContextVar
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -15,7 +18,7 @@ from altk_evolve.config.postgres import PostgresDBSettings, postgres_db_settings
 from altk_evolve.db.sqlite_manager import SQLiteManager
 from altk_evolve.schema.core import Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
-from altk_evolve.utils.utils import deserialize_content
+from altk_evolve.utils.utils import deserialize_content, serialize_content
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db.pgvector")
@@ -39,7 +42,8 @@ def _entity_row_factory(cursor: psycopg.Cursor[Any]) -> Callable[[Sequence[Any]]
 
 
 class PostgresEntityBackend(BaseEntityBackend):
-    conn: psycopg.Connection
+    supports_atomic_writes = True
+    _conn: psycopg.Connection
     embedding_model: SentenceTransformer
     embedding_dim: int
     _settings: PostgresDBSettings
@@ -49,6 +53,8 @@ class PostgresEntityBackend(BaseEntityBackend):
     def __init__(self, config: BaseSettings | None = None):
         super().__init__(config)
         self._settings = config if isinstance(config, type(postgres_db_settings)) else postgres_db_settings
+        self._transaction_connection: ContextVar[psycopg.Connection | None] = ContextVar("postgres_transaction", default=None)
+        self._prepared_embeddings: ContextVar[dict | None] = ContextVar("postgres_prepared_embeddings", default=None)
         self.conn = self._connect_target_db()
         try:
             self._ensure_pgvector_extension()
@@ -64,6 +70,69 @@ class PostgresEntityBackend(BaseEntityBackend):
             if not self.conn.closed:
                 self.conn.close()
             raise
+
+    def profile_repository(self):
+        """Use the same PostgreSQL database/settings as entity storage."""
+        from altk_evolve.processing.repository import PostgresProfileRepository
+
+        return PostgresProfileRepository(lambda: self._connect(self._settings.dbname))
+
+    @property
+    def conn(self) -> psycopg.Connection:
+        return self._transaction_connection.get() or self._conn
+
+    @conn.setter
+    def conn(self, value: psycopg.Connection):
+        self._conn = value
+
+    @property
+    def in_transaction(self) -> bool:
+        return self._transaction_connection.get() is not None
+
+    @contextmanager
+    def transaction(self, namespace_id: str):
+        """Serialize the short output/checkpoint commit on a dedicated connection."""
+        if self.in_transaction:
+            raise EvolveException("Nested processing transactions are not supported")
+        with self._connect(self._settings.dbname) as connection:
+            register_vector(connection)
+            with connection.transaction():
+                connection.execute(
+                    sql.SQL("LOCK TABLE {} IN SHARE ROW EXCLUSIVE MODE").format(sql.Identifier(self._table_name(namespace_id)))
+                )
+                token = self._transaction_connection.set(connection)
+                try:
+                    yield
+                finally:
+                    self._transaction_connection.reset(token)
+
+    def get_processing_checkpoint(self, namespace_id: str, key: str) -> dict | None:
+        row = self.conn.execute("SELECT value FROM processing_checkpoints WHERE namespace_id=%s AND key=%s", (namespace_id, key)).fetchone()
+        return row[0] if row else None
+
+    def _save_processing_checkpoint(self, namespace_id: str, key: str, value: dict) -> None:
+        self.conn.execute(
+            "INSERT INTO processing_checkpoints (namespace_id, key, value) VALUES (%s, %s, %s::jsonb) ON CONFLICT (namespace_id, key) DO NOTHING",
+            (namespace_id, key, json.dumps(value)),
+        )
+
+    def _prepare_storage(self, prepared):
+        prepared.storage = {
+            serialize_content(update.content): self.embedding_model.encode(serialize_content(update.content)).tolist()
+            for update in prepared.updates
+            if update.event in ("ADD", "UPDATE")
+        }
+
+    def _apply_prepared(self, namespace_id, prepared):
+        token = self._prepared_embeddings.set(prepared.storage)
+        try:
+            return super()._apply_prepared(namespace_id, prepared)
+        finally:
+            self._prepared_embeddings.reset(token)
+
+    def _embedding(self, content):
+        cached = self._prepared_embeddings.get()
+        return cached[content] if cached is not None else self.embedding_model.encode(content).tolist()
 
     def _connect(self, dbname: str) -> psycopg.Connection:
         return psycopg.connect(
@@ -150,6 +219,10 @@ class PostgresEntityBackend(BaseEntityBackend):
         """Ensure the pgvector extension is installed."""
         with self.conn.cursor() as cur:
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            cur.execute(
+                "CREATE TABLE IF NOT EXISTS processing_checkpoints ("
+                "namespace_id TEXT NOT NULL, key TEXT NOT NULL, value JSONB NOT NULL, PRIMARY KEY(namespace_id, key))"
+            )
 
     def _table_name(self, namespace_id: str) -> str:
         """Return a safe table name for a namespace."""
@@ -181,6 +254,8 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         """Create a new namespace (PostgreSQL table) for entities."""
+        if self._transaction_connection.get() is not None:
+            raise EvolveException("Cannot create a namespace inside an entity transaction")
         namespace_id = namespace_id or "ns_" + str(uuid.uuid4()).replace("-", "_")
         table = self._table_name(namespace_id)
 
@@ -200,8 +275,51 @@ class PostgresEntityBackend(BaseEntityBackend):
                 ).format(table=sql.Identifier(table), dim=sql.Literal(self.embedding_dim))
             )
 
+        self.create_search_indexes(namespace_id)
         with SQLiteManager() as db_manager:
             return db_manager.create_namespace(namespace_id)
+
+    def create_search_indexes(self, namespace_id: str, *, approximate: bool = False) -> None:
+        """Add indexes without changing stored data or blocking ordinary writes.
+
+        New namespaces get type and JSON containment indexes. Call this explicitly
+        for existing namespaces; approximate=True also opts into HNSW cosine search
+        for unfiltered queries. Filtered queries remain exact to avoid losing rare
+        matches to an approximate candidate limit. Index construction is maintenance
+        work and must run outside entity transactions.
+        """
+        if self.in_transaction:
+            raise EvolveException("Create search indexes outside entity transactions")
+        if approximate and self.embedding_dim > 2000:
+            raise EvolveException("HNSW vector indexes support at most 2000 dimensions")
+        table = self._table_name(namespace_id)
+        suffix = hashlib.sha256(table.encode()).hexdigest()[:24]
+        indexes = [("type", "btree (type)"), ("metadata", "gin (metadata jsonb_path_ops)")]
+        if approximate:
+            indexes.append(("vector", "hnsw (embedding vector_cosine_ops)"))
+        # A dedicated autocommit connection permits CONCURRENTLY. The session
+        # advisory lock serializes overlapping maintenance calls; close releases it.
+        with self._connect(self._settings.dbname) as connection:
+            connection.execute("SELECT pg_advisory_lock(hashtextextended(%s, 0))", ("evolve:index:" + table,))
+            for kind, definition in indexes:
+                name = f"evolve_{kind}_{suffix}"
+                existing = connection.execute("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(%s)", (name,)).fetchone()
+                if existing is not None and existing[0] is False:
+                    # An interrupted CONCURRENTLY build leaves an unusable index;
+                    # IF NOT EXISTS alone would silently keep it forever.
+                    connection.execute(sql.SQL("DROP INDEX CONCURRENTLY {}").format(sql.Identifier(name)))
+                connection.execute(
+                    sql.SQL("CREATE INDEX CONCURRENTLY IF NOT EXISTS {} ON {} USING " + definition).format(
+                        sql.Identifier(name), sql.Identifier(table)
+                    )
+                )
+            connection.execute(sql.SQL("ANALYZE {}").format(sql.Identifier(table)))
+
+    def validate_namespace(self, namespace_id: str) -> None:
+        self._validate_namespace(namespace_id)
+        with SQLiteManager() as db_manager:
+            if db_manager.get_namespace(namespace_id) is None:
+                raise NamespaceNotFoundException(f"Namespace {namespace_id} not found")
 
     def get_namespace_details(self, namespace_id: str) -> Namespace:
         self._validate_namespace(namespace_id)
@@ -235,9 +353,12 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     def _delete_namespace_impl(self, namespace_id: str):
         """Delete a namespace and its table."""
+        if self._transaction_connection.get() is not None:
+            raise EvolveException("Cannot delete a namespace inside an entity transaction")
         table = self._table_name(namespace_id)
-        with self.conn.cursor() as cur:
+        with self.conn.transaction(), self.conn.cursor() as cur:
             cur.execute(sql.SQL("DROP TABLE IF EXISTS {table}").format(table=sql.Identifier(table)))
+            cur.execute("DELETE FROM processing_checkpoints WHERE namespace_id=%s", (namespace_id,))
 
         with SQLiteManager() as db_manager:
             db_manager.delete_namespace(namespace_id)
@@ -246,7 +367,7 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     def _add_entity(self, namespace_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> str:
         table = self._table_name(namespace_id)
-        embedding = self.embedding_model.encode(content_str).tolist()
+        embedding = self._embedding(content_str)
         metadata_json = json.dumps(metadata)
         with self.conn.cursor() as cur:
             cur.execute(
@@ -263,7 +384,7 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     def _update_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
         table = self._table_name(namespace_id)
-        embedding = self.embedding_model.encode(content_str).tolist()
+        embedding = self._embedding(content_str)
         metadata_json = json.dumps(metadata)
         with self.conn.cursor() as cur:
             cur.execute(
@@ -350,8 +471,12 @@ class PostgresEntityBackend(BaseEntityBackend):
             query_params = params + [limit]
         else:
             query_embedding = self.embedding_model.encode(query).tolist()
+            # Adding zero prevents the approximate index from applying its
+            # candidate limit before selective predicates. PostgreSQL can still
+            # use the scalar/JSON indexes to find the exact filtered population.
+            distance = "(embedding <=> %s::vector) + 0" if where_parts else "embedding <=> %s::vector"
             stmt = sql.SQL(
-                "SELECT id, type, content, created_at, metadata FROM {table} WHERE {where} ORDER BY embedding <=> %s::vector LIMIT %s"
+                "SELECT id, type, content, created_at, metadata FROM {table} WHERE {where} ORDER BY " + distance + " LIMIT %s"
             ).format(table=sql.Identifier(table), where=where_clause)
             query_params = params + [str(query_embedding), limit]
 
@@ -377,7 +502,7 @@ class PostgresEntityBackend(BaseEntityBackend):
     def close(self):
         """Close PostgreSQL connection."""
         try:
-            if hasattr(self, "conn") and self.conn and not self.conn.closed:
-                self.conn.close()
+            if hasattr(self, "_conn") and self._conn and not self._conn.closed:
+                self._conn.close()
         except Exception as e:
             logger.warning(f"Error closing PostgreSQL connection: {e}")

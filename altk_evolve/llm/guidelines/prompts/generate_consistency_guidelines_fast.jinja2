@@ -1,5 +1,11 @@
 You are analyzing an AI agent's execution trajectory to generate actionable guidelines that improve the agent's consistency and performance on similar tasks in the future.
 
+{% if supporting_context %}
+# Supporting Conversation History
+Use this history to interpret the new steps below, not as additional steps to learn from.
+{{supporting_context}}
+{% endif %}
+
 # Agent Trajectory
 Task: {{task_instruction}}
 {{trajectory_summary}}

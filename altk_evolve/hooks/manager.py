@@ -558,7 +558,9 @@ def _invoke(hook_type: HookType, payload: Any, backend: BaseEntityBackend | None
 
     state: dict[str, Any] = {}
     if backend is not None:
-        state["backend"] = backend
+        from altk_evolve.hooks.backend import HookBackend
+
+        state["backend"] = HookBackend(backend)
         state["backend_kind"] = type(backend).__name__
     global_context = GlobalContext(request_id=uuid.uuid4().hex, state=state)
 
