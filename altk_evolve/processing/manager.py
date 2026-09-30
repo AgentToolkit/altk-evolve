@@ -165,7 +165,7 @@ class ProcessingManager:
         trajectory = Trajectory.model_validate(trajectory)
         skipped = set()
         if client is not None:
-            client.get_namespace_details(namespace_id)
+            client.backend.validate_namespace(namespace_id)
             if client.backend.in_transaction:
                 raise ProcessingError("Process trajectories outside storage transactions")
             if trajectory.batch is not None:

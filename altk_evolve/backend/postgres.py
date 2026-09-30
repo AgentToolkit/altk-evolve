@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import uuid
+import hashlib
 from contextlib import contextmanager
 from contextvars import ContextVar
 from collections.abc import Callable, Sequence
@@ -274,8 +275,51 @@ class PostgresEntityBackend(BaseEntityBackend):
                 ).format(table=sql.Identifier(table), dim=sql.Literal(self.embedding_dim))
             )
 
+        self.create_search_indexes(namespace_id)
         with SQLiteManager() as db_manager:
             return db_manager.create_namespace(namespace_id)
+
+    def create_search_indexes(self, namespace_id: str, *, approximate: bool = False) -> None:
+        """Add indexes without changing stored data or blocking ordinary writes.
+
+        New namespaces get type and JSON containment indexes. Call this explicitly
+        for existing namespaces; approximate=True also opts into HNSW cosine search
+        for unfiltered queries. Filtered queries remain exact to avoid losing rare
+        matches to an approximate candidate limit. Index construction is maintenance
+        work and must run outside entity transactions.
+        """
+        if self.in_transaction:
+            raise EvolveException("Create search indexes outside entity transactions")
+        if approximate and self.embedding_dim > 2000:
+            raise EvolveException("HNSW vector indexes support at most 2000 dimensions")
+        table = self._table_name(namespace_id)
+        suffix = hashlib.sha256(table.encode()).hexdigest()[:24]
+        indexes = [("type", "btree (type)"), ("metadata", "gin (metadata jsonb_path_ops)")]
+        if approximate:
+            indexes.append(("vector", "hnsw (embedding vector_cosine_ops)"))
+        # A dedicated autocommit connection permits CONCURRENTLY. The session
+        # advisory lock serializes overlapping maintenance calls; close releases it.
+        with self._connect(self._settings.dbname) as connection:
+            connection.execute("SELECT pg_advisory_lock(hashtextextended(%s, 0))", ("evolve:index:" + table,))
+            for kind, definition in indexes:
+                name = f"evolve_{kind}_{suffix}"
+                existing = connection.execute("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(%s)", (name,)).fetchone()
+                if existing is not None and existing[0] is False:
+                    # An interrupted CONCURRENTLY build leaves an unusable index;
+                    # IF NOT EXISTS alone would silently keep it forever.
+                    connection.execute(sql.SQL("DROP INDEX CONCURRENTLY {}").format(sql.Identifier(name)))
+                connection.execute(
+                    sql.SQL("CREATE INDEX CONCURRENTLY IF NOT EXISTS {} ON {} USING " + definition).format(
+                        sql.Identifier(name), sql.Identifier(table)
+                    )
+                )
+            connection.execute(sql.SQL("ANALYZE {}").format(sql.Identifier(table)))
+
+    def validate_namespace(self, namespace_id: str) -> None:
+        self._validate_namespace(namespace_id)
+        with SQLiteManager() as db_manager:
+            if db_manager.get_namespace(namespace_id) is None:
+                raise NamespaceNotFoundException(f"Namespace {namespace_id} not found")
 
     def get_namespace_details(self, namespace_id: str) -> Namespace:
         self._validate_namespace(namespace_id)
@@ -427,8 +471,12 @@ class PostgresEntityBackend(BaseEntityBackend):
             query_params = params + [limit]
         else:
             query_embedding = self.embedding_model.encode(query).tolist()
+            # Adding zero prevents the approximate index from applying its
+            # candidate limit before selective predicates. PostgreSQL can still
+            # use the scalar/JSON indexes to find the exact filtered population.
+            distance = "(embedding <=> %s::vector) + 0" if where_parts else "embedding <=> %s::vector"
             stmt = sql.SQL(
-                "SELECT id, type, content, created_at, metadata FROM {table} WHERE {where} ORDER BY embedding <=> %s::vector LIMIT %s"
+                "SELECT id, type, content, created_at, metadata FROM {table} WHERE {where} ORDER BY " + distance + " LIMIT %s"
             ).format(table=sql.Identifier(table), where=where_clause)
             query_params = params + [str(query_embedding), limit]
 

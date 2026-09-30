@@ -158,3 +158,49 @@ def test_postgres_checkpoints_are_independent_of_entity_hooks(sync, monkeypatch)
     assert client.backend.conn.execute(
         "SELECT count(*) FROM processing_checkpoints WHERE namespace_id=%s", (sync.namespace_id,)
     ).fetchone() == (1,)
+
+
+def test_processing_validates_catalog_without_counting_entities(sync, monkeypatch):
+    client = sync.client
+    monkeypatch.setattr(client.backend, "get_namespace_details", lambda *_: pytest.fail("processing must not count entities"))
+    result = client.process_trajectory({"messages": []}, namespace_id=sync.namespace_id, processing_profile=sync.namespace_id)
+    assert result.completed_processors == ["note"]
+
+
+def test_postgres_search_indexes_are_explicit_and_idempotent(sync):
+    client = sync.client
+    backend = client.backend
+    backend.create_search_indexes(sync.namespace_id)
+    backend.create_search_indexes(sync.namespace_id, approximate=True)
+    backend.create_search_indexes(sync.namespace_id, approximate=True)
+    rows = backend.conn.execute("SELECT indexdef FROM pg_indexes WHERE tablename=%s", (backend._table_name(sync.namespace_id),)).fetchall()
+    definitions = "\n".join(row[0] for row in rows)
+    assert "USING gin (metadata jsonb_path_ops)" in definitions
+    assert "USING btree (type)" in definitions
+    assert "USING hnsw (embedding vector_cosine_ops)" in definitions
+    client.update_entities(sync.namespace_id, [Entity(type="note", content="needle", metadata={"rare": True})], False)
+    assert (
+        client.backend.search_entities(sync.namespace_id, query="needle", filters={"metadata.rare": True}, limit=1)[0].content == "needle"
+    )
+
+
+def test_index_maintenance_repairs_interrupted_build(sync):
+    backend = sync.client.backend
+    table = backend._table_name(sync.namespace_id)
+    name = backend.conn.execute(
+        "SELECT indexname FROM pg_indexes WHERE tablename=%s AND indexdef LIKE '%%USING gin%%'", (table,)
+    ).fetchone()[0]
+    # Simulate the catalog state left by an interrupted concurrent index build.
+    backend.conn.execute("UPDATE pg_index SET indisvalid=false WHERE indexrelid=to_regclass(%s)", (name,))
+    backend.create_search_indexes(sync.namespace_id)
+    assert backend.conn.execute("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(%s)", (name,)).fetchone() == (True,)
+
+
+def test_processing_rejects_namespace_missing_from_catalog(sync):
+    import sqlite3
+    from altk_evolve.schema.exceptions import NamespaceNotFoundException
+
+    with sqlite3.connect(os.environ["EVOLVE_SQLITE_PATH"]) as connection:
+        connection.execute("DELETE FROM namespaces WHERE id=?", (sync.namespace_id,))
+    with pytest.raises(NamespaceNotFoundException):
+        sync.client.process_trajectory({"messages": []}, namespace_id=sync.namespace_id, processing_profile=sync.namespace_id)

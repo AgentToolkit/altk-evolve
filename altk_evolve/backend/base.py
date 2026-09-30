@@ -83,6 +83,10 @@ class BaseEntityBackend(ABC):
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         pass
 
+    def validate_namespace(self, namespace_id: str) -> None:
+        """Validate existence for processing without fetching entity statistics."""
+        self._validate_namespace(namespace_id)
+
     @abstractmethod
     def get_namespace_details(self, namespace_id: str) -> Namespace:
         pass
@@ -175,13 +179,15 @@ class BaseEntityBackend(ABC):
         caller already holds it (the conflict-resolution pre-read); otherwise
         it is fetched via the internal ``_search_entities_impl`` seam (no
         memory_post_read) — only when a memory_pre_delete subscriber exists,
-        so the hooks-disabled path stays zero-overhead. Entity not found →
-        ``metadata=None`` and the delete proceeds to the impl as before.
+        so the hooks-disabled path stays zero-overhead. A missing policy snapshot
+        fails closed; it must never turn a failed lookup into an unguarded delete.
         """
         if hooks_active(HookType.MEMORY_PRE_DELETE):
             if stored_entity is None:
                 found = self._search_entities_impl(namespace_id, filters={"id": entity_id}, limit=1)
-                stored_entity = found[0] if found else None
+                if not found:
+                    raise EvolveException(f"Entity '{entity_id}' not found; cannot evaluate deletion policy")
+                stored_entity = found[0]
             dispatch_memory_pre_delete(self, namespace_id, entity_id, metadata=stored_entity.metadata if stored_entity else None)
         self._delete_entity_by_id_impl(namespace_id, entity_id)
 

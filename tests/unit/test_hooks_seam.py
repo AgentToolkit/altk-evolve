@@ -705,11 +705,10 @@ def test_external_delete_payload_carries_fetched_metadata(client: EvolveClient):
     assert len(recorder.calls["memory_pre_delete"]) == 1
     assert recorder.calls["memory_pre_delete"][0].metadata == {"case": "c-2"}
 
-    # Nonexistent id: the hook still fires (metadata=None) and the impl's
-    # not-found error surfaces exactly as before.
+    # A missing snapshot must not authorize deletion with absent policy metadata.
     with pytest.raises(EvolveException, match="not found"):
         client.delete_entity_by_id("ns", "does-not-exist")
-    assert recorder.calls["memory_pre_delete"][1].metadata is None
+    assert len(recorder.calls["memory_pre_delete"]) == 1
 
 
 # ── conflict-resolution UPDATE metadata durability ───────────────────

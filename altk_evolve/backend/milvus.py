@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import uuid
+import sqlite3
+from contextlib import contextmanager
 
 from altk_evolve.backend.base import BaseEntityBackend, BaseSettings
 from altk_evolve.config.milvus import MilvusDBSettings, milvus_client_settings
@@ -11,7 +13,6 @@ from altk_evolve.schema.core import Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException, NamespaceNotFoundException
 from altk_evolve.utils.utils import deserialize_content
 from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient
-from pymilvus.exceptions import MilvusException
 from pymilvus.milvus_client.index import IndexParams
 from sentence_transformers import SentenceTransformer
 
@@ -45,12 +46,34 @@ class MilvusEntityBackend(BaseEntityBackend):
         self.embedding_model = SentenceTransformer(self.config.embedding_model)
         self.metric_type = "COSINE"
 
+    @contextmanager
+    def _metadata_write(self):
+        """Coordinate read/merge/upsert through the deployment's shared metadata DB.
+
+        All Evolve workers writing the same Milvus database must share sqlite_uri.
+        This excludes direct Milvus writers and hosts with independent SQLite files;
+        Milvus itself has no atomic JSON-key merge. No hooks or models run here.
+        """
+        if self.sqlite_uri == ":memory:":
+            raise EvolveException("Milvus metadata updates require a shared, file-backed sqlite_uri")
+        connection = sqlite3.connect(self.sqlite_uri, timeout=30)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            yield
+        finally:
+            connection.close()
+
     def _build_filter_expr(self, filters: dict | None, base_conditions: list[str] | None = None) -> str:
         base_conditions = base_conditions or []
         expressions = list(base_conditions)
         for key, value in (filters or {}).items():
             if value is None:
                 continue
+            if key == "id":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError) as exc:
+                    raise EvolveException("Entity IDs must be numeric") from exc
             literal = json.dumps(value)
             if key.startswith("metadata."):
                 metadata_key = key.split(".", 1)[1]
@@ -59,7 +82,7 @@ class MilvusEntityBackend(BaseEntityBackend):
                 expressions.append(f"{key} == {literal}")
             else:
                 expressions.append(f"metadata[{json.dumps(str(key))}] == {literal}")
-        return " AND ".join(expressions)
+        return " and ".join(expressions)
 
     def _split_filters(self, filters: dict | None) -> tuple[dict, dict]:
         schema_filters: dict = {}
@@ -279,18 +302,20 @@ class MilvusEntityBackend(BaseEntityBackend):
         )
 
     def _update_entity(self, namespace_id: str, entity_id: str, entity_type: str, content_str: str, timestamp: int, metadata: dict) -> None:
-        self.milvus.upsert(
-            collection_name=namespace_id,
-            data={
-                "type": entity_type,
-                "id": int(entity_id),
-                "content": content_str,
-                "created_at": timestamp,
-                "embedding": self.embedding_model.encode(content_str),
-                "metadata": metadata,
-            },
-            partial_update=True,
-        )
+        embedding = self.embedding_model.encode(content_str)
+        with self._metadata_write():
+            self.milvus.upsert(
+                collection_name=namespace_id,
+                data={
+                    "type": entity_type,
+                    "id": int(entity_id),
+                    "content": content_str,
+                    "created_at": timestamp,
+                    "embedding": embedding,
+                    "metadata": metadata,
+                },
+                partial_update=True,
+            )
 
     def _delete_entity(self, namespace_id: str, entity_id: str) -> None:
         self._delete_entity_by_id_impl(namespace_id=namespace_id, entity_id=entity_id)
@@ -301,22 +326,23 @@ class MilvusEntityBackend(BaseEntityBackend):
         except ValueError:
             raise EvolveException(f"Invalid entity ID '{entity_id}': must be numeric.")
         self._validate_namespace(namespace_id)
-        results = self.milvus.query(
-            collection_name=namespace_id,
-            filter=f"id == {entity_id_int}",
-            output_fields=["id", "type", "content", "created_at", "metadata"],
-            limit=1,
-        )
-        if not results:
-            raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
-        entity = parse_milvus_entity(results[0])
-        merged = {**(entity.metadata or {}), **metadata_patch}
-        timestamp = int(entity.created_at.timestamp())
-        from altk_evolve.utils.utils import serialize_content
-
-        self._update_entity(namespace_id, entity_id, entity.type, serialize_content(entity.content), timestamp, merged)
-        self._post_update(namespace_id)
-        return RecordedEntity(**{**entity.model_dump(), "metadata": merged})
+        with self._metadata_write():
+            results = self.milvus.query(
+                collection_name=namespace_id,
+                filter=f"id == {entity_id_int}",
+                output_fields=["id", "type", "content", "created_at", "metadata", "embedding"],
+                limit=1,
+                consistency_level="Strong",
+            )
+            if not results:
+                raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
+            raw = dict(results[0])
+            entity = parse_milvus_entity(raw)
+            merged = {**entity.metadata, **metadata_patch}
+            # Reuse the stored vector: metadata changes must not recompute embeddings.
+            self.milvus.upsert(collection_name=namespace_id, data={**raw, "metadata": merged}, partial_update=True)
+            self._post_update(namespace_id)
+            return entity.model_copy(update={"metadata": merged})
 
     def _post_update(self, namespace_id: str) -> None:
         self.milvus.flush(namespace_id)
@@ -330,24 +356,16 @@ class MilvusEntityBackend(BaseEntityBackend):
         self._validate_namespace(namespace_id)
         filters = filters or {}
         schema_filters, metadata_filters = self._split_filters(filters)
-        fetch_limit = max(limit, 1000) if filters else limit
+        fetch_limit = limit
 
         if query is None:
-            try:
-                results = self.milvus.query(
-                    collection_name=namespace_id,
-                    filter=self._build_filter_expr(schema_filters, base_conditions=["id > 0"]),
-                    output_fields=["id", "type", "content", "created_at", "metadata"],
-                    limit=fetch_limit,
-                )
-            except MilvusException as exc:
-                if "HasRawData" in str(exc):
-                    logger.warning(
-                        "Milvus raw-data assertion for namespace=%s; returning empty results.",
-                        namespace_id,
-                    )
-                    return []
-                raise
+            results = self.milvus.query(
+                collection_name=namespace_id,
+                filter=self._build_filter_expr(filters, base_conditions=["id > 0"]),
+                output_fields=["id", "type", "content", "created_at", "metadata"],
+                limit=fetch_limit,
+                consistency_level="Strong",
+            )
         else:
             self._ensure_embedding_index(namespace_id)
             try:
@@ -355,10 +373,11 @@ class MilvusEntityBackend(BaseEntityBackend):
                     collection_name=namespace_id,
                     anns_field="embedding",
                     data=[self.embedding_model.encode(query)],
-                    filter=self._build_filter_expr(schema_filters),
+                    filter=self._build_filter_expr(filters),
                     limit=fetch_limit,
                     output_fields=["*"],
                     search_params={"metric_type": self.metric_type},
+                    consistency_level="Strong",
                 )
             except Exception as exc:
                 if "index not found" in str(exc).lower():
@@ -367,10 +386,11 @@ class MilvusEntityBackend(BaseEntityBackend):
                         collection_name=namespace_id,
                         anns_field="embedding",
                         data=[self.embedding_model.encode(query)],
-                        filter=self._build_filter_expr(schema_filters),
+                        filter=self._build_filter_expr(filters),
                         limit=fetch_limit,
                         output_fields=["*"],
                         search_params={"metric_type": self.metric_type},
+                        consistency_level="Strong",
                     )
                 else:
                     raise
@@ -387,7 +407,8 @@ class MilvusEntityBackend(BaseEntityBackend):
         except ValueError as exc:
             raise EvolveException(f"Invalid entity ID: {entity_id}. Entity IDs must be numeric.") from exc
         self._validate_namespace(namespace_id)
-        self.milvus.delete(collection_name=namespace_id, ids=[entity_id_int])
+        with self._metadata_write():
+            self.milvus.delete(collection_name=namespace_id, ids=[entity_id_int])
 
     def close(self):
         try:

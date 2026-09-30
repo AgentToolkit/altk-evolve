@@ -386,6 +386,7 @@ def test_create_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
     """Test creating a new namespace."""
     namespace_id = "test_namespace"
     monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(False))
+    monkeypatch.setattr(postgres_backend, "_connect", lambda _: postgres_backend.conn)
 
     mock_cursor = MagicMock()
     mock_cursor_context = MagicMock()
