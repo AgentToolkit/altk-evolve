@@ -139,7 +139,7 @@ class MemoryPreDeletePayload(EvolveBasePayload):
 
     Fires on BOTH delete paths: the public ``delete_entity_by_id`` and
     conflict-resolution DELETE verdicts inside ``update_entities`` (all
-    routed through ``BaseEntityBackend._guarded_delete``).
+    checked during preparation and bound to an unchanged commit receipt).
 
     ``metadata`` carries the stored entity's metadata when it could be
     resolved (``None`` when the entity was not found), so policy plugins can

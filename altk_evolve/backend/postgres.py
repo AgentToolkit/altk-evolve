@@ -111,7 +111,7 @@ class PostgresEntityBackend(BaseEntityBackend):
 
     def _save_processing_checkpoint(self, namespace_id: str, key: str, value: dict) -> None:
         self.conn.execute(
-            "INSERT INTO processing_checkpoints (namespace_id, key, value) VALUES (%s, %s, %s::jsonb)",
+            "INSERT INTO processing_checkpoints (namespace_id, key, value) VALUES (%s, %s, %s::jsonb) ON CONFLICT (namespace_id, key) DO NOTHING",
             (namespace_id, key, json.dumps(value)),
         )
 
@@ -312,7 +312,7 @@ class PostgresEntityBackend(BaseEntityBackend):
         if self._transaction_connection.get() is not None:
             raise EvolveException("Cannot delete a namespace inside an entity transaction")
         table = self._table_name(namespace_id)
-        with self.conn.cursor() as cur:
+        with self.conn.transaction(), self.conn.cursor() as cur:
             cur.execute(sql.SQL("DROP TABLE IF EXISTS {table}").format(table=sql.Identifier(table)))
             cur.execute("DELETE FROM processing_checkpoints WHERE namespace_id=%s", (namespace_id,))
 

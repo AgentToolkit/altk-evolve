@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from contextlib import AbstractContextManager, nullcontext
 from altk_evolve.backend.writes import PreparedWrites
-from typing import Literal, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from altk_evolve.processing.repository import ProfileRepository
@@ -155,32 +155,21 @@ class BaseEntityBackend(ABC):
     def delete_entity_by_id(self, namespace_id: str, entity_id: str):
         """Delete an entity (public API). Fires memory_pre_delete; do not override — override _delete_entity_by_id_impl.
 
-        Unified delete semantics: this method and conflict-resolution DELETE
-        verdicts inside ``update_entities`` both route through
-        ``_guarded_delete``, so memory_pre_delete fires for every entity
-        delete issued through the backend abstraction. Veto behavior differs
+        API deletes dispatch here; conflict-resolution deletes dispatch during
+        preparation and commit only with an unchanged preparation receipt. Veto behavior differs
         per caller: here a halting plugin propagates
         :class:`MemoryPolicyViolation` to the caller; the conflict-resolution
         executor instead skips the vetoed delete and continues the batch.
         """
-        self._guarded_delete(namespace_id, entity_id, source="api")
+        self._guarded_delete(namespace_id, entity_id)
 
     def _guarded_delete(
         self,
         namespace_id: str,
         entity_id: str,
         stored_entity: RecordedEntity | None = None,
-        *,
-        source: Literal["api", "conflict_resolution"],
     ) -> None:
-        """Single guarded delete path: fire memory_pre_delete, then delete.
-
-        Every entity delete issued through the backend abstraction goes
-        through here — the public ``delete_entity_by_id`` (``source="api"``,
-        dispatching to ``_delete_entity_by_id_impl``) and conflict-resolution
-        DELETE verdicts inside ``update_entities``
-        (``source="conflict_resolution"``, dispatching to ``_delete_entity``)
-        — so a delete can never bypass the hook. Do not override.
+        """Dispatch policy for a direct API delete.
 
         The payload's ``metadata`` comes from ``stored_entity`` when the
         caller already holds it (the conflict-resolution pre-read); otherwise
@@ -194,10 +183,7 @@ class BaseEntityBackend(ABC):
                 found = self._search_entities_impl(namespace_id, filters={"id": entity_id}, limit=1)
                 stored_entity = found[0] if found else None
             dispatch_memory_pre_delete(self, namespace_id, entity_id, metadata=stored_entity.metadata if stored_entity else None)
-        if source == "conflict_resolution":
-            self._delete_entity(namespace_id, entity_id)
-        else:
-            self._delete_entity_by_id_impl(namespace_id, entity_id)
+        self._delete_entity_by_id_impl(namespace_id, entity_id)
 
     @abstractmethod
     def _delete_entity_by_id_impl(self, namespace_id: str, entity_id: str):
@@ -436,6 +422,7 @@ class BaseEntityBackend(ABC):
             prepared = self._prepare_updates(namespace_id, entities, enable_conflict_resolution, **kwargs)
             prepared.patches = deepcopy(patches)
         self._prepare_storage(prepared)
+        prepared._authorize(self, namespace_id)
         return prepared
 
     def _prepare_storage(self, prepared: PreparedWrites) -> None:
@@ -472,10 +459,20 @@ class BaseEntityBackend(ABC):
         Models, hooks, and embeddings must have finished in prepare_updates().
         A checkpoint requires an atomic backend; ordinary untracked writes retain
         support for non-transactional backends. Only touched replacement/delete
-        targets are compared, so unrelated namespace changes never cause retries.
+        targets are compared on atomic backends; advisory access stamps are rebased.
+        Non-atomic backends retain best-effort writes without pretending to offer CAS.
+        Only unchanged receipts from prepare_updates() may enter this method.
         """
         if checkpoint is not None and not self.supports_atomic_writes:
             raise NotImplementedError("Incremental processing requires atomic namespace writes")
+        targets = set()
+        for batch in batches:
+            batch._assert_authorized(self, namespace_id)
+            for update in batch.updates:
+                if update.event in ("UPDATE", "DELETE"):
+                    if update.id in targets:
+                        raise EvolveException(f"Multiple prepared mutations target entity {update.id}")
+                    targets.add(update.id)
         context = self.transaction(namespace_id) if self.supports_atomic_writes and not self.in_transaction else nullcontext()
         with context:
             checkpoint_keys = list(dict.fromkeys((checkpoint[0], *checkpoint_aliases))) if checkpoint is not None else []
@@ -492,16 +489,45 @@ class BaseEntityBackend(ABC):
                     if entity_id in expected and expected[entity_id] != entity:
                         raise ConcurrentEntityUpdate(f"Conflicting prepared versions of entity {entity_id}")
                     expected[entity_id] = entity
-            for entity_id, entity in expected.items():
-                current = self.scan_entities(namespace_id, filters={"id": entity_id}, limit=1)
-                if current != [entity]:
-                    raise ConcurrentEntityUpdate(f"Entity {entity_id} changed during preparation")
-            updates = [update for batch in batches for update in self._apply_prepared(namespace_id, batch)]
+            current_targets = {}
+            if self.supports_atomic_writes:
+                for entity_id, entity in expected.items():
+                    current = self.scan_entities(namespace_id, filters={"id": entity_id}, limit=1)
+                    # Access stamps are advisory; every other metadata field can
+                    # affect policy and must still invalidate a prepared decision.
+                    before = entity.model_copy(update={"metadata": {k: v for k, v in entity.metadata.items() if k != "last_accessed"}})
+                    after = (
+                        current[0].model_copy(update={"metadata": {k: v for k, v in current[0].metadata.items() if k != "last_accessed"}})
+                        if current
+                        else None
+                    )
+                    if before != after:
+                        raise ConcurrentEntityUpdate(f"Entity {entity_id} changed during preparation")
+                    current_targets[entity_id] = current[0]
+            updates = []
+            for batch in batches:
+                from dataclasses import replace
+
+                applied = replace(batch, updates=deepcopy(batch.updates))
+                for update in applied.updates:
+                    if update.event == "UPDATE" and update.id in current_targets:
+                        metadata = current_targets[update.id].metadata
+                        if "last_accessed" in metadata:
+                            update.metadata = {**(update.metadata or {}), "last_accessed": metadata["last_accessed"]}
+                        elif update.metadata:
+                            update.metadata.pop("last_accessed", None)
+                updates.extend(self._apply_prepared(namespace_id, applied))
             deleted = {update.id for update in updates if update.event == "DELETE"}
             for batch in batches:
                 for patch in batch.patches:
                     # A prepared deletion also removes any proposed metadata for that entity.
                     if patch.entity_id not in deleted:
+                        if self.supports_atomic_writes and not self.scan_entities(
+                            patch.namespace_id, filters={"id": patch.entity_id}, limit=1
+                        ):
+                            if set(patch.patch) <= {"last_accessed"}:
+                                continue
+                            raise ConcurrentEntityUpdate(f"Metadata patch target {patch.entity_id} disappeared during preparation")
                         self._update_entity_metadata_impl(patch.namespace_id, patch.entity_id, patch.patch)
             if checkpoint is not None:
                 for key in checkpoint_keys:

@@ -1,3 +1,4 @@
+from altk_evolve.llm.guidelines.context import render_supporting_context
 import json
 import logging
 import re
@@ -175,7 +176,7 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
     return None
 
 
-def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
+def parse_openai_agents_trajectory(messages: list[dict], *, context_messages: list[dict] | None = None) -> dict:
     """
     Parse OpenAI Agents SDK trajectory from streamer.to_input_list().
 
@@ -189,7 +190,9 @@ def parse_openai_agents_trajectory(messages: list[dict]) -> dict:
     """
     agent_steps: list[dict[str, str | dict]] = []
     function_calls: list[dict[str, str | dict]] = []
-    task_instruction: str | None = None
+    task_instruction: str | None = next(
+        (m["content"][:2000] for m in (context_messages or []) if m.get("role") == "user" and isinstance(m.get("content"), str)), None
+    )
 
     for message in messages:
         # Extract task instruction from first user message
@@ -303,10 +306,12 @@ def _generate_guidelines_for_segment(
     constrained_decoding_supported: bool,
     *,
     options: GuidelineRuntime,
+    supporting_context: str = "",
 ) -> GuidelineGenerationResult:
     """Generate guidelines for a single trajectory slice (full or subtask)."""
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
+        supporting_context=supporting_context,
         num_steps=num_steps,
         trajectory_summary=trajectory_slice,
         constrained_decoding_supported=constrained_decoding_supported,
@@ -347,7 +352,9 @@ def _generate_guidelines_for_segment(
     return GuidelineGenerationResult(guidelines=guidelines or [], task_description=task_description)
 
 
-def generate_guidelines(messages: list[dict], *, options: GuidelineRuntime | None = None) -> list[GuidelineGenerationResult]:
+def generate_guidelines(
+    messages: list[dict], *, options: GuidelineRuntime | None = None, context_messages: list[dict] | None = None
+) -> list[GuidelineGenerationResult]:
     """Generate guidelines from a trajectory, optionally segmented into subtasks.
 
     Segmentation is **disabled by default** (EVOLVE_SEGMENTATION_ENABLED=true enables it).
@@ -386,7 +393,7 @@ def generate_guidelines(messages: list[dict], *, options: GuidelineRuntime | Non
     )
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
-    trajectory_data = parse_openai_agents_trajectory(messages)
+    trajectory_data = parse_openai_agents_trajectory(messages, context_messages=context_messages)
     task_instruction = trajectory_data["task_instruction"]
     steps_list: list[str] = trajectory_data["steps_list"]
     n_steps = len(steps_list)
@@ -419,6 +426,7 @@ def generate_guidelines(messages: list[dict], *, options: GuidelineRuntime | Non
                     num_steps=len(slice_steps),
                     constrained_decoding_supported=constrained_decoding_supported,
                     options=options,
+                    supporting_context=render_supporting_context(context_messages),
                 )
                 for subtask, slice_steps in valid_slices
             ]
@@ -433,5 +441,6 @@ def generate_guidelines(messages: list[dict], *, options: GuidelineRuntime | Non
             num_steps=trajectory_data["num_steps"],
             constrained_decoding_supported=constrained_decoding_supported,
             options=options,
+            supporting_context=render_supporting_context(context_messages),
         )
     ]

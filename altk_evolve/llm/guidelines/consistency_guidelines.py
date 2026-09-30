@@ -1,3 +1,4 @@
+from altk_evolve.llm.guidelines.context import render_supporting_context
 import json
 import logging
 from collections.abc import Callable
@@ -468,7 +469,7 @@ def _generate_guideline_result(
     prompt = _CONSISTENCY_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         trajectory_summary=trajectory_summary,
-        supporting_context=json.dumps(context_messages, ensure_ascii=False) if context_messages else "",
+        supporting_context=render_supporting_context(context_messages),
         constrained_decoding_supported=constrained_decoding_supported,
     )
 
@@ -791,6 +792,7 @@ def _generate_fast_guideline_result(
     debug_suffix: str = "",
     *,
     options: GuidelineRuntime,
+    supporting_context: str = "",
 ) -> GuidelineGenerationResult:
     """Generate a single GuidelineGenerationResult for one segment (or the full trajectory)
     using the fast consistency pipeline: the LLM judges each step's confidence itself, in the
@@ -798,6 +800,7 @@ def _generate_fast_guideline_result(
     """
     prompt = _CONSISTENCY_GUIDELINES_FAST_TEMPLATE.render(
         task_instruction=task_description,
+        supporting_context=supporting_context,
         num_steps=num_steps,
         trajectory_summary=trajectory_slice,
         constrained_decoding_supported=constrained_decoding_supported,
@@ -898,7 +901,7 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
     )
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
-    trajectory_data = parse_openai_agents_trajectory(messages)
+    trajectory_data = parse_openai_agents_trajectory(messages, context_messages=trajectory.get("context_messages"))
     task_instruction = trajectory_data["task_instruction"]
     steps_list: list[str] = trajectory_data["steps_list"]
     n_steps = len(steps_list)
@@ -940,6 +943,7 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
                     trace_id=trace_id,
                     debug_suffix=f"_seg{i}",
                     options=options,
+                    supporting_context=render_supporting_context(trajectory.get("context_messages")),
                 )
                 for i, (subtask, slice_steps) in enumerate(valid_slices, 1)
             ]
@@ -958,6 +962,7 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
         debug_dir=debug_dir,
         trace_id=trace_id,
         options=options,
+        supporting_context=render_supporting_context(trajectory.get("context_messages")),
     )
     if debug_dir:
         _write_guidelines_debug(debug_dir, trace_id, [result], "_consistency-fast")

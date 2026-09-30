@@ -562,7 +562,7 @@ def test_halting_delete_raises_and_preserves_entity(client: EvolveClient):
 # ── unified delete path ──────────────────────────────────────────────
 #
 # Both delete initiators — the public delete_entity_by_id and LLM DELETE
-# verdicts from conflict resolution — route through _guarded_delete, so
+# verdicts from conflict resolution — dispatch policy before deletion, so
 # memory_pre_delete fires (with the stored entity's metadata) on every
 # entity delete. Veto semantics differ per caller: the public path raises,
 # the conflict-resolution executor skips that delete and continues.

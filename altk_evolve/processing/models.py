@@ -61,7 +61,8 @@ class TrajectoryBatch(BaseModel):
     provenance, not identity: changing modes does not replay completed input.
     Use a new scope for an intentional replay of historical batches. Aliases
     identify additional source IDs for the same contribution and revision;
-    adapters must never alias independent events.
+    adapters must never alias independent events. alias_revisions records the
+    revision of each alternate representation when its payload differs.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -71,6 +72,7 @@ class TrajectoryBatch(BaseModel):
     revision: str = Field(default="1", min_length=1)
     scope: str = Field(default="default", min_length=1)
     aliases: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+    alias_revisions: dict[str, str] = Field(default_factory=dict)
 
     def checkpoint_key(self, processor_id: str) -> str:
         value = [self.scope, self.source, self.conversation_id, processor_id, self.batch_id, self.revision]
@@ -79,7 +81,10 @@ class TrajectoryBatch(BaseModel):
     def checkpoint_keys(self, processor_id: str) -> list[str]:
         return list(
             dict.fromkeys(
-                self.model_copy(update={"batch_id": identity}).checkpoint_key(processor_id) for identity in (self.batch_id, *self.aliases)
+                self.model_copy(
+                    update={"batch_id": identity, "revision": self.alias_revisions.get(identity, self.revision)}
+                ).checkpoint_key(processor_id)
+                for identity in (self.batch_id, *self.aliases)
             )
         )
 

@@ -486,3 +486,27 @@ def test_parse_milvus_entity_accepts_epoch_zero_created_at():
     )
 
     assert parsed.created_at == datetime.datetime.fromtimestamp(0, datetime.UTC)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("event", ["UPDATE", "DELETE"])
+def test_nonatomic_milvus_writes_do_not_require_a_bounded_scan(milvus_backend, monkeypatch, event):
+    seed = RecordedEntity(id="1201", type="note", content="seed", metadata={}, created_at=datetime.datetime.now(datetime.UTC))
+    monkeypatch.setattr(milvus_backend, "_validate_namespace", lambda ns: None)
+    monkeypatch.setattr(milvus_backend, "_search_entities_impl", lambda *a, **kw: [seed])
+    monkeypatch.setattr(
+        milvus_backend, "scan_entities", Mock(side_effect=AssertionError("non-atomic backend cannot validate a CAS snapshot"))
+    )
+    monkeypatch.setattr(
+        "altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts",
+        lambda *a, **kw: [
+            EntityUpdate(id="1201", type="note", content="replacement", event=event),
+            EntityUpdate(id="new", type="note", content="addition", event="ADD"),
+        ],
+    )
+    write = Mock()
+    monkeypatch.setattr(milvus_backend, "_update_entity" if event == "UPDATE" else "_delete_entity", write)
+    monkeypatch.setattr(milvus_backend, "_add_entity", lambda *a, **kw: "1202")
+    results = milvus_backend.update_entities("ns", [Entity(type="note", content="incoming")])
+    assert [r.event for r in results] == [event, "ADD"]
+    write.assert_called_once()

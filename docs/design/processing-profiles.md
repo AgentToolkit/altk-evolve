@@ -362,7 +362,9 @@ in `entities`; `updates` reports actual storage mutations.
 
 Unrelated namespace changes do not invalidate processing. Reads for semantic
 reconciliation can be slightly stale. Only replacement/deletion targets are compared
-before destructive writes; a changed target raises `ConcurrentEntityUpdate`, leaving
+before destructive writes on atomic backends. Advisory `last_accessed` changes are
+rebased onto updates; content and policy-relevant metadata changes still raise
+`ConcurrentEntityUpdate`, leaving
 that contribution uncommitted and eligible for redelivery. There is no namespace-wide
 validation or automatic model retry. Concurrent deliveries can both run a processor,
 but only one can commit the same checkpoint.
@@ -385,7 +387,10 @@ call processing outside it.
 
 Hooks receive `HookBackend` for reads and metadata-patch proposals. During preparation,
 patches are collected and applied with the output commit; no hook is invoked under the
-commit lock. Callbacks must finish before returning. External side effects are outside
+commit lock. `prepare_updates()` returns an opaque receipt bound to its backend,
+namespace, and checked changes; constructing, modifying, or retargeting it is rejected
+by `commit_prepared()`. Multiple prepared mutations of the same target are rejected.
+Callbacks must finish before returning. External side effects are outside
 the storage guarantee and must tolerate duplicate execution.
 
 An atomic backend declares `supports_atomic_writes` and implements `transaction`,
@@ -426,12 +431,15 @@ History retains complete manifests so unpublished/ad-hoc plans remain traceable.
 Accurate consistency preserves `context_messages` as the original structured inference
 prefix, including system instructions and tool exchanges. Only assistant turns in
 `messages` are numbered and resampled. Guideline generation receives historical context
-separately from those scored steps; rendering history for extraction must never alter
-the replay prompt.
+separately from those scored steps. All three guideline paths bound the history rendered
+for extraction to 20,000 characters (up to 50 recent messages, 2,000 characters each),
+and retain the original task separately. This limit never alters the replay prefix.
 
 Phoenix records observed ancestor LLM span IDs as batch aliases, so discovering an inner
 instrumentation span later does not repeat an already committed contribution with the
-same payload revision. Alias links commit atomically and survive subsequent polls and
+same conversation content. Each alias carries its own representation revision, so
+provider/model labels and tool-schema detail need not be byte-identical. Changed
+conversation content is not aliased. Alias links commit atomically and survive subsequent polls and
 restarts. Discovery requires the span ancestry to be present in the fetched window;
 configure the fetch limit accordingly. Independent calls with identical content remain
 independent batches.

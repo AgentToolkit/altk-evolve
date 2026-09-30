@@ -269,7 +269,6 @@ def test_commit_does_not_run_hooks_or_compute_embeddings(storage, monkeypatch):
 
 
 def test_metadata_proposal_for_deleted_entity_does_not_abort_commit(storage, monkeypatch):
-    from altk_evolve.backend.writes import MetadataPatch
     from altk_evolve.schema.conflict_resolution import EntityUpdate
 
     client, peer, ns = storage
@@ -278,8 +277,14 @@ def test_metadata_proposal_for_deleted_entity_does_not_abort_commit(storage, mon
         "altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts",
         lambda *a, **kw: [EntityUpdate(id=seed.id, type="note", content=seed.content, event="DELETE")],
     )
+    from altk_evolve.hooks.backend import HookBackend
+
+    def patch_before_write(backend, namespace, entities):
+        HookBackend(backend).update_entity_metadata(namespace, seed.id, {"accessed": True})
+        return entities
+
+    monkeypatch.setattr("altk_evolve.backend.base.dispatch_memory_pre_write", patch_before_write)
     prepared = client.backend.prepare_updates(ns, [Entity(type="note", content="seed")])
-    prepared.patches.append(MetadataPatch(ns, seed.id, {"accessed": True}))
     client.backend.commit_prepared(ns, [prepared], checkpoint=("delete-batch", {}))
     assert peer.backend.scan_entities(ns) == []
     assert peer.backend.get_processing_checkpoint(ns, "delete-batch") == {}
@@ -350,3 +355,91 @@ def test_alias_checkpoint_linking_is_atomic_and_preserves_original_provenance(st
     monkeypatch.setattr(client.backend, "_save_processing_checkpoint", save)
     assert client.backend.commit_prepared(ns, [], checkpoint=("inner", {}), checkpoint_aliases=("outer",)) is None
     assert peer.backend.get_processing_checkpoint(ns, "inner") == {"revision": 1}
+
+
+@pytest.mark.parametrize("event", ["UPDATE", "DELETE"])
+def test_access_stamp_does_not_invalidate_but_policy_metadata_does(storage, monkeypatch, event):
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+
+    client, peer, ns = storage
+    seed = client.backend.scan_entities(ns)[0]
+    monkeypatch.setattr(
+        "altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts",
+        lambda *a, **kw: [EntityUpdate(id=seed.id, type="note", content="new", event=event, metadata={})],
+    )
+    prepared = client.backend.prepare_updates(ns, [Entity(type="note", content="seed")])
+    peer.patch_entity_metadata(ns, seed.id, {"last_accessed": "2030-01-01T00:00:00Z"})
+    client.backend.commit_prepared(ns, [prepared])
+    remaining = peer.backend.scan_entities(ns)
+    if event == "UPDATE":
+        assert remaining[0].metadata["last_accessed"] == "2030-01-01T00:00:00Z"
+        prepared = client.backend.prepare_updates(ns, [Entity(type="note", content="new")])
+        peer.patch_entity_metadata(ns, seed.id, {"legal_hold": True})
+        with pytest.raises(ConcurrentEntityUpdate):
+            client.backend.commit_prepared(ns, [prepared])
+    else:
+        assert remaining == []
+
+
+def test_prepared_write_receipts_reject_forged_mutated_and_retargeted_batches(storage):
+    from altk_evolve.backend.writes import PreparedWrites
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+    from altk_evolve.schema.exceptions import EvolveException
+
+    client, peer, ns = storage
+    seed = client.backend.scan_entities(ns)[0]
+    forged = PreparedWrites(0, updates=[EntityUpdate(id=seed.id, type="note", content="seed", event="DELETE")])
+    with pytest.raises(EvolveException, match="unchanged writes"):
+        client.backend.commit_prepared(ns, [forged])
+    prepared = client.backend.prepare_updates(ns, [Entity(type="note", content="valid")], False)
+    with pytest.raises(EvolveException, match="unchanged writes"):
+        peer.backend.commit_prepared(ns, [prepared])
+    with pytest.raises(EvolveException, match="unchanged writes"):
+        client.backend.commit_prepared("other", [prepared])
+    prepared.updates.append(forged.updates[0])
+    with pytest.raises(EvolveException, match="unchanged writes"):
+        client.backend.commit_prepared(ns, [prepared])
+    assert client.backend.scan_entities(ns) == [seed]
+
+
+def test_conflicting_prepared_mutations_are_rejected_before_any_write(storage, monkeypatch):
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+    from altk_evolve.schema.exceptions import EvolveException
+
+    client, peer, ns = storage
+    seed = client.backend.scan_entities(ns)[0]
+    event = "DELETE"
+
+    def resolve(*args, **kwargs):
+        return [EntityUpdate(id=seed.id, type="note", content="changed", event=event)]
+
+    monkeypatch.setattr("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve)
+    first = client.backend.prepare_updates(ns, [Entity(type="note", content="seed")])
+    event = "UPDATE"
+    second = client.backend.prepare_updates(ns, [Entity(type="note", content="seed")])
+    with pytest.raises(EvolveException, match="Multiple prepared mutations"):
+        client.backend.commit_prepared(ns, [first, second])
+    assert peer.backend.scan_entities(ns) == [seed]
+
+
+@pytest.mark.parametrize("patch,raises", [({"last_accessed": "now"}, False), ({"legal_hold": True}, True)])
+def test_disappeared_hook_patch_target_is_classified(storage, monkeypatch, patch, raises):
+    from altk_evolve.hooks.backend import HookBackend
+
+    client, peer, ns = storage
+    seed = client.backend.scan_entities(ns)[0]
+
+    def pre_write(backend, namespace, entities):
+        HookBackend(backend).update_entity_metadata(namespace, seed.id, patch)
+        return entities
+
+    monkeypatch.setattr("altk_evolve.backend.base.dispatch_memory_pre_write", pre_write)
+    prepared = client.backend.prepare_updates(ns, [Entity(type="note", content="new")], False)
+    peer.delete_entity_by_id(ns, seed.id)
+    if raises:
+        with pytest.raises(ConcurrentEntityUpdate):
+            client.backend.commit_prepared(ns, [prepared])
+        assert peer.backend.scan_entities(ns) == []
+    else:
+        client.backend.commit_prepared(ns, [prepared])
+        assert peer.backend.scan_entities(ns)[0].content == "new"

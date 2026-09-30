@@ -124,7 +124,12 @@ class FilesystemEntityBackend(BaseEntityBackend):
             raise EvolveException("Nested filesystem transactions are not supported")
         self._validate_namespace(namespace_id)
         with self._lock:
-            data = FilesystemNamespace.model_validate_json(self._namespace_file(namespace_id).read_text())
+            path = self._namespace_file(namespace_id)
+            try:
+                data = FilesystemNamespace.model_validate_json(path.read_text())
+            except (ValidationError, FileNotFoundError) as exc:
+                path.unlink(missing_ok=True)
+                raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found") from exc
             work = _NamespaceWork(data)
             token = self._work.set(work)
             try:

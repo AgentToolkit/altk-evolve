@@ -781,29 +781,46 @@ class PhoenixSync:
         """
         for trace_id, trace_spans in self._group_spans_by_trace(spans).items():
             parents = {sid: span.get("parent_id") for span in trace_spans if (sid := self._span_id(span)) is not None}
-            calls = self._dedupe_nested_llm_spans([span for span in trace_spans if self._is_llm_span(span)], parents)
+            eligible = [
+                span
+                for span in trace_spans
+                if self._is_llm_span(span)
+                and span.get("end_time")
+                and self._span_id(span)
+                and (include_errors or span.get("status_code") != "ERROR")
+            ]
+            calls = self._dedupe_nested_llm_spans(eligible, parents)
             for span in sorted(calls, key=lambda value: (str(value.get("start_time", "")), self._span_id(value) or "")):
-                if not span.get("end_time") or not self._span_id(span):
-                    continue
-                if not include_errors and span.get("status_code") == "ERROR":
-                    continue
-                extracted = self._extract_messages_from_span(span)
-                trajectory = self._extract_trajectory(span)
-                trajectory["batch_aliases"] = [
-                    identity
-                    for ancestor in trace_spans
-                    if self._is_llm_span(ancestor)
-                    and (identity := self._span_id(ancestor))
-                    and self._is_ancestor(parents, identity, self._span_id(span))
-                    and sum(self._is_ancestor(parents, identity, self._span_id(call)) for call in calls) == 1
-                ]
-                trajectory["messages"] = self._assemble_openai_messages(
-                    [message for message in extracted if message["type"] == "completion"]
-                )
-                trajectory["context_messages"] = self._assemble_openai_messages(
-                    [message for message in extracted if message["type"] == "prompt"]
-                )
-                yield self._clean_trajectory(trajectory)
+                trajectory = self._incremental_input(span)
+                aliases = {}
+                for ancestor in eligible:
+                    identity = self._span_id(ancestor)
+                    if (
+                        identity
+                        and self._is_ancestor(parents, identity, self._span_id(span))
+                        and sum(self._is_ancestor(parents, identity, self._span_id(call)) for call in calls) == 1
+                    ):
+                        alternate = self._incremental_input(ancestor)
+                        # Different provider/model labels and tool schemas can describe
+                        # the same call. Different conversation content is not equivalent.
+                        if all(alternate.get(key) == trajectory.get(key) for key in ("messages", "context_messages")):
+                            aliases[identity] = self._source_revision(alternate)
+                trajectory["batch_aliases"] = aliases
+                yield trajectory
+
+    def _incremental_input(self, span: dict) -> dict:
+        extracted = self._extract_messages_from_span(span)
+        trajectory = self._extract_trajectory(span)
+        trajectory["messages"] = self._assemble_openai_messages([message for message in extracted if message["type"] == "completion"])
+        trajectory["context_messages"] = self._assemble_openai_messages([message for message in extracted if message["type"] == "prompt"])
+        return self._clean_trajectory(trajectory)
+
+    @staticmethod
+    def _source_revision(trajectory: dict) -> str:
+        import hashlib
+
+        payload = {key: trajectory.get(key) for key in ("messages", "context_messages", "tools", "model")}
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     def _clean_trajectory(self, trajectory: dict) -> dict:
         """Clean up a trajectory by removing system reminders."""
@@ -830,7 +847,10 @@ class PhoenixSync:
 
             cleaned_messages.append(msg)
 
-        return {**trajectory, "messages": cleaned_messages}
+        result = {**trajectory, "messages": cleaned_messages}
+        if "context_messages" in trajectory:
+            result["context_messages"] = self._clean_trajectory({"messages": trajectory["context_messages"]})["messages"]
+        return result
 
     def _process_trajectory(self, trajectory: dict) -> int | None:
         """Process one source contribution; profile progress is stored by the manager."""
@@ -855,7 +875,6 @@ class PhoenixSync:
         )
 
         if self.processing_profile is not None:
-            import hashlib
             from altk_evolve.processing import TrajectoryBatch
 
             if not messages:
@@ -866,7 +885,7 @@ class PhoenixSync:
                 "tools": trajectory.get("tools"),
                 "model": trajectory.get("model"),
             }
-            revision = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            revision = self._source_revision(payload)
             plan = self.processing_plan or self.client.processing.resolve(self.processing_profile)
             result = self.client.process_trajectory(
                 {
@@ -876,7 +895,8 @@ class PhoenixSync:
                         source=f"phoenix:{self.phoenix_url.rstrip('/')}:{self.project}",
                         conversation_id=trajectory["trace_id"],
                         batch_id=trajectory["span_id"],
-                        aliases=tuple(trajectory.get("batch_aliases", [])),
+                        aliases=tuple(trajectory.get("batch_aliases", {})),
+                        alias_revisions=trajectory.get("batch_aliases", {}),
                         revision=revision,
                     ),
                     "metadata": {

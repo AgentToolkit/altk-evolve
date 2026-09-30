@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import json
 from collections.abc import Callable
 from typing import ClassVar, Literal, Self, cast
 
@@ -22,19 +21,6 @@ def _analysis_defaults() -> dict:
     return cast(dict, yaml.safe_load(path.read_text()))
 
 
-def _generation_view(trajectory: Trajectory) -> Trajectory:
-    """Render history for guideline extraction only; never use this view for resampling."""
-    if trajectory.context_messages:
-        task_context = {
-            "role": "user",
-            "content": "The following is supporting conversation context, not new steps to learn from. "
-            "Derive guidelines only from the new steps that follow, using this context to interpret them.\n"
-            + json.dumps(trajectory.context_messages, ensure_ascii=False),
-        }
-        trajectory = trajectory.model_copy(update={"messages": [task_context, *trajectory.messages]})
-    return trajectory
-
-
 class GuidelineConfig(GuidelineRuntime):
     guidelines_mode: Literal["standard", "consistency", "all"] = "standard"
     consistency_method: Literal["fast", "accurate"] = "fast"
@@ -45,7 +31,12 @@ class GuidelineConfig(GuidelineRuntime):
     @model_validator(mode="after")
     def capture_analysis(self):
         if self.guidelines_mode != "standard" and self.consistency_method == "accurate":
-            data = {**_analysis_defaults(), **(self.analysis_config or {})}
+            captured_keys = {"max_samples", "max_steps", "high_uncertainty_threshold", "aggregation", "skip_on_no_uncertainty", "agents"}
+            data = (
+                dict(self.analysis_config)
+                if self.analysis_config is not None and captured_keys <= self.analysis_config.keys()
+                else {**_analysis_defaults(), **(self.analysis_config or {})}
+            )
             for key, limit in (("max_samples", 100), ("max_steps", 1000)):
                 value = data[key]
                 if type(value) is not int or not 1 <= value <= limit:
@@ -90,13 +81,20 @@ class GuidelineProcessor:
         options = GuidelineRuntime.model_validate(config.model_dump(include=set(GuidelineRuntime.model_fields)))
         steps: list[tuple[str, Callable[[Trajectory], list[GuidelineGenerationResult]]]] = []
         if config.guidelines_mode in ("standard", "all"):
-            steps.append(("standard", lambda trajectory: generate_guidelines(_generation_view(trajectory).messages, options=options)))
+            steps.append(
+                (
+                    "standard",
+                    lambda trajectory: generate_guidelines(
+                        trajectory.messages, context_messages=trajectory.context_messages, options=options
+                    ),
+                )
+            )
         if config.guidelines_mode in ("consistency", "all"):
             if config.consistency_method == "fast":
                 steps.append(
                     (
                         "consistency-fast",
-                        lambda trajectory: generate_consistency_guidelines_fast(_generation_view(trajectory).model_dump(), options=options),
+                        lambda trajectory: generate_consistency_guidelines_fast(trajectory.model_dump(), options=options),
                     )
                 )
             else:
