@@ -99,11 +99,23 @@ def test_all_supporting_sources_must_have_receipts():
 
 def test_independent_filesystem_clients_preserve_concurrent_sources(backend):
     from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Lock
 
     backend.update_entities("n", [fact("original")], False)
     other = FilesystemEntityBackend(backend.config)
 
+    barrier = Barrier(2)
+    lock = Lock()
+    calls = 0
+
     def reconcile(old, new):
+        nonlocal calls
+        assert not backend.in_transaction and not other.in_transaction
+        with lock:
+            calls += 1
+            wait = calls <= 2
+        if wait:
+            barrier.wait(timeout=10)
         return [EntityUpdate(id=old[0].id, type="fact", content=old[0].content, event="NONE", incoming_ids=[new[0].id])]
 
     with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
@@ -124,3 +136,71 @@ def test_unknown_associations_do_not_claim_complete_provenance(backend):
     with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
         backend.update_entities("n", [fact("second")])
     assert backend.search_entities("n")[0].metadata["provenance_incomplete"]
+
+
+@pytest.mark.parametrize("event", ["NONE", "UPDATE"])
+def test_prepared_sources_commit_with_checkpoint_or_roll_back(backend, monkeypatch, event):
+    original = backend.update_entities("n", [fact("first")], False)[0]
+    before = backend.scan_entities("n")
+    settings = object()
+
+    def reconcile(old, new, **kwargs):
+        assert kwargs["settings"] is settings
+        assert not backend.in_transaction
+        return [
+            EntityUpdate(
+                id=old[0].id,
+                type="fact",
+                content="corrected" if event == "UPDATE" else old[0].content,
+                event=event,
+                incoming_ids=[new[0].id],
+            )
+        ]
+
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
+        prepared = backend.prepare_updates(
+            "n", [fact("second")], conflict_settings=settings, processing_provenance={"processor_id": "facts"}
+        )
+    assert backend.scan_entities("n") == before
+    save_checkpoint = backend._save_processing_checkpoint
+
+    def fail_checkpoint(*args):
+        raise OSError("checkpoint failed")
+
+    monkeypatch.setattr(backend, "_save_processing_checkpoint", fail_checkpoint)
+    with pytest.raises(OSError, match="checkpoint failed"):
+        backend.commit_prepared("n", [prepared], checkpoint=("batch", {"processor_id": "facts"}))
+    assert backend.scan_entities("n") == before
+    assert backend.get_processing_checkpoint("n", "batch") is None
+    monkeypatch.setattr(backend, "_save_processing_checkpoint", save_checkpoint)
+    backend.commit_prepared("n", [prepared], checkpoint=("batch", {"processor_id": "facts"}))
+    stored = backend.scan_entities("n")[0]
+    assert stored.id == original.id
+    assert {s["conversation_id"] for s in stored.metadata["sources"]} == {"first", "second"}
+    assert stored.metadata["memory_revision"] == (2 if event == "UPDATE" else 1)
+    if event == "UPDATE":
+        assert stored.metadata["processing"] == {"processor_id": "facts"}
+    else:
+        assert stored.created_at == before[0].created_at
+    assert backend.commit_prepared("n", [prepared], checkpoint=("batch", {})) is None
+    assert backend.scan_entities("n") == [stored]
+
+
+def test_stale_prepared_sources_do_not_commit_checkpoint(backend):
+    from altk_evolve.backend.base import ConcurrentEntityUpdate
+
+    backend.update_entities("n", [fact("first")], False)
+
+    def reconcile(old, new):
+        return [EntityUpdate(id=old[0].id, type="fact", content=old[0].content, event="NONE", incoming_ids=[new[0].id])]
+
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
+        first = backend.prepare_updates("n", [fact("second")])
+        stale = backend.prepare_updates("n", [fact("third")])
+        backend.commit_prepared("n", [first], checkpoint=("one", {}))
+        with pytest.raises(ConcurrentEntityUpdate):
+            backend.commit_prepared("n", [stale], checkpoint=("two", {}))
+        assert backend.get_processing_checkpoint("n", "two") is None
+        fresh = backend.prepare_updates("n", [fact("third")])
+        backend.commit_prepared("n", [fresh], checkpoint=("two", {}))
+    assert {s["conversation_id"] for s in backend.scan_entities("n")[0].metadata["sources"]} == {"first", "second", "third"}

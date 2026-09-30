@@ -513,12 +513,8 @@ class BaseEntityBackend(ABC):
                         namespace_id, update.id, update.type, serialize_content(update.content), prepared.timestamp, update.metadata
                     )
                 case "NONE":
-                    if update.incoming_ids or update.metadata.get("provenance_incomplete"):
-                        stored = prepared.expected[update.id]
-                        self._patch_entity(
-                            namespace_id, update.id, update.type, serialize_content(stored.content),
-                            int(stored.created_at.timestamp()), update.metadata,
-                        )
+                    if update.id in prepared.expected:
+                        self._update_entity_metadata_impl(namespace_id, update.id, update.metadata)
                 case "DELETE":
                     self._delete_entity(namespace_id, update.id)
         self._post_update(namespace_id)
@@ -622,11 +618,17 @@ class BaseEntityBackend(ABC):
         conflict_settings=None,
         processing_provenance: dict | None = None,
     ) -> list[EntityUpdate]:
-        prepared = self.prepare_updates(
-            namespace_id,
-            entities,
-            enable_conflict_resolution,
-            conflict_settings=conflict_settings,
-            processing_provenance=processing_provenance,
-        )
-        return self.commit_prepared(namespace_id, [prepared]) or []
+        for attempt in range(3):
+            prepared = self.prepare_updates(
+                namespace_id,
+                entities,
+                enable_conflict_resolution,
+                conflict_settings=conflict_settings,
+                processing_provenance=processing_provenance,
+            )
+            try:
+                return self.commit_prepared(namespace_id, [prepared]) or []
+            except ConcurrentEntityUpdate:
+                if attempt == 2:
+                    raise
+        raise AssertionError("Unreachable reconciliation retry")

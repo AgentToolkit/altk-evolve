@@ -175,7 +175,7 @@ def test_update_entities(milvus_backend: MilvusEntityBackend, monkeypatch):
         result = milvus_backend.update_entities(namespace_id="test_namespace", entities=entities, enable_conflict_resolution=True)
 
     assert len(result) == 1
-    assert result[0] == entity_update
+    assert result[0] == entity_update.model_copy(update={"id": "12345"})
 
 
 @pytest.mark.unit

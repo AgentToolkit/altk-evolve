@@ -204,3 +204,84 @@ def test_processing_rejects_namespace_missing_from_catalog(sync):
         connection.execute("DELETE FROM namespaces WHERE id=?", (sync.namespace_id,))
     with pytest.raises(NamespaceNotFoundException):
         sync.client.process_trajectory({"messages": []}, namespace_id=sync.namespace_id, processing_profile=sync.namespace_id)
+
+
+@pytest.mark.parametrize("event", ["NONE", "UPDATE"])
+def test_postgres_provenance_and_checkpoint_are_atomic(sync, monkeypatch, event):
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+
+    backend, namespace = sync.client.backend, sync.namespace_id
+
+    def source(thread):
+        return Entity(type="fact", content="preference", metadata={"user_id": "alice", "thread_id": thread})
+
+    backend.update_entities(namespace, [source("first")], False)
+    before = backend.scan_entities(namespace)
+
+    def reconcile(old, new, **kwargs):
+        assert not backend.in_transaction
+        return [
+            EntityUpdate(
+                id=old[0].id, type="fact", content="changed" if event == "UPDATE" else old[0].content, event=event, incoming_ids=[new[0].id]
+            )
+        ]
+
+    monkeypatch.setattr("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", reconcile)
+    prepared = backend.prepare_updates(namespace, [source("second")])
+    assert backend.scan_entities(namespace) == before
+    save_checkpoint = backend._save_processing_checkpoint
+
+    def fail(*args):
+        raise OSError("checkpoint failed")
+
+    monkeypatch.setattr(backend, "_save_processing_checkpoint", fail)
+    with pytest.raises(OSError, match="checkpoint failed"):
+        backend.commit_prepared(namespace, [prepared], checkpoint=("sources", {}))
+    assert backend.scan_entities(namespace) == before
+    assert backend.get_processing_checkpoint(namespace, "sources") is None
+    monkeypatch.setattr(backend, "_save_processing_checkpoint", save_checkpoint)
+    backend.commit_prepared(namespace, [prepared], checkpoint=("sources", {}))
+    stored = backend.scan_entities(namespace)[0]
+    assert {s["conversation_id"] for s in stored.metadata["sources"]} == {"first", "second"}
+    assert stored.metadata["memory_revision"] == (2 if event == "UPDATE" else 1)
+    assert backend.commit_prepared(namespace, [prepared], checkpoint=("sources", {})) is None
+
+
+def test_postgres_concurrent_reaffirmations_preserve_sources(sync, monkeypatch):
+    from threading import Barrier, Lock
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+
+    client, namespace = sync.client, sync.namespace_id
+
+    def source(thread):
+        return Entity(type="fact", content="preference", metadata={"user_id": "alice", "thread_id": thread})
+
+    client.backend.update_entities(namespace, [source("original")], False)
+    peer = EvolveClient(client.config)
+    barrier, lock = Barrier(2), Lock()
+    calls = 0
+
+    def reconcile(old, new, **kwargs):
+        nonlocal calls
+        assert not client.backend.in_transaction and not peer.backend.in_transaction
+        with lock:
+            calls += 1
+            wait = calls <= 2
+        if wait:
+            barrier.wait(timeout=10)
+        return [EntityUpdate(id=old[0].id, type="fact", content=old[0].content, event="NONE", incoming_ids=[new[0].id])]
+
+    monkeypatch.setattr("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", reconcile)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [
+                pool.submit(backend.update_entities, namespace, [source(thread)])
+                for backend, thread in [(client.backend, "one"), (peer.backend, "two")]
+            ]
+            for future in futures:
+                future.result(timeout=15)
+        stored = client.backend.scan_entities(namespace)[0]
+        assert {s["conversation_id"] for s in stored.metadata["sources"]} == {"original", "one", "two"}
+        assert calls == 3
+    finally:
+        peer.backend.close()
