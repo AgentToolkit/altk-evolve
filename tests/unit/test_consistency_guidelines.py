@@ -1,5 +1,7 @@
 """Tests for trajectory-to-IR transformation in consistency_guidelines.py."""
 
+from altk_evolve.config.guideline_runtime import GuidelineRuntime
+
 import json
 import logging
 from pathlib import Path
@@ -710,10 +712,9 @@ class TestSegmentationGuard:
         were deleted. Enabling it keeps the guard itself under test."""
         from unittest.mock import MagicMock, patch
 
-        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
-        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", True)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
 
         mock_segment = MagicMock(
             return_value=[
@@ -783,10 +784,9 @@ class TestSegmentationFloorAndFastPathScope:
         """
         from unittest.mock import MagicMock, patch
 
-        from altk_evolve.llm.guidelines import consistency_guidelines as module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
 
-        monkeypatch.setattr(module.evolve_config, "segmentation_enabled", True)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
 
         response = MagicMock()
         response.choices = [MagicMock()]
@@ -840,10 +840,9 @@ class TestSegmentationFloorAndFastPathScope:
         """
         from unittest.mock import patch
 
-        from altk_evolve.llm.guidelines import consistency_guidelines as module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
-        monkeypatch.setattr(module.evolve_config, "segmentation_enabled", True)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
 
         messages = [{"role": "user", "content": "go"}]
         messages += [{"role": "assistant", "content": f"step {i}"} for i in range(n_scorable)]
@@ -882,6 +881,7 @@ class TestSkipGateWindow:
         response.choices[0].message.content = json.dumps({"guidelines": []})
         with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion:
             _generate_guideline_result(
+                options=GuidelineRuntime.from_settings(),
                 messages=messages,
                 consistency_data={"step_uncertainties": step_uncertainties},
                 task_description="t",
@@ -1063,6 +1063,7 @@ class TestConsistencyResponseRepair:
         with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion, caplog.at_level(logging.INFO):
             mock_completion.return_value = self._bare_array_response()
             result = _generate_guideline_result(
+                options=GuidelineRuntime.from_settings(),
                 messages=[{"role": "assistant", "content": "step one"}],
                 consistency_data={"step_uncertainties": {1: 0.5}},
                 task_description="Answer a question",
@@ -1087,6 +1088,7 @@ class TestConsistencyResponseRepair:
         with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion") as mock_completion, caplog.at_level(logging.INFO):
             mock_completion.return_value = self._bare_array_response()
             result = _generate_fast_guideline_result(
+                options=GuidelineRuntime.from_settings(),
                 task_description="Answer a question",
                 trajectory_slice="Step 1 - Agent reasoning:\nstep one",
                 num_steps=1,
@@ -1113,10 +1115,9 @@ class TestGenerateConsistencyGuidelinesFast:
         """The fast pipeline calls the LLM once and never touches resample_trajectory/analyze_consistency."""
         from unittest.mock import patch
 
-        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
 
-        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", False)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
 
         trajectory = {
             "trace_id": "test-fast-1",
@@ -1159,10 +1160,9 @@ class TestGenerateConsistencyGuidelinesFast:
         resampling-derived uncertainty markers (those belong to the accurate pipeline only)."""
         from unittest.mock import patch
 
-        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
 
-        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", False)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
 
         trajectory = {
             "messages": [
@@ -1545,10 +1545,9 @@ class TestSegmentationFlagAccuratePipeline(_SegmentationFixture):
         """
         from unittest.mock import MagicMock, patch
 
-        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines
 
-        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", enabled)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", enabled)
 
         if segmenter_raises:
             mock_segment = MagicMock(side_effect=RuntimeError("segmenter unavailable"))
@@ -1589,7 +1588,7 @@ class TestSegmentationFlagAccuratePipeline(_SegmentationFixture):
         with (1,1)/(2,2) fixtures, a `step_range` built as `(start, start)` would pass too."""
         mock_segment, mock_gen, results = self._run(monkeypatch, enabled=True)
 
-        mock_segment.assert_called_once_with(self.MESSAGES)
+        mock_segment.assert_called_once_with(self.MESSAGES, options=GuidelineRuntime.from_settings())
         assert len(results) == 2
         assert mock_gen.call_count == 2
         assert [c.kwargs["step_range"] for c in mock_gen.call_args_list] == [(1, 2), (3, 5)]
@@ -1631,10 +1630,9 @@ class TestSegmentationFlagFastPipeline(_SegmentationFixture):
     def _run(self, monkeypatch, *, enabled):
         from unittest.mock import MagicMock, patch
 
-        from altk_evolve.llm.guidelines import consistency_guidelines as consistency_guidelines_module
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
 
-        monkeypatch.setattr(consistency_guidelines_module.evolve_config, "segmentation_enabled", enabled)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", enabled)
         mock_segment = MagicMock(return_value=self.subtasks())
 
         with (
@@ -1665,7 +1663,7 @@ class TestSegmentationFlagFastPipeline(_SegmentationFixture):
         """Flag on: the fast pipeline segments too, and each call sees only its own steps."""
         mock_segment, prompts, results = self._run(monkeypatch, enabled=True)
 
-        mock_segment.assert_called_once_with(self.MESSAGES)
+        mock_segment.assert_called_once_with(self.MESSAGES, options=GuidelineRuntime.from_settings())
         assert len(results) == 2
         assert [r.task_description for r in results] == [
             "Locate a configuration file on disk",

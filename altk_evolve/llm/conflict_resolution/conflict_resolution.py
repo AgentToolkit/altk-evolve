@@ -2,7 +2,7 @@ import json
 import os
 
 from jinja2 import Template
-from altk_evolve.config.llm import llm_settings
+from altk_evolve.config.llm import LLMSettings, llm_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.conflict_resolution import SimpleEntity, EntityUpdate
 from altk_evolve.schema.core import RecordedEntity
@@ -21,7 +21,7 @@ _STICKY_STORED_METADATA_KEYS = ("generation_method",)
 _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS = 8192
 
 
-def _is_groq_gpt_oss_target() -> bool:
+def _is_groq_gpt_oss_target(settings: LLMSettings | None = None) -> bool:
     """Is the conflict model GPT-OSS served by Groq, reached by any route?
 
     Provider and model prefix are not enough. wxo-agentic-memory sets
@@ -31,17 +31,18 @@ def _is_groq_gpt_oss_target() -> bool:
     reply. Measured against Groq gpt-oss-120b: ~2400 characters of reasoning
     without the cap, ~350 with it.
     """
-    model = llm_settings.conflict_resolution_model.strip().lower()
+    settings = settings or llm_settings
+    model = settings.conflict_resolution_model.strip().lower()
     if "gpt-oss" not in model:
         return False
-    provider = (llm_settings.custom_llm_provider or "").strip().lower()
+    provider = (settings.custom_llm_provider or "").strip().lower()
     if provider == "groq" or model.startswith("groq/"):
         return True
     base_url = (os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE") or "").lower()
     return "groq" in base_url
 
 
-def _conflict_resolution_completion_options() -> dict[str, object]:
+def _conflict_resolution_completion_options(settings: LLMSettings | None = None) -> dict[str, object]:
     """Per-provider completion options for conflict resolution.
 
     Ask for JSON mode wherever the provider handles it, so the reply is
@@ -54,16 +55,17 @@ def _conflict_resolution_completion_options() -> dict[str, object]:
     GPT-OSS on Groq additionally needs its reasoning bounded, or it spends the
     completion budget before emitting any JSON.
     """
+    settings = settings or llm_settings
     supported_params = (
         get_supported_openai_params(
-            model=llm_settings.conflict_resolution_model,
-            custom_llm_provider=llm_settings.custom_llm_provider,
+            model=settings.conflict_resolution_model,
+            custom_llm_provider=settings.custom_llm_provider,
         )
         or []
     )
     options: dict[str, object] = {}
 
-    if _is_groq_gpt_oss_target():
+    if _is_groq_gpt_oss_target(settings):
         options["max_tokens"] = _GROQ_GPT_OSS_CONFLICT_MAX_TOKENS
         # litellm RAISES UnsupportedParamsError rather than dropping this when the
         # provider is openai, even though the Groq endpoint behind it accepts it,
@@ -77,8 +79,13 @@ def _conflict_resolution_completion_options() -> dict[str, object]:
 
 
 def resolve_conflicts(
-    old_entities: list[RecordedEntity], new_entities: list[RecordedEntity], custom_update_entities_prompt: str | None = None
+    old_entities: list[RecordedEntity],
+    new_entities: list[RecordedEntity],
+    custom_update_entities_prompt: str | None = None,
+    *,
+    settings: LLMSettings | None = None,
 ) -> list[EntityUpdate]:
+    settings = settings or llm_settings
     simplified_old_entities = SimpleEntity.from_recorded_entities(old_entities)
     simplified_new_entities = SimpleEntity.from_recorded_entities(new_entities)
     new_entities_by_id = {entity.id: entity for entity in new_entities}
@@ -92,17 +99,17 @@ def resolve_conflicts(
 
     prompt = get_update_entities_messages(simplified_old_entities, simplified_new_entities, custom_update_entities_prompt)
     llm_messages = dispatch_llm_pre_call(
-        [{"role": "user", "content": prompt}], purpose="conflict_resolution", model=llm_settings.conflict_resolution_model
+        [{"role": "user", "content": prompt}], purpose="conflict_resolution", model=settings.conflict_resolution_model
     )
 
     last_error: Exception | None = None
     for attempt in range(3):
         try:
             completion_response = completion(
-                model=llm_settings.conflict_resolution_model,
+                model=settings.conflict_resolution_model,
                 messages=llm_messages,
-                custom_llm_provider=llm_settings.custom_llm_provider,
-                **_conflict_resolution_completion_options(),
+                custom_llm_provider=settings.custom_llm_provider,
+                **_conflict_resolution_completion_options(settings),
             )
             choice = completion_response.choices[0]
             # A budget-capped reply is a different failure from a malformed one and

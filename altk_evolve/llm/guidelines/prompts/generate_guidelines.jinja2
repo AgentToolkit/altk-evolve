@@ -5,6 +5,12 @@ Extract actionable, relevant guidelines from this trajectory that would help an 
 **Task Status:** There is no evaluation of the task's trajectory or output against any ground truth. There is also no user feedback to the AI agent. But the trajectory may contain the agent's self-evaluation of whether the task succeeded or failed.
 **Steps Taken:** {{num_steps}}
 
+{% if supporting_context %}
+# Supporting Conversation History
+Use this history to interpret the new steps below, not as additional steps to learn from.
+{{supporting_context}}
+{% endif %}
+
 # Agent Trajectory
 {{trajectory_summary}}
 

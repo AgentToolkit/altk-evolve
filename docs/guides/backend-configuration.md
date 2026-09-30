@@ -79,6 +79,34 @@ brew install postgresql pgvector
 brew services start postgresql
 ```
 
+**Search indexes:**
+
+New namespaces receive a B-tree index on `type` and a GIN index on JSONB metadata.
+For existing namespaces, run maintenance explicitly:
+
+```python
+from altk_evolve.frontend.client.evolve_client import EvolveClient
+
+client = EvolveClient()  # EVOLVE_BACKEND=postgres
+client.backend.create_search_indexes("my_namespace")
+
+# Optional: approximate cosine search for queries without filters.
+client.backend.create_search_indexes("my_namespace", approximate=True)
+```
+
+Index construction runs concurrently with ordinary reads/writes and refreshes
+planner statistics. It is idempotent and repairs invalid indexes left by an
+interrupted build. Run it outside entity transactions. After bulk imports,
+refresh statistics with PostgreSQL `ANALYZE` (or rerun this maintenance operation).
+
+HNSW is opt-in because nearest-neighbor results are approximate; it supports
+embedding dimensions up to 2,000. Filtered searches stay exact and can use the
+metadata/type indexes before ranking, so rare filtered matches are not lost to
+an approximate candidate window. Exact, unfiltered vector queries still scan the
+namespace unless an approximate index is enabled. Processing validates namespace
+existence without counting entities; explicit namespace-detail requests still
+return a count.
+
 **Bootstrap Database Fallback:**
 
 When `EVOLVE_PG_AUTO_CREATE_DB=true`, Evolve will automatically create the target database if it doesn't exist. It tries multiple bootstrap databases in order:
@@ -120,6 +148,21 @@ EVOLVE_NAMESPACE_ID=evolve
 uv sync --extra milvus
 ```
 
+**Concurrent writers:**
+
+All Evolve workers writing the same Milvus database must use the same file-backed
+`EVOLVE_SQLITE_PATH` (or configured `sqlite_uri`). Evolve uses that existing metadata
+database to serialize entity read/merge/upsert operations across local processes.
+Metadata patches reuse the stored embedding and read with strong consistency.
+This prevents one worker's metadata patch from overwriting another's patch.
+
+Independent metadata databases on separate hosts, direct Milvus writers, and
+external applications are outside that coordination boundary. Use PostgreSQL for
+multi-host transactional processing; Milvus does not support Evolve's atomic
+output/checkpoint contract. Query filters run inside Milvus before the result
+limit. Read failures propagate, and deletion with an active policy hook fails
+closed if its metadata snapshot cannot be loaded.
+
 ## Switching Backends
 
 You can switch backends at any time by changing the `EVOLVE_BACKEND` environment variable. Note that data is not automatically migrated between backends.
@@ -128,7 +171,7 @@ You can switch backends at any time by changing the `EVOLVE_BACKEND` environment
 
 - **Development/Testing**: Use `filesystem` for simplicity (note: no vector search)
 - **Production (Single Server)**: Use `postgres` for reliability, ACID guarantees, and semantic search
-- **Production (High Scale)**: Use `milvus` for optimized vector search at scale
+- **Production (High Scale)**: Use `postgres` for transactional multi-worker processing, or `milvus` for vector search with the writer-coordination constraints above
 - **Quick Start**: Use `filesystem` (default) - no setup required, but limited to text matching
 - **Semantic Search Required**: Use `postgres` or `milvus` for vector-based similarity search
 
@@ -151,8 +194,8 @@ Evolve uses a layered identity model. Understanding how each layer maps to physi
 | **Namespace isolation** | One JSON file per namespace (`{id}.json`) | One table per namespace (`ns_{id}`) | One collection per namespace |
 | **`user_id` storage** | `metadata.user_id` in JSON entity dict | `metadata` JSONB column (`metadata->>'user_id'`) | `metadata` JSON field (`metadata["user_id"]`) |
 | **`session_id` storage** | `metadata.session_id` in JSON entity dict | `metadata` JSONB column (`metadata->>'session_id'`) | `metadata` JSON field (`metadata["session_id"]`) |
-| **`user_id` index** | None (in-memory scan) | None (JSONB GIN possible but not created) | None (scan within collection) |
-| **`session_id` index** | None (in-memory scan) | None (JSONB GIN possible but not created) | None (scan within collection) |
+| **`user_id` index** | None (in-memory scan) | GIN on JSONB metadata (new namespaces; explicit maintenance for existing ones) | None (scan within collection) |
+| **`session_id` index** | None (in-memory scan) | GIN on JSONB metadata (new namespaces; explicit maintenance for existing ones) | None (scan within collection) |
 | **Filter mechanism** | Python dict match in `_entity_matches_filter` | `metadata @> '{"user_id": "..."}'::jsonb` | `metadata["user_id"] == "..."` expression |
 | **Cross-namespace query** | Loop over namespace files | Loop over `ns_*` tables | Loop over collections |
 
@@ -160,10 +203,10 @@ Evolve uses a layered identity model. Understanding how each layer maps to physi
 
 1. **Namespace is the only hard boundary.** Data in different namespaces is physically separated across all backends. There is no way to accidentally query across namespaces without explicitly iterating over them.
 
-2. **`user_id` and `session_id` are soft filters.** They rely on query-time filtering against the `metadata` dict. There are no dedicated columns, foreign keys, or indexes — a missing filter silently returns all entities in the namespace regardless of owner.
+2. **`user_id` and `session_id` are soft filters.** They rely on query-time filtering against the `metadata` dict. There are no dedicated columns or foreign keys — a missing filter silently returns all entities in the namespace regardless of owner.
 
-3. **No indexes on identity metadata.** For small-to-medium namespaces this is fine. For large namespaces with frequent per-user queries, consider adding:
-   - **PostgreSQL:** A GIN index on the `metadata` JSONB column, or a partial index on `(metadata->>'user_id')`.
+3. **Index support depends on the backend.** For large namespaces with frequent per-user queries:
+   - **PostgreSQL:** New namespaces have a GIN index on `metadata` for containment predicates; run `create_search_indexes()` for older namespaces.
    - **Milvus:** A scalar index on `metadata["user_id"]` (supported in Milvus 2.3+).
    - **Filesystem:** Not applicable — the backend scans in memory regardless.
 

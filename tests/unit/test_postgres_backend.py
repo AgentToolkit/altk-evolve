@@ -28,6 +28,7 @@ def postgres_backend() -> PostgresEntityBackend:
         mock_psycopg.connect.return_value = mock_conn
         mock_transformer.return_value.get_sentence_embedding_dimension.return_value = 384
         backend = PostgresEntityBackend()
+        mock_conn.__enter__.return_value = mock_conn
         return backend
 
 
@@ -385,6 +386,7 @@ def test_create_namespace(postgres_backend: PostgresEntityBackend, db_manager, m
     """Test creating a new namespace."""
     namespace_id = "test_namespace"
     monkeypatch.setattr(postgres_backend, "_table_exists", make_table_exists(False))
+    monkeypatch.setattr(postgres_backend, "_connect", lambda _: postgres_backend.conn)
 
     mock_cursor = MagicMock()
     mock_cursor_context = MagicMock()
@@ -515,6 +517,8 @@ def test_update_entities(postgres_backend: PostgresEntityBackend, monkeypatch):
     with (
         patch.object(postgres_backend.conn, "cursor", return_value=mock_cursor_context),
         patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve_conflicts),
+        patch("altk_evolve.backend.postgres.register_vector"),
+        patch.object(postgres_backend, "_connect", return_value=postgres_backend.conn),
     ):
         entities = [Entity(type=entity_update.type, content=entity_update.content, metadata={"key": "value"})]
         result = postgres_backend.update_entities(namespace_id="test_namespace", entities=entities, enable_conflict_resolution=True)
@@ -719,3 +723,48 @@ def test_update_entity_metadata_rejects_non_numeric_id(postgres_backend: Postgre
     """Raises EvolveException immediately for non-numeric entity IDs."""
     with pytest.raises(EvolveException, match="must be numeric"):
         postgres_backend.update_entity_metadata("test_namespace", "not-an-id", {"visibility": "public"})
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("fail", [False, True])
+def test_transaction_uses_dedicated_connection_and_restores_it(postgres_backend, fail):
+    from contextlib import contextmanager
+
+    original = postgres_backend.conn
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    outcomes = []
+
+    @contextmanager
+    def transaction():
+        try:
+            yield
+        except RuntimeError:
+            outcomes.append("rollback")
+            raise
+        else:
+            outcomes.append("commit")
+
+    connection.transaction.side_effect = transaction
+
+    def execute(statement, *args):
+        result = MagicMock()
+        if isinstance(statement, str) and "regclass" in statement:
+            result.fetchone.return_value = (42,)
+        else:
+            result.fetchone.return_value = (False,)
+        return result
+
+    connection.execute.side_effect = execute
+    with patch.object(postgres_backend, "_connect", return_value=connection), patch("altk_evolve.backend.postgres.register_vector"):
+        try:
+            with postgres_backend.transaction("memories"):
+                assert postgres_backend.conn is connection
+                if fail:
+                    raise RuntimeError("write failed")
+        except RuntimeError:
+            assert fail
+    assert postgres_backend.conn is original
+    assert outcomes == (["rollback"] if fail else ["commit"])
+    assert postgres_backend._table_name("memories") == "ns_memories"
+    assert not postgres_backend.in_transaction

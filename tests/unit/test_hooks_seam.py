@@ -562,7 +562,7 @@ def test_halting_delete_raises_and_preserves_entity(client: EvolveClient):
 # ── unified delete path ──────────────────────────────────────────────
 #
 # Both delete initiators — the public delete_entity_by_id and LLM DELETE
-# verdicts from conflict resolution — route through _guarded_delete, so
+# verdicts from conflict resolution — dispatch policy before deletion, so
 # memory_pre_delete fires (with the stored entity's metadata) on every
 # entity delete. Veto semantics differ per caller: the public path raises,
 # the conflict-resolution executor skips that delete and continues.
@@ -705,11 +705,10 @@ def test_external_delete_payload_carries_fetched_metadata(client: EvolveClient):
     assert len(recorder.calls["memory_pre_delete"]) == 1
     assert recorder.calls["memory_pre_delete"][0].metadata == {"case": "c-2"}
 
-    # Nonexistent id: the hook still fires (metadata=None) and the impl's
-    # not-found error surfaces exactly as before.
+    # A missing snapshot must not authorize deletion with absent policy metadata.
     with pytest.raises(EvolveException, match="not found"):
         client.delete_entity_by_id("ns", "does-not-exist")
-    assert recorder.calls["memory_pre_delete"][1].metadata is None
+    assert len(recorder.calls["memory_pre_delete"]) == 1
 
 
 # ── conflict-resolution UPDATE metadata durability ───────────────────
@@ -1051,7 +1050,11 @@ def test_llm_pre_call_fires_at_guideline_generation_call_site():
     response.choices = [Mock(message=Mock(content=json.dumps({"guidelines": []})))]
     with patch.object(guidelines, "completion", return_value=response) as mock_completion:
         guidelines._generate_guidelines_for_segment(
-            task_description="t", trajectory_slice="s", num_steps=1, constrained_decoding_supported=False
+            task_description="t",
+            trajectory_slice="s",
+            num_steps=1,
+            constrained_decoding_supported=False,
+            options=guidelines.GuidelineRuntime(),
         )
 
     sent = mock_completion.call_args.kwargs["messages"]
@@ -1126,6 +1129,7 @@ def test_llm_pre_call_fires_at_consistency_guidelines_call_site(constrained_deco
             step_range=None,
             constrained_decoding_supported=constrained_decoding_supported,
             debug_suffix="",
+            options=consistency_guidelines.GuidelineRuntime(),
         )
 
     sent = mock_completion.call_args.kwargs["messages"]

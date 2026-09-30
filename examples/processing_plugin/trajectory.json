@@ -1,0 +1,7 @@
+{
+  "trace_id": "example-trajectory",
+  "messages": [
+    {"role": "user", "content": "Please summarize this conversation."},
+    {"role": "assistant", "content": "Here is a short summary."}
+  ]
+}
