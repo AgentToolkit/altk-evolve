@@ -48,13 +48,14 @@ def build_module():
 
 
 @pytest.fixture
-def isolated_repo(tmp_path, build_module, monkeypatch):
-    """Copy plugin-source/ into tmp_path and monkeypatch REPO_ROOT / PLUGIN_SOURCE_DIR
-    so render_to and check_drift operate against an isolated tree. Returns tmp_path."""
-    shutil.copytree(REPO_ROOT / "plugin-source", tmp_path / "plugin-source")
-    monkeypatch.setattr(build_module, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(build_module, "PLUGIN_SOURCE_DIR", tmp_path / "plugin-source")
-    return tmp_path
+def isolated_repo(temp_project_dir, build_module, monkeypatch):
+    """Copy plugin-source/ into the shared temp_project_dir and monkeypatch
+    REPO_ROOT / PLUGIN_SOURCE_DIR so render_to and check_drift operate against an
+    isolated tree. Returns that directory, standing in for the repo root."""
+    shutil.copytree(REPO_ROOT / "plugin-source", temp_project_dir / "plugin-source")
+    monkeypatch.setattr(build_module, "REPO_ROOT", temp_project_dir)
+    monkeypatch.setattr(build_module, "PLUGIN_SOURCE_DIR", temp_project_dir / "plugin-source")
+    return temp_project_dir
 
 
 @pytest.fixture
@@ -67,7 +68,7 @@ def rendered_repo(isolated_repo, build_module):
 def _plugin_root(manifest, platform: str) -> Path:
     """Absolute path of the platform's plugin_root from the (possibly
     monkeypatched) manifest. After `isolated_repo` patches `build_module.REPO_ROOT`,
-    this already points into the test's tmp_path."""
+    this already points inside the test's isolated directory."""
     return Path(manifest.platforms[platform].plugin_root)
 
 
