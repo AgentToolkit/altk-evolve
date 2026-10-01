@@ -60,12 +60,26 @@ def codex_sandbox_ready():
     if not os.environ.get(credential_env_var):
         pytest.skip(f"{credential_env_var} not set in environment")
 
-    # A provider name without a base URL writes `model_provider = "<name>"` into
-    # config.toml with no matching [model_providers.<name>] table, so Codex falls
-    # back to its default endpoint and the run dies with an opaque 401. Fail here
-    # with the actual cause instead of inside session 1.
+    # Gateway routing needs CODEX_MODEL_PROVIDER and a base URL together: the
+    # [model_providers.<name>] table is only written when both are set. Half a
+    # pair sends the run to the wrong endpoint, so fail here with the real cause
+    # rather than inside session 1.
     provider = os.environ.get("CODEX_MODEL_PROVIDER")
-    base_url = os.environ.get("CODEX_MODEL_PROVIDER_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
+    provider_base_url = os.environ.get("CODEX_MODEL_PROVIDER_BASE_URL")
+
+    # Base URL alone is dropped entirely — it never reaches config.toml without a
+    # provider, and it is not forwarded into the container either — so the run
+    # would quietly use the default OpenAI endpoint instead of the gateway.
+    if provider_base_url and not provider:
+        pytest.fail(
+            "CODEX_MODEL_PROVIDER_BASE_URL is set but CODEX_MODEL_PROVIDER is not — "
+            "the base URL would be ignored and Codex would use its default endpoint. "
+            "Set both for gateway routing, or unset the base URL."
+        )
+
+    # Provider alone writes `model_provider = "<name>"` with no matching table, so
+    # Codex falls back to its default endpoint and dies with an opaque 401.
+    base_url = provider_base_url or os.environ.get("OPENAI_BASE_URL")
     if provider and not base_url:
         pytest.fail(
             f"CODEX_MODEL_PROVIDER={provider!r} is set but neither "
