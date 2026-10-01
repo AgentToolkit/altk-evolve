@@ -620,6 +620,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#hermes-quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hermes Quick Start
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#download-install-script" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1251,6 +1262,8 @@
       
         
       
+        
+      
     
     
     
@@ -1311,6 +1324,34 @@
     
   
     Evolve Lite (Claude Code)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../integrations/hermes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Provider (Hermes)
   
 
     
@@ -1552,6 +1593,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#hermes-quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hermes Quick Start
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#download-install-script" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1617,15 +1669,20 @@ Next: <a href="../examples/hello_world/bob/">Hello World with IBM Bob</a></p>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>claude<span class="w"> </span>plugin<span class="w"> </span>install<span class="w"> </span>evolve-lite
 </code></pre></div>
 Next: <a href="../examples/hello_world/claude/">Hello World with Claude Code</a></p>
+<h3 id="hermes-quick-start">Hermes Quick Start<a class="headerlink" href="#hermes-quick-start" title="Permanent link">&para;</a></h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>hermes
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>hermes<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>memory.provider<span class="w"> </span>evolve
+</code></pre></div>
+Next: <a href="../integrations/hermes/">Hermes Memory Provider</a></p>
 <h3 id="download-install-script">Download Install Script<a class="headerlink" href="#download-install-script" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Latest (based on main)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span>-o<span class="w"> </span>install.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>install.sh
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Latest Stable Version</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/platform-integrations/install.sh<span class="w"> </span>-o<span class="w"> </span>install.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>install.sh
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Latest (based on main)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span>-o<span class="w"> </span>install.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>install.sh
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Latest Stable Version</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/platform-integrations/install.sh<span class="w"> </span>-o<span class="w"> </span>install.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>install.sh
 </code></pre></div>
 <h3 id="install-script-usage">Install Script Usage<a class="headerlink" href="#install-script-usage" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./install.sh<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span><span class="o">{</span>bob,claude,codex,all<span class="o">}</span><span class="w"> </span>--mode<span class="w"> </span><span class="o">{</span>lite,full<span class="o">}</span><span class="w"> </span><span class="o">[</span>--dry-run<span class="o">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./install.sh<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span><span class="o">{</span>bob,claude,claw-code,codex,hermes,all<span class="o">}</span><span class="w"> </span>--mode<span class="w"> </span><span class="o">{</span>lite,full<span class="o">}</span><span class="w"> </span><span class="o">[</span>--dry-run<span class="o">]</span>
 </code></pre></div>
 <table>
 <thead>
@@ -1648,8 +1705,16 @@ Next: <a href="../examples/hello_world/claude/">Hello World with Claude Code</a>
 <td>Claude Code</td>
 </tr>
 <tr>
+<td><code>claw-code</code></td>
+<td>Claw Code</td>
+</tr>
+<tr>
 <td><code>codex</code></td>
 <td>Codex</td>
+</tr>
+<tr>
+<td><code>hermes</code></td>
+<td><a href="../integrations/hermes/">Hermes</a> (installs a memory provider into <code>$HERMES_HOME</code>; ignores <code>--dir</code>)</td>
 </tr>
 </tbody>
 </table>

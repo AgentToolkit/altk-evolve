@@ -10,30 +10,32 @@
       
       
       
-        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/">
+        <link rel="canonical" href="https://agenttoolkit.github.io/evolve/integrations/hermes/">
       
       
+        <link rel="prev" href="../claude/evolve-lite/">
       
-        <link rel="next" href="installation/">
+      
+        <link rel="next" href="../../results/">
       
       
         
       
       
-      <link rel="icon" href="assets/logo-32x32.png">
+      <link rel="icon" href="../../assets/logo-32x32.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Agent Lifecycle Toolkit (ALTK)</title>
+        <title>Memory Provider (Hermes) - Agent Lifecycle Toolkit (ALTK)</title>
       
     
     
 
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -61,9 +63,9 @@
       
     
     
-      <link rel="stylesheet" href="stylesheets/extra.css">
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
   
@@ -98,7 +100,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#evolve" class="md-skip">
+        <a href="#hermes-memory-provider" class="md-skip">
           Skip to content
         </a>
       
@@ -112,9 +114,9 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="Agent Lifecycle Toolkit (ALTK)" class="md-header__button md-logo" aria-label="Agent Lifecycle Toolkit (ALTK)" data-md-component="logo">
+    <a href="../.." title="Agent Lifecycle Toolkit (ALTK)" class="md-header__button md-logo" aria-label="Agent Lifecycle Toolkit (ALTK)" data-md-component="logo">
       
-  <img src="assets/logo-512x512.png" alt="logo">
+  <img src="../../assets/logo-512x512.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -131,7 +133,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              Memory Provider (Hermes)
             
           </span>
         </div>
@@ -277,11 +279,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="." class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -300,7 +300,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="installation/" class="md-tabs__link">
+      <a href="../../installation/" class="md-tabs__link">
         
   
   
@@ -321,7 +321,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="tutorials/" class="md-tabs__link">
+        <a href="../../tutorials/" class="md-tabs__link">
           
   
   
@@ -343,7 +343,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="guides/configuration/" class="md-tabs__link">
+        <a href="../../guides/configuration/" class="md-tabs__link">
           
   
   
@@ -365,7 +365,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="reference/cli/" class="md-tabs__link">
+        <a href="../../reference/cli/" class="md-tabs__link">
           
   
   
@@ -383,11 +383,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="integrations/claude/evolve-lite/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../claude/evolve-lite/" class="md-tabs__link">
           
   
   
@@ -409,7 +411,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="results/" class="md-tabs__link">
+        <a href="../../results/" class="md-tabs__link">
           
   
   
@@ -431,7 +433,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="operations/docker-testing/" class="md-tabs__link">
+        <a href="../../operations/docker-testing/" class="md-tabs__link">
           
   
   
@@ -457,9 +459,7 @@
           
             
               
-                
-              
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -470,9 +470,9 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="Agent Lifecycle Toolkit (ALTK)" class="md-nav__button md-logo" aria-label="Agent Lifecycle Toolkit (ALTK)" data-md-component="logo">
+    <a href="../.." title="Agent Lifecycle Toolkit (ALTK)" class="md-nav__button md-logo" aria-label="Agent Lifecycle Toolkit (ALTK)" data-md-component="logo">
       
-  <img src="assets/logo-512x512.png" alt="logo">
+  <img src="../../assets/logo-512x512.png" alt="logo">
 
     </a>
     Agent Lifecycle Toolkit (ALTK)
@@ -496,37 +496,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -542,81 +515,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#latest-from-evolve" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Latest from Evolve
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#guides" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Guides
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reference
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#demos" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Demos
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How It Works
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -628,7 +526,7 @@
   
   
     <li class="md-nav__item">
-      <a href="installation/" class="md-nav__link">
+      <a href="../../installation/" class="md-nav__link">
         
   
   
@@ -686,7 +584,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="tutorials/" class="md-nav__link ">
+            <a href="../../tutorials/" class="md-nav__link ">
               
   
   
@@ -730,7 +628,7 @@
   
   
     <li class="md-nav__item">
-      <a href="examples/hello_world/bob/" class="md-nav__link">
+      <a href="../../examples/hello_world/bob/" class="md-nav__link">
         
   
   
@@ -758,7 +656,7 @@
   
   
     <li class="md-nav__item">
-      <a href="examples/hello_world/claude/" class="md-nav__link">
+      <a href="../../examples/hello_world/claude/" class="md-nav__link">
         
   
   
@@ -786,7 +684,7 @@
   
   
     <li class="md-nav__item">
-      <a href="examples/hello_world/codex/" class="md-nav__link">
+      <a href="../../examples/hello_world/codex/" class="md-nav__link">
         
   
   
@@ -814,7 +712,7 @@
   
   
     <li class="md-nav__item">
-      <a href="tutorials/guidelines-loop/" class="md-nav__link">
+      <a href="../../tutorials/guidelines-loop/" class="md-nav__link">
         
   
   
@@ -917,7 +815,7 @@
   
   
     <li class="md-nav__item">
-      <a href="guides/configuration/" class="md-nav__link">
+      <a href="../../guides/configuration/" class="md-nav__link">
         
   
   
@@ -945,7 +843,7 @@
   
   
     <li class="md-nav__item">
-      <a href="guides/guidelines/" class="md-nav__link">
+      <a href="../../guides/guidelines/" class="md-nav__link">
         
   
   
@@ -973,7 +871,7 @@
   
   
     <li class="md-nav__item">
-      <a href="guides/low-code-tracing/" class="md-nav__link">
+      <a href="../../guides/low-code-tracing/" class="md-nav__link">
         
   
   
@@ -1001,7 +899,7 @@
   
   
     <li class="md-nav__item">
-      <a href="guides/phoenix-sync/" class="md-nav__link">
+      <a href="../../guides/phoenix-sync/" class="md-nav__link">
         
   
   
@@ -1029,7 +927,7 @@
   
   
     <li class="md-nav__item">
-      <a href="guides/extract-trajectories/" class="md-nav__link">
+      <a href="../../guides/extract-trajectories/" class="md-nav__link">
         
   
   
@@ -1057,7 +955,7 @@
   
   
     <li class="md-nav__item">
-      <a href="guides/memory-hooks/" class="md-nav__link">
+      <a href="../../guides/memory-hooks/" class="md-nav__link">
         
   
   
@@ -1085,7 +983,7 @@
   
   
     <li class="md-nav__item">
-      <a href="guides/retention/" class="md-nav__link">
+      <a href="../../guides/retention/" class="md-nav__link">
         
   
   
@@ -1178,7 +1076,7 @@
   
   
     <li class="md-nav__item">
-      <a href="reference/cli/" class="md-nav__link">
+      <a href="../../reference/cli/" class="md-nav__link">
         
   
   
@@ -1206,7 +1104,7 @@
   
   
     <li class="md-nav__item">
-      <a href="reference/policies/" class="md-nav__link">
+      <a href="../../reference/policies/" class="md-nav__link">
         
   
   
@@ -1238,8 +1136,10 @@
       
   
   
+    
   
   
+  
     
     
       
@@ -1251,19 +1151,22 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
             
   
   
@@ -1281,7 +1184,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1299,7 +1202,7 @@
   
   
     <li class="md-nav__item">
-      <a href="integrations/claude/evolve-lite/" class="md-nav__link">
+      <a href="../claude/evolve-lite/" class="md-nav__link">
         
   
   
@@ -1324,10 +1227,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="integrations/hermes/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Provider (Hermes)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1343,6 +1273,114 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#uninstall" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Uninstall
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1385,7 +1423,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="results/" class="md-nav__link ">
+            <a href="../../results/" class="md-nav__link ">
               
   
   
@@ -1487,7 +1525,7 @@
   
   
     <li class="md-nav__item">
-      <a href="operations/docker-testing/" class="md-nav__link">
+      <a href="../../operations/docker-testing/" class="md-nav__link">
         
   
   
@@ -1523,9 +1561,7 @@
             
             
               
-                
-              
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" hidden>
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -1544,10 +1580,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#latest-from-evolve" class="md-nav__link">
+  <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Latest from Evolve
+        Prerequisites
       
     </span>
   </a>
@@ -1555,32 +1591,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#guides" class="md-nav__link">
+  <a href="#installation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Guides
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reference
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#demos" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Demos
+        Installation
       
     </span>
   </a>
@@ -1592,6 +1606,61 @@
     <span class="md-ellipsis">
       
         How It Works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#uninstall" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Uninstall
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations
       
     </span>
   </a>
@@ -1611,137 +1680,220 @@
               
                 
 
+
+
   
 
 
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  <span class="md-ellipsis">
+    Home
+  </span>
 
+      </a>
+    </li>
   
 
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../claude/evolve-lite/" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Integrations
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
 
               
               <article class="md-content__inner md-typeset">
                 
                   
-  
-
 
 
   
   
 
 
-<h1 id="evolve">Evolve<a class="headerlink" href="#evolve" title="Permanent link">&para;</a></h1>
-<p><strong><em><em>Self-improving agents through iterations.</em></em></strong></p>
-<p>Coding agents repeat the same mistakes because they start fresh every session. Evolve gives agents memory — they learn from what worked and what didn't, so each session is better than the last.</p>
-<p>Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.</p>
-<p>On the AppWorld benchmark, Evolve improved agent reliability by <strong>+8.9 points</strong> overall, with a <strong>74% relative increase</strong> on hard multi-step tasks.
-Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.</p>
-<p><a class="md-button" href="https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents">The Announcement →</a> <a class="md-button" href="https://huggingface.co/blog/ibm-research/altk-evolve">Check out the Blog →</a> <a class="md-button" href="https://arxiv.org/abs/2603.10600">Read the Paper →</a> <a class="md-button" href="results/">See the Results →</a></p>
-<p><github-repo-card repo="agenttoolkit/altk-evolve"></github-repo-card></p>
-<h2 id="latest-from-evolve">Latest from Evolve<a class="headerlink" href="#latest-from-evolve" title="Permanent link">&para;</a></h2>
-<p>Research, releases, and practical findings from the Evolve team.</p>
+<h1 id="hermes-memory-provider">Hermes Memory Provider<a class="headerlink" href="#hermes-memory-provider" title="Permanent link">&para;</a></h1>
+<p>Hermes is the one platform where Evolve Lite is not a prompt-and-skill bundle. Hermes has a first-class <code>MemoryProvider</code> interface, so Evolve installs as a Python provider that Hermes imports and calls directly: it learns guidelines from finished sessions and injects the relevant ones before each turn, with no <code>/learn</code> command to remember and no hook to wire up.</p>
+<p>Like the other lite integrations it needs no vector store, no MCP server, and no second API key — guideline generation runs inside Hermes, through <code>agent.plugin_llm</code>, on the model and credentials Hermes is already configured with. The one requirement it inherits from that lane is structured output; see <a href="#prerequisites">Prerequisites</a>.</p>
+<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>2026-09-25</strong> · Paper — <strong><a href="https://arxiv.org/abs/2609.32091">Memory as Middleware for Self-Improving AI Agents</a></strong>
-  The case for agent memory as a pluggable middleware layer, with Evolve as the reference implementation (to appear at <a href="https://middleware-conf.github.io/2026">Middleware 2026</a>).</li>
-<li><strong>2026-09-15</strong> · Article — <strong><a href="https://huggingface.co/blog/ibm-research/altk-evolve-consistency">Your Agent Aced the Task. Will It Do It Again?</a></strong>
-  Diagnosing where an agent's decisions wobble and stabilizing them so success repeats.</li>
-<li><strong>2026-09-08</strong> · Paper — <strong><a href="https://arxiv.org/abs/2609.08832">Closing the Consistency Gap: Self-Evolving Agents That Learn to Stay on Course</a></strong>
-  Turning unstable trajectory steps into episodic memory to keep agents consistent across repeated runs.</li>
-<li><strong>2026-08-18</strong> · Article — <strong><a href="https://huggingface.co/blog/ibm-research/altk-evolve-hmm">How Much Memory Does Your Agent Actually Need?</a></strong>
-  Why agent memory should be calibrated to the model instead of simply increased.</li>
-<li><strong>2026-08-11</strong> · Article — <strong><a href="https://huggingface.co/blog/ibm-research/altk-evolve-sldd">Thinking of ACE? We Can Do It with Fewer Tokens</a></strong>
-  Comparing Evolve's targeted guideline retrieval with ACE's playbook approach and token usage.</li>
-<li><strong>2026-04-08</strong> · Article — <strong><a href="https://huggingface.co/blog/ibm-research/altk-evolve">ALTK‑Evolve: On‑the‑Job Learning for AI Agents</a></strong>
-  An introduction to learning reusable guidance from agent trajectories.</li>
-<li><strong>2026-04-07</strong> · Announcement — <strong><a href="https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents">IBM introduces ALTK Evolve</a></strong>
-  Evolve is opened to builders creating agents that learn from experience.</li>
-<li><strong>2026-03-11</strong> · Paper — <strong><a href="https://arxiv.org/abs/2603.10600">Trajectory-Informed Memory Generation for Self-Improving Agent Systems</a></strong>
-  The research framework and evaluation underlying Evolve.</li>
+<li><a href="https://github.com/NousResearch/hermes-agent">Hermes</a> installed and configured</li>
+<li>A model on Hermes's auxiliary lane that supports <strong>structured output</strong> (JSON schema). <code>PluginLlm</code> routes through <code>agent.auxiliary_client</code>, which defaults to your main model — so this is satisfied out of the box on the usual frontier providers. It is worth checking if you have pointed the auxiliary lane at a small or local model.</li>
 </ul>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Lite</label><label for="__tabbed_1_2">Full</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<p>When setting up API keys and extra services are too much</p>
-<p><a class="md-button" href="installation/">General Installation</a></p>
-<p><a class="md-button" href="examples/hello_world/claude/">Claude Code</a> <a class="md-button" href="examples/hello_world/bob/">IBM Bob</a> <a class="md-button" href="examples/hello_world/codex/">Codex</a> <a class="md-button" href="integrations/hermes/">Hermes</a></p>
+<div class="admonition warning">
+<p class="admonition-title">A model that cannot do structured output fails quietly</p>
+<p>Guideline generation is a single <code>complete_structured</code> call, and capture is written never to break a session. So if the auxiliary model rejects the JSON schema, the result is <strong>zero guidelines</strong> with no user-visible error — the only trace is one line in <code>agent.log</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>evolve: guideline generation LLM call failed
+</code></pre></div>
+<p>If sessions are ending and <code>entities/guideline/</code> stays empty, grep for that line before looking anywhere else.</p>
 </div>
-<div class="tabbed-block">
-<p>Total Control</p>
-<div class="admonition bug">
-<p class="admonition-title">Under Development</p>
-</div>
-<div class="grid cards" markdown>
-<ul>
-<li>
-<p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.795 1.694a4.287 4.287 0 0 1 6.061 0 4.28 4.28 0 0 1 1.181 3.819 4.28 4.28 0 0 1 3.819 1.181 4.287 4.287 0 0 1 0 6.061l-6.793 6.793a.25.25 0 0 0 0 .353l2.617 2.618a.75.75 0 1 1-1.061 1.061l-2.617-2.618a1.75 1.75 0 0 1 0-2.475l6.793-6.793a2.785 2.785 0 1 0-3.939-3.939l-5.9 5.9a.7.7 0 0 1-.249.165.749.749 0 0 1-.812-1.225l5.9-5.901a2.785 2.785 0 1 0-3.939-3.939L2.931 10.68A.75.75 0 1 1 1.87 9.619z"/><path d="M12.42 4.069a.75.75 0 0 1 1.061 0 .75.75 0 0 1 0 1.061L7.33 11.28a2.79 2.79 0 0 0 0 3.94 2.79 2.79 0 0 0 3.94 0l6.15-6.151a.75.75 0 0 1 1.061 0 .75.75 0 0 1 0 1.061l-6.151 6.15a4.285 4.285 0 1 1-6.06-6.06z"/></svg></span> <strong>MCP Server</strong></p>
-<hr />
-<p>Exposes tools to get guidelines and save trajectories.</p>
-</li>
-<li>
-<p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15 13.25a3.25 3.25 0 1 1 6.5 0 3.25 3.25 0 0 1-6.5 0m-12.5 6a3.25 3.25 0 1 1 6.5 0 3.25 3.25 0 0 1-6.5 0m0-14.5a3.25 3.25 0 1 1 6.5 0 3.25 3.25 0 0 1-6.5 0M5.75 6.5a1.75 1.75 0 1 0-.001-3.501A1.75 1.75 0 0 0 5.75 6.5m0 14.5a1.75 1.75 0 1 0-.001-3.501A1.75 1.75 0 0 0 5.75 21m12.5-6a1.75 1.75 0 1 0-.001-3.501A1.75 1.75 0 0 0 18.25 15"/><path d="M6.5 7.25c0 2.9 2.35 5.25 5.25 5.25h4.5V14h-4.5A6.75 6.75 0 0 1 5 7.25Z"/><path d="M5.75 16.75A.75.75 0 0 1 5 16V8a.75.75 0 0 1 1.5 0v8a.75.75 0 0 1-.75.75"/></svg></span> <strong>Conflict Resolution</strong></p>
-<hr />
-<p>Intelligently merges new insights with existing guidelines using LLMs.</p>
-</li>
-<li>
-<p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 2a3 3 0 0 1 3 3v.75h2V5a3 3 0 0 1 3-3h3a3 3 0 0 1 3 3v3a3 3 0 0 1-2.846 2.996L19 11h-3l-.154-.004a3 3 0 0 1-1.369-.413l-3.895 3.896c.264.446.418.965.418 1.521v.75h8.689l-2.219-2.22a.749.749 0 1 1 1.06-1.06l3.5 3.5a.75.75 0 0 1 0 1.06l-3.5 3.5a.749.749 0 1 1-1.06-1.06l2.219-2.22H11V19a3 3 0 0 1-2.846 2.996L8 22H5l-.154-.004a3 3 0 0 1-2.842-2.842L2 19v-3a3 3 0 0 1 3-3h3c.556 0 1.075.153 1.521.417l3.895-3.895a3 3 0 0 1-.412-1.368L13 8v-.75h-2V8a3 3 0 0 1-2.846 2.996L8 11H5l-.154-.004a3 3 0 0 1-2.842-2.842L2 8V5a3 3 0 0 1 3-3zM5 14.5A1.5 1.5 0 0 0 3.5 16v3A1.5 1.5 0 0 0 5 20.5h3A1.5 1.5 0 0 0 9.5 19v-3A1.5 1.5 0 0 0 8 14.5zm0-11A1.5 1.5 0 0 0 3.5 5v3A1.5 1.5 0 0 0 5 9.5h3A1.5 1.5 0 0 0 9.5 8V5A1.5 1.5 0 0 0 8 3.5zm11 0A1.5 1.5 0 0 0 14.5 5v3A1.5 1.5 0 0 0 16 9.5h3A1.5 1.5 0 0 0 20.5 8V5A1.5 1.5 0 0 0 19 3.5z"/></svg></span> <strong>Trajectory Analysis</strong> </p>
-<hr />
-<p>Automatically analyzes agent trajectories to generate guidelines and best practices.</p>
-</li>
-<li>
-<p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1.25c2.487 0 4.773.402 6.466 1.079.844.337 1.577.758 2.112 1.264.536.507.922 1.151.922 1.907v12.987l-.026.013h.026c0 .756-.386 1.4-.922 1.907-.535.506-1.268.927-2.112 1.264-1.693.677-3.979 1.079-6.466 1.079s-4.774-.402-6.466-1.079c-.844-.337-1.577-.758-2.112-1.264C2.886 19.9 2.5 19.256 2.5 18.5h.026l-.026-.013V5.5c0-.756.386-1.4.922-1.907.535-.506 1.268-.927 2.112-1.264C7.226 1.652 9.513 1.25 12 1.25M4 14.371v4.116l-.013.013H4c0 .211.103.487.453.817.351.332.898.666 1.638.962 1.475.589 3.564.971 5.909.971s4.434-.381 5.909-.971c.739-.296 1.288-.63 1.638-.962.349-.33.453-.607.453-.817h.013L20 18.487v-4.116a8 8 0 0 1-1.534.8c-1.693.677-3.979 1.079-6.466 1.079s-4.774-.402-6.466-1.079a8 8 0 0 1-1.534-.8M20 12V7.871a8 8 0 0 1-1.534.8C16.773 9.348 14.487 9.75 12 9.75s-4.774-.402-6.466-1.079A8 8 0 0 1 4 7.871V12c0 .21.104.487.453.817.35.332.899.666 1.638.961 1.475.59 3.564.972 5.909.972s4.434-.382 5.909-.972c.74-.295 1.287-.629 1.638-.96.35-.33.453-.607.453-.818M4 5.5c0 .211.103.487.453.817.351.332.898.666 1.638.962 1.475.589 3.564.971 5.909.971s4.434-.381 5.909-.971c.739-.296 1.288-.63 1.638-.962.349-.33.453-.607.453-.817 0-.211-.103-.487-.453-.817-.351-.332-.898-.666-1.638-.962-1.475-.589-3.564-.971-5.909-.971s-4.434.381-5.909.971c-.739.296-1.288.63-1.638.962C4.104 5.013 4 5.29 4 5.5"/></svg></span> <strong>Milvus Integration</strong></p>
-<hr />
-<p>Uses Milvus (or Milvus Lite) for efficient vector storage and retrieval.</p>
-</li>
-</ul>
-</div>
-<h2 id="guides">Guides<a class="headerlink" href="#guides" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="guides/configuration/">Configuration</a>: Configure models, backends, and environment variables.</li>
-<li><a href="guides/low-code-tracing/">Low-Code Tracing</a>: Instrument agents with Phoenix and verify end-to-end tracing.</li>
-<li><a href="guides/phoenix-sync/">Phoenix Sync</a>: Pull trajectories from Phoenix and generate stored guidelines.</li>
-<li><a href="guides/extract-trajectories/">Extract Trajectories</a>: Export Phoenix traces into an OpenAI-style message format.</li>
-</ul>
-<h2 id="reference">Reference<a class="headerlink" href="#reference" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="reference/cli/">CLI Reference</a>: Manage namespaces, entities, and sync jobs from the command line.</li>
-<li><a href="reference/policies/">Policies</a>: Structured policy entities and how to retrieve them with MCP tools.</li>
-</ul>
-</div>
-</div>
-</div>
-<h2 id="demos">Demos<a class="headerlink" href="#demos" title="Permanent link">&para;</a></h2>
-<div class="tabbed-set tabbed-alternate" data-tabs="2:3"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><input id="__tabbed_2_3" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Claude Code</label><label for="__tabbed_2_2">IBM Bob</label><label for="__tabbed_2_3">Codex</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<p><div class="video-wrapper">
-    <iframe width="1280" height="720" src="https://www.youtube.com/embed/XIlYA79pYp4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-</div></p>
-</div>
-<div class="tabbed-block">
-<p><div class="video-wrapper">
-    <iframe width="1280" height="720" src="https://www.youtube.com/embed/YlTJoSJ4eDg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-</div></p>
-</div>
-<div class="tabbed-block">
-<p><div class="video-wrapper">
-    <iframe width="1280" height="720" src="https://www.youtube.com/embed/IBc59bLjdi8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-</div></p>
-</div>
-</div>
+<h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>hermes
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>hermes<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>memory.provider<span class="w"> </span>evolve
+</code></pre></div>
+<p>The install copies the provider bundle to <code>$HERMES_HOME/plugins/evolve/</code> (default <code>~/.hermes/plugins/evolve/</code>). This is <strong>global</strong>: unlike the Bob and Claude installs there is nothing per-repo, and <code>--dir</code> is ignored. Nothing is pip-installed — the bundle is stdlib-only and self-contained.</p>
+<p>Check the install the same way — the command above pipes the script straight to <code>bash</code>, so there is no local copy to invoke:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>status
+</code></pre></div>
+<p>From a clone of the repo, run <code>platform-integrations/install.sh status</code> instead.</p>
+<p>Instead of <code>hermes config set</code>, you can run <code>hermes memory setup</code> and pick <code>evolve</code> — the provider publishes a config schema, so the wizard walks you through the settings in the <a href="#configuration">Configuration</a> table.</p>
+<div class="admonition note">
+<p class="admonition-title">Bundled providers win</p>
+<p>Hermes discovers memory providers from four places and resolves collisions <strong>bundled first</strong>, then user, then project, then entry point. If your hermes-agent checkout ships its own <code>plugins/memory/evolve/</code>, that copy shadows the one in <code>$HERMES_HOME/plugins/</code> and your changes here will appear to do nothing. Remove the bundled copy to use this one.</p>
 </div>
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<p>Evolve analyzes agent trajectories to extract guidelines and best practices, then recalls them in future sessions. It supports both a lightweight file-based mode (Evolve Lite) and a full mode backed by an MCP server with vector storage and LLM-based conflict resolution.</p>
-<figure>
-    <picture class="arch light">
-        <source media="(min-width: 1000px)" srcset="assets/architecture-wide-light.svg">
-        <img src="assets/architecture-light.svg" alt="Architecture">
-    </picture>
-    <picture class="arch dark">
-        <source media="(min-width: 1000px)" srcset="assets/architecture-wide-dark.svg">
-        <img src="assets/architecture-dark.svg" alt="Architecture">
-    </picture>
-    <!-- <figcaption>Does your agent make the same mistake twice?</figcaption> -->
-</figure>
+<p>Both halves of the loop are automatic — they run from <code>MemoryProvider</code> callbacks, not from anything you type.</p>
+<p><strong>Recall.</strong> After each turn, the provider retrieves guidelines on a background thread; on the next turn they are injected as a numbered list under <code>Guidelines learned from previous sessions (apply when relevant):</code>. Retrieval is case-insensitive term overlap between your message and each guideline's trigger + content — lexical, not semantic. Recalled text is passed through Hermes's own context sanitizer before injection, so a guideline that contains something fence-shaped cannot forge a context boundary.</p>
+<p><strong>Capture.</strong> At session end, if the session had at least <code>min_turns</code> user turns, the conversation is flattened to an OpenAI-shaped trajectory (system prompts dropped, tool calls inlined, previously-injected guidelines stripped so Evolve cannot re-learn its own output), appended to <code>trajectories/&lt;session_id&gt;.jsonl</code>, and passed through a single structured LLM call that applies evolve-lite's <code>learn</code> criteria. Each guideline that comes back is saved as a Markdown entity. Capture never breaks a session: every failure mode — no LLM available, a malformed response, an unwritable store — ends in zero guidelines, not an error.</p>
+<p>Two details worth knowing:</p>
+<ul>
+<li><strong>Only primary sessions write.</strong> Subagents and cron jobs get recall but never capture, so background work cannot pollute the store.</li>
+<li><strong>Session resets capture too.</strong> <code>/new</code> in the gateway ends a session without an explicit session-end, so the buffered transcript is captured under the session id that just finished.</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Check what ends a session on your install</p>
+<p>Capture only fires at a session boundary, and <code>hermes setup</code> writes <code>session_reset.mode: none</code> by default — sessions never auto-reset on idle or on a daily schedule. That leaves two boundaries: an explicit <code>/new</code> or <code>/reset</code>, and the Hermes process exiting. A long-running gateway that is never restarted and never sees a <code>/new</code> will therefore learn nothing, no matter how many turns go by.</p>
+<p>Either pick an auto-reset policy:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>hermes<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>session_reset.mode<span class="w"> </span>idle
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>hermes<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>session_reset.idle_minutes<span class="w"> </span><span class="m">60</span>
+</code></pre></div>
+<p>or leave resets off and have Evolve capture on a turn count instead:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_CAPTURE_EVERY_N_TURNS</span><span class="o">=</span><span class="m">10</span>
+</code></pre></div>
+</div>
+<p>Every recall that returns something appends a row to <code>$HERMES_HOME/evolve/audit.log</code> in the same format the rest of Evolve uses, so the <a href="../../guides/guidelines/"><code>provenance</code></a> tooling can read Hermes sessions without anything Hermes-specific.</p>
+<h2 id="tools">Tools<a class="headerlink" href="#tools" title="Permanent link">&para;</a></h2>
+<p>Automatic recall covers the common case; these two tools are for when the model wants to act deliberately. Both are on by default and can be turned off with <code>expose_tools</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>evolve_get_guidelines(task)</code></td>
+<td>Look up guidelines for a task other than the current one</td>
+</tr>
+<tr>
+<td><code>evolve_save_guideline(content, trigger, rationale)</code></td>
+<td>Record a lesson immediately, without waiting for session end</td>
+</tr>
+</tbody>
+</table>
+<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
+<p>Set these as environment variables, or as keys in <code>$HERMES_HOME/evolve/config.json</code>. Environment variables win.</p>
+<table>
+<thead>
+<tr>
+<th>Environment variable</th>
+<th><code>config.json</code> key</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EVOLVE_MODE</code></td>
+<td><code>mode</code></td>
+<td><code>lite</code></td>
+<td><code>lite</code>, or <code>server</code> to disable (see below)</td>
+</tr>
+<tr>
+<td><code>EVOLVE_DIR</code></td>
+<td><code>dir</code></td>
+<td><code>$HERMES_HOME/evolve</code></td>
+<td>Storage root override</td>
+</tr>
+<tr>
+<td><code>EVOLVE_PREFETCH_LIMIT</code></td>
+<td><code>prefetch_limit</code></td>
+<td><code>5</code></td>
+<td>Max guidelines injected per turn</td>
+</tr>
+<tr>
+<td><code>EVOLVE_CAPTURE_EVERY_N_TURNS</code></td>
+<td><code>capture_every_n_turns</code></td>
+<td><code>0</code> (off)</td>
+<td>Also capture every N turns, for long sessions that never end cleanly</td>
+</tr>
+<tr>
+<td><code>EVOLVE_MIN_TURNS</code></td>
+<td><code>min_turns</code></td>
+<td><code>2</code></td>
+<td>Minimum user turns before session-end capture fires</td>
+</tr>
+<tr>
+<td><code>EVOLVE_EXPOSE_TOOLS</code></td>
+<td><code>expose_tools</code></td>
+<td><code>true</code></td>
+<td>Expose the two <code>evolve_*</code> tools to the model</td>
+</tr>
+</tbody>
+</table>
+<p><code>EVOLVE_MODE=server</code> is reserved for a future MCP-backed mode and is not implemented. Setting it disables the provider — deliberately, so a half-configured server mode never silently degrades to doing nothing.</p>
+<h2 id="storage">Storage<a class="headerlink" href="#storage" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>$HERMES_HOME/evolve/
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  config.json              # optional
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  audit.log                # recall provenance, one JSON object per line
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>  entities/
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    guideline/
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>      use-make-check-for-tests.md
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  trajectories/
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    &lt;session_id&gt;.jsonl
+</code></pre></div>
+<p>Entity files are the same Markdown-with-YAML-frontmatter format as every other Evolve integration:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>---
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>type: guideline
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>trigger: running tests in a src-layout repo
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="gu">source: hermes-evolve-lite</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="gu">---</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>Use <span class="sb">`make check`</span> instead of bare pytest.
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="gu">## Rationale</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>Bare pytest fails without PYTHONPATH set.
+</code></pre></div>
+<p><code>EVOLVE_DIR</code> moves the entity and trajectory store; <code>audit.log</code> stays under <code>$HERMES_HOME/evolve/</code> either way, since it records what one agent install recalled rather than what the store contains.</p>
+<h2 id="uninstall">Uninstall<a class="headerlink" href="#uninstall" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>./install.sh<span class="w"> </span>uninstall<span class="w"> </span>--platform<span class="w"> </span>hermes
+</code></pre></div>
+<p>This removes <code>$HERMES_HOME/plugins/evolve/</code> and nothing else. The guideline store at <code>$HERMES_HOME/evolve/</code> is your data and is left in place — delete it yourself to discard what was learned.</p>
+<h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Lexical retrieval.</strong> Term overlap, not semantic search. A guideline phrased differently from your request may not surface.</li>
+<li><strong>No conflict resolution.</strong> Guidelines are appended; duplicates and near-duplicates accumulate. Full Evolve merges and garbage-collects them.</li>
+<li><strong>No migration path to server mode</strong> yet, so a future upgrade means starting fresh or writing an import script.</li>
+<li><strong>No reconciliation with Hermes's other stores.</strong> A lesson can end up captured both as an Evolve guideline and as a Hermes skill or memory entry.</li>
+</ul>
+<p>For how this compares with full Evolve, see the <a href="../claude/evolve-lite/#tradeoffs">Evolve Lite tradeoffs table</a>.</p>
+
+
 
 
 
@@ -1750,14 +1902,7 @@ Evolve is a system designed to help agents improve over time by learning from th
 
 
   
-  
 
-
-
-  
-
-
-  
 
 
 
@@ -1783,19 +1928,33 @@ Evolve is a system designed to help agents improve over time by learning from th
   
     
       
-        
-      
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../claude/evolve-lite/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Evolve Lite (Claude Code)">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Evolve Lite (Claude Code)
+              </div>
+            </div>
+          </a>
         
         
           
-          <a href="installation/" class="md-footer__link md-footer__link--next" aria-label="Next: Installation">
+          <a href="../../results/" class="md-footer__link md-footer__link--next" aria-label="Next: Benchmarks">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Installation
+                Benchmarks
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1930,14 +2089,14 @@ Evolve is a system designed to help agents improve over time by learning from th
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["content.tabs.link", "content.code.annotate", "content.code.copy", "content.tooltips", "announce.dismiss", "navigation.footer", "navigation.tabs", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "toc.follow"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tabs.link", "content.code.annotate", "content.code.copy", "content.tooltips", "announce.dismiss", "navigation.footer", "navigation.tabs", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
 
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
-<script src="./components/github-repo-card.js"></script>
+<script src="../../components/github-repo-card.js"></script>
 <script>
   (function () {
     function syncTheme() {
