@@ -20,6 +20,7 @@ see the import block below.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import logging
@@ -173,6 +174,40 @@ def write_entity_file(directory: Any, entity: Dict[str, Any], filename: Optional
 
 
 # ---------------------------------------------------------------------------
+# Trajectory file naming
+# ---------------------------------------------------------------------------
+
+# How much of the sanitized session id survives into the filename. The digest
+# carries identity, so this is only there to keep the file recognisable.
+_TRAJECTORY_STEM_CHARS = 40
+
+
+def sanitize_session_id(session_id: str) -> str:
+    """Fold a session id to the characters a filename may safely hold.
+
+    Lossy on purpose — and that is exactly why it is not a filename on its own.
+    See ``trajectory_filename``.
+    """
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "session")
+
+
+def trajectory_filename(session_id: str) -> str:
+    """Filename for one session's capture file — legible, but keyed on the digest.
+
+    ``sanitize_session_id`` is many-to-one: a gateway session key like ``a/b``
+    and a thread id like ``a:b`` both fold to ``a_b``. Naming the file after the
+    fold alone merged two sessions' records into one file, and the ``provenance``
+    skill then attributed one session's trajectory to the other — confidently,
+    because it had no way to tell. So the fold is decoration, kept so the
+    directory stays readable; a truncated SHA-256 of the *original* id is what
+    identifies the file. Same shape, and the same reasoning, as ``_bucket_name``
+    in ``__init__.py``.
+    """
+    digest = hashlib.sha256((session_id or "session").encode("utf-8")).hexdigest()[:12]
+    return f"{sanitize_session_id(session_id)[:_TRAJECTORY_STEM_CHARS]}-{digest}.jsonl"
+
+
+# ---------------------------------------------------------------------------
 # Backend interface
 # ---------------------------------------------------------------------------
 
@@ -240,8 +275,9 @@ class LiteBackend(EvolveBackend):
     Storage layout under *root* (default: ``$HERMES_HOME/evolve``,
     overridable via ``EVOLVE_DIR``):
 
-      entities/{type}/{slug}.md        -- markdown entities (evolve-lite compatible)
-      trajectories/{session_id}.jsonl  -- captured trajectories, one JSON line each
+      entities/{type}/{slug}.md                 -- markdown entities (evolve-lite compatible)
+      trajectories/{session_id}-{digest}.jsonl  -- captured trajectories, one JSON line
+                                                   each; see ``trajectory_filename``
 
     Retrieval is case-insensitive term-overlap scoring of query tokens
     against each entity's ``trigger`` + ``content`` — no vector index, no
@@ -391,8 +427,14 @@ class LiteBackend(EvolveBackend):
         traj_path: Optional[Path] = None
         try:
             self._ensure_dir(self.trajectories_dir)
-            safe_session = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "session")
-            traj_path = self.trajectories_dir / f"{safe_session}.jsonl"
+            # Stores written before the digest-suffixed name existed hold
+            # ``<sanitized>.jsonl``. Keep appending to such a file when it is
+            # already there: switching names mid-session would split one
+            # session's records across two files, and provenance reads one.
+            # New sessions get the injective name, so the collision that made
+            # the old name unsafe cannot recur in a store written from here on.
+            legacy = self.trajectories_dir / f"{sanitize_session_id(session_id)}.jsonl"
+            traj_path = legacy if legacy.is_file() else self.trajectories_dir / trajectory_filename(session_id)
             record: Dict[str, Any] = {"ts": time.time(), "session_id": session_id}
             # Who produced this trajectory. Recorded so an existing store stays
             # attributable after the fact, whatever EVOLVE_SCOPE was set to when
