@@ -81,7 +81,9 @@ def reconcile_decisions(
             contributors = [incoming_by_id[identifier] for identifier in dict.fromkeys([decision.id, *decision.incoming_ids])]
             change.metadata = new_memory_metadata(incoming_by_id[decision.id].metadata, list(contributors), observed_at)
         else:
-            if decision.event == "NONE" and decision.id in incoming_by_id and not decision.incoming_ids:
+            if decision.event == "NONE" and decision.id in incoming_by_id:
+                if set(decision.incoming_ids) - {decision.id}:
+                    raise EvolveException("Conflict resolution attached sources to a discarded incoming entity")
                 continue
             if decision.id not in candidates:
                 raise EvolveException("Conflict resolution returned an out-of-scope entity ID")

@@ -8,9 +8,24 @@ import pytest
 from altk_evolve.backend.reconciliation import reconcile_decisions, attach_processing_provenance, prepare_additions
 from altk_evolve.schema.core import Entity, RecordedEntity
 from altk_evolve.schema.conflict_resolution import EntityUpdate
+from altk_evolve.schema.exceptions import EvolveException
 
 pytestmark = pytest.mark.unit
 OBSERVED = datetime(2026, 9, 30, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("references", [[], ["incoming"], ["incoming", "incoming"]])
+def test_discarded_incoming_can_reference_itself(references):
+    incoming = [RecordedEntity(id="incoming", type="fact", content="discard", created_at=OBSERVED)]
+    decision = EntityUpdate(id="incoming", type="fact", content="discard", event="NONE", incoming_ids=references)
+    assert reconcile_decisions(incoming, {}, [decision], "fact", OBSERVED) == []
+
+
+def test_discarded_incoming_cannot_claim_another_source():
+    incoming = [RecordedEntity(id=identifier, type="fact", content="discard", created_at=OBSERVED) for identifier in ["one", "two"]]
+    decision = EntityUpdate(id="one", type="fact", content="discard", event="NONE", incoming_ids=["two"])
+    with pytest.raises(EvolveException, match="attached sources to a discarded"):
+        reconcile_decisions(incoming, {}, [decision], "fact", OBSERVED)
 
 
 @pytest.mark.parametrize("event", ["ADD", "UPDATE", "NONE", "DELETE"])

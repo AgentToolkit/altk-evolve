@@ -411,8 +411,9 @@ class BaseEntityBackend(ABC):
                             },
                         }
                 case "NONE":
-                    if update.incoming_ids or update.metadata.get("provenance_incomplete"):
-                        prepared.expected[update.id] = stored_by_id[update.id].model_copy(deep=True)
+                    stored = stored_by_id.get(update.id)
+                    if stored is not None and (update.incoming_ids or update.metadata != stored.metadata):
+                        prepared.expected[update.id] = stored.model_copy(deep=True)
         return prepared
 
     def prepare_updates(

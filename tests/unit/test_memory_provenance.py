@@ -27,6 +27,26 @@ def fact(conversation, user="alice", agent="a"):
     return Entity(type="fact", content="preferred style", metadata={"user_id": user, "agent_id": agent, "thread_id": conversation})
 
 
+def test_unchanged_none_candidates_do_not_conflict_across_batches(backend):
+    original = backend.update_entities(
+        "n", [Entity(type="fact", content="unrelated", metadata={"sources": [], "provenance_incomplete": True})], False
+    )[0]
+
+    def reconcile(old, new):
+        return [
+            EntityUpdate(id=old[0].id, type="fact", content=old[0].content, event="NONE"),
+            EntityUpdate(id=new[0].id, type="fact", content=new[0].content, event="ADD"),
+        ]
+
+    with patch("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", side_effect=reconcile):
+        batches = [backend.prepare_updates("n", [Entity(type="fact", content="unrelated")]) for _ in range(2)]
+    assert all(original.id not in batch.expected for batch in batches)
+    with patch.object(backend, "_reaffirm_entity", wraps=backend._reaffirm_entity) as reaffirm:
+        backend.commit_prepared("n", batches, checkpoint=("batch", {}))
+        reaffirm.assert_not_called()
+    assert len(backend.search_entities("n")) == 3
+
+
 def test_candidates_are_isolated_and_none_records_a_second_source(backend):
     for user, agent in [("alice", "a"), ("bob", "a"), ("alice", "b")]:
         backend.update_entities("n", [fact("first", user, agent)], False)
