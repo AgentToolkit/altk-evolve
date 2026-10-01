@@ -4,6 +4,199 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-10-01)
+
+### Bug Fixes
+
+- **config**: Disable segmentation by default
+  ([#321](https://github.com/AgentToolkit/altk-evolve/pull/321),
+  [`c4498e2`](https://github.com/AgentToolkit/altk-evolve/commit/c4498e2e9aabce280df85b835cb28625a862d6ee))
+
+- **consistency**: Address reviewer - pass tools to content steps, drop kind-mismatched samples,
+  narrow graceful degradation ([#332](https://github.com/AgentToolkit/altk-evolve/pull/332),
+  [`81a4645`](https://github.com/AgentToolkit/altk-evolve/commit/81a4645ea349f871c31931dc3425d718d2aefaee))
+
+- **consistency**: Address reviewer feedback on n>1 fallback and error handling
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Discard resamples that record no decision instead of scoring them
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Drop name key on tool-role replay messages
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Drop non-input message keys before resampling
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Fail fast on auth and permission errors without fallback fanout
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Get k resamples from providers that refuse n>1
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Give non-degradable errors precedence over tool_use_failed
+  ([#332](https://github.com/AgentToolkit/altk-evolve/pull/332),
+  [`81a4645`](https://github.com/AgentToolkit/altk-evolve/commit/81a4645ea349f871c31931dc3425d718d2aefaee))
+
+- **consistency**: Make accurate resampling work on providers that refuse n>1
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Never infer n>1 support from an error at all
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Only cache an n>1 negative when the error names the parameter
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Pass tools to content steps, drop kind-mismatched samples, narrow graceful
+  degradation ([#332](https://github.com/AgentToolkit/altk-evolve/pull/332),
+  [`81a4645`](https://github.com/AgentToolkit/altk-evolve/commit/81a4645ea349f871c31931dc3425d718d2aefaee))
+
+- **consistency**: Preserve hard-error precedence across sampling attempts
+  ([#332](https://github.com/AgentToolkit/altk-evolve/pull/332),
+  [`81a4645`](https://github.com/AgentToolkit/altk-evolve/commit/81a4645ea349f871c31931dc3425d718d2aefaee))
+
+- **consistency**: Sanitise caller-supplied IR steps in place
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **consistency**: Set tool_choice=none for content steps and degrade gracefully on tool_use_failed
+  ([#332](https://github.com/AgentToolkit/altk-evolve/pull/332),
+  [`81a4645`](https://github.com/AgentToolkit/altk-evolve/commit/81a4645ea349f871c31931dc3425d718d2aefaee))
+
+- **consistency**: Validate caller-supplied IR steps and harden renderer handling
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **guidelines**: Apply segmentation flag to all three generation paths
+  ([#321](https://github.com/AgentToolkit/altk-evolve/pull/321),
+  [`c4498e2`](https://github.com/AgentToolkit/altk-evolve/commit/c4498e2e9aabce280df85b835cb28625a862d6ee))
+
+- **memory**: Avoid unchanged reaffirmations and accept self-only discards
+  ([#334](https://github.com/AgentToolkit/altk-evolve/pull/334),
+  [`3c94c7c`](https://github.com/AgentToolkit/altk-evolve/commit/3c94c7c87ddf524171c8320bf2f519c4512bb8f4))
+
+- **memory**: Guard source-only commits and validate add provenance
+  ([#334](https://github.com/AgentToolkit/altk-evolve/pull/334),
+  [`3c94c7c`](https://github.com/AgentToolkit/altk-evolve/commit/3c94c7c87ddf524171c8320bf2f519c4512bb8f4))
+
+- **memory**: Integrate provenance with prepared processing commits
+  ([#334](https://github.com/AgentToolkit/altk-evolve/pull/334),
+  [`3c94c7c`](https://github.com/AgentToolkit/altk-evolve/commit/3c94c7c87ddf524171c8320bf2f519c4512bb8f4))
+
+- **memory**: Preserve source retention and guard Milvus reaffirmations
+  ([#334](https://github.com/AgentToolkit/altk-evolve/pull/334),
+  [`3c94c7c`](https://github.com/AgentToolkit/altk-evolve/commit/3c94c7c87ddf524171c8320bf2f519c4512bb8f4))
+
+- **processing**: Address review validation and transport failures
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Address runtime and persistence review findings
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Checkpoint incremental trajectory contributions
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Enforce profile validation and runtime invariants
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Keep reads available and preserve stored provenance
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Preserve hook reentrancy and retry completion
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Preserve replay context and close review gaps
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Separate preparation from atomic commit
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Store profiles in the configured backend database
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Validate analyzer metrics and MCP revision errors
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **storage**: Preserve filtered reads and concurrent metadata updates
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **sync**: Avoid aliasing independent descendant calls
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+### Documentation
+
+- Add the Memory as Middleware paper to the README and docs
+  ([#336](https://github.com/AgentToolkit/altk-evolve/pull/336),
+  [`52a9a46`](https://github.com/AgentToolkit/altk-evolve/commit/52a9a4614bf4bdcef070f1668535656c670d769c))
+
+- Drop the hero-row button for the middleware paper
+  ([#336](https://github.com/AgentToolkit/altk-evolve/pull/336),
+  [`52a9a46`](https://github.com/AgentToolkit/altk-evolve/commit/52a9a4614bf4bdcef070f1668535656c670d769c))
+
+- Leave the results page out of the middleware paper change
+  ([#336](https://github.com/AgentToolkit/altk-evolve/pull/336),
+  [`52a9a46`](https://github.com/AgentToolkit/altk-evolve/commit/52a9a4614bf4bdcef070f1668535656c670d769c))
+
+- Link Middleware 2026 in the paper entry
+  ([#336](https://github.com/AgentToolkit/altk-evolve/pull/336),
+  [`52a9a46`](https://github.com/AgentToolkit/altk-evolve/commit/52a9a4614bf4bdcef070f1668535656c670d769c))
+
+- Say the middleware paper will appear at Middleware 2026
+  ([#336](https://github.com/AgentToolkit/altk-evolve/pull/336),
+  [`52a9a46`](https://github.com/AgentToolkit/altk-evolve/commit/52a9a4614bf4bdcef070f1668535656c670d769c))
+
+- **processing**: Propose pluggable runtime processing profiles
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+### Features
+
+- **config**: Generate one guideline set per trajectory by default (segmentation off)
+  ([#321](https://github.com/AgentToolkit/altk-evolve/pull/321),
+  [`c4498e2`](https://github.com/AgentToolkit/altk-evolve/commit/c4498e2e9aabce280df85b835cb28625a862d6ee))
+
+- **consistency**: Let a caller supply the trajectory IR and the renderer
+  ([#327](https://github.com/AgentToolkit/altk-evolve/pull/327),
+  [`088269b`](https://github.com/AgentToolkit/altk-evolve/commit/088269bcdf5a3dc60c87213a1c97f3e6889ff994))
+
+- **memory**: Scope reconciliation and preserve multiple sources
+  ([#334](https://github.com/AgentToolkit/altk-evolve/pull/334),
+  [`3c94c7c`](https://github.com/AgentToolkit/altk-evolve/commit/3c94c7c87ddf524171c8320bf2f519c4512bb8f4))
+
+- **memory**: Scope reconciliation and preserve supporting sources
+  ([#334](https://github.com/AgentToolkit/altk-evolve/pull/334),
+  [`3c94c7c`](https://github.com/AgentToolkit/altk-evolve/commit/3c94c7c87ddf524171c8320bf2f519c4512bb8f4))
+
+- **processing**: Add pluggable versioned trajectory profiles
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+- **processing**: Implement pluggable versioned trajectory profiles
+  ([#314](https://github.com/AgentToolkit/altk-evolve/pull/314),
+  [`e845175`](https://github.com/AgentToolkit/altk-evolve/commit/e8451751fa4177ea3078db14a8f5b8dbbfdad921))
+
+
 ## v1.3.0 (2026-09-25)
 
 ### Bug Fixes
