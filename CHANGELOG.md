@@ -4,6 +4,71 @@
 
 <!-- version list -->
 
+## v1.4.1 (2026-10-01)
+
+### Bug Fixes
+
+- **hermes**: Address PR review findings and add a recall indicator
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Close four holes on the guideline write path
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Make EVOLVE_SCOPE actually partition the store
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Skip an undecodable entity file instead of losing all recall
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+### Documentation
+
+- **hermes**: Check the install the same way it was installed
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Correct the README's account of the content screen
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Document the Hermes memory provider integration
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Fix stale references in the provider bundle
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Match the bundle README to the other platforms
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Warn about the two ways the loop stops silently
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **tests**: Drop the Hermes-specific sections from the test guide
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+### Features
+
+- **hermes**: Add Hermes as a platform integration target
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Add hermes platform to install.sh
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Add hermes platform to the plugin render pipeline
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+
 ## v1.4.0 (2026-10-01)
 
 ### Bug Fixes
