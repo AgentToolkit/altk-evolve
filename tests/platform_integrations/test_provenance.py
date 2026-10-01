@@ -8,6 +8,8 @@ dedup against existing influence rows, and the ``record`` writer. The semantic
 verdict is agent-driven and is NOT tested here (there is no heuristic to test).
 """
 
+import functools
+import importlib
 import json
 import os
 import re
@@ -16,6 +18,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from _hermes_loader import HERMES_PLUGIN_ROOT, HOST_STUBS, load_module
 
 pytestmark = [pytest.mark.platform_integrations]
 
@@ -28,6 +32,47 @@ ENTITY_IO_SCRIPT = _PLUGIN_ROOT / "lib/evolve-lite/entity_io.py"
 def _claude_slug(root: Path) -> str:
     """Mirror provenance.py / doctor.py slugging: non-alphanumerics -> '-'."""
     return re.sub(r"[^A-Za-z0-9]", "-", str(root))
+
+
+@functools.lru_cache(maxsize=None)
+def _hermes_backend():
+    """The rendered Hermes provider's ``backend`` module — the writer of these files."""
+    package = load_module("_hermes_provider_for_provenance", HERMES_PLUGIN_ROOT / "__init__.py", extra_syspath=[HOST_STUBS])
+    return importlib.import_module(f"{package.__name__}.backend")
+
+
+@functools.lru_cache(maxsize=None)
+def _provenance_module():
+    """The rendered provenance script, imported for its helpers.
+
+    The tests below still drive it as a subprocess — that is what a host runs.
+    This is only for reaching a single function directly, which a subprocess
+    cannot do.
+    """
+    return load_module("_provenance_under_test", PROVENANCE_SCRIPT)
+
+
+def _hermes_traj_name(session_id):
+    """Capture filename for ``session_id``, from the provider that writes it.
+
+    Deliberately not a third hand copy of the formula, unlike ``_claude_slug``:
+    a copy here would make these tests agree with themselves while the shipped
+    reader drifted away from the shipped writer, which is the one failure
+    ``TestHermesFilenameParity`` exists to catch.
+    """
+    return _hermes_backend().trajectory_filename(session_id)
+
+
+def write_hermes_capture(evolve_dir, filename, records):
+    """Write a Hermes-shaped capture file: one JSON record per line."""
+    path = Path(evolve_dir) / "trajectories" / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+    return path
+
+
+def hermes_record(session_id, text):
+    return {"ts": 1, "session_id": session_id, "messages": [{"role": "user", "content": text}]}
 
 
 def run_provenance(mode, *, evolve_dir, home=None, cwd=None, stdin=None):
@@ -95,7 +140,7 @@ class TestCandidatesLegacyTrajectory:
 
 
 class TestCandidatesHermesTrajectory:
-    """The Hermes memory provider writes ``trajectories/<sid>.jsonl``.
+    """The Hermes memory provider writes ``trajectories/<sanitized-sid>-<digest>.jsonl``.
 
     None of the other resolution steps match that shape, so before it was added
     every Hermes recall row resolved to ``missing: ["trajectory"]`` — provenance
@@ -103,17 +148,14 @@ class TestCandidatesHermesTrajectory:
     """
 
     def test_locates_a_hermes_trajectory(self, tmp_path):
+        session_id = "20260912_193549_752cc6c7"
         home = tmp_path / "home"
         home.mkdir()
         evolve_dir = tmp_path / "hermes" / "evolve"
         evolve_dir.mkdir(parents=True)
-        write_audit(evolve_dir, [{"event": "recall", "session_id": "20260912_193549_752cc6c7", "entities": ["guideline/foo"]}])
+        write_audit(evolve_dir, [{"event": "recall", "session_id": session_id, "entities": ["guideline/foo"]}])
         write_entity(evolve_dir, "guideline/foo")
-        traj = evolve_dir / "trajectories" / "20260912_193549_752cc6c7.jsonl"
-        traj.parent.mkdir(parents=True)
-        traj.write_text(
-            '{"ts": 1, "session_id": "20260912_193549_752cc6c7", "messages": [{"role": "user", "content": "hi"}]}\n', encoding="utf-8"
-        )
+        traj = write_hermes_capture(evolve_dir, _hermes_traj_name(session_id), [hermes_record(session_id, "hi")])
 
         result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
         assert result.returncode == 0, result.stderr
@@ -122,22 +164,148 @@ class TestCandidatesHermesTrajectory:
         assert candidates[0]["trajectory_path"] == str(traj)
         assert "missing" not in candidates[0]
 
-    def test_a_session_id_is_path_sanitized_the_way_the_provider_does(self, tmp_path):
-        # The provider maps anything outside [A-Za-z0-9_.-] to "_" when it names
-        # the file, so a gateway session key with a "/" in it still resolves.
+
+class TestCandidatesHermesSessionCollisions:
+    """Sanitizing a session id into a filename is many-to-one.
+
+    ``a/b`` and ``a:b`` both fold to ``a_b``, so naming a capture file after the
+    fold let two sessions share one — and provenance then credited one session
+    with the other's trajectory. The provider suffixes a digest of the original
+    id; these pin that the locator computes the same name and so reads one
+    session's file and no other's.
+    """
+
+    @staticmethod
+    def _seed(tmp_path, session_ids):
         home = tmp_path / "home"
         home.mkdir()
         evolve_dir = tmp_path / "hermes" / "evolve"
         evolve_dir.mkdir(parents=True)
-        write_audit(evolve_dir, [{"event": "recall", "session_id": "discord/42", "entities": ["guideline/foo"]}])
+        write_audit(
+            evolve_dir,
+            [{"event": "recall", "session_id": sid, "entities": ["guideline/foo"]} for sid in session_ids],
+        )
         write_entity(evolve_dir, "guideline/foo")
-        traj = evolve_dir / "trajectories" / "discord_42.jsonl"
-        traj.parent.mkdir(parents=True)
-        traj.write_text("{}\n", encoding="utf-8")
+        return home, evolve_dir
+
+    def test_locates_a_digest_suffixed_trajectory(self, tmp_path):
+        home, evolve_dir = self._seed(tmp_path, ["discord/42"])
+        traj = write_hermes_capture(evolve_dir, _hermes_traj_name("discord/42"), [hermes_record("discord/42", "hi")])
 
         result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
         assert result.returncode == 0, result.stderr
-        assert parse_jsonl(result.stdout)[0]["trajectory_path"] == str(traj)
+        candidates = parse_jsonl(result.stdout)
+        assert candidates[0]["trajectory_path"] == str(traj)
+        assert "missing" not in candidates[0]
+
+    def test_ids_that_sanitize_alike_resolve_to_their_own_file(self, tmp_path):
+        home, evolve_dir = self._seed(tmp_path, ["a/b", "a:b"])
+        slash = write_hermes_capture(evolve_dir, _hermes_traj_name("a/b"), [hermes_record("a/b", "slash work")])
+        colon = write_hermes_capture(evolve_dir, _hermes_traj_name("a:b"), [hermes_record("a:b", "colon work")])
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        assert result.returncode == 0, result.stderr
+        by_session = {c["session_id"]: c for c in parse_jsonl(result.stdout)}
+        assert by_session["a/b"]["trajectory_path"] == str(slash)
+        assert by_session["a:b"]["trajectory_path"] == str(colon)
+        assert "colon work" not in by_session["a/b"]["trajectory_excerpt"]
+        assert "slash work" not in by_session["a:b"]["trajectory_excerpt"]
+
+    def test_the_plain_folded_name_is_not_read(self, tmp_path):
+        """The fold is not a filename the provider writes, so it is not ownership
+        either: a file sitting at ``a_b.jsonl`` could be ``a/b``'s or ``a:b``'s.
+        Reporting the trajectory missing is the honest answer."""
+        home, evolve_dir = self._seed(tmp_path, ["a/b"])
+        write_hermes_capture(evolve_dir, "a_b.jsonl", [hermes_record("a:b", "not yours")])
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        assert result.returncode == 0, result.stderr
+        candidates = parse_jsonl(result.stdout)
+        assert candidates[0]["trajectory_path"] is None
+        assert candidates[0]["missing"] == ["trajectory"]
+
+    def test_one_unencodable_id_does_not_take_the_healthy_sessions_with_it(self, tmp_path):
+        """Computing the capture name must not be able to abort the run.
+
+        A lone surrogate survives ``json.dumps`` into audit.log, and the reader
+        reads the id back as an ordinary string. Taking its SHA-256 then raises
+        ``UnicodeEncodeError``, which would propagate out of ``build_candidates``
+        and lose every *other* session's candidate along with it. The provider
+        could not name a file for that id either, so the honest result is one
+        missing trajectory and the rest of the run intact.
+        """
+        home, evolve_dir = self._seed(tmp_path, ["s\ud800x", "healthy/1"])
+        traj = write_hermes_capture(evolve_dir, _hermes_traj_name("healthy/1"), [hermes_record("healthy/1", "hi")])
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        assert result.returncode == 0, result.stderr
+        by_session = {c["session_id"]: c for c in parse_jsonl(result.stdout)}
+        assert by_session["healthy/1"]["trajectory_path"] == str(traj)
+        assert by_session["s\ud800x"]["trajectory_path"] is None
+        assert by_session["s\ud800x"]["missing"] == ["trajectory"]
+
+
+class TestHermesFilenameParity:
+    """The writer's filename formula and the shipped reader's, pinned together.
+
+    A capture filename is produced by the Hermes bundle's ``backend.py`` and
+    recomputed by this skill's ``provenance.py``. They cannot share code: the
+    rendered skill script ships to hosts that have no provider to import, so the
+    formula is maintained by hand in both, each with a comment telling the next
+    person to keep them in sync.
+
+    Nothing else in the suite compares them. The reader tests build their
+    fixtures from the reader's own formula, and ``build_plugins.py check``
+    compares the rendered copies to each other rather than the writer to the
+    reader — so changing ``_TRAJECTORY_STEM_CHARS`` alone used to ship green
+    while the shipped provenance script quietly stopped locating any capture for
+    a realistic id. These are the tests that go red instead.
+    """
+
+    # Realistic ids, plus every shape that tempted one side into a shortcut: the
+    # falsy ones (where the fallback lives), the long and shared-prefix ones (what
+    # a stem-length change breaks), and a traversal attempt.
+    @pytest.mark.parametrize(
+        "session_id",
+        [
+            "",
+            None,
+            "session",
+            "a/b",
+            "a:b",
+            "discord/42",
+            "20260912_193549_752cc6c7",
+            "x" * 300,
+            "x" * 40 + "a",
+            "x" * 40 + "b",
+            "séance/✓",
+            "../../etc/passwd",
+        ],
+        ids=repr,
+    )
+    def test_the_reader_computes_the_name_the_writer_wrote(self, session_id):
+        assert _provenance_module()._hermes_trajectory_name(session_id) == _hermes_traj_name(session_id)
+
+    def test_both_sides_decline_an_id_with_no_utf8_encoding(self):
+        """Agreeing that there is no name is parity too.
+
+        The writer raises and its caller fails soft, so nothing reaches disk; the
+        reader returns ``None`` and falls through to the next locator. What must
+        not happen is one side naming a file the other never wrote — or the reader
+        raising where the writer shrugged (see
+        ``test_one_unencodable_id_does_not_take_the_healthy_sessions_with_it``).
+        """
+        with pytest.raises(UnicodeEncodeError):
+            _hermes_traj_name("s\ud800x")
+        assert _provenance_module()._hermes_trajectory_name("s\ud800x") is None
+
+    def test_the_two_stem_limits_are_the_same_number(self):
+        """Restated as a constant on each side, so compare the constants directly.
+
+        The parametrized cases above catch a drift only for ids longer than the
+        smaller of the two limits. This catches it outright.
+        """
+        assert _provenance_module()._HERMES_STEM_CHARS == _hermes_backend()._TRAJECTORY_STEM_CHARS
 
 
 class TestCandidatesNativeTranscript:

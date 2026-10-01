@@ -73,6 +73,17 @@ def _write_config(home, values):
     config_path.write_text(json.dumps(values), encoding="utf-8")
 
 
+def _capture_file(home):
+    """The single capture file in a store rooted at *home*.
+
+    Found rather than named: the filename carries a digest of the session id (see
+    ``backend.trajectory_filename``), and tests that are about something else —
+    identity fields, file modes — should not restate that formula.
+    ``TestTrajectoryFilenames`` owns the naming.
+    """
+    return next((home / "evolve" / "trajectories").glob("*.jsonl"))
+
+
 def _make_provider(module, home, **kwargs):
     provider = module.EvolveMemoryProvider()
     provider.initialize("session-1", hermes_home=str(home), platform="cli", **kwargs)
@@ -803,7 +814,7 @@ class TestStoreScoping:
         _join(p)
         p.shutdown()
 
-        record = json.loads((tmp_path / "evolve" / "trajectories" / "session-1.jsonl").read_text(encoding="utf-8").strip())
+        record = json.loads(_capture_file(tmp_path).read_text(encoding="utf-8").strip())
         assert record["user_id"] == "alice"
         assert record["chat_id"] == "general"
         assert record["agent_context"] == "primary"
@@ -812,7 +823,7 @@ class TestStoreScoping:
         provider.on_session_end(_FOUR_MESSAGES)
         _join(provider)
 
-        record = json.loads((tmp_path / "evolve" / "trajectories" / "session-1.jsonl").read_text(encoding="utf-8").strip())
+        record = json.loads(_capture_file(tmp_path).read_text(encoding="utf-8").strip())
         assert "user_id" not in record
         assert "chat_id" not in record
 
@@ -848,7 +859,7 @@ class TestStorePermissions:
         store = tmp_path / "evolve"
 
         assert self._mode(store / "trajectories") == 0o700
-        assert self._mode(store / "trajectories" / "session-1.jsonl") == 0o600
+        assert self._mode(_capture_file(tmp_path)) == 0o600
 
     def test_an_existing_directorys_mode_is_left_alone(self, hermes_backend, tmp_path):
         """Only creation tightens. An ``EVOLVE_DIR`` store deliberately shared
@@ -1085,14 +1096,121 @@ class TestTools:
         assert "error" in json.loads(provider.handle_tool_call("evolve_nonexistent", {}))
 
 
+class TestTrajectoryFilenames:
+    """One session, one file.
+
+    The filename used to be the session id with everything outside
+    ``[A-Za-z0-9_.-]`` folded to ``_``. That fold is many-to-one, so two sessions
+    could share a capture file — and the ``provenance`` skill, which reads these
+    files back, then credited one session's trajectory to the other.
+    """
+
+    def test_ids_that_sanitize_alike_get_different_files(self, hermes_backend):
+        # Both fold to "a_b"; before the digest they were the same file.
+        assert hermes_backend.trajectory_filename("a/b") != hermes_backend.trajectory_filename("a:b")
+
+    def test_the_name_is_stable_for_one_id(self, hermes_backend):
+        # Resolution has to work from the id alone, so the mapping cannot carry
+        # per-call state (a counter, a timestamp).
+        assert hermes_backend.trajectory_filename("discord/42") == hermes_backend.trajectory_filename("discord/42")
+
+    def test_the_sanitized_id_stays_readable_in_the_name(self, hermes_backend):
+        name = hermes_backend.trajectory_filename("discord/42")
+
+        assert name.startswith("discord_42-")
+        assert name.endswith(".jsonl")
+
+    def test_a_long_id_is_truncated_but_still_distinct(self, hermes_backend):
+        # The readable part is capped; the digest is over the whole id, so two
+        # ids sharing a long prefix do not collide.
+        a = hermes_backend.trajectory_filename("x" * 200 + "a")
+        b = hermes_backend.trajectory_filename("x" * 200 + "b")
+
+        assert a != b
+        assert len(a) < 80
+
+    def test_an_empty_id_still_names_a_file(self, hermes_backend):
+        """Only the readable half needs the fallback, and only for ``""``.
+
+        ``-3f3af1ecebbd.jsonl`` is a baffling thing to meet in a directory
+        listing; every other id already folds to a non-empty stem.
+        """
+        assert hermes_backend.trajectory_filename("").startswith("session-")
+
+    def test_an_empty_id_does_not_take_the_literal_id_session(self, hermes_backend):
+        """The fallback is for the readable half only.
+
+        ``"session"`` is a legal session id. Feeding the fallback to the digest
+        as well would give it and ``""`` one filename — the same collision the
+        digest was added to prevent, arriving through the fallback instead.
+        """
+        assert hermes_backend.trajectory_filename("") != hermes_backend.trajectory_filename("session")
+
+    def test_an_id_with_no_utf8_encoding_names_no_file(self, hermes_backend):
+        """A lone surrogate has no encoding, so there is no digest to take.
+
+        Raising is the honest outcome: ``save_trajectory`` catches it and writes
+        nothing. The contract the provenance reader mirrors is "no name, nothing
+        on disk" — see ``test_provenance.py``'s writer/reader cross-check.
+        """
+        with pytest.raises(UnicodeEncodeError):
+            hermes_backend.trajectory_filename("s\ud800x")
+
+    def test_two_colliding_sessions_write_separate_files(self, hermes_module, noop_generator, tmp_path):
+        """End to end through the provider, not just the naming helper."""
+        for session_id in ("chat/7", "chat:7"):
+            p = _make_provider(hermes_module, tmp_path, agent_context="primary")
+            p.on_session_switch(session_id, reset=True)
+            p.on_session_end(_FOUR_MESSAGES)
+            _join(p)
+            p.shutdown()
+
+        files = sorted((tmp_path / "evolve" / "trajectories").glob("*.jsonl"))
+        assert len(files) == 2
+        # Each file holds exactly the session that wrote it.
+        written = {json.loads(f.read_text(encoding="utf-8").strip())["session_id"] for f in files}
+        assert written == {"chat/7", "chat:7"}
+
+    def test_a_file_at_the_plain_folded_name_is_left_alone(self, hermes_module, hermes_backend, noop_generator, tmp_path):
+        """The digest name is the only name written. A file sitting at the plain
+        fold cannot be shown to belong to this session — the fold is precisely
+        what two sessions can share — so it is never appended to."""
+        folded = tmp_path / "evolve" / "trajectories" / "session-1.jsonl"
+        folded.parent.mkdir(parents=True)
+        folded.write_text('{"ts": 1, "session_id": "session-1", "messages": []}\n', encoding="utf-8")
+
+        p = _make_provider(hermes_module, tmp_path, agent_context="primary")
+        p.on_session_end(_FOUR_MESSAGES)
+        _join(p)
+        p.shutdown()
+
+        assert len(folded.read_text(encoding="utf-8").strip().splitlines()) == 1
+        assert sorted(f.name for f in folded.parent.glob("*.jsonl")) == sorted(
+            ["session-1.jsonl", hermes_backend.trajectory_filename("session-1")]
+        )
+
+    def test_a_session_id_too_long_for_a_filename_still_captures(self, hermes_module, noop_generator, tmp_path):
+        """The fold is truncated before the digest is appended, so the name stays
+        inside the filesystem's per-component limit. Folding alone would leave a
+        300-character name and every write for that session would fail."""
+        session_id = "discord/" + "x" * 300
+
+        p = _make_provider(hermes_module, tmp_path, agent_context="primary")
+        p.on_session_switch(session_id, reset=True)
+        p.on_session_end(_FOUR_MESSAGES)
+        _join(p)
+        p.shutdown()
+
+        captured = _capture_file(tmp_path)
+        assert json.loads(captured.read_text(encoding="utf-8").strip())["session_id"] == session_id
+
+
 class TestTrajectoryCapture:
     def test_session_end_writes_the_trajectory_jsonl(self, provider, tmp_path):
         provider.on_session_end(_FOUR_MESSAGES)
         _join(provider)
 
-        traj_file = tmp_path / "evolve" / "trajectories" / "session-1.jsonl"
-        assert traj_file.exists()
-        lines = traj_file.read_text(encoding="utf-8").strip().splitlines()
+        lines = _capture_file(tmp_path).read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 1
         payload = json.loads(lines[0])
         assert payload["session_id"] == "session-1"

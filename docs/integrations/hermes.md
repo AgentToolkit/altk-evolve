@@ -46,7 +46,7 @@ Both halves of the loop are automatic — they run from `MemoryProvider` callbac
 
 **Recall.** After each turn, the provider retrieves guidelines on a background thread; on the next turn they are injected as a numbered list under `Guidelines learned from previous sessions (apply when relevant):`. Retrieval is case-insensitive term overlap between your message and each guideline's trigger + content — lexical, not semantic. Recalled text is passed through Hermes's own context sanitizer before injection, so a guideline that contains something fence-shaped cannot forge a context boundary.
 
-**Capture.** At session end, if the session had at least `min_turns` user turns, the conversation is flattened to an OpenAI-shaped trajectory (system prompts dropped, tool calls inlined, previously-injected guidelines stripped so Evolve cannot re-learn its own output), appended to `trajectories/<session_id>.jsonl`, and passed through a single structured LLM call that applies evolve-lite's `learn` criteria. Each guideline that comes back is saved as a Markdown entity. Capture never breaks a session: every failure mode — no LLM available, a malformed response, an unwritable store — ends in zero guidelines, not an error.
+**Capture.** At session end, if the session had at least `min_turns` user turns, the conversation is flattened to an OpenAI-shaped trajectory (system prompts dropped, tool calls inlined, previously-injected guidelines stripped so Evolve cannot re-learn its own output), appended to `trajectories/<session_id>-<digest>.jsonl` (the readable part of the id, plus a truncated SHA-256 of the whole id — session ids are not all filename-safe, and folding them to something that is would let two sessions share a file), and passed through a single structured LLM call that applies evolve-lite's `learn` criteria. Each guideline that comes back is saved as a Markdown entity. Capture never breaks a session: every failure mode — no LLM available, a malformed response, an unwritable store — ends in zero guidelines, not an error.
 
 Two details worth knowing:
 
@@ -105,7 +105,7 @@ $HERMES_HOME/evolve/
     guideline/
       use-make-check-for-tests.md
   trajectories/
-    <session_id>.jsonl
+    <session_id>-<digest>.jsonl
 ```
 
 Entity files are the same Markdown-with-YAML-frontmatter format as every other Evolve integration:
