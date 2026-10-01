@@ -473,6 +473,7 @@ def get_guidelines_with_attribution(
         {
             "text": text,
             "entity_ids": [entity.id for entity in entities],
+            "entity_revisions": {entity.id: entity.metadata.get("memory_revision") for entity in entities},
             "namespace_id": resolved_ns,
         }
     )
@@ -893,6 +894,10 @@ def get_compliance_status(namespace_id: str | None = None) -> str:
         {
             "healthy": healthy,
             "evolve_version": package_version,
+            "memory_capabilities": {
+                "scoped_conflict_resolution": evolve_config.backend in {"filesystem", "postgres"},
+                "source_associations": 1,
+            },
             "backend": evolve_config.backend,
             "namespace_id": resolved_ns,
             "retention_available": retention_available,

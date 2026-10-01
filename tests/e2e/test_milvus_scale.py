@@ -89,3 +89,33 @@ def test_concurrent_clients_preserve_disjoint_metadata(memory):
         "memory", filter=f"id == {entity_id}", output_fields=["metadata"], limit=1, consistency_level="Strong"
     )
     assert rows[0]["metadata"] == {"legal_hold": True, **{f"user_{i}": True for i in range(16)}}
+
+
+@pytest.mark.parametrize("change", ["sources", "legal_hold"])
+def test_stale_provenance_cannot_overwrite_concurrent_metadata(memory, monkeypatch, change):
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+
+    clients, entity_id = memory
+    backend = clients[0].backend
+    backend.update_entity_metadata("memory", entity_id, {"legal_hold": False})
+
+    def reconcile(old, new):
+        target = next(entity for entity in old if entity.id == entity_id)
+        return [EntityUpdate(id=target.id, type="note", content=target.content, event="NONE", incoming_ids=[new[0].id])]
+
+    monkeypatch.setattr("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", reconcile)
+    incoming = Entity(type="note", content="rare held target", metadata={"thread_id": "incoming"})
+    prepared = backend.prepare_updates("memory", [incoming])
+    concurrent = {"sources": [{"conversation_id": "concurrent", "status": "supporting"}]} if change == "sources" else {"legal_hold": True}
+    clients[1].patch_entity_metadata("memory", entity_id, concurrent)
+    with pytest.raises(EvolveException, match="changed during provenance"):
+        backend.commit_prepared("memory", [prepared])
+    stored = backend.search_entities("memory", filters={"id": entity_id})[0]
+    assert stored.metadata[change] == concurrent[change]
+    # Fresh preparation succeeds without discarding the concurrent evidence/hold.
+    backend.update_entities("memory", [incoming])
+    stored = backend.search_entities("memory", filters={"id": entity_id})[0]
+    if change == "sources":
+        assert {s["conversation_id"] for s in stored.metadata["sources"]} == {"concurrent", "incoming"}
+    else:
+        assert stored.metadata["legal_hold"] is True

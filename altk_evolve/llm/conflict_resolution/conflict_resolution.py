@@ -102,6 +102,13 @@ def resolve_conflicts(
         [{"role": "user", "content": prompt}], purpose="conflict_resolution", model=settings.conflict_resolution_model
     )
 
+    llm_messages[-1]["content"] += (
+        "\nFor each decision include incoming_ids: the IDs of incoming entities that support it. "
+        "For UPDATE, DELETE, and a NONE that reaffirms an old memory, identify the contributing incoming IDs explicitly. "
+        "Use an empty list for unrelated old memories. Set supersedes=true only when a correction replaces old evidence; "
+        "leave it false for additional supporting evidence. Do not invent IDs."
+    )
+
     last_error: Exception | None = None
     for attempt in range(3):
         try:

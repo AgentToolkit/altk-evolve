@@ -703,3 +703,22 @@ def test_cascade_reasons_use_opaque_source_reference():
     cascade = next(item for item in items if item.entity_id == "child-id")
     assert cascade.reason == "cascade"
     assert cascade.cascade_source_id == "parent-id"
+
+
+def test_cascade_does_not_delete_fresh_raw_trajectory_messages():
+    from altk_evolve.schema.provenance import attach_sources
+
+    records = [
+        _entity("old", type="trajectory", created_days_ago=40, metadata={"task_id": "task", "user_id": "u", "agent_id": "a"}),
+        _entity("fresh", type="trajectory", metadata={"task_id": "task", "user_id": "u", "agent_id": "a"}),
+        _entity("derived", metadata={"source_task_id": "task", "user_id": "u", "agent_id": "a"}),
+    ]
+    for record in records:
+        record.metadata = attach_sources(record.metadata, None, [record])
+    client = FakeClient(records)
+    policy = RetentionPolicy(
+        rules=[RetentionRule(name="old", entity_type="trajectory", max_age_days=30, action="delete", cascade_derived=True)]
+    )
+    report = RetentionEngine(client).apply("ns", policy, now=NOW, dry_run=False)
+    assert {item.entity_id for item in report.deleted} == {"old", "derived"}
+    assert set(client.store) == {"fresh"}
