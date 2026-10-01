@@ -11,7 +11,13 @@ Runs two sequential Claude Code sessions against the Dockerized sandbox:
 
 Assertions:
   - Session 1 produces a guideline file under .evolve/entities/.
-  - Session 2 does NOT invoke exiftool/PIL (recall shortcut worked).
+  - Session 2 recalls a session-1 guideline (recorded as a recall audit event).
+  - Session 3 records an influence verdict for a recalled guideline.
+
+Whether session 2 actually avoids exiftool is logged but not asserted: the
+guideline's content is model-authored, so a valid guideline ("pip install
+piexif and read the EXIF tags") does not imply the agent stops reaching for
+exiftool. The recall audit events above cover the part evolve controls.
 
 Requires Docker, the `claude-sandbox` image built, and ANTHROPIC_API_KEY
 set in the environment (forwarded into the container).
@@ -160,14 +166,18 @@ def test_claude_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
     session2_transcript = max(session2_transcripts, key=lambda p: p.stat().st_mtime)
 
     commands = _bash_commands(session2_transcript)
-    log.info(f"session 2: checking {len(commands)} bash commands for forbidden tools")
     joined = "\n".join(commands).lower()
 
-    # Recall should steer Claude away from tools guaranteed-unavailable in the
-    # sandbox. Only `exiftool` is definitively absent (not installed, can't be
-    # pip-installed). Other libraries (PIL, piexif, exifread) may appear in a
-    # valid guideline as "install via pip and use", so we don't ban them.
-    assert not re.search(r"\bexiftool\b", joined), "session 2 invoked exiftool despite recall guideline:\n" + "\n".join(commands)
+    # Recall ideally steers Claude away from `exiftool`, the one tool definitively
+    # absent from the sandbox (not installed, can't be pip-installed). This is a
+    # model-behaviour signal, not an evolve contract: the guideline text is
+    # model-authored and may legitimately say "pip install piexif" without ruling
+    # exiftool out. Log it for triage; the recall audit assertions below are what
+    # actually verify the recall path.
+    if re.search(r"\bexiftool\b", joined):
+        log.warning("session 2 still invoked exiftool despite the recalled guideline:\n" + "\n".join(commands))
+    else:
+        log.info(f"session 2: none of the {len(commands)} bash commands invoked exiftool")
 
     # --- Usage provenance: audit.log should record recall ---
     audit_log = sandbox_workspace / ".evolve" / "audit.log"

@@ -60,6 +60,20 @@ def codex_sandbox_ready():
     if not os.environ.get(credential_env_var):
         pytest.skip(f"{credential_env_var} not set in environment")
 
+    # A provider name without a base URL writes `model_provider = "<name>"` into
+    # config.toml with no matching [model_providers.<name>] table, so Codex falls
+    # back to its default endpoint and the run dies with an opaque 401. Fail here
+    # with the actual cause instead of inside session 1.
+    provider = os.environ.get("CODEX_MODEL_PROVIDER")
+    base_url = os.environ.get("CODEX_MODEL_PROVIDER_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
+    if provider and not base_url:
+        pytest.fail(
+            f"CODEX_MODEL_PROVIDER={provider!r} is set but neither "
+            "CODEX_MODEL_PROVIDER_BASE_URL nor OPENAI_BASE_URL is — Codex would be "
+            "pointed at an undefined provider and fail to authenticate. Set a base "
+            "URL, or unset CODEX_MODEL_PROVIDER to use the default OpenAI provider."
+        )
+
     return True
 
 
