@@ -1,0 +1,7 @@
+name: evolve
+version: 0.1.0
+description: "ALTK-Evolve -- on-the-job learning: task guidelines generated from trajectories, recalled per-turn (lite/filesystem mode, Phase 0)."
+pip_dependencies: []
+requires_env: []
+hooks:
+  - on_session_end

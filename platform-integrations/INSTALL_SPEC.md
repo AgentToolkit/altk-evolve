@@ -3,7 +3,11 @@
 ## Overview
 
 `install.sh` is a single-file bash/Python hybrid installer that sets up Evolve integrations
-into a user's project directory for one or more supported platforms: **Bob**, **Claude**, and **Codex**.
+for one or more supported platforms: **Bob**, **Claude**, **Claw Code**, **Codex**, and **Hermes**.
+
+Most platforms install into the user's project directory. **Hermes is global**: it installs
+into `$HERMES_HOME` (default `~/.hermes`) and ignores `--dir`, because Hermes discovers
+memory providers from its own home rather than per-repo.
 
 It is designed to be run:
 - Locally from within the evolve repo: `./install.sh install`
@@ -48,13 +52,15 @@ Commands:
   status     Show what is currently installed
 
 install options:
-  --platform {bob,claude,codex,all}   Platform to install (default: auto-detect + prompt)
+  --platform {bob,claude,claw-code,codex,hermes,all}
+                                    Platform to install (default: auto-detect + prompt)
   --mode     {lite,full}            Installation mode for bob (default: lite)
   --dir      DIR                    Target project directory (default: current working dir)
   --dry-run                         Preview changes without modifying files
 
 uninstall options:
-  --platform {bob,claude,codex,all}   Platform to uninstall (default: prompt)
+  --platform {bob,claude,claw-code,codex,hermes,all}
+                                    Platform to uninstall (default: prompt)
   --dir      DIR                    Target project directory (default: current working dir)
   --dry-run                         Preview changes without modifying files
 ```
@@ -69,7 +75,9 @@ Detection checks in order (any match = platform considered available):
 |----------|-------------------|
 | bob      | `.bob/` dir exists in target dir, OR `bob` on PATH |
 | claude   | `.claude/` dir exists in target dir, OR `claude` on PATH |
+| claw-code | `.claw/` dir exists in target dir, OR `claw` on PATH |
 | codex    | `.codex/` dir exists in target dir, OR `.agents/plugins/marketplace.json` exists, OR `codex` on PATH |
+| hermes   | `$HERMES_HOME` (default `~/.hermes`) exists, OR `hermes` on PATH — note: global, not target-dir relative |
 
 If no `--platform` flag is given, the script runs interactively: shows detected platforms,
 lets the user pick one, multiple, or all.
@@ -124,6 +132,31 @@ Target: project directory
 
 Codex is currently implemented only in lite mode. Full mode is reserved for future MCP-backed work.
 
+### Hermes — Lite Mode
+
+Source: `platform-integrations/hermes/plugins/evolve/`
+Target: `$HERMES_HOME/plugins/evolve/` (default `~/.hermes/plugins/evolve/`) — **global, ignores `--dir`**
+
+1. Copy the whole bundle → `$HERMES_HOME/plugins/evolve/` (merge, idempotent). This is a
+   Python `MemoryProvider`, not a prompt/skill bundle: Hermes imports it directly and calls
+   it on recall and at session end. Nothing is written into the project directory.
+2. Print the enable command — the provider is inert until Hermes is pointed at it:
+   ```
+   hermes config set memory.provider evolve
+   ```
+
+No JSON/YAML config is touched, no CLI is invoked, and no pip package is installed: the
+bundled `lib/evolve-lite/` is stdlib-only and travels with the plugin.
+
+Two precedence notes:
+- A provider bundled inside a `hermes-agent` checkout at `plugins/memory/evolve/` **shadows**
+  the one installed here.
+- The provider stores learned guidelines in `$HERMES_HOME/evolve/`, independent of the plugin
+  directory, so it survives reinstall.
+
+Hermes is lite-only. There is no full/server mode — `EVOLVE_MODE=server` raises
+`NotImplementedError` by design so a misconfiguration fails loudly.
+
 ---
 
 ## Uninstall Actions
@@ -143,6 +176,15 @@ Codex is currently implemented only in lite mode. Full mode is reserved for futu
 1. Remove `plugins/evolve-lite/`
 2. Remove the `evolve-lite` entry from `.agents/plugins/marketplace.json`
 3. Remove the Evolve `UserPromptSubmit` hook from `.codex/hooks.json`
+
+### Hermes
+1. Remove `$HERMES_HOME/plugins/evolve/` — only that directory; sibling user plugins are untouched
+2. Remove `$HERMES_HOME/plugins/` if it is now empty
+3. Leave the guideline store at `$HERMES_HOME/evolve/` in place and warn about it. Learned
+   guidelines are user data; uninstall removes code, never the store.
+
+Removing the provider does not reset `memory.provider` in the Hermes config — run
+`hermes config set memory.provider <other>` if it was pointed at `evolve`.
 
 ---
 
@@ -194,6 +236,8 @@ All operations are safe to run multiple times:
 - YAML writes check for sentinel before appending
 - Claude plugin install is idempotent by the Claude CLI itself
 - Codex marketplace and hook writes merge matching Evolve entries and preserve user-owned entries
+- Hermes is a plain directory copy into `$HERMES_HOME/plugins/evolve/`; reinstalling over an
+  existing copy overwrites the bundle's files and leaves the store untouched
 
 ---
 
@@ -250,5 +294,6 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platf
 ./platform-integrations/install.sh install --platform bob --mode full
 ./platform-integrations/install.sh install --platform all
 ./platform-integrations/install.sh status
+./platform-integrations/install.sh install --platform hermes    # global: ignores --dir
 ./platform-integrations/install.sh uninstall --platform bob
 ```

@@ -94,6 +94,52 @@ class TestCandidatesLegacyTrajectory:
         assert "missing" not in cand
 
 
+class TestCandidatesHermesTrajectory:
+    """The Hermes memory provider writes ``trajectories/<sid>.jsonl``.
+
+    None of the other resolution steps match that shape, so before it was added
+    every Hermes recall row resolved to ``missing: ["trajectory"]`` — provenance
+    ran, reported nothing, and looked like it had simply found no influence.
+    """
+
+    def test_locates_a_hermes_trajectory(self, tmp_path):
+        home = tmp_path / "home"
+        home.mkdir()
+        evolve_dir = tmp_path / "hermes" / "evolve"
+        evolve_dir.mkdir(parents=True)
+        write_audit(evolve_dir, [{"event": "recall", "session_id": "20260912_193549_752cc6c7", "entities": ["guideline/foo"]}])
+        write_entity(evolve_dir, "guideline/foo")
+        traj = evolve_dir / "trajectories" / "20260912_193549_752cc6c7.jsonl"
+        traj.parent.mkdir(parents=True)
+        traj.write_text(
+            '{"ts": 1, "session_id": "20260912_193549_752cc6c7", "messages": [{"role": "user", "content": "hi"}]}\n', encoding="utf-8"
+        )
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        assert result.returncode == 0, result.stderr
+        candidates = parse_jsonl(result.stdout)
+        assert len(candidates) == 1
+        assert candidates[0]["trajectory_path"] == str(traj)
+        assert "missing" not in candidates[0]
+
+    def test_a_session_id_is_path_sanitized_the_way_the_provider_does(self, tmp_path):
+        # The provider maps anything outside [A-Za-z0-9_.-] to "_" when it names
+        # the file, so a gateway session key with a "/" in it still resolves.
+        home = tmp_path / "home"
+        home.mkdir()
+        evolve_dir = tmp_path / "hermes" / "evolve"
+        evolve_dir.mkdir(parents=True)
+        write_audit(evolve_dir, [{"event": "recall", "session_id": "discord/42", "entities": ["guideline/foo"]}])
+        write_entity(evolve_dir, "guideline/foo")
+        traj = evolve_dir / "trajectories" / "discord_42.jsonl"
+        traj.parent.mkdir(parents=True)
+        traj.write_text("{}\n", encoding="utf-8")
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        assert result.returncode == 0, result.stderr
+        assert parse_jsonl(result.stdout)[0]["trajectory_path"] == str(traj)
+
+
 class TestCandidatesNativeTranscript:
     def test_locates_native_claude_transcript(self, tmp_path):
         # Sandbox a fake HOME and project root; the native locator builds

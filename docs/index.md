@@ -29,7 +29,7 @@ Research, releases, and practical findings from the Evolve team.
 
     [General Installation](installation/index.md){ .md-button }
 
-    [Claude Code](examples/hello_world/claude.md){ .md-button } [IBM Bob](examples/hello_world/bob.md){ .md-button } [Codex](examples/hello_world/codex.md){ .md-button }
+    [Claude Code](examples/hello_world/claude.md){ .md-button } [IBM Bob](examples/hello_world/bob.md){ .md-button } [Codex](examples/hello_world/codex.md){ .md-button } [Hermes](integrations/hermes.md){ .md-button }
 
 === "Full"
     Total Control

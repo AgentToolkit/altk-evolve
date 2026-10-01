@@ -41,6 +41,10 @@ def sandbox_home(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("HOMEDRIVE", raising=False)
     monkeypatch.delenv("HOMEPATH", raising=False)
+    # HERMES_HOME takes precedence over ~/.hermes in install.sh's _hermes_home(),
+    # so pinning HOME alone would not contain a Hermes install on a machine that
+    # sets it — the test would write into the developer's real Hermes home.
+    monkeypatch.delenv("HERMES_HOME", raising=False)
     return home
 
 

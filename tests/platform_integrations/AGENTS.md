@@ -5,7 +5,7 @@
 Tests for `platform-integrations/install.sh` to ensure the installer:
 1. **NEVER overwrites existing user data** (critical requirement)
 2. Is idempotent (can be run multiple times safely)
-3. Properly installs/uninstalls for Bob, Roo, and Claude platforms
+3. Properly installs/uninstalls for the Bob, Claude, Claw Code, Codex, and Hermes platforms
 
 ## Critical Requirement
 
@@ -244,6 +244,18 @@ class TestMyFeature:
    codex_hooks = true
    ```
    If hooks are not enabled, invoke the `evolve-lite:recall` skill manually.
+
+**Hermes Lite Mode:**
+(See `HermesInstaller` in install.sh)
+
+1. Copy the bundle: `platform-integrations/hermes/plugins/evolve/` →
+   `$HERMES_HOME/plugins/evolve/` (default `~/.hermes/plugins/evolve/`)
+2. Nothing else: no config file is edited, no CLI is invoked, nothing is written
+   into the target directory. The user enables it with
+   `hermes config set memory.provider evolve`.
+3. Uninstall removes only `$HERMES_HOME/plugins/evolve/` (plus `plugins/` if it
+   is left empty) and **keeps** the guideline store at `$HERMES_HOME/evolve/` —
+   learned guidelines are user data.
 
 ## Important Notes
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Evolve Platform Installer
-# Installs Evolve Lite (and optionally Full) integrations for Bob, Claude Code, and Codex.
+# Installs Evolve Lite (and optionally Full) integrations for Bob, Claude Code,
+# Claw Code, Codex, and Hermes.
 #
 # Usage:
-#   ./install.sh install [--platform bob|claude|codex|all] [--mode lite|full] [--dir DIR] [--dry-run]
-#   ./install.sh uninstall [--platform bob|claude|codex|all] [--dir DIR] [--dry-run]
+#   ./install.sh install [--platform bob|claude|claw-code|codex|hermes|all] [--mode lite|full] [--dir DIR] [--dry-run]
+#   ./install.sh uninstall [--platform bob|claude|claw-code|codex|hermes|all] [--dir DIR] [--dry-run]
 #   ./install.sh status [--dir DIR]
 #
 # Remote:
@@ -127,6 +128,9 @@ ADAPT_SCRIPT      = "adapt_memory.py"
 CLAUDE_PLUGIN     = "evolve-lite"
 CLAW_CODE_PLUGIN  = "evolve-lite"
 CODEX_PLUGIN      = "evolve-lite"
+# The Hermes plugin directory name is `evolve` (plugin.yaml `name:`), not
+# `evolve-lite` — Hermes resolves memory providers by directory name.
+HERMES_PLUGIN     = "evolve"
 
 # Marker used to manage a single greppable instruction line that an installer
 # injects into an agent's always-on instruction file (e.g. ~/.codex/AGENTS.md).
@@ -842,6 +846,16 @@ class DryRunFileOps(FileOps):
 
 # ── Platform detection ────────────────────────────────────────────────────────
 
+def _hermes_home():
+    """Hermes's home dir — $HERMES_HOME if set, else ~/.hermes.
+
+    Mirrors hermes_constants.get_hermes_home() on the Hermes side; the provider
+    reads its store from the same root.
+    """
+    env = os.environ.get("HERMES_HOME", "").strip()
+    return Path(env) if env else Path.home() / ".hermes"
+
+
 def detect_platforms(target_dir):
     target = Path(target_dir)
     return {
@@ -861,6 +875,11 @@ def detect_platforms(target_dir):
             shutil.which("codex") is not None or
             (target / ".codex").is_dir() or
             (target / ".agents" / "plugins" / "marketplace.json").is_file()
+        ),
+        # Hermes is global, not per-project: detect its home, not a repo dir.
+        "hermes": (
+            shutil.which("hermes") is not None or
+            _hermes_home().is_dir()
         ),
     }
 
@@ -1607,6 +1626,64 @@ class CodexInstaller:
         print(f"    evolve-lite/{AUDIT_SCRIPT} : {'✓' if audit_file.is_file() else '✗'}")
 
 
+class HermesInstaller:
+    """Hermes loads memory providers from $HERMES_HOME/plugins/<name>/ (see
+    hermes-agent plugins/memory/__init__.py). So installation is a plain copy to
+    that path — no CLI, no marketplace, no repo-local files. GLOBAL, not
+    per-project: the provider's store is $HERMES_HOME/evolve/, independent of
+    --dir.
+
+    Note bundled-wins precedence on the Hermes side: a provider shipped inside
+    the hermes-agent checkout at plugins/memory/evolve/ shadows this one.
+    """
+
+    def __init__(self, ops: FileOps):
+        self.ops = ops
+
+    def _plugin_dir(self):
+        return _hermes_home() / "plugins" / HERMES_PLUGIN
+
+    def install(self, target_dir):
+        _ensure_source_dir()
+        source_dir = SOURCE_DIR
+        plugin_source = Path(source_dir) / "platform-integrations" / "hermes" / "plugins" / HERMES_PLUGIN
+        plugin_target = self._plugin_dir()
+        info(f"Installing Hermes memory provider → {plugin_target}")
+
+        self.ops.copy_tree(plugin_source, plugin_target)
+        success("Copied Hermes memory provider")
+
+        info("Enable it with: hermes config set memory.provider evolve")
+        success("Hermes installation complete")
+
+    def uninstall(self, target_dir):
+        plugin_target = self._plugin_dir()
+        info(f"Uninstalling Hermes memory provider from {plugin_target}")
+
+        # Only ever remove our own plugin dir; sibling user plugins are untouched.
+        self.ops.remove_dir(plugin_target)
+        self.ops.remove_dir_if_empty(_hermes_home() / "plugins")
+
+        warn(
+            "The guideline store at $HERMES_HOME/evolve/ was left in place — "
+            "remove it manually to discard learned guidelines."
+        )
+        success("Hermes uninstall complete")
+
+    def status(self, target_dir):
+        plugin_dir = self._plugin_dir()
+        lib_entity_io = plugin_dir / "lib" / "evolve-lite" / "entity_io.py"
+        rows = [
+            ("hermes CLI", "✓" if shutil.which("hermes") else "✗ (not found on PATH)"),
+            (f"plugins/{HERMES_PLUGIN}", "✓" if plugin_dir.is_dir() else "✗"),
+            ("provider __init__.py", "✓" if (plugin_dir / "__init__.py").is_file() else "✗"),
+            ("lib/evolve-lite/entity_io", "✓" if lib_entity_io.is_file() else "✗"),
+        ]
+        print("  Hermes:")
+        for label, mark in rows:
+            print(f"    {label:<25} : {mark}")
+
+
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
 PLATFORM_CLASSES = {
@@ -1614,6 +1691,7 @@ PLATFORM_CLASSES = {
     "claude":    ClaudeInstaller,
     "claw-code": ClawCodeInstaller,
     "codex":     CodexInstaller,
+    "hermes":    HermesInstaller,
 }
 
 
@@ -1622,7 +1700,7 @@ def cmd_install(args):
     ops = DryRunFileOps() if DRY_RUN else FileOps()
 
     if args.platform == "all":
-        platforms = ["bob", "claude", "claw-code", "codex"]
+        platforms = ["bob", "claude", "claw-code", "codex", "hermes"]
     elif args.platform:
         platforms = [args.platform]
     else:
@@ -1671,7 +1749,7 @@ def cmd_uninstall(args):
         info(_c("35", "DRY RUN — no files will be written or deleted"))
 
     if args.platform == "all":
-        platforms = ["bob", "claude", "claw-code", "codex"]
+        platforms = ["bob", "claude", "claw-code", "codex", "hermes"]
     elif args.platform:
         platforms = [args.platform]
     else:
@@ -1711,6 +1789,8 @@ def cmd_status(args):
     print()
     CodexInstaller(ops).status(target_dir)
     print()
+    HermesInstaller(ops).status(target_dir)
+    print()
 
 
 # ── argparse ──────────────────────────────────────────────────────────────────
@@ -1718,13 +1798,13 @@ def cmd_status(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="install.sh",
-        description="Install Evolve integrations for Bob, Claude Code, and Codex.",
+        description="Install Evolve integrations for Bob, Claude Code, Claw Code, Codex, and Hermes.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_install = sub.add_parser("install", help="Install Evolve into the current project")
     p_install.add_argument(
-        "--platform", choices=["bob", "claude", "claw-code", "codex", "all"], default=None,
+        "--platform", choices=["bob", "claude", "claw-code", "codex", "hermes", "all"], default=None,
         help="Platform to install (default: auto-detect and prompt)",
     )
     p_install.add_argument(
@@ -1737,7 +1817,7 @@ def main():
 
     p_uninstall = sub.add_parser("uninstall", help="Remove Evolve from the current project")
     p_uninstall.add_argument(
-        "--platform", choices=["bob", "claude", "claw-code", "codex", "all"], default=None,
+        "--platform", choices=["bob", "claude", "claw-code", "codex", "hermes", "all"], default=None,
         help="Platform to uninstall (default: prompt)",
     )
     p_uninstall.add_argument("--dir", default=os.getcwd(), help="Target project directory (default: cwd)")
