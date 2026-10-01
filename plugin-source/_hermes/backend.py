@@ -196,12 +196,15 @@ def trajectory_filename(session_id: str) -> str:
 
     ``sanitize_session_id`` is many-to-one: a gateway session key like ``a/b``
     and a thread id like ``a:b`` both fold to ``a_b``. Naming the file after the
-    fold alone merged two sessions' records into one file, and the ``provenance``
-    skill then attributed one session's trajectory to the other — confidently,
-    because it had no way to tell. So the fold is decoration, kept so the
+    fold alone would put two sessions' records in one file, and the ``provenance``
+    skill would then attribute one session's trajectory to the other —
+    confidently, having no way to tell. So the fold is decoration, kept so the
     directory stays readable; a truncated SHA-256 of the *original* id is what
     identifies the file. Same shape, and the same reasoning, as ``_bucket_name``
     in ``__init__.py``.
+
+    Truncating the fold is not cosmetic either: an unbounded session id makes a
+    filename the filesystem refuses, and every capture for that session is lost.
     """
     digest = hashlib.sha256((session_id or "session").encode("utf-8")).hexdigest()[:12]
     return f"{sanitize_session_id(session_id)[:_TRAJECTORY_STEM_CHARS]}-{digest}.jsonl"
@@ -427,14 +430,7 @@ class LiteBackend(EvolveBackend):
         traj_path: Optional[Path] = None
         try:
             self._ensure_dir(self.trajectories_dir)
-            # Stores written before the digest-suffixed name existed hold
-            # ``<sanitized>.jsonl``. Keep appending to such a file when it is
-            # already there: switching names mid-session would split one
-            # session's records across two files, and provenance reads one.
-            # New sessions get the injective name, so the collision that made
-            # the old name unsafe cannot recur in a store written from here on.
-            legacy = self.trajectories_dir / f"{sanitize_session_id(session_id)}.jsonl"
-            traj_path = legacy if legacy.is_file() else self.trajectories_dir / trajectory_filename(session_id)
+            traj_path = self.trajectories_dir / trajectory_filename(session_id)
             record: Dict[str, Any] = {"ts": time.time(), "session_id": session_id}
             # Who produced this trajectory. Recorded so an existing store stays
             # attributable after the fact, whatever EVOLVE_SCOPE was set to when

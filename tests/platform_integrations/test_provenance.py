@@ -120,7 +120,7 @@ class TestCandidatesLegacyTrajectory:
 
 
 class TestCandidatesHermesTrajectory:
-    """The Hermes memory provider writes ``trajectories/<sid>.jsonl``.
+    """The Hermes memory provider writes ``trajectories/<sanitized-sid>-<digest>.jsonl``.
 
     None of the other resolution steps match that shape, so before it was added
     every Hermes recall row resolved to ``missing: ["trajectory"]`` — provenance
@@ -128,17 +128,14 @@ class TestCandidatesHermesTrajectory:
     """
 
     def test_locates_a_hermes_trajectory(self, tmp_path):
+        session_id = "20260912_193549_752cc6c7"
         home = tmp_path / "home"
         home.mkdir()
         evolve_dir = tmp_path / "hermes" / "evolve"
         evolve_dir.mkdir(parents=True)
-        write_audit(evolve_dir, [{"event": "recall", "session_id": "20260912_193549_752cc6c7", "entities": ["guideline/foo"]}])
+        write_audit(evolve_dir, [{"event": "recall", "session_id": session_id, "entities": ["guideline/foo"]}])
         write_entity(evolve_dir, "guideline/foo")
-        traj = evolve_dir / "trajectories" / "20260912_193549_752cc6c7.jsonl"
-        traj.parent.mkdir(parents=True)
-        traj.write_text(
-            '{"ts": 1, "session_id": "20260912_193549_752cc6c7", "messages": [{"role": "user", "content": "hi"}]}\n', encoding="utf-8"
-        )
+        traj = write_hermes_capture(evolve_dir, _hermes_traj_name(session_id), [hermes_record(session_id, "hi")])
 
         result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
         assert result.returncode == 0, result.stderr
@@ -147,32 +144,15 @@ class TestCandidatesHermesTrajectory:
         assert candidates[0]["trajectory_path"] == str(traj)
         assert "missing" not in candidates[0]
 
-    def test_a_session_id_is_path_sanitized_the_way_the_provider_does(self, tmp_path):
-        # The provider maps anything outside [A-Za-z0-9_.-] to "_" when it names
-        # the file, so a gateway session key with a "/" in it still resolves.
-        home = tmp_path / "home"
-        home.mkdir()
-        evolve_dir = tmp_path / "hermes" / "evolve"
-        evolve_dir.mkdir(parents=True)
-        write_audit(evolve_dir, [{"event": "recall", "session_id": "discord/42", "entities": ["guideline/foo"]}])
-        write_entity(evolve_dir, "guideline/foo")
-        traj = evolve_dir / "trajectories" / "discord_42.jsonl"
-        traj.parent.mkdir(parents=True)
-        traj.write_text("{}\n", encoding="utf-8")
-
-        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
-        assert result.returncode == 0, result.stderr
-        assert parse_jsonl(result.stdout)[0]["trajectory_path"] == str(traj)
-
 
 class TestCandidatesHermesSessionCollisions:
     """Sanitizing a session id into a filename is many-to-one.
 
-    ``a/b`` and ``a:b`` both fold to ``a_b``, so the old plain-folded name could
-    hold two sessions — and provenance credited whichever session asked first
-    with the other's trajectory. The provider now suffixes a digest of the
-    original id; these pin that the locator reads the new name, and that it stays
-    honest about the old one, where the ambiguity is already on disk.
+    ``a/b`` and ``a:b`` both fold to ``a_b``, so naming a capture file after the
+    fold let two sessions share one — and provenance then credited one session
+    with the other's trajectory. The provider suffixes a digest of the original
+    id; these pin that the locator computes the same name and so reads one
+    session's file and no other's.
     """
 
     @staticmethod
@@ -211,9 +191,10 @@ class TestCandidatesHermesSessionCollisions:
         assert "colon work" not in by_session["a/b"]["trajectory_excerpt"]
         assert "slash work" not in by_session["a:b"]["trajectory_excerpt"]
 
-    def test_a_legacy_file_owned_by_another_session_is_not_returned(self, tmp_path):
-        """The records carry the raw id, so a folded name alone is not ownership.
-        Reporting the trajectory missing is right: we have none for this session."""
+    def test_the_plain_folded_name_is_not_read(self, tmp_path):
+        """The fold is not a filename the provider writes, so it is not ownership
+        either: a file sitting at ``a_b.jsonl`` could be ``a/b``'s or ``a:b``'s.
+        Reporting the trajectory missing is the honest answer."""
         home, evolve_dir = self._seed(tmp_path, ["a/b"])
         write_hermes_capture(evolve_dir, "a_b.jsonl", [hermes_record("a:b", "not yours")])
 
@@ -222,38 +203,6 @@ class TestCandidatesHermesSessionCollisions:
         candidates = parse_jsonl(result.stdout)
         assert candidates[0]["trajectory_path"] is None
         assert candidates[0]["missing"] == ["trajectory"]
-
-    def test_a_legacy_file_shared_by_two_sessions_excerpts_only_one(self, tmp_path):
-        """Both sessions already wrote to one file, so the path is shared. The
-        excerpt is not: the agent judges a verdict from it, and the other
-        session's messages are what would make that verdict wrong."""
-        home, evolve_dir = self._seed(tmp_path, ["a/b", "a:b"])
-        shared = write_hermes_capture(
-            evolve_dir,
-            "a_b.jsonl",
-            [hermes_record("a/b", "slash work"), hermes_record("a:b", "colon work")],
-        )
-
-        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
-        assert result.returncode == 0, result.stderr
-        by_session = {c["session_id"]: c for c in parse_jsonl(result.stdout)}
-        assert by_session["a/b"]["trajectory_path"] == str(shared)
-        assert "slash work" in by_session["a/b"]["trajectory_excerpt"]
-        assert "colon work" not in by_session["a/b"]["trajectory_excerpt"]
-        assert "colon work" in by_session["a:b"]["trajectory_excerpt"]
-        assert "slash work" not in by_session["a:b"]["trajectory_excerpt"]
-
-    def test_the_digest_name_wins_when_both_forms_exist(self, tmp_path):
-        """Only reachable if a session was resumed under an older plugin build.
-        Prefer the name that identifies exactly one session over the one that
-        might be shared."""
-        home, evolve_dir = self._seed(tmp_path, ["a/b"])
-        write_hermes_capture(evolve_dir, "a_b.jsonl", [hermes_record("a/b", "legacy")])
-        digest = write_hermes_capture(evolve_dir, _hermes_traj_name("a/b"), [hermes_record("a/b", "current")])
-
-        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
-        assert result.returncode == 0, result.stderr
-        assert parse_jsonl(result.stdout)[0]["trajectory_path"] == str(digest)
 
 
 class TestCandidatesNativeTranscript:

@@ -1148,21 +1148,38 @@ class TestTrajectoryFilenames:
         written = {json.loads(f.read_text(encoding="utf-8").strip())["session_id"] for f in files}
         assert written == {"chat/7", "chat:7"}
 
-    def test_an_existing_legacy_file_keeps_being_appended_to(self, hermes_module, noop_generator, tmp_path):
-        """A store written before the digest existed must not have a session
-        split across two files on upgrade: provenance resolves one path, so the
-        records written after the upgrade would otherwise become invisible."""
-        legacy = tmp_path / "evolve" / "trajectories" / "session-1.jsonl"
-        legacy.parent.mkdir(parents=True)
-        legacy.write_text('{"ts": 1, "session_id": "session-1", "messages": []}\n', encoding="utf-8")
+    def test_a_file_at_the_plain_folded_name_is_left_alone(self, hermes_module, hermes_backend, noop_generator, tmp_path):
+        """The digest name is the only name written. A file sitting at the plain
+        fold cannot be shown to belong to this session — the fold is precisely
+        what two sessions can share — so it is never appended to."""
+        folded = tmp_path / "evolve" / "trajectories" / "session-1.jsonl"
+        folded.parent.mkdir(parents=True)
+        folded.write_text('{"ts": 1, "session_id": "session-1", "messages": []}\n', encoding="utf-8")
 
         p = _make_provider(hermes_module, tmp_path, agent_context="primary")
         p.on_session_end(_FOUR_MESSAGES)
         _join(p)
         p.shutdown()
 
-        assert sorted(f.name for f in legacy.parent.glob("*.jsonl")) == ["session-1.jsonl"]
-        assert len(legacy.read_text(encoding="utf-8").strip().splitlines()) == 2
+        assert len(folded.read_text(encoding="utf-8").strip().splitlines()) == 1
+        assert sorted(f.name for f in folded.parent.glob("*.jsonl")) == sorted(
+            ["session-1.jsonl", hermes_backend.trajectory_filename("session-1")]
+        )
+
+    def test_a_session_id_too_long_for_a_filename_still_captures(self, hermes_module, noop_generator, tmp_path):
+        """The fold is truncated before the digest is appended, so the name stays
+        inside the filesystem's per-component limit. Folding alone would leave a
+        300-character name and every write for that session would fail."""
+        session_id = "discord/" + "x" * 300
+
+        p = _make_provider(hermes_module, tmp_path, agent_context="primary")
+        p.on_session_switch(session_id, reset=True)
+        p.on_session_end(_FOUR_MESSAGES)
+        _join(p)
+        p.shutdown()
+
+        captured = _capture_file(tmp_path)
+        assert json.loads(captured.read_text(encoding="utf-8").strip())["session_id"] == session_id
 
 
 class TestTrajectoryCapture:

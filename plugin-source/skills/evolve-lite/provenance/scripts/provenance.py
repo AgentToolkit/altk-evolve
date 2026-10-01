@@ -87,19 +87,19 @@ def _claude_transcript_slug(root):
 
 # How much of the sanitized session id the Hermes provider keeps in a trajectory
 # filename before the digest. Mirrors ``_TRAJECTORY_STEM_CHARS`` in that bundle's
-# backend.py; see ``_hermes_trajectory_names``.
+# backend.py; see ``_hermes_trajectory_name``.
 _HERMES_STEM_CHARS = 40
 
 
-def _hermes_trajectory_names(session_id):
-    """``(injective, legacy)`` filenames for a session's Hermes capture file.
+def _hermes_trajectory_name(session_id):
+    """Filename of a session's Hermes capture file.
 
-    The Hermes memory provider names the file after the session id with every
-    character outside ``[A-Za-z0-9_.-]`` folded to ``_``. That fold is
-    many-to-one — ``a/b`` and ``a:b`` both give ``a_b`` — so the provider now
-    appends a truncated SHA-256 of the *original* id, making the name injective.
-    Both forms are returned because stores written before that change still hold
-    the plain fold, and those files must keep resolving.
+    The provider folds every character outside ``[A-Za-z0-9_.-]`` to ``_`` so the
+    id can be a filename, then appends a truncated SHA-256 of the *original* id.
+    The fold alone is many-to-one — ``a/b`` and ``a:b`` both give ``a_b`` — so
+    naming the file after it let two sessions share one capture file, and this
+    module then handed one session's trajectory to the other. The digest is what
+    makes the name identify a single session.
 
     This duplicates ``trajectory_filename`` in the Hermes bundle's backend.py by
     hand, the same way ``_claude_transcript_slug`` duplicates doctor.py's: the
@@ -111,41 +111,7 @@ def _hermes_trajectory_names(session_id):
     sid = str(session_id or "session")
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", sid)
     digest = hashlib.sha256(sid.encode("utf-8")).hexdigest()[:12]
-    return f"{safe[:_HERMES_STEM_CHARS]}-{digest}.jsonl", f"{safe}.jsonl"
-
-
-def _read_text(path):
-    """File contents, or ``None`` if it cannot be read."""
-    try:
-        return Path(path).read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-
-def _session_tagged_lines(text, session_id):
-    """Lines of a JSONL capture that declare ``session_id``.
-
-    Returns ``None`` when no record carries a ``session_id`` field at all, meaning
-    the file is not a Hermes capture and ownership cannot be decided from its
-    records — Claude's transcripts use ``sessionId``, so they land here and are
-    never filtered. An empty list is therefore meaningful: the records *are*
-    tagged, and none of them belong to this session.
-    """
-    tagged = False
-    kept = []
-    for line in text.splitlines():
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(record, dict) or "session_id" not in record:
-            continue
-        tagged = True
-        if record["session_id"] == session_id:
-            kept.append(line)
-    return kept if tagged else None
+    return f"{safe[:_HERMES_STEM_CHARS]}-{digest}.jsonl"
 
 
 def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
@@ -156,11 +122,9 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
     1. Legacy ``.evolve/trajectories/`` files:
        * ``claude-transcript_<sid>.jsonl`` — stop-hook transcript dump.
        * ``<sanitized-sid>-<digest>.jsonl`` — the Hermes memory provider's
-         capture output, one JSON record appended per capture. The plain
-         ``<sanitized-sid>.jsonl`` form that older stores hold is also accepted,
-         but only for a file whose records claim this session: that name is a
-         lossy fold of the id and two sessions can land on it. See
-         ``_hermes_trajectory_names``.
+         capture output, one JSON record appended per capture. The digest is over
+         the unsanitized id, so the name belongs to one session; see
+         ``_hermes_trajectory_name``.
        * ``trajectory_<ts>_<sid>.json`` — save-trajectory skill output; the sid
          is the filename slice after the timestamp.
        * ``trajectory_<ts>.json`` — open and match the inner ``session_id``.
@@ -193,26 +157,10 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
 
         # Hermes: trajectories/<sanitized>-<digest>.jsonl. The digest is taken
         # over the original session id, so this name identifies one session and
-        # one only — take it as given when it is there.
-        injective, legacy = _hermes_trajectory_names(session_id)
-        hermes = traj_dir / injective
+        # one only.
+        hermes = traj_dir / _hermes_trajectory_name(session_id)
         if hermes.is_file():
             return hermes
-
-        # The legacy plain-sanitized name from stores written before the digest
-        # existed. That name is many-to-one, so the file may well be a different
-        # session's whose id folded to the same characters. The records carry the
-        # raw session id, so let them decide — the same rule the Bob step below
-        # applies to ``sessionId``: the body field is authoritative, and a file
-        # we cannot show is ours is not returned.
-        hermes_legacy = traj_dir / legacy
-        if hermes_legacy.is_file():
-            text = _read_text(hermes_legacy)
-            owned = None if text is None else _session_tagged_lines(text, session_id)
-            # ``None`` — untagged records, or a file we cannot read — leaves
-            # ownership undecided, and the filename is the only evidence there is.
-            if owned is None or owned:
-                return hermes_legacy
 
         # trajectory_<ts>_<sid>.json — match on the filename sid slice.
         for path in sorted(traj_dir.glob("trajectory_*_*.json")):
@@ -335,25 +283,14 @@ def _read_entity(evolve_dir, entity_id):
     return entity_path, text[:_ENTITY_EXCERPT_CHARS]
 
 
-def _read_trajectory_excerpt(trajectory_path, session_id=None):
-    """Return a bounded text excerpt of the trajectory file, or ``None``.
-
-    When the file's records are session-tagged (a Hermes capture), the excerpt is
-    narrowed to the records this session wrote. A legacy plain-sanitized file can
-    hold two sessions whose ids folded to the same name, and handing the agent the
-    other session's messages is what turns a provenance verdict from unsupported
-    into wrong. Files whose records carry no ``session_id`` are passed through
-    whole, which is every other shape this locator resolves.
-    """
+def _read_trajectory_excerpt(trajectory_path):
+    """Return a bounded text excerpt of the trajectory file, or ``None``."""
     if trajectory_path is None:
         return None
-    text = _read_text(trajectory_path)
-    if text is None:
+    try:
+        text = Path(trajectory_path).read_text(encoding="utf-8")
+    except OSError:
         return None
-    if session_id is not None:
-        owned = _session_tagged_lines(text, session_id)
-        if owned is not None:
-            return "\n".join(owned)[:_TRAJECTORY_EXCERPT_CHARS]
     return text[:_TRAJECTORY_EXCERPT_CHARS]
 
 
@@ -387,7 +324,7 @@ def build_candidates(evolve_dir, *, project_root=None, home=None):
             if (session_id, entity_id) in existing:
                 continue
             entity_path, entity_excerpt = _read_entity(evolve_dir, entity_id)
-            trajectory_excerpt = _read_trajectory_excerpt(trajectory_path, session_id)
+            trajectory_excerpt = _read_trajectory_excerpt(trajectory_path)
 
             missing = []
             if entity_excerpt is None:
