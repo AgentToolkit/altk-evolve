@@ -1568,3 +1568,39 @@ def test_filesystem_transaction_heals_corrupt_namespace(client, contents):
     assert not path.exists()
     client.create_namespace("memories")
     assert client.backend.scan_entities("memories") == []
+
+
+def test_profile_reconciliation_tracks_sources_within_user_scope(client, monkeypatch):
+    from altk_evolve.schema.conflict_resolution import EntityUpdate
+
+    class Sourced(EchoProcessor):
+        def process(self, trajectory, *, context):
+            return ProcessorResult(
+                entities=[Entity(type="note", content="same preference", metadata=trajectory.metadata)],
+                enable_conflict_resolution=True,
+            )
+
+    client._processing = make_manager(processor_type=Sourced)
+    plan = client.processing.validate(definition())
+
+    def reconcile(old, new, *, settings):
+        assert not client.backend.in_transaction
+        if not old:
+            return [EntityUpdate(id=new[0].id, type="note", content=new[0].content, event="ADD")]
+        assert len(old) == 1
+        assert old[0].metadata["user_id"] == new[0].metadata["user_id"]
+        return [EntityUpdate(id=old[0].id, type="note", content=old[0].content, event="NONE", incoming_ids=[new[0].id])]
+
+    monkeypatch.setattr("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", reconcile)
+    for user, conversation in [("alice", "one"), ("bob", "two"), ("alice", "three")]:
+        client.process_trajectory(
+            {"messages": [], "metadata": {"user_id": user, "thread_id": conversation}},
+            namespace_id="memories",
+            plan=plan,
+        )
+    stored = {e.metadata["user_id"]: e for e in client.get_all_entities("memories")}
+    assert set(stored) == {"alice", "bob"}
+    assert {s["conversation_id"] for s in stored["alice"].metadata["sources"]} == {"one", "three"}
+    assert {s["conversation_id"] for s in stored["bob"].metadata["sources"]} == {"two"}
+    assert stored["alice"].metadata["memory_revision"] == 1
+    assert stored["alice"].metadata["processing"]["processor_id"] == "first"

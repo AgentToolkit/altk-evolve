@@ -99,6 +99,7 @@ def categorize_facts(facts: list[RecordedEntity]) -> dict[str, list[dict[str, An
         categorized.setdefault(category, []).append(
             {
                 "id": fact.id,
+                "revision": metadata.get("memory_revision"),
                 "content": str(fact.content),
                 "key": metadata.get("key"),
                 "value": metadata.get("value"),

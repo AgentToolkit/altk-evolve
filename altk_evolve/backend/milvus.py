@@ -321,6 +321,14 @@ class MilvusEntityBackend(BaseEntityBackend):
         self._delete_entity_by_id_impl(namespace_id=namespace_id, entity_id=entity_id)
 
     def _update_entity_metadata_impl(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+        return self._patch_metadata(namespace_id, entity_id, metadata_patch)
+
+    def _reaffirm_entity(self, namespace_id: str, entity_id: str, metadata: dict, expected: RecordedEntity) -> None:
+        self._patch_metadata(namespace_id, entity_id, metadata, expected=expected)
+
+    def _patch_metadata(
+        self, namespace_id: str, entity_id: str, metadata_patch: dict, *, expected: RecordedEntity | None = None
+    ) -> RecordedEntity:
         try:
             entity_id_int = int(entity_id)
         except ValueError:
@@ -338,6 +346,14 @@ class MilvusEntityBackend(BaseEntityBackend):
                 raise EvolveException(f"Entity '{entity_id}' not found in namespace '{namespace_id}'")
             raw = dict(results[0])
             entity = parse_milvus_entity(raw)
+            if expected is not None:
+                before = expected.model_copy(update={"metadata": {k: v for k, v in expected.metadata.items() if k != "last_accessed"}})
+                after = entity.model_copy(update={"metadata": {k: v for k, v in entity.metadata.items() if k != "last_accessed"}})
+                if before != after:
+                    # Milvus cannot roll back earlier batch writes: never trigger
+                    # the whole-batch automatic retry used by atomic backends.
+                    raise EvolveException("Entity changed during provenance preparation; Milvus batch may be partially applied")
+                metadata_patch = {k: v for k, v in metadata_patch.items() if k != "last_accessed"}
             merged = {**entity.metadata, **metadata_patch}
             # Reuse the stored vector: metadata changes must not recompute embeddings.
             self.milvus.upsert(collection_name=namespace_id, data={**raw, "metadata": merged}, partial_update=True)

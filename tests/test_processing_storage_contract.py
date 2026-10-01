@@ -93,7 +93,7 @@ def test_unrelated_write_during_reconciliation_does_not_retry(storage, monkeypat
         calls.append(1)
         with ThreadPoolExecutor(1) as pool:
             pool.submit(peer.update_entities, ns, [Entity(type="note", content="concurrent")], False).result(timeout=5)
-        return [EntityUpdate(id="new", type="note", content="learned", event="ADD")]
+        return [EntityUpdate(id=new[0].id, type="note", content="learned", event="ADD")]
 
     monkeypatch.setattr("altk_evolve.llm.conflict_resolution.conflict_resolution.resolve_conflicts", resolve)
     prepared = client.backend.prepare_updates(ns, [Entity(type="note", content="seed")])
