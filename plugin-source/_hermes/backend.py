@@ -188,7 +188,7 @@ def sanitize_session_id(session_id: str) -> str:
     Lossy on purpose — and that is exactly why it is not a filename on its own.
     See ``trajectory_filename``.
     """
-    return re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "session")
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(session_id) or "session")
 
 
 def trajectory_filename(session_id: str) -> str:
@@ -205,9 +205,16 @@ def trajectory_filename(session_id: str) -> str:
 
     Truncating the fold is not cosmetic either: an unbounded session id makes a
     filename the filesystem refuses, and every capture for that session is lost.
+
+    The empty-id fallback belongs to the *fold*, not to the digest. Hashing
+    ``session_id or "session"`` would hand ``""`` and the literal id ``"session"``
+    the same digest, putting them back in one file — the collision this function
+    exists to prevent, reintroduced through the fallback. ``_bucket_name`` draws
+    the line in the same place.
     """
-    digest = hashlib.sha256((session_id or "session").encode("utf-8")).hexdigest()[:12]
-    return f"{sanitize_session_id(session_id)[:_TRAJECTORY_STEM_CHARS]}-{digest}.jsonl"
+    sid = str(session_id)
+    digest = hashlib.sha256(sid.encode("utf-8")).hexdigest()[:12]
+    return f"{sanitize_session_id(sid)[:_TRAJECTORY_STEM_CHARS]}-{digest}.jsonl"
 
 
 # ---------------------------------------------------------------------------

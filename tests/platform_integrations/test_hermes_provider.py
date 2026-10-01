@@ -1129,9 +1129,32 @@ class TestTrajectoryFilenames:
         assert a != b
         assert len(a) < 80
 
-    @pytest.mark.parametrize("session_id", ["", None])
-    def test_an_empty_id_still_names_a_file(self, hermes_backend, session_id):
-        assert hermes_backend.trajectory_filename(session_id).startswith("session-")
+    def test_an_empty_id_still_names_a_file(self, hermes_backend):
+        """Only the readable half needs the fallback, and only for ``""``.
+
+        ``-3f3af1ecebbd.jsonl`` is a baffling thing to meet in a directory
+        listing; every other id already folds to a non-empty stem.
+        """
+        assert hermes_backend.trajectory_filename("").startswith("session-")
+
+    def test_an_empty_id_does_not_take_the_literal_id_session(self, hermes_backend):
+        """The fallback is for the readable half only.
+
+        ``"session"`` is a legal session id. Feeding the fallback to the digest
+        as well would give it and ``""`` one filename — the same collision the
+        digest was added to prevent, arriving through the fallback instead.
+        """
+        assert hermes_backend.trajectory_filename("") != hermes_backend.trajectory_filename("session")
+
+    def test_an_id_with_no_utf8_encoding_names_no_file(self, hermes_backend):
+        """A lone surrogate has no encoding, so there is no digest to take.
+
+        Raising is the honest outcome: ``save_trajectory`` catches it and writes
+        nothing. The contract the provenance reader mirrors is "no name, nothing
+        on disk" — see ``test_provenance.py``'s writer/reader cross-check.
+        """
+        with pytest.raises(UnicodeEncodeError):
+            hermes_backend.trajectory_filename("s\ud800x")
 
     def test_two_colliding_sessions_write_separate_files(self, hermes_module, noop_generator, tmp_path):
         """End to end through the provider, not just the naming helper."""

@@ -8,7 +8,8 @@ dedup against existing influence rows, and the ``record`` writer. The semantic
 verdict is agent-driven and is NOT tested here (there is no heuristic to test).
 """
 
-import hashlib
+import functools
+import importlib
 import json
 import os
 import re
@@ -17,6 +18,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from _hermes_loader import HERMES_PLUGIN_ROOT, HOST_STUBS, load_module
 
 pytestmark = [pytest.mark.platform_integrations]
 
@@ -31,16 +34,33 @@ def _claude_slug(root: Path) -> str:
     return re.sub(r"[^A-Za-z0-9]", "-", str(root))
 
 
-def _hermes_traj_name(session_id: str) -> str:
-    """Mirror the Hermes provider's capture filename: sanitized id, then a
-    truncated digest of the *original* id so the name identifies one session.
+@functools.lru_cache(maxsize=None)
+def _hermes_backend():
+    """The rendered Hermes provider's ``backend`` module — the writer of these files."""
+    package = load_module("_hermes_provider_for_provenance", HERMES_PLUGIN_ROOT / "__init__.py", extra_syspath=[HOST_STUBS])
+    return importlib.import_module(f"{package.__name__}.backend")
 
-    Duplicated here for the same reason as ``_claude_slug``: these tests drive
-    provenance.py as a subprocess, so there is no module to import.
-    ``test_hermes_provider.py::TestTrajectoryFilenames`` pins the write side.
+
+@functools.lru_cache(maxsize=None)
+def _provenance_module():
+    """The rendered provenance script, imported for its helpers.
+
+    The tests below still drive it as a subprocess — that is what a host runs.
+    This is only for reaching a single function directly, which a subprocess
+    cannot do.
     """
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id)
-    return f"{safe[:40]}-{hashlib.sha256(session_id.encode('utf-8')).hexdigest()[:12]}.jsonl"
+    return load_module("_provenance_under_test", PROVENANCE_SCRIPT)
+
+
+def _hermes_traj_name(session_id):
+    """Capture filename for ``session_id``, from the provider that writes it.
+
+    Deliberately not a third hand copy of the formula, unlike ``_claude_slug``:
+    a copy here would make these tests agree with themselves while the shipped
+    reader drifted away from the shipped writer, which is the one failure
+    ``TestHermesFilenameParity`` exists to catch.
+    """
+    return _hermes_backend().trajectory_filename(session_id)
 
 
 def write_hermes_capture(evolve_dir, filename, records):
@@ -203,6 +223,89 @@ class TestCandidatesHermesSessionCollisions:
         candidates = parse_jsonl(result.stdout)
         assert candidates[0]["trajectory_path"] is None
         assert candidates[0]["missing"] == ["trajectory"]
+
+    def test_one_unencodable_id_does_not_take_the_healthy_sessions_with_it(self, tmp_path):
+        """Computing the capture name must not be able to abort the run.
+
+        A lone surrogate survives ``json.dumps`` into audit.log, and the reader
+        reads the id back as an ordinary string. Taking its SHA-256 then raises
+        ``UnicodeEncodeError``, which would propagate out of ``build_candidates``
+        and lose every *other* session's candidate along with it. The provider
+        could not name a file for that id either, so the honest result is one
+        missing trajectory and the rest of the run intact.
+        """
+        home, evolve_dir = self._seed(tmp_path, ["s\ud800x", "healthy/1"])
+        traj = write_hermes_capture(evolve_dir, _hermes_traj_name("healthy/1"), [hermes_record("healthy/1", "hi")])
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+        assert result.returncode == 0, result.stderr
+        by_session = {c["session_id"]: c for c in parse_jsonl(result.stdout)}
+        assert by_session["healthy/1"]["trajectory_path"] == str(traj)
+        assert by_session["s\ud800x"]["trajectory_path"] is None
+        assert by_session["s\ud800x"]["missing"] == ["trajectory"]
+
+
+class TestHermesFilenameParity:
+    """The writer's filename formula and the shipped reader's, pinned together.
+
+    A capture filename is produced by the Hermes bundle's ``backend.py`` and
+    recomputed by this skill's ``provenance.py``. They cannot share code: the
+    rendered skill script ships to hosts that have no provider to import, so the
+    formula is maintained by hand in both, each with a comment telling the next
+    person to keep them in sync.
+
+    Nothing else in the suite compares them. The reader tests build their
+    fixtures from the reader's own formula, and ``build_plugins.py check``
+    compares the rendered copies to each other rather than the writer to the
+    reader — so changing ``_TRAJECTORY_STEM_CHARS`` alone used to ship green
+    while the shipped provenance script quietly stopped locating any capture for
+    a realistic id. These are the tests that go red instead.
+    """
+
+    # Realistic ids, plus every shape that tempted one side into a shortcut: the
+    # falsy ones (where the fallback lives), the long and shared-prefix ones (what
+    # a stem-length change breaks), and a traversal attempt.
+    @pytest.mark.parametrize(
+        "session_id",
+        [
+            "",
+            None,
+            "session",
+            "a/b",
+            "a:b",
+            "discord/42",
+            "20260912_193549_752cc6c7",
+            "x" * 300,
+            "x" * 40 + "a",
+            "x" * 40 + "b",
+            "séance/✓",
+            "../../etc/passwd",
+        ],
+        ids=repr,
+    )
+    def test_the_reader_computes_the_name_the_writer_wrote(self, session_id):
+        assert _provenance_module()._hermes_trajectory_name(session_id) == _hermes_traj_name(session_id)
+
+    def test_both_sides_decline_an_id_with_no_utf8_encoding(self):
+        """Agreeing that there is no name is parity too.
+
+        The writer raises and its caller fails soft, so nothing reaches disk; the
+        reader returns ``None`` and falls through to the next locator. What must
+        not happen is one side naming a file the other never wrote — or the reader
+        raising where the writer shrugged (see
+        ``test_one_unencodable_id_does_not_take_the_healthy_sessions_with_it``).
+        """
+        with pytest.raises(UnicodeEncodeError):
+            _hermes_traj_name("s\ud800x")
+        assert _provenance_module()._hermes_trajectory_name("s\ud800x") is None
+
+    def test_the_two_stem_limits_are_the_same_number(self):
+        """Restated as a constant on each side, so compare the constants directly.
+
+        The parametrized cases above catch a drift only for ids longer than the
+        smaller of the two limits. This catches it outright.
+        """
+        assert _provenance_module()._HERMES_STEM_CHARS == _hermes_backend()._TRAJECTORY_STEM_CHARS
 
 
 class TestCandidatesNativeTranscript:

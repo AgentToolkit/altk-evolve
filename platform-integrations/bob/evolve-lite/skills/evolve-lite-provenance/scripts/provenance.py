@@ -92,25 +92,34 @@ _HERMES_STEM_CHARS = 40
 
 
 def _hermes_trajectory_name(session_id):
-    """Filename of a session's Hermes capture file.
+    """Filename of a session's Hermes capture file, or ``None`` if it has none.
 
     The provider folds every character outside ``[A-Za-z0-9_.-]`` to ``_`` so the
     id can be a filename, then appends a truncated SHA-256 of the *original* id.
     The fold alone is many-to-one — ``a/b`` and ``a:b`` both give ``a_b`` — so
     naming the file after it let two sessions share one capture file, and this
     module then handed one session's trajectory to the other. The digest is what
-    makes the name identify a single session.
+    makes the name identify a single session. Note which half the empty-id
+    fallback applies to: the fold, never the digest, or ``""`` and the literal id
+    ``"session"`` would collide again.
+
+    ``None`` for an id with no UTF-8 encoding (a lone surrogate survives
+    ``json.dumps`` and reaches us through audit.log). The provider cannot name a
+    file for such an id either — ``save_trajectory`` catches the encode error and
+    writes nothing — so there is genuinely nothing to find, and raising here
+    would abort the whole ``candidates`` run over one malformed row.
 
     This duplicates ``trajectory_filename`` in the Hermes bundle's backend.py by
     hand, the same way ``_claude_transcript_slug`` duplicates doctor.py's: the
     rendered provenance script cannot import the provider. If you change one,
-    change both.
+    change both — ``test_provenance.py`` pins them against each other.
     """
-    # ``or "session"`` before str(), not after: the provider's fallback is for a
-    # falsy id, and str(None) would otherwise fold to the literal "None".
-    sid = str(session_id or "session")
-    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", sid)
-    digest = hashlib.sha256(sid.encode("utf-8")).hexdigest()[:12]
+    sid = str(session_id)
+    try:
+        digest = hashlib.sha256(sid.encode("utf-8")).hexdigest()[:12]
+    except UnicodeError:
+        return None
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", sid or "session")
     return f"{safe[:_HERMES_STEM_CHARS]}-{digest}.jsonl"
 
 
@@ -157,10 +166,12 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
 
         # Hermes: trajectories/<sanitized>-<digest>.jsonl. The digest is taken
         # over the original session id, so this name identifies one session and
-        # one only.
-        hermes = traj_dir / _hermes_trajectory_name(session_id)
-        if hermes.is_file():
-            return hermes
+        # one only. ``None`` means the id has no capture filename at all.
+        hermes_name = _hermes_trajectory_name(session_id)
+        if hermes_name is not None:
+            hermes = traj_dir / hermes_name
+            if hermes.is_file():
+                return hermes
 
         # trajectory_<ts>_<sid>.json — match on the filename sid slice.
         for path in sorted(traj_dir.glob("trajectory_*_*.json")):
