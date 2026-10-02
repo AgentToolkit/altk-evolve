@@ -164,7 +164,11 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
     """
 
     async def request_trace(request: Request):
-        token = context.attach(propagate.extract(request.headers))
+        # A host's ASGI instrumentation has already extracted the remote parent.
+        # Keep that local span as our parent; only extract at an uninstrumented boundary.
+        token = None
+        if not trace.get_current_span().get_span_context().is_valid:
+            token = context.attach(propagate.extract(request.headers))
         try:
             with telemetry_operation("evolve.http.request", kind=trace.SpanKind.SERVER) as span:
                 span.set_attribute("http.request.method", request.method)
@@ -173,7 +177,8 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
                     span.set_attribute("http.route", route.path)
                 yield
         finally:
-            context.detach(token)
+            if token is not None:
+                context.detach(token)
 
     router = APIRouter(tags=["Evolve memory"], dependencies=[Depends(request_trace)])
 

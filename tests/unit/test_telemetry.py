@@ -147,7 +147,7 @@ provider.shutdown()
 metrics.get_meter_provider().shutdown(timeout_millis=500)
 """
     env = {
-        **os.environ,
+        **{k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "EVOLVE_OTEL_"))},
         "OTEL_SDK_DISABLED": "false",
         "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:1",
         "OTEL_EXPORTER_OTLP_TIMEOUT": "0.1",
@@ -260,3 +260,181 @@ server.shutdown()
     env["OTEL_METRICS_EXPORTER"] = "none"
     result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("remote_parent", [False, True])
+async def test_rest_preserves_active_host_span(telemetry_capture, remote_parent):
+    from starlette.requests import Request
+    from altk_evolve.frontend.api.memory import build_memory_router
+
+    exporter, _ = telemetry_capture
+    router = build_memory_router(client_dependency=lambda: None, scope_dependency=lambda: None)
+    headers = [(b"traceparent", b"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01")] if remote_parent else []
+    with telemetry.operation("host.request") as host:
+        dependency = router.dependencies[0].dependency(Request({"type": "http", "method": "GET", "headers": headers}))
+        await anext(dependency)
+        assert trace.get_current_span().get_span_context().trace_id == host.get_span_context().trace_id
+        await dependency.aclose()
+        assert trace.get_current_span() is host
+    child = next(span for span in exporter.get_finished_spans() if span.name == "evolve.http.request")
+    assert child.parent.span_id == host.get_span_context().span_id
+
+
+@pytest.mark.asyncio
+async def test_rest_extracts_remote_parent_without_host(telemetry_capture):
+    from starlette.requests import Request
+    from altk_evolve.frontend.api.memory import build_memory_router
+
+    exporter, _ = telemetry_capture
+    router = build_memory_router(client_dependency=lambda: None, scope_dependency=lambda: None)
+    previous = trace.get_current_span()
+    dependency = router.dependencies[0].dependency(
+        Request(
+            {"type": "http", "method": "GET", "headers": [(b"traceparent", b"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01")]}
+        )
+    )
+    await anext(dependency)
+    await dependency.aclose()
+    assert trace.get_current_span() is previous
+    child = exporter.get_finished_spans()[0]
+    assert child.context.trace_id == int("0123456789abcdef0123456789abcdef", 16)  # pragma: allowlist secret (synthetic trace ID)
+    assert child.parent.span_id == int("0123456789abcdef", 16)
+
+
+@pytest.mark.parametrize("value", ["invalid-private-value", "0", "-1", "nan", "inf"])
+def test_invalid_export_configuration_is_retryable(monkeypatch, caplog, value):
+    monkeypatch.delenv("EVOLVE_OTEL_ENABLED", raising=False)
+    monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "none")
+    monkeypatch.setenv("OTEL_METRICS_EXPORTER", "otlp")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_METRICS_TIMEOUT", value)
+    monkeypatch.setattr(telemetry, "_OWNED", None)
+    monkeypatch.setattr(trace, "get_tracer_provider", trace.ProxyTracerProvider)
+    from opentelemetry import metrics
+    from opentelemetry.metrics._internal import _ProxyMeterProvider
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(metrics, "get_meter_provider", _ProxyMeterProvider)
+    install_trace, install_meter = Mock(), Mock()
+    monkeypatch.setattr(trace, "set_tracer_provider", install_trace)
+    monkeypatch.setattr(metrics, "set_meter_provider", install_meter)
+    assert telemetry.configure_service_telemetry() is None
+    assert telemetry._OWNED is None
+    install_trace.assert_not_called()
+    install_meter.assert_not_called()
+    assert "invalid-private-value" not in caplog.text
+    monkeypatch.setenv("OTEL_METRICS_EXPORTER", "none")
+    provider = telemetry.configure_service_telemetry()
+    assert provider is not None
+    install_trace.assert_called_once_with(provider)
+    provider.shutdown()
+
+
+def test_owned_export_excludes_third_party_exception_payloads():
+    import os
+    import subprocess
+    import sys
+
+    code = """
+import asyncio
+from unittest.mock import patch
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from altk_evolve.telemetry import configure_service_telemetry, operation
+from fastmcp import Client
+from altk_evolve.frontend.mcp import mcp_server
+exporter = InMemorySpanExporter()
+with patch('opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter', return_value=exporter):
+    provider = configure_service_telemetry()
+async def invoke():
+    with operation('evolve.request'):
+        async with Client(mcp_server.mcp) as client:
+            result = await client.call_tool('retrieve_user_facts', {'user_id': 'user', 'limit': 'SECRET-PAYLOAD'}, raise_on_error=False)
+            assert result.is_error
+asyncio.run(invoke())
+provider.force_flush()
+spans = exporter.get_finished_spans()
+assert spans
+assert all(s.instrumentation_scope.name == 'altk_evolve' for s in spans)
+assert 'SECRET-PAYLOAD' not in str([(dict(s.attributes), s.events, s.status.description) for s in spans])
+provider.shutdown()
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "EVOLVE_OTEL_"))}
+    env["OTEL_METRICS_EXPORTER"] = "none"
+    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+
+
+def test_retryable_collector_failure_does_not_delay_process_exit():
+    import os
+    import subprocess
+    import sys
+
+    code = """
+import os, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from altk_evolve.telemetry import configure_service_telemetry, operation
+class Collector(BaseHTTPRequestHandler):
+    def log_message(self, *args): pass
+    def do_POST(self):
+        self.rfile.read(int(self.headers['Content-Length']))
+        self.send_response(503)
+        self.end_headers()
+server = ThreadingHTTPServer(('127.0.0.1', 0), Collector)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+os.environ['OTEL_EXPORTER_OTLP_ENDPOINT'] = f'http://127.0.0.1:{server.server_port}'
+configure_service_telemetry()
+for _ in range(100):
+    with operation('evolve.memory.search'): pass
+# Exercise actual SDK atexit cleanup, including the final metrics export.
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "EVOLVE_OTEL_"))}
+    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=8)
+    assert result.returncode == 0, result.stderr
+
+
+def test_owned_metrics_exclude_third_party_scopes():
+    import os
+    import subprocess
+    import sys
+
+    code = """
+from unittest.mock import patch
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from altk_evolve.telemetry import configure_service_telemetry, operation
+before = metrics.get_meter('third.party.before').create_counter('private_counter')
+reader = InMemoryMetricReader()
+with patch('opentelemetry.sdk.metrics.export.PeriodicExportingMetricReader', return_value=reader):
+    provider = configure_service_telemetry()
+before.add(1, {'prompt': 'SECRET-BEFORE'})
+metrics.get_meter('third.party.after').create_counter('private_counter').add(1, {'user.id': 'SECRET-AFTER'})
+with operation('evolve.test'): pass
+data = reader.get_metrics_data()
+scopes = [sm for rm in data.resource_metrics for sm in rm.scope_metrics]
+assert scopes
+assert all(sm.scope.name == 'altk_evolve' for sm in scopes)
+assert 'SECRET' not in str(data)
+provider.shutdown()
+metrics.get_meter_provider().shutdown()
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "EVOLVE_OTEL_"))}
+    env["OTEL_TRACES_EXPORTER"] = "none"
+    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("package", ["opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"])
+def test_incidental_old_exporter_does_not_install_provider(monkeypatch, package):
+    from unittest.mock import Mock
+
+    monkeypatch.delenv("EVOLVE_OTEL_ENABLED", raising=False)
+    monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
+    monkeypatch.setattr(telemetry, "_OWNED", None)
+    monkeypatch.setattr(trace, "get_tracer_provider", trace.ProxyTracerProvider)
+    monkeypatch.setattr(telemetry, "version", lambda name: "1.30.0" if name == package else "1.41.1")
+    install = Mock()
+    monkeypatch.setattr(trace, "set_tracer_provider", install)
+    assert telemetry.configure_service_telemetry() is None
+    assert telemetry._OWNED is None
+    install.assert_not_called()

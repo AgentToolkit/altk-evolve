@@ -269,7 +269,11 @@ in the background with bounded queues; an absent collector does not block memory
 operations. Unsent telemetry may be dropped. Requests default to a one-second
 export timeout, overridable through standard OTEL timeout settings. Set
 `EVOLVE_OTEL_ENABLED=false` to disable Evolve-owned export. If optional exporter
-packages are absent, Evolve logs a warning and continues without an exporter.
+packages are absent or older than the supported minimum (1.41.1), Evolve logs a
+warning and continues without an exporter. Install the `observability` extra to
+obtain compatible versions.
+Invalid exporter configuration also logs a warning and leaves service startup
+unaffected; correct the settings and retry initialization to enable export.
 
 Use an actual reachable collector address. OpenLIT and other OTLP backends are
 supported without their SDKs. This exporter uses HTTP/protobuf; the signal-specific
@@ -291,7 +295,9 @@ headers. Independent scheduled attempts start separate traces with job reference
 Duration histograms and outcome counters have bounded operation/result labels,
 never namespace, user, conversation or entity IDs. Namespace attribution belongs
 on spans. Evolve's instrumentation excludes contents, prompts, SQL values and
-exception messages. Third-party/host instrumentation has its own capture settings.
+exception messages. Evolve-owned trace and metric export only forwards the `altk_evolve`
+instrumentation scope, so third-party exception payloads are not implicitly
+exported. FastMCP still propagates trace context. A host-owned provider controls
+its own exporters and third-party capture settings.
 Traces are diagnostic and may be sampled; durable retention receipts remain the
 authoritative audit record.
-

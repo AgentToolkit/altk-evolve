@@ -15,6 +15,9 @@ import os
 import json
 from contextvars import ContextVar
 import threading
+import math
+import logging
+from importlib.metadata import version
 
 from opentelemetry import metrics, trace
 from opentelemetry.trace import Status, StatusCode
@@ -115,7 +118,10 @@ def report_result(result, span, *, operation_name="evolve.operation"):
 def _export_timeout(signal):
     # Explicit OTEL settings win; an absent collector should not leave an
     # exporter request waiting for the SDK's ten-second default.
-    return float(os.getenv(f"OTEL_EXPORTER_OTLP_{signal}_TIMEOUT", os.getenv("OTEL_EXPORTER_OTLP_TIMEOUT", "1")))
+    value = float(os.getenv(f"OTEL_EXPORTER_OTLP_{signal}_TIMEOUT", os.getenv("OTEL_EXPORTER_OTLP_TIMEOUT", "1")))
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("OTLP timeout must be finite and positive")
+    return value
 
 
 def configure_service_telemetry():
@@ -138,29 +144,61 @@ def configure_service_telemetry():
         try:
             from opentelemetry.sdk.resources import Resource
             from opentelemetry.sdk.trace import TracerProvider
-            from opentelemetry.sdk.trace.export import BatchSpanProcessor
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanProcessor
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
             from opentelemetry.sdk.metrics import MeterProvider
+            from opentelemetry.sdk.metrics.view import View, DropAggregation
             from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
             from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
             from opentelemetry.metrics._internal import _ProxyMeterProvider
         except ImportError:
-            import logging
-
             logging.getLogger(__name__).warning("OTLP export unavailable; install altk-evolve[observability] to enable it")
             return None
 
-        provider = TracerProvider(resource=Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "evolve")}))
-        if os.getenv("OTEL_TRACES_EXPORTER", "otlp") != "none":
-            provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(timeout=_export_timeout("TRACES"))))
-        trace.set_tracer_provider(provider)
-        # Respect a host-configured meter provider independently of tracing.
+        class EvolveSpanProcessor(SpanProcessor):
+            """Do not enable third-party payload/exception capture implicitly."""
+
+            def __init__(self, exporter):
+                self.batch = BatchSpanProcessor(exporter)
+
+            def on_end(self, span):
+                if span.instrumentation_scope and span.instrumentation_scope.name == "altk_evolve":
+                    self.batch.on_end(span)
+
+            def shutdown(self):
+                self.batch.shutdown()
+
+            def force_flush(self, timeout_millis=30000):
+                return self.batch.force_flush(timeout_millis)
+
+        provider = None
         meter = None
-        if os.getenv("OTEL_METRICS_EXPORTER", "otlp") != "none" and isinstance(metrics.get_meter_provider(), _ProxyMeterProvider):
-            meter = MeterProvider(
-                resource=provider.resource,
-                metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(timeout=_export_timeout("METRICS")))],
-            )
+        try:
+            # Exporters can be installed transitively without our optional extra.
+            # Older releases retry beyond the timeout during process shutdown.
+            for package in ("opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"):
+                if tuple(int(part) for part in version(package).split(".")) < (1, 41, 1):
+                    raise ValueError("Install the observability extra for supported exporters")
+            provider = TracerProvider(resource=Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "evolve")}))
+            if os.getenv("OTEL_TRACES_EXPORTER", "otlp") != "none":
+                provider.add_span_processor(EvolveSpanProcessor(OTLPSpanExporter(timeout=_export_timeout("TRACES"))))
+            # Construct both before installing either global provider. Bad optional
+            # export configuration must not prevent startup or poison later retries.
+            if os.getenv("OTEL_METRICS_EXPORTER", "otlp") != "none" and isinstance(metrics.get_meter_provider(), _ProxyMeterProvider):
+                meter = MeterProvider(
+                    resource=provider.resource,
+                    metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(timeout=_export_timeout("METRICS")))],
+                    views=[View(instrument_name="*", aggregation=DropAggregation()), View(meter_name="altk_evolve")],
+                )
+        except Exception as exc:
+            if meter is not None:
+                meter.shutdown()
+            if provider is not None:
+                provider.shutdown()
+            logging.getLogger(__name__).warning("OTLP export unavailable due to configuration (%s)", type(exc).__name__)
+            return None
+        trace.set_tracer_provider(provider)
+        if meter is not None:
             metrics.set_meter_provider(meter)
         _OWNED = provider
         return provider
