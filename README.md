@@ -253,11 +253,11 @@ The [public retention service](docs/guides/retention-api.md) is available as `cl
 
 Evolve's Python operations use the OpenTelemetry API and inherit the host's
 provider. Constructing `EvolveClient` never installs or replaces a provider.
-Standalone MCP services export telemetry by default when the exporter packages
-are installed. To configure a destination:
+Standalone MCP services export telemetry by default. Compatible SDK and exporter
+versions are declared as dependencies and enforced at installation. To configure a destination:
 
 ```bash
-uv pip install 'altk-evolve[observability]'
+uv pip install altk-evolve
 export OTEL_SERVICE_NAME=evolve
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
@@ -268,10 +268,8 @@ Without an endpoint setting, the OTLP exporter uses localhost:4318. Export runs
 in the background with bounded queues; an absent collector does not block memory
 operations. Unsent telemetry may be dropped. Requests default to a one-second
 export timeout, overridable through standard OTEL timeout settings. Set
-`EVOLVE_OTEL_ENABLED=false` to disable Evolve-owned export. If optional exporter
-packages are absent or older than the supported minimum (1.41.1), Evolve logs a
-warning and continues without an exporter. Install the `observability` extra to
-obtain compatible versions.
+`EVOLVE_OTEL_ENABLED=false` to disable Evolve-owned export. If exporter packages
+cannot be imported, Evolve logs a warning and continues without an exporter.
 Invalid exporter configuration also logs a warning and leaves service startup
 unaffected; correct the settings and retry initialization to enable export.
 

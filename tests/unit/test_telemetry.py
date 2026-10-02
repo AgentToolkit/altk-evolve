@@ -190,14 +190,14 @@ def test_concurrent_service_namespaces_do_not_mix(telemetry_capture):
     assert len(set(owners.values())) == 2
 
 
-def test_missing_optional_exporter_does_not_prevent_startup(monkeypatch, caplog):
+def test_missing_exporter_does_not_prevent_startup(monkeypatch, caplog):
     import builtins
 
     original_import = builtins.__import__
 
     def without_sdk(name, *args, **kwargs):
         if name.startswith("opentelemetry.sdk"):
-            raise ImportError("optional exporter not installed")
+            raise ImportError("exporter not installed")
         return original_import(name, *args, **kwargs)
 
     monkeypatch.delenv("EVOLVE_OTEL_ENABLED", raising=False)
@@ -206,7 +206,7 @@ def test_missing_optional_exporter_does_not_prevent_startup(monkeypatch, caplog)
     monkeypatch.setattr(trace, "get_tracer_provider", trace.ProxyTracerProvider)
     monkeypatch.setattr(builtins, "__import__", without_sdk)
     assert telemetry.configure_service_telemetry() is None
-    assert "install altk-evolve[observability]" in caplog.text
+    assert "reinstall altk-evolve" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -424,29 +424,12 @@ metrics.get_meter_provider().shutdown()
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("package", ["opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"])
-@pytest.mark.parametrize(
-    ("installed_version", "supported"),
-    [("1.30.0", False), ("1.41.1rc1", False), ("1.41.1", True), ("1.41.1+local", True), ("1.42.0rc1", True), ("1.42.0.dev0", True)],
-)
-def test_exporter_version_compatibility(monkeypatch, package, installed_version, supported):
-    from unittest.mock import Mock
+def test_exporter_minimum_versions_are_required_dependencies():
+    from pathlib import Path
+    import tomllib
 
-    monkeypatch.delenv("EVOLVE_OTEL_ENABLED", raising=False)
-    monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
-    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "none")
-    monkeypatch.setenv("OTEL_METRICS_EXPORTER", "none")
-    monkeypatch.setattr(telemetry, "_OWNED", None)
-    monkeypatch.setattr(trace, "get_tracer_provider", trace.ProxyTracerProvider)
-    monkeypatch.setattr(telemetry, "version", lambda name: installed_version if name == package else "1.41.1")
-    install = Mock()
-    monkeypatch.setattr(trace, "set_tracer_provider", install)
-    provider = telemetry.configure_service_telemetry()
-    if supported:
-        assert provider is not None
-        install.assert_called_once_with(provider)
-        provider.shutdown()
-    else:
-        assert provider is None
-        assert telemetry._OWNED is None
-        install.assert_not_called()
+    project = tomllib.loads((Path(__file__).resolve().parents[2] / "pyproject.toml").read_text())["project"]
+    # These must apply even when no extras are selected: older exporters can
+    # retry beyond their timeout and block process exit after collector failures.
+    assert "opentelemetry-sdk>=1.41.1,<2" in project["dependencies"]
+    assert "opentelemetry-exporter-otlp-proto-http>=1.41.1,<2" in project["dependencies"]

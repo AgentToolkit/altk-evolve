@@ -197,7 +197,8 @@ dependencies = [
     { name = "litellm" },
     { name = "numpy" },
     { name = "opentelemetry-api" },
-    { name = "packaging" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
     { name = "pandas" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -232,10 +233,6 @@ milvus = [
     { name = "milvus-lite", marker = "platform_machine != 'aarch64'" },
     { name = "pymilvus" },
     { name = "pymilvus", extra = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
-]
-observability = [
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-sdk" },
 ]
 pgvector = [
     { name = "pgvector" },
@@ -322,9 +319,8 @@ requires-dist = [
     { name = "openinference-instrumentation-openai-agents", marker = "extra == 'tracing'" },
     { name = "openinference-instrumentation-smolagents", marker = "extra == 'tracing'" },
     { name = "opentelemetry-api", specifier = ">=1.30,<2" },
-    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'observability'", specifier = ">=1.41.1,<2" },
-    { name = "opentelemetry-sdk", marker = "extra == 'observability'", specifier = ">=1.41.1,<2" },
-    { name = "packaging", specifier = ">=23.2" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.41.1,<2" },
+    { name = "opentelemetry-sdk", specifier = ">=1.41.1,<2" },
     { name = "pandas" },
     { name = "pgvector", marker = "extra == 'pgvector'", specifier = ">=0.3" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
@@ -342,7 +338,7 @@ requires-dist = [
     { name = "uv", marker = "extra == 'build'" },
     { name = "uvicorn" },
 ]
-provides-extras = ["build", "observability", "tracing", "milvus", "pgvector", "hooks", "pii-regex", "pii", "pii-semantic", "secrets", "bench", "examples"]
+provides-extras = ["build", "tracing", "milvus", "pgvector", "hooks", "pii-regex", "pii", "pii-semantic", "secrets", "bench", "examples"]
 
 [package.metadata.requires-dev]
 dev = [

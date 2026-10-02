@@ -17,8 +17,6 @@ from contextvars import ContextVar
 import threading
 import math
 import logging
-from importlib.metadata import version
-from packaging.version import Version
 
 from opentelemetry import metrics, trace
 from opentelemetry.trace import Status, StatusCode
@@ -153,7 +151,7 @@ def configure_service_telemetry():
             from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
             from opentelemetry.metrics._internal import _ProxyMeterProvider
         except ImportError:
-            logging.getLogger(__name__).warning("OTLP export unavailable; install altk-evolve[observability] to enable it")
+            logging.getLogger(__name__).warning("OTLP export unavailable; reinstall altk-evolve with its declared dependencies")
             return None
 
         class EvolveSpanProcessor(SpanProcessor):
@@ -175,11 +173,6 @@ def configure_service_telemetry():
         provider = None
         meter = None
         try:
-            # Exporters can be installed transitively without our optional extra.
-            # Older releases retry beyond the timeout during process shutdown.
-            for package in ("opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"):
-                if Version(version(package)) < Version("1.41.1"):
-                    raise ValueError("Install the observability extra for supported exporters")
             provider = TracerProvider(resource=Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "evolve")}))
             if os.getenv("OTEL_TRACES_EXPORTER", "otlp") != "none":
                 provider.add_span_processor(EvolveSpanProcessor(OTLPSpanExporter(timeout=_export_timeout("TRACES"))))
