@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from altk_evolve.telemetry import traced, operation as telemetry_operation
+
 import hashlib
 import json
 import uuid
@@ -150,6 +152,7 @@ class ProcessingManager:
             raise ProcessingError(f"Invalid stored profile {reference.id}: {exc}") from exc
         return replace(plan, profile_id=reference.id, revision=record["revision"])
 
+    @traced("evolve.processing.run")
     def process(
         self, trajectory: Trajectory | dict, *, plan: ProcessingPlan, client: Any = None, namespace_id: str | None = None
     ) -> ProcessingResult:
@@ -183,6 +186,7 @@ class ProcessingManager:
         assert namespace_id is not None
         return self.persist(generated, client=client, namespace_id=namespace_id)
 
+    @traced("evolve.processing.generate")
     def generate(self, trajectory: Trajectory | dict, *, plan: ProcessingPlan, skipped: set[str] | None = None) -> GeneratedProcessing:
         """Execute plugins once without acquiring an entity-storage transaction."""
         trajectory = Trajectory.model_validate(trajectory)
@@ -206,7 +210,10 @@ class ProcessingManager:
                 continue
             config = processor_type.config_model.model_validate_json(_encode(spec["config"]))
             processor = processor_type.from_config(config)
-            result = ProcessorResult.model_validate(processor.process(trajectory.model_copy(deep=True), context=context))
+            with telemetry_operation("evolve.processing.processor") as span:
+                span.set_attribute("evolve.processor.type", processor_type.__name__)
+                result = ProcessorResult.model_validate(processor.process(trajectory.model_copy(deep=True), context=context))
+                span.set_attribute("evolve.result.count", len(result.entities))
             diagnostics[spec["id"]] = result.diagnostics
             stamp = {**provenance, "processor_id": spec["id"]}
             for entity in result.entities:
@@ -226,6 +233,7 @@ class ProcessingManager:
             trajectory.batch,
         )
 
+    @traced("evolve.processing.persist")
     def persist(self, generated: GeneratedProcessing, *, client: Any, namespace_id: str) -> ProcessingResult:
         """Prepare against available memory, then commit each processor's contribution.
 

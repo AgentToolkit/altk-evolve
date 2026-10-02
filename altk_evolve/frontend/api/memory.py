@@ -10,7 +10,9 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from opentelemetry import context, propagate, trace
+from altk_evolve.telemetry import operation as telemetry_operation
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from altk_evolve.frontend.client.evolve_client import EvolveClient
@@ -160,7 +162,20 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
     Scope dependencies must authenticate the caller and authorize any selected agent.
     They may also enforce the host's feature flag before returning MemoryScope.
     """
-    router = APIRouter(tags=["Evolve memory"])
+
+    async def request_trace(request: Request):
+        token = context.attach(propagate.extract(request.headers))
+        try:
+            with telemetry_operation("evolve.http.request", kind=trace.SpanKind.SERVER) as span:
+                span.set_attribute("http.request.method", request.method)
+                route = request.scope.get("route")
+                if route is not None:
+                    span.set_attribute("http.route", route.path)
+                yield
+        finally:
+            context.detach(token)
+
+    router = APIRouter(tags=["Evolve memory"], dependencies=[Depends(request_trace)])
 
     def service(client: EvolveClient = Depends(client_dependency), scope: MemoryScope = Depends(scope_dependency)):
         if not isinstance(scope, MemoryScope):

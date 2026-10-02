@@ -1,3 +1,4 @@
+from altk_evolve.telemetry import operation as telemetry_operation
 import datetime
 import json
 import logging
@@ -470,7 +471,8 @@ class PostgresEntityBackend(BaseEntityBackend):
             )
             query_params = params + [limit]
         else:
-            query_embedding = self.embedding_model.encode(query).tolist()
+            with telemetry_operation("evolve.embedding.encode"):
+                query_embedding = self.embedding_model.encode(query).tolist()
             # Adding zero prevents the approximate index from applying its
             # candidate limit before selective predicates. PostgreSQL can still
             # use the scalar/JSON indexes to find the exact filtered population.
@@ -481,8 +483,9 @@ class PostgresEntityBackend(BaseEntityBackend):
             query_params = params + [str(query_embedding), limit]
 
         with self.conn.cursor(row_factory=_entity_row_factory) as cur:
-            cur.execute(stmt, query_params)
-            results: list[RecordedEntity] = cur.fetchall()
+            with telemetry_operation("evolve.db.search", namespace_id=namespace_id):
+                cur.execute(stmt, query_params)
+                results: list[RecordedEntity] = cur.fetchall()
             return results
 
     def _delete_entity_by_id_impl(self, namespace_id: str, entity_id: str):

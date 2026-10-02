@@ -4,6 +4,11 @@ Evolve MCP Server
 This server provides a tool to get task-relevant guidelines.
 """
 
+from altk_evolve.telemetry import traced
+
+from contextlib import asynccontextmanager
+from altk_evolve.telemetry import configure_service_telemetry
+
 import base64
 import datetime
 import json
@@ -47,7 +52,19 @@ _client_init_lock = threading.Lock()
 
 # Need to configure FastAPI separately and mount FastMCP on it
 app = FastAPI(title="Evolve API & UI")
-mcp = FastMCP("entities")
+
+
+@asynccontextmanager
+async def telemetry_lifespan(server):
+    provider = configure_service_telemetry()
+    try:
+        yield {}
+    finally:
+        if provider is not None:
+            provider.force_flush(timeout_millis=2000)
+
+
+mcp = FastMCP("entities", lifespan=telemetry_lifespan)
 
 # Mount API routes
 app.include_router(api_router, prefix="/api")
@@ -388,6 +405,7 @@ def get_entities(
 
 
 @mcp.tool()
+@traced("evolve.mcp.get_guidelines")
 def get_guidelines(
     task: str,
     user_id: str | None = None,
@@ -416,6 +434,7 @@ def get_guidelines(
 
 
 @mcp.tool()
+@traced("evolve.mcp.get_guidelines_with_attribution")
 def get_guidelines_with_attribution(
     task: str,
     user_id: str | None = None,
@@ -914,6 +933,7 @@ def _empty_store_user_facts_response(user_id: str) -> str:
 
 
 @mcp.tool()
+@traced("evolve.mcp.store_user_facts")
 def store_user_facts(
     user_id: str,
     message: str,
@@ -1035,6 +1055,7 @@ def _search_facts_with_fallback(
 
 
 @mcp.tool()
+@traced("evolve.mcp.retrieve_user_facts")
 def retrieve_user_facts(
     user_id: str, query: str | None = None, limit: int = 5, namespace_id: str | None = None, agent_id: str | None = None
 ) -> str:
@@ -1073,6 +1094,7 @@ def retrieve_user_facts(
 
 
 @mcp.tool()
+@traced("evolve.mcp.save_trajectory")
 def save_trajectory(
     trajectory_data: str,
     task_id: str | None = None,

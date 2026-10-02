@@ -5,9 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "opentelemetry-api>=1.30,<2",
     "arize-phoenix>=12.30.0",
     "croniter>=6.2.4,<7",
-    "fastmcp",
+    "fastmcp>=3.1,<4",
     "jinja2",
     "litellm>=1.84.0",
     "numpy",
@@ -23,6 +24,8 @@ dependencies = [
 
 [project.optional-dependencies]
 build = ["uv"]
+
+observability = ["opentelemetry-sdk>=1.30,<2", "opentelemetry-exporter-otlp-proto-http>=1.30,<2"]
 
 tracing = [
     "openinference-instrumentation-openai",

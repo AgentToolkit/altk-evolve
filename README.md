@@ -248,3 +248,43 @@ See the [Contributing Guide](CONTRIBUTING.md) to understand our development proc
 Hosts can mount the [scoped REST router](docs/guides/embedded-memory-api.md) with their own client and authentication dependencies. Evolve owns [retention schedules and worker execution](docs/guides/retention-scheduling.md), using Kubernetes-compatible cron, timezone, concurrency, deadline, and suspension fields. Use `evolve retention schedules` to manage schedules and `start`/`stop` to enable or suspend them. The Evolve service owns background execution.
 
 The [public retention service](docs/guides/retention-api.md) is available as `client.retention(namespace_id, agent_id=...)`; CLI, REST, MCP, and scheduling share its operations and scope checks.
+
+### OpenTelemetry service instrumentation
+
+Evolve's Python operations use the OpenTelemetry API and inherit the host's
+provider. Constructing `EvolveClient` never installs or replaces a provider.
+For the standalone MCP service:
+
+```bash
+uv pip install 'altk-evolve[observability]'
+export EVOLVE_OTEL_ENABLED=true
+export OTEL_SERVICE_NAME=evolve
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+python -m altk_evolve.frontend.mcp --transport sse
+```
+
+Use an actual reachable collector address. OpenLIT and other OTLP backends are
+supported without their SDKs. This exporter uses HTTP/protobuf; the signal-specific
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`
+include `/v1/traces` and `/v1/metrics`, respectively. Standard resource, sampling,
+batch-size, export-timeout and metric-interval environment settings apply.
+`OTEL_TRACES_EXPORTER=none` and `OTEL_METRICS_EXPORTER=none` disable each exporter;
+`OTEL_SDK_DISABLED=true` prevents Evolve's service initialization. An existing
+host tracer provider is left untouched, including ownership of its shutdown.
+Custom service hosts can explicitly call `configure_service_telemetry()` from
+`altk_evolve.telemetry` at startup. The SDK installs process-exit shutdown hooks;
+the MCP lifespan additionally performs a bounded trace flush.
+
+Spans cover memory search, query embeddings and PostgreSQL retrieval, write
+preparation/commit, fact extraction and conflict resolution, model calls,
+processing stages/processors, active hooks, and retention marking/sweeping/jobs.
+FastMCP propagates MCP trace metadata; the scoped REST router accepts W3C trace
+headers. Independent scheduled attempts start separate traces with job references.
+Duration histograms and outcome counters have bounded operation/result labels,
+never namespace, user, conversation or entity IDs. Namespace attribution belongs
+on spans. Evolve's instrumentation excludes contents, prompts, SQL values and
+exception messages. Third-party/host instrumentation has its own capture settings.
+Traces are diagnostic and may be sampled; durable retention receipts remain the
+authoritative audit record.
+

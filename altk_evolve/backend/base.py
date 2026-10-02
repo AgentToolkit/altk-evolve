@@ -1,3 +1,4 @@
+from altk_evolve.telemetry import traced
 from copy import deepcopy
 import datetime
 import logging
@@ -416,6 +417,7 @@ class BaseEntityBackend(ABC):
                         prepared.expected[update.id] = stored.model_copy(deep=True)
         return prepared
 
+    @traced("evolve.memory.prepare_writes")
     def prepare_updates(
         self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True, **kwargs
     ) -> PreparedWrites:
@@ -462,6 +464,7 @@ class BaseEntityBackend(ABC):
         self._post_update(namespace_id)
         return updates
 
+    @traced("evolve.memory.commit")
     def commit_prepared(
         self,
         namespace_id: str,

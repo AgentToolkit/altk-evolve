@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'win32'",
@@ -196,6 +196,7 @@ dependencies = [
     { name = "jinja2" },
     { name = "litellm" },
     { name = "numpy" },
+    { name = "opentelemetry-api" },
     { name = "pandas" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -230,6 +231,10 @@ milvus = [
     { name = "milvus-lite", marker = "platform_machine != 'aarch64'" },
     { name = "pymilvus" },
     { name = "pymilvus", extra = ["milvus-lite"], marker = "platform_machine != 'aarch64'" },
+]
+observability = [
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
 ]
 pgvector = [
     { name = "pgvector" },
@@ -304,7 +309,7 @@ requires-dist = [
     { name = "croniter", specifier = ">=6.2.4,<7" },
     { name = "curated-tokenizers", marker = "extra == 'pii-semantic'", specifier = ">=0.0.10" },
     { name = "datasets", marker = "extra == 'bench'", specifier = ">=2.14" },
-    { name = "fastmcp" },
+    { name = "fastmcp", specifier = ">=3.1,<4" },
     { name = "jinja2" },
     { name = "litellm", specifier = ">=1.84.0" },
     { name = "milvus-lite", marker = "platform_machine != 'aarch64' and extra == 'milvus'", specifier = ">=2.5.1" },
@@ -315,6 +320,9 @@ requires-dist = [
     { name = "openinference-instrumentation-openai", marker = "extra == 'tracing'" },
     { name = "openinference-instrumentation-openai-agents", marker = "extra == 'tracing'" },
     { name = "openinference-instrumentation-smolagents", marker = "extra == 'tracing'" },
+    { name = "opentelemetry-api", specifier = ">=1.30,<2" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'observability'", specifier = ">=1.30,<2" },
+    { name = "opentelemetry-sdk", marker = "extra == 'observability'", specifier = ">=1.30,<2" },
     { name = "pandas" },
     { name = "pgvector", marker = "extra == 'pgvector'", specifier = ">=0.3" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'pgvector'", specifier = ">=3.1" },
@@ -332,7 +340,7 @@ requires-dist = [
     { name = "uv", marker = "extra == 'build'" },
     { name = "uvicorn" },
 ]
-provides-extras = ["build", "tracing", "milvus", "pgvector", "hooks", "pii-regex", "pii", "pii-semantic", "secrets", "bench", "examples"]
+provides-extras = ["build", "observability", "tracing", "milvus", "pgvector", "hooks", "pii-regex", "pii", "pii-semantic", "secrets", "bench", "examples"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -4045,9 +4053,6 @@ wheels = [
 name = "nvidia-cufft-cu12"
 version = "11.2.1.3"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "nvidia-nvjitlink-cu12" },
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/94/3266821f65b92b3138631e9c8e7fe1fb513804ac934485a8d05776e1dd43/nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_x86_64.whl", hash = "sha256:f083fc24912aa410be21fa16d157fed2055dab1cc4b6934a0e03cba69eb242b9", size = 211459117, upload-time = "2024-04-03T20:57:40.402Z" },
 ]

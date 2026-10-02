@@ -1,3 +1,4 @@
+from altk_evolve.telemetry import traced
 import json
 import os
 
@@ -8,7 +9,8 @@ from altk_evolve.schema.conflict_resolution import SimpleEntity, EntityUpdate
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.utils.utils import clean_llm_response, serialize_content
-from litellm import completion, get_supported_openai_params
+from altk_evolve.telemetry import model_completion as completion
+from litellm import get_supported_openai_params
 from pathlib import Path
 
 
@@ -78,6 +80,7 @@ def _conflict_resolution_completion_options(settings: LLMSettings | None = None)
     return options
 
 
+@traced("evolve.memory.resolve_conflicts")
 def resolve_conflicts(
     old_entities: list[RecordedEntity],
     new_entities: list[RecordedEntity],
