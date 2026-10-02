@@ -1,27 +1,42 @@
 # Evolve Lite for Bob
 
-A Bob integration that helps you learn from conversations by automatically extracting and applying guidelines.
+A Bob integration that gives the agent a persistent, shareable memory of your
+project.
 
 ⭐ Star the repo: https://github.com/AgentToolkit/altk-evolve
 
 ## Features
 
-- **Manual Learning**: Use `evolve-lite:learn` to extract and save guidelines from conversations
-- **Manual Retrieval**: Use `evolve-lite:recall` to retrieve and apply stored guidelines
-- **Guideline Sharing**: Subscribe to read-scope repos and publish to write-scope repos via Git
+Recall and save are driven by instructions, not skills. The installer writes
+`EVOLVE.md` into Bob's global rules directory, where it is loaded into every
+session; it tells the agent to read `./.evolve/entities/` as its first action on
+a non-trivial task, and to write an entity near the end only when it learned
+something durable.
+
+The commands cover everything around that loop — `/evolve-lite-adapt-memory`,
+`/evolve-lite-publish`, `/evolve-lite-subscribe`, `/evolve-lite-sync`,
+`/evolve-lite-unsubscribe`, `/evolve-lite-provenance`, `/evolve-lite-retention`,
+`/evolve-lite-save`, `/evolve-lite-save-trajectory`,
+`/evolve-lite-synthesize-skill`.
+
+> Bob resolves skills by folder name, so everything here uses the dash form
+> (`evolve-lite-publish`), not the colon form other hosts use.
 
 ## Installation
 
 Run the installation script from the repository root:
 
 ```bash
-bash platform-integrations/install.sh install bob lite
+bash platform-integrations/install.sh install --platform bob --mode lite
 ```
 
 This installs:
-- 6 skills in `~/.bob/skills/`
+- 10 skills in `~/.bob/skills/` and a matching slash command per skill in `~/.bob/commands/`
 - Shared library in `~/.bob/lib/evolve-lite/`
-- Custom mode configuration
+- The always-on instructions at `~/.bob/rules/00-evolve-lite.md` (Bob loads every
+  `~/.bob/rules/*.md` into every session)
+- The recall-audit script at `~/.bob/evolve-lite/audit_recall.py`, allowlisted in
+  Bob's settings so it runs without a prompt
 
 ## How It Works
 
@@ -98,11 +113,11 @@ automatically add it to `.gitignore`.
 
 ### Subscribing to a Repo
 
-Use `evolve-lite:subscribe` to add either a read-scope subscription or a
+Use `evolve-lite-subscribe` to add either a read-scope subscription or a
 write-scope publish target:
 
 ```text
-evolve-lite:subscribe
+evolve-lite-subscribe
 > Remote URL: git@github.com:alice/evolve-guidelines.git
 > Short name: alice
 > Scope: read
@@ -113,7 +128,7 @@ The repo is cloned directly into `.evolve/entities/subscribed/{name}/`
 
 ### Publishing Guidelines
 
-Use `evolve-lite:publish` to share local guidelines via a **write-scope** repo:
+Use `evolve-lite-publish` to share local guidelines via a **write-scope** repo:
 
 1. The skill picks (or asks about) the write-scope target repo
 2. Lists files in `.evolve/entities/guideline/`
@@ -127,11 +142,11 @@ pulls in anything other writers have pushed to the same remote.
 
 ### Syncing Repos
 
-Use `evolve-lite:sync` to pull the latest changes from every configured
+Use `evolve-lite-sync` to pull the latest changes from every configured
 repo:
 
 ```text
-evolve-lite:sync
+evolve-lite-sync
 > Synced 2 repo(s): memory [write] (+0 added, 1 updated, 0 removed), alice [read] (+2 added, 0 updated, 0 removed)
 ```
 
@@ -141,11 +156,11 @@ preserved.
 
 ### Unsubscribing
 
-Use `evolve-lite:unsubscribe` to remove a configured repo and delete
+Use `evolve-lite-unsubscribe` to remove a configured repo and delete
 its locally cloned files:
 
 ```text
-evolve-lite:unsubscribe
+evolve-lite-unsubscribe
 > Which repo would you like to remove?
 > 1. memory [write]
 > 2. alice [read]
@@ -173,21 +188,32 @@ publish commits, so the skill warns first.
 
 ## Skills Included
 
-### `evolve-lite:learn`
+There is no `learn` or `recall` skill — `~/.bob/rules/00-evolve-lite.md` drives
+both directly, so a skill would be redundant double-delivery of the same
+instructions.
 
-Manually invoke to extract guidelines from the current conversation:
-- Analyzes task, steps taken, successes and failures
-- Generates proactive guidelines (what to do, not what to avoid)
-- Saves guidelines as markdown files in `.evolve/entities/guideline/`
+### `evolve-lite-adapt-memory`
 
-### `evolve-lite:recall`
+Mirror a just-saved memory into the shared Evolve store so it becomes shareable
+and auditable alongside every other entity.
 
-Manually invoke to retrieve and display stored guidelines:
-- Loads guidelines from private and subscribed sources
-- Formats and displays them for your review
-- Annotates subscribed guidelines with their source
+### `evolve-lite-provenance`
 
-### `evolve-lite:publish`
+Analyze saved trajectories and recall-audit events offline to record whether
+recalled guidelines influenced completed sessions.
+
+### `evolve-lite-retention`
+
+Apply data-retention rules to the local store — flag or delete stale and unused
+entities and expired sessions. Dry-run by default.
+
+### `evolve-lite-save` / `evolve-lite-save-trajectory` / `evolve-lite-synthesize-skill`
+
+Capture the current session: as a reusable skill, as a trajectory JSON file in
+OpenAI chat-completion format, or by promoting a saved trajectory into an
+executable skill.
+
+### `evolve-lite-publish`
 
 Publish private guidelines to a write-scope repo:
 - Lists available private guidelines
@@ -196,20 +222,20 @@ Publish private guidelines to a write-scope repo:
 - Stamps with `owner`, `published_at`, and `source` metadata
 - Commits and pushes to the configured remote
 
-### `evolve-lite:subscribe`
+### `evolve-lite-subscribe`
 
 Add a configured repo to the unified `repos:` list:
 - Clones the remote into `.evolve/entities/subscribed/{name}/`
 - Adds an entry with `scope: read` or `scope: write` to config
 
-### `evolve-lite:sync`
+### `evolve-lite-sync`
 
 Sync every configured repo:
 - Read-scope: fetch + reset --hard (clobbers any local edits)
 - Write-scope: fetch + rebase (preserves unpushed local publishes)
 - Reports changes (added, updated, removed)
 
-### `evolve-lite:unsubscribe`
+### `evolve-lite-unsubscribe`
 
 Remove a configured repo:
 - Lists current repos with their scope and notes
