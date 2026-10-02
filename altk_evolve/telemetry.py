@@ -18,6 +18,7 @@ import threading
 import math
 import logging
 from importlib.metadata import version
+from packaging.version import Version
 
 from opentelemetry import metrics, trace
 from opentelemetry.trace import Status, StatusCode
@@ -177,7 +178,7 @@ def configure_service_telemetry():
             # Exporters can be installed transitively without our optional extra.
             # Older releases retry beyond the timeout during process shutdown.
             for package in ("opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"):
-                if tuple(int(part) for part in version(package).split(".")) < (1, 41, 1):
+                if Version(version(package)) < Version("1.41.1"):
                     raise ValueError("Install the observability extra for supported exporters")
             provider = TracerProvider(resource=Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "evolve")}))
             if os.getenv("OTEL_TRACES_EXPORTER", "otlp") != "none":

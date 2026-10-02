@@ -425,16 +425,28 @@ metrics.get_meter_provider().shutdown()
 
 
 @pytest.mark.parametrize("package", ["opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"])
-def test_incidental_old_exporter_does_not_install_provider(monkeypatch, package):
+@pytest.mark.parametrize(
+    ("installed_version", "supported"),
+    [("1.30.0", False), ("1.41.1rc1", False), ("1.41.1", True), ("1.41.1+local", True), ("1.42.0rc1", True), ("1.42.0.dev0", True)],
+)
+def test_exporter_version_compatibility(monkeypatch, package, installed_version, supported):
     from unittest.mock import Mock
 
     monkeypatch.delenv("EVOLVE_OTEL_ENABLED", raising=False)
     monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "none")
+    monkeypatch.setenv("OTEL_METRICS_EXPORTER", "none")
     monkeypatch.setattr(telemetry, "_OWNED", None)
     monkeypatch.setattr(trace, "get_tracer_provider", trace.ProxyTracerProvider)
-    monkeypatch.setattr(telemetry, "version", lambda name: "1.30.0" if name == package else "1.41.1")
+    monkeypatch.setattr(telemetry, "version", lambda name: installed_version if name == package else "1.41.1")
     install = Mock()
     monkeypatch.setattr(trace, "set_tracer_provider", install)
-    assert telemetry.configure_service_telemetry() is None
-    assert telemetry._OWNED is None
-    install.assert_not_called()
+    provider = telemetry.configure_service_telemetry()
+    if supported:
+        assert provider is not None
+        install.assert_called_once_with(provider)
+        provider.shutdown()
+    else:
+        assert provider is None
+        assert telemetry._OWNED is None
+        install.assert_not_called()

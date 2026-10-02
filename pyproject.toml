@@ -12,6 +12,7 @@ dependencies = [
     "jinja2",
     "litellm>=1.84.0",
     "numpy",
+    "packaging>=23.2",
     "pandas",
     "pydantic",
     "pyyaml",
