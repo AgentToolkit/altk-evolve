@@ -293,9 +293,11 @@ headers. Independent scheduled attempts start separate traces with job reference
 Duration histograms and outcome counters have bounded operation/result labels,
 never namespace, user, conversation or entity IDs. Namespace attribution belongs
 on spans. Evolve's instrumentation excludes contents, prompts, SQL values and
-exception messages. Evolve-owned trace and metric export only forwards the `altk_evolve`
-instrumentation scope, so third-party exception payloads are not implicitly
-exported. FastMCP still propagates trace context. A host-owned provider controls
+exception messages. Evolve-owned export forwards Evolve's instrumentation and
+sanitized FastMCP transport spans that retain timing, IDs, kind and status code
+to preserve the trace tree. Transport names are fixed; attributes, exception
+events, links and status descriptions are omitted. Metrics only forward the
+`altk_evolve` scope. A host-owned provider controls
 its own exporters and third-party capture settings.
 Traces are diagnostic and may be sampled; durable retention receipts remain the
 authoritative audit record.

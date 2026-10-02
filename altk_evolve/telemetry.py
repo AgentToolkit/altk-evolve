@@ -142,7 +142,8 @@ def configure_service_telemetry():
             return None
         try:
             from opentelemetry.sdk.resources import Resource
-            from opentelemetry.sdk.trace import TracerProvider
+            from opentelemetry.sdk.trace import TracerProvider, ReadableSpan
+            from opentelemetry.sdk.util.instrumentation import InstrumentationScope
             from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanProcessor
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
             from opentelemetry.sdk.metrics import MeterProvider
@@ -163,6 +164,23 @@ def configure_service_telemetry():
             def on_end(self, span):
                 if span.instrumentation_scope and span.instrumentation_scope.name == "altk_evolve":
                     self.batch.on_end(span)
+                elif span.instrumentation_scope and span.instrumentation_scope.name == "fastmcp":
+                    # Keep the transport parent so downstream trace trees remain
+                    # connected. Never forward its arbitrary name, attributes,
+                    # exception events, links or status description.
+                    self.batch.on_end(
+                        ReadableSpan(
+                            name="evolve.mcp.transport",
+                            context=span.context,
+                            parent=span.parent,
+                            resource=span.resource,
+                            kind=span.kind,
+                            status=Status(span.status.status_code),
+                            start_time=span.start_time,
+                            end_time=span.end_time,
+                            instrumentation_scope=InstrumentationScope("altk_evolve.mcp"),
+                        )
+                    )
 
             def shutdown(self):
                 self.batch.shutdown()

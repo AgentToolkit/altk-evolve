@@ -343,6 +343,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from altk_evolve.telemetry import configure_service_telemetry, operation
 from fastmcp import Client
 from altk_evolve.frontend.mcp import mcp_server
+from types import SimpleNamespace
 exporter = InMemorySpanExporter()
 with patch('opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter', return_value=exporter):
     provider = configure_service_telemetry()
@@ -351,11 +352,19 @@ async def invoke():
         async with Client(mcp_server.mcp) as client:
             result = await client.call_tool('retrieve_user_facts', {'user_id': 'user', 'limit': 'SECRET-PAYLOAD'}, raise_on_error=False)
             assert result.is_error
+            with patch.object(mcp_server, 'get_client', return_value=SimpleNamespace(namespace_exists=lambda ns: False)):
+                await client.call_tool('retrieve_user_facts', {'namespace_id': 'test-service', 'user_id': 'user'})
 asyncio.run(invoke())
 provider.force_flush()
 spans = exporter.get_finished_spans()
 assert spans
-assert all(s.instrumentation_scope.name == 'altk_evolve' for s in spans)
+assert all(s.instrumentation_scope.name in {'altk_evolve', 'altk_evolve.mcp'} for s in spans)
+transport = [s for s in spans if s.instrumentation_scope.name == 'altk_evolve.mcp']
+assert transport, 'missing transport parents disconnect the trace tree'
+assert all(s.name == 'evolve.mcp.transport' and not s.attributes and not s.events and not s.links and s.status.description is None for s in transport)
+ids = {s.context.span_id for s in spans}
+assert all(s.parent is None or s.parent.span_id in ids for s in spans), 'exported tree has missing parents'
+assert any(s.name == 'evolve.mcp.retrieve_user_facts' for s in spans)
 assert 'SECRET-PAYLOAD' not in str([(dict(s.attributes), s.events, s.status.description) for s in spans])
 provider.shutdown()
 """
