@@ -56,12 +56,10 @@ app = FastAPI(title="Evolve API & UI")
 
 @asynccontextmanager
 async def telemetry_lifespan(server):
-    provider = configure_service_telemetry()
-    try:
-        yield {}
-    finally:
-        if provider is not None:
-            provider.force_flush(timeout_millis=2000)
+    configure_service_telemetry()
+    # SDK background exporters own their queues and process-exit cleanup.
+    # Never wait on the collector while closing a service/session lifespan.
+    yield {}
 
 
 mcp = FastMCP("entities", lifespan=telemetry_lifespan)

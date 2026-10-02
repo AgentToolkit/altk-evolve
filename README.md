@@ -253,16 +253,23 @@ The [public retention service](docs/guides/retention-api.md) is available as `cl
 
 Evolve's Python operations use the OpenTelemetry API and inherit the host's
 provider. Constructing `EvolveClient` never installs or replaces a provider.
-For the standalone MCP service:
+Standalone MCP services export telemetry by default when the exporter packages
+are installed. To configure a destination:
 
 ```bash
 uv pip install 'altk-evolve[observability]'
-export EVOLVE_OTEL_ENABLED=true
 export OTEL_SERVICE_NAME=evolve
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 python -m altk_evolve.frontend.mcp --transport sse
 ```
+
+Without an endpoint setting, the OTLP exporter uses localhost:4318. Export runs
+in the background with bounded queues; an absent collector does not block memory
+operations. Unsent telemetry may be dropped. Requests default to a one-second
+export timeout, overridable through standard OTEL timeout settings. Set
+`EVOLVE_OTEL_ENABLED=false` to disable Evolve-owned export. If optional exporter
+packages are absent, Evolve logs a warning and continues without an exporter.
 
 Use an actual reachable collector address. OpenLIT and other OTLP backends are
 supported without their SDKs. This exporter uses HTTP/protobuf; the signal-specific
@@ -274,7 +281,7 @@ batch-size, export-timeout and metric-interval environment settings apply.
 host tracer provider is left untouched, including ownership of its shutdown.
 Custom service hosts can explicitly call `configure_service_telemetry()` from
 `altk_evolve.telemetry` at startup. The SDK installs process-exit shutdown hooks;
-the MCP lifespan additionally performs a bounded trace flush.
+the MCP lifespan does not synchronously flush or wait for a collector.
 
 Spans cover memory search, query embeddings and PostgreSQL retrieval, write
 preparation/commit, fact extraction and conflict resolution, model calls,

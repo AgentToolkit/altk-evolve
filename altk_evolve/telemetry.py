@@ -1,4 +1,4 @@
-"""Content-free instrumentation; exporting is opt-in at the service boundary.
+"""Content-free instrumentation; exporting defaults on at the service boundary.
 
 Libraries only use the API and inherit their host's provider. No prompts,
 memories, SQL parameters, exception messages, or user IDs are exported here.
@@ -112,8 +112,14 @@ def report_result(result, span, *, operation_name="evolve.operation"):
                 _RESULTS.add(count, {"evolve.operation": operation_name, "evolve.result": outcome})
 
 
+def _export_timeout(signal):
+    # Explicit OTEL settings win; an absent collector should not leave an
+    # exporter request waiting for the SDK's ten-second default.
+    return float(os.getenv(f"OTEL_EXPORTER_OTLP_{signal}_TIMEOUT", os.getenv("OTEL_EXPORTER_OTLP_TIMEOUT", "1")))
+
+
 def configure_service_telemetry():
-    """Opt-in HTTP/protobuf OTLP exporter. Never replace a host-owned provider.
+    """Default-on, background HTTP/protobuf OTLP exporter. Never replace a host-owned provider.
 
     Uses standard OTEL exporter, resource, sampling, and batching environment
     variables. Call at service startup, not when constructing a library client.
@@ -122,33 +128,38 @@ def configure_service_telemetry():
     global _OWNED
     if os.getenv("OTEL_SDK_DISABLED", "").lower() == "true":
         return None
-    if os.getenv("EVOLVE_OTEL_ENABLED", "").lower() not in {"1", "true", "yes"}:
+    if os.getenv("EVOLVE_OTEL_ENABLED", "true").strip().lower() not in {"1", "true", "yes"}:
         return None
     with _LOCK:
         if _OWNED is not None:
             return _OWNED
         if not isinstance(trace.get_tracer_provider(), trace.ProxyTracerProvider):
             return None
-        from opentelemetry.sdk.resources import Resource
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        try:
+            from opentelemetry.sdk.resources import Resource
+            from opentelemetry.sdk.trace import TracerProvider
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+            from opentelemetry.sdk.metrics import MeterProvider
+            from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+            from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+            from opentelemetry.metrics._internal import _ProxyMeterProvider
+        except ImportError:
+            import logging
+
+            logging.getLogger(__name__).warning("OTLP export unavailable; install altk-evolve[observability] to enable it")
+            return None
 
         provider = TracerProvider(resource=Resource.create({"service.name": os.getenv("OTEL_SERVICE_NAME", "evolve")}))
         if os.getenv("OTEL_TRACES_EXPORTER", "otlp") != "none":
-            provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+            provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(timeout=_export_timeout("TRACES"))))
         trace.set_tracer_provider(provider)
         # Respect a host-configured meter provider independently of tracing.
-        from opentelemetry.sdk.metrics import MeterProvider
-        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-        from opentelemetry.metrics._internal import _ProxyMeterProvider
-
         meter = None
         if os.getenv("OTEL_METRICS_EXPORTER", "otlp") != "none" and isinstance(metrics.get_meter_provider(), _ProxyMeterProvider):
             meter = MeterProvider(
                 resource=provider.resource,
-                metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
+                metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(timeout=_export_timeout("METRICS")))],
             )
             metrics.set_meter_provider(meter)
         _OWNED = provider

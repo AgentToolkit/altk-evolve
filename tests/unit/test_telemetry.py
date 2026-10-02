@@ -88,7 +88,7 @@ def test_returned_error_is_not_success(telemetry_capture):
 
 
 def test_disabled_service_does_not_install_provider(monkeypatch):
-    monkeypatch.delenv("EVOLVE_OTEL_ENABLED", raising=False)
+    monkeypatch.setenv("EVOLVE_OTEL_ENABLED", "false")
     before = trace.get_tracer_provider()
     assert telemetry.configure_service_telemetry() is None
     assert trace.get_tracer_provider() is before
@@ -114,7 +114,7 @@ async def test_mcp_propagates_host_trace_context(telemetry_capture, monkeypatch)
     exporter, _ = telemetry_capture
     monkeypatch.setattr(fastmcp_telemetry, "otel_get_tracer", lambda *args, **kwargs: telemetry._TRACER)
     monkeypatch.setattr(mcp_server, "get_client", lambda: SimpleNamespace(namespace_exists=lambda ns: False))
-    monkeypatch.delenv("EVOLVE_OTEL_ENABLED", raising=False)
+    monkeypatch.setenv("EVOLVE_OTEL_ENABLED", "false")
     with telemetry.operation("application.request") as parent:
         async with Client(mcp_server.mcp) as client:
             await client.call_tool("retrieve_user_facts", {"namespace_id": "service", "user_id": "secret-user"})
@@ -125,7 +125,7 @@ async def test_mcp_propagates_host_trace_context(telemetry_capture, monkeypatch)
     assert "secret-user" not in str(memory.attributes)
 
 
-def test_service_exporter_is_opt_in_idempotent_and_outage_safe(tmp_path):
+def test_service_exporter_defaults_on_idempotent_and_outage_safe(tmp_path):
     """Separate process keeps the global provider lifecycle realistic."""
     import os
     import subprocess
@@ -148,11 +148,11 @@ metrics.get_meter_provider().shutdown(timeout_millis=500)
 """
     env = {
         **os.environ,
-        "EVOLVE_OTEL_ENABLED": "true",
         "OTEL_SDK_DISABLED": "false",
         "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:1",
         "OTEL_EXPORTER_OTLP_TIMEOUT": "0.1",
     }
+    env.pop("EVOLVE_OTEL_ENABLED", None)
     result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
 
@@ -188,3 +188,75 @@ def test_concurrent_service_namespaces_do_not_mix(telemetry_capture):
     for span in spans:
         assert span.context.trace_id == owners[span.attributes["evolve.namespace.id"]]
     assert len(set(owners.values())) == 2
+
+
+def test_missing_optional_exporter_does_not_prevent_startup(monkeypatch, caplog):
+    import builtins
+
+    original_import = builtins.__import__
+
+    def without_sdk(name, *args, **kwargs):
+        if name.startswith("opentelemetry.sdk"):
+            raise ImportError("optional exporter not installed")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.delenv("EVOLVE_OTEL_ENABLED", raising=False)
+    monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
+    monkeypatch.setattr(telemetry, "_OWNED", None)
+    monkeypatch.setattr(trace, "get_tracer_provider", trace.ProxyTracerProvider)
+    monkeypatch.setattr(builtins, "__import__", without_sdk)
+    assert telemetry.configure_service_telemetry() is None
+    assert "install altk-evolve[observability]" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_service_lifespan_does_not_wait_for_export(monkeypatch):
+    from unittest.mock import Mock
+    from altk_evolve.frontend.mcp import mcp_server
+
+    provider = Mock()
+    monkeypatch.setattr(mcp_server, "configure_service_telemetry", lambda: provider)
+    async with mcp_server.telemetry_lifespan(None):
+        pass
+    provider.force_flush.assert_not_called()
+    provider.shutdown.assert_not_called()
+
+
+def test_slow_collector_does_not_block_memory_operations():
+    import os
+    import subprocess
+    import sys
+
+    code = """
+import os, time, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from altk_evolve.telemetry import configure_service_telemetry, operation
+entered, release = threading.Event(), threading.Event()
+class Collector(BaseHTTPRequestHandler):
+    def log_message(self, *args): pass
+    def do_POST(self):
+        self.rfile.read(int(self.headers['Content-Length']))
+        entered.set()
+        release.wait(5)
+server = ThreadingHTTPServer(('127.0.0.1', 0), Collector)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+os.environ['OTEL_EXPORTER_OTLP_ENDPOINT'] = f'http://127.0.0.1:{server.server_port}'
+provider = configure_service_telemetry()
+with operation('evolve.memory.search'): pass
+flusher = threading.Thread(target=provider.force_flush)
+flusher.start()
+assert entered.wait(5), 'no export reached the collector'
+started = time.perf_counter()
+for _ in range(100):
+    with operation('evolve.memory.search'): pass
+assert time.perf_counter() - started < 1, 'memory work waited on collector'
+flusher.join(3)
+assert not flusher.is_alive(), 'default exporter timeout was not bounded'
+release.set()
+provider.shutdown()
+server.shutdown()
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "EVOLVE_OTEL_"))}
+    env["OTEL_METRICS_EXPORTER"] = "none"
+    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
