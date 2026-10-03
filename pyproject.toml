@@ -287,6 +287,9 @@ module = [
     # IBM READI ships no py.typed marker; Presidio is an optional transitive of it.
     "risk_assessment.*",
     "presidio_analyzer.*",
+    # Optional READI spaCy backend is absent from the lean typing environment.
+    "spacy.*",
+    "thinc.*",
     "pymilvus.*",
     "smolagents.*",
     "milvus_lite.*",
