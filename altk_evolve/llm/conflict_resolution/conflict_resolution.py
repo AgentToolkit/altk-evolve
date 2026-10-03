@@ -146,6 +146,14 @@ def resolve_conflicts(
                 raise
             entity_updates = [EntityUpdate.model_validate(event) for event in parsed["entities"]]
             for update in entity_updates:
+                if any(identifier not in new_entities_by_id for identifier in update.incoming_ids):
+                    raise ValueError("Conflict decision references an unknown incoming ID")
+                incoming_target = update.event == "ADD" or (update.event == "NONE" and update.id in new_entities_by_id)
+                target = (new_entities_by_id if incoming_target else old_entities_by_id).get(update.id)
+                if target is None or update.type != target.type:
+                    raise ValueError("Conflict decision references an invalid target ID or type")
+                if update.event == "NONE" and incoming_target and set(update.incoming_ids) - {update.id}:
+                    raise ValueError("A discarded incoming entity cannot absorb other sources")
                 if update.event == "ADD":
                     update.metadata = new_entities_by_id[update.id].metadata
                 elif update.event == "UPDATE":
@@ -177,6 +185,18 @@ def resolve_conflicts(
         except Exception as e:
             last_error = e
             if attempt < 2:
+                # Do not echo invalid model output or exception text. The
+                # original scoped inputs remain the only authority for IDs.
+                llm_messages = [
+                    *llm_messages,
+                    {
+                        "role": "user",
+                        "content": "The previous response failed validation. Return valid JSON using only the actual input IDs "
+                        "and their original types, never IDs from the examples. ADD must target an incoming ID; "
+                        "UPDATE and DELETE must target an existing ID; NONE may target either. "
+                        "incoming_ids may contain only incoming IDs. Return the corrected complete decision list.",
+                    },
+                ]
                 continue
     raise EvolveException("Failed to resolve conflicts after 3 attempts") from last_error
 

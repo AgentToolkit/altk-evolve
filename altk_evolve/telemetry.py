@@ -220,8 +220,12 @@ def model_completion(*args, **kwargs):
     """Time a model request without capturing messages or response content."""
     from litellm import completion
 
+    from altk_evolve.utils.cancellation import check_request_cancelled
+
     with operation("evolve.llm.completion") as span:
+        check_request_cancelled()
         response = completion(*args, **kwargs)
+        check_request_cancelled()
         usage = getattr(response, "usage", None)
         for field in ("prompt_tokens", "completion_tokens"):
             value = getattr(usage, field, None)

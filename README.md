@@ -301,3 +301,9 @@ events, links and status descriptions are omitted. Metrics only forward the
 its own exporters and third-party capture settings.
 Traces are diagnostic and may be sampled; durable retention receipts remain the
 authoritative audit record.
+
+MCP clients must send `notifications/cancelled` to cancel server work; stopping a
+local wait alone does not cancel the request. Evolve checks cooperative
+cancellation around model calls and before committing prepared memory writes.
+An in-flight provider call may still finish, and earlier committed writes remain.
+These checkpoints do not provide rollback or interrupt arbitrary synchronous work.
