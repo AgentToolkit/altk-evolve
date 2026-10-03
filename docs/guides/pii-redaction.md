@@ -82,7 +82,7 @@ $ pip install 'altk-evolve[pii-semantic]'
 
 `evolve hooks init` ships the **READI semantic plugin active** and the **regex plugin commented out** (both `mode: sequential`, `on_error: fail`). Evolve auto-discovers `./evolve.hooks.yaml` (search order: `$EVOLVE_HOOKS_CONFIG` → `./evolve.hooks.yaml` → `~/.config/evolve/hooks.yaml`), so once the extra is installed, redaction is live — no code change. For **defence-in-depth**, uncomment the regex block so both methods run (regex for structured identifiers, semantic for names); leaving READI active. To run regex only, comment the READI block and uncomment the regex block, and install `[pii-regex]` instead.
 
-> **macOS caveat:** READI's transformer model uses the Apple-Silicon MPS backend, which can fail-closed and block writes from the seam's worker thread (see [Known limitations](#known-limitations)). On macOS for local dev, prefer the regex block, or run READI on CPU/Linux.
+> **macOS:** The `spacy` extractor defaults to CPU on macOS, including transformer models. No launcher workaround is needed. READI’s `default` extractor still uses upstream device selection; use `readi_extractor: spacy` for reliable threaded inference on Apple Silicon.
 
 ## Configuration
 
@@ -100,6 +100,7 @@ Both plugins are configured through their own `config` block in the hook plugin 
   config:
     readi_extractor: spacy      # default | spacy | hf | presidio
     readi_model: ja_core_news_trf
+    readi_device: auto         # spacy only: auto | cpu | cuda; auto uses CPU on macOS
     readi_language: ja
     redaction_text: "[REDACTED]"
     # redact_metadata defaults to true (matches the regex plugin). Set false only
@@ -142,7 +143,7 @@ Use `--limit`: the full corpus is 43k rows and takes hours under transformer NER
 ## Known limitations
 
 - **Presidio is English-only through READI.** READI's `PresidioEntityExtractor` hardcodes `language="en"` in its analyze call (carrying an explicit "this needs to be fixed" note upstream). `readi_language` reaches the spaCy engine configuration but not Presidio itself, so multilingual Presidio needs an upstream fix or a local override. Use `readi_extractor: spacy` for non-English.
-- **Apple Silicon / MPS thread affinity.** `spacy-curated-transformers` places transformer pipelines on torch's MPS backend, which binds to the first thread that touches it. The hook seam's sync bridge dispatches on a dedicated thread when an event loop is already running, so a model first used on the main thread raises `Placeholder storage has not been allocated on MPS device!` there — and with `on_error: fail` that blocks the operation. A per-thread model cache does not help (verified). Workarounds on macOS: use a non-transformer pipeline (`en_core_web_lg`), use `readi_extractor: hf`, or build with a CPU-only torch. CPU and CUDA hosts are unaffected.
+- **Device selection.** With `readi_extractor: spacy`, Evolve loads and runs the model in a scoped device context, restoring the caller’s context after each operation. `readi_device: auto` uses CPU on macOS and spaCy GPU auto-selection elsewhere. `cpu` forces CPU; `cuda` requires a CUDA-capable spaCy installation and fails rather than silently falling back. Other extractors accept only `auto` and retain upstream device selection. In particular, READI’s `default` extractor can still encounter Apple MPS errors across threads; select `spacy` on macOS.
 - **Recall is not a guarantee.** 0.48 overall recall on ai4privacy means these plugins reduce exposure; they do not eliminate it. Categories neither engine targets (passwords, device identifiers, crypto addresses, vehicle IDs) pass through. Treat redaction as defence in depth, not as the control that lets you store regulated data.
 - **Metadata is redacted by default.** `redact_metadata: true` is the default so the semantic plugin matches the regex plugin, which round-trips the whole entity through cpex-pii-filter and therefore redacts metadata unconditionally — shipping the two with opposite defaults would be a silent parity gap, and masking more is the fail-safe default for a redactor. The trade-off: metadata can hold ids, paths and trace keys that redaction would corrupt, so a deployment that keys on those should set `redact_metadata: false` deliberately (the regex plugin has no such opt-out).
 - **Process-global plugin manager.** As documented in [memory-hooks.md](memory-hooks.md), CPEX's `PluginManager` is a process-wide singleton — a second `EvolveClient` that resolves its own plugins replaces the first client's plugins, which for a redaction plugin means redaction can be silently disabled by unrelated code.

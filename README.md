@@ -248,3 +248,62 @@ See the [Contributing Guide](CONTRIBUTING.md) to understand our development proc
 Hosts can mount the [scoped REST router](docs/guides/embedded-memory-api.md) with their own client and authentication dependencies. Evolve owns [retention schedules and worker execution](docs/guides/retention-scheduling.md), using Kubernetes-compatible cron, timezone, concurrency, deadline, and suspension fields. Use `evolve retention schedules` to manage schedules and `start`/`stop` to enable or suspend them. The Evolve service owns background execution.
 
 The [public retention service](docs/guides/retention-api.md) is available as `client.retention(namespace_id, agent_id=...)`; CLI, REST, MCP, and scheduling share its operations and scope checks.
+
+### OpenTelemetry service instrumentation
+
+Evolve's Python operations use the OpenTelemetry API and inherit the host's
+provider. Constructing `EvolveClient` never installs or replaces a provider.
+Standalone MCP services export telemetry by default. Compatible SDK and exporter
+versions are declared as dependencies and enforced at installation. To configure a destination:
+
+```bash
+uv pip install altk-evolve
+export OTEL_SERVICE_NAME=evolve
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+python -m altk_evolve.frontend.mcp --transport sse
+```
+
+Without an endpoint setting, the OTLP exporter uses localhost:4318. Export runs
+in the background with bounded queues; an absent collector does not block memory
+operations. Unsent telemetry may be dropped. Requests default to a one-second
+export timeout, overridable through standard OTEL timeout settings. Set
+`EVOLVE_OTEL_ENABLED=false` to disable Evolve-owned export. If exporter packages
+cannot be imported, Evolve logs a warning and continues without an exporter.
+Invalid exporter configuration also logs a warning and leaves service startup
+unaffected; correct the settings and retry initialization to enable export.
+
+Use an actual reachable collector address. OpenLIT and other OTLP backends are
+supported without their SDKs. This exporter uses HTTP/protobuf; the signal-specific
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`
+include `/v1/traces` and `/v1/metrics`, respectively. Standard resource, sampling,
+batch-size, export-timeout and metric-interval environment settings apply.
+`OTEL_TRACES_EXPORTER=none` and `OTEL_METRICS_EXPORTER=none` disable each exporter;
+`OTEL_SDK_DISABLED=true` prevents Evolve's service initialization. An existing
+host tracer provider is left untouched, including ownership of its shutdown.
+Custom service hosts can explicitly call `configure_service_telemetry()` from
+`altk_evolve.telemetry` at startup. The SDK installs process-exit shutdown hooks;
+the MCP lifespan does not synchronously flush or wait for a collector.
+
+Spans cover memory search, query embeddings and PostgreSQL retrieval, write
+preparation/commit, fact extraction and conflict resolution, model calls,
+processing stages/processors, active hooks, and retention marking/sweeping/jobs.
+FastMCP propagates MCP trace metadata; the scoped REST router accepts W3C trace
+headers. Independent scheduled attempts start separate traces with job references.
+Duration histograms and outcome counters have bounded operation/result labels,
+never namespace, user, conversation or entity IDs. Namespace attribution belongs
+on spans. Evolve's instrumentation excludes contents, prompts, SQL values and
+exception messages. Evolve-owned export forwards Evolve's instrumentation and
+sanitized FastMCP transport spans that retain timing, IDs, kind and status code
+to preserve the trace tree. Transport names are fixed; attributes, exception
+events, links and status descriptions are omitted. Metrics only forward the
+`altk_evolve` scope. A host-owned provider controls
+its own exporters and third-party capture settings.
+Traces are diagnostic and may be sampled; durable retention receipts remain the
+authoritative audit record.
+
+MCP clients must send `notifications/cancelled` to cancel server work; stopping a
+local wait alone does not cancel the request. Evolve checks cooperative
+cancellation around model calls and before committing prepared memory writes.
+An in-flight provider call may still finish, and earlier committed writes remain.
+These checkpoints do not provide rollback or interrupt arbitrary synchronous work.
