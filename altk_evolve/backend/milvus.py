@@ -243,6 +243,16 @@ class MilvusEntityBackend(BaseEntityBackend):
         except Exception as exc:
             raise EvolveException(f"Failed to ensure embedding index for namespace={namespace_id}: {exc}") from exc
 
+    def _ensure_loaded(self, namespace_id: str) -> None:
+        """Load the collection before reading it.
+
+        A process that opens an existing namespace finds its collection released, and
+        milvus-lite >= 3 rejects reads on it (code=101). ``load_collection`` is a no-op
+        when the collection is already loaded; the index must exist before loading.
+        """
+        self._ensure_embedding_index(namespace_id)
+        self.milvus.load_collection(collection_name=namespace_id)
+
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         namespace_id = namespace_id or "ns_" + str(uuid.uuid4()).replace("-", "_")
 
@@ -334,6 +344,7 @@ class MilvusEntityBackend(BaseEntityBackend):
         except ValueError:
             raise EvolveException(f"Invalid entity ID '{entity_id}': must be numeric.")
         self._validate_namespace(namespace_id)
+        self._ensure_loaded(namespace_id)
         with self._metadata_write():
             results = self.milvus.query(
                 collection_name=namespace_id,
@@ -373,6 +384,7 @@ class MilvusEntityBackend(BaseEntityBackend):
         filters = filters or {}
         schema_filters, metadata_filters = self._split_filters(filters)
         fetch_limit = limit
+        self._ensure_loaded(namespace_id)
 
         if query is None:
             results = self.milvus.query(
@@ -383,7 +395,6 @@ class MilvusEntityBackend(BaseEntityBackend):
                 consistency_level="Strong",
             )
         else:
-            self._ensure_embedding_index(namespace_id)
             try:
                 raw_results = self.milvus.search(
                     collection_name=namespace_id,

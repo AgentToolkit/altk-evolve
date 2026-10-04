@@ -478,6 +478,101 @@ def test_update_entity_metadata_rejects_non_numeric_id(milvus_backend: MilvusEnt
         milvus_backend.update_entity_metadata("test_namespace", "not-an-id", {"visibility": "public"})
 
 
+class ReleasedCollection:
+    """Read surface of a collection opened by a fresh process: reads fail until it is loaded.
+
+    Mirrors milvus-lite >= 3, which raises code=101 on query/search against a released collection.
+    """
+
+    def __init__(self, has_index: bool = True):
+        self.row = {
+            "id": 42,
+            "type": "guideline",
+            "content": "paginate fully",
+            "created_at": int(datetime.datetime.now(datetime.UTC).timestamp()),
+            "metadata": {},
+            "embedding": [0.1] * 384,
+        }
+        self.has_index = has_index
+        self.loaded = False
+        self.calls: list[str] = []
+
+    def install(self, backend: MilvusEntityBackend, monkeypatch) -> None:
+        monkeypatch.setattr(backend.milvus, "has_collection", always_has_collection)
+        monkeypatch.setattr(backend.embedding_model, "encode", arbitrary_embedding)
+        for name in ("list_indexes", "create_index", "load_collection", "query", "search", "upsert", "flush"):
+            monkeypatch.setattr(backend.milvus, name, getattr(self, name))
+
+    def list_indexes(self, **kwargs):
+        return ["embedding_auto_idx"] if self.has_index else []
+
+    def create_index(self, **kwargs):
+        self.calls.append("create_index")
+        self.has_index = True
+
+    def load_collection(self, collection_name, **kwargs):
+        from pymilvus.exceptions import MilvusException
+
+        self.calls.append("load_collection")
+        if not self.has_index:
+            raise MilvusException(code=700, message="index not found")
+        self.loaded = True
+
+    def _read(self):
+        from pymilvus.exceptions import MilvusException
+
+        if not self.loaded:
+            raise MilvusException(code=101, message="Collection is in state 'released'; call load() before search/get/query")
+        return [dict(self.row)]
+
+    def query(self, **kwargs):
+        return self._read()
+
+    def search(self, **kwargs):
+        return [[{**hit, "distance": 0.0} for hit in self._read()]]
+
+    def upsert(self, **kwargs):
+        return {"ids": [42]}
+
+    def flush(self, *args, **kwargs):
+        pass
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("query", [None, "pagination"])
+def test_search_entities_loads_released_collection(milvus_backend: MilvusEntityBackend, monkeypatch, query):
+    """Listing and vector search both work on a namespace this process has not written to (#343)."""
+    collection = ReleasedCollection()
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.search_entities("test_namespace", query=query)
+
+    assert [entity.content for entity in result] == ["paginate fully"]
+
+
+@pytest.mark.unit
+def test_update_entity_metadata_loads_released_collection(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """The read inside a metadata patch works on a namespace this process has not written to (#343)."""
+    collection = ReleasedCollection()
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.update_entity_metadata("test_namespace", "42", {"visibility": "public"})
+
+    assert result.metadata["visibility"] == "public"
+
+
+@pytest.mark.unit
+def test_search_entities_creates_missing_index_before_loading(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """A legacy collection without an embedding index gets one before it is loaded, since loading needs it."""
+    collection = ReleasedCollection(has_index=False)
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.search_entities("test_namespace", query=None)
+
+    assert [entity.content for entity in result] == ["paginate fully"]
+    assert collection.calls[0] == "create_index"
+
+
 @pytest.mark.unit
 def test_parse_milvus_entity_accepts_epoch_zero_created_at():
     parsed = parse_milvus_entity(
