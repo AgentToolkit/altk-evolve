@@ -10,7 +10,7 @@ import pytest
 
 from altk_evolve.llm.guidelines import guidelines as guidelines_module
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines, parse_guideline_response, parse_openai_agents_trajectory
-from altk_evolve.schema.guidelines import SubtaskSegment
+from altk_evolve.schema.guidelines import Guideline, SubtaskSegment, resolve_guideline_category
 
 
 def _mock_completion_response(payload: dict | list) -> MagicMock:
@@ -231,6 +231,62 @@ class TestParseGuidelineResponse:
         guidelines = parse_guideline_response(json.dumps({"guidelines": [bad]}), "standard")
         assert guidelines is None
         assert "Failed to parse standard guideline response" in caplog.text
+
+
+@pytest.mark.unit
+class TestCategoryRepair:
+    """A category naming real categories in the wrong shape must not cost the generation.
+
+    Validation is per response, so one off-contract label used to fail
+    ``GuidelineGenerationResponse`` and discard every guideline mined from that trajectory.
+    Only providers without constrained decoding get here; gpt-oss emits ``"strategy|recovery"``,
+    which the prompts invite by spelling the choice as ``"strategy|recovery|optimization"``.
+    """
+
+    def test_multi_valued_category_keeps_the_whole_response(self, caplog):
+        """The regression this exists for: the *sibling* guideline was the real loss."""
+        multi = {**_GUIDELINE, "content": "Retry with a smaller page size", "category": "strategy|recovery"}
+        with caplog.at_level(logging.INFO):
+            guidelines = parse_guideline_response(json.dumps({"guidelines": [multi, _GUIDELINE]}), "standard")
+        assert guidelines is not None
+        assert [g.category for g in guidelines] == ["strategy", "strategy"]
+        assert [g.content for g in guidelines] == ["Retry with a smaller page size", "Validate files before parsing"]
+        assert "Repaired off-contract guideline category 'strategy|recovery'" in caplog.text
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("strategy|recovery", "strategy"),
+            ("recovery|strategy", "recovery"),  # first named wins — not a fixed precedence
+            ("strategy|recovery|optimization", "strategy"),  # the prompt placeholder, copied verbatim
+            ("recovery, optimization", "recovery"),
+            ("optimization / strategy", "optimization"),
+            ("recovery or strategy", "recovery"),
+            ("strategy and optimization", "strategy"),
+            ("Recovery", "recovery"),
+            ("  optimization  ", "optimization"),
+            (["recovery", "strategy"], "recovery"),
+            ("planning|recovery", "recovery"),  # skips a part that names nothing
+        ],
+    )
+    def test_resolves_the_shapes_models_emit(self, raw, expected):
+        assert resolve_guideline_category(raw) == expected
+
+    @pytest.mark.parametrize("raw", ["not-a-real-category", "performance optimization work", "", "   ", None, 7, []])
+    def test_returns_none_when_no_part_names_a_category(self, raw):
+        """Including free text that merely mentions one — matching is on whole parts.
+
+        None is what preserves ``test_returns_none_for_a_wrong_category_value``: an invented
+        label means the model never picked from the choices, so it reaches the ``Literal`` and
+        is rejected rather than being filed under a default that would hide it.
+        """
+        assert resolve_guideline_category(raw) is None
+
+    def test_a_contract_category_is_not_reported_as_repaired(self, caplog):
+        """Only off-contract output gets logged, so the signal stays worth watching."""
+        with caplog.at_level(logging.INFO):
+            Guideline(content="c", rationale="r", category="recovery", trigger="t")
+        assert "guideline category" not in caplog.text
 
 
 @pytest.mark.unit

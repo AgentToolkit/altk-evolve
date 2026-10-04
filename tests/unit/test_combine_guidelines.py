@@ -130,6 +130,51 @@ class TestCombineCluster:
     @patch("altk_evolve.llm.guidelines.clustering.completion")
     @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
     @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
+    def test_combine_cluster_repairs_a_multi_valued_category(self, _mock_params, _mock_schema, mock_completion):
+        """A merge response labelled "strategy|recovery" is repaired, not retried three times.
+
+        ``ConsolidatedGuideline`` inherits the category repair, so the same gpt-oss output that
+        cost a whole extraction used to cost the cluster: validation failed on every attempt and
+        ``combine_cluster`` raised, losing the merge for a label it could read.
+        """
+        mock_completion.return_value = _mock_completion_response([_cg("Merged rule", "strategy|recovery", [0, 1])])
+
+        entities = [_make_entity("1", "Rule A", support=2), _make_entity("2", "Rule B", support=1)]
+        result = combine_cluster(entities)
+
+        assert mock_completion.call_count == 1
+        assert len(result) == 1
+        assert result[0].category == "strategy"
+        assert result[0].support == 3
+
+    @patch("altk_evolve.llm.guidelines.clustering.completion")
+    @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
+    @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
+    def test_combine_cluster_normalizes_stored_categories(self, _mock_params, _mock_schema, mock_completion):
+        """Stored labels are resolved on both sides of the LLM call.
+
+        Going in, because a multi-valued label shown back to the model invites it to echo one;
+        coming out, because an uncovered member is rebuilt from its metadata and a stored label
+        that names nothing has to fall back — a stored entity cannot be regenerated.
+        """
+        mock_completion.return_value = _mock_completion_response([_cg("Merged rule", "strategy", [0])])
+
+        covered = _make_entity("1", "Rule A")
+        covered.metadata["category"] = "optimization|strategy"
+        uncovered = _make_entity("2", "Rule B is unique")
+        uncovered.metadata["category"] = "escalation"
+        result = combine_cluster([covered, uncovered])
+
+        _, kwargs = mock_completion.call_args
+        prompt = kwargs["messages"][0]["content"]
+        assert "optimization|strategy" not in prompt
+        assert "**Category:** optimization" in prompt
+        carried = next(g for g in result if g.content == "Rule B is unique")
+        assert carried.category == "strategy"
+
+    @patch("altk_evolve.llm.guidelines.clustering.completion")
+    @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
+    @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
     def test_combine_cluster_dedupes_repeated_source_indices(self, _mock_params, _mock_schema, mock_completion):
         # A repeated index within one guideline's source_indices must not double-count support.
         mock_completion.return_value = _mock_completion_response([_cg("Merged rule", "strategy", [0, 0, 1])])

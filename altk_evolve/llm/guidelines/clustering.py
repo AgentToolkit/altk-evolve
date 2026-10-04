@@ -18,13 +18,19 @@ from altk_evolve.config.llm import llm_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
-from altk_evolve.schema.guidelines import ConsolidatedGuideline, ConsolidatedGuidelineResponse, Evidence, Guideline
+from altk_evolve.schema.guidelines import (
+    DEFAULT_GUIDELINE_CATEGORY,
+    ConsolidatedGuideline,
+    ConsolidatedGuidelineResponse,
+    Evidence,
+    Guideline,
+    resolve_guideline_category,
+)
 from altk_evolve.utils.utils import clean_llm_response
 
 logger = logging.getLogger(__name__)
 
 MAX_CLUSTER_ENTITIES = 5000
-_VALID_CATEGORIES = {"strategy", "recovery", "optimization"}
 
 _COMBINE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/combine_guidelines.jinja2").read_text())
 
@@ -150,10 +156,6 @@ def _merge_evidence(evidences: list[Evidence | None]) -> Evidence | None:
     return "success" if "success" in present else "failure"
 
 
-def _coerce_category(value: object) -> str:
-    return str(value) if value in _VALID_CATEGORIES else "strategy"
-
-
 def _attribute_support(
     entities: list[RecordedEntity],
     consolidated: list[ConsolidatedGuideline],
@@ -205,7 +207,9 @@ def _attribute_support(
             Guideline(
                 content=str(entities[i].content),
                 rationale=str(md.get("rationale", "")),
-                category=_coerce_category(md.get("category")),  # type: ignore[arg-type]
+                # A stored entity cannot be regenerated, so an unrecoverable label falls back
+                # rather than failing the member out of the cluster.
+                category=resolve_guideline_category(md.get("category")) or DEFAULT_GUIDELINE_CATEGORY,
                 trigger=str(md.get("trigger", "")),
                 implementation_steps=_normalize_steps(md.get("implementation_steps")),
                 support=member_support[i],
@@ -262,7 +266,9 @@ def combine_cluster(entities: list[RecordedEntity], mode: str = "lossless") -> l
         {
             "content": str(e.content),
             "rationale": (e.metadata or {}).get("rationale", ""),
-            "category": (e.metadata or {}).get("category", "strategy"),
+            # Coerced on the way in as well: a stored multi-valued label shown back to the
+            # model is an invitation to echo it in the merged guideline.
+            "category": resolve_guideline_category((e.metadata or {}).get("category")) or DEFAULT_GUIDELINE_CATEGORY,
             "trigger": (e.metadata or {}).get("trigger", ""),
             "implementation_steps": _normalize_steps((e.metadata or {}).get("implementation_steps")),
         }
