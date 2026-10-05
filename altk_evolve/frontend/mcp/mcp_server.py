@@ -1545,6 +1545,17 @@ def set_processing_profile(profile_id: str, definition: dict, expected_revision:
 
 
 @mcp.tool()
+def ensure_processing_profile(profile_id: str, definition: dict) -> dict:
+    """Refresh a caller-owned profile from server defaults, preserving operator edits.
+
+    Use only for profiles owned by the calling application. Existing profiles
+    are adopted using revision 1 as their original defaults. Returns the pinned
+    revision to use for this processing request.
+    """
+    return get_client().processing.ensure(profile_id, definition)
+
+
+@mcp.tool()
 def process_trajectory(trajectory: dict, namespace_id: str, processing_profile: str, revision: int | None = None) -> dict:
     """Process new messages with optional batch identity and supporting context_messages.
 
