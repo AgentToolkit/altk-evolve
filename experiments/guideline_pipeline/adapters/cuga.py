@@ -181,8 +181,7 @@ def _outcome(task: dict, evaluation: dict) -> TrajectoryOutcome | None:
         success = task["score"] >= 1.0
     if success is None:
         return None
-    report = evaluation.get("evaluation") or {}
-    failed = (str(check.get("requirement") or "").strip().replace("\n", " ") for check in report.get("failures") or [])
+    failed = (str(check.get("requirement") or "").strip().replace("\n", " ") for check in _checks(evaluation, "failures"))
     detail = _evaluation_report(evaluation)
     return TrajectoryOutcome(
         success=bool(success),
@@ -197,7 +196,7 @@ def _evaluation_report(evaluation: dict) -> str | None:
     if not isinstance(report, dict):
         return None
     lines = [f"num_tests={report.get('num_tests')} pass_count={report.get('pass_count')} pass_percentage={report.get('pass_percentage')}"]
-    for heading, checks in (("PASSED checks:", report.get("passes") or []), ("FAILED checks:", report.get("failures") or [])):
+    for heading, checks in (("PASSED checks:", _checks(evaluation, "passes")), ("FAILED checks:", _checks(evaluation, "failures"))):
         if checks:
             lines.append(heading)
         for check in checks:
@@ -208,6 +207,13 @@ def _evaluation_report(evaluation: dict) -> str | None:
             if trace and heading.startswith("FAILED"):
                 lines.append(f"    trace: {trace[:FAIL_TRACE_CHARS]}")
     return "\n".join(lines)
+
+
+def _checks(evaluation: dict, key: str) -> list[dict]:
+    """The report's checks under key; results.json is open input, so anything but a dict entry is skipped."""
+    report = evaluation.get("evaluation")
+    checks = report.get(key) if isinstance(report, dict) else None
+    return [check for check in checks if isinstance(check, dict)] if isinstance(checks, list) else []
 
 
 def _system_prompt(steps: list[dict]) -> str | None:
