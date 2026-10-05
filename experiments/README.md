@@ -2,16 +2,18 @@
 
 Measurement scripts and research pipelines that run against this checkout of
 Evolve. Nothing here is packaged (only `altk_evolve*` ships), but the code is
-linted and type-checked like the rest of the repo.
+linted, type-checked and collected by pytest like the rest of the repo.
 
 Each subdirectory is one experiment family:
 
 | Directory | What it measures | Needs |
 |-----------|------------------|-------|
 | [`claude_sandbox/`](claude_sandbox/) | Token, wall-clock and step savings when Claude Code recalls guidelines or synthesized skills | Docker, the `claude-sandbox` image, Anthropic credentials |
+| [`guideline_pipeline/`](guideline_pipeline/README.md) | Guidelines mined from benchmark datasets through processing profiles, via per-dataset adapters | An Evolve backend with atomic writes; LLM credentials for the chosen profile |
 
-Results are written next to the script that produced them (for example
-`claude_sandbox/results/`) and are not committed.
+Results, datasets and run output are written next to the code that produced
+them (for example `claude_sandbox/results/`) and are not committed; see
+[`.gitignore`](.gitignore).
 
 If a script here graduates into a regression check, move it under `tests/`.
 
