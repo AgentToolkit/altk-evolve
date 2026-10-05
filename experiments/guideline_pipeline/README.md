@@ -109,8 +109,9 @@ uv run python -m experiments.guideline_pipeline mine --adapter cuga --input path
 ```
 
 Drop `--dry-run` to mine. The built-in processor sets each guideline's `evidence`
-from the outcome, and its standard generator grounds extraction in the outcome's
-`failed_checks` and `detail` (#351).
+from the outcome. Once #351 merges, its standard generator also grounds extraction
+in the outcome's `failed_checks` and `detail`; until then they reach processors
+through `trajectory.outcome` but not the extraction prompt.
 
 ## Writing an adapter
 

@@ -101,6 +101,18 @@ def test_outcome_fallbacks_and_detail_cap():
     assert overridden.outcome is not None and overridden.outcome.success
 
 
+def test_malformed_evaluation_reports_are_skipped_not_fatal():
+    adapter = CugaAdapter()
+    mixed = {"success": False, "evaluation": {"passes": ["ok", {"requirement": "p"}], "failures": ["bad", None, {"requirement": "r"}]}}
+    record = adapter.record("run", "t_1", {"intent": "x", "steps": []}, {"eval": mixed})
+    assert record.outcome is not None and record.outcome.failed_checks == ("r",)
+    assert record.outcome.detail is not None and "  - p" in record.outcome.detail and "bad" not in record.outcome.detail
+
+    for report in (["not", "a", "dict"], "text", {"failures": "text", "passes": {"requirement": "p"}}):
+        outcome = adapter.record("run", "t_1", {"intent": "x", "steps": []}, {"eval": {"success": False, "evaluation": report}}).outcome
+        assert outcome is not None and not outcome.success and outcome.failed_checks == ()
+
+
 def test_identity_metadata_and_model():
     records = by_id(CugaAdapter(model="gpt-4.1"))
     record = records["aaa0001_2"]
