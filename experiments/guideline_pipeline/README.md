@@ -108,9 +108,9 @@ uv run python -m experiments.guideline_pipeline mine --adapter cuga --input path
     --adapter-option include_summaries=true --adapter-option model=gpt-4.1 --dry-run
 ```
 
-Drop `--dry-run` to mine. Note that the built-in processor uses the outcome for
-each guideline's `evidence`; it does not yet show `failed_checks` or `detail` to
-the extraction prompt.
+Drop `--dry-run` to mine. The built-in processor sets each guideline's `evidence`
+from the outcome, and its standard generator grounds extraction in the outcome's
+`failed_checks` and `detail` (#351).
 
 ## Writing an adapter
 
