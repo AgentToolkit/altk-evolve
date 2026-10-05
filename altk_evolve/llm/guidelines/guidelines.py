@@ -4,6 +4,7 @@ import logging
 import re
 from json import JSONDecodeError
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from jinja2 import Template
 from altk_evolve.telemetry import model_completion as completion
@@ -23,9 +24,21 @@ from altk_evolve.schema.guidelines import (
 )
 from altk_evolve.utils.utils import clean_llm_response
 
+if TYPE_CHECKING:
+    from altk_evolve.processing.models import TrajectoryOutcome
+
 logger = logging.getLogger(__name__)
 
 _GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_guidelines.jinja2").read_text())
+
+# With an outcome, a failure yields 1-3 corrective guidelines and a success at most 2
+# non-obvious ones. The prompt states these limits and the parser enforces them.
+_MAX_FAILURE_GUIDELINES = 3
+_MAX_SUCCESS_GUIDELINES = 2
+# Bounds on the evaluator's report rendered into the prompt.
+_MAX_FAILED_CHECKS = 10
+_MAX_CHECK_CHARS = 500
+_MAX_DETAIL_CHARS = 2500
 
 # Matches one escape at a time: group 1 is a complete, valid JSON escape (\u only counts
 # when four hex digits follow, so LaTeX like \underbrace is repaired rather than left as
@@ -308,14 +321,37 @@ def _generate_guidelines_for_segment(
     *,
     options: GuidelineRuntime,
     supporting_context: str = "",
+    outcome: "TrajectoryOutcome | None" = None,
 ) -> GuidelineGenerationResult:
-    """Generate guidelines for a single trajectory slice (full or subtask)."""
+    """Generate guidelines for a single trajectory slice (full or subtask).
+
+    An outcome switches the prompt to its outcome-grounded rules; without one the
+    prompt is unchanged.
+    """
+    max_guidelines = None
+    outcome_context: dict = {}
+    if outcome is not None:
+        max_guidelines = _MAX_SUCCESS_GUIDELINES if outcome.success else _MAX_FAILURE_GUIDELINES
+        detail = outcome.detail
+        if detail and len(detail) > _MAX_DETAIL_CHARS:
+            detail = detail[:_MAX_DETAIL_CHARS] + "\n... [truncated]"
+        outcome_context = {
+            "outcome": outcome,
+            "failed_checks": [
+                check if len(check) <= _MAX_CHECK_CHARS else check[:_MAX_CHECK_CHARS] + " ... [truncated]"
+                for check in outcome.failed_checks[:_MAX_FAILED_CHECKS]
+            ],
+            "omitted_checks": max(0, len(outcome.failed_checks) - _MAX_FAILED_CHECKS),
+            "detail": detail,
+            "max_guidelines": max_guidelines,
+        }
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         supporting_context=supporting_context,
         num_steps=num_steps,
         trajectory_summary=trajectory_slice,
         constrained_decoding_supported=constrained_decoding_supported,
+        **outcome_context,
     )
 
     llm_messages = dispatch_llm_pre_call(
@@ -349,12 +385,19 @@ def _generate_guidelines_for_segment(
     if not clean_response:
         logger.warning(f"LLM returned empty response for guideline generation. Model: {options.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
-    guidelines = parse_guideline_response(clean_response, "standard")
-    return GuidelineGenerationResult(guidelines=guidelines or [], task_description=task_description)
+    guidelines = parse_guideline_response(clean_response, "standard") or []
+    if max_guidelines is not None and len(guidelines) > max_guidelines:
+        logger.info(f"Keeping the first {max_guidelines} of {len(guidelines)} guidelines the outcome prompt allows.")
+        guidelines = guidelines[:max_guidelines]
+    return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
 
 
 def generate_guidelines(
-    messages: list[dict], *, options: GuidelineRuntime | None = None, context_messages: list[dict] | None = None
+    messages: list[dict],
+    *,
+    options: GuidelineRuntime | None = None,
+    context_messages: list[dict] | None = None,
+    outcome: "TrajectoryOutcome | None" = None,
 ) -> list[GuidelineGenerationResult]:
     """Generate guidelines from a trajectory, optionally segmented into subtasks.
 
@@ -428,6 +471,7 @@ def generate_guidelines(
                     constrained_decoding_supported=constrained_decoding_supported,
                     options=options,
                     supporting_context=render_supporting_context(context_messages),
+                    outcome=outcome,
                 )
                 for subtask, slice_steps in valid_slices
             ]
@@ -443,5 +487,6 @@ def generate_guidelines(
             constrained_decoding_supported=constrained_decoding_supported,
             options=options,
             supporting_context=render_supporting_context(context_messages),
+            outcome=outcome,
         )
     ]

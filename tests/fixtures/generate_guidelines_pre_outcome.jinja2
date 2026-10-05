@@ -1,0 +1,58 @@
+Extract actionable, relevant guidelines from this trajectory that would help an AI agent perform similar tasks better in the future.
+
+# Task Information
+**Task:** {{task_instruction}}
+**Task Status:** There is no evaluation of the task's trajectory or output against any ground truth. There is also no user feedback to the AI agent. But the trajectory may contain the agent's self-evaluation of whether the task succeeded or failed.
+**Steps Taken:** {{num_steps}}
+
+{% if supporting_context %}
+# Supporting Conversation History
+Use this history to interpret the new steps below, not as additional steps to learn from.
+{{supporting_context}}
+{% endif %}
+
+# Agent Trajectory
+{{trajectory_summary}}
+
+**IMPORTANT TO REMEMBER:**
+1. Only generate guidelines if they are truly relevant and actionable
+2. Guidelines should be specific to patterns observed in this trajectory
+3. Include both positive patterns (what worked) and negative patterns (what to avoid)
+4. Each guideline should have:
+   - A clear, concise description (content)
+   - The purpose/benefit of following it
+   - The category: "strategy", "recovery", or "optimization"
+   - Specific steps to implement the guideline
+   - A trigger condition (when to apply this guideline)
+
+5. If the task seems to have succeeded, focus on the successful strategies used
+6. If the task seems to have failed, focus on what went wrong and how to prevent/recover from it
+7. Do not generate generic guidelines - be specific to this task execution
+8. Look for patterns in how the agent:
+   - Discovered and used APIs
+   - Handled authentication and credentials
+   - Iterated through results (pagination)
+   - Structured its approach to the problem
+   - Handled errors or unexpected responses
+
+{% if not constrained_decoding_supported %}
+**Output Format (JSON):**
+```json
+{
+    "guidelines": [
+        {
+            "content": "Clear, actionable guideline",
+            "rationale": "Why this guideline helps",
+            "category": "strategy|recovery|optimization",
+            "trigger": "When to apply this guideline",
+            "implementation_steps": ["step 1", "step 2"]
+        }
+    ]
+}
+```
+
+Generate guidelines now. Return ONLY the JSON, no other text.
+{% endif %}
+
+
+
