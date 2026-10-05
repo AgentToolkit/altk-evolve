@@ -9,6 +9,7 @@ from altk_evolve.backend.reconciliation import reconcile_decisions, attach_proce
 from altk_evolve.schema.core import Entity, RecordedEntity
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.exceptions import EvolveException
+from altk_evolve.schema.provenance import attach_sources
 
 pytestmark = pytest.mark.unit
 OBSERVED = datetime(2026, 9, 30, tzinfo=UTC)
@@ -101,3 +102,33 @@ def test_append_path_is_deterministic_and_copies_nested_content():
     assert result[0].metadata["memory_revision"] == 1
     result[0].content["value"].append("mutation")
     assert entities[0].content == {"value": []}
+
+
+def _source(conversation, associated_at, status="supporting"):
+    return {
+        "conversation_id": conversation,
+        "task_id": None,
+        "user_id": "alice",
+        "agent_id": "a",
+        "status": status,
+        "associated_at": associated_at,
+    }
+
+
+def test_append_path_keeps_existing_association_times():
+    earlier = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    entities = [Entity(type="guideline", content="moved", metadata={"sources": [_source("one", earlier)]})]
+    sources = prepare_additions(entities, "guideline", OBSERVED)[0].metadata["sources"]
+    assert [s["associated_at"] for s in sources] == [earlier]
+
+
+def test_duplicate_associations_combine_conservatively():
+    earlier, later = datetime(2026, 1, 1, tzinfo=UTC).isoformat(), datetime(2026, 6, 1, tzinfo=UTC).isoformat()
+    members = [
+        Entity(type="guideline", content="a", metadata={"sources": [_source("one", earlier)]}),
+        Entity(type="guideline", content="b", metadata={"sources": [_source("one", later, status="superseded")]}),
+    ]
+    for ordered in (members, members[::-1]):
+        (source,) = attach_sources({}, None, ordered, associated_at=OBSERVED)["sources"]
+        # Still supporting if either record was; aged from the later association.
+        assert (source["status"], source["associated_at"]) == ("supporting", later)

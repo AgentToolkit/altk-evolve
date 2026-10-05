@@ -55,12 +55,37 @@ def attach_sources(
         additions = sources(entity)
         complete = complete and bool(additions) and not (entity.metadata or {}).get("provenance_incomplete", False)
         for source in additions:
-            source["associated_at"] = now
-            key = tuple(source.get(k) for k in ("conversation_id", "task_id", "user_id", "agent_id"))
-            associations = [
-                v for v in associations if tuple(v.get(k) for k in ("conversation_id", "task_id", "user_id", "agent_id")) != key
-            ]
+            # A fresh observation is stamped now. An association that already carries a
+            # time (e.g. moved onto a consolidated memory) is not a new observation and
+            # keeps it, so deletion receipts recorded before the move still apply.
+            source.setdefault("associated_at", now)
+            key = _association_key(source)
+            for previous in [v for v in associations if _association_key(v) == key]:
+                associations.remove(previous)
+                source.update(_combine_duplicate(previous, source))
             associations.append(source)
     result["sources"] = associations
     result["provenance_incomplete"] = not complete
     return result
+
+
+def _association_key(source: dict) -> tuple:
+    return tuple(source.get(k) for k in ("conversation_id", "task_id", "user_id", "agent_id"))
+
+
+def _combine_duplicate(previous: dict, source: dict) -> dict:
+    """Two records of one association combine conservatively for retention.
+
+    It stays supporting if either record was, and ages from the later time. For a fresh
+    observation (stamped now, supporting) this is the same as letting it replace the old
+    record; it only matters when both records were already stamped.
+    """
+    combined: dict = {}
+    if previous.get("status") == "supporting":
+        combined["status"] = "supporting"
+    try:
+        if datetime.fromisoformat(previous["associated_at"]) > datetime.fromisoformat(source["associated_at"]):
+            combined["associated_at"] = previous["associated_at"]
+    except (KeyError, TypeError, ValueError):
+        pass
+    return combined
