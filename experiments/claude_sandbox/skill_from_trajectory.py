@@ -14,13 +14,13 @@ Per trial:
   4. For each condition, run each measure utterance once. Capture token usage,
      duration, and the skill the model invoked (if any).
 
-Results: experiments/results/skill_from_trajectory_<UTC-timestamp>/
+Results: experiments/claude_sandbox/results/skill_from_trajectory_<UTC-timestamp>/
   - report.md            three-way × per-utterance comparison table
   - raw.json             full per-run usage payloads + tool-call summaries
   - synthesized_skills/  copy of each trial's synthesized skill dir
 
 Usage:
-    python3 experiments/skill_from_trajectory.py [--trials 5]
+    python3 experiments/claude_sandbox/skill_from_trajectory.py [--trials 5]
 """
 
 from __future__ import annotations
@@ -454,7 +454,7 @@ def main() -> int:
     _check_prerequisites()
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    results_dir = REPO_ROOT / "experiments" / "results" / f"skill_from_trajectory_{timestamp}"
+    results_dir = Path(__file__).resolve().parent / "results" / f"skill_from_trajectory_{timestamp}"
     results_dir.mkdir(parents=True, exist_ok=True)
     workspace_root = results_dir / "workspaces"
     workspace_root.mkdir(exist_ok=True)

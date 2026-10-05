@@ -15,7 +15,7 @@ Repeat N times per condition. Reports headline tokens from claude
 --output-format json and per-turn usage parsed from the saved transcript.
 
 Usage:
-    python experiments/token_savings.py [--runs 3]
+    python experiments/claude_sandbox/token_savings.py [--runs 3]
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from pathlib import Path
 # Constants mirrored from test_claude_sandbox_learn_recall.py — kept inline
 # so this script doesn't pull in pytest just to import them.
 SANDBOX_IMAGE = "claude-sandbox"
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 SESSION_TIMEOUT_SECONDS = 600
 FORWARDED_ENV_VARS = (
     "ANTHROPIC_API_KEY",
@@ -398,7 +398,7 @@ def main() -> int:
     _check_prerequisites()
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    results_dir = REPO_ROOT / "experiments" / "results" / f"token_savings_{timestamp}"
+    results_dir = Path(__file__).resolve().parent / "results" / f"token_savings_{timestamp}"
     results_dir.mkdir(parents=True, exist_ok=True)
     workspace_root = results_dir / "workspaces"
     workspace_root.mkdir(exist_ok=True)
