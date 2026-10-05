@@ -73,17 +73,17 @@ class RetentionScheduler:
         token = execution_cancelled.set(lambda: self.store.cancelled(namespace, job_id, self.worker_id))
         try:
             if self.store.cancelled(namespace, job_id, self.worker_id):
-                report_result({"cancelled": True}, span)
+                report_result({"cancelled": True}, span, operation_name="evolve.retention.job")
                 self.store.finish(namespace, job_id, self.worker_id, "cancelled")
                 return
             result = self.client.retention(namespace, agent_id=definition.agent_id).run(
                 definition.policy_id, run_id=job_id, dry_run=definition.dry_run, initiated_by=job["initiated_by"]
             )
             status = "cancelled" if result.get("cancelled") else ("failed" if result.get("error") or result.get("errors") else "completed")
-            report_result(result, span)
+            report_result(result, span, operation_name="evolve.retention.job")
             self.store.finish(namespace, job_id, self.worker_id, status, result.get("error"))
         except Exception as exc:
-            report_result({"error": True}, span)
+            report_result({"error": True}, span, operation_name="evolve.retention.job")
             logger.exception("Retention job %s failed", job_id)
             self.store.finish(namespace, job_id, self.worker_id, "failed", type(exc).__name__)
         finally:

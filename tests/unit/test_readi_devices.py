@@ -16,10 +16,33 @@ pytestmark = pytest.mark.unit
     "platform,device,expected",
     [("darwin", "auto", "numpy"), ("linux", "auto", "cupy"), ("darwin", "cpu", "numpy"), ("linux", "cuda", "cupy")],
 )
-def test_device_scope_covers_loading_and_inference_and_restores_on_error(monkeypatch, platform, device, expected):
+@pytest.mark.parametrize("load_failure", [False, True])
+def test_device_scope_covers_loading_and_inference_and_restores_on_error(monkeypatch, platform, device, expected, load_failure):
     host = SimpleNamespace(name="host")
     current = ContextVar("ops", default=host)
     seen = []
+    active = {"cupy": 1, "torch": 2}
+
+    @contextmanager
+    def cuda_device(runtime, selected=None):
+        previous = active[runtime]
+        if selected is not None:
+            active[runtime] = selected
+        try:
+            yield
+        finally:
+            active[runtime] = previous
+
+    monkeypatch.setitem(
+        sys.modules,
+        "thinc.compat",
+        SimpleNamespace(
+            has_cupy_gpu=True,
+            has_torch_cuda_gpu=True,
+            cupy=SimpleNamespace(cuda=SimpleNamespace(Device=lambda: cuda_device("cupy"))),
+            torch=SimpleNamespace(cuda=SimpleNamespace(current_device=lambda: active["torch"], device=lambda i: cuda_device("torch", i))),
+        ),
+    )
 
     @contextmanager
     def use_ops(name):
@@ -31,9 +54,12 @@ def test_device_scope_covers_loading_and_inference_and_restores_on_error(monkeyp
 
     def load(name):
         seen.append(("load", current.get().name))
+        if load_failure:
+            raise RuntimeError("load failed")
         return object()
 
     def gpu():
+        active.update(cupy=0, torch=0)
         current.set(SimpleNamespace(name="cupy"))
 
     class Base:
@@ -58,13 +84,22 @@ def test_device_scope_covers_loading_and_inference_and_restores_on_error(monkeyp
         "risk_assessment.classification.unstructured.spacy": SimpleNamespace(SpacyEntityExtractor=Extractor),
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
+    if load_failure:
+        with pytest.raises(RuntimeError, match="load failed"):
+            readi._build_spacy_extractor("test-model", device)
+        assert current.get() is host
+        assert active == {"cupy": 1, "torch": 2}
+        return
     extractor = readi._build_spacy_extractor("test-model", device)
     assert current.get() is host
+    assert active == {"cupy": 1, "torch": 2}
     assert extractor.extract("ok") == []
     assert current.get() is host
+    assert active == {"cupy": 1, "torch": 2}
     with pytest.raises(RuntimeError):
         extractor.extract("fail")
     assert current.get() is host
+    assert active == {"cupy": 1, "torch": 2}
     assert seen == [("load", expected), ("extract", expected), ("extract", expected)]
 
 

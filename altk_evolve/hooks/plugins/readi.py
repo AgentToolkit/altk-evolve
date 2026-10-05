@@ -204,6 +204,23 @@ def redact_messages(
     return out if changed else None
 
 
+def _cuda_device_scope():
+    """Restore both CUDA runtimes after spaCy selects its loading device."""
+    from contextlib import ExitStack
+    from thinc.compat import cupy, torch, has_cupy_gpu, has_torch_cuda_gpu
+
+    stack = ExitStack()
+    try:
+        if has_cupy_gpu:
+            stack.enter_context(cupy.cuda.Device())
+        if has_torch_cuda_gpu:
+            stack.enter_context(torch.cuda.device(torch.cuda.current_device()))
+    except BaseException:
+        stack.close()
+        raise
+    return stack
+
+
 def _build_spacy_extractor(model: str, device: str) -> Any:
     """Keep READI's entity conversion, with scoped spaCy device selection."""
     import spacy
@@ -217,7 +234,7 @@ def _build_spacy_extractor(model: str, device: str) -> Any:
             # here avoids enabling MPS and leaves unrelated host models alone.
             EntityExtractor.__init__(self, {})
             self.extractor_name = "SPACY"
-            with use_ops("numpy"):
+            with _cuda_device_scope(), use_ops("numpy"):
                 if device == "cuda":
                     spacy.require_gpu()
                     if get_current_ops().name != "cupy":
