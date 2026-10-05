@@ -22,6 +22,8 @@ from altk_evolve.processing.models import (
     ProcessorResult,
     ProfileDefinition,
     ProfileReference,
+    ProfileConflict,
+    ProfileNotFound,
     Trajectory,
     TrajectoryBatch,
 )
@@ -42,6 +44,47 @@ def _reject_nonfinite(value):
     elif isinstance(value, (list, tuple, set, frozenset)):
         for item in value:
             _reject_nonfinite(item)
+
+
+def _refresh_inherited(current, previous, defaults):
+    """Three-way merge: refresh unchanged defaults and retain operator edits."""
+    if current == previous:
+        return deepcopy(defaults)
+    if isinstance(current, dict) and isinstance(previous, dict) and isinstance(defaults, dict):
+        if "plugin" in current and current.get("plugin") != previous.get("plugin"):
+            return deepcopy(current)
+        if "plugin" in current and "plugin" in defaults and defaults["plugin"] != previous.get("plugin"):
+            # A replacement plugin owns a different configuration schema.
+            return deepcopy(defaults)
+        result = {}
+        for key, value in current.items():
+            if key in previous and key in defaults:
+                result[key] = _refresh_inherited(value, previous[key], defaults[key])
+            elif key not in previous or value != previous[key]:
+                result[key] = deepcopy(value)
+        for key in defaults.keys() - previous.keys() - current.keys():
+            result[key] = deepcopy(defaults[key])
+        return result
+    if all(isinstance(value, list) for value in (current, previous, defaults)):
+        if all(isinstance(item, dict) and isinstance(item.get("id"), str) for items in (current, previous, defaults) for item in items):
+            before = {item["id"]: item for item in previous}
+            after = {item["id"]: item for item in defaults}
+            result = []
+            for item in current:
+                key = item["id"]
+                if key in before and key in after:
+                    result.append(_refresh_inherited(item, before[key], after[key]))
+                elif key not in before or item != before[key]:
+                    result.append(deepcopy(item))
+            present = {item["id"] for item in current}
+            result.extend(deepcopy(item) for item in defaults if item["id"] not in before and item["id"] not in present)
+            if [item["id"] for item in current] == [item["id"] for item in previous if item["id"] in present]:
+                # Config edits do not override the application's processor order.
+                merged = {item["id"]: item for item in result}
+                result = [merged[item["id"]] for item in defaults if item["id"] in merged]
+                result.extend(item for key, item in merged.items() if key not in after)
+            return result
+    return deepcopy(current)
 
 
 @dataclass
@@ -118,13 +161,54 @@ class ProcessingManager:
             raise ProcessingError("Profile name is required; revision must be >= 0 (0 creates)")
         plan = self.validate(definition)
         # Persist normalized configuration/defaults and implementation versions, not live pointers.
-        revision = self.repository.put(name, plan.manifest(), expected_revision=expected_revision)
+        value = plan.manifest()
+        if expected_revision:
+            _, stored = self.repository.get(name)
+            if "managed_defaults" in stored:
+                value = {"profile_manifest": value, "managed_defaults": stored["managed_defaults"]}
+        revision = self.repository.put(name, value, expected_revision=expected_revision)
         return {"id": name, "revision": revision, "manifest": plan.manifest()}
 
     def get(self, name: str, revision: int | None = None) -> dict:
         ProfileReference(id=name, revision=revision)
         number, manifest = self.repository.get(name, revision)
-        return {"id": name, "revision": number, "manifest": manifest}
+        return {"id": name, "revision": number, "manifest": manifest.get("profile_manifest", manifest)}
+
+    def ensure(self, name: str, definition: dict | ProfileDefinition) -> dict:
+        """Refresh a caller-owned profile's defaults without overwriting operator edits.
+
+        The supplied definition is resolved on this service. An existing legacy
+        profile uses its first revision as the original defaults; later edits are
+        preserved. Immutable revisions and compare-and-swap protect concurrent
+        updates. Explicitly pinned values in the supplied definition stay pinned.
+        """
+        if not name:
+            raise ProcessingError("Profile name is required")
+        defaults = self.validate(definition).manifest()
+        for _ in range(5):
+            try:
+                revision, stored = self.repository.get(name)
+                current = stored.get("profile_manifest", stored)
+                previous = stored.get("managed_defaults")
+                if previous is None:
+                    _, previous = self.repository.get(name, 1)
+                    previous = previous.get("profile_manifest", previous)
+                merged = _refresh_inherited(current, previous, defaults)
+                plan = self.validate(
+                    {"processors": [{key: spec[key] for key in ("id", "plugin", "config")} for spec in merged["processors"]]},
+                    conflict_settings=merged["conflict_resolution"],
+                )
+                manifest = plan.manifest()
+                if current == manifest and stored.get("managed_defaults") == defaults:
+                    return {"id": name, "revision": revision, "manifest": current}
+            except ProfileNotFound:
+                revision, manifest = 0, defaults
+            try:
+                number = self.repository.put(name, {"profile_manifest": manifest, "managed_defaults": defaults}, expected_revision=revision)
+                return {"id": name, "revision": number, "manifest": manifest}
+            except ProfileConflict:
+                continue
+        raise ProfileConflict(f"Profile {name} kept changing during default refresh")
 
     def resolve(self, reference: ProfileReference | str, *, revision: int | None = None) -> ProcessingPlan:
         if isinstance(reference, str):
