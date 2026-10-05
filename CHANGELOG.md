@@ -4,6 +4,23 @@
 
 <!-- version list -->
 
+## v1.5.1 (2026-10-05)
+
+### Bug Fixes
+
+- **processing**: Preserve replacement processor configuration
+  ([#365](https://github.com/AgentToolkit/altk-evolve/pull/365),
+  [`0a8a1dc`](https://github.com/AgentToolkit/altk-evolve/commit/0a8a1dc54dc30bc6cb7eefa8ddcd7e3fe404e51d))
+
+- **processing**: Refresh application-owned profile defaults safely
+  ([#365](https://github.com/AgentToolkit/altk-evolve/pull/365),
+  [`0a8a1dc`](https://github.com/AgentToolkit/altk-evolve/commit/0a8a1dc54dc30bc6cb7eefa8ddcd7e3fe404e51d))
+
+- **processing**: Refresh plugin schemas and inherited order
+  ([#365](https://github.com/AgentToolkit/altk-evolve/pull/365),
+  [`0a8a1dc`](https://github.com/AgentToolkit/altk-evolve/commit/0a8a1dc54dc30bc6cb7eefa8ddcd7e3fe404e51d))
+
+
 ## v1.5.0 (2026-10-05)
 
 ### Bug Fixes
