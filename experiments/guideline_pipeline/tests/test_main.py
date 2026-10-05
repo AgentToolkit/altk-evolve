@@ -53,7 +53,7 @@ def test_usage_errors(client: EvolveClient, dataset: Path, monkeypatch: pytest.M
     monkeypatch.setattr(cli, "make_client", lambda: client)
 
     assert cli.main([*argv(dataset), "--adapter", "nope"]) == 2
-    assert "Unknown adapter 'nope' (available: fake)" in capsys.readouterr().err
+    assert "Unknown adapter 'nope' (available: cuga, fake)" in capsys.readouterr().err
     assert cli.main(argv(dataset, "--revision", "9")) == 2
     assert "error:" in capsys.readouterr().err
     with pytest.raises(SystemExit):

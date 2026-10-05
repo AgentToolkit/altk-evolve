@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pydantic import Field
 
@@ -36,3 +36,14 @@ class Adapter(Protocol):
     def records(self, path: Path) -> Iterator[AdapterRecord]:
         """Yield records from path lazily, so large datasets stream."""
         ...
+
+
+@runtime_checkable
+class ConfigurableAdapter(Adapter, Protocol):
+    """An adapter that accepts ``--adapter-option KEY=VALUE`` settings.
+
+    configure validates the options (raising ValueError on unknown keys or bad
+    values) and returns a configured copy; the registered instance is unchanged.
+    """
+
+    def configure(self, options: Mapping[str, str]) -> Adapter: ...

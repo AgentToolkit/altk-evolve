@@ -37,8 +37,80 @@ uv run python -m experiments.guideline_pipeline mine --adapter <name> --input <p
   and the run continues. The exit code is 1 if anything failed, 2 for a usage
   error (unknown adapter or profile, unsupported backend).
 - `--limit N` stops after N records read from the adapter, including skipped ones.
+- `--adapter-option KEY=VALUE` (repeatable) configures the adapter for this run.
+  Each adapter documents its keys; an unknown key or a bad value is a usage error,
+  as is passing options to an adapter that takes none.
 - On macOS, `make_client()` first calls `runtime.stabilize_runtime()` to keep
   the embedding model off MPS. This is a temporary workaround.
+
+## CUGA
+
+The `cuga` adapter reads CUGA benchmark runs (AppWorld tasks). `--input` is one
+run directory or a directory of them:
+
+```text
+<input>/
+  <run>/                      # e.g. test_normal_dev; becomes metadata.run and metadata.partition
+    metadata.json             # optional: {"task_ids": [...], "experiment_name": ...}
+    results.json              # optional: {"<task_id>": {"eval": <JSON string or object>, ...}}
+    <task_id>.json            # {"intent", "score", "dataset_name", "steps": [{"name", "data", "prompts"?}]}
+    appworld_sdk_*.json       # ignored
+```
+
+When `metadata.json` lists `task_ids`, those are the tasks; otherwise every JSON
+file other than `results`, `metadata` and `appworld_sdk_*` is one. Each task
+becomes one record:
+
+- **messages**: the intent as the user message, then each `Raw_Assistant_Response`
+  as an `execute_ipython` function call and each `User_output` / `Observation` /
+  `Tool_output` as an `OBSERVATION:` assistant message (the extractor ignores
+  `role: "tool"`). Steps are cut to 2000 characters. CUGA's duplicate logs
+  (`Assistant_code`, `Assistant_nl`), the final-answer step and the evaluation
+  are left out.
+- **outcome**: `success` from `results.json` (falling back to the task's
+  `EvaluationResult` step, then to `score >= 1`), the failed ground-truth
+  requirements as `failed_checks`, and the first 2000 characters of the
+  evaluation report as `detail`. A task with no evaluation and no score has no outcome.
+- **batch**: source `cuga`, conversation `<run>/<task_id>`, batch `<task_id>`, and
+  a revision that digests the record's content. Correcting a task file or its
+  `results.json` entry, or changing an option that changes the content, reprocesses
+  that task; re-running unchanged input skips it. Renaming a run directory changes
+  its identity.
+- **Long runs**: the extractor keeps only the first 50 steps, so the adapter keeps
+  the first 6 and the last 43 steps with one `[N steps elided ...]` marker between
+  them. This is temporary, until the extractor's limits are configurable.
+
+Options (`--adapter-option KEY=VALUE`):
+
+| Key | Effect |
+| --- | --- |
+| `include_system_prompt=true` | Add the agent's system prompt (the first `system` message in any step's `prompts`) as a `system` context message. |
+| `include_summaries=true` | Add each reflective `Summary` block from `User_return` steps as an assistant context message. |
+| `task_ids=a_1,b_2` | Only these tasks. A listed ID that is not found ends the run with an error. |
+| `task_manifest=<file>` | Only the tasks in a JSON file (`task_ids` or `tasks[].task_id`) or a text file with one ID per line (`#` comments). Combines with `task_ids`. |
+| `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
+
+Context messages are supporting history: the extractor sees them, but they are
+not counted as steps and are rendered within a character budget that keeps the
+most recent ones.
+
+A sample profile, [profiles/cuga.json](profiles/cuga.json), runs the built-in
+`evolve.guidelines` processor in `standard` mode with segmentation off. Its model
+and provider are omitted, so they are captured from the `EVOLVE_*` / LLM settings
+when the profile is published.
+
+```bash
+uv run evolve processing-profiles apply cuga-guidelines \
+    --file experiments/guideline_pipeline/profiles/cuga.json --expected-revision 0
+
+uv run python -m experiments.guideline_pipeline mine --adapter cuga --input path/to/cuga_runs \
+    --namespace cuga --processing-profile cuga-guidelines \
+    --adapter-option include_summaries=true --adapter-option model=gpt-4.1 --dry-run
+```
+
+Drop `--dry-run` to mine. Note that the built-in processor uses the outcome for
+each guideline's `evidence`; it does not yet show `failed_checks` or `detail` to
+the extraction prompt.
 
 ## Writing an adapter
 
@@ -91,8 +163,12 @@ ADAPTERS = {adapter.name: adapter for adapter in (MyDatasetAdapter(),)}
   mined needs a new `batch.revision`, or the record is skipped.
 - Messages must be JSON-serializable; `--dry-run` checks this.
 
-Each adapter needs unit tests under `tests/` that use a tiny in-test fixture,
-never a copy of the real dataset. See `tests/fakes.py` for the pattern.
+To take `--adapter-option` settings, also implement `configure(options)`, which
+validates the `KEY=VALUE` strings and returns a configured copy (see
+`ConfigurableAdapter` in `adapters/base.py` and `adapters/cuga.py`).
+
+Each adapter needs unit tests under `tests/` that use a tiny synthetic fixture,
+never a copy of the real dataset. See `tests/fakes.py` and `tests/fixtures/cuga/`.
 
 ## Tests
 

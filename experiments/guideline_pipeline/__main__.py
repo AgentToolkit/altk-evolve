@@ -27,12 +27,36 @@ def _positive(value: str) -> int:
     return number
 
 
+def _option(value: str) -> tuple[str, str]:
+    key, sep, setting = value.partition("=")
+    if not sep or not key.strip():
+        raise argparse.ArgumentTypeError("must be KEY=VALUE")
+    return key.strip(), setting
+
+
+def _options(pairs: list[tuple[str, str]]) -> dict[str, str]:
+    options: dict[str, str] = {}
+    for key, value in pairs:
+        if key in options:
+            raise ValueError(f"--adapter-option {key} given twice")
+        options[key] = value
+    return options
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m experiments.guideline_pipeline", description=__doc__)
     stages = parser.add_subparsers(dest="stage", required=True)
     mine_parser = stages.add_parser("mine", help="generate guidelines from a dataset through a processing profile")
     mine_parser.add_argument("--adapter", required=True, help="registered dataset adapter name")
     mine_parser.add_argument("--input", required=True, type=Path, help="dataset path, as the adapter expects it")
+    mine_parser.add_argument(
+        "--adapter-option",
+        action="append",
+        default=[],
+        type=_option,
+        metavar="KEY=VALUE",
+        help="adapter setting; repeatable (see the adapter's README section)",
+    )
     mine_parser.add_argument("--namespace", required=True, help="namespace to write guidelines into (created if missing)")
     mine_parser.add_argument("--processing-profile", required=True, help="published processing profile id")
     mine_parser.add_argument("--revision", type=_positive, help="pin a profile revision (default: latest, resolved once per run)")
@@ -44,7 +68,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        adapter = get_adapter(args.adapter)
+        adapter = get_adapter(args.adapter, _options(args.adapter_option))
         report = mine(
             adapter.records(args.input),
             None if args.dry_run else make_client(),
