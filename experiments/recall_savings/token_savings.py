@@ -15,7 +15,7 @@ Repeat N times per condition. Reports headline tokens from claude
 --output-format json and per-turn usage parsed from the saved transcript.
 
 Usage:
-    python experiments/claude_sandbox/token_savings.py [--runs 3]
+    python experiments/recall_savings/token_savings.py [--runs 3]
 """
 
 from __future__ import annotations
