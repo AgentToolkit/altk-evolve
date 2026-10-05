@@ -1566,6 +1566,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#refreshing-application-owned-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Refreshing application-owned defaults
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1984,6 +1995,21 @@ conversation content is not aliased. Alias links commit atomically and survive s
 restarts. Discovery requires the span ancestry to be present in the fetched window;
 configure the fetch limit accordingly. Independent calls with identical content remain
 independent batches.</p>
+<h3 id="refreshing-application-owned-defaults">Refreshing application-owned defaults<a class="headerlink" href="#refreshing-application-owned-defaults" title="Permanent link">&para;</a></h3>
+<p>Applications can use <code>ProcessingManager.ensure(name, definition)</code> or the MCP tool
+<code>ensure_processing_profile(profile_id, definition)</code> for a profile they own.
+Defaults resolve on the Evolve service. The operation keeps the profile ID,
+creates an immutable revision only when needed, and retries conditional-write
+conflicts. Pass the returned revision when processing a batch.</p>
+<p>Evolve retains the previously resolved defaults alongside the profile. Fields
+that still match those defaults follow updated configuration; changed fields,
+added processors, and operator removals are preserved. Explicit values in the
+application's supplied definition remain explicit. Regular profile updates keep
+the default baseline so later refreshes preserve those edits. Historical profile
+revisions continue to resolve to their original models and providers.</p>
+<p>When adopting an existing profile, its first revision serves as the baseline.
+Use this only for an application-owned profile whose first revision represents
+that application's defaults, not an unrelated administrator-owned profile.</p>
 
 
 
