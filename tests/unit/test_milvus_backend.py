@@ -484,7 +484,7 @@ class ReleasedCollection:
     Mirrors milvus-lite >= 3, which raises code=101 on query/search against a released collection.
     """
 
-    def __init__(self, has_index: bool = True):
+    def __init__(self, has_index: bool = True, loaded: bool = False, can_load: bool = True):
         self.row = {
             "id": 42,
             "type": "guideline",
@@ -494,14 +494,20 @@ class ReleasedCollection:
             "embedding": [0.1] * 384,
         }
         self.has_index = has_index
-        self.loaded = False
+        self.loaded = loaded
+        self.can_load = can_load
         self.calls: list[str] = []
 
     def install(self, backend: MilvusEntityBackend, monkeypatch) -> None:
         monkeypatch.setattr(backend.milvus, "has_collection", always_has_collection)
         monkeypatch.setattr(backend.embedding_model, "encode", arbitrary_embedding)
-        for name in ("list_indexes", "create_index", "load_collection", "query", "search", "upsert", "flush"):
+        for name in ("get_load_state", "list_indexes", "create_index", "load_collection", "query", "search", "upsert", "flush"):
             monkeypatch.setattr(backend.milvus, name, getattr(self, name))
+
+    def get_load_state(self, collection_name, **kwargs):
+        from pymilvus.client.types import LoadState
+
+        return {"state": LoadState.Loaded if self.loaded else LoadState.NotLoad}
 
     def list_indexes(self, **kwargs):
         return ["embedding_auto_idx"] if self.has_index else []
@@ -514,6 +520,8 @@ class ReleasedCollection:
         from pymilvus.exceptions import MilvusException
 
         self.calls.append("load_collection")
+        if not self.can_load:
+            raise MilvusException(code=65535, message="PrivilegeLoad: permission deny")
         if not self.has_index:
             raise MilvusException(code=700, message="index not found")
         self.loaded = True
@@ -571,6 +579,19 @@ def test_search_entities_creates_missing_index_before_loading(milvus_backend: Mi
 
     assert [entity.content for entity in result] == ["paginate fully"]
     assert collection.calls[0] == "create_index"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("query", [None, "pagination"])
+def test_search_entities_skips_load_when_already_loaded(milvus_backend: MilvusEntityBackend, monkeypatch, query):
+    """Read-only credentials lack the Load privilege, so a loaded collection is read without a Load request."""
+    collection = ReleasedCollection(loaded=True, can_load=False)
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.search_entities("test_namespace", query=query)
+
+    assert [entity.content for entity in result] == ["paginate fully"]
+    assert "load_collection" not in collection.calls
 
 
 @pytest.mark.unit
