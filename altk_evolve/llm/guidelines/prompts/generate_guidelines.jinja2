@@ -2,8 +2,14 @@ Extract actionable, relevant guidelines from this trajectory that would help an 
 
 # Task Information
 **Task:** {{task_instruction}}
-**Task Status:** There is no evaluation of the task's trajectory or output against any ground truth. There is also no user feedback to the AI agent. But the trajectory may contain the agent's self-evaluation of whether the task succeeded or failed.
-**Steps Taken:** {{num_steps}}
+{% if outcome %}**Task Status:** {{ "SUCCEEDED" if outcome.success else "FAILED" }}, as judged by an external evaluation of the task's output.
+{% if failed_checks %}**Failed checks:**
+{% for check in failed_checks %}- {{check}}
+{% endfor %}{% if omitted_checks %}- ... and {{omitted_checks}} more
+{% endif %}{% endif %}{% if detail %}**Evaluation detail:**
+{{detail}}
+{% endif %}{% else %}**Task Status:** There is no evaluation of the task's trajectory or output against any ground truth. There is also no user feedback to the AI agent. But the trajectory may contain the agent's self-evaluation of whether the task succeeded or failed.
+{% endif %}**Steps Taken:** {{num_steps}}
 
 {% if supporting_context %}
 # Supporting Conversation History
@@ -15,7 +21,20 @@ Use this history to interpret the new steps below, not as additional steps to le
 {{trajectory_summary}}
 
 **IMPORTANT TO REMEMBER:**
-1. Only generate guidelines if they are truly relevant and actionable
+{% if outcome %}{% if outcome.success %}1. The task succeeded. Return at most {{max_guidelines}} guidelines, and only for non-obvious patterns the agent had to work out: a discovery, a recovery, or a step it would easily have missed.
+2. If the agent succeeded without struggle, return an empty list.
+{% else %}1. The task failed. Return 1 to {{max_guidelines}} corrective guidelines that would have prevented this failure{% if failed_checks or detail %}, grounded in the failed checks and evaluation detail above{% endif %}.
+2. Identify the step where the agent went wrong, and state what it should have done instead.
+{% endif %}3. An empty list is better than generic advice. Never return platitudes like "be careful" or "double-check your work".
+4. Write each guideline as an imperative instruction about a specific behavior.
+5. Make guidelines generalize to similar tasks: leave out task IDs, people's names, record IDs, amounts, and other values specific to this task.
+6. Each guideline should have:
+   - A clear, concise description (content)
+   - The purpose/benefit of following it
+   - The category: "strategy", "recovery", or "optimization"
+   - Specific steps to implement the guideline
+   - A trigger condition (when to apply this guideline)
+{% else %}1. Only generate guidelines if they are truly relevant and actionable
 2. Guidelines should be specific to patterns observed in this trajectory
 3. Include both positive patterns (what worked) and negative patterns (what to avoid)
 4. Each guideline should have:
@@ -34,7 +53,7 @@ Use this history to interpret the new steps below, not as additional steps to le
    - Iterated through results (pagination)
    - Structured its approach to the problem
    - Handled errors or unexpected responses
-
+{% endif %}
 {% if not constrained_decoding_supported %}
 **Output Format (JSON):**
 ```json
