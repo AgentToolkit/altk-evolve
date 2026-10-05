@@ -1,4 +1,4 @@
-"""A fake dataset adapter and an echo processor: no LLM, no network."""
+"""A fake dataset adapter, an echo processor and a scripted guideline processor: no LLM, no network."""
 
 from __future__ import annotations
 
@@ -9,8 +9,11 @@ from typing import ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict
 
+from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.processing import ProcessorContext, ProcessorResult, Trajectory, TrajectoryBatch, TrajectoryOutcome
+from altk_evolve.processing.builtin import GuidelineProcessor
 from altk_evolve.schema.core import Entity
+from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResult
 
 from experiments.guideline_pipeline.adapters.base import AdapterRecord
 
@@ -46,6 +49,37 @@ class EchoProcessor:
         )
 
 
+def _scripted_guidelines(trajectory: Trajectory) -> list[GuidelineGenerationResult]:
+    """One guideline per trajectory; task_description is the first user message, as with segmentation off."""
+    instruction = next(m["content"] for m in trajectory.messages if m["role"] == "user")
+    guideline = Guideline(
+        content=f"For tasks like '{instruction}', check the answer '{trajectory.messages[-1]['content']}'.",
+        rationale="scripted",
+        category="strategy",
+        trigger="always",
+    )
+    return [GuidelineGenerationResult(guidelines=[guideline], task_description=instruction)]
+
+
+class ScriptedGuidelineProcessor(GuidelineProcessor):
+    """The built-in evolve.guidelines processor with the LLM step scripted.
+
+    Its entity metadata (source_task_id, task_description, support, evidence) is
+    built by the library's own process(); only generation is replaced, and
+    conflict resolution is turned off because it is another LLM call.
+    """
+
+    id: ClassVar[str] = "tests.pipeline_guidelines"
+    config_model: ClassVar[type[BaseModel]] = EchoConfig
+
+    @classmethod
+    def from_config(cls, config: BaseModel) -> Self:
+        return cls((("standard", _scripted_guidelines),))
+
+    def process(self, trajectory: Trajectory, *, context: ProcessorContext) -> ProcessorResult:
+        return super().process(trajectory, context=context).model_copy(update={"enable_conflict_resolution": False})
+
+
 class FakeAdapter:
     """Reads a JSON list of {"task", "answer", "success", "revision"?} objects."""
 
@@ -67,3 +101,14 @@ class FakeAdapter:
 def profile(label: str = "v1", fail_on: str | None = None) -> dict:
     config: dict = {"label": label} if fail_on is None else {"label": label, "fail_on": fail_on}
     return {"processors": [{"id": "echo", "plugin": EchoProcessor.id, "config": config}]}
+
+
+def guideline_profile() -> dict:
+    return {"processors": [{"id": "guidelines", "plugin": ScriptedGuidelineProcessor.id, "config": {}}]}
+
+
+def store_guidelines(client: EvolveClient, namespace_id: str, *guidelines: tuple[str, dict]) -> None:
+    """Write (content, metadata) guidelines directly, as consolidation does: no LLM, no conflict resolution."""
+    client.ensure_namespace(namespace_id)
+    entities = [Entity(type="guideline", content=content, metadata=metadata) for content, metadata in guidelines]
+    client.update_entities(namespace_id, entities, enable_conflict_resolution=False)

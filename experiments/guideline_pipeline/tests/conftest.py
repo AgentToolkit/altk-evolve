@@ -12,7 +12,7 @@ from altk_evolve.config.filesystem import FilesystemSettings
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.processing import ProcessingManager, ProcessorRegistry, SQLiteProfileRepository
 
-from experiments.guideline_pipeline.tests.fakes import EchoProcessor, profile
+from experiments.guideline_pipeline.tests.fakes import EchoProcessor, ScriptedGuidelineProcessor, guideline_profile, profile
 
 
 @pytest.fixture
@@ -21,11 +21,13 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> EvolveClient:
     monkeypatch.setenv("EVOLVE_HOOKS_CONFIG", "")
     registry = ProcessorRegistry()
     registry.register(EchoProcessor)
+    registry.register(ScriptedGuidelineProcessor)
     manager = ProcessingManager(registry=registry, repository=SQLiteProfileRepository(tmp_path / "profiles.db"))
     client = EvolveClient(
         EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path / "entities"))), processing=manager
     )
     client.processing.put("echo", profile(), expected_revision=0)
+    client.processing.put("guidelines", guideline_profile(), expected_revision=0)
     return client
 
 
