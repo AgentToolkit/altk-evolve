@@ -33,7 +33,9 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
     # Import here to avoid circular import (guidelines.py imports this module)
     from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 
-    trajectory_data = parse_openai_agents_trajectory(messages)
+    # Same options as the caller's own parse: the step indices returned here are positions
+    # in that rendering, so a different window would move what they point at.
+    trajectory_data = parse_openai_agents_trajectory(messages, options=options)
 
     supported_params = get_supported_openai_params(
         model=options.guidelines_model,

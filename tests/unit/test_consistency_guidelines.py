@@ -468,6 +468,32 @@ class TestCanSegmentTrajectory:
         ]
         assert _can_segment_trajectory(messages) is True
 
+    @staticmethod
+    def _long_trajectory(n_steps: int) -> list[dict]:
+        return [{"role": "user", "content": "hi"}] + [{"role": "assistant", "content": f"step {i}"} for i in range(1, n_steps + 1)]
+
+    def test_a_long_trajectory_is_safe_with_the_default_head_only_window(self, monkeypatch):
+        """Head-only truncation shortens the segmenter's reach without moving any index:
+        position n is still positional step n, which is what the IR numbering counts."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 5)
+        assert _can_segment_trajectory(self._long_trajectory(20)) is True
+
+    def test_an_elided_trajectory_is_not_safe(self, monkeypatch):
+        """With a tail configured, the kept tail steps sit at list positions that no longer
+        equal their positional step numbers, while transform_trajectory_to_IR counts straight
+        through the gap — so the indices segment_trajectory returns would address the wrong
+        IR steps."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 5)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_tail_steps", 2)
+        assert _can_segment_trajectory(self._long_trajectory(20)) is False
+
+    def test_a_short_trajectory_stays_safe_when_elision_is_configured(self, monkeypatch):
+        """Nothing is elided below the step budget, so the setting alone must not disable
+        segmentation for trajectories it never touches."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 5)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_tail_steps", 2)
+        assert _can_segment_trajectory(self._long_trajectory(4)) is True
+
     def test_mixed_safe_messages_are_safe(self):
         # string content step followed by single-function_call step
         messages = [

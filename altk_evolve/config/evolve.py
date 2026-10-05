@@ -12,6 +12,16 @@ class EvolveConfig(BaseSettings):
     settings: BaseSettings | None = None
     clustering_threshold: float = 0.80
     segmentation_enabled: bool = False
+    # Trajectory rendering limits, applied by parse_openai_agents_trajectory to every
+    # generation path. Defaults reproduce the previously hard-coded 50 steps / 2000
+    # characters, head-only.
+    #   trajectory_tail_steps  - how much of the step budget is reserved for the *end* of a
+    #                            long run. 0 (default) keeps today's head-only truncation;
+    #                            raise it to keep the final steps, which is where a run's
+    #                            outcome is, at the cost of the middle.
+    trajectory_max_steps: int = Field(default=50, ge=1)
+    trajectory_max_step_chars: int = Field(default=2000, ge=1)
+    trajectory_tail_steps: int = Field(default=0, ge=0)
     retention_scheduler_enabled: bool = True
     retention_poll_seconds: float = Field(default=10, gt=0)
     retention_max_workers: int = Field(default=1, ge=1)
@@ -39,6 +49,16 @@ class EvolveConfig(BaseSettings):
     retrieval_near_core_thresh: float = Field(default=0.75, ge=0.0, le=1.0)
     retrieval_dedup_thresh: float = Field(default=0.90, ge=0.0, le=1.0)
     evidence_filter: Literal["all", "success", "failure"] = "all"
+
+    @model_validator(mode="after")
+    def _check_trajectory_window(self) -> "EvolveConfig":
+        if self.trajectory_tail_steps >= self.trajectory_max_steps:
+            raise ValueError(
+                f"trajectory_tail_steps ({self.trajectory_tail_steps}) must be < trajectory_max_steps "
+                f"({self.trajectory_max_steps}); the tail is carved out of the step budget, so a tail "
+                "that consumes all of it would leave no steps from the start of the run."
+            )
+        return self
 
     @model_validator(mode="after")
     def _check_support_thresholds(self) -> "EvolveConfig":

@@ -49,12 +49,46 @@ All configuration variables are prefixed with `EVOLVE_`.
 | `EVOLVE_CONSISTENCY_METHOD` | Consistency mode only: `fast` (LLM self-judged) or `accurate` (resampling based) — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method) | `fast` |
 | `EVOLVE_CONSISTENCY_RESAMPLE_MAX_WORKERS` | `accurate` method only: how many resampling calls run in parallel when a provider won't return several completions in one call — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method). Raise it to cut resampling wall-clock, lower it to `1` if the provider rate-limits you | `4` |
 | `EVOLVE_SEGMENTATION_ENABLED` | Segment trajectories into logical subtasks before generating guidelines. Governs all three generation paths (`standard`, and both `consistency` methods). Disabled by default — see [Trajectory segmentation](#trajectory-segmentation) | `false` |
+| `EVOLVE_TRAJECTORY_MAX_STEPS` | Most trajectory steps rendered into a generation prompt — see [Trajectory limits](#trajectory-limits) | `50` |
+| `EVOLVE_TRAJECTORY_MAX_STEP_CHARS` | Characters kept per step before truncation | `2000` |
+| `EVOLVE_TRAJECTORY_TAIL_STEPS` | How much of the step budget is reserved for the **end** of a long run. `0` truncates head-only, as before — see [Trajectory limits](#trajectory-limits) | `0` |
 | `EVOLVE_GUIDELINES_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_FACT_EXTRACTION_MODEL` | Model for fact extraction only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_MODEL_NAME` | Global fallback model for all Evolve LLM calls | `gpt-4o` |
 | `EVOLVE_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for OpenAI-compatible endpoints). Defaults to `openai` whenever `OPENAI_API_KEY` or `OPENAI_BASE_URL` is set, even if you never set this variable yourself — see the [consistency guide](guidelines.md#choosing-a-consistency-method) for a case where that implicit default causes misrouting | `openai` if `OPENAI_API_KEY`/`OPENAI_BASE_URL` is set, else `None` |
 | `EVOLVE_EMBEDDING_MODEL` | Embedding model                                                               | `sentence-transformers/all-MiniLM-L6-v2` |
+
+### Trajectory limits
+
+A trajectory is rendered into the generation prompt as at most `EVOLVE_TRAJECTORY_MAX_STEPS`
+steps of at most `EVOLVE_TRAJECTORY_MAX_STEP_CHARS` characters each. Both were fixed at 50
+and 2000 before; the defaults are unchanged.
+
+**Keeping the end of a long run.** By default the window is head-only: a 200-step run is
+rendered as its first 50 steps, and the 150 that follow — including whatever the run
+finished with — are not in the prompt at all. A run's outcome is at its end, so a guideline
+mined from the head alone can state an approach that the run went on to abandon.
+`EVOLVE_TRAJECTORY_TAIL_STEPS` carves part of the budget out for the end:
+
+```bash
+# 40 steps from the start, 10 from the end, the middle replaced by a marker
+EVOLVE_TRAJECTORY_MAX_STEPS=50
+EVOLVE_TRAJECTORY_TAIL_STEPS=10
+```
+
+The tail comes **out of** `EVOLVE_TRAJECTORY_MAX_STEPS`, not on top of it, so the prompt
+never grows past the budget; the omitted middle is announced in the prompt as
+`[... N intermediate step(s) omitted ...]` rather than silently closed up. It must stay
+below `EVOLVE_TRAJECTORY_MAX_STEPS` — a tail that consumed the whole budget would leave no
+steps from the start of the run.
+
+Leave it at `0` if you compare results against runs recorded earlier: it changes which steps
+reach the model, so guidelines mined before and after the change come from different views
+of the same trajectory. One interaction to know about: with elision in effect, the
+`accurate` consistency method skips segmentation on any trajectory long enough to be elided,
+because its step numbering and the segmenter's stop agreeing across the gap. Trajectories
+within the step budget are unaffected, as is the `fast` method.
 
 ### Trajectory segmentation
 
