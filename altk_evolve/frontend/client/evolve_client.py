@@ -307,12 +307,21 @@ class EvolveClient:
         return self._cluster_guideline_entities(entities, threshold=threshold)
 
     def _cluster_guideline_entities(self, entities: list[RecordedEntity], threshold: float | None = None) -> list[list[RecordedEntity]]:
-        """Cluster a pre-fetched list of guideline entities by task similarity."""
+        """Cluster a pre-fetched list of guideline entities by task similarity.
+
+        Clustering runs separately inside each memory scope (user, owner, agent,
+        visibility), the same exact-identity rule reconciliation uses, so a cluster
+        never mixes memories from different scopes.
+        """
         from altk_evolve.llm.guidelines.clustering import cluster_entities
+        from altk_evolve.schema.provenance import identity
 
         if threshold is None:
             threshold = self.config.clustering_threshold
-        return cluster_entities(entities, threshold=threshold)
+        by_scope: dict[tuple, list[RecordedEntity]] = {}
+        for entity in entities:
+            by_scope.setdefault(identity(entity), []).append(entity)
+        return [cluster for scoped in by_scope.values() for cluster in cluster_entities(scoped, threshold=threshold)]
 
     def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None, mode: str | None = None) -> ConsolidationResult:
         """Cluster similar guidelines and combine each cluster into consolidated guidelines.
@@ -331,7 +340,7 @@ class EvolveClient:
             ConsolidationResult with cluster/guideline counts and total support before/after.
         """
         from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members
-        from altk_evolve.schema.provenance import attach_sources
+        from altk_evolve.schema.provenance import attach_sources, identity
 
         if mode is None:
             mode = getattr(self.config, "consolidation_mode", "lossless")
@@ -366,6 +375,14 @@ class EvolveClient:
         support_after = 0
 
         for cluster in clusters:
+            # Never merge (or show the merge model) memories from different scopes.
+            # Clustering already partitions by scope; this guards the write boundary.
+            scopes = {identity(entity) for entity in cluster}
+            if len(scopes) != 1:
+                logger.warning("Cluster mixes memory scopes (IDs: %s); skipping.", [e.id for e in cluster])
+                continue
+            scope = {key: value for key, value in zip(("user_id", "owner_id", "agent_id", "visibility"), scopes.pop()) if value is not None}
+
             # Phase 1: combine + insert (skip cluster on failure)
             try:
                 attributed = combine_cluster_with_members(cluster, mode=combine_mode)
@@ -373,13 +390,15 @@ class EvolveClient:
 
                 task_description = (cluster[0].metadata or {}).get("task_description", "")
                 # Each member is attributed to exactly one output, so each output carries
-                # the union of its own members' source associations (original times kept).
+                # the union of its own members' source associations (original times kept)
+                # and the scope every member shares.
                 new_entities = [
                     Entity(
                         content=guideline.content,
                         type="guideline",
                         metadata=attach_sources(
                             {
+                                **scope,
                                 "task_description": task_description,
                                 "rationale": guideline.rationale,
                                 "category": guideline.category,
