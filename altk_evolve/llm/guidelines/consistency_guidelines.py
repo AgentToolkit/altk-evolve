@@ -234,7 +234,7 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
     }
 
 
-def _can_segment_trajectory(messages: list[dict]) -> bool:
+def _can_segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None = None) -> bool:
     """True iff segment_trajectory's step indices stay positionally aligned with
     transform_trajectory_to_IR's step numbering.
 
@@ -252,6 +252,12 @@ def _can_segment_trajectory(messages: list[dict]) -> bool:
     and for Agents SDK messages with multiple parallel function_calls in one message,
     both of which produce a step count mismatch between parse_openai_agents_trajectory
     and transform_trajectory_to_IR.
+
+    Also False once the trajectory is long enough for head+tail elision to apply
+    (EVOLVE_TRAJECTORY_TAIL_STEPS above 0). Elision closes a gap in the middle, so from the
+    first tail step onwards a list position no longer equals a positional step number, while
+    transform_trajectory_to_IR keeps counting straight through. Head-only truncation — the
+    default — keeps the alignment: it only shortens the range the segmenter can reach.
     """
     for msg in messages:
         if msg.get("role") != "assistant":
@@ -268,6 +274,14 @@ def _can_segment_trajectory(messages: list[dict]) -> bool:
                 return False
         else:
             return False
+
+    # Only parse when elision is actually configured — with the default head-only window
+    # there is nothing to check. Asking the parser is exact: a step count reimplemented here
+    # would be a second thing to keep in step with it, and parsing is pure and cheap next to
+    # this path's resampling calls.
+    options = options or GuidelineRuntime.from_settings()
+    if options.trajectory_tail_steps and parse_openai_agents_trajectory(messages, options=options)["steps_omitted"]:
+        return False
     return True
 
 
@@ -732,7 +746,7 @@ def generate_consistency_guidelines(
     # Only attempt when every assistant message's content field allows a 1:1 step index
     # mapping between segment_trajectory and transform_trajectory_to_IR.
     subtasks = []
-    if options.segmentation_enabled and n_scorable_steps >= SEGMENTATION_MIN_STEPS and _can_segment_trajectory(messages):
+    if options.segmentation_enabled and n_scorable_steps >= SEGMENTATION_MIN_STEPS and _can_segment_trajectory(messages, options=options):
         try:
             from altk_evolve.llm.guidelines.segmentation import segment_trajectory
 
@@ -912,7 +926,7 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
     )
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
-    trajectory_data = parse_openai_agents_trajectory(messages, context_messages=trajectory.get("context_messages"))
+    trajectory_data = parse_openai_agents_trajectory(messages, context_messages=trajectory.get("context_messages"), options=options)
     task_instruction = trajectory_data["task_instruction"]
     steps_list: list[str] = trajectory_data["steps_list"]
     n_steps = len(steps_list)

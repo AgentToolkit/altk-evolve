@@ -176,9 +176,45 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
     return None
 
 
-def parse_openai_agents_trajectory(messages: list[dict], *, context_messages: list[dict] | None = None) -> dict:
+def trajectory_step_window(total_steps: int, *, max_steps: int, tail_steps: int) -> tuple[int, int]:
+    """How many steps to keep from the start and the end of a ``total_steps``-step trajectory.
+
+    The tail is carved out of the ``max_steps`` budget rather than added to it, so the
+    rendered step count never exceeds the budget however the two are set. ``tail_steps`` is
+    clamped to leave at least one head step, which keeps a directly-constructed
+    ``GuidelineRuntime`` (no validator) from rendering a trajectory with no beginning.
+
+    Returns ``(head, tail)``. A trajectory within budget returns ``(total_steps, 0)``, and so
+    does any configuration with ``tail_steps == 0`` — that is the historical head-only
+    truncation, which is still the default.
+    """
+    if total_steps <= max_steps:
+        return total_steps, 0
+    tail = min(max(tail_steps, 0), max_steps - 1)
+    return max_steps - tail, tail
+
+
+def parse_openai_agents_trajectory(
+    messages: list[dict], *, context_messages: list[dict] | None = None, options: GuidelineRuntime | None = None
+) -> dict:
     """
     Parse OpenAI Agents SDK trajectory from streamer.to_input_list().
+
+    Rendering is bounded by three settings on ``options`` (defaulting to the ``EVOLVE_*``
+    environment, see ``EvolveConfig``): ``trajectory_max_steps`` steps,
+    ``trajectory_max_step_chars`` characters per step, and ``trajectory_tail_steps`` of the
+    step budget reserved for the end of the run. The defaults reproduce the previously
+    hard-coded 50 steps / 2000 characters, head-only.
+
+    **Head+tail elision.** With ``trajectory_tail_steps`` above 0, a trajectory over budget
+    keeps its first and last steps and drops the middle, because the end of a run is where
+    its outcome is and a head-only window never shows it. The gap is rendered as a marker
+    entry in ``steps_list``, not silently closed: ``steps_list`` and
+    ``trajectory_summary`` must stay the same sequence (the summary is the joined list), or
+    the 1-based indices ``segment_trajectory`` returns would address different steps than
+    the segmenter saw. For the same reason ``**Step n**`` labels number *list positions*,
+    so the marker occupies a position of its own and the label of a step still equals its
+    index. ``num_steps`` counts real steps only.
 
     Returns:
         dict with:
@@ -187,7 +223,9 @@ def parse_openai_agents_trajectory(messages: list[dict], *, context_messages: li
         - function_calls: List of tool/function calls made
         - num_steps: Total number of agent actions
         - steps_list: Individual formatted step strings (before joining), for subtask slicing
+        - steps_omitted: Steps dropped to fit the budget (0 when the whole run is rendered)
     """
+    options = options or GuidelineRuntime.from_settings()
     agent_steps: list[dict[str, str | dict]] = []
     function_calls: list[dict[str, str | dict]] = []
     task_instruction: str | None = next(
@@ -277,13 +315,28 @@ def parse_openai_agents_trajectory(messages: list[dict], *, context_messages: li
                     )
             # Any other shape (e.g. empty content and no tool_calls) contributes no steps.
 
+    head, tail = trajectory_step_window(len(agent_steps), max_steps=options.trajectory_max_steps, tail_steps=options.trajectory_tail_steps)
+    steps_omitted = len(agent_steps) - head - tail
+    kept: list[dict[str, str | dict] | None] = list(agent_steps[:head])
+    if tail:
+        # None marks the gap. It takes a position in the list so that a step's label still
+        # matches its index, and travels into any subtask slice that spans the elision.
+        # Only the elided window gets a marker: head-only truncation is the historical
+        # default, and announcing it would change what every existing caller's prompt says.
+        kept.append(None)
+        kept.extend(agent_steps[-tail:])
+
+    max_step_chars = options.trajectory_max_step_chars
     steps_list = []
-    for i, step in enumerate(agent_steps[:50], 1):
+    for i, step in enumerate(kept, 1):
+        if step is None:
+            steps_list.append(f"**[... {steps_omitted} intermediate step(s) omitted ...]**")
+            continue
         step_type = step["type"]
         content = step["content"]
         # Truncate long content
-        if len(content) > 2000:
-            content = content[:2000] + "..."
+        if len(content) > max_step_chars:
+            content = content[:max_step_chars] + "..."
 
         if step_type == "reasoning":
             steps_list.append(f"**Step {i} - Reasoning:**\n{content}")
@@ -295,7 +348,8 @@ def parse_openai_agents_trajectory(messages: list[dict], *, context_messages: li
         "trajectory_summary": "\n\n".join(steps_list),
         "steps_list": steps_list,
         "function_calls": function_calls,
-        "num_steps": len([s for s in agent_steps[:50] if s["type"] in ["action", "reasoning"]]),
+        "num_steps": len([s for s in kept if s is not None and s["type"] in ["action", "reasoning"]]),
+        "steps_omitted": steps_omitted,
     }
 
 
@@ -393,7 +447,7 @@ def generate_guidelines(
     )
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
-    trajectory_data = parse_openai_agents_trajectory(messages, context_messages=context_messages)
+    trajectory_data = parse_openai_agents_trajectory(messages, context_messages=context_messages, options=options)
     task_instruction = trajectory_data["task_instruction"]
     steps_list: list[str] = trajectory_data["steps_list"]
     n_steps = len(steps_list)
