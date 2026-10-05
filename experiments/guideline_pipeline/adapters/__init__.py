@@ -4,8 +4,9 @@ from collections.abc import Mapping
 
 from experiments.guideline_pipeline.adapters.base import Adapter, AdapterRecord, ConfigurableAdapter
 from experiments.guideline_pipeline.adapters.cuga import CugaAdapter
+from experiments.guideline_pipeline.adapters.vakra import VakraAdapter
 
-ADAPTERS: dict[str, Adapter] = {adapter.name: adapter for adapter in (CugaAdapter(),)}
+ADAPTERS: dict[str, Adapter] = {adapter.name: adapter for adapter in (CugaAdapter(), VakraAdapter())}
 
 
 def get_adapter(name: str, options: Mapping[str, str] | None = None) -> Adapter:

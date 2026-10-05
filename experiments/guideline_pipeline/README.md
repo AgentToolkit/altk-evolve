@@ -112,6 +112,88 @@ Drop `--dry-run` to mine. The built-in processor sets each guideline's `evidence
 from the outcome, and its standard generator grounds extraction in the outcome's
 `failed_checks` and `detail` (#351).
 
+## VAKRA
+
+The `vakra` adapter reads VAKRA benchmark output. `--input` is one run directory:
+
+```text
+<input>/
+  <domain>.json               # a list of records: {"uuid", "domain", "status", "model_input": {"tools", ...},
+                              #   "trajectory": [{"type": "HumanMessage" | "AIMessage" | "ToolMessage", ...}],
+                              #   "output": [{"turn_id", "query", "answer", ...}]}
+  <domain>_tools.json         # ignored
+  results.json                # optional evaluator output: {"domains": {"<domain>": {"dialogues": [{"uuid", "score", "details"}]}}}
+```
+
+Domain files are read one at a time, in name order. Each record becomes one record:
+
+- **messages**: the first `HumanMessage` (else the first turn's `query`) as the
+  user message, then, as assistant steps: a `TOOL SPACE` summary (the tools the
+  agent called, then the names of all tools it was offered), each `AIMessage`'s
+  `reasoning`, each of its `tool_calls` as a function call with the real tool
+  name and arguments, its `content` as the answer, each `ToolMessage` result as an
+  `OBSERVATION:`, and any later `HumanMessage` as a `USER MESSAGE:`. Text longer
+  than a step is split into `(part i/n)` steps rather than truncated. Runs longer
+  than the extractor's 50 steps are elided as for CUGA (the helper is shared, in
+  `adapters/elision.py`).
+- **outcome**: from the record's `results.json` dialogue. `success` is
+  `score >= 1`; the record's `status` is execution status only and is not used. A
+  failed dialogue's `failed_checks` are its turns' sub-checks (policy, exact
+  match, answer, groundedness) that scored 0, with the judge's explanation. The
+  `detail` is the per-turn scores and explanations, cut to 2000 characters. A
+  dialogue with only a score gets just `success`; a record with no results entry
+  has no outcome.
+- **trace_id** and **batch**: the record's `uuid` is the trace, conversation and
+  batch ID (source `vakra`); the revision digests the record's content, as for CUGA.
+- **metadata**: `domain`, `split` (`train` or `heldout`) and `score`.
+
+### Train / held-out split
+
+Each domain is split by position, in file order and without shuffling, and only
+one side is yielded. By default that is the train side, so `mine` never sees a
+held-out query.
+
+- `train_n=N` (default 7): the first N records of each domain are train; the rest are held out.
+- `dev_frac=F` (0 <= F < 1): the last `round(n * F)` records of each domain are held
+  out. Rounding means a one-record domain stays in train and a two-record domain
+  splits 1 / 1 at `dev_frac=0.3`. Use it when domain sizes vary too much for one `train_n`.
+- Setting both is a usage error.
+
+The held-out side is recorded in a manifest, `{domain: [{uuid, query, answer, score}, ...]}`,
+for a later retrieval evaluation. Set `heldout_out=<file>` and the adapter writes it
+when reading starts, from the same options as the split it yields, so the
+manifest is exactly the complement of the mined records. The file is
+deterministic: the same input and options always produce the same bytes. A dry
+run writes it too, without an LLM call. From Python, `VakraAdapter(...).heldout_manifest(path)`
+returns the same dict.
+
+Options (`--adapter-option KEY=VALUE`):
+
+| Key | Effect |
+| --- | --- |
+| `train_n=N` | The first N records of each domain are train (default 7). |
+| `dev_frac=F` | Instead, hold out the last `round(n * F)` records of each domain. |
+| `split=heldout` | Yield the held-out records instead of the train records (default `train`). |
+| `domains=authors,hockey` | Only these domain files (by name without `.json`). A missing domain ends the run with an error. |
+| `include_tools=false` | Leave out the `TOOL SPACE` step. |
+| `results=<file>` | Read the evaluation from this file instead of `<input>/results.json`. |
+| `heldout_out=<file>` | Write the held-out manifest to this file. |
+
+```bash
+# Check the split and write the held-out manifest, without touching storage.
+uv run python -m experiments.guideline_pipeline mine --adapter vakra --input path/to/vakra_run \
+    --namespace vakra --processing-profile vakra-guidelines \
+    --adapter-option dev_frac=0.3 --adapter-option heldout_out=vakra_heldout.json --dry-run
+
+# Mine the train split with the same options.
+uv run python -m experiments.guideline_pipeline mine --adapter vakra --input path/to/vakra_run \
+    --namespace vakra --processing-profile vakra-guidelines --adapter-option dev_frac=0.3
+```
+
+The CUGA sample profile works here too (publish it under another ID). Evaluating
+retrieval on the held-out queries is not part of this stage; a later eval stage
+will read the manifest.
+
 ## Writing an adapter
 
 An adapter is any object with a `name` and a `records(path)` method that yields
@@ -167,8 +249,11 @@ To take `--adapter-option` settings, also implement `configure(options)`, which
 validates the `KEY=VALUE` strings and returns a configured copy (see
 `ConfigurableAdapter` in `adapters/base.py` and `adapters/cuga.py`).
 
+If long runs can exceed the extractor's 50-step cap, keep their ending with
+`adapters/elision.py`'s `elide_middle`.
+
 Each adapter needs unit tests under `tests/` that use a tiny synthetic fixture,
-never a copy of the real dataset. See `tests/fakes.py` and `tests/fixtures/cuga/`.
+never a copy of the real dataset. See `tests/fakes.py` and `tests/fixtures/`.
 
 ## Tests
 

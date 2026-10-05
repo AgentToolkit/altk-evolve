@@ -1,0 +1,85 @@
+{
+  "domains": {
+    "authors": {
+      "domain": "authors",
+      "n_paired": 9,
+      "dialogues": [
+        {
+          "uuid": "auth-01",
+          "score": 1.0,
+          "metadata": {"capability": "synthetic", "domain": "authors"},
+          "details": {
+            "dialogue_score": 1.0,
+            "num_turns": 1,
+            "per_turn": [
+              {
+                "turn_id": 1,
+                "query": "Which conference had the most papers in 2012?",
+                "pred_answer": "ICML had the most papers in 2012.",
+                "score": 1.0,
+                "metadata": {
+                  "gt_steps": 1, "pred_steps": 1, "extra_steps": 0,
+                  "exactmatch_score": 1.0, "answer_score": null, "groundedness_score": 1.0,
+                  "score_explanation": {"answer": null, "exactmatch": "The tool calls match.", "groundedness": "The answer is grounded in the tool output."}
+                }
+              }
+            ],
+            "aggregate": "mean"
+          }
+        },
+        {
+          "uuid": "auth-02",
+          "score": 0.0,
+          "details": {
+            "dialogue_score": 0.0,
+            "num_turns": 1,
+            "per_turn": [
+              {
+                "turn_id": 1,
+                "query": "Who wrote the most papers?",
+                "score": 0.0,
+                "metadata": {
+                  "gt_steps": 2, "pred_steps": 2, "extra_steps": 0,
+                  "exactmatch_score": 0.0, "answer_score": 0.0, "groundedness_score": null,
+                  "score_explanation": {"answer": "The expected answer is Grace,\nnot Ada.", "exactmatch": "get_papers was called without the journal filter.", "groundedness": null}
+                }
+              }
+            ]
+          }
+        },
+        {"uuid": "auth-03", "score": 1.0},
+        {"uuid": "auth-04", "score": 1.0},
+        {"uuid": "auth-05", "score": 1.0},
+        {"uuid": "auth-06", "score": 0.0},
+        {"uuid": "auth-07", "score": 1.0},
+        {"uuid": "auth-08", "score": 1.0},
+        {"uuid": "auth-09", "score": 0.0}
+      ]
+    },
+    "hockey": {
+      "domain": "hockey",
+      "dialogues": [
+        {"uuid": "hock-01", "score": 1.0},
+        {
+          "uuid": "hock-02",
+          "score": 0.0,
+          "details": {
+            "dialogue_score": 0.0,
+            "num_turns": 1,
+            "per_turn": [
+              {
+                "turn_id": 1,
+                "score": 0.0,
+                "metadata": {
+                  "gt_steps": 1, "pred_steps": 0, "extra_steps": 0,
+                  "exactmatch_score": 0.0, "answer_score": 1.0, "groundedness_score": 0.0,
+                  "score_explanation": {"answer": "Close enough to 312.", "exactmatch": null, "groundedness": "No tool output supports the number."}
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

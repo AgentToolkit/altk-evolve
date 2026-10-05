@@ -15,7 +15,8 @@ from altk_evolve.processing import ProcessingManager, TrajectoryOutcome
 
 from experiments.guideline_pipeline import __main__ as cli
 from experiments.guideline_pipeline.adapters import ADAPTERS, AdapterRecord, get_adapter
-from experiments.guideline_pipeline.adapters.cuga import PARSER_STEP_LIMIT, CugaAdapter, elide_middle
+from experiments.guideline_pipeline.adapters.cuga import CugaAdapter
+from experiments.guideline_pipeline.adapters.elision import PARSER_STEP_LIMIT, elide_middle
 from experiments.guideline_pipeline.stages.mine import mine
 
 pytestmark = pytest.mark.unit
