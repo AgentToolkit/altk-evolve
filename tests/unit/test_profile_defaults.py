@@ -88,3 +88,12 @@ def test_refresh_retries_after_concurrent_operator_edit(tmp_path, monkeypatch):
     assert result["revision"] == 3
     assert result["manifest"]["processors"][0]["config"]["guidelines_model"] == "operator-model"
     assert result["manifest"]["processors"][0]["config"]["custom_llm_provider"] == "ollama"
+
+
+def test_operator_replacement_processor_keeps_its_own_config():
+    from altk_evolve.processing.manager import _refresh_inherited
+
+    before = {"processors": [{"id": "guidelines", "plugin": "evolve.guidelines", "config": {"guidelines_model": "old"}}]}
+    defaults = {"processors": [{"id": "guidelines", "plugin": "evolve.guidelines", "config": {"guidelines_model": "new"}}]}
+    current = {"processors": [{"id": "guidelines", "plugin": "operator.custom", "config": {"threshold": 4}}]}
+    assert _refresh_inherited(current, before, defaults) == current

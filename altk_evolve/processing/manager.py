@@ -51,6 +51,8 @@ def _refresh_inherited(current, previous, defaults):
     if current == previous:
         return deepcopy(defaults)
     if isinstance(current, dict) and isinstance(previous, dict) and isinstance(defaults, dict):
+        if "plugin" in current and current.get("plugin") != previous.get("plugin"):
+            return deepcopy(current)
         result = {}
         for key, value in current.items():
             if key in previous and key in defaults:
