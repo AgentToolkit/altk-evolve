@@ -40,6 +40,48 @@ uv run python -m experiments.guideline_pipeline mine --adapter <name> --input <p
 - On macOS, `make_client()` first calls `runtime.stabilize_runtime()` to keep
   the embedding model off MPS. This is a temporary workaround.
 
+## Adapters
+
+### `tau-retail`
+
+Reads τ-bench retail runs exported as one text file per task. `--input` is a
+directory of `task_*.txt` files (read in task-number order, not recursively) or
+a single `task_*.txt` file. Each file has `=====`-ruled sections: a
+`TASK <n>  reward=<r>  breakdown={...}` header, `USER SCENARIO`,
+`GROUND-TRUTH EVALUATION CRITERIA`, `AGENT DOMAIN POLICY`, `CONVERSATION`
+(`[ASSISTANT]` / `[USER]` turns, `-> CALL name(...)` with `args: {...}`, and
+`<- RESULT ...`), `FINAL ANSWER`, and `JUDGE / REWARD DETAILS`. See
+`tests/fixtures/tau/` for the exact layout.
+
+Each task becomes one record:
+
+- **messages:** the user scenario as the task, then the conversation. Each call
+  is an assistant function call with its tool name and arguments; results and
+  both speakers' turns are labelled assistant messages. A conversation longer
+  than the extractor's 50-step limit keeps its first and last steps around an
+  elision marker (temporary, until that limit is configurable).
+- **outcome:** `success` when the reward is 1.0; judge lines with
+  `action_match=False` or `met=False` become `failed_checks`, and the start of the
+  judge section becomes `detail`.
+- **trace_id / batch:** the file name (`task_12`); the batch revision is a hash of
+  the file, so editing a task reprocesses only that task.
+- **metadata:** the header's reward, breakdown, termination reason and the other
+  fields it carries; `model=` in the header sets the record's model.
+
+A file without the header (and its reward), the user scenario or any
+conversation turn is skipped with a warning on stderr, and the run continues.
+
+The domain policy is left out by default, because it is the same in every task.
+To add it as context (`context_messages`), set `TAU_RETAIL_INCLUDE_POLICY=1`.
+Context is not counted as new material, and including it changes every batch
+revision, so a re-run with the policy processes every task again.
+
+```bash
+TAU_RETAIL_INCLUDE_POLICY=1 uv run python -m experiments.guideline_pipeline mine --adapter tau-retail \
+    --input runs/tau-retail-train/trajectories --namespace tau_retail \
+    --processing-profile guidelines-consistency --dry-run
+```
+
 ## Writing an adapter
 
 An adapter is any object with a `name` and a `records(path)` method that yields

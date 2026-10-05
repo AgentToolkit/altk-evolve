@@ -1,8 +1,10 @@
 """Dataset adapters, by name."""
 
 from experiments.guideline_pipeline.adapters.base import Adapter, AdapterRecord
+from experiments.guideline_pipeline.adapters.tau import TauRetailAdapter
 
 ADAPTERS: dict[str, Adapter] = {}
+ADAPTERS[TauRetailAdapter.name] = TauRetailAdapter()
 
 
 def get_adapter(name: str) -> Adapter:
