@@ -4,6 +4,139 @@
 
 <!-- version list -->
 
+## v1.5.1 (2026-10-05)
+
+### Bug Fixes
+
+- **processing**: Preserve replacement processor configuration
+  ([#365](https://github.com/AgentToolkit/altk-evolve/pull/365),
+  [`0a8a1dc`](https://github.com/AgentToolkit/altk-evolve/commit/0a8a1dc54dc30bc6cb7eefa8ddcd7e3fe404e51d))
+
+- **processing**: Refresh application-owned profile defaults safely
+  ([#365](https://github.com/AgentToolkit/altk-evolve/pull/365),
+  [`0a8a1dc`](https://github.com/AgentToolkit/altk-evolve/commit/0a8a1dc54dc30bc6cb7eefa8ddcd7e3fe404e51d))
+
+- **processing**: Refresh plugin schemas and inherited order
+  ([#365](https://github.com/AgentToolkit/altk-evolve/pull/365),
+  [`0a8a1dc`](https://github.com/AgentToolkit/altk-evolve/commit/0a8a1dc54dc30bc6cb7eefa8ddcd7e3fe404e51d))
+
+
+## v1.5.0 (2026-10-05)
+
+### Bug Fixes
+
+- **memory**: Retry invalid conflict decisions and honor request cancellation
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Enable background service export by default
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Enforce exporter compatibility at installation
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Isolate export and preserve host trace context
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Parse exporter versions with PEP 440
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Preserve sanitized MCP transport parents
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **readi**: Scope spaCy devices and default macOS to CPU
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **telemetry**: Preserve CUDA context and label retention job counts
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **typing**: Account for optional READI device dependencies
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+### Features
+
+- **observability**: Add native Evolve tracing and background OTLP export
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Trace Evolve operations with optional OTLP export
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+
+## v1.4.1 (2026-10-01)
+
+### Bug Fixes
+
+- **hermes**: Address PR review findings and add a recall indicator
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Close four holes on the guideline write path
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Make EVOLVE_SCOPE actually partition the store
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Skip an undecodable entity file instead of losing all recall
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+### Documentation
+
+- **hermes**: Check the install the same way it was installed
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Correct the README's account of the content screen
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Document the Hermes memory provider integration
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Fix stale references in the provider bundle
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Match the bundle README to the other platforms
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Warn about the two ways the loop stops silently
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **tests**: Drop the Hermes-specific sections from the test guide
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+### Features
+
+- **hermes**: Add Hermes as a platform integration target
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Add hermes platform to install.sh
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+- **hermes**: Add hermes platform to the plugin render pipeline
+  ([#313](https://github.com/AgentToolkit/altk-evolve/pull/313),
+  [`f30af96`](https://github.com/AgentToolkit/altk-evolve/commit/f30af968b0bfe8ac86f2f738fcb72ff852a98472))
+
+
 ## v1.4.0 (2026-10-01)
 
 ### Bug Fixes

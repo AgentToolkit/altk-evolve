@@ -217,8 +217,8 @@ class TestSubscribe:
         assert not dest.exists(), "Clone should be rolled back when config write fails"
 
     @pytest.mark.skipif(_IS_WINDOWS, reason="chmod not supported on Windows")
-    def test_warns_when_audit_write_fails(self, temp_project_dir, local_repo):
-        """If audit_append raises after a successful clone, subscribe still succeeds with a warning."""
+    def test_rolls_back_when_audit_write_fails(self, temp_project_dir, local_repo):
+        """If audit_append raises after a successful clone, subscribe rolls back the clone and config."""
         evolve_dir = temp_project_dir / ".evolve"
         evolve_dir.mkdir(parents=True)
         # Pre-create a read-only audit.log so audit_append raises PermissionError
@@ -235,10 +235,13 @@ class TestSubscribe:
             )
         finally:
             audit_log.chmod(0o644)
-        assert result.returncode == 0
-        assert "Warning: audit log could not be updated" in result.stderr
+        assert result.returncode != 0
+        assert "failed to record subscription in audit log" in result.stderr
         dest = evolve_dir / "entities" / "subscribed" / "alice"
-        assert dest.exists(), "Clone should be kept even when audit write fails"
+        assert not dest.exists(), "Clone should be removed when audit write fails"
+        cfg_path = temp_project_dir / "evolve.config.yaml"
+        cfg_text = cfg_path.read_text() if cfg_path.exists() else ""
+        assert "name: alice" not in cfg_text, "Config should not list the subscription after rollback"
 
 
 class TestUnsubscribe:

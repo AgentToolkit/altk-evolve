@@ -443,3 +443,22 @@ conversation content is not aliased. Alias links commit atomically and survive s
 restarts. Discovery requires the span ancestry to be present in the fetched window;
 configure the fetch limit accordingly. Independent calls with identical content remain
 independent batches.
+
+### Refreshing application-owned defaults
+
+Applications can use `ProcessingManager.ensure(name, definition)` or the MCP tool
+`ensure_processing_profile(profile_id, definition)` for a profile they own.
+Defaults resolve on the Evolve service. The operation keeps the profile ID,
+creates an immutable revision only when needed, and retries conditional-write
+conflicts. Pass the returned revision when processing a batch.
+
+Evolve retains the previously resolved defaults alongside the profile. Fields
+that still match those defaults follow updated configuration; changed fields,
+added processors, and operator removals are preserved. Explicit values in the
+application's supplied definition remain explicit. Regular profile updates keep
+the default baseline so later refreshes preserve those edits. Historical profile
+revisions continue to resolve to their original models and providers.
+
+When adopting an existing profile, its first revision serves as the baseline.
+Use this only for an application-owned profile whose first revision represents
+that application's defaults, not an unrelated administrator-owned profile.

@@ -4,6 +4,11 @@ Evolve MCP Server
 This server provides a tool to get task-relevant guidelines.
 """
 
+from altk_evolve.telemetry import traced
+
+from contextlib import asynccontextmanager
+from altk_evolve.telemetry import configure_service_telemetry
+
 import base64
 import datetime
 import json
@@ -47,7 +52,17 @@ _client_init_lock = threading.Lock()
 
 # Need to configure FastAPI separately and mount FastMCP on it
 app = FastAPI(title="Evolve API & UI")
-mcp = FastMCP("entities")
+
+
+@asynccontextmanager
+async def telemetry_lifespan(server):
+    configure_service_telemetry()
+    # SDK background exporters own their queues and process-exit cleanup.
+    # Never wait on the collector while closing a service/session lifespan.
+    yield {}
+
+
+mcp = FastMCP("entities", lifespan=telemetry_lifespan)
 
 # Mount API routes
 app.include_router(api_router, prefix="/api")
@@ -388,6 +403,7 @@ def get_entities(
 
 
 @mcp.tool()
+@traced("evolve.mcp.get_guidelines")
 def get_guidelines(
     task: str,
     user_id: str | None = None,
@@ -416,6 +432,7 @@ def get_guidelines(
 
 
 @mcp.tool()
+@traced("evolve.mcp.get_guidelines_with_attribution")
 def get_guidelines_with_attribution(
     task: str,
     user_id: str | None = None,
@@ -914,6 +931,7 @@ def _empty_store_user_facts_response(user_id: str) -> str:
 
 
 @mcp.tool()
+@traced("evolve.mcp.store_user_facts")
 def store_user_facts(
     user_id: str,
     message: str,
@@ -1035,6 +1053,7 @@ def _search_facts_with_fallback(
 
 
 @mcp.tool()
+@traced("evolve.mcp.retrieve_user_facts")
 def retrieve_user_facts(
     user_id: str, query: str | None = None, limit: int = 5, namespace_id: str | None = None, agent_id: str | None = None
 ) -> str:
@@ -1073,6 +1092,7 @@ def retrieve_user_facts(
 
 
 @mcp.tool()
+@traced("evolve.mcp.save_trajectory")
 def save_trajectory(
     trajectory_data: str,
     task_id: str | None = None,
@@ -1522,6 +1542,17 @@ def get_processing_profile(profile_id: str, revision: int | None = None) -> dict
 def set_processing_profile(profile_id: str, definition: dict, expected_revision: int) -> dict:
     """Validate and replace a complete profile. Revision 0 creates; stale writes fail."""
     return get_client().processing.put(profile_id, definition, expected_revision=expected_revision)
+
+
+@mcp.tool()
+def ensure_processing_profile(profile_id: str, definition: dict) -> dict:
+    """Refresh a caller-owned profile from server defaults, preserving operator edits.
+
+    Use only for profiles owned by the calling application. Existing profiles
+    are adopted using revision 1 as their original defaults. Returns the pinned
+    revision to use for this processing request.
+    """
+    return get_client().processing.ensure(profile_id, definition)
 
 
 @mcp.tool()
