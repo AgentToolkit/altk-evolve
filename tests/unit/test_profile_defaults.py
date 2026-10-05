@@ -97,3 +97,63 @@ def test_operator_replacement_processor_keeps_its_own_config():
     defaults = {"processors": [{"id": "guidelines", "plugin": "evolve.guidelines", "config": {"guidelines_model": "new"}}]}
     current = {"processors": [{"id": "guidelines", "plugin": "operator.custom", "config": {"threshold": 4}}]}
     assert _refresh_inherited(current, before, defaults) == current
+
+
+def test_application_replaces_plugin_with_different_config_schema(tmp_path):
+    from pydantic import BaseModel, ConfigDict
+    from altk_evolve.processing import ProcessorRegistry
+
+    class OldConfig(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        old_option: int = 1
+
+    class NewConfig(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        new_option: str = "new"
+
+    class OldProcessor:
+        id = "test.old"
+        version = "1"
+        api_version = 1
+        config_model = OldConfig
+
+        @classmethod
+        def from_config(cls, config):
+            return cls()
+
+        def process(self, trajectory, *, context):
+            raise AssertionError("refresh must not execute processors")
+
+    class NewProcessor(OldProcessor):
+        id = "test.new"
+        config_model = NewConfig
+
+    registry = ProcessorRegistry()
+    registry.register(OldProcessor)
+    registry.register(NewProcessor)
+    m = ProcessingManager(registry=registry, repository=SQLiteProfileRepository(tmp_path / "profiles.db"))
+    before = {"processors": [{"id": "processor", "plugin": "test.old", "config": {}}]}
+    m.ensure("service", before)
+    m.put("service", {"processors": [{"id": "processor", "plugin": "test.old", "config": {"old_option": 9}}]}, expected_revision=1)
+    result = m.ensure("service", {"processors": [{"id": "processor", "plugin": "test.new", "config": {}}]})
+    assert result["manifest"]["processors"][0]["config"] == {"new_option": "new"}
+    assert m.resolve("service").manifest() == result["manifest"]
+
+
+@pytest.mark.parametrize("operator_order,expected", [(["a", "b"], ["b", "new", "a"]), (["b", "a"], ["b", "a", "new"])])
+def test_default_order_changes_independently_of_operator_config_edits(tmp_path, operator_order, expected):
+    def definition(ids, edited=False):
+        return {
+            "processors": [
+                {"id": key, "plugin": "evolve.guidelines", "config": {"guidelines_mode": "all" if edited and key == "a" else "standard"}}
+                for key in ids
+            ]
+        }
+
+    m = manager(tmp_path / "profiles.db")
+    m.ensure("service", definition(["a", "b"]))
+    m.put("service", definition(operator_order, edited=True), expected_revision=1)
+    result = m.ensure("service", definition(["b", "new", "a"]))
+    processors = result["manifest"]["processors"]
+    assert [item["id"] for item in processors] == expected
+    assert next(item for item in processors if item["id"] == "a")["config"]["guidelines_mode"] == "all"

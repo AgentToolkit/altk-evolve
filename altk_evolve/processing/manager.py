@@ -53,6 +53,9 @@ def _refresh_inherited(current, previous, defaults):
     if isinstance(current, dict) and isinstance(previous, dict) and isinstance(defaults, dict):
         if "plugin" in current and current.get("plugin") != previous.get("plugin"):
             return deepcopy(current)
+        if "plugin" in current and "plugin" in defaults and defaults["plugin"] != previous.get("plugin"):
+            # A replacement plugin owns a different configuration schema.
+            return deepcopy(defaults)
         result = {}
         for key, value in current.items():
             if key in previous and key in defaults:
@@ -75,6 +78,11 @@ def _refresh_inherited(current, previous, defaults):
                     result.append(deepcopy(item))
             present = {item["id"] for item in current}
             result.extend(deepcopy(item) for item in defaults if item["id"] not in before and item["id"] not in present)
+            if [item["id"] for item in current] == [item["id"] for item in previous if item["id"] in present]:
+                # Config edits do not override the application's processor order.
+                merged = {item["id"]: item for item in result}
+                result = [merged[item["id"]] for item in defaults if item["id"] in merged]
+                result.extend(item for key, item in merged.items() if key not in after)
             return result
     return deepcopy(current)
 
