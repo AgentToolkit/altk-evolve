@@ -1,0 +1,51 @@
+{
+  "task_id": "aaa0001_1",
+  "intent": "List my open todos.",
+  "dataset_name": "synthetic",
+  "score": 1.0,
+  "eval": null,
+  "steps": [
+    {
+      "name": "Raw_Assistant_Response",
+      "data": "todos = todo_list(status='open')\nprint(todos)",
+      "prompts": [
+        {
+          "role": "system",
+          "value": "# ROLE\nYou are a synthetic test agent. Use the provided tools."
+        },
+        {
+          "role": "human",
+          "value": "List my open todos."
+        }
+      ]
+    },
+    {
+      "name": "Assistant_code",
+      "data": "todos = todo_list(status='open')\nprint(todos)"
+    },
+    {
+      "name": "User_output",
+      "data": "[{'id': 1, 'text': 'buy milk'}]"
+    },
+    {
+      "name": "User_return",
+      "data": "Execution output:\n[{'id': 1, 'text': 'buy milk'}]\n\nSummary:\nFetched one open todo; ready to answer."
+    },
+    {
+      "name": "Raw_Assistant_Response",
+      "data": "You have one open todo: buy milk."
+    },
+    {
+      "name": "Assistant_nl",
+      "data": "You have one open todo: buy milk."
+    },
+    {
+      "name": "FinalAnswerAgent",
+      "data": "{\"final_answer\": \"buy milk\"}"
+    },
+    {
+      "name": "EvaluationResult",
+      "data": "{\"task_id\": \"aaa0001_1\", \"success\": true, \"pass_percentage\": 100.0, \"evaluation\": {\"num_tests\": 1, \"pass_count\": 1, \"pass_percentage\": 100.0, \"passes\": [{\"requirement\": \"assert answers match.\", \"label\": \"no_op_fail\"}], \"failures\": []}}"
+    }
+  ]
+}
