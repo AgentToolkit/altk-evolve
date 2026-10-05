@@ -159,17 +159,22 @@ def _attribute_support(
     consolidated: list[ConsolidatedGuideline],
     member_support: list[int],
     member_evidence: list[Evidence | None],
-) -> list[Guideline]:
+) -> list[tuple[Guideline, list[int]]]:
     """Map consolidated guidelines back to their source members, conserving total support.
 
     Each input index is attributed to exactly one output guideline (the first that claims
-    it via ``source_indices``). Any index the model failed to cover is carried through
-    unchanged as its own guideline, so no advice is ever dropped and ``sum(support)`` is
-    preserved.
+    it via ``source_indices``). An output that claims no valid, unclaimed index is dropped.
+    Any index the model failed to cover is carried through unchanged as its own guideline,
+    so no advice is ever dropped and ``sum(support)`` is preserved.
+
+    Returns:
+        ``(guideline, member_indices)`` pairs. The member index lists partition
+        ``range(len(entities))``, so callers can carry per-member data (such as source
+        provenance) onto exactly one output.
     """
     n = len(entities)
     assigned = [False] * n
-    out: list[Guideline] = []
+    out: list[tuple[Guideline, list[int]]] = []
 
     for cg in consolidated:
         # Dedupe within a single guideline's source_indices so a repeated index (e.g.
@@ -185,14 +190,17 @@ def _attribute_support(
         for i in idxs:
             assigned[i] = True
         out.append(
-            Guideline(
-                content=cg.content,
-                rationale=cg.rationale,
-                category=cg.category,
-                trigger=cg.trigger,
-                implementation_steps=cg.implementation_steps,
-                support=sum(member_support[i] for i in idxs),
-                evidence=_merge_evidence([member_evidence[i] for i in idxs]),
+            (
+                Guideline(
+                    content=cg.content,
+                    rationale=cg.rationale,
+                    category=cg.category,
+                    trigger=cg.trigger,
+                    implementation_steps=cg.implementation_steps,
+                    support=sum(member_support[i] for i in idxs),
+                    evidence=_merge_evidence([member_evidence[i] for i in idxs]),
+                ),
+                idxs,
             )
         )
 
@@ -202,18 +210,21 @@ def _attribute_support(
             continue
         md = entities[i].metadata or {}
         out.append(
-            Guideline(
-                content=str(entities[i].content),
-                rationale=str(md.get("rationale", "")),
-                category=_coerce_category(md.get("category")),  # type: ignore[arg-type]
-                trigger=str(md.get("trigger", "")),
-                implementation_steps=_normalize_steps(md.get("implementation_steps")),
-                support=member_support[i],
-                evidence=member_evidence[i],
+            (
+                Guideline(
+                    content=str(entities[i].content),
+                    rationale=str(md.get("rationale", "")),
+                    category=_coerce_category(md.get("category")),  # type: ignore[arg-type]
+                    trigger=str(md.get("trigger", "")),
+                    implementation_steps=_normalize_steps(md.get("implementation_steps")),
+                    support=member_support[i],
+                    evidence=member_evidence[i],
+                ),
+                [i],
             )
         )
 
-    total_in, total_out = sum(member_support), sum(g.support for g in out)
+    total_in, total_out = sum(member_support), sum(g.support for g, _ in out)
     if total_out != total_in:
         logger.warning("Support not conserved during consolidation (in=%d, out=%d).", total_in, total_out)
     return out
@@ -233,6 +244,17 @@ def combine_cluster(entities: list[RecordedEntity], mode: str = "lossless") -> l
 
     Returns:
         Consolidated list of guidelines with ``support``/``evidence`` populated.
+
+    Raises:
+        EvolveException: If the LLM call fails after 3 attempts.
+    """
+    return [guideline for guideline, _ in combine_cluster_with_members(entities, mode=mode)]
+
+
+def combine_cluster_with_members(entities: list[RecordedEntity], mode: str = "lossless") -> list[tuple[Guideline, list[RecordedEntity]]]:
+    """Like :func:`combine_cluster`, but also return the members each guideline was built from.
+
+    Every entity in ``entities`` is attributed to exactly one returned guideline.
 
     Raises:
         EvolveException: If the LLM call fails after 3 attempts.
@@ -314,7 +336,8 @@ def combine_cluster(entities: list[RecordedEntity], mode: str = "lossless") -> l
                 clean_response = clean_llm_response(content)
 
             consolidated = ConsolidatedGuidelineResponse.model_validate(json.loads(clean_response)).guidelines
-            return _attribute_support(entities, consolidated, member_support, member_evidence)
+            attributed = _attribute_support(entities, consolidated, member_support, member_evidence)
+            return [(guideline, [entities[i] for i in members]) for guideline, members in attributed]
         except Exception as e:
             last_error = e
             if attempt < 2:

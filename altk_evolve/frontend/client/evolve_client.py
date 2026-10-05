@@ -330,7 +330,8 @@ class EvolveClient:
         Returns:
             ConsolidationResult with cluster/guideline counts and total support before/after.
         """
-        from altk_evolve.llm.guidelines.clustering import combine_cluster
+        from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members
+        from altk_evolve.schema.provenance import attach_sources
 
         if mode is None:
             mode = getattr(self.config, "consolidation_mode", "lossless")
@@ -367,24 +368,31 @@ class EvolveClient:
         for cluster in clusters:
             # Phase 1: combine + insert (skip cluster on failure)
             try:
-                consolidated_guidelines = combine_cluster(cluster, mode=combine_mode)
+                attributed = combine_cluster_with_members(cluster, mode=combine_mode)
+                consolidated_guidelines = [guideline for guideline, _ in attributed]
 
                 task_description = (cluster[0].metadata or {}).get("task_description", "")
+                # Each member is attributed to exactly one output, so each output carries
+                # the union of its own members' source associations (original times kept).
                 new_entities = [
                     Entity(
                         content=guideline.content,
                         type="guideline",
-                        metadata={
-                            "task_description": task_description,
-                            "rationale": guideline.rationale,
-                            "category": guideline.category,
-                            "trigger": guideline.trigger,
-                            "implementation_steps": guideline.implementation_steps,
-                            "support": guideline.support,
-                            "evidence": guideline.evidence,
-                        },
+                        metadata=attach_sources(
+                            {
+                                "task_description": task_description,
+                                "rationale": guideline.rationale,
+                                "category": guideline.category,
+                                "trigger": guideline.trigger,
+                                "implementation_steps": guideline.implementation_steps,
+                                "support": guideline.support,
+                                "evidence": guideline.evidence,
+                            },
+                            None,
+                            members,
+                        ),
                     )
-                    for guideline in consolidated_guidelines
+                    for guideline, members in attributed
                 ]
                 if not new_entities:
                     logger.warning(

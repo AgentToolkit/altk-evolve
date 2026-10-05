@@ -247,16 +247,17 @@ def _make_client(mock_backend, mode: str = "lossless"):
 
 @pytest.mark.unit
 class TestConsolidateGuidelines:
-    @patch("altk_evolve.llm.guidelines.clustering.combine_cluster")
+    @patch("altk_evolve.llm.guidelines.clustering.combine_cluster_with_members")
     def test_consolidate_guidelines_deletes_originals_and_inserts_new(self, mock_combine):
-        consolidated = [
-            Guideline(content="Combined guideline", rationale="Merged", category="strategy", trigger="Always", support=2),
-        ]
-        mock_combine.return_value = consolidated
-
         entities_cluster = [
             _make_entity("1", "Guideline A", "error handling"),
             _make_entity("2", "Guideline B", "error handling"),
+        ]
+        mock_combine.return_value = [
+            (
+                Guideline(content="Combined guideline", rationale="Merged", category="strategy", trigger="Always", support=2),
+                entities_cluster,
+            ),
         ]
 
         mock_backend = MagicMock()
@@ -295,20 +296,20 @@ class TestConsolidateGuidelines:
         first_delete_idx = next(i for i, c in enumerate(call_names) if "delete_entity_by_id" in c)
         assert insert_idx < first_delete_idx
 
-    @patch("altk_evolve.llm.guidelines.clustering.combine_cluster")
+    @patch("altk_evolve.llm.guidelines.clustering.combine_cluster_with_members")
     def test_consolidate_guidelines_returns_correct_counts_and_conserves_support(self, mock_combine):
+        cluster1 = [_make_entity(f"c1-{i}", f"Guideline {i}", "task A") for i in range(3)]
+        cluster2 = [_make_entity(f"c2-{i}", f"Guideline {i}", "task B") for i in range(2)]
+
         # Cluster 1: 3 entities -> 1 consolidated guideline (support 3)
         # Cluster 2: 2 entities -> 2 consolidated guidelines (support 1 + 1)
         mock_combine.side_effect = [
-            [Guideline(content="C1", rationale="R", category="strategy", trigger="T", support=3)],
+            [(Guideline(content="C1", rationale="R", category="strategy", trigger="T", support=3), cluster1)],
             [
-                Guideline(content="C2a", rationale="R", category="strategy", trigger="T", support=1),
-                Guideline(content="C2b", rationale="R", category="optimization", trigger="T", support=1),
+                (Guideline(content="C2a", rationale="R", category="strategy", trigger="T", support=1), cluster2[:1]),
+                (Guideline(content="C2b", rationale="R", category="optimization", trigger="T", support=1), cluster2[1:]),
             ],
         ]
-
-        cluster1 = [_make_entity(f"c1-{i}", f"Guideline {i}", "task A") for i in range(3)]
-        cluster2 = [_make_entity(f"c2-{i}", f"Guideline {i}", "task B") for i in range(2)]
 
         mock_backend = MagicMock()
         mock_backend._search_entities_impl.return_value = cluster1 + cluster2
