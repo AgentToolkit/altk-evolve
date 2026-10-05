@@ -31,7 +31,7 @@ EVIDENCE_CODES: Mapping[str | None, str] = {"success": "s", "failure": "f", "bot
 def evidence_code(row: GuidelineRow) -> str:
     """The playbook code for a guideline's evidence; an unrecognized value is an error, not a guess."""
     evidence = row.metadata.get("evidence")
-    if evidence not in EVIDENCE_CODES:
+    if not (evidence is None or isinstance(evidence, str)) or evidence not in EVIDENCE_CODES:  # a list or dict is unhashable
         raise ValueError(f"guideline {row.entity.id} has unrecognized evidence {evidence!r} (expected one of success, failure, both)")
     return EVIDENCE_CODES[evidence]
 

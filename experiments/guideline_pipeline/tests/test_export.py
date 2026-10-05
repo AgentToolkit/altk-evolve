@@ -67,6 +67,13 @@ def test_unrecognized_evidence_is_an_error(client: EvolveClient):
         playbook(client)
 
 
+@pytest.mark.parametrize("evidence", [["success"], {"outcome": "success"}])
+def test_unhashable_evidence_is_the_same_error(client: EvolveClient, evidence: object):
+    store_guidelines(client, "memories", ("rule", {"evidence": evidence}))
+    with pytest.raises(ValueError, match="unrecognized evidence"):
+        playbook(client)
+
+
 def test_support_defaults_to_one(client: EvolveClient):
     store_guidelines(
         client, "memories", ("absent", {}), ("explicit", {"support": 4}), ("unusable", {"support": "many"}), ("zero", {"support": 0})
@@ -197,7 +204,6 @@ def test_atomic_write_replaces_or_leaves_nothing(tmp_path: Path, monkeypatch: py
     out = tmp_path / "nested" / "playbook.json"
     write_json_atomic(out, {"entries": []})
     assert json.loads(out.read_text()) == {"entries": []}
-    assert oct(out.stat().st_mode & 0o777) == "0o644"
 
     def fail(*args, **kwargs):
         raise OSError("disk full")
@@ -209,3 +215,29 @@ def test_atomic_write_replaces_or_leaves_nothing(tmp_path: Path, monkeypatch: py
         write_json_atomic(tmp_path / "other.json", {"bad": object()})
     assert json.loads(out.read_text()) == {"entries": []}
     assert sorted(p.name for p in tmp_path.rglob("*") if p.is_file()) == ["playbook.json"]
+
+
+@pytest.fixture
+def umask():
+    """Set the process umask for one test and restore it afterwards."""
+    previous = os.umask(0o022)
+    try:
+        yield os.umask
+    finally:
+        os.umask(previous)
+
+
+def test_atomic_write_gives_the_mode_a_plain_write_would(tmp_path: Path, umask):
+    out = tmp_path / "playbook.json"
+    umask(0o022)
+    write_json_atomic(out, {"entries": []})
+    assert oct(out.stat().st_mode & 0o777) == "0o644"
+
+    umask(0o077)
+    write_json_atomic(tmp_path / "private.json", {"entries": []})
+    assert oct((tmp_path / "private.json").stat().st_mode & 0o777) == "0o600"
+
+    umask(0o022)
+    out.chmod(0o600)
+    write_json_atomic(out, {"entries": [{"r": "new"}]})
+    assert oct(out.stat().st_mode & 0o777) == "0o600"
