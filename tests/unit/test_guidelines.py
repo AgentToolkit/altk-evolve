@@ -638,6 +638,15 @@ class TestOutcomePrompt:
         assert "x" * 2500 + "\n... [truncated]" in prompt
         assert "x" * 2501 not in prompt
 
+    def test_each_failed_check_is_bounded(self):
+        checks = ("y" * 600, "short check")
+        generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=False, failed_checks=checks))
+
+        prompt = self._prompt(self.mock_completion)
+        assert "- " + "y" * 500 + " ... [truncated]\n" in prompt
+        assert "y" * 501 not in prompt
+        assert "- short check\n" in prompt
+
     @pytest.mark.parametrize(("success", "limit"), [(False, 3), (True, 2)])
     def test_outcome_limits_are_enforced(self, success, limit, caplog):
         payload = {"guidelines": [{**_GUIDELINE, "content": f"guideline {i}"} for i in range(5)]}

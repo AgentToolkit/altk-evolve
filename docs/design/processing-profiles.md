@@ -291,8 +291,9 @@ are not stored on entities; they are available to processors through
 `trajectory.outcome`. Standard generation also switches to an outcome-grounded prompt:
 a failure yields 1–3 corrective guidelines grounded in the failed checks and detail, a
 success at most 2 non-obvious patterns, and either may yield none rather than generic
-advice. Extra guidelines are dropped. The prompt renders the first 10 failed checks and
-the first 2,500 characters of `detail`, and each segment receives the same outcome.
+advice. Extra guidelines are dropped. The prompt renders the first 10 failed checks,
+each cut to 500 characters, and the first 2,500 characters of `detail`. With
+segmentation, each segment receives the same outcome and these limits apply per segment.
 Consistency generation is unchanged. Without an outcome, behavior is unchanged. The Python client,
 REST, MCP `process_trajectory`, and CLI input JSON all accept it. An outcome supplied
 after its batch was processed needs a new `batch.revision`, or the processor is skipped.

@@ -36,6 +36,7 @@ _MAX_FAILURE_GUIDELINES = 3
 _MAX_SUCCESS_GUIDELINES = 2
 # Bounds on the evaluator's report rendered into the prompt.
 _MAX_FAILED_CHECKS = 10
+_MAX_CHECK_CHARS = 500
 _MAX_DETAIL_CHARS = 2500
 
 # Matches one escape at a time: group 1 is a complete, valid JSON escape (\u only counts
@@ -335,7 +336,10 @@ def _generate_guidelines_for_segment(
             detail = detail[:_MAX_DETAIL_CHARS] + "\n... [truncated]"
         outcome_context = {
             "outcome": outcome,
-            "failed_checks": outcome.failed_checks[:_MAX_FAILED_CHECKS],
+            "failed_checks": [
+                check if len(check) <= _MAX_CHECK_CHARS else check[:_MAX_CHECK_CHARS] + " ... [truncated]"
+                for check in outcome.failed_checks[:_MAX_FAILED_CHECKS]
+            ],
             "omitted_checks": max(0, len(outcome.failed_checks) - _MAX_FAILED_CHECKS),
             "detail": detail,
             "max_guidelines": max_guidelines,
