@@ -8,6 +8,12 @@ from altk_evolve.llm.guidelines.consistency_analyzer import consistency_metric a
 
 @pytest.mark.unit
 def test_both_metrics_reuse_configured_embedding_model(monkeypatch, mock_sentence_transformer):
+    for name in (
+        "EVOLVE_CONSISTENCY_EMBEDDING_MODEL_SMALL",
+        "EVOLVE_CONSISTENCY_EMBEDDING_MODEL_LARGE",
+        "EVOLVE_CONSISTENCY_EMBEDDING_TRUST_REMOTE_CODE",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(metrics, "guidelines_settings", GuidelinesSettings(_env_file=None))
     monkeypatch.setattr(metrics.milvus_other_settings, "embedding_model", "BAAI/bge-small-en-v1.5")
     small = metrics.get_metric_instance("sbert_small")
