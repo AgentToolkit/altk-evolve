@@ -4,6 +4,19 @@
 
 <!-- version list -->
 
+## v1.5.2 (2026-10-06)
+
+### Features
+
+- **consistency**: Reuse configured embedding model by default
+  ([#367](https://github.com/AgentToolkit/altk-evolve/pull/367),
+  [`fd14d33`](https://github.com/AgentToolkit/altk-evolve/commit/fd14d3372829a88f2ea8adb2c97a242dfd98a00a))
+
+- **consistency**: Reuse configured embeddings instead of hard-coded models
+  ([#367](https://github.com/AgentToolkit/altk-evolve/pull/367),
+  [`fd14d33`](https://github.com/AgentToolkit/altk-evolve/commit/fd14d3372829a88f2ea8adb2c97a242dfd98a00a))
+
+
 ## v1.5.1 (2026-10-05)
 
 ### Bug Fixes
