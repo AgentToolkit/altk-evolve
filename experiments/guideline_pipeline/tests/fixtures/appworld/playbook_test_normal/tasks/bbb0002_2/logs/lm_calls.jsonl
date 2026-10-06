@@ -1,0 +1,1 @@
+{"id": "call-1", "input": {"model": "synthetic-model", "messages": [{"role": "user", "content": "A prompt that names no task."}]}, "output": {"content": "print('hello')"}}

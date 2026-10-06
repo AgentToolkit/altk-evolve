@@ -1,0 +1,3 @@
+{"role": "agent", "content": "print('hello')", "step_number": 1}
+{"role": "task", "content": "Say hello.", "step_number": 0}
+{"role": "environment", "content": "hello", "step_number": 1}

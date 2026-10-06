@@ -118,7 +118,7 @@ class CugaAdapter:
             "pass_percentage": evaluation.get("pass_percentage"),
         }
         content: dict[str, Any] = {
-            "messages": [{"role": "user", "content": task.get("intent") or ""}, *elide_middle(_agent_steps(steps))],
+            "messages": [{"role": "user", "content": task.get("intent") or ""}, *elide_middle(agent_steps(steps))],
             "context_messages": self._context(steps),
             "trace_id": task_id,
             "model": self.model,
@@ -145,10 +145,11 @@ class CugaAdapter:
         return context
 
 
-def _agent_steps(steps: list[dict]) -> list[dict[str, Any]]:
+def agent_steps(steps: list[dict]) -> list[dict[str, Any]]:
     """Actions become function calls and observations become reasoning steps, one extractor step each.
 
     role "tool" would be dropped by the extractor, so observations are assistant messages.
+    Each step is cut to STEP_CHARS; steps with no data are left out.
     """
     messages: list[dict[str, Any]] = []
     calls = 0

@@ -113,6 +113,77 @@ from the outcome. Once #351 merges, its standard generator also grounds extracti
 in the outcome's `failed_checks` and `detail`; until then they reach processors
 through `trajectory.outcome` but not the extraction prompt.
 
+## AppWorld
+
+The `appworld` adapter reads the output tree of AppWorld's own ReAct runner as
+it is. `--input` is one run directory or a directory of them:
+
+```text
+<input>/
+  <run>/                          # becomes metadata.run; any directory with a tasks/ child is a run
+    evaluations/<split>.json      # optional: {"individual": {"<task_id>": {"success", "difficulty", ...}}}
+    tasks/<task_id>/
+      tips_subtask.json           # optional: {"task_instruction", ...}
+      logs/environment_io.md      # required: the agent's code and the environment's output
+      logs/lm_calls.jsonl         # optional: one LM call per line, {"input": {"messages": [...]}}
+      logs/logger.jsonl           # optional: {"role", "content", ...} per line
+```
+
+Each task becomes one record:
+
+- **Instruction** (the user message), from the first source that has it, recorded
+  in `metadata.instruction_source`:
+  1. `tips_subtask` — `task_instruction` in `tips_subtask.json`.
+  2. `lm_calls` — the last user message of the first LM call. Its few-shot examples
+     and any injected playbook come first, so the adapter takes the text from the
+     last `Task:`, starting at the `My name is:` line before it when that is within
+     600 characters (keeping the user's identity), else 200 characters before
+     `Task:`. A prompt with no `Task:` has no instruction.
+  3. `logger` — the first `role: "task"` entry in `logger.jsonl`.
+  4. `specs` — `instruction` in `<appworld_root>/data/tasks/<task_id>/specs.json`,
+     only when the `appworld_root` option is set.
+- **messages**: after the instruction, each `### Environment Interaction N` block in
+  `environment_io.md` gives its code as an `execute_ipython` function call and its
+  output as an `OBSERVATION:` assistant message, rendered and cut to 2000 characters
+  exactly as the CUGA adapter does. Long runs keep the first 6 and last 43 steps,
+  as there.
+- **outcome**: `success` from the task's entry in `evaluations/<split>.json`, which
+  may be a boolean or the string `"True"` / `"False"`. Any other value, or a task
+  missing from the evaluations, gives no outcome. Failed requirements are not yet
+  mapped to `failed_checks` or `detail`.
+- **metadata**: `run`, `split` (the evaluations file name, when the task is
+  evaluated), `difficulty`, `model` and `instruction_source`.
+- **batch**: source `appworld`, conversation `<run>/<task_id>`, batch `<task_id>`,
+  and a revision that digests the record's content, as for CUGA. A task listed in
+  two evaluations files of one run is an error.
+
+A task with no `environment_io.md`, no interactions in it, or no recoverable
+instruction is skipped with a `skipped <run>/<task_id>: ...` warning on stderr, so
+the rest of the run is still mined; it is never mined with an empty instruction.
+An unreadable JSON file ends the run, as for CUGA.
+
+Options (`--adapter-option KEY=VALUE`):
+
+| Key | Effect |
+| --- | --- |
+| `task_ids=a_1,b_2` | Only these tasks. A listed ID with no task directory ends the run with an error. |
+| `task_manifest=<file>` | Only the tasks in a JSON file (`task_ids` or `tasks[].task_id`) or a text file with one ID per line (`#` comments). Combines with `task_ids`. |
+| `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
+| `appworld_root=<dir>` | An AppWorld root whose `data/tasks/<task_id>/specs.json` is the last instruction source. The run tree does not contain it. |
+
+[profiles/appworld.json](profiles/appworld.json) is the same sample profile as
+CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, model and
+provider captured when published.
+
+```bash
+uv run evolve processing-profiles apply appworld-guidelines \
+    --file experiments/guideline_pipeline/profiles/appworld.json --expected-revision 0
+
+uv run python -m experiments.guideline_pipeline mine --adapter appworld --input path/to/appworld_runs \
+    --namespace appworld --processing-profile appworld-guidelines \
+    --adapter-option model=gpt-4.1 --dry-run
+```
+
 ## Writing an adapter
 
 An adapter is any object with a `name` and a `records(path)` method that yields
