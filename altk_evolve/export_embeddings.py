@@ -146,6 +146,8 @@ def export_coderank(cache_dir: str | None = None) -> Path:
             os.rename(output, target)
         except OSError:
             # Another builder may have finished the same export first.
+            if not target.exists():
+                raise
             validate_coderank_artifact(target)
     return target
 

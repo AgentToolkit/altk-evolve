@@ -2,8 +2,10 @@
 
 import hashlib
 import json
-import os
 from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 CODERANK_MODEL = "nomic-ai/CodeRankEmbed"
 CODERANK_REVISION = "3c4b60807d71f79b43f3c4363786d9493691f8b1"  # pragma: allowlist secret (public HF revision)
@@ -12,8 +14,13 @@ EXPORT_VERSION = 1
 ARTIFACT_FILES = ("model.onnx", "config.json", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json")
 
 
+class FastEmbedCacheSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    fastembed_cache_path: str | None = Field(default=None, validation_alias="FASTEMBED_CACHE_PATH")
+
+
 def coderank_directory(cache_dir: str | None = None) -> Path:
-    root = Path(cache_dir or os.environ.get("FASTEMBED_CACHE_PATH") or Path.home() / ".cache" / "fastembed")
+    root = Path(cache_dir or FastEmbedCacheSettings().fastembed_cache_path or Path.home() / ".cache" / "fastembed")
     return root / f"evolve-coderankembed-fp32-{CODERANK_REVISION[:12]}-v{EXPORT_VERSION}"
 
 

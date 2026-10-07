@@ -97,3 +97,24 @@ def test_sentence_transformers_stays_default(monkeypatch, mock_sentence_transfor
     monkeypatch.delenv("EVOLVE_EMBEDDING_PROVIDER", raising=False)
     get_embedding_model("custom-model", trust_remote_code=True)
     mock_sentence_transformer.assert_called_once_with("custom-model", trust_remote_code=True)
+
+
+@pytest.mark.unit
+def test_fastembed_accepts_case_insensitive_model_name(fastembed):
+    model = get_embedding_model("baai/BGE-small-en-v1.5")
+    assert model.get_sentence_embedding_dimension() == 3
+
+
+@pytest.mark.unit
+def test_fastembed_cache_path_from_dotenv(fastembed, monkeypatch, tmp_path):
+    from altk_evolve.embedding_assets import coderank_directory
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("FASTEMBED_CACHE_PATH")
+    (tmp_path / ".env").write_text("EVOLVE_EMBEDDING_PROVIDER=fastembed\nFASTEMBED_CACHE_PATH=/dotenv/cache\n")
+    get_embedding_model("BAAI/bge-small-en-v1.5")
+    assert fastembed.calls[-1]["cache_dir"] == "/dotenv/cache"
+    assert coderank_directory().parent.as_posix() == "/dotenv/cache"
+    monkeypatch.setenv("FASTEMBED_CACHE_PATH", "/environment/cache")
+    get_embedding_model("BAAI/bge-small-en-v1.5")
+    assert fastembed.calls[-1]["cache_dir"] == "/environment/cache"
