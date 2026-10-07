@@ -56,7 +56,11 @@ def test_fastembed_used_by_consistency_and_guideline_selection(fastembed, monkey
     from altk_evolve.schema.core import RecordedEntity
 
     monkeypatch.setattr(metrics, "guidelines_settings", GuidelinesSettings(_env_file=None))
-    monkeypatch.setattr(metrics.milvus_other_settings, "embedding_model", "BAAI/bge-small-en-v1.5")
+    monkeypatch.setattr(metrics.guidelines_settings, "consistency_embedding_model_small", "BAAI/bge-small-en-v1.5")
+    monkeypatch.setattr(metrics.guidelines_settings, "consistency_embedding_model_large", "BAAI/bge-small-en-v1.5")
+    monkeypatch.setattr(
+        retrieval, "_embed", lambda texts, _: get_embedding_model("BAAI/bge-small-en-v1.5").encode(texts, normalize_embeddings=True)
+    )
     clustering._get_sentence_transformer.cache_clear()
     try:
         for name in ("sbert_small", "sbert_large"):
@@ -75,7 +79,7 @@ def test_fastembed_used_by_consistency_and_guideline_selection(fastembed, monkey
         ]
         selected = retrieval.select_guidelines(entities, "same", top_k=1)
         assert selected.retrieved[0].id == "1"
-        assert clustering.cluster_entities(entities) == []
+        assert clustering.cluster_entities(entities, embedding_model="BAAI/bge-small-en-v1.5") == []
         assert len(fastembed.calls) == 1
         mock_sentence_transformer.assert_not_called()
     finally:

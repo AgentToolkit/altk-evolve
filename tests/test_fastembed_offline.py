@@ -14,9 +14,8 @@ def test_fastembed_cached_embeddings_and_consistency(monkeypatch):
     from altk_evolve.embeddings import get_embedding_model
     from altk_evolve.llm.guidelines.consistency_analyzer import consistency_metric as metrics
 
-    monkeypatch.setattr(metrics.milvus_other_settings, "embedding_model", "BAAI/bge-small-en-v1.5")
-    monkeypatch.setattr(metrics.guidelines_settings, "consistency_embedding_model_small", None)
-    monkeypatch.setattr(metrics.guidelines_settings, "consistency_embedding_model_large", None)
+    monkeypatch.setattr(metrics.guidelines_settings, "consistency_embedding_model_small", "BAAI/bge-small-en-v1.5")
+    monkeypatch.setattr(metrics.guidelines_settings, "consistency_embedding_model_large", "BAAI/bge-small-en-v1.5")
     metrics._load_consistency_model.cache_clear()
     model = get_embedding_model("BAAI/bge-small-en-v1.5")
     vectors = model.encode(["customer impact first", "lead with customer impact"])

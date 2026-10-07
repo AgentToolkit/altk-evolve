@@ -1,13 +1,14 @@
-"""Consistency metrics honor configured models without implicit extra downloads."""
+"""Consistency defaults preserve the specialized models with either provider."""
 
 import pytest
+from altk_evolve.embedding_assets import CODERANK_REVISION
 
 from altk_evolve.config.guidelines import GuidelinesSettings
 from altk_evolve.llm.guidelines.consistency_analyzer import consistency_metric as metrics
 
 
 @pytest.mark.unit
-def test_both_metrics_reuse_configured_embedding_model(monkeypatch, mock_sentence_transformer):
+def test_default_metrics_use_minilm_and_pinned_coderank(monkeypatch, mock_sentence_transformer):
     for name in (
         "EVOLVE_CONSISTENCY_EMBEDDING_MODEL_SMALL",
         "EVOLVE_CONSISTENCY_EMBEDDING_MODEL_LARGE",
@@ -15,11 +16,15 @@ def test_both_metrics_reuse_configured_embedding_model(monkeypatch, mock_sentenc
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(metrics, "guidelines_settings", GuidelinesSettings(_env_file=None))
-    monkeypatch.setattr(metrics.milvus_other_settings, "embedding_model", "BAAI/bge-small-en-v1.5")
-    small = metrics.get_metric_instance("sbert_small")
-    large = metrics.get_metric_instance("sbert_large")
-    assert small.sentence_transformer_model is large.sentence_transformer_model
-    mock_sentence_transformer.assert_called_once_with("BAAI/bge-small-en-v1.5", trust_remote_code=False)
+    from altk_evolve.embedding_assets import CODERANK_MODEL, CODERANK_REVISION, MINILM_MODEL
+    from unittest.mock import call
+
+    metrics.get_metric_instance("sbert_small")
+    metrics.get_metric_instance("sbert_large")
+    assert mock_sentence_transformer.call_args_list == [
+        call(MINILM_MODEL, trust_remote_code=False),
+        call(CODERANK_MODEL, revision=CODERANK_REVISION, trust_remote_code=True),
+    ]
 
 
 @pytest.mark.unit
@@ -28,7 +33,7 @@ def test_explicit_large_model_preserves_specialized_option(monkeypatch, mock_sen
     monkeypatch.setenv("EVOLVE_CONSISTENCY_EMBEDDING_TRUST_REMOTE_CODE", "true")
     monkeypatch.setattr(metrics, "guidelines_settings", GuidelinesSettings(_env_file=None))
     metrics.get_metric_instance("sbert_large")
-    mock_sentence_transformer.assert_called_once_with("nomic-ai/CodeRankEmbed", trust_remote_code=True)
+    mock_sentence_transformer.assert_called_once_with("nomic-ai/CodeRankEmbed", revision=CODERANK_REVISION, trust_remote_code=True)
 
 
 @pytest.mark.unit

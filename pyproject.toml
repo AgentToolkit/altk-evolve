@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 fastembed = ["fastembed>=0.7,<1"]
+fastembed-export = ["altk-evolve[fastembed]", "onnx>=1.17,<2"]
 build = ["uv"]
 
 tracing = [
@@ -294,6 +295,8 @@ module = [
     "thinc.*",
     "pymilvus.*",
     "fastembed.*",
+    "onnx.*",
+    "onnxruntime.*",
     "smolagents.*",
     "milvus_lite.*",
     "openinference.*",

@@ -23,7 +23,7 @@ from abc import ABC, abstractmethod
 from functools import lru_cache
 
 from altk_evolve.config.guidelines import guidelines_settings
-from altk_evolve.config.milvus import milvus_other_settings
+from altk_evolve.embedding_assets import CODERANK_MODEL, MINILM_MODEL
 
 
 @lru_cache(maxsize=4)
@@ -33,19 +33,19 @@ def _load_consistency_model(model_name: str, trust_remote_code: bool):
     return get_embedding_model(model_name, trust_remote_code=trust_remote_code)
 
 
-def _configured_consistency_model(override: str | None):
+def _configured_consistency_model(override: str | None, default: str):
     return _load_consistency_model(
-        override or milvus_other_settings.embedding_model,
+        override or default,
         guidelines_settings.consistency_embedding_trust_remote_code,
     )
 
 
 def get_sentence_transformer_small():
-    return _configured_consistency_model(guidelines_settings.consistency_embedding_model_small)
+    return _configured_consistency_model(guidelines_settings.consistency_embedding_model_small, MINILM_MODEL)
 
 
 def get_sentence_transformer_large():
-    return _configured_consistency_model(guidelines_settings.consistency_embedding_model_large)
+    return _configured_consistency_model(guidelines_settings.consistency_embedding_model_large, CODERANK_MODEL)
 
 
 def get_metric_instance(metric: str):

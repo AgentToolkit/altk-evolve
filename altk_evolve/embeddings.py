@@ -1,10 +1,15 @@
 """Shared embedding loader for storage, guideline selection and consistency."""
 
 from functools import lru_cache
+from threading import Lock
 from typing import Literal, Protocol, cast
 
 import numpy as np
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from altk_evolve.embedding_assets import CODERANK_MODEL, CODERANK_REVISION, coderank_directory, validate_coderank_artifact
+
+_registration_lock = Lock()
 
 
 class EmbeddingSettings(BaseSettings):
@@ -28,7 +33,26 @@ class FastEmbedModel:
     def __init__(self, model_name: str, cache_dir: str | None):
         from fastembed import TextEmbedding
 
-        self._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir)
+        options = {}
+        if model_name == CODERANK_MODEL:
+            from fastembed.common.model_description import ModelSource, PoolingType
+
+            directory = coderank_directory(cache_dir)
+            validate_coderank_artifact(directory)
+            with _registration_lock:
+                if not any(item["model"] == model_name for item in TextEmbedding.list_supported_models()):
+                    TextEmbedding.add_custom_model(
+                        model=model_name,
+                        pooling=PoolingType.DISABLED,  # CLS pooling is part of Evolve's exported graph.
+                        normalization=True,
+                        sources=ModelSource(hf=CODERANK_MODEL),
+                        dim=768,
+                        model_file="model.onnx",
+                        description="Evolve-owned FP32 export of pinned official CodeRankEmbed weights",
+                        license="MIT",
+                    )
+            options["specific_model_path"] = str(directory)
+        self._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir, **options)
         self._dimension = int(next(item["dim"] for item in TextEmbedding.list_supported_models() if item["model"] == model_name))
 
     def encode(self, sentences: str | list[str], *, normalize_embeddings: bool = False) -> np.ndarray:
@@ -68,9 +92,15 @@ def get_embedding_model(model_name: str, *, trust_remote_code: bool = False) -> 
 @lru_cache(maxsize=4)
 def _load_embedding_model(provider: str, model_name: str, trust_remote_code: bool, cache_dir: str | None) -> EmbeddingModel:
     if provider == "fastembed":
-        if trust_remote_code:
+        if trust_remote_code and model_name != CODERANK_MODEL:
             raise ValueError("FastEmbed does not support trust_remote_code; use a supported ONNX model")
         return FastEmbedModel(model_name, cache_dir)
     from sentence_transformers import SentenceTransformer
 
+    if model_name == CODERANK_MODEL:
+        # This built-in model uses reviewed, pinned upstream custom code.
+        return cast(
+            EmbeddingModel,
+            SentenceTransformer(model_name, revision=CODERANK_REVISION, trust_remote_code=True),
+        )
     return cast(EmbeddingModel, SentenceTransformer(model_name, trust_remote_code=trust_remote_code))
