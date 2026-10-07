@@ -28,9 +28,9 @@ from altk_evolve.config.milvus import milvus_other_settings
 
 @lru_cache(maxsize=4)
 def _load_consistency_model(model_name: str, trust_remote_code: bool):
-    from sentence_transformers import SentenceTransformer
+    from altk_evolve.embeddings import get_embedding_model
 
-    return SentenceTransformer(model_name, trust_remote_code=trust_remote_code)
+    return get_embedding_model(model_name, trust_remote_code=trust_remote_code)
 
 
 def _configured_consistency_model(override: str | None):

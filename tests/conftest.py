@@ -20,6 +20,9 @@ def mock_sentence_transformer(request):
             from altk_evolve.llm.guidelines.consistency_analyzer import consistency_metric
 
             consistency_metric._load_consistency_model.cache_clear()
+            from altk_evolve.embeddings import _load_embedding_model
+
+            _load_embedding_model.cache_clear()
 
             # Create a mock instance that will be returned when SentenceTransformer() is called
             mock_instance = Mock()
@@ -50,6 +53,7 @@ def mock_sentence_transformer(request):
             mock_st.return_value = mock_instance
             yield mock_st
             consistency_metric._load_consistency_model.cache_clear()
+            _load_embedding_model.cache_clear()
     else:
         # For non-unit tests, don't apply the mock
         yield None

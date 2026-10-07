@@ -26,6 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+fastembed = ["fastembed>=0.7,<1"]
 build = ["uv"]
 
 tracing = [
@@ -292,6 +293,7 @@ module = [
     "spacy.*",
     "thinc.*",
     "pymilvus.*",
+    "fastembed.*",
     "smolagents.*",
     "milvus_lite.*",
     "openinference.*",
