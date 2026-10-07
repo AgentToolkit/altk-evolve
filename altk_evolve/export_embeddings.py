@@ -56,9 +56,15 @@ def export_coderank(cache_dir: str | None = None) -> Path:
         )
         model = SentenceTransformer(source, device="cpu", trust_remote_code=True).eval()
         model.float()
-        output = work / "artifact"
+        output = coderank_directory(str(work))
         output.mkdir()
         model.tokenizer.save_pretrained(output)
+        # FastEmbed reads max_length, while Transformers uses model_max_length.
+        # The upstream tokenizer retains an old 512-token value in max_length.
+        tokenizer_config_path = output / "tokenizer_config.json"
+        tokenizer_config = json.loads(tokenizer_config_path.read_text())
+        tokenizer_config.update(max_length=model.max_seq_length, model_max_length=model.max_seq_length)
+        tokenizer_config_path.write_text(json.dumps(tokenizer_config, indent=2) + "\n")
         if not (output / "special_tokens_map.json").exists():
             shutil.copyfile(Path(source) / "special_tokens_map.json", output / "special_tokens_map.json")
         shutil.copyfile(Path(source) / "config.json", output / "config.json")
@@ -105,6 +111,7 @@ def export_coderank(cache_dir: str | None = None) -> Path:
         min_cosine = float(np.sum(reference * actual, axis=1).min())
         if max_delta > 1e-4 or min_cosine < 0.9999:
             raise ValueError(f"ONNX validation failed: similarity delta={max_delta}, cosine={min_cosine}")
+        validation = {"max_pairwise_delta": max_delta, "min_aligned_cosine": min_cosine}
         manifest = {
             "source": CODERANK_MODEL,
             "revision": CODERANK_REVISION,
@@ -115,13 +122,26 @@ def export_coderank(cache_dir: str | None = None) -> Path:
             "dimension": 768,
             "max_sequence_length": 8192,
             "sha256": {name: file_sha256(output / name) for name in ARTIFACT_FILES},
-            "validation": {"max_pairwise_delta": max_delta, "min_aligned_cosine": min_cosine},
+            "validation": validation,
             "versions": {
                 name: importlib.metadata.version(name) for name in ("torch", "onnx", "onnxruntime", "sentence-transformers", "transformers")
             },
         }
         (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         validate_coderank_artifact(output)
+        # Validate the actual runtime adapter, including its tokenizer and pooling.
+        del session
+        from altk_evolve.embeddings import FastEmbedModel
+
+        runtime = FastEmbedModel(CODERANK_MODEL, str(work))
+        runtime_vectors = runtime.encode(VALIDATION_TEXTS, normalize_embeddings=True)
+        runtime_delta = float(np.abs(reference @ reference.T - runtime_vectors @ runtime_vectors.T).max())
+        runtime_cosine = float(np.sum(reference * runtime_vectors, axis=1).min())
+        if not np.isfinite(runtime_vectors).all() or runtime_delta > 1e-4 or runtime_cosine < 0.9999:
+            raise ValueError(f"FastEmbed validation failed: similarity delta={runtime_delta}, cosine={runtime_cosine}")
+        validation.update(fastembed_max_pairwise_delta=runtime_delta, fastembed_min_aligned_cosine=runtime_cosine)
+        (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        del runtime
         try:
             os.rename(output, target)
         except OSError:

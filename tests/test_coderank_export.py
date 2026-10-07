@@ -1,5 +1,6 @@
 """Opt-in real export test; downloads official weights and validates the resulting graph."""
 
+import json
 import os
 import subprocess
 import sys
@@ -13,7 +14,11 @@ def test_official_coderank_export_and_torch_free_runtime(tmp_path):
     from altk_evolve.export_embeddings import export_coderank
 
     path = export_coderank(str(tmp_path))
-    assert (path / "manifest.json").is_file()
+    manifest = json.loads((path / "manifest.json").read_text())
+    assert manifest["validation"]["fastembed_max_pairwise_delta"] < 1e-4
+    assert manifest["validation"]["fastembed_min_aligned_cosine"] >= 0.9999
+    config = json.loads((path / "tokenizer_config.json").read_text())
+    assert config["max_length"] == config["model_max_length"] == 8192
     env = {**os.environ, "EVOLVE_EMBEDDING_PROVIDER": "fastembed", "FASTEMBED_CACHE_PATH": str(tmp_path), "HF_HUB_OFFLINE": "1"}
     subprocess.run(
         [
