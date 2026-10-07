@@ -12,7 +12,7 @@ from typing import Any
 import psycopg
 from psycopg import sql
 from pgvector.psycopg import register_vector
-from sentence_transformers import SentenceTransformer
+from altk_evolve.embeddings import EmbeddingModel, get_embedding_model
 
 from altk_evolve.backend.base import BaseEntityBackend, BaseSettings
 from altk_evolve.config.postgres import PostgresDBSettings, postgres_db_settings
@@ -45,7 +45,7 @@ def _entity_row_factory(cursor: psycopg.Cursor[Any]) -> Callable[[Sequence[Any]]
 class PostgresEntityBackend(BaseEntityBackend):
     supports_atomic_writes = True
     _conn: psycopg.Connection
-    embedding_model: SentenceTransformer
+    embedding_model: EmbeddingModel
     embedding_dim: int
     _settings: PostgresDBSettings
     _schema_filter_fields = {"id", "type", "content", "created_at"}
@@ -60,7 +60,7 @@ class PostgresEntityBackend(BaseEntityBackend):
         try:
             self._ensure_pgvector_extension()
             register_vector(self.conn)
-            self.embedding_model = SentenceTransformer(self._settings.embedding_model)
+            self.embedding_model = get_embedding_model(self._settings.embedding_model)
             embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
             if embedding_dim is None or embedding_dim <= 0:
                 raise EvolveException(
