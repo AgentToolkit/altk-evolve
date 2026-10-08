@@ -1,0 +1,1 @@
+{"domain": "authors", "tools": [{"name": "get_papers", "description": "List papers."}, {"name": "get_authors", "description": "List authors."}]}

@@ -1,0 +1,12 @@
+{
+  "aaa0001_1": {
+    "intent": "List my open todos.",
+    "eval": "{\"task_id\": \"aaa0001_1\", \"success\": true, \"pass_percentage\": 100.0, \"evaluation\": {\"num_tests\": 1, \"pass_count\": 1, \"pass_percentage\": 100.0, \"passes\": [{\"requirement\": \"assert answers match.\", \"label\": \"no_op_fail\"}], \"failures\": []}}",
+    "score": "1.0"
+  },
+  "aaa0001_2": {
+    "intent": "Mark the todo 'buy milk' as done.",
+    "eval": "{\"task_id\": \"aaa0001_2\", \"success\": false, \"pass_percentage\": 50.0, \"evaluation\": {\"num_tests\": 2, \"pass_count\": 1, \"pass_percentage\": 50.0, \"passes\": [{\"requirement\": \"assert answers match.\", \"label\": \"no_op_fail\"}], \"failures\": [{\"requirement\": \"assert todo 'buy milk'\\nis marked done\", \"trace\": \"AssertionError: False == True\", \"label\": \"fail\"}]}}",
+    "score": "0.5"
+  }
+}

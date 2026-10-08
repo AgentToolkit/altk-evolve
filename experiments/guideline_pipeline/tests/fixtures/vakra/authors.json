@@ -1,0 +1,48 @@
+[
+  {
+    "uuid": "auth-01",
+    "domain": "authors",
+    "status": "success",
+    "error": "",
+    "duration_s": 1.5,
+    "model_input": {
+      "messages": [{"role": "system", "content": "You are a synthetic test agent."}, {"role": "user", "content": "Which conference had the most papers in 2012?"}],
+      "tools": [
+        {"name": "get_papers", "description": "List papers.", "args_schema": null},
+        {"name": "get_conferences", "description": "List conferences.", "args_schema": null}
+      ]
+    },
+    "trajectory": [
+      {"type": "SystemMessage", "content": "You are a synthetic test agent."},
+      {"type": "HumanMessage", "content": "Which conference had the most papers in 2012?"},
+      {"type": "AIMessage", "content": "", "reasoning": "I should count papers per conference for 2012.", "tool_calls": [{"id": "tc-1", "name": "get_papers", "args": {"year": 2012}}]},
+      {"type": "ToolMessage", "content": "[{\"conference\": \"ICML\", \"count\": 12}]", "tool_name": "get_papers", "tool_call_id": "tc-1", "result": "[{\"conference\": \"ICML\", \"count\": 12}]"},
+      {"type": "AIMessage", "content": "ICML had the most papers in 2012."}
+    ],
+    "output": [{"turn_id": 1, "query": "Which conference had the most papers in 2012?", "answer": "ICML", "thought": "", "sequence": {"tool_call": [{"name": "get_papers", "arguments": {"year": 2012}}]}}]
+  },
+  {
+    "uuid": "auth-02",
+    "domain": "authors",
+    "status": "success",
+    "error": "",
+    "duration_s": 2.0,
+    "model_input": {"messages": [], "tools": [{"name": "get_papers"}, {"name": "get_authors"}]},
+    "trajectory": [
+      {"type": "HumanMessage", "content": "Who wrote the most papers?"},
+      {"type": "AIMessage", "content": "", "tool_calls": [{"id": "tc-1", "name": "get_authors", "args": {}}, {"id": "tc-2", "name": "get_papers", "args": {"limit": 5}}]},
+      {"type": "ToolMessage", "content": "", "tool_name": "get_authors", "tool_call_id": "tc-1", "result": "[\"Ada\", \"Grace\"]"},
+      {"type": "ToolMessage", "content": "", "tool_name": "get_papers", "tool_call_id": "tc-2", "result": ""},
+      {"type": "HumanMessage", "content": "Only count journal papers."},
+      {"type": "AIMessage", "content": "Ada wrote the most papers."}
+    ],
+    "output": [{"turn_id": 1, "query": "Who wrote the most papers?", "answer": "Ada", "sequence": {"tool_call": []}}]
+  },
+  {"uuid": "auth-03", "domain": "authors", "status": "success", "trajectory": [{"type": "HumanMessage", "content": "Query 3"}, {"type": "AIMessage", "content": "Answer 3"}], "output": [{"turn_id": 1, "query": "Query 3", "answer": "Answer 3"}]},
+  {"uuid": "auth-04", "domain": "authors", "status": "success", "trajectory": [{"type": "HumanMessage", "content": "Query 4"}, {"type": "AIMessage", "content": "Answer 4"}], "output": [{"turn_id": 1, "query": "Query 4", "answer": "Answer 4"}]},
+  {"uuid": "auth-05", "domain": "authors", "status": "success", "trajectory": [{"type": "HumanMessage", "content": "Query 5"}, {"type": "AIMessage", "content": "Answer 5"}], "output": [{"turn_id": 1, "query": "Query 5", "answer": "Answer 5"}]},
+  {"uuid": "auth-06", "domain": "authors", "status": "error", "error": "timeout", "trajectory": [{"type": "HumanMessage", "content": "Query 6"}], "output": [{"turn_id": 1, "query": "Query 6", "answer": ""}]},
+  {"uuid": "auth-07", "domain": "authors", "status": "success", "trajectory": [{"type": "HumanMessage", "content": "Query 7"}, {"type": "AIMessage", "content": "Answer 7"}], "output": [{"turn_id": 1, "query": "Query 7", "answer": "Answer 7"}]},
+  {"uuid": "auth-08", "domain": "authors", "status": "success", "trajectory": [{"type": "HumanMessage", "content": "Query 8"}, {"type": "AIMessage", "content": "Answer 8"}], "output": [{"turn_id": 1, "query": "Query 8", "answer": "Answer 8"}]},
+  {"uuid": "auth-09", "domain": "authors", "status": "success", "trajectory": [], "output": [{"turn_id": 1, "query": "Query 9", "answer": "Answer 9"}]}
+]
