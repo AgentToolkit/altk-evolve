@@ -9,7 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from altk_evolve.llm.guidelines import guidelines as guidelines_module
-from altk_evolve.llm.guidelines.guidelines import generate_guidelines, parse_guideline_response, parse_openai_agents_trajectory
+from altk_evolve.llm.guidelines.guidelines import (
+    generate_guidelines,
+    parse_guideline_response,
+    parse_openai_agents_trajectory,
+    trajectory_step_window,
+)
 from altk_evolve.schema.guidelines import SubtaskSegment
 
 
@@ -396,6 +401,113 @@ class TestParseOpenaiAgentsTrajectory:
         # The context label is the only thing distinguishing the three pipelines in logs.
         assert "Recovered standard guideline response" in caplog.text
         assert "consistency" not in caplog.text
+
+
+@pytest.mark.unit
+class TestTrajectoryLimits:
+    """The step/character window, and what head+tail elision has to preserve.
+
+    `steps_list` and `trajectory_summary` are the same sequence — the summary is the joined
+    list — and `segment_trajectory` returns 1-based positions into it. So the gap left by
+    elision has to occupy a position of its own rather than be closed up silently, and a
+    step's `**Step n**` label has to keep matching its index.
+    """
+
+    @staticmethod
+    def _messages(n_steps: int, *, content: str = "step") -> list[dict]:
+        return [{"role": "user", "content": "Do the thing"}] + [
+            {"role": "assistant", "content": f"{content} {i}"} for i in range(1, n_steps + 1)
+        ]
+
+    @staticmethod
+    def _label_numbers(steps_list: list[str]) -> list[int]:
+        return [int(s.split()[1]) for s in steps_list if s.startswith("**Step ")]
+
+    def test_defaults_render_fifty_head_only_steps(self):
+        """Pins the pre-existing behaviour the new knobs default to: the first 50 steps, no
+        marker, and nothing from the end of the run."""
+        result = parse_openai_agents_trajectory(self._messages(60))
+        assert result["num_steps"] == 50
+        assert len(result["steps_list"]) == 50
+        assert result["steps_omitted"] == 10
+        assert self._label_numbers(result["steps_list"]) == list(range(1, 51))
+        assert "step 50" in result["steps_list"][-1]
+        assert "omitted" not in result["trajectory_summary"]
+
+    def test_a_trajectory_within_budget_omits_nothing(self):
+        result = parse_openai_agents_trajectory(self._messages(3))
+        assert result["num_steps"] == 3
+        assert result["steps_omitted"] == 0
+
+    def test_max_steps_is_configurable(self, monkeypatch):
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 4)
+        result = parse_openai_agents_trajectory(self._messages(60))
+        assert result["num_steps"] == 4
+        assert result["steps_omitted"] == 56
+
+    def test_max_step_chars_is_configurable(self, monkeypatch):
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_step_chars", 10)
+        result = parse_openai_agents_trajectory(self._messages(1, content="x" * 50))
+        assert result["steps_list"][0].endswith("x" * 10 + "...")
+
+    def test_tail_steps_keeps_the_end_of_a_long_run(self, monkeypatch):
+        """The point of the knob: the last steps, where the run's outcome is, reach the prompt."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 10)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_tail_steps", 3)
+        result = parse_openai_agents_trajectory(self._messages(60))
+
+        assert result["num_steps"] == 10  # the budget, not the budget plus a tail
+        assert result["steps_omitted"] == 50
+        assert "step 7" in result["steps_list"][6]  # last head step
+        assert "step 58" in result["steps_list"][8]  # first tail step
+        assert "step 60" in result["steps_list"][-1]
+        assert result["steps_list"][7] == "**[... 50 intermediate step(s) omitted ...]**"
+
+    def test_the_gap_takes_a_position_so_labels_still_match_indices(self, monkeypatch):
+        """What `segment_trajectory`'s indices depend on. The marker holds position 8, which
+        is why the numbering reads 1-7 then 9-11 rather than renumbering the tail."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 10)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_tail_steps", 3)
+        steps_list = parse_openai_agents_trajectory(self._messages(60))["steps_list"]
+
+        assert len(steps_list) == 11
+        assert self._label_numbers(steps_list) == [1, 2, 3, 4, 5, 6, 7, 9, 10, 11]
+        for i, step in enumerate(steps_list, 1):
+            if step.startswith("**Step "):
+                assert step.startswith(f"**Step {i} -")
+
+    def test_summary_stays_the_joined_steps_list_under_elision(self, monkeypatch):
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 10)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_tail_steps", 3)
+        result = parse_openai_agents_trajectory(self._messages(60))
+        assert result["trajectory_summary"] == "\n\n".join(result["steps_list"])
+
+    def test_explicit_options_override_the_environment(self, monkeypatch):
+        """A caller passing a runtime gets its window, not the ambient one — the segmenter
+        relies on this to parse the same messages the same way as its caller did."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 50)
+        options = GuidelineRuntime(trajectory_max_steps=6, trajectory_tail_steps=2)
+        result = parse_openai_agents_trajectory(self._messages(60), options=options)
+        assert result["num_steps"] == 6
+        assert "step 60" in result["steps_list"][-1]
+
+    @pytest.mark.parametrize(
+        ("total_steps", "max_steps", "tail_steps", "expected"),
+        [
+            (3, 50, 0, (3, 0)),  # within budget: everything, no tail
+            (3, 50, 10, (3, 0)),  # ...even with a tail configured
+            (60, 50, 0, (50, 0)),  # head-only default
+            (60, 10, 3, (7, 3)),  # tail carved out of the budget
+            (60, 10, 9, (1, 9)),  # tail may take all but one step
+            (60, 3, 9, (1, 2)),  # ...and is clamped to that, not rejected
+            (60, 1, 5, (1, 0)),  # a budget of one leaves no room for a tail
+            (60, 10, -1, (10, 0)),  # a negative tail is no tail
+        ],
+    )
+    def test_step_window(self, total_steps, max_steps, tail_steps, expected):
+        """`GuidelineRuntime` is constructible directly, bypassing EvolveConfig's validator,
+        so the clamp — not the validator — is what guarantees a head step survives."""
+        assert trajectory_step_window(total_steps, max_steps=max_steps, tail_steps=tail_steps) == expected
 
 
 @pytest.mark.unit
