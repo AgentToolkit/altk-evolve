@@ -1,0 +1,6 @@
+# Experiment inputs and output stay local; nothing here is committed.
+results/
+data/
+runs/
+*.db
+*.zip
