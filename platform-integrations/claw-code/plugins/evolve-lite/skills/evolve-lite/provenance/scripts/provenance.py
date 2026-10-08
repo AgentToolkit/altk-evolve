@@ -25,6 +25,7 @@ Two modes:
 """
 
 import glob
+import hashlib
 import json
 import re
 import sys
@@ -84,6 +85,44 @@ def _claude_transcript_slug(root):
     return re.sub(r"[^A-Za-z0-9]", "-", str(root))
 
 
+# How much of the sanitized session id the Hermes provider keeps in a trajectory
+# filename before the digest. Mirrors ``_TRAJECTORY_STEM_CHARS`` in that bundle's
+# backend.py; see ``_hermes_trajectory_name``.
+_HERMES_STEM_CHARS = 40
+
+
+def _hermes_trajectory_name(session_id):
+    """Filename of a session's Hermes capture file, or ``None`` if it has none.
+
+    The provider folds every character outside ``[A-Za-z0-9_.-]`` to ``_`` so the
+    id can be a filename, then appends a truncated SHA-256 of the *original* id.
+    The fold alone is many-to-one — ``a/b`` and ``a:b`` both give ``a_b`` — so
+    naming the file after it let two sessions share one capture file, and this
+    module then handed one session's trajectory to the other. The digest is what
+    makes the name identify a single session. Note which half the empty-id
+    fallback applies to: the fold, never the digest, or ``""`` and the literal id
+    ``"session"`` would collide again.
+
+    ``None`` for an id with no UTF-8 encoding (a lone surrogate survives
+    ``json.dumps`` and reaches us through audit.log). The provider cannot name a
+    file for such an id either — ``save_trajectory`` catches the encode error and
+    writes nothing — so there is genuinely nothing to find, and raising here
+    would abort the whole ``candidates`` run over one malformed row.
+
+    This duplicates ``trajectory_filename`` in the Hermes bundle's backend.py by
+    hand, the same way ``_claude_transcript_slug`` duplicates doctor.py's: the
+    rendered provenance script cannot import the provider. If you change one,
+    change both — ``test_provenance.py`` pins them against each other.
+    """
+    sid = str(session_id)
+    try:
+        digest = hashlib.sha256(sid.encode("utf-8")).hexdigest()[:12]
+    except UnicodeError:
+        return None
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", sid or "session")
+    return f"{safe[:_HERMES_STEM_CHARS]}-{digest}.jsonl"
+
+
 def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
     """Locate the saved trajectory transcript for ``session_id``.
 
@@ -91,10 +130,10 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
 
     1. Legacy ``.evolve/trajectories/`` files:
        * ``claude-transcript_<sid>.jsonl`` — stop-hook transcript dump.
-       * ``<sid>.jsonl`` — the Hermes memory provider's capture output, which
-         names the file after the session and appends one JSON record per
-         capture. No other harness writes this shape, so the direct path is
-         unambiguous.
+       * ``<sanitized-sid>-<digest>.jsonl`` — the Hermes memory provider's
+         capture output, one JSON record appended per capture. The digest is over
+         the unsanitized id, so the name belongs to one session; see
+         ``_hermes_trajectory_name``.
        * ``trajectory_<ts>_<sid>.json`` — save-trajectory skill output; the sid
          is the filename slice after the timestamp.
        * ``trajectory_<ts>.json`` — open and match the inner ``session_id``.
@@ -125,12 +164,14 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
         if direct.is_file():
             return direct
 
-        # Hermes: trajectories/<sid>.jsonl. The provider replaces any character
-        # outside [A-Za-z0-9_.-] when it builds the filename, so apply the same
-        # mapping here rather than trusting the id to be path-safe.
-        hermes = traj_dir / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', str(session_id))}.jsonl"
-        if hermes.is_file():
-            return hermes
+        # Hermes: trajectories/<sanitized>-<digest>.jsonl. The digest is taken
+        # over the original session id, so this name identifies one session and
+        # one only. ``None`` means the id has no capture filename at all.
+        hermes_name = _hermes_trajectory_name(session_id)
+        if hermes_name is not None:
+            hermes = traj_dir / hermes_name
+            if hermes.is_file():
+                return hermes
 
         # trajectory_<ts>_<sid>.json — match on the filename sid slice.
         for path in sorted(traj_dir.glob("trajectory_*_*.json")):

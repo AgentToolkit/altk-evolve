@@ -20,6 +20,7 @@ see the import block below.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import logging
@@ -173,6 +174,50 @@ def write_entity_file(directory: Any, entity: Dict[str, Any], filename: Optional
 
 
 # ---------------------------------------------------------------------------
+# Trajectory file naming
+# ---------------------------------------------------------------------------
+
+# How much of the sanitized session id survives into the filename. The digest
+# carries identity, so this is only there to keep the file recognisable.
+_TRAJECTORY_STEM_CHARS = 40
+
+
+def sanitize_session_id(session_id: str) -> str:
+    """Fold a session id to the characters a filename may safely hold.
+
+    Lossy on purpose — and that is exactly why it is not a filename on its own.
+    See ``trajectory_filename``.
+    """
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(session_id) or "session")
+
+
+def trajectory_filename(session_id: str) -> str:
+    """Filename for one session's capture file — legible, but keyed on the digest.
+
+    ``sanitize_session_id`` is many-to-one: a gateway session key like ``a/b``
+    and a thread id like ``a:b`` both fold to ``a_b``. Naming the file after the
+    fold alone would put two sessions' records in one file, and the ``provenance``
+    skill would then attribute one session's trajectory to the other —
+    confidently, having no way to tell. So the fold is decoration, kept so the
+    directory stays readable; a truncated SHA-256 of the *original* id is what
+    identifies the file. Same shape, and the same reasoning, as ``_bucket_name``
+    in ``__init__.py``.
+
+    Truncating the fold is not cosmetic either: an unbounded session id makes a
+    filename the filesystem refuses, and every capture for that session is lost.
+
+    The empty-id fallback belongs to the *fold*, not to the digest. Hashing
+    ``session_id or "session"`` would hand ``""`` and the literal id ``"session"``
+    the same digest, putting them back in one file — the collision this function
+    exists to prevent, reintroduced through the fallback. ``_bucket_name`` draws
+    the line in the same place.
+    """
+    sid = str(session_id)
+    digest = hashlib.sha256(sid.encode("utf-8")).hexdigest()[:12]
+    return f"{sanitize_session_id(sid)[:_TRAJECTORY_STEM_CHARS]}-{digest}.jsonl"
+
+
+# ---------------------------------------------------------------------------
 # Backend interface
 # ---------------------------------------------------------------------------
 
@@ -240,8 +285,9 @@ class LiteBackend(EvolveBackend):
     Storage layout under *root* (default: ``$HERMES_HOME/evolve``,
     overridable via ``EVOLVE_DIR``):
 
-      entities/{type}/{slug}.md        -- markdown entities (evolve-lite compatible)
-      trajectories/{session_id}.jsonl  -- captured trajectories, one JSON line each
+      entities/{type}/{slug}.md                 -- markdown entities (evolve-lite compatible)
+      trajectories/{session_id}-{digest}.jsonl  -- captured trajectories, one JSON line
+                                                   each; see ``trajectory_filename``
 
     Retrieval is case-insensitive term-overlap scoring of query tokens
     against each entity's ``trigger`` + ``content`` — no vector index, no
@@ -391,8 +437,7 @@ class LiteBackend(EvolveBackend):
         traj_path: Optional[Path] = None
         try:
             self._ensure_dir(self.trajectories_dir)
-            safe_session = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "session")
-            traj_path = self.trajectories_dir / f"{safe_session}.jsonl"
+            traj_path = self.trajectories_dir / trajectory_filename(session_id)
             record: Dict[str, Any] = {"ts": time.time(), "session_id": session_id}
             # Who produced this trajectory. Recorded so an existing store stays
             # attributable after the fact, whatever EVOLVE_SCOPE was set to when
