@@ -738,7 +738,7 @@ def test_complete_reply_at_the_budget_limit_is_still_accepted(mock_completion, s
     content also fails to parse.
     """
     mock_completion.return_value = _mock_reply(
-        json.dumps({"entities": [{"id": "e1", "type": "guideline", "content": "x", "event": "NONE"}]}),
+        json.dumps({"entities": [{"id": "entity_1", "type": "guideline", "content": "x", "event": "NONE"}]}),
         finish_reason="length",
     )
 
@@ -816,3 +816,36 @@ def test_truncated_nested_fragment_still_reports_the_budget(mock_completion, sam
         resolve_conflicts(sample_recorded_entities, sample_recorded_entities)
 
     assert "cut off by the completion budget" in str(excinfo.value.__cause__)
+
+
+@pytest.mark.unit
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
+@pytest.mark.parametrize(
+    "decision",
+    [{"id": "not-in-candidates", "event": event} for event in ("UPDATE", "DELETE", "NONE")]
+    + [
+        {"id": "entity_1", "event": "UPDATE", "type": "wrong-type"},
+        {"id": "entity_1", "event": "NONE", "incoming_ids": ["unknown-incoming"]},
+    ],
+)
+def test_invalid_reference_is_retried(mock_completion, sample_recorded_entities, sample_new_recorded_entities, decision):
+    invalid = {"type": "guideline", "content": "text", **decision}
+    valid = {"id": "new_entity_1", "type": "guideline", "content": "Use descriptive variable names", "event": "ADD"}
+
+    def response(item):
+        return Mock(choices=[Mock(message=Mock(content=json.dumps({"entities": [item]})), finish_reason="stop")])
+
+    mock_completion.side_effect = [response(invalid), response(valid)]
+    result = resolve_conflicts(sample_recorded_entities, sample_new_recorded_entities)
+    assert result[0].id == "new_entity_1"
+    assert mock_completion.call_count == 2
+
+
+@pytest.mark.unit
+@patch("altk_evolve.llm.conflict_resolution.conflict_resolution.completion")
+def test_persistently_invalid_reference_fails_closed(mock_completion, sample_recorded_entities, sample_new_recorded_entities):
+    invalid = {"id": "outside-scope", "type": "guideline", "content": "text", "event": "NONE"}
+    mock_completion.return_value = Mock(choices=[Mock(message=Mock(content=json.dumps({"entities": [invalid]})), finish_reason="stop")])
+    with pytest.raises(EvolveException, match="after 3 attempts"):
+        resolve_conflicts(sample_recorded_entities, sample_new_recorded_entities)
+    assert mock_completion.call_count == 3

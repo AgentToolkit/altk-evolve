@@ -56,7 +56,7 @@ def sync(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("EVOLVE_HOOKS_CONFIG", "")
     monkeypatch.setenv("EVOLVE_SQLITE_PATH", str(tmp_path / "namespaces.db"))
-    monkeypatch.setattr("altk_evolve.backend.postgres.SentenceTransformer", lambda _: Embeddings())
+    monkeypatch.setattr("altk_evolve.backend.postgres.get_embedding_model", lambda _: Embeddings())
     settings = PostgresDBSettings(**{key: value for key, value in options.items() if key in PostgresDBSettings.model_fields})
     client = EvolveClient(EvolveConfig(backend="postgres", settings=settings))
     client.processing.registry.register(NoteProcessor)

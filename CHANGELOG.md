@@ -4,6 +4,127 @@
 
 <!-- version list -->
 
+## v1.6.1 (2026-10-08)
+
+### Bug Fixes
+
+- **memory**: Exclude entity types before pagination and reject trivial guidelines
+  ([#372](https://github.com/AgentToolkit/altk-evolve/pull/372),
+  [`962aa1d`](https://github.com/AgentToolkit/altk-evolve/commit/962aa1dbfe404311466489216e76be6e64dba7ad))
+
+- **memory**: Filter inventory types and reject trivial guidelines
+  ([#372](https://github.com/AgentToolkit/altk-evolve/pull/372),
+  [`962aa1d`](https://github.com/AgentToolkit/altk-evolve/commit/962aa1dbfe404311466489216e76be6e64dba7ad))
+
+
+## v1.6.0 (2026-10-07)
+
+### Bug Fixes
+
+- **embeddings**: Honor dotenv cache paths and preserve export errors
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+- **embeddings**: Preserve CodeRank token limits and validate FastEmbed output
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+### Features
+
+- **embeddings**: Add optional FastEmbed provider
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+- **embeddings**: Add optional FastEmbed provider for shared ONNX inference
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+- **embeddings**: Export official CodeRankEmbed for ONNX consistency defaults
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+
+## v1.5.2 (2026-10-06)
+
+### Features
+
+- **consistency**: Reuse configured embedding model by default
+  ([#367](https://github.com/AgentToolkit/altk-evolve/pull/367),
+  [`fd14d33`](https://github.com/AgentToolkit/altk-evolve/commit/fd14d3372829a88f2ea8adb2c97a242dfd98a00a))
+
+- **consistency**: Reuse configured embeddings instead of hard-coded models
+  ([#367](https://github.com/AgentToolkit/altk-evolve/pull/367),
+  [`fd14d33`](https://github.com/AgentToolkit/altk-evolve/commit/fd14d3372829a88f2ea8adb2c97a242dfd98a00a))
+
+
+## v1.5.1 (2026-10-05)
+
+### Bug Fixes
+
+- **processing**: Preserve replacement processor configuration
+  ([#365](https://github.com/AgentToolkit/altk-evolve/pull/365),
+  [`0a8a1dc`](https://github.com/AgentToolkit/altk-evolve/commit/0a8a1dc54dc30bc6cb7eefa8ddcd7e3fe404e51d))
+
+- **processing**: Refresh application-owned profile defaults safely
+  ([#365](https://github.com/AgentToolkit/altk-evolve/pull/365),
+  [`0a8a1dc`](https://github.com/AgentToolkit/altk-evolve/commit/0a8a1dc54dc30bc6cb7eefa8ddcd7e3fe404e51d))
+
+- **processing**: Refresh plugin schemas and inherited order
+  ([#365](https://github.com/AgentToolkit/altk-evolve/pull/365),
+  [`0a8a1dc`](https://github.com/AgentToolkit/altk-evolve/commit/0a8a1dc54dc30bc6cb7eefa8ddcd7e3fe404e51d))
+
+
+## v1.5.0 (2026-10-05)
+
+### Bug Fixes
+
+- **memory**: Retry invalid conflict decisions and honor request cancellation
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Enable background service export by default
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Enforce exporter compatibility at installation
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Isolate export and preserve host trace context
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Parse exporter versions with PEP 440
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Preserve sanitized MCP transport parents
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **readi**: Scope spaCy devices and default macOS to CPU
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **telemetry**: Preserve CUDA context and label retention job counts
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **typing**: Account for optional READI device dependencies
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+### Features
+
+- **observability**: Add native Evolve tracing and background OTLP export
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+- **observability**: Trace Evolve operations with optional OTLP export
+  ([#342](https://github.com/AgentToolkit/altk-evolve/pull/342),
+  [`71dc334`](https://github.com/AgentToolkit/altk-evolve/commit/71dc3349ba3595ea29b3aa58a6415107cf488467))
+
+
 ## v1.4.1 (2026-10-01)
 
 ### Bug Fixes

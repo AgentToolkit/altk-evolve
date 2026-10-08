@@ -20,27 +20,32 @@ from scipy.stats import entropy
 
 from abc import ABC, abstractmethod
 
-# Module-level caching for sentence transformer models (populated on first use)
-sentence_transformer_model_small = None
-sentence_transformer_model_large = None
+from functools import lru_cache
+
+from altk_evolve.config.guidelines import guidelines_settings
+from altk_evolve.embedding_assets import CODERANK_MODEL, MINILM_MODEL
+
+
+@lru_cache(maxsize=4)
+def _load_consistency_model(model_name: str, trust_remote_code: bool):
+    from altk_evolve.embeddings import get_embedding_model
+
+    return get_embedding_model(model_name, trust_remote_code=trust_remote_code)
+
+
+def _configured_consistency_model(override: str | None, default: str):
+    return _load_consistency_model(
+        override or default,
+        guidelines_settings.consistency_embedding_trust_remote_code,
+    )
 
 
 def get_sentence_transformer_small():
-    global sentence_transformer_model_small
-    if sentence_transformer_model_small is None:
-        from sentence_transformers import SentenceTransformer
-
-        sentence_transformer_model_small = SentenceTransformer("all-MiniLM-L6-v2")
-    return sentence_transformer_model_small
+    return _configured_consistency_model(guidelines_settings.consistency_embedding_model_small, MINILM_MODEL)
 
 
 def get_sentence_transformer_large():
-    global sentence_transformer_model_large
-    if sentence_transformer_model_large is None:
-        from sentence_transformers import SentenceTransformer
-
-        sentence_transformer_model_large = SentenceTransformer("nomic-ai/CodeRankEmbed", trust_remote_code=True)
-    return sentence_transformer_model_large
+    return _configured_consistency_model(guidelines_settings.consistency_embedding_model_large, CODERANK_MODEL)
 
 
 def get_metric_instance(metric: str):
