@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from altk_evolve.telemetry import traced
+
 import datetime as dt
 import json
 import uuid
@@ -174,6 +176,7 @@ class ScheduleStore(RetentionStore):
                 return now
         return dt.datetime.now(dt.UTC)
 
+    @traced("evolve.retention.schedule.expire_interrupted_jobs")
     def expire_interrupted_jobs(self, seconds: float = 60) -> None:
         """PostgreSQL GC runs are disposable; committed candidates survive interruption."""
         if not self._is_postgres:
@@ -192,6 +195,7 @@ class ScheduleStore(RetentionStore):
                     (row["namespace_id"], row["job_id"]),
                 )
 
+    @traced("evolve.retention.schedule.dispatch")
     def dispatch(self, namespace: str, schedule_id: str, now: dt.datetime) -> str | None:
         """Atomically admit the most recent due occurrence; never duplicate a tick."""
         now = utc(now)
@@ -254,6 +258,7 @@ class ScheduleStore(RetentionStore):
             ).fetchall()
             return [self.record(row) for row in rows]
 
+    @traced("evolve.retention.schedule.claim")
     def claim(self, namespace: str, job_id: str, worker_id: str, now: dt.datetime) -> dict[str, Any] | None:
         with self.transaction() as conn:
             row = self.sql(conn, "SELECT * FROM evolve_retention_jobs WHERE namespace_id=? AND job_id=?", (namespace, job_id)).fetchone()
@@ -276,6 +281,7 @@ class ScheduleStore(RetentionStore):
             )
             return self.record(row) if cursor.rowcount == 1 else None
 
+    @traced("evolve.retention.schedule.cancelled")
     def cancelled(self, namespace: str, job_id: str, worker_id: str) -> bool:
         """Renew the claim at operation boundaries and fail closed on lost ownership."""
         with self.transaction() as conn:
@@ -287,6 +293,7 @@ class ScheduleStore(RetentionStore):
             )
             return bool(cursor.rowcount != 1)
 
+    @traced("evolve.retention.schedule.finish")
     def finish(self, namespace: str, job_id: str, worker_id: str, status: str, error: str | None = None) -> None:
         with self.transaction() as conn:
             self.sql(

@@ -38,6 +38,7 @@ defence-in-depth default).
 
 from __future__ import annotations
 
+import sys
 import threading
 from collections.abc import Iterable, Sequence
 from typing import Any, Protocol, runtime_checkable
@@ -203,12 +204,70 @@ def redact_messages(
     return out if changed else None
 
 
+def _cuda_device_scope():
+    """Restore both CUDA runtimes after spaCy selects its loading device."""
+    from contextlib import ExitStack
+    from thinc.compat import cupy, torch, has_cupy_gpu, has_torch_cuda_gpu
+
+    stack = ExitStack()
+    try:
+        if has_cupy_gpu:
+            stack.enter_context(cupy.cuda.Device())
+        if has_torch_cuda_gpu:
+            stack.enter_context(torch.cuda.device(torch.cuda.current_device()))
+    except BaseException:
+        stack.close()
+        raise
+    return stack
+
+
+def _build_spacy_extractor(model: str, device: str) -> Any:
+    """Keep READI's entity conversion, with scoped spaCy device selection."""
+    import spacy
+    from thinc.api import get_current_ops, set_current_ops, use_ops
+    from risk_assessment.classification.unstructured import EntityExtractor
+    from risk_assessment.classification.unstructured.spacy import SpacyEntityExtractor
+
+    class ScopedSpacyExtractor(SpacyEntityExtractor):
+        def __init__(self):
+            # READI's constructor unconditionally calls prefer_gpu(). Loading
+            # here avoids enabling MPS and leaves unrelated host models alone.
+            EntityExtractor.__init__(self, {})
+            self.extractor_name = "SPACY"
+            with _cuda_device_scope(), use_ops("numpy"):
+                if device == "cuda":
+                    spacy.require_gpu()
+                    if get_current_ops().name != "cupy":
+                        raise ValueError("readi_device=cuda requires a CUDA-capable spaCy installation")
+                elif device == "auto" and sys.platform != "darwin":
+                    spacy.prefer_gpu()
+                self.ops = get_current_ops()
+                try:
+                    self.model = spacy.load(model)
+                except OSError:
+                    from spacy.cli import download
+
+                    download(model)
+                    self.model = spacy.load(model)
+            self.inference_lock = threading.Lock()
+
+        def extract(self, text):
+            # Hooks may call this model from different threads. Restore each
+            # caller's context even when inference raises.
+            with self.inference_lock, use_ops("numpy"):
+                set_current_ops(self.ops)
+                return super().extract(text)
+
+    return ScopedSpacyExtractor()
+
+
 def build_readi_detector(
     *,
     extractor: str = DEFAULT_EXTRACTOR,
     model: str | None = None,
     language: str = "en",
     detection_type: str = "PII",
+    device: str = "auto",
 ) -> SpanDetector:
     """Build a :class:`SpanDetector` backed by IBM READI. Imports ``risk_assessment``.
 
@@ -238,6 +297,11 @@ def build_readi_detector(
     if extractor not in EXTRACTORS:
         raise ValueError(f"Unknown readi extractor {extractor!r} (expected one of {', '.join(EXTRACTORS)})")
 
+    if device not in ("auto", "cpu", "cuda"):
+        raise ValueError("readi_device must be auto, cpu, or cuda")
+    if device != "auto" and extractor != "spacy":
+        raise ValueError("readi_device is only supported with readi_extractor='spacy'")
+
     # Cheap import; validates the [pii-semantic] extra without loading model weights.
     # Narrow guard: only a genuinely-absent READI package gets the install hint.
     # A name-less ImportError, or one naming an unrelated module, means a broken
@@ -254,9 +318,7 @@ def build_readi_detector(
 
     def _build_extractor() -> Any:
         if extractor == "spacy":
-            from risk_assessment.classification.unstructured.spacy import SpacyEntityExtractor
-
-            return SpacyEntityExtractor(model or DEFAULT_SPACY_MODEL)
+            return _build_spacy_extractor(model or DEFAULT_SPACY_MODEL, device)
         if extractor == "hf":
             if not model:
                 raise ValueError("readi_model is required when readi_extractor='hf'")
@@ -290,14 +352,6 @@ def build_readi_detector(
     # and two threads racing here would each download/load a multi-hundred-MB
     # pipeline.
     #
-    # Apple Silicon caveat: spacy-curated-transformers places these models on
-    # torch's MPS backend, and MPS binds to the first thread that touches it —
-    # a model used from a second thread raises "Placeholder storage has not
-    # been allocated on MPS device!" no matter where it was built (a per-thread
-    # cache does NOT help; verified). With on_error=fail that surfaces as a
-    # blocked operation. See the "Known limitations" section of
-    # docs/guides/pii-redaction.md for workarounds; it does not affect
-    # CPU/CUDA hosts.
     cache: list[Any] = []
     lock = threading.Lock()
 
@@ -324,6 +378,8 @@ class ReadiSemanticPIIPlugin(HookPluginBase):
     Config keys (all optional):
       - ``readi_extractor``: ``default`` | ``spacy`` | ``hf`` | ``presidio``
       - ``readi_model``: spaCy pipeline name or HF ``pipeline("ner")`` id
+      - ``readi_device``: ``auto`` | ``cpu`` | ``cuda`` (spacy extractor only).
+        Auto uses CPU on macOS; other hosts retain spaCy GPU auto-selection.
       - ``readi_language``: language code for the spacy/presidio engine
       - ``readi_detection_type``: READI ``DetectionType`` for ``default``
       - ``redaction_text``: mask string (default ``[REDACTED]``)
@@ -358,6 +414,7 @@ class ReadiSemanticPIIPlugin(HookPluginBase):
                 model=cfg.get("readi_model"),
                 language=str(cfg.get("readi_language") or "en"),
                 detection_type=str(cfg.get("readi_detection_type") or "PII"),
+                device=str(cfg.get("readi_device") or "auto").strip().lower(),
             )
         return self._detector
 
