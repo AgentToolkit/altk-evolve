@@ -560,8 +560,12 @@ def list_entities(
     include_content: bool = False,
     record_access: bool = False,
     namespace_id: str | None = None,
+    exclude_entity_types: list[str] | None = None,
 ) -> str:
     """Return a structured, paginated entity inventory.
+
+    Excluded types are removed before totals, facets, and pagination are calculated.
+    Exclusion takes precedence over inclusion.
 
     This is the UI/admin counterpart to ``get_entities``, whose prose response
     is intentionally optimized for prompt injection. Administrative scans do
@@ -581,8 +585,11 @@ def list_entities(
     candidates = client.scan_entities(resolved_ns, limit=scan_limit)
 
     wanted_types = set(entity_types or [])
+    excluded_types = set(exclude_entity_types or [])
 
     def matches(entity: RecordedEntity) -> bool:
+        if entity.type in excluded_types:
+            return False
         metadata = entity.metadata or {}
         if wanted_types and entity.type not in wanted_types:
             return False

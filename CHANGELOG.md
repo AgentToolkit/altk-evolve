@@ -4,6 +4,46 @@
 
 <!-- version list -->
 
+## v1.6.1 (2026-10-08)
+
+### Bug Fixes
+
+- **memory**: Exclude entity types before pagination and reject trivial guidelines
+  ([#372](https://github.com/AgentToolkit/altk-evolve/pull/372),
+  [`962aa1d`](https://github.com/AgentToolkit/altk-evolve/commit/962aa1dbfe404311466489216e76be6e64dba7ad))
+
+- **memory**: Filter inventory types and reject trivial guidelines
+  ([#372](https://github.com/AgentToolkit/altk-evolve/pull/372),
+  [`962aa1d`](https://github.com/AgentToolkit/altk-evolve/commit/962aa1dbfe404311466489216e76be6e64dba7ad))
+
+
+## v1.6.0 (2026-10-07)
+
+### Bug Fixes
+
+- **embeddings**: Honor dotenv cache paths and preserve export errors
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+- **embeddings**: Preserve CodeRank token limits and validate FastEmbed output
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+### Features
+
+- **embeddings**: Add optional FastEmbed provider
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+- **embeddings**: Add optional FastEmbed provider for shared ONNX inference
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+- **embeddings**: Export official CodeRankEmbed for ONNX consistency defaults
+  ([#371](https://github.com/AgentToolkit/altk-evolve/pull/371),
+  [`b0ab709`](https://github.com/AgentToolkit/altk-evolve/commit/b0ab7092110cbf5c59b3b94f833a30df19d2370e))
+
+
 ## v1.5.2 (2026-10-06)
 
 ### Features

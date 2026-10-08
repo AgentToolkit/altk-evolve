@@ -1,6 +1,6 @@
 [project]
 name = "altk-evolve"
-version = "1.5.2"
+version = "1.6.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,6 +26,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+fastembed = ["fastembed>=0.7,<1"]
+fastembed-export = ["altk-evolve[fastembed]", "onnx>=1.17,<2"]
 build = ["uv"]
 
 tracing = [
@@ -292,6 +294,9 @@ module = [
     "spacy.*",
     "thinc.*",
     "pymilvus.*",
+    "fastembed.*",
+    "onnx.*",
+    "onnxruntime.*",
     "smolagents.*",
     "milvus_lite.*",
     "openinference.*",
