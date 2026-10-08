@@ -15,13 +15,15 @@ live in plugin-source/ but are never shipped:
   README.md         — describes the source tree.
   build_plugins.py  — this script.
   plugin.toml       — canonical plugin metadata; projected to per-platform
-                      plugin.json by metadata_emit functions, never copied.
+                      plugin.json by metadata_emit functions, and to the
+                      repo-root claude marketplace entry by
+                      _marketplace_targets(), never copied.
 
 Per-platform routing: any file living under `plugin-source/_<platform>/...`
 ships to that platform only, and the `_<platform>/` prefix is stripped from
-its output target. This is how single-platform artifacts (claude's
-`hooks/hooks.json`, bob's `custom_modes.yaml`, the per-platform READMEs)
-live alongside the universal sources without leaking to other hosts.
+its output target. This is how single-platform artifacts (claw-code's
+`hooks/retrieve_entities.sh`, the per-platform READMEs) live alongside the
+universal sources without leaking to other hosts.
 
 Source files ending in `.j2` are rendered through Jinja2 with a per-platform
 context (see PlatformConfig.context). Other files are copied verbatim.
@@ -115,6 +117,21 @@ class CodexConfig(BaseModel):
     default_prompt: list[str] = []
 
 
+class MarketplaceConfig(BaseModel):
+    """The [marketplace] table: fields of the repo-root Claude Code marketplace
+    manifest that are NOT already covered by [plugin]. Everything the entry
+    shares with plugin.json (name, description, author, version) comes from
+    [plugin] instead, so the two cannot disagree."""
+
+    model_config = _LENIENT
+    name: str | None = None
+    description: str | None = None
+    owner: Author = Field(default_factory=Author)
+    schema_url: str | None = Field(default=None, alias="schema")
+    entry_source: str | None = None
+    entry_category: str | None = None
+
+
 class PluginMetadata(BaseModel):
     """Top-level shape of plugin-source/plugin.toml.
 
@@ -130,6 +147,7 @@ class PluginMetadata(BaseModel):
     claude: ClaudeConfig = Field(default_factory=ClaudeConfig)
     claw_code: ClawCodeConfig = Field(default_factory=ClawCodeConfig, alias="claw-code")
     codex: CodexConfig = Field(default_factory=CodexConfig)
+    marketplace: MarketplaceConfig = Field(default_factory=MarketplaceConfig)
 
 
 # ----- plugin.json output models --------------------------------------------
@@ -205,6 +223,25 @@ class _CodexOut(BaseModel):
     interface: _CodexInterfaceOut | None = None
 
 
+class _MarketplaceEntryOut(BaseModel):
+    model_config = _LENIENT
+    name: str
+    description: str | None = None
+    version: str
+    author: _OutAuthor | None = None
+    source: str | None = None
+    category: str | None = None
+
+
+class _MarketplaceOut(BaseModel):
+    model_config = _LENIENT
+    schema_url: str | None = Field(default=None, serialization_alias="$schema")
+    name: str | None = None
+    description: str | None = None
+    owner: _OutAuthor | None = None
+    plugins: list[_MarketplaceEntryOut] = []
+
+
 # ----- projection ------------------------------------------------------------
 #
 # Each platform that ships a plugin.json gets a small projection function that
@@ -251,6 +288,38 @@ def _claw_code_plugin_json(meta: PluginMetadata) -> _ClawCodeOut:
         default_enabled=meta.claw_code.default_enabled,
         **_extras(p),
         **_extras(meta.claw_code),
+    )
+
+
+def _marketplace_json(meta: PluginMetadata) -> _MarketplaceOut:
+    """The repo-root .claude-plugin/marketplace.json.
+
+    Unlike the per-platform plugin.json files this has no plugin_root to live
+    under, so it is emitted by _marketplace_targets() rather than by a
+    PlatformConfig.metadata_emit.
+
+    Claude Code resolves a plugin's version from plugin.json and silently
+    ignores the marketplace entry's (`claude plugin validate` warns when the
+    two disagree), so taking both from [plugin].version is what keeps the
+    warning from ever firing again.
+    """
+    p = meta.plugin
+    m = meta.marketplace
+    return _MarketplaceOut(
+        schema_url=m.schema_url,
+        name=m.name,
+        description=m.description,
+        owner=_OutAuthor.model_validate(m.owner.model_dump(exclude_none=True)) if m.owner.name else None,
+        plugins=[
+            _MarketplaceEntryOut(
+                name=p.name,
+                description=p.description,
+                version=p.version,
+                author=_author(p),
+                source=m.entry_source,
+                category=m.entry_category,
+            )
+        ],
     )
 
 
@@ -301,7 +370,8 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         # recall/learn skills are redundant. Worse, their "Must be used"
         # descriptions made the agent auto-invoke recall every session (it
         # fires, finds nothing, pure noise). Build them OUT of the Claude
-        # plugin only; codex/bob still ship recall + learn.
+        # plugin. Codex and bob exclude them too, for their own reasons noted
+        # below; claw-code is the only host that still ships recall + learn.
         "target_excludes": [
             r"^skills/evolve-lite/recall/",
             r"^skills/evolve-lite/learn/",
@@ -492,6 +562,26 @@ def _bob_command_targets() -> list[tuple[Path, Path, bytes]]:
     return out
 
 
+# Claude Code reads the marketplace manifest from .claude-plugin/ at the REPO
+# ROOT — outside every plugin_root — which is why it needs its own target list
+# rather than a PlatformConfig.metadata_target.
+MARKETPLACE_TARGET = Path(".claude-plugin") / "marketplace.json"
+
+
+def _marketplace_targets(metadata: PluginMetadata) -> list[tuple[Path, Path, bytes]]:
+    """The repo-root marketplace manifest, as a single
+    (source_for_drift_label, target_rel_to_repo_root, content) triple — the
+    same shape _bob_command_targets() returns, so render and check treat both
+    the same way."""
+    return [
+        (
+            PLUGIN_SOURCE_DIR / "plugin.toml",
+            MARKETPLACE_TARGET,
+            _dump_json(_marketplace_json(metadata)),
+        )
+    ]
+
+
 @dataclass(frozen=True)
 class TargetRewrite:
     pattern: re.Pattern[str]
@@ -566,10 +656,16 @@ def _load_metadata() -> PluginMetadata:
     return PluginMetadata.model_validate(raw)
 
 
+def _dump_json(model: BaseModel) -> bytes:
+    """Serialize an output model the one way every generated JSON file uses:
+    camelCase via aliases, unset fields dropped, 2-space indent, trailing
+    newline."""
+    return (model.model_dump_json(by_alias=True, exclude_none=True, indent=2) + "\n").encode("utf-8")
+
+
 def _render_plugin_json(cfg: PlatformConfig, metadata: PluginMetadata) -> bytes:
     assert cfg.metadata_emit is not None
-    model = cfg.metadata_emit(metadata)
-    return (model.model_dump_json(by_alias=True, exclude_none=True, indent=2) + "\n").encode("utf-8")
+    return _dump_json(cfg.metadata_emit(metadata))
 
 
 def _walk_sources() -> list[tuple[Path, tuple[str, ...]]]:
@@ -681,7 +777,7 @@ def render_to(out_root: Path) -> list[Path]:
         target.write_bytes(_render_plugin_json(cfg, metadata))
         written.append(plugin_root_rel / cfg.metadata_target)
 
-    for _, target_rel, content in _bob_command_targets():
+    for _, target_rel, content in (*_bob_command_targets(), *_marketplace_targets(metadata)):
         target = out_root / target_rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
@@ -767,14 +863,14 @@ def check_drift() -> int:
         if committed.read_bytes() != rendered:
             drifts.append((plugin_toml, committed))
 
-    for skill_src, target_rel, content in _bob_command_targets():
+    for src, target_rel, content in (*_bob_command_targets(), *_marketplace_targets(metadata)):
         committed = REPO_ROOT / target_rel
         expected.add(committed)
         if not committed.is_file():
             missing.append(committed)
             continue
         if committed.read_bytes() != content:
-            drifts.append((skill_src, committed))
+            drifts.append((src, committed))
 
     # Orphan check: walk each plugin_root and flag any file that wasn't
     # part of the expected render. Without this, a stale artifact left

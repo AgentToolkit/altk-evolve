@@ -1602,8 +1602,11 @@ class CodexInstaller:
         print("  Codex:")
         print(f"    plugins/evolve-lite       : {'✓' if plugin_dir.is_dir() else '✗'}")
         print(f"    lib/evolve-lite/entity_io : {'✓' if (plugin_dir / 'lib' / 'evolve-lite' / 'entity_io.py').is_file() else '✗'}")
-        print(f"    skills/evolve-lite/learn  : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'learn').is_dir() else '✗'}")
-        print(f"    skills/evolve-lite/recall : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'recall').is_dir() else '✗'}")
+        # Probe skills codex actually ships. `learn` and `recall` are built out
+        # of the codex plugin (EVOLVE.md drives that workflow directly), so
+        # probing for them printed ✗ on every healthy install.
+        print(f"    skills/.../adapt-memory   : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'adapt-memory').is_dir() else '✗'}")
+        print(f"    skills/.../sync           : {'✓' if (plugin_dir / 'skills' / 'evolve-lite' / 'sync').is_dir() else '✗'}")
 
         marketplace_path = Path(target_dir) / ".agents" / "plugins" / "marketplace.json"
         marketplace_present = (
