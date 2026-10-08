@@ -151,3 +151,17 @@ def test_personal_facts_respect_injected_agent_scope(app_client):
         result = http.get("/memory/facts").json()
         assert result["matched_count"] == 1
         assert result["categories"]["misc"][0]["content"] == "agent-a secret"
+
+
+@pytest.mark.parametrize("path", ["/api/memory/entities", "/api/manage/memory/entities"])
+def test_inventory_excludes_types_without_hiding_custom_types(app_client, path):
+    http, backend = app_client
+    for kind in ("trajectory", "custom_lesson"):
+        backend.update_entities("instance-a", [Entity(type=kind, content=kind, metadata={"user_id": "alice"})], False)
+    response = http.get(path, params={"exclude_entity_types": "trajectory", "limit": 1}, headers={"x-manage": "yes"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == (3 if "/manage/" in path else 2)
+    assert "trajectory" not in data["facets"]["entity_types"]
+    assert data["facets"]["entity_types"]["custom_lesson"] == 1
+    assert data["next_cursor"] is not None
