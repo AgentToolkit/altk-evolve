@@ -1,3 +1,5 @@
+from altk_evolve.telemetry import traced
+from altk_evolve.utils.cancellation import check_request_cancelled
 from copy import deepcopy
 import datetime
 import logging
@@ -416,6 +418,7 @@ class BaseEntityBackend(ABC):
                         prepared.expected[update.id] = stored.model_copy(deep=True)
         return prepared
 
+    @traced("evolve.memory.prepare_writes")
     def prepare_updates(
         self, namespace_id: str, entities: list[Entity], enable_conflict_resolution: bool = True, **kwargs
     ) -> PreparedWrites:
@@ -462,6 +465,7 @@ class BaseEntityBackend(ABC):
         self._post_update(namespace_id)
         return updates
 
+    @traced("evolve.memory.commit")
     def commit_prepared(
         self,
         namespace_id: str,
@@ -480,6 +484,7 @@ class BaseEntityBackend(ABC):
         Non-atomic backends retain best-effort writes without pretending to offer CAS.
         Only unchanged receipts from prepare_updates() may enter this method.
         """
+        check_request_cancelled()
         if checkpoint is not None and not self.supports_atomic_writes:
             raise NotImplementedError("Incremental processing requires atomic namespace writes")
         targets = set()
@@ -492,6 +497,7 @@ class BaseEntityBackend(ABC):
                     targets.add(update.id)
         context = self.transaction(namespace_id) if self.supports_atomic_writes and not self.in_transaction else nullcontext()
         with context:
+            check_request_cancelled()
             checkpoint_keys = list(dict.fromkeys((checkpoint[0], *checkpoint_aliases))) if checkpoint is not None else []
             existing = {key: self.get_processing_checkpoint(namespace_id, key) for key in checkpoint_keys}
             committed = next((value for value in existing.values() if value is not None), None)

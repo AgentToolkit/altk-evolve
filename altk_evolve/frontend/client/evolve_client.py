@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from altk_evolve.telemetry import traced
+
 import datetime
 import logging
 from threading import Lock
@@ -107,6 +109,7 @@ class EvolveClient:
                 self._processing = ProcessingManager(repository=self.backend.profile_repository())
             return self._processing
 
+    @traced("evolve.trajectory.process")
     def process_trajectory(
         self,
         trajectory: Trajectory | dict,
@@ -160,6 +163,7 @@ class EvolveClient:
         """Delete a namespace that entities exist in."""
         self.backend.delete_namespace(namespace_id)
 
+    @traced("evolve.memory.update")
     def update_entities(
         self,
         namespace_id: str,
@@ -180,6 +184,7 @@ class EvolveClient:
             processing_provenance=processing_provenance,
         )
 
+    @traced("evolve.memory.search")
     def search_entities(
         self, namespace_id: str, query: str | None = None, filters: dict | None = None, limit: int = 10
     ) -> list[RecordedEntity]:
@@ -218,6 +223,7 @@ class EvolveClient:
         """Merge metadata_updates into an entity without touching content or ID."""
         return self.backend.update_entity_metadata(namespace_id, entity_id, metadata_updates)
 
+    @traced("evolve.memory.record_access")
     def record_access(self, namespace_id: str, entity_ids: list[str], when: datetime.datetime | None = None) -> list[str]:
         """Stamp ``metadata.last_accessed`` (ISO-8601 UTC) on the given entities.
 
@@ -427,6 +433,7 @@ class EvolveClient:
             support_after=support_after,
         )
 
+    @traced("evolve.guidelines.select")
     def select_guidelines(
         self,
         namespace_id: str,

@@ -6,6 +6,8 @@ locks the current entity and records its outcome in the deletion transaction.
 
 from __future__ import annotations
 
+from altk_evolve.telemetry import traced
+
 import datetime as dt
 import hashlib
 import json
@@ -208,6 +210,7 @@ class Collection:
             raise ValueError("Retention policy not found")
         return row
 
+    @traced("evolve.retention.collection.mark")
     def mark(self, policy_id: str, *, initiated_by: str | None, run_id: str | None = None, limit: int = 1000) -> dict[str, Any]:
         from psycopg import sql
         from psycopg.types.json import Jsonb
@@ -345,6 +348,7 @@ class Collection:
             ),
         )
 
+    @traced("evolve.retention.collection.sweep")
     def sweep(self, policy_id: str, *, initiated_by: str | None, run_id: str | None = None, limit: int = 1000) -> dict[str, Any]:
         run_id = run_id or str(uuid.uuid4())
         outcomes = []
