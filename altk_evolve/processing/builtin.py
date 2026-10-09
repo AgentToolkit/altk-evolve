@@ -104,6 +104,8 @@ class GuidelineProcessor:
     def process(self, trajectory: Trajectory, *, context: ProcessorContext) -> ProcessorResult:
         """Run the selected generators on this bounded contribution."""
         batches = [(method, generate(trajectory)) for method, generate in self._steps]
+        # A known outcome is authoritative; otherwise caller metadata may carry evidence.
+        evidence = {} if trajectory.outcome is None else {"evidence": "success" if trajectory.outcome.success else "failure"}
         entities = [
             Entity(
                 type="guideline",
@@ -115,6 +117,7 @@ class GuidelineProcessor:
                     "support": 1,
                     **guideline.model_dump(exclude={"content", "support", "evidence"}),
                     "generation_method": method,
+                    **evidence,
                 },
             )
             for method, results in batches
