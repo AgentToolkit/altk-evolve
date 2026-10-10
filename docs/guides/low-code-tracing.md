@@ -236,6 +236,7 @@ When Evolve generates guidelines from traced trajectories (or from explicit `sav
     *   `"auto-mcp"`: Auto-generated when an agent directly calls the Evolve `save_trajectory` MCP tool.
     *   `"manual"`: Explicitly created by a human or agent (e.g., via the `create_entity` MCP tool).
 *   **`source_task_id`**: The originating trace ID (for Phoenix) or task ID (for MCP), linking the guideline back to the specific execution that inspired it.
+*   **`sources`**: Content-free associations to the conversations and tasks that support the guideline, each with a `status` and an `associated_at` time. When similar guidelines are consolidated, each consolidated guideline carries the union of the `sources` of the guidelines it merged, with their original `associated_at` times, so [source-deletion receipts](retention-api.md#explicit-source-deletion-receipts) keep applying. If any merged guideline had no known source, the result is marked `provenance_incomplete` and retention keeps it. Consolidation only merges guidelines that share the same `user_id`, `owner_id`, `agent_id`, and `visibility`, and the consolidated guideline keeps them.
 
 ---
 

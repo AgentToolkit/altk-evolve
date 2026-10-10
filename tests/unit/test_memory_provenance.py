@@ -1,5 +1,6 @@
 """Reconciliation scope and source associations through real filesystem writes."""
 
+import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -295,3 +296,198 @@ def test_source_times_survive_content_updates_but_refresh_on_reaffirmation(backe
         backend.update_entities("n", [fact("original")])
     sources = backend.scan_entities("n")[0].metadata["sources"]
     assert next(s for s in sources if s["conversation_id"] == "original")["associated_at"] > original_time
+
+
+# ---------------------------------------------------------------------------
+# Consolidation keeps source associations
+# ---------------------------------------------------------------------------
+
+
+def guideline(content, conversation=None, user="alice", agent="a", task="handle errors", **scope):
+    metadata = {
+        "task_description": task,
+        "rationale": "r",
+        "category": "strategy",
+        "trigger": "t",
+        "user_id": user,
+        "agent_id": agent,
+        **scope,
+    }
+    if conversation is not None:
+        metadata["thread_id"] = conversation
+    return Entity(type="guideline", content=content, metadata=metadata)
+
+
+def merge_response(*groups):
+    """A mocked merge-LLM reply: one consolidated guideline per group of input indices."""
+    body = {
+        "guidelines": [
+            {"content": f"merged {group}", "rationale": "", "category": "strategy", "trigger": "", "source_indices": group}
+            for group in groups
+        ]
+    }
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(body)))])
+
+
+def consolidate(backend, *groups):
+    """Run EvolveClient.consolidate_guidelines, treating whatever is handed to clustering as one cluster.
+
+    Like the real clustering, a lone entity forms no cluster.
+    """
+    from altk_evolve.frontend.client.evolve_client import EvolveClient
+
+    client = EvolveClient.__new__(EvolveClient)
+    client.backend = backend
+    client.config = SimpleNamespace(clustering_threshold=0.8, consolidation_mode="lossless")
+    with (
+        patch(
+            "altk_evolve.llm.guidelines.clustering.cluster_entities",
+            side_effect=lambda entities, threshold: [entities] if len(entities) > 1 else [],
+        ),
+        patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[]),
+        patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False),
+        patch("altk_evolve.llm.guidelines.clustering.completion", return_value=merge_response(*groups)),
+    ):
+        return client.consolidate_guidelines("n")
+
+
+def stored_guidelines(backend):
+    return {entity.content: entity for entity in backend.scan_entities("n", filters={"type": "guideline"})}
+
+
+def conversations(entity):
+    return {source["conversation_id"] for source in entity.metadata.get("sources", [])}
+
+
+def test_consolidation_keeps_every_members_sources_with_original_times(backend):
+    backend.update_entities("n", [guideline("A", "one"), guideline("B", "two"), guideline("C", "three")], False)
+    original = {s["conversation_id"]: s for e in backend.scan_entities("n") for s in e.metadata["sources"]}
+
+    consolidate(backend, [0, 1, 2])
+
+    (merged,) = stored_guidelines(backend).values()
+    assert conversations(merged) == {"one", "two", "three"}
+    assert merged.metadata["provenance_incomplete"] is False
+    # Consolidation is not a new observation: each association keeps the time it was
+    # first made, so a deletion receipt recorded before consolidation still applies.
+    assert {s["conversation_id"]: s["associated_at"] for s in merged.metadata["sources"]} == {
+        conversation: source["associated_at"] for conversation, source in original.items()
+    }
+
+
+def test_each_member_source_lands_on_exactly_one_consolidated_guideline(backend):
+    backend.update_entities("n", [guideline(c.upper(), c) for c in ["a", "b", "c", "d"]], False)
+    order = [e.metadata["thread_id"] for e in backend.scan_entities("n", filters={"type": "guideline"})]
+
+    # Index 1 is claimed twice; the second claim is ignored. Index 3 is never claimed.
+    consolidate(backend, [0, 1], [1, 2])
+
+    stored = stored_guidelines(backend)
+    assert conversations(stored["merged [0, 1]"]) == {order[0], order[1]}
+    assert conversations(stored["merged [1, 2]"]) == {order[2]}
+    # The uncovered member is carried through unchanged, with its own source.
+    assert conversations(stored[order[3].upper()]) == {order[3]}
+    claimed = [c for entity in stored.values() for c in conversations(entity)]
+    assert sorted(claimed) == sorted(order)
+
+
+def test_consolidated_guideline_without_attributed_members_is_not_written(backend):
+    backend.update_entities("n", [guideline("A", "one"), guideline("B", "two")], False)
+
+    consolidate(backend, [], [7], [0, 1])
+
+    (merged,) = stored_guidelines(backend).values()
+    assert merged.content == "merged [0, 1]"
+    assert conversations(merged) == {"one", "two"}
+
+
+def test_consolidation_marks_partial_provenance_incomplete(backend):
+    backend.update_entities("n", [guideline("A", "one"), guideline("B")], False)
+
+    consolidate(backend, [0, 1])
+
+    (merged,) = stored_guidelines(backend).values()
+    assert conversations(merged) == {"one"}
+    assert merged.metadata["provenance_incomplete"] is True
+
+
+def test_consolidation_of_members_without_provenance_adds_none(backend):
+    backend.update_entities("n", [guideline("A"), guideline("B")], False)
+
+    consolidate(backend, [0, 1])
+
+    (merged,) = stored_guidelines(backend).values()
+    assert "sources" not in merged.metadata
+    assert "provenance_incomplete" not in merged.metadata
+
+
+# ---------------------------------------------------------------------------
+# Consolidation stays inside each memory's scope
+# ---------------------------------------------------------------------------
+
+SCOPE_KEYS = ("user_id", "owner_id", "agent_id", "visibility")
+
+
+def scope_of(entity):
+    return tuple(entity.metadata.get(key) for key in SCOPE_KEYS)
+
+
+def test_consolidation_keeps_the_members_scope(backend):
+    scope = {"owner_id": "alice", "visibility": "public"}
+    backend.update_entities("n", [guideline("A", "one", **scope), guideline("B", "two", **scope)], False)
+
+    consolidate(backend, [0, 1])
+
+    (merged,) = stored_guidelines(backend).values()
+    assert scope_of(merged) == ("alice", "alice", "a", "public")
+
+
+def test_consolidation_never_merges_across_scopes(backend):
+    backend.update_entities(
+        "n",
+        [
+            guideline("alice A", "alice-one"),
+            guideline("bob A", "bob-one", user="bob"),
+            guideline("alice B", "alice-two"),
+            guideline("bob B", "bob-two", user="bob"),
+            guideline("alice other agent", "alice-three", agent="b"),
+        ],
+        False,
+    )
+    originals = {e.content: scope_of(e) for e in backend.scan_entities("n")}
+
+    # The model is told to merge everything it is shown.
+    consolidate(backend, [0, 1, 2, 3, 4])
+
+    stored = backend.scan_entities("n", filters={"type": "guideline"})
+    by_scope = {scope_of(e): e for e in stored}
+    assert len(by_scope) == len(stored) == 3
+    assert by_scope[originals["alice A"]].content.startswith("merged")
+    assert conversations(by_scope[originals["alice A"]]) == {"alice-one", "alice-two"}
+    assert conversations(by_scope[originals["bob A"]]) == {"bob-one", "bob-two"}
+    # A memory alone in its scope has nothing to merge with and is left untouched.
+    assert by_scope[originals["alice other agent"]].content == "alice other agent"
+    for entity in stored:
+        assert {(s["user_id"], s["agent_id"]) for s in entity.metadata["sources"]} == {
+            (entity.metadata["user_id"], entity.metadata["agent_id"])
+        }
+
+
+def test_a_mixed_scope_cluster_is_skipped_before_the_merge_model_sees_it(backend):
+    from altk_evolve.frontend.client.evolve_client import EvolveClient
+
+    backend.update_entities("n", [guideline("alice A", "one"), guideline("bob A", "two", user="bob")], False)
+    before = backend.scan_entities("n")
+    client = EvolveClient.__new__(EvolveClient)
+    client.backend = backend
+    client.config = SimpleNamespace(clustering_threshold=0.8, consolidation_mode="lossless")
+
+    with (
+        patch.object(client, "_cluster_guideline_entities", return_value=[before]),
+        patch("altk_evolve.llm.guidelines.clustering.completion") as completion,
+    ):
+        result = client.consolidate_guidelines("n")
+
+    completion.assert_not_called()
+    assert result.clusters_found == 0
+    assert backend.scan_entities("n") == before

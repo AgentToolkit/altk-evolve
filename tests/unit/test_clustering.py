@@ -6,8 +6,9 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from altk_evolve.llm.guidelines.clustering import _union_find, cluster_entities
+from altk_evolve.llm.guidelines.clustering import _attribute_support, _union_find, cluster_entities
 from altk_evolve.schema.core import RecordedEntity
+from altk_evolve.schema.guidelines import ConsolidatedGuideline
 
 
 def _make_entity(entity_id: str, task_description: str | None = None) -> RecordedEntity:
@@ -160,3 +161,39 @@ class TestClusterEntities:
 
         # Should use the default model from config
         mock_st_cls.assert_called_once_with("test-default-model")
+
+
+# ---------------------------------------------------------------------------
+# _attribute_support tests
+# ---------------------------------------------------------------------------
+
+
+def _consolidated(content: str, source_indices: list) -> ConsolidatedGuideline:
+    return ConsolidatedGuideline(content=content, rationale="", category="strategy", trigger="", source_indices=source_indices)
+
+
+@pytest.mark.unit
+class TestAttributeSupport:
+    def test_members_partition_across_outputs(self):
+        entities = [_make_entity(str(i), "task") for i in range(4)]
+        consolidated = [_consolidated("first", [0, 1]), _consolidated("second", [1, 2])]
+
+        out = _attribute_support(entities, consolidated, [1, 2, 3, 4], [None] * 4)
+
+        assert [(g.content, members) for g, members in out] == [
+            ("first", [0, 1]),
+            # Index 1 was already claimed, so only index 2 counts here.
+            ("second", [2]),
+            # Index 3 was never claimed and is carried through as its own guideline.
+            ("Guideline for 3", [3]),
+        ]
+        assert sorted(i for _, members in out for i in members) == [0, 1, 2, 3]
+        assert [g.support for g, _ in out] == [3, 3, 4]
+
+    def test_output_without_attributable_members_is_dropped(self):
+        entities = [_make_entity(str(i), "task") for i in range(2)]
+        consolidated = [_consolidated("empty", []), _consolidated("out of range", [5, -1]), _consolidated("real", [0, 1])]
+
+        out = _attribute_support(entities, consolidated, [1, 1], [None, None])
+
+        assert [(g.content, members) for g, members in out] == [("real", [0, 1])]
