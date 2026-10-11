@@ -1,14 +1,14 @@
 ---
 name: evolve-lite:publish
-description: Publish a private guideline to a configured write-scope repo.
+description: Publish private guidelines, atomic skills, or skill flows to a configured write-scope repo.
 ---
 
-# Publish a Guideline
+# Publish Entities
 
 ## Overview
 
-Publish one or more private guidelines from `.evolve/entities/guideline/`
-into a configured **write-scope** repo. The entity is stamped with
+Publish one or more private entities from `.evolve/entities/guideline/`, `.evolve/entities/atomic-skill/`, or `.evolve/entities/skill-flow/`
+into a configured **write-scope** repo. Each entity is stamped with
 `visibility: public`, `owner`, `published_at`, and `source`, moved into
 the local clone of the write repo, and committed / pushed to the remote.
 
@@ -29,10 +29,10 @@ If `identity.user` is missing, ask for it and add it to the config.
 
 ### Step 2: First-time setup
 
-Ensure `.evolve/` is gitignored at the project root:
+Ensure `.evolve/entities/subscribed/` is gitignored at the project root (the subscribed clones are managed by evolve-lite and should not be committed). Do **not** gitignore `.evolve/` or `.bob/` — those directories must remain tracked.
 
 ```bash
-grep -qxF '.evolve/' .gitignore 2>/dev/null || echo '.evolve/' >> .gitignore
+grep -qxF '.evolve/entities/subscribed/' .gitignore 2>/dev/null || echo '.evolve/entities/subscribed/' >> .gitignore
 ```
 
 ### Step 3: Pick the target write-scope repo
@@ -47,7 +47,72 @@ Let `{repo}` be the chosen repo name and `{branch}` its configured branch (defau
 
 ### Step 4: List and select entities
 
-List files in `.evolve/entities/guideline/` and ask the user which to publish.
+List files in `.evolve/entities/guideline/`, `.evolve/entities/atomic-skill/`, and `.evolve/entities/skill-flow/`, then ask the user which to publish.
+
+### Step 4a: Test gate (optional)
+
+The quality gate is **off by default**. Only run it when the user explicitly requests it (e.g. "publish with quality gate", "run the gate before publishing", "include quality check").
+
+If the user did **not** ask for the gate, skip this step entirely and proceed to Step 5.
+
+If the user **did** ask for the gate, run:
+
+```bash
+python3 .bob/skills/evolve-lite-test/scripts/check_tests.py --threshold 0.8 --verbose
+```
+
+The gate report is at `.evolve/tests/evaluation/gate_report.json`.
+
+**If the gate passes** (exit 0), continue to Step 5.
+
+**If the gate fails** (exit 1), tell the user publishing is blocked and work through the `❌` lines to fix each failure before retrying. Do not proceed to Step 5 until the gate exits 0.
+
+#### Fixing gate failures
+
+Read the `❌` lines from the gate output. Each failure is one of two types:
+
+---
+
+**Content evaluation failure** — `score < 0.5` or `violated` terms
+
+The `missed=[...]` list shows command terms that are in the test fixture but absent from the skill content.
+
+```
+❌ my-skill   score=0.33   matched=1/3   missed=['orchestrate agents import', '--kind']
+```
+
+Open the entity file at `.evolve/entities/{type}/my-skill.md`.
+
+- **Missing terms**: Add the missing command, flag, or tool name to the skill content body. If the term is a genuine part of what the skill prescribes, the content is incomplete — extend it.
+- **Incorrect fixture**: If the term was over-extracted and the skill is actually correct without it, regenerate the fixture to match the current content:
+  ```bash
+  python3 .bob/skills/evolve-lite-test/scripts/generate_skill_tests.py .evolve/entities/{type}/my-skill.md
+  ```
+- **Violated terms**: If `violated=[...]` is non-empty, remove the offending phrase from the skill content or adjust the `must_not_include` list in the fixture.
+
+---
+
+**Recall failure** — skill not surfacing in top-3 for its own scenario
+
+```
+❌ my-skill   rank=6   @1=✗ @3=✗ @5=✓   score=2
+     matched_terms: ['cli']
+     top5: ['other-skill', 'third-skill', ...]
+```
+
+The `trigger` field is too vague or uses the wrong vocabulary. Rewrite it so it contains the words a user would actually type when describing the problem:
+
+- Use the *symptom*, *error message*, or *task description* — not the solution.
+- Include the specific command, flag, product name, or error text that distinguishes this skill from the others in `top5`.
+- Look at `matched_terms`: if only short, generic words matched (e.g. `['cli']`), the trigger needs more specific keywords.
+
+After editing the trigger, regenerate the fixture and re-run the gate:
+```bash
+python3 .bob/skills/evolve-lite-test/scripts/generate_skill_tests.py .evolve/entities/{type}/my-skill.md
+python3 .bob/skills/evolve-lite-test/scripts/check_tests.py --threshold 0.8 --verbose
+```
+
+Repeat until both suites show ✅ and the gate exits 0.
 
 ### Step 5: Run publish script
 
@@ -57,76 +122,39 @@ For each selected file, run:
 python3 .bob/skills/evolve-lite-publish/scripts/publish.py --entity "{filename}" --repo "{repo}" --user "{identity.user}"
 ```
 
-### Step 6: Commit and push
+### Step 6: Commit and push to a new branch
+
+If the user specified a branch name (e.g. "publish to a new branch called `{new_branch}`"), use that. Otherwise derive one as `{identity.user}-{YYYY-MM-DD}`.
+
+Let `{publish_branch}` be that branch name.
 
 Build `{names}` as a comma-joined list of selected filenames, and
-`{guideline_paths}` as a space-joined list of the corresponding
-`guideline/{filename}` paths inside the clone (the files the publish
-script just wrote).
+`{entity_paths}` as a space-joined list of the corresponding typed paths inside the clone (for example `.evolve/entities/guideline/{product}/{filename}`, `.evolve/entities/atomic-skill/{product}/{filename}`, or `.evolve/entities/skill-flow/{product}/{filename}`) for the files the publish script just wrote.
+
+If the publish script wrote a `.gitignore` into the clone root (it will on first publish), include that path too so it lands on the remote and protects every future contributor's clone.
 
 ```bash
-git -C ".evolve/entities/subscribed/{repo}" add -- {guideline_paths}
+git -C ".evolve/entities/subscribed/{repo}" checkout -b "{publish_branch}"
+git -C ".evolve/entities/subscribed/{repo}" add -- {entity_paths} .gitignore
 git -C ".evolve/entities/subscribed/{repo}" commit -m "[evolve] publish: {names}"
-git -C ".evolve/entities/subscribed/{repo}" push origin "{branch}"
+git -C ".evolve/entities/subscribed/{repo}" push origin "{publish_branch}"
 ```
 
-On push success, continue to Step 7.
+> **Never use `git add .` or `git add -A` here.** Only the entity files and `.gitignore` are staged explicitly. The `.gitignore` in the clone blocks `.venv/`, `.env`, `.vscode/`, `__pycache__/`, secrets, and all other project noise from ever being staged — but explicit path staging is the final guarantee.
 
-### Step 6a: Recover from non-fast-forward rejection
+On push success, tell the user the branch name and continue to Step 7.
 
-If the push fails and stderr mentions `rejected` / `non-fast-forward`
-/ `fetch first`, another writer pushed to `{branch}` in between.
-Rebase the local commit and push once more:
+### Step 6a: Recover from push rejection
+
+If the push fails and stderr mentions `rejected` / `non-fast-forward` / `fetch first`, the branch already exists on the remote. Pull it in and retry:
 
 ```bash
-git -C ".evolve/entities/subscribed/{repo}" fetch origin "{branch}"
-git -C ".evolve/entities/subscribed/{repo}" rebase "origin/{branch}"
+git -C ".evolve/entities/subscribed/{repo}" fetch origin "{publish_branch}"
+git -C ".evolve/entities/subscribed/{repo}" rebase "origin/{publish_branch}"
+git -C ".evolve/entities/subscribed/{repo}" push origin "{publish_branch}"
 ```
 
-- Rebase clean → retry `git push origin "{branch}"` once, then Step 7.
-- Rebase conflicted → attempt to resolve, then hand off for user
-  review. Do not `git rebase --continue` or `git push` without an
-  explicit user confirmation.
-
-  1. `git -C ".evolve/entities/subscribed/{repo}" status --porcelain`
-     lists the conflicted paths. If any are `UD`, `DU`, or binary,
-     skip to the abort step — those aren't safe to auto-resolve.
-  2. For each `UU`/`AA` file, read the conflict markers. During a
-     rebase, `<<<<<<< HEAD` is the **remote's** version and the
-     section under the commit sha is the **publish change** being
-     replayed (opposite of a regular merge). Write an
-     intent-preserving resolution; don't `git add` yet.
-  3. Show the user the diff (`git -C ".evolve/entities/subscribed/{repo}" diff HEAD -- {file}`) per
-     resolved file with a one-line strategy summary, and ask whether
-     to **continue** (stage + `rebase --continue` + push) or **abort**
-     (roll back for manual resolution).
-  4. On **continue**:
-
-     ```bash
-     git -C ".evolve/entities/subscribed/{repo}" add {resolved-files}
-     git -C ".evolve/entities/subscribed/{repo}" rebase --continue
-     git -C ".evolve/entities/subscribed/{repo}" push origin "{branch}"
-     ```
-
-     Then Step 7. If `rebase --continue` surfaces a new conflict, loop
-     from step 1.
-  5. On **abort** — user declined, conflict isn't safely resolvable,
-     or the proposed merge feels unsafe:
-
-     ```bash
-     git -C ".evolve/entities/subscribed/{repo}" rebase --abort
-     ```
-
-     The local publish commit is preserved at
-     `.evolve/entities/subscribed/{repo}` but not on the remote. Tell
-     the user to either (a) resolve manually in that directory
-     (`git fetch origin {branch} && git rebase origin/{branch}`, fix
-     conflicts, `git add` + `git rebase --continue`, `git push origin
-     {branch}`) or (b) re-run `evolve-lite:publish` with a different
-     filename if the conflict is a shared name.
-
-If the push fails for any other reason (auth, network, missing remote
-ref), surface git's error and stop — rebase will not help.
+If the push fails for any other reason (auth, network, missing remote ref), surface git's error and stop.
 
 ### Step 7: Confirm
 
@@ -134,9 +162,9 @@ Tell the user what was published and to which repo.
 
 ## Notes
 
-- Published entities are **moved** from `.evolve/entities/guideline/` into
-  the write-scope clone at `.evolve/entities/subscribed/{repo}/guideline/`,
+- Published entities are **copied** from their private typed directories under `.evolve/entities/`
+  into the matching typed directory in the write-scope clone at `.evolve/entities/subscribed/{repo}/`,
   with `visibility: public`, `owner: {user}`, `published_at`, and `source`
   stamped in frontmatter
-- The original private entity is deleted after successful publication
+- The original private entity is kept intact after publication
 - All publish actions are logged to `.evolve/audit.log`

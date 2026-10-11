@@ -1,225 +1,126 @@
 # Evolve Lite for Bob
 
-A Bob integration that helps you learn from conversations by automatically extracting and applying guidelines.
+A Bob integration that gives IBM Bob a persistent learning layer — each session recalls stored knowledge, then extracts and saves new learnings automatically.
 
 ⭐ Star the repo: https://github.com/AgentToolkit/altk-evolve
 
-## Features
+📋 **[Skills & Modes Pipeline →](docs/PIPELINE.md)** — how all skills connect and the full learn/dedup/test flow
 
-- **Manual Learning**: Use `evolve-lite:learn` to extract and save guidelines from conversations
-- **Manual Retrieval**: Use `evolve-lite:recall` to retrieve and apply stored guidelines
-- **Guideline Sharing**: Subscribe to read-scope repos and publish to write-scope repos via Git
-
-## Installation
-
-Run the installation script from the repository root:
-
-```bash
-bash platform-integrations/install.sh install bob lite
-```
-
-This installs:
-- 6 skills in `~/.bob/skills/`
-- Shared library in `~/.bob/lib/evolve-lite/`
-- Custom mode configuration
+🧪 **[Testing →](docs/TESTING.md)** — how the entity library is validated
 
 ## How It Works
 
-### Guideline Storage
+Every session in **Evolve Lite** mode follows four mandatory steps:
 
-Guidelines are stored as individual markdown files in `.evolve/entities/`,
-organized by source. Both read-scope subscriptions and write-scope publish
-targets live under `entities/subscribed/{name}/`:
+1. **Recall** — surface stored guidelines and skills relevant to your task
+2. **Work** — complete your task with Bob as normal
+3. **Save trajectory** — capture the full conversation as structured JSON
+4. **Learn** — extract reusable entities, run the quality gate, and merge into the library
 
-```text
-.evolve/entities/
-  guideline/                            # Private guidelines
-    use-context-managers.md
-  subscribed/
-    memory/                             # write-scope clone (publishes land here)
-      guideline/
-        my-published-guideline.md
-    alice/                              # read-scope clone
-      guideline/
-        her-guideline.md
+Over time the library accumulates your team's hard-won knowledge — non-obvious commands, error recovery patterns, product-specific workflows — and recalls it automatically at the start of each session.
+
+## Installation
+
+Run the installer from the `altk-evolve` repository root:
+
+```bash
+bash platform-integrations/install.sh install --platform bob --mode lite
 ```
 
-Each file uses markdown with YAML frontmatter:
+Or remotely:
 
-```markdown
----
-type: guideline
-trigger: When processing files or managing resources
-visibility: private
----
-
-Use context managers for file operations
-
-## Rationale
-
-Context managers ensure proper resource cleanup
+```bash
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh \
+  | bash -s -- install --platform bob --mode lite
 ```
 
-## Sharing Guidelines
+## Repository Layout
 
-Evolve Lite treats shared guidelines as multi-reader / multi-writer git
-databases. A single unified `repos:` list in `evolve.config.yaml`
-describes every external guideline repo; each entry has a `scope` of
-`read` (subscribe only) or `write` (publish target that is also pulled
-on sync).
+```
+.bob/                        Bob skill definitions and mode configuration
+  commands/                  Slash-command definitions (one per skill)
+  lib/evolve-lite/           Shared Python libraries
+    entity_io.py             Entity read/write, product registry, banality checks
+    config.py                evolve.config.yaml reader/writer
+    audit.py                 Audit log helpers
+    trajectory_extractor.py  Reads trajectories directly from Bob task logs
+  skills/                    Skill implementations (SKILL.md + scripts/)
 
-### Setup
+.evolve/                     Runtime data (created on first use)
+  entities/
+    atomic-skill/            Single-step reusable procedures, organised by domain
+    guideline/               Declarative approach preferences, organised by domain
+    skill-flow/              Multi-step ordered workflows, organised by domain
+    subscribed/              Entities from subscribed repos (gitignored)
+  tests/
+    pseudo_conversations/    Test fixtures (one JSON per entity)
+    evaluation/              Test reports (content, recall, baseline)
+    dedup/                   Deduplication phase reports
+  trajectories/              Saved conversation JSON files
+  audit.log                  Recall audit log
+```
 
-Sharing requires `evolve.config.yaml` at the project root. If it doesn't
-exist, the subscribe or publish skills will prompt you to create one.
-Minimal structure:
+## Entity Types
+
+Evolve Lite stores three types of entities:
+
+- **`guideline`** — a declarative preference that shapes how an agent chooses between approaches. No executable steps. Example: *"prefer CLI over MCP server when both are available"*.
+- **`atomic-skill`** — the smallest self-contained executable procedure that solves one focused sub-problem. Includes steps, dependencies, concrete examples, and a success rubric.
+- **`skill-flow`** — a named, recurring ordered sequence of steps, where each step maps to an existing atomic skill or inlined operation. Order matters.
+
+## Skills Included
+
+| Skill | Command | Purpose |
+|---|---|---|
+| `evolve-lite-recall` | `/evolve-lite-recall` | Surface stored entities relevant to the current task |
+| `evolve-lite-save-trajectory` | `/evolve-lite-save-trajectory` | Save the conversation as JSON to `.evolve/trajectories/` |
+| `evolve-lite-learn` | `/evolve-lite-learn` | Extract entities, run quality gate, merge into library |
+| `evolve-lite-dedup` | `/evolve-lite-dedup` | Two-phase cleanup: quality gate then merge/discard |
+| `evolve-lite-create-tests` | `/evolve-lite-create-tests` | Generate test fixtures for all entities |
+| `evolve-lite-run-tests` | `/evolve-lite-run-tests` | Run content, recall, and baseline test suites |
+| `evolve-lite-test` | `/evolve-lite-test` | Generate fixtures + run all three suites |
+| `evolve-lite-test-new-skills` | `/evolve-lite-test-new-skills` | Test only newly saved entities after `learn` |
+| `evolve-lite-publish` | `/evolve-lite-publish` | Push entities to a write-scope git repo |
+| `evolve-lite-subscribe` | `/evolve-lite-subscribe` | Add a read or write-scope git repo |
+| `evolve-lite-sync` | `/evolve-lite-sync` | Pull latest entities from all subscribed repos |
+| `evolve-lite-unsubscribe` | `/evolve-lite-unsubscribe` | Remove a repo subscription |
+| `evolve-lite-provenance` | `/evolve-lite-provenance` | Audit which recalled entities influenced sessions |
+| `evolve-lite-save` | `/evolve-lite-save` | Capture a session workflow as a new reusable skill |
+| `evolve-manager` | `/evolve-manager` | Merge fork entity libraries into main (maintainer mode) |
+
+## Sharing Entities
+
+Entities are shared via git. Add a `evolve.config.yaml` at your project root:
 
 ```yaml
 identity:
-  user: yourname          # used to stamp ownership on published guidelines
+  user: yourname
 
 repos:
   - name: memory
     scope: write
     remote: git@github.com:yourname/evolve-memory.git
     branch: main
-    notes: public memory for my open-source projects
   - name: team
     scope: read
     remote: git@github.com:myorg/evolve-guidelines.git
     branch: main
-
-sync:
-  on_session_start: false
 ```
 
-The `.evolve/` directory is kept out of version control — the skills
-automatically add it to `.gitignore`.
+Then use `/evolve-lite-subscribe`, `/evolve-lite-publish`, and `/evolve-lite-sync` to manage sharing.
 
-### Subscribing to a Repo
-
-Use `evolve-lite:subscribe` to add either a read-scope subscription or a
-write-scope publish target:
-
-```text
-evolve-lite:subscribe
-> Remote URL: git@github.com:alice/evolve-guidelines.git
-> Short name: alice
-> Scope: read
-```
-
-The repo is cloned directly into `.evolve/entities/subscribed/{name}/`
-(this directory serves as both the git clone and the recall mirror).
-
-### Publishing Guidelines
-
-Use `evolve-lite:publish` to share local guidelines via a **write-scope** repo:
-
-1. The skill picks (or asks about) the write-scope target repo
-2. Lists files in `.evolve/entities/guideline/`
-3. You pick which ones to publish
-4. Each selected file is moved into the write-scope clone at
-   `.evolve/entities/subscribed/{repo}/guideline/`, stamped with your
-   username, committed, and pushed to the remote
-
-Because the publish target is also a subscribed repo, your next sync
-pulls in anything other writers have pushed to the same remote.
-
-### Syncing Repos
-
-Use `evolve-lite:sync` to pull the latest changes from every configured
-repo:
-
-```text
-evolve-lite:sync
-> Synced 2 repo(s): memory [write] (+0 added, 1 updated, 0 removed), alice [read] (+2 added, 0 updated, 0 removed)
-```
-
-Read-scope repos use `git fetch` + `git reset --hard`. Write-scope repos
-use `git fetch` + `git rebase` so any unpushed local publish commits are
-preserved.
-
-### Unsubscribing
-
-Use `evolve-lite:unsubscribe` to remove a configured repo and delete
-its locally cloned files:
-
-```text
-evolve-lite:unsubscribe
-> Which repo would you like to remove?
-> 1. memory [write]
-> 2. alice [read]
-```
-
-The skill confirms before deleting `.evolve/entities/subscribed/{name}/`.
-Removing a write-scope repo will also discard any unpushed local
-publish commits, so the skill warns first.
-
-### Sharing Storage Layout
-
-```text
-.evolve/
-  entities/
-    guideline/                      # your private guidelines
-      my-guideline.md
-    subscribed/
-      memory/                       # write-scope clone (publishes land here)
-        guideline/
-          my-published-guideline.md
-      alice/                        # read-scope clone (also serves as recall mirror)
-        guideline/
-          her-guideline.md
-```
-
-## Skills Included
-
-### `evolve-lite:learn`
-
-Manually invoke to extract guidelines from the current conversation:
-- Analyzes task, steps taken, successes and failures
-- Generates proactive guidelines (what to do, not what to avoid)
-- Saves guidelines as markdown files in `.evolve/entities/guideline/`
-
-### `evolve-lite:recall`
-
-Manually invoke to retrieve and display stored guidelines:
-- Loads guidelines from private and subscribed sources
-- Formats and displays them for your review
-- Annotates subscribed guidelines with their source
-
-### `evolve-lite:publish`
-
-Publish private guidelines to a write-scope repo:
-- Lists available private guidelines
-- Moves selected guidelines into the write-scope clone at
-  `.evolve/entities/subscribed/{repo}/guideline/`
-- Stamps with `owner`, `published_at`, and `source` metadata
-- Commits and pushes to the configured remote
-
-### `evolve-lite:subscribe`
-
-Add a configured repo to the unified `repos:` list:
-- Clones the remote into `.evolve/entities/subscribed/{name}/`
-- Adds an entry with `scope: read` or `scope: write` to config
-
-### `evolve-lite:sync`
-
-Sync every configured repo:
-- Read-scope: fetch + reset --hard (clobbers any local edits)
-- Write-scope: fetch + rebase (preserves unpushed local publishes)
-- Reports changes (added, updated, removed)
-
-### `evolve-lite:unsubscribe`
-
-Remove a configured repo:
-- Lists current repos with their scope and notes
-- Deletes the local clone at `.evolve/entities/subscribed/{name}/`
-- Removes the entry from config
+The `.evolve/entities/subscribed/` directory is excluded from version control — the skills automatically gitignore it.
 
 ## Environment Variables
 
-- `EVOLVE_DIR`: Override the default `.evolve` directory location (guidelines, config, etc. are stored here)
+| Variable | Default | Description |
+|---|---|---|
+| `EVOLVE_DIR` | `.evolve` | Override the evolve data directory location |
+| `EVOLVE_DEBUG` | unset | Set to `1` to enable debug logging to `/tmp/evolve-<uid>/evolve-plugin.log` |
 
-## Verification
+## Documentation
 
-After installation, the skills should be available in Bob's skill list.
+- **[PIPELINE.md](docs/PIPELINE.md)** — complete reference for all skills, modes, and how they chain together
+- **[TESTING.md](docs/TESTING.md)** — how the entity library is validated (content, recall, and baseline tests)
+- **[atomic_skill_evaluation_plan.md](docs/atomic_skill_evaluation_plan.md)** — design notes for the atomic skill evaluation framework
+- **[bob-management-mode-plan.md](docs/bob-management-mode-plan.md)** — design notes for Evolve Manager mode
