@@ -1,0 +1,22 @@
+{
+  "aggregate": "{'task_goal_completion': 50.0}",
+  "individual": {
+    "bbb0002_1": {
+      "success": "False",
+      "difficulty": "2",
+      "num_tests": "2",
+      "passes": "[{'requirement': 'assert answers match.', 'label': 'no_op_fail'}]",
+      "failures": "[{'requirement': 'assert the note was shared', 'trace': 'AssertionError', 'label': 'fail'}]"
+    },
+    "bbb0002_3": {
+      "success": "True",
+      "difficulty": "1",
+      "num_tests": "1",
+      "passes": "[]",
+      "failures": "[]"
+    },
+    "bbb0002_4": {
+      "success": "True"
+    }
+  }
+}
