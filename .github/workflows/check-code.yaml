@@ -80,8 +80,12 @@ jobs:
       with:
         enable-cache: true
         python-version: ${{ matrix.python-version }}
+    # Install every extra so code behind optional dependencies (e.g. fastembed)
+    # is type-checked against real stubs rather than silently treated as Any.
+    - name: Install dependencies
+      run: uv sync --frozen --all-groups --all-extras
     - name: Check typing
-      run: uv run mypy .
+      run: uv run --no-sync mypy .
 
   check-plugins-rendered:
     runs-on: ubuntu-latest
