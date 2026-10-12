@@ -12,7 +12,9 @@ or wrap that — it adds the two things native memory lacks, plus a set of skill
 for managing the resulting store.
 
 - **Sharing**: `/evolve-lite:adapt-memory` mirrors a just-saved native memory
-  into the shared store at `.evolve/entities/`, so a teammate can pull it
+  into the in-repo store at `.evolve/entities/` as a normal Evolve entity
+  (publishing mirrored memories to a shared repo is not supported yet — see
+  [Publishing Guidelines](#publishing-guidelines))
 - **Provenance**: `audit_recall.py` records which memories a session actually
   consulted, so their value can be measured over time
 - **Git-backed distribution**: `/evolve-lite:subscribe`, `/evolve-lite:publish`,
@@ -27,20 +29,33 @@ single instruction file Claude imports (see below).
 
 ## Installation
 
-### From Local Directory
+Run the installer from your project root:
 
 ```bash
-claude --plugin-dir /path/to/altk-evolve/platform-integrations/claude/plugins/evolve-lite
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform claude
 ```
 
-### From Marketplace
+or, from a clone of this repo:
 
-1. Add the marketplace and plugin:
-   ```bash
-   claude plugin marketplace add AgentToolkit/altk-evolve
-   claude plugin install evolve-lite@evolve-marketplace
-   ```
+```bash
+platform-integrations/install.sh install --platform claude --dir /path/to/your/project
+```
 
+The installer:
+
+- installs the plugin (`claude plugin marketplace add` +
+  `claude plugin install evolve-lite@evolve-marketplace`);
+- copies `EVOLVE.md` to `<project>/.evolve/EVOLVE.md` and adds the import line
+  to the project's `CLAUDE.md` (see [How It Works](#how-it-works));
+- installs `adapt_memory.py`, `audit_recall.py` and their shared `lib/` under
+  `~/.claude/evolve-lite/`;
+- allowlists those scripts and `.evolve/` writes in `<project>/.claude/settings.json`
+  so they never trigger a per-use permission prompt.
+
+Installing only the plugin — `claude --plugin-dir …` or
+`claude plugin install evolve-lite@evolve-marketplace` on its own — loads the
+skills but skips the rest, so `EVOLVE.md` never reaches sessions and
+`/evolve-lite:doctor` reports `NOT_INSTALLED`. Run the installer as well.
 
 ## How It Works
 
@@ -63,7 +78,13 @@ That file asks Claude for two things:
 
 When Claude saves a native memory, it invokes `/evolve-lite:adapt-memory`, which
 writes the same fact into `.evolve/entities/{type}/{name}.md` as a normal Evolve
-entity. From there it can be published to a git repo and pulled by teammates.
+entity. `{type}` is the native memory's own type (`user`, `feedback`, `project`
+or `reference`), and the entity records `source: native-memory` plus the
+`native_path` it was mirrored from.
+
+> **Not yet publishable.** `/evolve-lite:publish` currently reads only
+> `.evolve/entities/guideline/`, so mirrored memories cannot be published to a
+> shared repo yet. Tracked in [#373](https://github.com/AgentToolkit/altk-evolve/issues/373).
 
 ### After consulting memories — log it (provenance)
 
@@ -107,7 +128,7 @@ repos:
     branch: main
     notes: private memory shared only within my org
 sync:
-  on_session_start: true  # auto-sync on each session start
+  on_session_start: true  # written by subscribe; not acted on yet (see Syncing Repos)
 ```
 
 - `scope: read` — pulled on sync. Cannot be published to.
@@ -129,9 +150,13 @@ write-scope publish target:
 > Scope: read
 ```
 
-The repo is cloned into `.evolve/entities/subscribed/alice/` so recall can
-pick it up immediately. Repo names must use only letters, numbers, `.`,
-`_`, and `-`.
+The repo is cloned into `.evolve/entities/subscribed/alice/`. Repo names must
+use only letters, numbers, `.`, `_`, and `-`.
+
+> **Note:** on Claude, recall stays native, and nothing reads
+> `.evolve/entities/subscribed/` into a session today. Subscribed guidelines
+> are on disk for you to browse, but Claude does not recall them
+> automatically.
 
 ### Publishing Guidelines
 
@@ -144,6 +169,11 @@ via a **write-scope** repo:
 4. Each selected file is moved into `.evolve/entities/subscribed/{repo}/guideline/`,
    stamped with `visibility: public`, `owner`, `published_at`, and
    `source`, committed, and pushed to the remote
+
+> **Limitation:** publish only looks in `.evolve/entities/guideline/`, and
+> nothing in this plugin writes there — `/evolve-lite:adapt-memory` writes
+> `entities/{user,feedback,project,reference}/`. Until [#373](https://github.com/AgentToolkit/altk-evolve/issues/373) is fixed,
+> only entity files you place under `guideline/` yourself can be published.
 
 Because the publish target is also a subscribed repo, your next sync will
 pull in anything other writers have pushed to the same repo.
@@ -158,8 +188,9 @@ repo (both scopes):
 > Synced 2 repo(s): memory [write] (+2 added, 0 updated, 0 removed), bob [read] (+0 added, 1 updated, 0 removed)
 ```
 
-If `sync.on_session_start: true` is set in config, this runs automatically
-at the start of each session.
+Sync runs only when you invoke it. This plugin installs no hooks, so
+`sync.on_session_start` in the config is not acted on — nothing syncs
+automatically at session start.
 
 > **Note:** Read-scope repos use `git fetch` + `git reset --hard`, so the
 > local clone always matches the remote exactly (deleted or modified files
@@ -177,7 +208,9 @@ before removing a write-scope repo (unpushed publishes would be lost).
 ```text
 .evolve/
   entities/
-    guideline/
+    feedback/                 # mirrored native memories, one dir per native type
+      canada-km-only.md
+    guideline/                # what publish reads (see the limitation above)
       private-guideline.md
     subscribed/
       memory/                 # write-scope clone — publishes land here
@@ -190,7 +223,7 @@ before removing a write-scope repo (unpushed publishes would be lost).
 
 ## Example Walkthrough
 
-See the [Evolve Lite guide](../../../../docs/integrations/claude/evolve-lite.md#example-walkthrough) for a step-by-step example showing a memory saved in one session, mirrored into the shared store, and applied in the next.
+See the [Evolve Lite guide](https://github.com/AgentToolkit/altk-evolve/blob/main/docs/integrations/claude/evolve-lite.md#example-walkthrough) for a step-by-step example showing a memory saved in one session, mirrored into the shared store, and applied in the next.
 
 ## Skills Included
 
@@ -198,9 +231,9 @@ There is no `learn` or `recall` skill on Claude — native memory owns both.
 
 ### `/evolve-lite:adapt-memory`
 
-Mirror a just-saved native memory into the shared Evolve store so it becomes
-shareable and auditable. Normally invoked by Claude itself per the EVOLVE.md
-contract; you can also invoke it by hand.
+Mirror a just-saved native memory into the project's Evolve store
+(`.evolve/entities/<native type>/`) so it becomes auditable. Normally invoked
+by Claude itself per the EVOLVE.md contract; you can also invoke it by hand.
 
 ### `/evolve-lite:doctor`
 
@@ -250,33 +283,40 @@ Manually invoke to export the current conversation as a trajectory JSON file:
 
 ## Entities Storage
 
-Entities are stored as individual markdown files in `.evolve/entities/`, nested by type:
+Entities are stored as individual markdown files in `.evolve/entities/`, nested
+by type. A mirrored native memory lands under its native type:
 
 ```
 .evolve/entities/
-  guideline/
-    use-python-pil-for-image-metadata-extraction.md
-    cache-api-responses-locally.md
+  feedback/
+    canada-km-only.md
+  project/
+    use-pillow-for-image-metadata.md
 ```
 
 Each file uses markdown with YAML frontmatter:
 
 ```markdown
 ---
-type: guideline
-trigger: When extracting image metadata in containerized environments
+type: project
+trigger: When extracting image metadata in a sandbox without exiftool
+source: native-memory
+native_path: /Users/you/.claude/projects/<hash>/memory/use-pillow-for-image-metadata.md
 ---
 
-Use Python PIL/Pillow for image metadata extraction in sandboxed environments
+Use Python Pillow for image metadata extraction in sandboxed environments.
 
-## Rationale
-
-System tools like exiftool may not be available
+System tools like exiftool may not be installed in the sandbox.
 ```
 
 ## Environment Variables
 
-- `EVOLVE_DIR`: Override the default `.evolve` directory location (entities, trajectories, config, etc. are stored here)
+- `EVOLVE_DEBUG`: set to any non-empty value to append debug lines from the
+  helper scripts to `$TMPDIR/evolve-<uid>/evolve-plugin.log`.
+- `EVOLVE_DIR`: **not supported end to end yet.** Some scripts read it, but
+  `EVOLVE.md` and the installer always use `<project>/.evolve`, and
+  `subscribe` and `sync` resolve the project root from it differently. Leave
+  it unset.
 
 ## Verification
 

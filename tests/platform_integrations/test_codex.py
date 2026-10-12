@@ -15,6 +15,7 @@ installer:
 """
 
 import json
+import shutil
 
 import pytest
 
@@ -152,3 +153,29 @@ class TestCodexInstall:
         assert "~/.codex/AGENTS.md pointer" in result.stdout
         assert "EVOLVE.md" in result.stdout
         assert "audit_recall.py" in result.stdout
+
+
+@pytest.mark.platform_integrations
+class TestCodexStatus:
+    """`status` must report a healthy install as healthy. Kept out of the
+    e2e-marked class above so it runs in the default tier: before #335 the
+    status rows probed `learn` and `recall`, which codex builds out, and
+    printed ✗ on every good install while the label-only test still passed."""
+
+    @pytest.mark.parametrize("row", ["skills/.../adapt-memory", "skills/.../sync"])
+    def test_shipped_skill_rows_report_installed(self, temp_project_dir, install_runner, row):
+        install_runner.run("install", platform="codex")
+        result = install_runner.run("status")
+
+        lines = [ln for ln in result.stdout.splitlines() if row in ln]
+        assert len(lines) == 1, f"expected one `{row}` status row, got {lines!r}"
+        assert lines[0].rstrip().endswith("✓"), f"healthy install reported {lines[0].strip()!r}"
+
+    def test_removed_skill_row_reports_missing(self, temp_project_dir, install_runner):
+        install_runner.run("install", platform="codex")
+        skill_dir = temp_project_dir / "plugins" / EVOLVE_PLUGIN / "skills" / "evolve-lite" / "sync"
+        shutil.rmtree(skill_dir)
+        result = install_runner.run("status")
+
+        line = next(ln for ln in result.stdout.splitlines() if "skills/.../sync" in ln)
+        assert line.rstrip().endswith("✗"), f"missing sync skill reported {line.strip()!r}"

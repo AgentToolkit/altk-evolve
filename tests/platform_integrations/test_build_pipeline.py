@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BUILD_SCRIPT = REPO_ROOT / "plugin-source" / "build_plugins.py"
@@ -403,6 +404,64 @@ class TestMarketplaceGeneration:
         entry = json.loads((rendered_repo / build_module.MARKETPLACE_TARGET).read_text())["plugins"][0]
         assert entry["version"] == plugin_json["version"], "marketplace entry and plugin.json disagree on version"
 
+    def test_whole_manifest_matches_plugin_toml_and_plugin_json(self, rendered_repo, build_module):
+        """Pin every field, not just `version`: dropping `source`, `owner` or the
+        top-level `name`, or hard-coding the description, all still render a
+        manifest that `check` accepts and `claude plugin validate` rejects."""
+        metadata = build_module._load_metadata()
+        m = metadata.marketplace
+        manifest = build_module.load_manifest()
+        plugin_json = json.loads((_plugin_root(manifest, "claude") / ".claude-plugin" / "plugin.json").read_text())
+        raw = (rendered_repo / build_module.MARKETPLACE_TARGET).read_text()
+        assert raw.endswith("\n"), "marketplace.json must end with a trailing newline"
+
+        data = json.loads(raw)
+        assert data["$schema"] == m.schema_url
+        assert data["name"] == m.name
+        assert data["description"] == m.description
+        assert data["owner"] == m.owner.model_dump(exclude_none=True)
+        assert data["owner"]["name"]
+
+        assert len(data["plugins"]) == 1
+        entry = data["plugins"][0]
+        assert entry == {
+            "name": plugin_json["name"],
+            "description": plugin_json["description"],
+            "version": plugin_json["version"],
+            "author": plugin_json["author"],
+            "source": m.entry_source,
+            "category": m.entry_category,
+        }
+        assert entry["source"]
+
+    @pytest.mark.parametrize(
+        "old, new",
+        [
+            ('entry_source = "', 'entry_sorce = "'),  # typo'd required key
+            ('name = "evolve-marketplace"', 'name = ""'),  # empty required value
+            ('owner = { name = "Vinod Muthusamy" }', 'owner = { email = "a@b.c" }'),  # owner without a name
+            ('entry_category = "productivity"', 'entry_category = "productivity"\n"$schema" = "x"'),  # unknown key
+        ],
+    )
+    def test_invalid_marketplace_table_fails_the_build(self, isolated_repo, build_module, old, new):
+        toml_path = isolated_repo / "plugin-source" / "plugin.toml"
+        text = toml_path.read_text()
+        assert old in text, f"fixture drifted: {old!r} not in plugin.toml"
+        toml_path.write_text(text.replace(old, new, 1))
+
+        with pytest.raises(ValidationError):
+            build_module._load_metadata()
+
+    def test_missing_marketplace_table_fails_the_build(self, isolated_repo, build_module):
+        toml_path = isolated_repo / "plugin-source" / "plugin.toml"
+        text = toml_path.read_text()
+        start = text.index("\n[marketplace]\n")
+        end = text.index("\n[codex]\n")
+        toml_path.write_text(text[:start] + text[end:])
+
+        with pytest.raises(ValidationError):
+            build_module._load_metadata()
+
     def test_perturbed_marketplace_is_detected_as_drift(self, rendered_repo, build_module, capsys):
         target = rendered_repo / build_module.MARKETPLACE_TARGET
         target.write_bytes(target.read_bytes().replace(b'"version"', b'"verzion"'))
@@ -424,42 +483,50 @@ class TestMarketplaceGeneration:
 
 @pytest.mark.platform_integrations
 @pytest.mark.unit
-class TestReadmesDoNotInvokeExcludedSkills:
-    """The regression guard for #335: each platform's README must not tell the
-    reader to invoke a skill that platform's `target_excludes` builds out.
+class TestRenderedDocsDoNotInvokeExcludedSkills:
+    """The regression guard for #335: nothing a platform ships may tell the
+    reader (or the agent) to invoke a skill that platform's `target_excludes`
+    builds out.
 
     The Claude README documented `/evolve-lite:learn` and `/evolve-lite:recall`
-    for months after both were excluded from the Claude plugin — `check_drift`
-    could not catch it, because the README rendered exactly as its source said.
-    Only the *invocable* token forms are forbidden; prose may still discuss an
-    absent skill in words (the rewritten READMEs say so explicitly).
+    for months after both were excluded from the Claude plugin, and the codex
+    and bob adapt-memory SKILL.md pointed at the excluded `learn` skill —
+    `check_drift` could not catch either, because each file rendered exactly as
+    its source said. So every rendered Markdown file is scanned (README,
+    SKILL.md, EVOLVE.md, bob commands), not just the README. Only the
+    *invocable* token forms are forbidden; prose may still discuss an absent
+    skill in words (the rewritten READMEs say so explicitly).
     """
 
     def _invocation_tokens(self, skill: str) -> list[str]:
-        return [
-            f"evolve-lite:{skill}",
-            f"/evolve-lite:{skill}",
-            f"$evolve-lite:{skill}",
-            f"evolve-lite-{skill}",
-        ]
+        # The colon form also covers `/evolve-lite:x` and `$evolve-lite:x`.
+        return [f"evolve-lite:{skill}", f"evolve-lite-{skill}"]
 
-    def test_no_readme_invokes_an_excluded_skill(self, rendered_repo, build_module):
+    def _excluded_skills(self, cfg, skills: list[str]) -> list[str]:
+        # `excludes` matches the source-side path, as PlatformConfig documents.
+        return [s for s in skills if cfg.excludes(Path(f"skills/evolve-lite/{s}/SKILL.md"))]
+
+    def test_no_rendered_doc_invokes_an_excluded_skill(self, rendered_repo, build_module):
         manifest = build_module.load_manifest()
         skills = [p.name for p in build_module._discover_skills()]
-        checked = 0
+        guarded = 0
         for platform, cfg in manifest.platforms.items():
-            readme = _plugin_root(manifest, platform) / "README.md"
-            if not readme.is_file():
+            excluded = self._excluded_skills(cfg, skills)
+            if not excluded:
                 continue
-            checked += 1
-            text = readme.read_text()
-            for skill in skills:
-                # `excludes` matches the source-side path, as PlatformConfig documents.
-                if not cfg.excludes(Path(f"skills/evolve-lite/{skill}/SKILL.md")):
-                    continue
-                for token in self._invocation_tokens(skill):
-                    assert token not in text, f"{platform}'s README invokes `{token}`, but {platform} excludes the `{skill}` skill"
-        assert checked, "no rendered READMEs were found — the guard checked nothing"
+            root = _plugin_root(manifest, platform)
+            # A platform that builds skills out must document what it ships —
+            # a missing README would otherwise make this guard skip it silently.
+            assert (root / "README.md").is_file(), f"{platform} excludes {excluded} but ships no README.md"
+            guarded += 1
+            for doc in sorted(root.rglob("*.md")):
+                text = doc.read_text()
+                for skill in excluded:
+                    for token in self._invocation_tokens(skill):
+                        assert token not in text, (
+                            f"{doc.relative_to(root)} ({platform}) invokes `{token}`, but {platform} excludes the `{skill}` skill"
+                        )
+        assert guarded, "no platform excludes any skill — the guard checked nothing"
 
 
 @pytest.mark.platform_integrations

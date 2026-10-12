@@ -63,7 +63,8 @@ RESERVED_SOURCES = frozenset({"_macros.j2", "README.md", "build_plugins.py", "pl
 # Lenient pydantic models for plugin.toml. Only `name` and `version` under
 # [plugin] are required; everything else has a sensible default. `extra="allow"`
 # keeps unknown keys from raising — typos or platform tables we don't render
-# yet pass through silently rather than breaking the build.
+# yet pass through silently rather than breaking the build. The one exception
+# is [marketplace], which is strict (see MarketplaceConfig).
 
 _LENIENT = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -117,18 +118,31 @@ class CodexConfig(BaseModel):
     default_prompt: list[str] = []
 
 
+class MarketplaceOwner(BaseModel):
+    """Extra owner fields (email, url, ...) round-trip; `name` is required."""
+
+    model_config = _LENIENT
+    name: str = Field(min_length=1)
+
+
 class MarketplaceConfig(BaseModel):
     """The [marketplace] table: fields of the repo-root Claude Code marketplace
     manifest that are NOT already covered by [plugin]. Everything the entry
     shares with plugin.json (name, description, author, version) comes from
-    [plugin] instead, so the two cannot disagree."""
+    [plugin] instead, so the two cannot disagree.
 
-    model_config = _LENIENT
-    name: str | None = None
+    Unlike the rest of plugin.toml this table is strict. The marketplace schema
+    requires `name`, `owner.name` and each entry's `source`, and a lenient model
+    would turn a typo (`entry_sorce`) or a missing key into a manifest that
+    renders, passes `check`, and only fails later in `claude plugin validate`.
+    Unknown keys are rejected for the same reason: nothing would forward them."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    name: str = Field(min_length=1)
     description: str | None = None
-    owner: Author = Field(default_factory=Author)
+    owner: MarketplaceOwner
     schema_url: str | None = Field(default=None, alias="schema")
-    entry_source: str | None = None
+    entry_source: str = Field(min_length=1)
     entry_category: str | None = None
 
 
@@ -147,7 +161,7 @@ class PluginMetadata(BaseModel):
     claude: ClaudeConfig = Field(default_factory=ClaudeConfig)
     claw_code: ClawCodeConfig = Field(default_factory=ClawCodeConfig, alias="claw-code")
     codex: CodexConfig = Field(default_factory=CodexConfig)
-    marketplace: MarketplaceConfig = Field(default_factory=MarketplaceConfig)
+    marketplace: MarketplaceConfig
 
 
 # ----- plugin.json output models --------------------------------------------
@@ -229,16 +243,16 @@ class _MarketplaceEntryOut(BaseModel):
     description: str | None = None
     version: str
     author: _OutAuthor | None = None
-    source: str | None = None
+    source: str
     category: str | None = None
 
 
 class _MarketplaceOut(BaseModel):
     model_config = _LENIENT
     schema_url: str | None = Field(default=None, serialization_alias="$schema")
-    name: str | None = None
+    name: str
     description: str | None = None
-    owner: _OutAuthor | None = None
+    owner: _OutAuthor
     plugins: list[_MarketplaceEntryOut] = []
 
 
@@ -309,7 +323,7 @@ def _marketplace_json(meta: PluginMetadata) -> _MarketplaceOut:
         schema_url=m.schema_url,
         name=m.name,
         description=m.description,
-        owner=_OutAuthor.model_validate(m.owner.model_dump(exclude_none=True)) if m.owner.name else None,
+        owner=_OutAuthor.model_validate(m.owner.model_dump(exclude_none=True)),
         plugins=[
             _MarketplaceEntryOut(
                 name=p.name,

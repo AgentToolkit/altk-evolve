@@ -14,7 +14,8 @@ write an entity near the end only when it learned something durable — and poin
 
 The skills cover everything around that loop:
 
-- `evolve-lite:adapt-memory` — mirror a saved memory into the shared store
+- `evolve-lite:adapt-memory` — a no-op on Codex, which has no native memory
+  store to mirror; the "Save" section of `EVOLVE.md` writes entities directly
 - `evolve-lite:publish` — publish a private guideline to a write-scope repo
 - `evolve-lite:subscribe` / `evolve-lite:unsubscribe` — manage shared guideline repos
 - `evolve-lite:sync` — pull the latest from every configured repo
@@ -29,8 +30,10 @@ Entities and sharing data are stored in the active workspace under:
 ```text
 .evolve/
   entities/
-    guideline/
-      use-context-managers-for-file-operations.md     # private
+    feedback/                                          # saved per EVOLVE.md, one dir per type
+      use-context-managers-for-file-operations.md     # (user / feedback / project / reference)
+    guideline/                                         # what publish reads (see below)
+      private-guideline.md
     subscribed/
       memory/                                          # write-scope clone (publish target)
         guideline/
@@ -62,7 +65,7 @@ repos:
     branch: main
 
 sync:
-  on_session_start: true
+  on_session_start: true   # written by subscribe; not acted on yet (see Syncing Repos)
 ```
 
 ## Source Layout
@@ -116,7 +119,7 @@ repos:
     notes: public memory for my open-source projects
 
 sync:
-  on_session_start: true
+  on_session_start: true   # not acted on yet (see Syncing Repos)
 ```
 
 The `.evolve/` directory is kept out of version control.
@@ -125,7 +128,8 @@ The `.evolve/` directory is kept out of version control.
 
 Use `evolve-lite:subscribe` to add either a read-only subscription or a
 write-scope publish target. The repo is cloned directly into
-`.evolve/entities/subscribed/{name}/` so recall picks it up immediately.
+`.evolve/entities/subscribed/{name}/`, inside the `./.evolve/entities/` tree
+that the recall step in `EVOLVE.md` reads.
 Names must use only letters, numbers, `.`, `_`, and `-`.
 
 ### Publishing Guidelines
@@ -141,6 +145,12 @@ repo:
 4. The original private guideline is removed from
    `.evolve/entities/guideline/`
 
+> **Limitation:** publish only looks in `.evolve/entities/guideline/`, but
+> the "Save" step in `EVOLVE.md` writes entities under
+> `entities/{user,feedback,project,reference}/`, so nothing Codex saves is
+> publishable yet. Until [#373](https://github.com/AgentToolkit/altk-evolve/issues/373) is fixed, only entity files you place under
+> `guideline/` yourself can be published.
+
 Because the publish target is also a subscribed repo, your next sync pulls
 in anything other writers have pushed to the same remote.
 
@@ -151,8 +161,9 @@ repo (both scopes). Read-scope repos use `git fetch` + `git reset --hard`;
 write-scope repos use `git fetch` + `git rebase` so unpushed local publish
 commits are preserved.
 
-If `sync.on_session_start: true` is set in config, this runs automatically
-whenever a Codex session starts or resumes.
+Sync runs only when you invoke it. This plugin installs no hooks, so
+`sync.on_session_start` in the config is not acted on — nothing syncs
+automatically when a Codex session starts or resumes.
 
 ### Removing a Repo
 
@@ -165,19 +176,19 @@ local clone at `.evolve/entities/subscribed/{name}/`.
 .evolve/
   entities/
     guideline/
-      private-guideline.md      # private local guideline
+      private-guideline.md      # private local guideline (what publish reads)
     subscribed/
       memory/                   # write-scope clone — publishes land here
         guideline/
           my-published-guideline.md
       alice/                    # read-scope clone
         guideline/
-          her-guideline.md      # recall annotates as [from: alice]
+          her-guideline.md
 ```
 
 ## Example Walkthrough
 
-See the [Codex example walkthrough](../../../../docs/examples/hello_world/codex.md) for a step-by-step example showing the save-then-recall loop in a Codex workspace.
+See the [Codex example walkthrough](https://github.com/AgentToolkit/altk-evolve/blob/main/docs/examples/hello_world/codex.md) for a step-by-step example showing the save-then-recall loop in a Codex workspace.
 
 ## Included Skills
 
@@ -186,8 +197,9 @@ skill would be redundant double-delivery of the same instructions.
 
 ### `evolve-lite:adapt-memory`
 
-Mirror a just-saved memory into the shared Evolve store so it becomes shareable
-and auditable alongside every other entity.
+Ships for parity with Claude, but is a no-op on Codex: it mirrors a host's
+native memory store, and Codex has none. Codex saves entities directly by
+following the "Save" section of `EVOLVE.md`.
 
 ### `evolve-lite:provenance`
 
@@ -228,7 +240,11 @@ repos use hard reset to mirror the remote exactly.
 
 ## Environment Variables
 
-- `EVOLVE_DIR`: Override the default `.evolve` directory location for entities, sharing data, audit logs, and the mirrored subscription store.
+- `EVOLVE_DEBUG`: set to any non-empty value to append debug lines from the
+  helper scripts to `$TMPDIR/evolve-<uid>/evolve-plugin.log`.
+- `EVOLVE_DIR`: **not supported end to end yet.** Some scripts read it, but
+  `EVOLVE.md` always tells the agent to use `./.evolve/`, and `subscribe` and
+  `sync` resolve the project root from it differently. Leave it unset.
 
 ## Verification
 

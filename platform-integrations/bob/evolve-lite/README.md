@@ -1,7 +1,7 @@
 # Evolve Lite for Bob
 
-A Bob integration that gives the agent a persistent, shareable memory of your
-project.
+A Bob integration that gives the agent a persistent memory of your project,
+plus git-backed sharing of guidelines.
 
 ⭐ Star the repo: https://github.com/AgentToolkit/altk-evolve
 
@@ -13,43 +13,59 @@ session; it tells the agent to read `./.evolve/entities/` as its first action on
 a non-trivial task, and to write an entity near the end only when it learned
 something durable.
 
-The commands cover everything around that loop — `/evolve-lite-adapt-memory`,
-`/evolve-lite-publish`, `/evolve-lite-subscribe`, `/evolve-lite-sync`,
+The commands cover everything around that loop — `/evolve-lite-publish`, `/evolve-lite-subscribe`, `/evolve-lite-sync`,
 `/evolve-lite-unsubscribe`, `/evolve-lite-provenance`, `/evolve-lite-retention`,
 `/evolve-lite-save`, `/evolve-lite-save-trajectory`,
-`/evolve-lite-synthesize-skill`.
+`/evolve-lite-synthesize-skill`. `/evolve-lite-adapt-memory` also ships, but
+is a no-op on Bob (see [Skills Included](#skills-included)).
 
-> Bob resolves skills by folder name, so everything here uses the dash form
-> (`evolve-lite-publish`), not the colon form other hosts use.
+> Skill folders and slash commands use the dash form (`/evolve-lite-publish`).
+> Each skill's frontmatter `name:`, the skill bodies, and script messages use
+> the colon form (`evolve-lite:publish`), as on other hosts.
 
 ## Installation
 
-Run the installation script from the repository root:
+Run the installer from your project root:
 
 ```bash
-bash platform-integrations/install.sh install --platform bob --mode lite
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```
 
-This installs:
-- 10 skills in `~/.bob/skills/` and a matching slash command per skill in `~/.bob/commands/`
-- Shared library in `~/.bob/lib/evolve-lite/`
+or, from a clone of this repo, pass your project with `--dir` (it defaults to
+the current directory, so running it from the altk-evolve checkout without
+`--dir` installs into the checkout itself):
+
+```bash
+bash platform-integrations/install.sh install --platform bob --mode lite --dir /path/to/your/project
+```
+
+This installs, per project (under `<project>/.bob/`):
+- 10 skills in `<project>/.bob/skills/` and a matching slash command per skill
+  in `<project>/.bob/commands/`
+- Shared library in `<project>/.bob/lib/evolve-lite/`
+
+and, globally (under `~/.bob/`):
 - The always-on instructions at `~/.bob/rules/00-evolve-lite.md` (Bob loads every
   `~/.bob/rules/*.md` into every session)
 - The recall-audit script at `~/.bob/evolve-lite/audit_recall.py`, allowlisted in
-  Bob's settings so it runs without a prompt
+  `~/.bob/settings.json` so it runs without a prompt
 
 ## How It Works
 
 ### Guideline Storage
 
-Guidelines are stored as individual markdown files in `.evolve/entities/`,
-organized by source. Both read-scope subscriptions and write-scope publish
-targets live under `entities/subscribed/{name}/`:
+Entities are stored as individual markdown files in `.evolve/entities/`. What
+the agent saves (per the "Save" section of the instructions) lands under one
+directory per type — `user`, `feedback`, `project` or `reference`. Both
+read-scope subscriptions and write-scope publish targets live under
+`entities/subscribed/{name}/`:
 
 ```text
 .evolve/entities/
-  guideline/                            # Private guidelines
+  project/                              # Saved by the agent, one dir per type
     use-context-managers.md
+  guideline/                            # What publish reads (see below)
+    private-guideline.md
   subscribed/
     memory/                             # write-scope clone (publishes land here)
       guideline/
@@ -63,16 +79,13 @@ Each file uses markdown with YAML frontmatter:
 
 ```markdown
 ---
-type: guideline
+type: project
 trigger: When processing files or managing resources
-visibility: private
 ---
 
-Use context managers for file operations
+Use context managers for file operations.
 
-## Rationale
-
-Context managers ensure proper resource cleanup
+**Why:** they guarantee the file is closed even when an exception is raised.
 ```
 
 ## Sharing Guidelines
@@ -105,7 +118,7 @@ repos:
     branch: main
 
 sync:
-  on_session_start: false
+  on_session_start: false   # not acted on: sync runs only when you invoke it
 ```
 
 The `.evolve/` directory is kept out of version control — the skills
@@ -139,6 +152,11 @@ Use `evolve-lite-publish` to share local guidelines via a **write-scope** repo:
 
 Because the publish target is also a subscribed repo, your next sync
 pulls in anything other writers have pushed to the same remote.
+
+> **Limitation:** publish only looks in `.evolve/entities/guideline/`, but
+> the agent saves entities under `entities/{user,feedback,project,reference}/`,
+> so nothing Bob saves is publishable yet. Until [#373](https://github.com/AgentToolkit/altk-evolve/issues/373) is fixed, only
+> entity files you place under `guideline/` yourself can be published.
 
 ### Syncing Repos
 
@@ -175,7 +193,9 @@ publish commits, so the skill warns first.
 ```text
 .evolve/
   entities/
-    guideline/                      # your private guidelines
+    project/                        # saved by the agent, one dir per type
+      my-entity.md
+    guideline/                      # what publish reads
       my-guideline.md
     subscribed/
       memory/                       # write-scope clone (publishes land here)
@@ -194,8 +214,9 @@ instructions.
 
 ### `evolve-lite-adapt-memory`
 
-Mirror a just-saved memory into the shared Evolve store so it becomes shareable
-and auditable alongside every other entity.
+Ships for parity with Claude, but is a no-op on Bob: it mirrors a host's
+native memory store, and Bob has none. Bob saves entities directly by
+following the "Save" section of `~/.bob/rules/00-evolve-lite.md`.
 
 ### `evolve-lite-provenance`
 
@@ -244,7 +265,12 @@ Remove a configured repo:
 
 ## Environment Variables
 
-- `EVOLVE_DIR`: Override the default `.evolve` directory location (guidelines, config, etc. are stored here)
+- `EVOLVE_DEBUG`: set to any non-empty value to append debug lines from the
+  helper scripts to `$TMPDIR/evolve-<uid>/evolve-plugin.log`.
+- `EVOLVE_DIR`: **not supported end to end yet.** Some scripts read it, but the
+  always-on instructions always tell the agent to use `./.evolve/`, and
+  `subscribe` and `sync` resolve the project root from it differently. Leave
+  it unset.
 
 ## Verification
 
