@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 from threading import Lock
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 import numpy as np
 from pydantic_settings import SettingsConfigDict
@@ -41,7 +41,7 @@ class FastEmbedModel:
 
         if model_name.lower() == CODERANK_MODEL.lower():
             model_name = CODERANK_MODEL
-        options = {}
+        options: dict[str, Any] = {}
         if model_name == CODERANK_MODEL:
             from fastembed.common.model_description import ModelSource, PoolingType
 
@@ -67,7 +67,7 @@ class FastEmbedModel:
 
     def encode(self, sentences: str | list[str], *, normalize_embeddings: bool = False) -> np.ndarray:
         single = isinstance(sentences, str)
-        texts = [sentences] if single else sentences
+        texts: list[str] = [sentences] if isinstance(sentences, str) else sentences
         if not texts:
             return np.empty((0, self._dimension), dtype=np.float32)
         vectors = np.asarray(list(self._model.embed(texts, parallel=None)), dtype=np.float32)
