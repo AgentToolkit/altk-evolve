@@ -4,6 +4,19 @@
 
 <!-- version list -->
 
+## v1.6.1 (2026-10-08)
+
+### Bug Fixes
+
+- **memory**: Exclude entity types before pagination and reject trivial guidelines
+  ([#372](https://github.com/AgentToolkit/altk-evolve/pull/372),
+  [`962aa1d`](https://github.com/AgentToolkit/altk-evolve/commit/962aa1dbfe404311466489216e76be6e64dba7ad))
+
+- **memory**: Filter inventory types and reject trivial guidelines
+  ([#372](https://github.com/AgentToolkit/altk-evolve/pull/372),
+  [`962aa1d`](https://github.com/AgentToolkit/altk-evolve/commit/962aa1dbfe404311466489216e76be6e64dba7ad))
+
+
 ## v1.6.0 (2026-10-07)
 
 ### Bug Fixes

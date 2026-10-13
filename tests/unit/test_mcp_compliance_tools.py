@@ -671,3 +671,20 @@ def test_plugin_display_metadata_does_not_hide_health_failures(client, tmp_path,
     assert plugin["show_in_ui"] is False
     assert plugin["enabled"] is True
     assert result["healthy"] is False
+
+
+def test_excluded_types_are_removed_before_pagination_totals_and_facets(client):
+    client.scan_entities.return_value = [
+        _entity("raw", entity_type="trajectory"),
+        _entity("fact", created_days_ago=1),
+        _entity("custom", entity_type="custom_lesson", created_days_ago=2),
+    ]
+    first = json.loads(list_entities(exclude_entity_types=["trajectory"], limit=1))
+    second = json.loads(list_entities(exclude_entity_types=["trajectory"], limit=1, cursor=first["next_cursor"]))
+    assert first["total"] == 2
+    assert first["facets"]["entity_types"] == {"fact": 1, "custom_lesson": 1}
+    assert first["items"][0]["id"] == "fact"
+    assert second["items"][0]["id"] == "custom"
+    assert second["next_cursor"] is None
+    assert json.loads(list_entities())["total"] == 3
+    assert json.loads(list_entities(entity_types=["trajectory"], exclude_entity_types=["trajectory"]))["total"] == 0

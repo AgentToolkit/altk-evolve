@@ -206,8 +206,21 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
             raise HTTPException(exc.status, detail=exc.payload()) from exc
 
     @router.get("/memory/entities")
-    def inventory(limit: int = Query(50, ge=1, le=200), cursor: str | None = None, pair=Depends(service)):
-        result = invoke(pair, "list_entities", personal=True, limit=limit, cursor=cursor, include_content=True)
+    def inventory(
+        limit: int = Query(50, ge=1, le=200),
+        cursor: str | None = None,
+        exclude_entity_types: list[str] | None = Query(None),
+        pair=Depends(service),
+    ):
+        result = invoke(
+            pair,
+            "list_entities",
+            personal=True,
+            limit=limit,
+            cursor=cursor,
+            include_content=True,
+            exclude_entity_types=exclude_entity_types,
+        )
         result["items"] = [_project(item, admin=False) for item in result["items"]]
         return result
 
@@ -244,9 +257,16 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
         return invoke(pair, "retrieve_user_facts", user_id=_user(pair[1]), agent_id=pair[1].agent_id, query=query, limit=limit)
 
     @router.get("/manage/memory/entities")
-    def admin_inventory(limit: int = Query(50, ge=1, le=200), cursor: str | None = None, pair=Depends(service)):
+    def admin_inventory(
+        limit: int = Query(50, ge=1, le=200),
+        cursor: str | None = None,
+        exclude_entity_types: list[str] | None = Query(None),
+        pair=Depends(service),
+    ):
         _manager(pair[1])
-        result = invoke(pair, "list_entities", agent_id=pair[1].agent_id, limit=limit, cursor=cursor)
+        result = invoke(
+            pair, "list_entities", agent_id=pair[1].agent_id, limit=limit, cursor=cursor, exclude_entity_types=exclude_entity_types
+        )
         result["items"] = [_project(item, admin=True) for item in result["items"]]
         return result
 
