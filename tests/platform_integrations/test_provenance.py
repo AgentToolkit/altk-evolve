@@ -307,6 +307,26 @@ class TestHermesFilenameParity:
         """
         assert _provenance_module()._HERMES_STEM_CHARS == _hermes_backend()._TRAJECTORY_STEM_CHARS
 
+    @pytest.mark.parametrize(
+        ("session_id", "name"),
+        [
+            ("discord/42", "discord_42-aeeee1ab5efb.jsonl"),
+            ("20260912_193549_752cc6c7/" + "x" * 20, "20260912_193549_752cc6c7_xxxxxxxxxxxxxxx-bc5ffc644e61.jsonl"),
+        ],
+        ids=["short", "truncated"],
+    )
+    def test_the_on_disk_name_is_pinned(self, session_id, name):
+        """The format itself, as a literal — not computed from either side.
+
+        Every other test here derives its expectation from the writer, so a format
+        change applied to both sides at once passes them all. But the writer (the
+        Hermes bundle) and the reader (the other hosts' bundles) install
+        separately, and such a change orphans every capture already on disk. This
+        makes it a deliberate edit rather than a silent one.
+        """
+        assert _hermes_traj_name(session_id) == name
+        assert _provenance_module()._hermes_trajectory_name(session_id) == name
+
 
 class TestCandidatesNativeTranscript:
     def test_locates_native_claude_transcript(self, tmp_path):

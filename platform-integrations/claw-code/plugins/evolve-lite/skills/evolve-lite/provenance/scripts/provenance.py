@@ -99,9 +99,10 @@ def _hermes_trajectory_name(session_id):
     The fold alone is many-to-one — ``a/b`` and ``a:b`` both give ``a_b`` — so
     naming the file after it let two sessions share one capture file, and this
     module then handed one session's trajectory to the other. The digest is what
-    makes the name identify a single session. Note which half the empty-id
-    fallback applies to: the fold, never the digest, or ``""`` and the literal id
-    ``"session"`` would collide again.
+    makes the name identify a single session (over ``str`` ids, which is all
+    audit.log rows can carry: ``read_recall_rows`` drops the rest). Note which
+    half the empty-id fallback applies to: the fold, never the digest, or ``""``
+    and the literal id ``"session"`` would collide again.
 
     ``None`` for an id with no UTF-8 encoding (a lone surrogate survives
     ``json.dumps`` and reaches us through audit.log). The provider cannot name a
@@ -132,7 +133,7 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
        * ``claude-transcript_<sid>.jsonl`` — stop-hook transcript dump.
        * ``<sanitized-sid>-<digest>.jsonl`` — the Hermes memory provider's
          capture output, one JSON record appended per capture. The digest is over
-         the unsanitized id, so the name belongs to one session; see
+         the unsanitized id, so the name belongs to one ``str`` session id; see
          ``_hermes_trajectory_name``.
        * ``trajectory_<ts>_<sid>.json`` — save-trajectory skill output; the sid
          is the filename slice after the timestamp.
@@ -165,8 +166,9 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
             return direct
 
         # Hermes: trajectories/<sanitized>-<digest>.jsonl. The digest is taken
-        # over the original session id, so this name identifies one session and
-        # one only. ``None`` means the id has no capture filename at all.
+        # over the original session id, so this name identifies one ``str``
+        # session id and one only. ``None`` means the id has no capture filename
+        # at all.
         hermes_name = _hermes_trajectory_name(session_id)
         if hermes_name is not None:
             hermes = traj_dir / hermes_name

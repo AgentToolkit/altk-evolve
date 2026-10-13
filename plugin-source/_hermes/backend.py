@@ -200,8 +200,9 @@ def trajectory_filename(session_id: str) -> str:
     skill would then attribute one session's trajectory to the other —
     confidently, having no way to tell. So the fold is decoration, kept so the
     directory stays readable; a truncated SHA-256 of the *original* id is what
-    identifies the file. Same shape, and the same reasoning, as ``_bucket_name``
-    in ``__init__.py``.
+    identifies the file — one file per distinct ``str`` id, which is all the host
+    ever passes (``str()`` would fold ``None`` onto ``"None"``). Same shape, and
+    the same reasoning, as ``_bucket_name`` in ``__init__.py``.
 
     Truncating the fold is not cosmetic either: an unbounded session id makes a
     filename the filesystem refuses, and every capture for that session is lost.
