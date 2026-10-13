@@ -46,6 +46,9 @@ class MilvusEntityBackend(BaseEntityBackend):
         )
         self.embedding_model = SentenceTransformer(self.config.embedding_model)
         self.metric_type = "COSINE"
+        # Namespaces this process has seen loaded. Nothing here releases a collection,
+        # so the state only moves forward and the probe runs once per namespace.
+        self._loaded: set[str] = set()
 
     @contextmanager
     def _metadata_write(self):
@@ -222,11 +225,12 @@ class MilvusEntityBackend(BaseEntityBackend):
         if not self.milvus.has_collection(namespace_id):
             raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
 
-    def _ensure_embedding_index(self, namespace_id: str) -> None:
+    def _ensure_embedding_index(self, namespace_id: str) -> bool:
+        """Create the embedding index if it is missing, then load. True if it created one."""
         try:
             existing_indexes = self.milvus.list_indexes(collection_name=namespace_id, field_name="embedding")
             if existing_indexes:
-                return
+                return False
             logger.warning(
                 "Missing embedding index for namespace=%s; creating AUTOINDEX (%s)",
                 namespace_id,
@@ -240,7 +244,8 @@ class MilvusEntityBackend(BaseEntityBackend):
                 metric_type=self.metric_type,
             )
             self.milvus.create_index(collection_name=namespace_id, index_params=index_params)
-            self.milvus.load_collection(collection_name=namespace_id)
+            self.milvus.load_collection(collection_name=namespace_id, timeout=self.config.timeout)
+            return True
         except Exception as exc:
             raise EvolveException(f"Failed to ensure embedding index for namespace={namespace_id}: {exc}") from exc
 
@@ -250,13 +255,26 @@ class MilvusEntityBackend(BaseEntityBackend):
         A process that opens an existing namespace finds its collection released, and
         milvus-lite >= 3 rejects reads on it (code=101). Check the load state first:
         ``load_collection`` always sends a Load request, which read-only credentials
-        (``CollectionReadOnly``) may not issue, and a loaded collection already has its
-        index. Only a collection that is not loaded gets its index ensured and is loaded.
+        (``CollectionReadOnly``) may not issue. The index is ensured either way, because
+        milvus-lite reports a collection with no index as loaded and would otherwise
+        brute-force it forever; creating one loads the collection, so no second Load.
+
+        If the state cannot be read, nothing is done and the read itself reports the
+        problem. Only ``Loaded`` skips the Load: a ``Loading`` collection still rejects reads.
         """
-        if self.milvus.get_load_state(collection_name=namespace_id)["state"] == LoadState.Loaded:
+        if namespace_id in self._loaded:
             return
-        self._ensure_embedding_index(namespace_id)
-        self.milvus.load_collection(collection_name=namespace_id)
+        try:
+            state = self.milvus.get_load_state(collection_name=namespace_id)["state"]
+        except Exception as exc:
+            logger.warning("Could not read load state for namespace=%s: %s", namespace_id, exc)
+            return
+        if state == LoadState.NotExist:
+            raise NamespaceNotFoundException(f"Namespace `{namespace_id}` not found")
+        created = self._ensure_embedding_index(namespace_id)
+        if state != LoadState.Loaded and not created:
+            self.milvus.load_collection(collection_name=namespace_id, timeout=self.config.timeout)
+        self._loaded.add(namespace_id)
 
     def create_namespace(self, namespace_id: str | None = None) -> Namespace:
         namespace_id = namespace_id or "ns_" + str(uuid.uuid4()).replace("-", "_")
@@ -296,6 +314,7 @@ class MilvusEntityBackend(BaseEntityBackend):
 
     def _delete_namespace_impl(self, namespace_id: str):
         self.milvus.drop_collection(collection_name=namespace_id)
+        self._loaded.discard(namespace_id)
 
         with SQLiteManager(self.sqlite_uri) as db_manager:
             db_manager.delete_namespace(namespace_id)
@@ -378,7 +397,7 @@ class MilvusEntityBackend(BaseEntityBackend):
 
     def _post_update(self, namespace_id: str) -> None:
         self.milvus.flush(namespace_id)
-        self.milvus.load_collection(namespace_id)
+        self.milvus.load_collection(namespace_id, timeout=self.config.timeout)
 
     # ── search / delete ──────────────────────────────────────────────
 
