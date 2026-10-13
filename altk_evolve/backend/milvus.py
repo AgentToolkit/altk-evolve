@@ -15,7 +15,7 @@ from altk_evolve.utils.utils import deserialize_content
 from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient
 from pymilvus.client.types import LoadState
 from pymilvus.milvus_client.index import IndexParams
-from sentence_transformers import SentenceTransformer
+from altk_evolve.embeddings import EmbeddingModel, get_embedding_model
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("entities-db.milvus")
@@ -23,7 +23,7 @@ logger = logging.getLogger("entities-db.milvus")
 
 class MilvusEntityBackend(BaseEntityBackend):
     milvus: MilvusClient
-    embedding_model: SentenceTransformer
+    embedding_model: EmbeddingModel
     _schema_filter_fields = {"id", "type", "content", "created_at"}
 
     def profile_repository(self):
@@ -44,7 +44,7 @@ class MilvusEntityBackend(BaseEntityBackend):
             token=self.config.token,
             timeout=self.config.timeout,
         )
-        self.embedding_model = SentenceTransformer(self.config.embedding_model)
+        self.embedding_model = get_embedding_model(self.config.embedding_model)
         self.metric_type = "COSINE"
         # Namespaces this process has seen loaded. Nothing here releases a collection,
         # so the state only moves forward and the probe runs once per namespace.

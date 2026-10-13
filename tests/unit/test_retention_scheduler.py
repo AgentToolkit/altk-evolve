@@ -127,7 +127,12 @@ def test_start_deadline_checked_again_at_claim(store):
     assert store.jobs("a")[0]["status"] == "missed"
 
 
-def test_worker_uses_policy_agent_scope_and_persists_history(client, store):
+def test_worker_uses_policy_agent_scope_and_persists_history(client, store, monkeypatch):
+    from unittest.mock import Mock
+    from altk_evolve.retention import scheduler as scheduler_module
+
+    report = Mock(wraps=scheduler_module.report_result)
+    monkeypatch.setattr(scheduler_module, "report_result", report)
     client.update_entities(
         "a",
         [
@@ -148,6 +153,7 @@ def test_worker_uses_policy_agent_scope_and_persists_history(client, store):
     run = store.get_run(namespace_id="a", run_id=job_id)
     assert run["status"] == "completed"
     assert run["initiated_by"] == "alice"
+    assert report.call_args.kwargs["operation_name"] == "evolve.retention.job"
     assert len(run["report"]["deleted"]) == 1
     scheduler.execute(store.jobs("a")[0])  # Finished claim cannot run twice.
     assert store.get_run(namespace_id="a", run_id=job_id) == run

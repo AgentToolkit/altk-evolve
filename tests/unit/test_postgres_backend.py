@@ -21,7 +21,7 @@ def postgres_backend() -> PostgresEntityBackend:
     with (
         patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
         patch("altk_evolve.backend.postgres.register_vector"),
-        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch("altk_evolve.backend.postgres.get_embedding_model") as mock_transformer,
     ):
         mock_conn = MagicMock()
         mock_conn.closed = False
@@ -93,7 +93,7 @@ def test_postgres_backend_initialization_ensures_extension_before_registering_ve
     with (
         patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
         patch("altk_evolve.backend.postgres.register_vector", side_effect=lambda _conn: call_order.append("register_vector")),
-        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch("altk_evolve.backend.postgres.get_embedding_model") as mock_transformer,
         patch.object(
             PostgresEntityBackend,
             "_ensure_pgvector_extension",
@@ -147,7 +147,7 @@ def test_postgres_backend_initialization_auto_creates_missing_database():
     with (
         patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
         patch("altk_evolve.backend.postgres.register_vector", side_effect=lambda _conn: call_order.append("register_vector")),
-        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch("altk_evolve.backend.postgres.get_embedding_model") as mock_transformer,
         patch.object(
             PostgresEntityBackend,
             "_ensure_pgvector_extension",
@@ -206,7 +206,7 @@ def test_postgres_backend_initialization_auto_creates_with_fallback_bootstrap_db
     with (
         patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
         patch("altk_evolve.backend.postgres.register_vector", side_effect=lambda _conn: call_order.append("register_vector")),
-        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch("altk_evolve.backend.postgres.get_embedding_model") as mock_transformer,
         patch.object(
             PostgresEntityBackend,
             "_ensure_pgvector_extension",
@@ -277,7 +277,7 @@ def test_postgres_backend_initialization_handles_database_creation_race_conditio
     with (
         patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
         patch("altk_evolve.backend.postgres.register_vector"),
-        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch("altk_evolve.backend.postgres.get_embedding_model") as mock_transformer,
         patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
     ):
         # First call: try to connect to target db (fails - doesn't exist)
@@ -315,7 +315,7 @@ def test_postgres_backend_initialization_missing_database_without_auto_create_ra
     with (
         patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
         patch("altk_evolve.backend.postgres.register_vector"),
-        patch("altk_evolve.backend.postgres.SentenceTransformer"),
+        patch("altk_evolve.backend.postgres.get_embedding_model"),
         patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
     ):
         mock_psycopg.connect.side_effect = MissingDatabaseError("database does not exist")
@@ -340,7 +340,7 @@ def test_postgres_backend_initialization_closes_connection_on_setup_failure():
     with (
         patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
         patch("altk_evolve.backend.postgres.register_vector", side_effect=RuntimeError("register failed")),
-        patch("altk_evolve.backend.postgres.SentenceTransformer"),
+        patch("altk_evolve.backend.postgres.get_embedding_model"),
         patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
     ):
         mock_conn = MagicMock()
@@ -367,7 +367,7 @@ def test_postgres_backend_initialization_rejects_invalid_embedding_dimension():
     with (
         patch("altk_evolve.backend.postgres.psycopg") as mock_psycopg,
         patch("altk_evolve.backend.postgres.register_vector"),
-        patch("altk_evolve.backend.postgres.SentenceTransformer") as mock_transformer,
+        patch("altk_evolve.backend.postgres.get_embedding_model") as mock_transformer,
         patch.object(PostgresEntityBackend, "_ensure_pgvector_extension", autospec=True),
     ):
         mock_conn = MagicMock()

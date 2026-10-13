@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from altk_evolve.telemetry import traced
+
 import datetime as dt
 import re
 import hashlib
@@ -280,6 +282,7 @@ class RetentionService:
         return {"acknowledged": self.store.acknowledge_interrupted(self.namespace_id, job_id)}
 
     @operation
+    @traced("evolve.retention.run")
     def run(
         self,
         policy_id: str,
@@ -417,6 +420,7 @@ class RetentionService:
         return Collection(self.client, self.namespace_id, self.agent_id)
 
     @operation
+    @traced("evolve.retention.mark")
     def mark(self, policy_id: str, *, initiated_by: str | None = None, limit: int = 1000) -> dict[str, Any]:
         self._validate_initiator(initiated_by)
         if not 1 <= limit <= 10000:
@@ -424,6 +428,7 @@ class RetentionService:
         return self._collection().mark(policy_id, initiated_by=initiated_by, limit=limit)
 
     @operation
+    @traced("evolve.retention.sweep")
     def sweep(self, policy_id: str, *, initiated_by: str | None = None, limit: int = 1000) -> dict[str, Any]:
         self._validate_initiator(initiated_by)
         if not 1 <= limit <= 10000:

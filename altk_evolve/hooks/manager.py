@@ -46,6 +46,8 @@ that imports the hook seam — therefore stays cheap when hooks are disabled.
 
 from __future__ import annotations
 
+from altk_evolve.telemetry import traced
+
 import asyncio
 import concurrent.futures
 import contextvars
@@ -543,6 +545,7 @@ async def _ainvoke(hook_type: HookType, payload: Any, global_context: Any) -> An
     return result
 
 
+@traced("evolve.hook.invoke")
 def _invoke(hook_type: HookType, payload: Any, backend: BaseEntityBackend | None = None) -> Any:
     """Invoke a hook synchronously; return the final ``modified_payload``,
     or ``None`` when no plugin returned one.

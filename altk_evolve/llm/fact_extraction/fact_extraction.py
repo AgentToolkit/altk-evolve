@@ -1,10 +1,11 @@
+from altk_evolve.telemetry import traced
 import datetime
 import json
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Template
-from litellm import completion
+from altk_evolve.telemetry import model_completion as completion
 from pydantic import BaseModel
 
 from altk_evolve.config.llm import llm_settings
@@ -53,6 +54,7 @@ def _build_prompt(messages: list[dict], use_categorization: bool) -> str:
     return Template(prompt_file.read_text(encoding="utf-8")).render(**prompt_input)
 
 
+@traced("evolve.facts.extract")
 def extract_facts_from_messages(messages: list[dict], use_categorization: bool | None = None) -> list[str] | list[ExtractedFact]:
     """Extract user facts from chat messages."""
     if use_categorization is None:

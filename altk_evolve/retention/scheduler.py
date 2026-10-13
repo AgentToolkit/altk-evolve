@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from altk_evolve.telemetry import traced, report_result
+from opentelemetry import trace
+
 import datetime as dt
 import logging
 import threading
@@ -40,11 +43,16 @@ class RetentionScheduler:
                 logger.exception("Unable to dispatch retention schedule %s", schedule["schedule_id"])
         return admitted
 
+    @traced("evolve.retention.job")
     def execute(self, job: dict[str, Any]) -> None:
         """Claim once; preserve failed, cancelled, or partial execution in run history."""
 
         namespace, job_id = job["namespace_id"], job["job_id"]
+        span = trace.get_current_span()
+        span.set_attribute("evolve.namespace.id", namespace)
+        span.set_attribute("evolve.retention.job.id", job_id)
         claimed = self.store.claim(namespace, job_id, self.worker_id, self.store.current_time())
+        span.set_attribute("evolve.retention.claimed", claimed is not None)
         if claimed is None:
             return
         job = claimed
@@ -65,14 +73,17 @@ class RetentionScheduler:
         token = execution_cancelled.set(lambda: self.store.cancelled(namespace, job_id, self.worker_id))
         try:
             if self.store.cancelled(namespace, job_id, self.worker_id):
+                report_result({"cancelled": True}, span, operation_name="evolve.retention.job")
                 self.store.finish(namespace, job_id, self.worker_id, "cancelled")
                 return
             result = self.client.retention(namespace, agent_id=definition.agent_id).run(
                 definition.policy_id, run_id=job_id, dry_run=definition.dry_run, initiated_by=job["initiated_by"]
             )
             status = "cancelled" if result.get("cancelled") else ("failed" if result.get("error") or result.get("errors") else "completed")
+            report_result(result, span, operation_name="evolve.retention.job")
             self.store.finish(namespace, job_id, self.worker_id, status, result.get("error"))
         except Exception as exc:
+            report_result({"error": True}, span, operation_name="evolve.retention.job")
             logger.exception("Retention job %s failed", job_id)
             self.store.finish(namespace, job_id, self.worker_id, "failed", type(exc).__name__)
         finally:

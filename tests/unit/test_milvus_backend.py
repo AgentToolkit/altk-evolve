@@ -16,7 +16,7 @@ from altk_evolve.schema.exceptions import NamespaceNotFoundException, EvolveExce
 @pytest.fixture(scope="module")
 def milvus_backend(tmp_path_factory) -> MilvusEntityBackend:
     """Create a MilvusEntityBackend instance for testing."""
-    with patch("altk_evolve.backend.milvus.MilvusClient"), patch("altk_evolve.backend.milvus.SentenceTransformer"):
+    with patch("altk_evolve.backend.milvus.MilvusClient"), patch("altk_evolve.backend.milvus.get_embedding_model"):
         backend = MilvusEntityBackend()
         backend.sqlite_uri = str(tmp_path_factory.mktemp("milvus-metadata") / "metadata.db")
         return backend

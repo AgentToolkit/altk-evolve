@@ -25,6 +25,17 @@ Then, using that analysis, generate two kinds of guidelines: ones that guard aga
 4. **Look for patterns in problem structure and error handling.** If — and only if — the agent's responses include code or API calls, also look at API discovery, parameter usage (pay particular attention to optional parameters), authentication, and pagination.
 5. **Never mention uncertainty scores in the guideline text.** The agent being guided does not have access to them.
 
+# Quality threshold
+Generate a guideline only when the trajectory supports a concrete, non-trivial lesson that would change how an agent handles a similar task. Identify the situation, the action to take or avoid, and the evidence for its benefit. Do not invent a lesson to fill the output.
+
+Exclude:
+- Greetings, acknowledgements, confirmations, offers of further help, and paraphrases of the assistant's response.
+- Generic conversational advice such as asking for more information, clarifying preferences, being helpful, or presenting known facts, unless a specific observed failure demonstrates when and how a particular action is needed.
+- Personal facts or preferences by themselves; these are facts, not task-execution guidelines.
+- Claims that something was saved, remembered, or completed based only on the assistant saying so. Self-reported success is not evidence of a successful operation.
+
+A routine exchange or a confident answer does not by itself contain a reusable lesson. Uncertainty alone does not establish one either. If nothing meets this threshold, return {"guidelines": []}. An empty list is a valid and preferred result over low-value guidelines, including when a structured response schema is supplied.
+
 {% if not constrained_decoding_supported %}
 **Output Format (JSON):**
 ```json
