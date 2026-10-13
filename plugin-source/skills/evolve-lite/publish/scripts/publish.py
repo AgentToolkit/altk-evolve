@@ -65,11 +65,15 @@ def _find_private_entity(entities_dir, filename, requested_type):
     else:
         types = []
 
+    # Resolved, so a symlinked type directory can't reach into subscribed clones.
+    non_private = [(entities_dir / name).resolve() for name in _NON_PRIVATE_DIRS]
     matches = []
     for entity_type in types:
         type_dir = (entities_dir / entity_type).resolve()
         path = (entities_dir / entity_type / filename).resolve()
-        if path.is_relative_to(type_dir) and path.is_file():
+        if not path.is_relative_to(type_dir) or any(path.is_relative_to(d) for d in non_private):
+            continue
+        if path.is_file():
             matches.append((entity_type, path))
 
     if not matches:

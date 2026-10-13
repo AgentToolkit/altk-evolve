@@ -348,6 +348,33 @@ class TestPublishAnyEntityType:
         assert "invalid entity type" in result.stderr
         assert theirs.exists()
 
+    def test_symlinked_type_dir_cannot_reach_into_subscribed(self, typed_project):
+        """A type directory symlinked into a subscribed clone must not become a publish source."""
+        read_clone = typed_project / ".evolve" / "entities" / "subscribed" / "read" / "feedback"
+        read_clone.mkdir(parents=True)
+        theirs = read_clone / "note.md"
+        theirs.write_text("---\ntype: feedback\n---\n\nSomeone else's.\n")
+        (typed_project / ".evolve" / "entities" / "feedback").symlink_to(read_clone, target_is_directory=True)
+
+        for args in (["--entity", "note.md"], ["--entity", "note.md", "--type", "feedback"]):
+            result = run_publish(typed_project, args, expect_success=False)
+            assert result.returncode != 0
+            assert "not found" in result.stderr
+        assert theirs.exists()
+        assert not _typed_dest(typed_project, "feedback", "note.md").exists()
+
+    def test_symlinked_type_dir_outside_subscribed_still_publishes(self, typed_project, tmp_path):
+        """Symlinking a type directory elsewhere (e.g. a shared drive) is a legitimate layout."""
+        elsewhere = tmp_path / "elsewhere" / "feedback"
+        elsewhere.mkdir(parents=True)
+        source = elsewhere / "note.md"
+        source.write_text("---\ntype: feedback\n---\n\nMine.\n")
+        (typed_project / ".evolve" / "entities" / "feedback").symlink_to(elsewhere, target_is_directory=True)
+
+        run_publish(typed_project, ["--entity", "note.md"])
+        assert _typed_dest(typed_project, "feedback", "note.md").is_file()
+        assert not source.exists()
+
     def test_audit_log_records_type(self, typed_project):
         _write_private(typed_project, "feedback", "note.md")
         run_publish(typed_project, ["--entity", "note.md", "--user", "alice"])
