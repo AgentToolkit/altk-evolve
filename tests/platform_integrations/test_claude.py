@@ -42,6 +42,9 @@ EXPECTED_ALLOW_RULES = [
     "Bash(python3 ~/.claude/evolve-lite/audit_recall.py:*)",
     "Read(.evolve/**)",
     "Edit(.evolve/**)",
+]
+# Rules earlier installers wrote; install and uninstall must both strip them.
+LEGACY_ALLOW_RULES = [
     "Write(.evolve/**)",
 ]
 
@@ -322,7 +325,7 @@ class TestClaudePermissionAllowlist:
             assert allow.count(rule) == 1
 
     def test_uninstall_removes_only_evolve_rules(self, install_runner, claude_settings_file):
-        """Uninstall drops exactly the 5 evolve rules, leaving user rules + keys."""
+        """Uninstall drops exactly the evolve rules, leaving user rules + keys."""
         claude_settings_file.parent.mkdir(parents=True, exist_ok=True)
         claude_settings_file.write_text(
             json.dumps(
@@ -340,6 +343,31 @@ class TestClaudePermissionAllowlist:
         assert data["permissions"]["allow"] == ["Bash(ls:*)"]
         for rule in EXPECTED_ALLOW_RULES:
             assert rule not in data["permissions"]["allow"]
+
+    def test_reinstall_strips_legacy_rules(self, install_runner, claude_settings_file):
+        """Upgrading over an older install drops the ignored Write rule, keeping user rules."""
+        claude_settings_file.parent.mkdir(parents=True, exist_ok=True)
+        claude_settings_file.write_text(json.dumps({"permissions": {"allow": ["Bash(ls:*)", *LEGACY_ALLOW_RULES]}}, indent=2) + "\n")
+
+        install_runner.run("install", platform="claude")
+
+        allow = _allow(claude_settings_file)
+        assert "Bash(ls:*)" in allow
+        for rule in LEGACY_ALLOW_RULES:
+            assert rule not in allow, f"legacy rule {rule!r} survived reinstall: {allow!r}"
+        for rule in EXPECTED_ALLOW_RULES:
+            assert allow.count(rule) == 1
+
+    def test_uninstall_strips_legacy_rules(self, install_runner, claude_settings_file):
+        """Uninstall also removes legacy rules an older installer left behind."""
+        install_runner.run("install", platform="claude")
+        data = json.loads(claude_settings_file.read_text())
+        data["permissions"]["allow"] += ["Bash(ls:*)", *LEGACY_ALLOW_RULES]
+        claude_settings_file.write_text(json.dumps(data, indent=2) + "\n")
+
+        install_runner.run("uninstall", platform="claude")
+
+        assert _allow(claude_settings_file) == ["Bash(ls:*)"]
 
     def test_uninstall_cleans_up_empties(self, install_runner, claude_settings_file, file_assertions):
         """When only evolve rules existed, uninstall removes the empty allow key,
