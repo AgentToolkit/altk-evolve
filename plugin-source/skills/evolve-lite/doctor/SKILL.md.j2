@@ -17,17 +17,31 @@ external imports" approval. If you (or a teammate) declined it — even once, in
 past session — Claude silently disables the import forever, the thin EVOLVE.md
 never loads, and evolve becomes a no-op with **no error**.
 
-This skill checks whether the import is actually reaching your sessions, by
-looking for a canary token that the installed EVOLVE.md expands into the session
-transcript when the import loads.
+This skill checks whether the import is actually reaching your sessions. The
+installed EVOLVE.md carries a canary line, and only you can tell whether it
+reached your context: Claude does not write CLAUDE.md or its imports into
+session transcripts, so there is nothing on disk to check instead.
 
 ## Required Action
 
-Run the doctor script from the repo root:
+1. Look in the project instructions already loaded into your context (the
+   `CLAUDE.md` contents and anything it imports) for a line that starts with
+   `Evolve import canary:`. Do **not** read, open or search any file for it —
+   reading `.evolve/EVOLVE.md` would find the line whether or not the import
+   works, and defeat the check.
 
-```bash
-{{ invoke("doctor", "doctor.py") }}
-```
+2. Run the doctor script from the repo root, passing what you found. If you
+   found the line, pass the `EVOLVE_IMPORT_CANARY_…` token from it:
+
+   ```bash
+   {{ invoke("doctor", "doctor.py", args="--seen <token>") }}
+   ```
+
+   If you did not find it:
+
+   ```bash
+   {{ invoke("doctor", "doctor.py", args="--not-seen") }}
+   ```
 
 It is read-only and always exits 0. Read the status code it prints:
 
@@ -37,10 +51,11 @@ It is read-only and always exits 0. Read the status code it prints:
   Follow the remediation the script prints: purge the project approval, start a
   new session, and **Allow** the import dialog.
 - **NOT_INSTALLED** — evolve isn't wired into this repo; re-run the installer.
-- **STALE_EVOLVE_MD** — the installed `.evolve/EVOLVE.md` predates the canary;
-  re-run the installer to refresh it.
-- **UNKNOWN** — no recent Claude transcripts for this project yet; open a
-  session, then re-run.
+- **STALE_EVOLVE_MD** — the installed `.evolve/EVOLVE.md` predates the current
+  canary, or this session loaded an older copy; re-run the installer to refresh
+  it, then start a new session.
+- **UNKNOWN** — the script was run without `--seen` or `--not-seen`; follow the
+  steps above.
 
 Relay the status and any remediation to the user.
 {% else %}
