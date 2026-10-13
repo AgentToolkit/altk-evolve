@@ -227,3 +227,130 @@ def test_publish_rejects_directory_entity_path(temp_project_dir, publish_script,
     assert result.returncode != 0
     assert "not found or is a directory" in result.stderr
     assert entity_dir.is_dir()
+
+
+# ---------------------------------------------------------------------------
+# Non-guideline entity types (#373): adapt-memory and the EVOLVE.md save flow
+# write .evolve/entities/<native type>/, not guideline/.
+# ---------------------------------------------------------------------------
+
+ADAPT_MEMORY_SCRIPT = (
+    _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/adapt-memory/scripts/adapt_memory.py"
+)
+
+
+def _write_private(project_dir, entity_type, filename, body="Use kilometres, never miles."):
+    type_dir = project_dir / ".evolve" / "entities" / entity_type
+    type_dir.mkdir(parents=True, exist_ok=True)
+    path = type_dir / filename
+    path.write_text(f"---\ntype: {entity_type}\n---\n\n{body}\n")
+    return path
+
+
+def _typed_dest(project_dir, entity_type, filename, repo=_DEFAULT_WRITE_REPO):
+    return project_dir / ".evolve" / "entities" / "subscribed" / repo / entity_type / filename
+
+
+@pytest.fixture
+def typed_project(temp_project_dir):
+    """A project with a write-scope repo configured and no private entities yet."""
+    (temp_project_dir / "evolve.config.yaml").write_text(_DEFAULT_CONFIG)
+    _init_fake_clone(temp_project_dir, _DEFAULT_WRITE_REPO)
+    return temp_project_dir
+
+
+class TestPublishAnyEntityType:
+    def test_publishes_entity_mirrored_by_adapt_memory(self, typed_project, tmp_path):
+        """The #373 repro: mirror a native `feedback` memory, then publish it."""
+        native = tmp_path / "native" / "canada_km_only.md"
+        native.parent.mkdir()
+        native.write_text(
+            "---\nname: canada-km-only\ndescription: Distances for Canadian users\nmetadata:\n  type: feedback\n---\n\nAlways report distances in km.\n"
+        )
+        env = {**os.environ, "EVOLVE_DIR": str(typed_project / ".evolve")}
+        subprocess.run(
+            [sys.executable, str(ADAPT_MEMORY_SCRIPT), str(native), "--trigger", "When reporting a distance"],
+            cwd=str(typed_project),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        source = typed_project / ".evolve" / "entities" / "feedback" / "canada-km-only.md"
+        assert source.is_file()
+
+        run_publish(typed_project, ["--entity", "canada-km-only.md", "--user", "alice"])
+
+        dest = _typed_dest(typed_project, "feedback", "canada-km-only.md")
+        assert dest.is_file()
+        assert not source.exists()
+        content = dest.read_text()
+        assert "Always report distances in km." in content
+        assert "visibility: public" in content
+        assert "owner: alice" in content
+        assert not (typed_project / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO / "guideline").exists()
+
+    @pytest.mark.parametrize("entity_type", ["user", "feedback", "project", "reference", "guideline"])
+    @pytest.mark.parametrize(("platform_name", "publish_script"), PUBLISH_SCRIPT_VARIANTS)
+    def test_keeps_type_directory_in_shared_repo(self, typed_project, entity_type, publish_script, platform_name):
+        source = _write_private(typed_project, entity_type, "note.md")
+        run_publish_script(publish_script, typed_project, ["--entity", "note.md"])
+        assert _typed_dest(typed_project, entity_type, "note.md").is_file()
+        assert not source.exists()
+
+    def test_explicit_type_flag(self, typed_project):
+        source = _write_private(typed_project, "reference", "note.md")
+        run_publish(typed_project, ["--entity", "note.md", "--type", "reference"])
+        assert _typed_dest(typed_project, "reference", "note.md").is_file()
+        assert not source.exists()
+
+    def test_ambiguous_name_is_rejected_and_nothing_moves(self, typed_project):
+        feedback = _write_private(typed_project, "feedback", "note.md", body="feedback body")
+        project = _write_private(typed_project, "project", "note.md", body="project body")
+
+        result = run_publish(typed_project, ["--entity", "note.md"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "ambiguous" in result.stderr
+        assert "feedback/note.md" in result.stderr and "project/note.md" in result.stderr
+        assert feedback.exists() and project.exists()
+        assert not (typed_project / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO / "feedback").exists()
+
+    def test_type_flag_resolves_ambiguity(self, typed_project):
+        feedback = _write_private(typed_project, "feedback", "note.md", body="feedback body")
+        project = _write_private(typed_project, "project", "note.md", body="project body")
+
+        run_publish(typed_project, ["--entity", "note.md", "--type", "project"])
+
+        assert "project body" in _typed_dest(typed_project, "project", "note.md").read_text()
+        assert not project.exists()
+        assert feedback.exists(), "the other type's entity must be left alone"
+
+    def test_type_flag_pointing_at_wrong_type_is_not_found(self, typed_project):
+        source = _write_private(typed_project, "feedback", "note.md")
+        result = run_publish(typed_project, ["--entity", "note.md", "--type", "project"], expect_success=False)
+        assert result.returncode != 0
+        assert "not found" in result.stderr
+        assert source.exists()
+
+    def test_never_publishes_from_subscribed(self, typed_project):
+        """Entities under entities/subscribed/ belong to other repos; publish must not pick them up."""
+        theirs = typed_project / ".evolve" / "entities" / "subscribed" / "note.md"
+        theirs.write_text("---\ntype: guideline\n---\n\nSomeone else's.\n")
+
+        result = run_publish(typed_project, ["--entity", "note.md"], expect_success=False)
+        assert result.returncode != 0
+        assert "not found" in result.stderr
+        assert theirs.exists()
+
+        result = run_publish(typed_project, ["--entity", "note.md", "--type", "subscribed"], expect_success=False)
+        assert result.returncode != 0
+        assert "invalid entity type" in result.stderr
+        assert theirs.exists()
+
+    def test_audit_log_records_type(self, typed_project):
+        _write_private(typed_project, "feedback", "note.md")
+        run_publish(typed_project, ["--entity", "note.md", "--user", "alice"])
+        entry = json.loads((typed_project / ".evolve" / "audit.log").read_text().strip())
+        assert entry["entity"] == "note.md"
+        assert entry["type"] == "feedback"

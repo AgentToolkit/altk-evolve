@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Publish a private guideline entity to a write-scope repo."""
+"""Publish a private entity to a write-scope repo.
+
+Private entities live in ``.evolve/entities/<type>/<name>.md``. The type is
+whatever saved them: ``guideline`` from learn/save, or a native memory type
+(``user``, ``feedback``, ``project``, ``reference``) from adapt-memory and the
+EVOLVE.md save flow. The published copy keeps that layout in the shared repo,
+at ``<clone>/<type>/<name>.md``.
+"""
 
 import argparse
 import datetime
@@ -23,7 +30,7 @@ if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
 from audit import append as audit_append  # noqa: E402
-from entity_io import entity_to_markdown, markdown_to_entity  # noqa: E402
+from entity_io import entity_to_markdown, markdown_to_entity, sanitize_type  # noqa: E402
 from config import get_repo, load_config, normalize_repos, write_repos  # noqa: E402
 
 
@@ -34,6 +41,45 @@ def _resolve_source(repo, effective_user):
         if match:
             return match.group(1)
     return effective_user
+
+
+# Subdirectories of entities/ that never hold private entities.
+_NON_PRIVATE_DIRS = {"subscribed"}
+
+
+def _find_private_entity(entities_dir, filename, requested_type):
+    """Locate the private entity `filename` under ``entities/<type>/``.
+
+    Searches every private type directory unless `requested_type` names one.
+    Returns ``(type, path, None)`` on success or ``(None, None, error)``.
+    """
+    if requested_type is not None:
+        entity_type = sanitize_type(requested_type)
+        if not entity_type or entity_type in _NON_PRIVATE_DIRS:
+            return None, None, f"invalid entity type: {requested_type!r}"
+        types = [entity_type]
+    elif entities_dir.is_dir():
+        types = sorted(
+            d.name for d in entities_dir.iterdir() if d.is_dir() and d.name not in _NON_PRIVATE_DIRS and not d.name.startswith(".")
+        )
+    else:
+        types = []
+
+    matches = []
+    for entity_type in types:
+        type_dir = (entities_dir / entity_type).resolve()
+        path = (entities_dir / entity_type / filename).resolve()
+        if path.is_relative_to(type_dir) and path.is_file():
+            matches.append((entity_type, path))
+
+    if not matches:
+        where = entities_dir / types[0] if requested_type is not None else entities_dir / "<type>"
+        return None, None, f"entity file not found or is a directory: {where / filename}"
+    if len(matches) > 1:
+        found = ", ".join(f"{t}/{filename}" for t, _ in matches)
+        return None, None, f"entity name {filename!r} is ambiguous ({found}); pass --type to pick one"
+    entity_type, path = matches[0]
+    return entity_type, path, None
 
 
 def _select_target_repo(cfg, requested_name):
@@ -59,6 +105,7 @@ def _select_target_repo(cfg, requested_name):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--entity", required=True, help="Basename of the .md file to publish")
+    parser.add_argument("--type", default=None, help="Entity type directory to publish from (optional unless the name is ambiguous)")
     parser.add_argument("--user", default=None, help="Username to stamp as owner")
     parser.add_argument("--repo", default=None, help="Write-scope repo name (optional if exactly one is configured)")
     args = parser.parse_args()
@@ -71,15 +118,9 @@ def main():
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
 
-    src_base = (evolve_dir / "entities" / "guideline").resolve()
-    src_path = (evolve_dir / "entities" / "guideline" / args.entity).resolve()
-
-    if not src_path.is_relative_to(src_base):
-        print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
-        sys.exit(1)
-
-    if not src_path.is_file():
-        print(f"Error: entity file not found or is a directory: {src_path}", file=sys.stderr)
+    entity_type, src_path, err = _find_private_entity(evolve_dir / "entities", args.entity, args.type)
+    if err is not None:
+        print(f"Error: {err}", file=sys.stderr)
         sys.exit(1)
 
     config = load_config(project_root)
@@ -109,7 +150,7 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
-    dest_dir = clone_root / "guideline"
+    dest_dir = clone_root / entity_type
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_base = dest_dir.resolve()
     dest_path = (dest_dir / args.entity).resolve()
@@ -147,6 +188,7 @@ def main():
             action="publish",
             actor=effective_user or "unknown",
             entity=args.entity,
+            type=entity_type,
             repo=target["name"],
         )
     except Exception as exc:

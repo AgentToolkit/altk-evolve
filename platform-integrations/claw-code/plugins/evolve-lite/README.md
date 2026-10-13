@@ -168,10 +168,10 @@ automatically add it to `.gitignore`.
   `.evolve/entities/subscribed/<name>/` so recall can pick it up
   immediately. Repo names must use only letters, numbers, `.`, `_`, and
   `-`.
-- `evolve-lite:publish` lists files in `.evolve/entities/guideline/`,
+- `evolve-lite:publish` lists files in each `.evolve/entities/{type}/` directory,
   prompts for which to publish, then for each selection: stamps
   `visibility: public`/`owner`/`published_at`/`source`, moves it under
-  `.evolve/entities/subscribed/{repo}/guideline/`, and commits + pushes.
+  `.evolve/entities/subscribed/{repo}/{type}/`, and commits + pushes.
 - `evolve-lite:sync` pulls the latest changes from every configured repo.
   Read-scope repos use `git fetch` + `git reset --hard`, so the local
   clone always matches the remote exactly. Write-scope repos use

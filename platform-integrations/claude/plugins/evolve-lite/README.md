@@ -110,13 +110,13 @@ pick it up immediately. Repo names must use only letters, numbers, `.`,
 
 ### Publishing Guidelines
 
-Use `/evolve-lite:publish` to share one or more of your local guidelines
-via a **write-scope** repo:
+Use `/evolve-lite:publish` to share one or more of your local entities
+(guidelines, or memories mirrored by adapt-memory) via a **write-scope** repo:
 
 1. The skill selects (or asks about) the write-scope target repo
-2. It lists files in `.evolve/entities/guideline/`
+2. It lists files in each `.evolve/entities/{type}/` directory (skipping `subscribed/`)
 3. You pick which ones to publish
-4. Each selected file is moved into `.evolve/entities/subscribed/{repo}/guideline/`,
+4. Each selected file is moved into `.evolve/entities/subscribed/{repo}/{type}/`,
    stamped with `visibility: public`, `owner`, `published_at`, and
    `source`, committed, and pushed to the remote
 

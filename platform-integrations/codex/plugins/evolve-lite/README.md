@@ -137,16 +137,16 @@ Names must use only letters, numbers, `.`, `_`, and `-`.
 
 ### Publishing Guidelines
 
-Use `evolve-lite:publish` to share local guidelines via a **write-scope**
+Use `evolve-lite:publish` to share local entities via a **write-scope**
 repo:
 
 1. The skill selects (or asks about) the write-scope target repo
-2. Pick a file from `.evolve/entities/guideline/`
-3. Publish moves it into `.evolve/entities/subscribed/{repo}/guideline/`,
+2. Pick a file from a `.evolve/entities/{type}/` directory (skipping `subscribed/`)
+3. Publish moves it into `.evolve/entities/subscribed/{repo}/{type}/`,
    stamps it with `visibility: public`, `published_at`, `owner`, and a
    `source` label derived from the repo's remote
-4. The original private guideline is removed from
-   `.evolve/entities/guideline/`
+4. The original private entity is removed from
+   `.evolve/entities/{type}/`
 
 Because the publish target is also a subscribed repo, your next sync pulls
 in anything other writers have pushed to the same remote.
@@ -200,8 +200,8 @@ guidelines pulled from any write- or read-scope repo under
 
 ### `evolve-lite:publish`
 
-Move a selected private guideline into a configured write-scope repo's
-local clone at `.evolve/entities/subscribed/{repo}/guideline/`, stamp it
+Move a selected private entity into a configured write-scope repo's
+local clone at `.evolve/entities/subscribed/{repo}/{type}/`, stamp it
 as public, commit it, and push it.
 
 ### `evolve-lite:subscribe`
