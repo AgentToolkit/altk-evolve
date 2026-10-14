@@ -1,8 +1,10 @@
 # Canonical plugin metadata for the evolve-lite plugin.
 #
-# Per-platform plugin.json files under platform-integrations/ are rendered
-# from this file by build_plugins.py. The [plugin] table holds host-agnostic
-# metadata; per-platform tables hold genuinely platform-specific fields only.
+# Per-platform plugin.json files under platform-integrations/, plus the
+# repo-root .claude-plugin/marketplace.json that `claude plugin marketplace
+# add AgentToolkit/altk-evolve` reads, are rendered from this file by
+# build_plugins.py. The [plugin] table holds host-agnostic metadata;
+# per-platform tables hold genuinely platform-specific fields only.
 # snake_case keys for declared fields are emitted as camelCase in the
 # generated JSON.
 #
@@ -43,6 +45,25 @@ Repository = "https://github.com/AgentToolkit/altk-evolve"
 
 [claw-code]
 default_enabled = true
+
+# The Claude Code marketplace manifest at the repo root. Everything the entry
+# shares with plugin.json (name, description, author, version) is taken from
+# [plugin] so the two can never disagree — which they silently did until this
+# table existed, because marketplace.json was hand-maintained outside the
+# generator and `build_plugins.py check` had no way to see it. Only the fields
+# that are genuinely marketplace-scoped live here.
+#
+# `owner` is the marketplace's owner, not the plugin's author, so it is its own
+# field rather than authors[0].
+[marketplace]
+name = "evolve-marketplace"
+description = "Evolve plugins for Claude Code - continuous improvement through auto-generated guidelines"
+owner = { name = "Vinod Muthusamy" }
+schema = "https://anthropic.com/claude-code/marketplace.schema.json"
+# Per-entry fields. `source` is resolved relative to the repo root (the
+# directory holding .claude-plugin/), not to marketplace.json itself.
+entry_source = "./platform-integrations/claude/plugins/evolve-lite"
+entry_category = "productivity"
 
 [codex]
 category = "Productivity"
