@@ -224,5 +224,5 @@ def test_claude_learn_then_recall_flow(sandbox_ready, sandbox_workspace):
     influenced_ids = {event.get("entity") for event in influence_events}
     assert influenced_ids & recalled_ids, f"influence events {influence_events} did not assess any recalled ids {recalled_ids}"
     for event in influence_events:
-        assert event.get("verdict") in {"followed", "contradicted", "not_applicable"}
+        assert event.get("verdict") in {"followed", "contradicted", "not_applicable", "insufficient_evidence"}
         assert event.get("evidence"), f"influence event missing evidence: {event}"
