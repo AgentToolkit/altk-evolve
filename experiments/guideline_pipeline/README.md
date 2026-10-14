@@ -154,7 +154,7 @@ Options (`--adapter-option KEY=VALUE`):
 | --- | --- |
 | `include_system_prompt=true` | Add the agent's system prompt (the first `system` message in any step's `prompts`) as a `system` context message. |
 | `include_summaries=true` | Add each reflective `Summary` block from `User_return` steps as an assistant context message. |
-| `task_ids=a_1,b_2` | Only these tasks. A listed ID that is not found ends the run with an error. |
+| `task_ids=a_1,b_2` | Only these tasks. A listed ID that is not found ends the run with an error, and so does a value that lists no IDs. |
 | `task_manifest=<file>` | Only the tasks in a JSON file (`task_ids` or `tasks[].task_id`) or a text file with one ID per line (`#` comments). Combines with `task_ids`. |
 | `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
 

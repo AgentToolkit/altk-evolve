@@ -77,7 +77,7 @@ class CugaAdapter:
             if key in ("include_system_prompt", "include_summaries"):
                 changes[key] = _boolean(key, value)
             elif key == "task_ids":
-                task_ids.update(item.strip() for item in value.split(",") if item.strip())
+                task_ids.update(_names(key, value))
             elif key == "task_manifest":
                 task_ids.update(load_task_manifest(Path(value)))
             elif key == "model":
@@ -335,6 +335,14 @@ def _loads(value: Any) -> dict:
 def _plain(content: dict) -> dict:
     outcome = content["outcome"]
     return {**content, "outcome": None if outcome is None else outcome.model_dump(mode="json")}
+
+
+def _names(key: str, value: str) -> set[str]:
+    """A comma-separated filter option. One that names nothing would mean "no filter", so it is an error."""
+    names = {item.strip() for item in value.split(",") if item.strip()}
+    if not names:
+        raise ValueError(f"cuga option {key} names nothing: {value!r}")
+    return names
 
 
 def _boolean(key: str, value: str) -> bool:

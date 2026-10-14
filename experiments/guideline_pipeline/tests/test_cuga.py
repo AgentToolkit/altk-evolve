@@ -285,6 +285,10 @@ def test_mine_dry_run_from_the_cli(monkeypatch: pytest.MonkeyPatch, capsys: pyte
     assert "Unknown cuga option 'nope'" in capsys.readouterr().err
     assert cli.main([*argv, "--adapter-option", "model=a", "--adapter-option", "model=b"]) == 2
     assert "given twice" in capsys.readouterr().err
+    # An empty filter (say, an unset shell variable) would mean "no filter", so it is refused.
+    for empty in ("task_ids=", "task_ids= , "):
+        assert cli.main([*argv, "--adapter-option", empty]) == 2
+        assert "cuga option task_ids names nothing" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         cli.main([*argv, "--adapter-option", "novalue"])
 
