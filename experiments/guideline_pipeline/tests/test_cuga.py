@@ -121,6 +121,26 @@ def test_outcome_fallbacks_and_detail_cap():
     assert overridden.outcome is not None and overridden.outcome.success
 
 
+def test_string_verdicts_are_parsed_not_coerced():
+    adapter = CugaAdapter()
+    failures = {"failures": [{"requirement": "r"}]}
+    for verdict in ("False", "false", " FALSE "):
+        for eval_ in ({"success": verdict, "evaluation": failures}, json.dumps({"success": verdict, "evaluation": failures})):
+            outcome = adapter.record("run", "t_1", {"intent": "x", "steps": []}, {"eval": eval_}).outcome
+            assert outcome is not None and (outcome.success, outcome.failed_checks) == (False, ("r",))
+    assert adapter.record("run", "t_1", {"intent": "x", "steps": []}, {"eval": {"success": "True"}}).outcome == TrajectoryOutcome(
+        success=True
+    )
+
+    # An unreadable verdict is unknown, so the next source in the documented order decides.
+    step = {"name": "EvaluationResult", "data": json.dumps({"success": "false"})}
+    task = {"intent": "x", "score": 1.0, "steps": [step]}
+    assert adapter.record("run", "t_1", task, {"eval": {"success": "maybe"}}).outcome == TrajectoryOutcome(success=False)
+    task = {"intent": "x", "score": 1.0, "steps": [{**step, "data": json.dumps({"success": 0})}]}
+    assert adapter.record("run", "t_1", task, {"eval": {"success": "maybe"}}).outcome == TrajectoryOutcome(success=True)
+    assert adapter.record("run", "t_1", {"intent": "x", "steps": []}, {"eval": {"success": "maybe"}}).outcome is None
+
+
 def test_malformed_evaluation_reports_are_skipped_not_fatal():
     adapter = CugaAdapter()
     mixed = {"success": False, "evaluation": {"passes": ["ok", {"requirement": "p"}], "failures": ["bad", None, {"requirement": "r"}]}}

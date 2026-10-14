@@ -127,7 +127,7 @@ class CugaAdapter:
             "trace_id": task_id,
             "model": self.model,
             "metadata": {key: value for key, value in metadata.items() if value is not None},
-            "outcome": _outcome(task, evaluation),
+            "outcome": _outcome(_success(task, steps, result), evaluation),
         }
         # The revision is a digest of exactly what processors see, so a corrected
         # task file, results entry or option change is reprocessed; nothing else is.
@@ -175,20 +175,40 @@ def _agent_steps(steps: list[dict]) -> list[dict[str, Any]]:
 
 def _evaluation(steps: list[dict], result: dict | None) -> dict:
     """The task's evaluation: the EvaluationResult step, overridden by the authoritative results.json eval."""
-    step = next((_loads(step.get("data")) for step in steps if step.get("name") == "EvaluationResult"), {})
-    return {**step, **_loads((result or {}).get("eval"))}
+    return {**_step_evaluation(steps), **_loads((result or {}).get("eval"))}
 
 
-def _outcome(task: dict, evaluation: dict) -> TrajectoryOutcome | None:
-    success = evaluation.get("success")
-    if success is None and isinstance(task.get("score"), (int, float)):
-        success = task["score"] >= 1.0
+def _step_evaluation(steps: list[dict]) -> dict:
+    return next((_loads(step.get("data")) for step in steps if step.get("name") == "EvaluationResult"), {})
+
+
+def _success(task: dict, steps: list[dict], result: dict | None) -> bool | None:
+    """The verdict from the first source with a readable one: results.json, the EvaluationResult step, then score >= 1."""
+    for evaluation in (_loads((result or {}).get("eval")), _step_evaluation(steps)):
+        if (verdict := _verdict(evaluation.get("success"))) is not None:
+            return verdict
+    return task["score"] >= 1.0 if isinstance(task.get("score"), (int, float)) else None
+
+
+def _verdict(value: Any) -> bool | None:
+    """A verdict stored as a bool or as the string "true"/"false" (any case); None for anything else.
+
+    Runs are stringly typed, and bool("False") is True, so nothing else is coerced.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+        return value.strip().lower() == "true"
+    return None
+
+
+def _outcome(success: bool | None, evaluation: dict) -> TrajectoryOutcome | None:
     if success is None:
         return None
     failed = (str(check.get("requirement") or "").strip().replace("\n", " ") for check in _checks(evaluation, "failures"))
     detail = _evaluation_report(evaluation)
     return TrajectoryOutcome(
-        success=bool(success),
+        success=success,
         failed_checks=tuple(dict.fromkeys(check for check in failed if check)),
         detail=detail[:DETAIL_CHARS] if detail else None,
     )

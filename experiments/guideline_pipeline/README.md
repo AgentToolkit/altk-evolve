@@ -135,7 +135,8 @@ no `intent` is skipped with a warning. Each other task becomes one record:
   (`Assistant_code`, `Assistant_nl`), the final-answer step and the evaluation
   are left out.
 - **outcome**: `success` from `results.json` (falling back to the task's
-  `EvaluationResult` step, then to `score >= 1`), the failed ground-truth
+  `EvaluationResult` step, then to `score >= 1`; a verdict counts only as a bool
+  or the string `"true"`/`"false"`, and anything else falls through), the failed ground-truth
   requirements as `failed_checks`, and the first 2000 characters of the
   evaluation report as `detail`. A task with no evaluation and no score has no outcome.
 - **batch**: source `cuga`, conversation `<run>/<task_id>`, batch `<task_id>`, and
