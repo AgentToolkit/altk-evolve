@@ -145,11 +145,9 @@ repo:
 4. The original private entity is removed from
    `.evolve/entities/{type}/`
 
-> **Limitation:** publish only looks in `.evolve/entities/guideline/`, but
-> the "Save" step in `EVOLVE.md` writes entities under
-> `entities/{user,feedback,project,reference}/`, so nothing Codex saves is
-> publishable yet. Until [#373](https://github.com/AgentToolkit/altk-evolve/issues/373) is fixed, only entity files you place under
-> `guideline/` yourself can be published.
+Entities saved by the "Save" step in `EVOLVE.md` (`entities/{user,feedback,project,reference}/`)
+are publishable this way. If the same file name exists in more than one type
+directory, publish refuses and asks for `--type`.
 
 Because the publish target is also a subscribed repo, your next sync pulls
 in anything other writers have pushed to the same remote.

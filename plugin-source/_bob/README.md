@@ -141,22 +141,21 @@ The repo is cloned directly into `.evolve/entities/subscribed/{name}/`
 
 ### Publishing Guidelines
 
-Use `evolve-lite-publish` to share local guidelines via a **write-scope** repo:
+Use `evolve-lite-publish` to share local entities via a **write-scope** repo:
 
 1. The skill picks (or asks about) the write-scope target repo
-2. Lists files in `.evolve/entities/guideline/`
+2. Lists files in each `.evolve/entities/{type}/` directory (skipping `subscribed/`)
 3. You pick which ones to publish
 4. Each selected file is moved into the write-scope clone at
-   `.evolve/entities/subscribed/{repo}/guideline/`, stamped with your
+   `.evolve/entities/subscribed/{repo}/{type}/`, stamped with your
    username, committed, and pushed to the remote
 
 Because the publish target is also a subscribed repo, your next sync
 pulls in anything other writers have pushed to the same remote.
 
-> **Limitation:** publish only looks in `.evolve/entities/guideline/`, but
-> the agent saves entities under `entities/{user,feedback,project,reference}/`,
-> so nothing Bob saves is publishable yet. Until [#373](https://github.com/AgentToolkit/altk-evolve/issues/373) is fixed, only
-> entity files you place under `guideline/` yourself can be published.
+Entities the agent saves under `entities/{user,feedback,project,reference}/` are
+publishable this way. If the same file name exists in more than one type
+directory, publish refuses and asks for `--type`.
 
 ### Syncing Repos
 

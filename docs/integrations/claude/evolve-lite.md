@@ -36,7 +36,7 @@ Then run `/evolve-lite:doctor` in a Claude session to confirm `EVOLVE.md` is bei
 
 Claude Code already recalls and saves memories on its own judgment: it decides what to look up at the start of a task and what to write down at the end. Evolve Lite does not intercept either. It adds the two things native memory lacks:
 
-1. **Sharing** — When Claude saves a native memory, it invokes `/evolve-lite:adapt-memory`, which mirrors the same fact into `.evolve/entities/{type}/{name}.md` as a normal Evolve entity, where `{type}` is the native memory's type (`user`, `feedback`, `project` or `reference`). Publishing mirrored memories to a shared repo is not supported yet: `/evolve-lite:publish` only reads `.evolve/entities/guideline/` (tracked in [#373](https://github.com/AgentToolkit/altk-evolve/issues/373)).
+1. **Sharing** — When Claude saves a native memory, it invokes `/evolve-lite:adapt-memory`, which mirrors the same fact into `.evolve/entities/{type}/{name}.md` as a normal Evolve entity, where `{type}` is the native memory's type (`user`, `feedback`, `project` or `reference`). Mirrored memories can be shared with `/evolve-lite:publish`, which keeps the `{type}/` directory in the shared repo.
 
 2. **Provenance** — When Claude consults native memories, it runs `python3 ~/.claude/evolve-lite/audit_recall.py <type>/<name>`, recording what was actually opened so the store's value can be measured over time.
 
@@ -187,7 +187,7 @@ There is no `learn` or `recall` skill on Claude — native memory owns both.
 | `/evolve-lite:adapt-memory` | Mirror a just-saved native memory into the project's evolve store |
 | `/evolve-lite:doctor` | Verify the `CLAUDE.md` import is actually loading `EVOLVE.md` |
 | `/evolve-lite:subscribe` | Add a shared guidelines repo (read-scope or write-scope) |
-| `/evolve-lite:publish` | Publish a local guideline to a write-scope repo |
+| `/evolve-lite:publish` | Publish a local entity (guideline or mirrored memory) to a write-scope repo |
 | `/evolve-lite:sync` | Pull the latest guidelines from every configured repo |
 | `/evolve-lite:unsubscribe` | Remove a repo and delete its local clone |
 | `/evolve-lite:provenance` | Report whether recalled guidelines influenced past sessions |
