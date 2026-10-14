@@ -717,6 +717,16 @@ class TestOutcomePrompt:
         assert [g.content for g in results[0].guidelines] == [f"guideline {i}" for i in range(limit)]
         assert f"Keeping the first {limit} of 5" in caplog.text
 
+    @pytest.mark.parametrize("success", [False, True])
+    def test_outcome_prompt_keeps_the_quality_threshold(self, success):
+        """The outcome rules replace the no-outcome rules, not the quality threshold that follows them."""
+        generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=success))
+
+        prompt = self._prompt(self.mock_completion)
+        assert "\n\n# Quality threshold\n" in prompt
+        assert "Self-reported success is not evidence of a successful operation." in prompt
+        assert 'If nothing meets this threshold, return {"guidelines": []}.' in prompt
+
     def test_success_with_nothing_new_returns_no_guidelines(self):
         self.mock_completion.return_value = _mock_completion_response({"guidelines": []})
 
