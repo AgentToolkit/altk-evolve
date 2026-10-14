@@ -36,6 +36,7 @@ _ATTRIBUTE_MINIMUM = {
     "with_stem": 9,  # pathlib.PurePath
     "removeprefix": 9,  # str / bytes
     "removesuffix": 9,  # str / bytes
+    "UTC": 11,  # datetime.UTC (use datetime.timezone.utc, which works everywhere)
     "hardlink_to": 10,  # pathlib.Path
     "bit_count": 10,  # int
     "is_junction": 12,  # pathlib.Path
