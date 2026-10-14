@@ -271,6 +271,27 @@ The stock REST/MCP service has no authenticated-principal or profile-editor poli
 Run it within a trusted deployment boundary, or protect all routes with application
 authentication and resource authorization before exposing it to untrusted callers.
 
+## Task outcome
+
+When an evaluator has judged the task, supply it as `Trajectory.outcome`:
+
+```json
+"outcome": {
+  "success": false,
+  "failed_checks": ["order total matches cart"],
+  "detail": "Expected 42.00, got 40.00"
+}
+```
+
+The built-in `evolve.guidelines` processor sets `evidence` on every guideline it
+generates from that trajectory: `"success"` or `"failure"`. This overrides any
+`evidence` in `trajectory.metadata`, and enables `evidence_filter` at retrieval and
+evidence merging during consolidation. `failed_checks` and `detail` are optional and
+are not stored on entities; they are available to processors through
+`trajectory.outcome`. Without an outcome, behavior is unchanged. The Python client,
+REST, MCP `process_trajectory`, and CLI input JSON all accept it. An outcome supplied
+after its batch was processed needs a new `batch.revision`, or the processor is skipped.
+
 ## CLI and Phoenix sync
 
 CLI profile operations connect to the configured database, including PostgreSQL. They

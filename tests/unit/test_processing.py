@@ -815,6 +815,72 @@ def test_builtin_metadata_pins_support_and_matches_generation_fields():
     }
 
 
+@pytest.mark.parametrize(("success", "evidence"), [(True, "success"), (False, "failure")])
+def test_builtin_outcome_sets_evidence_on_every_guideline(success, evidence):
+    from altk_evolve.processing.builtin import GuidelineProcessor
+    from altk_evolve.processing.models import ProcessorContext, Trajectory, TrajectoryOutcome
+    from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResult
+
+    def step(content):
+        guideline = Guideline(content=content, rationale="why", category="strategy", trigger="when", evidence="both")
+        return lambda _: [GuidelineGenerationResult(task_description="task", guidelines=[guideline])]
+
+    processor = GuidelineProcessor((("standard", step("a")), ("consistency-fast", step("b"))))
+    outcome = TrajectoryOutcome(success=success, failed_checks=("total matches cart",), detail="expected 42.00")
+    trajectory = Trajectory(messages=[], metadata={"evidence": "both"}, outcome=outcome)
+    result = processor.process(trajectory, context=ProcessorContext("operation"))
+    # The outcome overrides both model-returned and caller-supplied evidence.
+    assert [entity.metadata["evidence"] for entity in result.entities] == [evidence, evidence]
+    for entity in result.entities:
+        assert not {"outcome", "failed_checks", "detail"} & entity.metadata.keys()
+
+
+def test_builtin_without_outcome_keeps_caller_evidence():
+    from altk_evolve.processing.builtin import GuidelineProcessor
+    from altk_evolve.processing.models import ProcessorContext, Trajectory
+    from altk_evolve.schema.guidelines import Guideline, GuidelineGenerationResult
+
+    guideline = Guideline(content="check", rationale="why", category="strategy", trigger="when")
+    processor = GuidelineProcessor((("standard", lambda _: [GuidelineGenerationResult(task_description="task", guidelines=[guideline])]),))
+    result = processor.process(Trajectory(messages=[], metadata={"evidence": "failure"}), context=ProcessorContext("operation"))
+    assert result.entities[0].metadata["evidence"] == "failure"
+
+
+def test_trajectory_outcome_validation():
+    from pydantic import ValidationError
+    from altk_evolve.frontend.api.processing import ProcessRequest
+    from altk_evolve.processing import Trajectory, TrajectoryOutcome
+
+    trajectory = Trajectory.model_validate({"messages": [], "outcome": {"success": False, "failed_checks": ["total"], "detail": "x"}})
+    assert trajectory.outcome == TrajectoryOutcome(success=False, failed_checks=("total",), detail="x")
+    assert Trajectory(messages=[]).outcome is None
+    for outcome in ({}, {"success": True, "score": 1}, {"success": "maybe"}, {"success": False, "failed_checks": [""]}):
+        with pytest.raises(ValidationError):
+            Trajectory.model_validate({"messages": [], "outcome": outcome})
+    request = ProcessRequest.model_validate(
+        {"namespace_id": "memories", "trajectory": {"messages": [], "outcome": {"success": True}}, "processing_profile": {"id": "review"}}
+    )
+    assert request.trajectory.outcome == TrajectoryOutcome(success=True)
+
+
+def test_outcome_reaches_processors_from_dict_input():
+    from altk_evolve.processing import TrajectoryOutcome
+
+    seen = []
+
+    class RecordingProcessor(EchoProcessor):
+        id = "tests.recording"
+
+        def process(self, trajectory, *, context):
+            seen.append(trajectory.outcome)
+            return ProcessorResult()
+
+    manager = make_manager(processor_type=RecordingProcessor)
+    plan = manager.validate(definition(plugin="tests.recording"))
+    manager.process({"messages": [], "outcome": {"success": False, "detail": "x"}}, plan=plan)
+    assert seen == [TrajectoryOutcome(success=False, detail="x")]
+
+
 def test_provenance_is_independent_and_empty_plan_warns():
     manager = make_manager()
     profile = definition()
