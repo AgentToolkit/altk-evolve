@@ -5,6 +5,7 @@ import socket
 import sys
 import threading
 import uvicorn
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from altk_evolve.frontend.mcp.mcp_server import app, get_client, mcp
 from altk_evolve.frontend.mcp.http_transport import create_resilient_sse_app
@@ -62,9 +63,19 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+class _DashboardSettings(BaseSettings):
+    """EVOLVE_DASHBOARD, read like every other EVOLVE_ setting: the environment, then `.env`."""
+
+    model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
+    dashboard: str | None = None
+
+
 def _dashboard_enabled(flag: bool | None) -> bool:
     """The command-line flag wins; otherwise EVOLVE_DASHBOARD, which defaults to on."""
-    return flag if flag is not None else _is_truthy_env("EVOLVE_DASHBOARD", True)
+    if flag is not None:
+        return flag
+    raw = _DashboardSettings().dashboard
+    return raw is None or raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
 class _DashboardServer(uvicorn.Server):

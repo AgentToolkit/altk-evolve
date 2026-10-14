@@ -102,6 +102,19 @@ def test_dashboard_flag_overrides_the_environment(monkeypatch, runtime) -> None:
     assert _run_stdio(monkeypatch, ["--dashboard"]) == [launcher.run_api_server]
 
 
+@pytest.mark.parametrize(("env", "expected_started"), [(None, False), ("true", True)])
+def test_dashboard_setting_is_read_from_dotenv(monkeypatch, runtime, tmp_path, env, expected_started) -> None:
+    """EVOLVE_DASHBOARD in `.env` turns the dashboard off, like every other EVOLVE_ setting;
+    a value in the process environment still takes precedence over the file."""
+    (tmp_path / ".env").write_text("EVOLVE_DASHBOARD=false\n")
+    monkeypatch.chdir(tmp_path)
+    if env is None:
+        monkeypatch.delenv("EVOLVE_DASHBOARD", raising=False)
+    else:
+        monkeypatch.setenv("EVOLVE_DASHBOARD", env)
+    assert (_run_stdio(monkeypatch, []) == [launcher.run_api_server]) is expected_started
+
+
 def test_dashboard_logs_the_address_it_bound(caplog) -> None:
     """The listener is announced, with its real address, only once the socket is bound."""
 
