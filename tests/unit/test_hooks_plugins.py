@@ -215,6 +215,32 @@ def test_secrets_plugin_redacts_llm_egress(tmp_path: Path):
     assert messages == [{"role": "user", "content": "deploy with [REDACTED] and [REDACTED]"}]
 
 
+# Assembled at runtime: GitHub push protection rejects a Slack-token-shaped literal
+# even when it is fake, and it has no inline allowlist pragma.
+_FAKE_SLACK_BOT_TOKEN = "-".join(["xoxb", "123456789012", "1234567890123", "AbCdEfGhIjKlMnOpQrStUvWx"])
+_FAKE_AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"  # pragma: allowlist secret
+
+
+@pytest.mark.unit
+def test_secrets_plugin_redacts_a_whole_slack_token(tmp_path: Path):
+    """Every segment of the token is replaced, not just its prefix."""
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+
+    messages = dispatch_llm_pre_call([{"role": "user", "content": f"notify {_FAKE_SLACK_BOT_TOKEN} when done"}], purpose="test")
+    assert messages == [{"role": "user", "content": "notify [REDACTED] when done"}]
+
+
+@pytest.mark.unit
+def test_secrets_plugin_redacts_only_the_value_of_an_aws_secret_assignment(tmp_path: Path):
+    """The key name stays readable; only the secret value is replaced."""
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+
+    messages = dispatch_llm_pre_call([{"role": "user", "content": f"aws_secret_access_key = {_FAKE_AWS_SECRET}"}], purpose="test")
+    assert messages == [{"role": "user", "content": "aws_secret_access_key = [REDACTED]"}]
+
+
 @pytest.mark.unit
 def test_secrets_plugin_leaves_non_secret_untouched(tmp_path: Path):
     pytest.importorskip("cpex_secrets_detection")
