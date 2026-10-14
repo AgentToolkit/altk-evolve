@@ -8,37 +8,39 @@ the repo's ``./CLAUDE.md``. That import requires a one-time, per-project
 session) Claude silently disables the import forever — the thin EVOLVE.md never
 loads and evolve becomes a no-op with NO error.
 
-Claude's internal approval flag is undocumented and unreliable to read, so this
-script detects delivery *empirically*: the installed thin EVOLVE.md carries a
-canary token (``EVOLVE_IMPORT_CANARY_<v>``). When the import loads, that token
-expands into the session transcript. The doctor extracts the token from the
-installed copy (never hardcoding it twice) and greps the most recent Claude
-project transcripts for it.
+Claude's internal approval flag is undocumented and unreliable to read, so the
+doctor detects delivery *empirically*: the installed thin EVOLVE.md carries a
+visible canary line (``Evolve import canary: EVOLVE_IMPORT_CANARY_<v>``). Only
+the model can see what reached its context — Claude does not write CLAUDE.md or
+its imports into session transcripts, and strips HTML comments from them — so
+the doctor skill checks its own context for that line and passes what it found
+here. This script extracts the expected token from the installed copy (never
+hardcoding it twice) and compares.
 
 Status codes (printed verbatim, always exit 0 — this is a diagnostic):
 
-    OK              — canary found in a recent transcript; import is loading.
-    IMPORT_DISABLED — import line present in CLAUDE.md but canary absent from
-                      every recent transcript; the user likely declined the
+    OK              — the session saw the installed canary; import is loading.
+    IMPORT_DISABLED — import line present in CLAUDE.md but the session did not
+                      see the canary; the user likely declined the
                       external-import approval.
     NOT_INSTALLED   — the import line is missing from CLAUDE.md, or the installed
                       .evolve/EVOLVE.md is missing; run the installer.
-    STALE_EVOLVE_MD — installed EVOLVE.md has no canary; it predates this build,
-                      re-run the installer.
-    UNKNOWN         — no recent Claude transcripts for this project yet.
+    STALE_EVOLVE_MD — installed EVOLVE.md has no visible canary line (it
+                      predates this build), or the session saw a different
+                      canary than the installed one; re-run the installer.
+    UNKNOWN         — called without --seen/--not-seen, so there is nothing to
+                      compare; run it through /evolve-lite:doctor.
 
 Usage:
-    python3 doctor.py
+    python3 doctor.py --seen EVOLVE_IMPORT_CANARY_<v>
+    python3 doctor.py --not-seen
 """
 
+import argparse
 import os
 import re
 import sys
 from pathlib import Path
-
-# Note: the shared lib import below provides `claude_project_slug`, the single
-# source of truth for the ~/.claude/projects/<slug>/ directory name (shared with
-# adapt_memory.py).
 
 # Walk up from the script location to find the installed plugin lib directory.
 # Every host installs the shared lib under lib/evolve-lite/ so multiple plugins
@@ -55,7 +57,7 @@ for _ancestor in _script.parents:
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
-from entity_io import claude_project_slug, log as _log  # noqa: E402
+from entity_io import log as _log  # noqa: E402
 
 
 def log(message):
@@ -68,10 +70,9 @@ CLAUDE_IMPORT_LINE = "@.evolve/EVOLVE.md"
 
 # Pattern used to lift the canary token out of the installed EVOLVE.md so the
 # exact token lives in exactly one place (the template), never duplicated here.
-_CANARY_RE = re.compile(r"EVOLVE_IMPORT_CANARY_\S+")
-
-# How many of the most-recent transcripts to scan for the canary.
-_RECENT_N = 3
+# Anchored to a visible line: older builds kept the token in an HTML comment,
+# which Claude strips before the model sees it, so those count as stale.
+_CANARY_RE = re.compile(r"^Evolve import canary: (EVOLVE_IMPORT_CANARY_\S+)", re.MULTILINE)
 
 
 def _evolve_dir(root):
@@ -82,39 +83,13 @@ def _evolve_dir(root):
     return root / ".evolve"
 
 
-def _recent_transcripts(home, root, limit=_RECENT_N):
-    """The most recent N ``*.jsonl`` transcripts for this project, by mtime."""
-    # Claude derives a project's transcript dir name the same way it derives the
-    # native memory dir name — see entity_io.claude_project_slug (one source of
-    # truth, shared with adapt_memory.py).
-    slug = claude_project_slug(root)
-    proj_dir = home / ".claude" / "projects" / slug
-    if not proj_dir.is_dir():
-        return []
-    jsonl = [p for p in proj_dir.glob("*.jsonl") if p.is_file()]
-    jsonl.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return jsonl[:limit]
-
-
-def _canary_in_transcripts(transcripts, token):
-    """True if `token` appears anywhere in any of the given transcript files."""
-    for path in transcripts:
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        if token in text:
-            return True
-    return False
-
-
-def diagnose(root, home):
+def diagnose(root, seen):
     """Core diagnosis. Returns ``(code, message)``; never raises on missing
-    files/dirs. `root` is the project root; `home` is the user home dir under
-    which Claude keeps ``~/.claude/projects/<slug>/``.
+    files/dirs. `root` is the project root; `seen` is the canary token the
+    session found in its own context, ``False`` if it found none, or ``None``
+    if the caller did not say.
     """
     root = Path(root)
-    home = Path(home)
 
     # --- Install sanity ------------------------------------------------------
     claude_md = root / "CLAUDE.md"
@@ -149,19 +124,24 @@ def diagnose(root, home):
     if not match:
         return (
             "STALE_EVOLVE_MD",
-            f"installed EVOLVE.md at {evolve_md} has no canary token (it predates this build); re-run the installer to refresh it.",
+            f"installed EVOLVE.md at {evolve_md} has no canary line (it predates this build); re-run the installer to refresh it.",
         )
-    token = match.group(0)
+    token = match.group(1)
 
-    # --- Transcript check ----------------------------------------------------
-    transcripts = _recent_transcripts(home, root)
-    if not transcripts:
+    # --- Compare with what the session saw -----------------------------------
+    if seen is None:
         return (
             "UNKNOWN",
-            "no recent Claude transcripts for this project yet; open a session, then re-run.",
+            "no session result given; run this through /evolve-lite:doctor, which checks the session's own context for the canary.",
         )
-    if _canary_in_transcripts(transcripts, token):
+    if seen == token:
         return ("OK", "✓ evolve EVOLVE.md import is loading.")
+    if seen:
+        return (
+            "STALE_EVOLVE_MD",
+            f"this session loaded canary {seen} but the installed EVOLVE.md carries {token}; "
+            "re-run the installer, then start a new session.",
+        )
 
     return (
         "IMPORT_DISABLED",
@@ -173,9 +153,15 @@ def diagnose(root, home):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Check that the evolve EVOLVE.md import reaches Claude sessions.")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--seen", metavar="TOKEN", help="canary token the session found in its own context")
+    group.add_argument("--not-seen", action="store_true", help="the session found no canary in its own context")
+    args = parser.parse_args()
+    seen = args.seen if args.seen is not None else (False if args.not_seen else None)
+
     root = Path(os.getcwd()).resolve()
-    home = Path.home()
-    code, message = diagnose(root, home)
+    code, message = diagnose(root, seen)
     log(f"{code}: {message}")
     print(f"evolve doctor [{code}] {message}")
     # Diagnostic only — never fail the caller.
