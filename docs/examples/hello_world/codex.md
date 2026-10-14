@@ -64,7 +64,7 @@ Select the `Evolve Lite` plugin and install it.
     Codex probably attempted to use a system utility like `exiftool`, but because we intentionally ran it in a docker container, that utility wasn't available, so Codex created a script to read the exif data instead.
 
 !!! system-message "Learning From the Past"
-    `$evolve-lite:learn` will produce new guidelines from this experience, if they were not generated already.
+    Codex has no `learn` skill: the Evolve instructions (`EVOLVE.md`) tell it to save a durable lesson as an entity under `.evolve/entities/` near the end of a task. If it didn't, ask it to save what it learned.
 
 !!! system-message "One Eternity Later"
     Reset the conversation history using `/clear`
