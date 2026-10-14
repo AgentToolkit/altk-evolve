@@ -211,6 +211,31 @@ def test_builtin_mode_and_config_are_captured(monkeypatch):
         manager.validate({"processors": [{"id": "g", "plugin": "evolve.guidelines", "config": {"guidelines_mode": "typo"}}]})
 
 
+def test_default_plan_captures_trajectory_window_from_settings(monkeypatch):
+    from altk_evolve.config.evolve import evolve_config
+    from altk_evolve.config.guidelines import guidelines_settings
+    from altk_evolve.processing.builtin import GuidelineProcessor
+    from altk_evolve.schema.guidelines import GuidelineGenerationResult
+
+    monkeypatch.setattr(evolve_config, "trajectory_max_steps", 5)
+    monkeypatch.setattr(evolve_config, "trajectory_max_step_chars", 40)
+    monkeypatch.setattr(evolve_config, "trajectory_tail_steps", 2)
+    monkeypatch.setattr(guidelines_settings, "guidelines_mode", "standard")
+    calls = []
+
+    def generate(messages, *, context_messages=None, options):
+        calls.append(options)
+        return [GuidelineGenerationResult(task_description="task", guidelines=[])]
+
+    monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.generate_guidelines", generate)
+    manager = make_manager(processor_type=GuidelineProcessor)
+    plan = manager.default_plan()
+    config = plan.manifest()["processors"][0]["config"]
+    assert (config["trajectory_max_steps"], config["trajectory_max_step_chars"], config["trajectory_tail_steps"]) == (5, 40, 2)
+    manager.process({"messages": [{"role": "user", "content": "task"}]}, plan=plan)
+    assert (calls[0].trajectory_max_steps, calls[0].trajectory_max_step_chars, calls[0].trajectory_tail_steps) == (5, 40, 2)
+
+
 def test_conflict_resolution_uses_captured_settings_and_stamps_after_model(client, monkeypatch):
     from altk_evolve.schema.conflict_resolution import EntityUpdate
     from altk_evolve.config.llm import llm_settings

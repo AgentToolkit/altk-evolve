@@ -27,6 +27,9 @@ class GuidelineConfig(GuidelineRuntime):
     guidelines_model: str = Field(default_factory=lambda: GuidelineRuntime.from_settings().guidelines_model)
     custom_llm_provider: str | None = Field(default_factory=lambda: GuidelineRuntime.from_settings().custom_llm_provider)
     segmentation_enabled: bool = Field(default_factory=lambda: GuidelineRuntime.from_settings().segmentation_enabled)
+    trajectory_max_steps: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_max_steps, ge=1)
+    trajectory_max_step_chars: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_max_step_chars, ge=1)
+    trajectory_tail_steps: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_tail_steps, ge=0)
 
     @model_validator(mode="after")
     def capture_analysis(self):
