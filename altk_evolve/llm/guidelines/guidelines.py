@@ -322,11 +322,14 @@ def _generate_guidelines_for_segment(
     options: GuidelineRuntime,
     supporting_context: str = "",
     outcome: "TrajectoryOutcome | None" = None,
+    segmented: bool = False,
 ) -> GuidelineGenerationResult:
     """Generate guidelines for a single trajectory slice (full or subtask).
 
     An outcome switches the prompt to its outcome-grounded rules; without one the
-    prompt is unchanged.
+    prompt is unchanged. ``segmented`` marks the slice as one subtask of a longer
+    trajectory, so a failure prompt allows an empty result for a slice that did not
+    contribute to the failure.
     """
     max_guidelines = None
     outcome_context: dict = {}
@@ -344,6 +347,7 @@ def _generate_guidelines_for_segment(
             "omitted_checks": max(0, len(outcome.failed_checks) - _MAX_FAILED_CHECKS),
             "detail": detail,
             "max_guidelines": max_guidelines,
+            "segmented": segmented,
         }
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
@@ -472,6 +476,7 @@ def generate_guidelines(
                     options=options,
                     supporting_context=render_supporting_context(context_messages),
                     outcome=outcome,
+                    segmented=True,
                 )
                 for subtask, slice_steps in valid_slices
             ]

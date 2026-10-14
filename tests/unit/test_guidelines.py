@@ -667,6 +667,7 @@ class TestOutcomePrompt:
         assert "leave out task IDs" in prompt
         assert "There is no evaluation" not in prompt
         assert "Consider positive patterns" not in prompt
+        assert "did not contribute to the failure" not in prompt
 
     def test_success_asks_only_for_non_obvious_patterns(self):
         generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=True))
@@ -748,3 +749,6 @@ class TestOutcomePrompt:
         prompts = [c.kwargs["messages"][-1]["content"] for c in self.mock_completion.call_args_list]
         assert len(prompts) == 2
         assert all("**Task Status:** FAILED" in p and "- refund amount\n" in p for p in prompts)
+        # A segment that had nothing to do with the failure may return nothing.
+        allows_empty = "evaluation detail above. If this part of the trajectory did not contribute to the failure, return an empty list.\n"
+        assert all(allows_empty in p for p in prompts)
