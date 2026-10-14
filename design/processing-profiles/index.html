@@ -1511,6 +1511,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#task-outcome" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task outcome
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cli-and-phoenix-sync" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1852,13 +1863,29 @@ supply their own authorization; identifiers alone are not authenticated principa
 The stock REST/MCP service has no authenticated-principal or profile-editor policy.
 Run it within a trusted deployment boundary, or protect all routes with application
 authentication and resource authorization before exposing it to untrusted callers.</p>
+<h2 id="task-outcome">Task outcome<a class="headerlink" href="#task-outcome" title="Permanent link">&para;</a></h2>
+<p>When an evaluator has judged the task, supply it as <code>Trajectory.outcome</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">&quot;outcome&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;failed_checks&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;order total matches cart&quot;</span><span class="p">],</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Expected 42.00, got 40.00&quot;</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="p">}</span>
+</code></pre></div>
+<p>The built-in <code>evolve.guidelines</code> processor sets <code>evidence</code> on every guideline it
+generates from that trajectory: <code>"success"</code> or <code>"failure"</code>. This overrides any
+<code>evidence</code> in <code>trajectory.metadata</code>, and enables <code>evidence_filter</code> at retrieval and
+evidence merging during consolidation. <code>failed_checks</code> and <code>detail</code> are optional and
+are not stored on entities; they are available to processors through
+<code>trajectory.outcome</code>. Without an outcome, behavior is unchanged. The Python client,
+REST, MCP <code>process_trajectory</code>, and CLI input JSON all accept it. An outcome supplied
+after its batch was processed needs a new <code>batch.revision</code>, or the processor is skipped.</p>
 <h2 id="cli-and-phoenix-sync">CLI and Phoenix sync<a class="headerlink" href="#cli-and-phoenix-sync" title="Permanent link">&para;</a></h2>
 <p>CLI profile operations connect to the configured database, including PostgreSQL. They
 do not contact a running REST/MCP service. Clients using the same database see the same
 profile revisions; use REST/MCP when the host service owns the database access.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>processing-profiles<span class="w"> </span>get<span class="w"> </span>support-review<span class="w"> </span>--revision<span class="w"> </span><span class="m">1</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--processing-profile<span class="w"> </span>support-review
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--processing-profile<span class="w"> </span>support-review<span class="w"> </span>--profile-revision<span class="w"> </span><span class="m">1</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>processing-profiles<span class="w"> </span>get<span class="w"> </span>support-review<span class="w"> </span>--revision<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--processing-profile<span class="w"> </span>support-review
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>uv<span class="w"> </span>run<span class="w"> </span>evolve<span class="w"> </span>sync<span class="w"> </span>phoenix<span class="w"> </span>--processing-profile<span class="w"> </span>support-review<span class="w"> </span>--profile-revision<span class="w"> </span><span class="m">1</span>
 </code></pre></div>
 <p>Without a revision, Phoenix sync resolves before each completed LLM span; a pinned revision
 is resolved once when the syncer is constructed. A profile cannot be combined with
@@ -1893,21 +1920,21 @@ separately; an update may consolidate into an existing entity.</p>
 <p>A conversation can remain open indefinitely. Supply <code>Trajectory.batch</code> to identify a
 bounded contribution; <code>messages</code> contains new material and <code>context_messages</code> contains
 supporting history. For example, the same chat can submit events 1–120, then 121–140:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">process_trajectory</span><span class="p">(</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="p">{</span>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>        <span class="s2">&quot;batch&quot;</span><span class="p">:</span> <span class="p">{</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>            <span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;my-app&quot;</span><span class="p">,</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>            <span class="s2">&quot;conversation_id&quot;</span><span class="p">:</span> <span class="s2">&quot;chat-42&quot;</span><span class="p">,</span>
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>            <span class="s2">&quot;batch_id&quot;</span><span class="p">:</span> <span class="s2">&quot;events-121-140&quot;</span><span class="p">,</span>
-<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>            <span class="s2">&quot;revision&quot;</span><span class="p">:</span> <span class="s2">&quot;1&quot;</span><span class="p">,</span>
-<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>            <span class="s2">&quot;scope&quot;</span><span class="p">:</span> <span class="s2">&quot;agent:researcher&quot;</span><span class="p">,</span>
-<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>        <span class="p">},</span>
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>        <span class="s2">&quot;messages&quot;</span><span class="p">:</span> <span class="n">new_messages</span><span class="p">,</span>
-<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>        <span class="s2">&quot;context_messages&quot;</span><span class="p">:</span> <span class="n">earlier_messages</span><span class="p">,</span>
-<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>    <span class="p">},</span>
-<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>    <span class="n">namespace_id</span><span class="o">=</span><span class="s2">&quot;memories&quot;</span><span class="p">,</span>
-<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>    <span class="n">processing_profile</span><span class="o">=</span><span class="s2">&quot;support-review&quot;</span><span class="p">,</span>
-<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">process_trajectory</span><span class="p">(</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>    <span class="p">{</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>        <span class="s2">&quot;batch&quot;</span><span class="p">:</span> <span class="p">{</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>            <span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;my-app&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>            <span class="s2">&quot;conversation_id&quot;</span><span class="p">:</span> <span class="s2">&quot;chat-42&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>            <span class="s2">&quot;batch_id&quot;</span><span class="p">:</span> <span class="s2">&quot;events-121-140&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>            <span class="s2">&quot;revision&quot;</span><span class="p">:</span> <span class="s2">&quot;1&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>            <span class="s2">&quot;scope&quot;</span><span class="p">:</span> <span class="s2">&quot;agent:researcher&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>        <span class="p">},</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>        <span class="s2">&quot;messages&quot;</span><span class="p">:</span> <span class="n">new_messages</span><span class="p">,</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>        <span class="s2">&quot;context_messages&quot;</span><span class="p">:</span> <span class="n">earlier_messages</span><span class="p">,</span>
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>    <span class="p">},</span>
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>    <span class="n">namespace_id</span><span class="o">=</span><span class="s2">&quot;memories&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>    <span class="n">processing_profile</span><span class="o">=</span><span class="s2">&quot;support-review&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="p">)</span>
 </code></pre></div>
 <p>REST's trajectory object, MCP <code>process_trajectory</code>, and the CLI input JSON accept the
 same fields. The source adapter owns stable, non-overlapping batch IDs and changes
