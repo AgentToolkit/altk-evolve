@@ -47,8 +47,11 @@ with open(os.environ["FAKE_CLAUDE_LOG"], "a") as f:
 """
 
 
-def _build_tarball(dest, mutate=None):
-    """Build a GitHub-style source tarball (single top-level dir) from this tree."""
+def _build_tarball(dest, mutate=None, tar_filter=None):
+    """Build a GitHub-style source tarball (single top-level dir) from this tree.
+
+    `mutate(top)` edits the staged tree before it is packed; `tar_filter` is
+    passed to `TarFile.add(filter=...)` to adjust individual members."""
     staging = dest.parent / (dest.name + ".src")
     top = staging / "altk-evolve-main"
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
@@ -57,7 +60,7 @@ def _build_tarball(dest, mutate=None):
     if mutate is not None:
         mutate(top)
     with tarfile.open(dest, "w:gz") as tar:
-        tar.add(top, arcname=top.name)
+        tar.add(top, arcname=top.name, filter=tar_filter)
     shutil.rmtree(staging)
     return dest
 
@@ -148,6 +151,11 @@ def _assert_loadable_marketplace(path):
         assert plugin_dir.is_relative_to(path.resolve())
         assert (plugin_dir / ".claude-plugin" / "plugin.json").is_file(), f"plugin not copied: {plugin_dir}"
         assert (plugin_dir / "skills").is_dir()
+
+
+def _snapshot(root):
+    """Map every file under `root` to its bytes."""
+    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
 
 
 def _copy_dir(home):
@@ -289,6 +297,83 @@ class TestDownloadedInstallMarketplace:
         assert "must be a subdirectory of the marketplace" in result.stderr
         assert not _copy_dir(sandbox_home).exists()
         assert cli.marketplace_adds() == []
+
+    def test_absolute_plugin_source_is_refused(self, tmp_path, piped_cwd, temp_project_dir, sandbox_home):
+        """An absolute `source` is refused even when it names a real directory."""
+        outside = tmp_path / "outside"
+        (outside / ".claude-plugin").mkdir(parents=True)
+        (outside / ".claude-plugin" / "plugin.json").write_text("{}\n")
+        (outside / "skills").mkdir()
+
+        def absolute(top):
+            manifest = top / ".claude-plugin" / "marketplace.json"
+            data = json.loads(manifest.read_text())
+            data["plugins"][0]["source"] = str(outside)
+            manifest.write_text(json.dumps(data))
+
+        cli = FakeCli(tmp_path, _build_tarball(tmp_path / "absolute.tar.gz", absolute))
+        result = _run_piped(cli, piped_cwd, temp_project_dir, "install", expect_success=False)
+
+        assert result.returncode != 0
+        assert "must be a subdirectory of the marketplace" in result.stderr
+        assert not _copy_dir(sandbox_home).exists()
+        assert cli.marketplace_adds() == []
+        assert sorted(p.name for p in outside.iterdir()) == [".claude-plugin", "skills"]
+
+    def test_stale_staging_from_a_crashed_run_is_cleared(self, fake_cli, piped_cwd, temp_project_dir, sandbox_home):
+        """Leftover `.staging` / `.old` dirs from an interrupted run don't block a reinstall."""
+        _run_piped(fake_cli, piped_cwd, temp_project_dir, "install")
+        copy_dir = _copy_dir(sandbox_home)
+        staging = copy_dir.with_name("marketplace.staging")
+        old = copy_dir.with_name("marketplace.old")
+        for leftover in (staging, old):
+            (leftover / "half-copied").mkdir(parents=True)
+            (leftover / "half-copied" / "stale.txt").write_text("stale\n")
+
+        _run_piped(fake_cli, piped_cwd, temp_project_dir, "install")
+
+        assert not staging.exists()
+        assert not old.exists()
+        assert not (copy_dir / "half-copied").exists()
+        _assert_loadable_marketplace(copy_dir)
+        assert fake_cli.marketplace_adds() == [str(copy_dir), str(copy_dir)]
+
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0, reason="root can read a mode-0 file, so the copy cannot be made to fail"
+    )
+    def test_failed_copy_keeps_previous_copy_registered(self, fake_cli, piped_cwd, temp_project_dir, sandbox_home, tmp_path):
+        """A copy that fails part-way leaves the previous copy intact and registered, and no staging dir."""
+        _run_piped(fake_cli, piped_cwd, temp_project_dir, "install")
+        copy_dir = _copy_dir(sandbox_home)
+        before = _snapshot(copy_dir)
+        assert before
+
+        # A newer tarball with a plugin file the installer cannot read. The file
+        # sits in a skill dir that only the marketplace copy reads, so the
+        # failure happens inside replace_tree_subset, after earlier files of the
+        # new copy have already been staged.
+        unreadable = "altk-evolve-main/" + str(_PLUGIN_REL / "skills" / "evolve-lite" / "save" / "zz-unreadable.txt")
+
+        def add_file(top):
+            (top / unreadable.split("/", 1)[1]).write_text("new version\n")
+
+        def mode_zero(info):
+            if info.name == unreadable:
+                info.mode = 0
+            return info
+
+        fake_cli.tarball = _build_tarball(tmp_path / "unreadable.tar.gz", add_file, mode_zero)
+        result = _run_piped(fake_cli, piped_cwd, temp_project_dir, "install", expect_success=False)
+
+        assert result.returncode != 0, result.stdout
+        assert "Failed to install claude" in result.stderr
+        # The previous copy is untouched and is still the registered marketplace.
+        assert _snapshot(copy_dir) == before
+        _assert_loadable_marketplace(copy_dir)
+        assert fake_cli.marketplace_adds() == [str(copy_dir)]
+        # The partial new copy was cleaned up.
+        assert not copy_dir.with_name("marketplace.staging").exists()
+        assert not copy_dir.with_name("marketplace.old").exists()
 
     def test_download_without_marketplace_manifest_falls_back_to_github(self, tmp_path, piped_cwd, temp_project_dir, sandbox_home):
         """An older tag with no root marketplace.json keeps today's GitHub fallback."""
