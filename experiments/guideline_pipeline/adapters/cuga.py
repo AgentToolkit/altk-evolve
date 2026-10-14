@@ -31,6 +31,7 @@ FAIL_TRACE_CHARS = 600
 _ACTION_STEPS = ("Raw_Assistant_Response", "Assistant_response")
 _OBSERVATION_STEPS = ("User_output", "Observation", "Tool_output")
 _NOT_TASKS = ("results", "metadata")
+_RUN_MARKERS = ("results.json", "metadata.json")
 
 # TEMPORARY: parse_openai_agents_trajectory keeps only the first 50 agent steps, so a
 # long CUGA run would lose its ending (where it succeeds or fails). Until those
@@ -112,7 +113,7 @@ class CugaAdapter:
                 if self.task_ids and task_file.stem not in self.task_ids:
                     continue
                 task = _read_json(task_file)
-                if not str(task.get("intent") or "").strip():
+                if not (isinstance(intent := task.get("intent"), str) and intent.strip()):
                     logger.warning("skipped %s/%s: no intent", run_dir.name, task_file.stem)
                     continue
                 yield self.record(run_dir.name, task_file.stem, task, results.get(task_file.stem), experiment=experiment)
@@ -200,12 +201,14 @@ def _success(task: dict, steps: list[dict], result: dict | None) -> bool | None:
 
 
 def _verdict(value: Any) -> bool | None:
-    """A verdict stored as a bool or as the string "true"/"false" (any case); None for anything else.
+    """A verdict stored as a bool, the integer 0 or 1, or the string "true"/"false" (any case); None for anything else.
 
     Runs are stringly typed, and bool("False") is True, so nothing else is coerced.
     """
     if isinstance(value, bool):
         return value
+    if isinstance(value, int) and value in (0, 1):
+        return value == 1
     if isinstance(value, str) and value.strip().lower() in ("true", "false"):
         return value.strip().lower() == "true"
     return None
@@ -300,13 +303,17 @@ def load_task_manifest(path: Path) -> list[str]:
 
 
 def _run_dirs(path: Path) -> list[Path]:
-    """path's child runs when it has any, else path itself when it is a run.
+    """path itself when its own files mark it as a run, else its child runs.
 
-    Child runs take precedence, so a stray JSON file beside them (a summary, a
-    config) is ignored with a warning instead of making path the only run.
+    A run's marker files decide first, so a subdirectory of JSON inside a run (logs,
+    per-task artifacts) never turns it into a parent. Without them, child runs take
+    precedence, so a stray JSON file beside them (a summary, a config) is ignored with
+    a warning instead of making path the only run.
     """
     if not path.is_dir():
         return []
+    if any((path / name).exists() for name in _RUN_MARKERS) or any(path.glob("appworld_sdk_*.json")):
+        return [path]
     children = sorted(child for child in path.iterdir() if _is_run_dir(child))
     if not children:
         return [path] if _is_run_dir(path) else []

@@ -53,9 +53,22 @@ def test_a_stray_json_beside_runs_is_ignored_not_read_as_the_run(tmp_path: Path,
     assert "ignored summary.json" in caplog.text
 
 
-def test_a_task_without_an_intent_is_skipped_with_a_warning(run_copy: Path, caplog: pytest.LogCaptureFixture):
+@pytest.mark.parametrize("run", ["test_normal_dev", "test_normal_train"])
+def test_a_json_subdirectory_inside_a_run_does_not_make_it_a_parent(tmp_path: Path, caplog: pytest.LogCaptureFixture, run: str):
+    # dev is marked by results.json and metadata.json, train only by its appworld_sdk file.
+    single = Path(shutil.copytree(FIXTURES / run, tmp_path / run))
+    (single / "logs").mkdir()
+    (single / "logs" / "trace.json").write_text("{}")
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        assert list(by_id(CugaAdapter(), single)) == list(by_id(CugaAdapter(), FIXTURES / run))
+    assert "ignored" not in caplog.text
+
+
+@pytest.mark.parametrize("intent", [None, "", "  ", 5, ["a"], {"k": 1}])
+def test_a_task_without_an_intent_is_skipped_with_a_warning(run_copy: Path, caplog: pytest.LogCaptureFixture, intent):
     task = json.loads((run_copy / "aaa0001_2.json").read_text())
-    task["intent"] = "  "
+    task["intent"] = intent
     (run_copy / "aaa0001_2.json").write_text(json.dumps(task))
 
     with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
@@ -136,8 +149,12 @@ def test_string_verdicts_are_parsed_not_coerced():
     step = {"name": "EvaluationResult", "data": json.dumps({"success": "false"})}
     task = {"intent": "x", "score": 1.0, "steps": [step]}
     assert adapter.record("run", "t_1", task, {"eval": {"success": "maybe"}}).outcome == TrajectoryOutcome(success=False)
-    task = {"intent": "x", "score": 1.0, "steps": [{**step, "data": json.dumps({"success": 0})}]}
+    task = {"intent": "x", "score": 1.0, "steps": [{**step, "data": json.dumps({"success": 2})}]}
     assert adapter.record("run", "t_1", task, {"eval": {"success": "maybe"}}).outcome == TrajectoryOutcome(success=True)
+    # The integers 0 and 1 are verdicts, not just numbers to fall past.
+    for number, verdict in ((0, False), (1, True)):
+        task = {"intent": "x", "score": float(not verdict), "steps": [step]}
+        assert adapter.record("run", "t_1", task, {"eval": {"success": number}}).outcome == TrajectoryOutcome(success=verdict)
     assert adapter.record("run", "t_1", {"intent": "x", "steps": []}, {"eval": {"success": "maybe"}}).outcome is None
 
 

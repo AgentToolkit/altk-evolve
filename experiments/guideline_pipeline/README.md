@@ -122,12 +122,14 @@ run directory or a directory of them:
     appworld_sdk_*.json       # ignored
 ```
 
-When `--input` holds run directories, it is read as their parent and any JSON
+A directory holding `results.json`, `metadata.json` or an `appworld_sdk_*.json`
+is a run, whatever subdirectories it has (logs, per-task artifacts). Otherwise,
+when `--input` holds run directories, it is read as their parent and any JSON
 file directly inside it (a summary, a config) is ignored with a warning.
 
 When `metadata.json` lists `task_ids`, those are the tasks; otherwise every JSON
-file other than `results`, `metadata` and `appworld_sdk_*` is one. A task with
-no `intent` is skipped with a warning. Each other task becomes one record:
+file other than `results`, `metadata` and `appworld_sdk_*` is one. A task whose
+`intent` is missing, blank or not a string is skipped with a warning. Each other task becomes one record:
 
 - **messages**: the intent as the user message, then each `Raw_Assistant_Response`
   as an `execute_ipython` function call and each `User_output` / `Observation` /
@@ -136,8 +138,8 @@ no `intent` is skipped with a warning. Each other task becomes one record:
   (`Assistant_code`, `Assistant_nl`), the final-answer step and the evaluation
   are left out.
 - **outcome**: `success` from `results.json` (falling back to the task's
-  `EvaluationResult` step, then to `score >= 1`; a verdict counts only as a bool
-  or the string `"true"`/`"false"`, and anything else falls through), the failed ground-truth
+  `EvaluationResult` step, then to `score >= 1`; a verdict counts only as a bool,
+  the integer `0`/`1` or the string `"true"`/`"false"`, and anything else falls through), the failed ground-truth
   requirements as `failed_checks`, and the first 2000 characters of the
   evaluation report as `detail`. A task with no evaluation and no score has no outcome.
 - **batch**: source `cuga`, conversation `<run>/<task_id>`, batch `<task_id>`, and
