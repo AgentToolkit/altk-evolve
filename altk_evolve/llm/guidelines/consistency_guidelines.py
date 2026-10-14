@@ -15,6 +15,7 @@ from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
 from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
 from altk_evolve.llm.guidelines.guidelines import parse_guideline_response, parse_openai_agents_trajectory
+from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, subtask_slices
 
 from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
@@ -46,10 +47,6 @@ HIGH_MARKER_CAP = 5
 # their uncertainty cannot be marked — the skip gate has to ignore them too, or a trajectory
 # whose only uncertain step falls outside the window generates with no marker at all.
 MAX_RENDERED_STEPS = 50
-
-# Shortest trajectory worth splitting into subtasks. Below this, segmentation costs an extra
-# LLM call and mostly yields per-step guidelines, so one whole-trajectory pass is better.
-SEGMENTATION_MIN_STEPS = 5
 
 
 def _strip_orphaned_tool_messages(messages: list[dict]) -> list[dict]:
@@ -934,15 +931,7 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
             subtasks = []
 
     if len(subtasks) >= 2:
-        valid_slices: list[tuple] = []
-        for subtask in subtasks:
-            start = min(max(0, subtask.start_step - 1), n_steps)
-            end = min(max(0, subtask.end_step), n_steps)
-            if start >= end:
-                logger.debug(f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
-                continue
-            valid_slices.append((subtask, steps_list[start:end]))
-
+        valid_slices = subtask_slices(subtasks, steps_list)
         if len(valid_slices) >= 2:
             results = [
                 _generate_fast_guideline_result(

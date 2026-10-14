@@ -18,6 +18,33 @@ logger = logging.getLogger(__name__)
 
 _SEGMENT_TEMPLATE = Template((Path(__file__).parent / "prompts/segment_trajectory.jinja2").read_text())
 
+# Shortest trajectory worth splitting into subtasks. Below this, segmentation costs an extra
+# LLM call and mostly yields per-step guidelines, so one whole-trajectory pass is better.
+# Every generation path that segments checks it before calling segment_trajectory.
+SEGMENTATION_MIN_STEPS = 5
+
+
+def subtask_slices(subtasks: list[SubtaskSegment], steps_list: list[str]) -> list[tuple[SubtaskSegment, list[str]]]:
+    """Pair each subtask with its slice of ``steps_list``, one generation call per slice.
+
+    ``start_step``/``end_step`` are 1-based and inclusive, and are clamped to the list. A
+    subtask whose range is empty after clamping, or the same as an earlier subtask's, is
+    skipped, so a segmenter that repeats a range cannot fan one slice out into several
+    near-identical generation calls.
+    """
+    n_steps = len(steps_list)
+    slices: list[tuple[SubtaskSegment, list[str]]] = []
+    seen: set[tuple[int, int]] = set()
+    for subtask in subtasks:
+        start = min(max(0, subtask.start_step - 1), n_steps)
+        end = min(max(0, subtask.end_step), n_steps)
+        if start >= end or (start, end) in seen:
+            logger.debug(f"Skipping subtask with empty or repeated steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
+            continue
+        seen.add((start, end))
+        slices.append((subtask, steps_list[start:end]))
+    return slices
+
 
 def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None = None) -> list[SubtaskSegment]:
     """Segment a trajectory into logical subtasks with generalized descriptions.

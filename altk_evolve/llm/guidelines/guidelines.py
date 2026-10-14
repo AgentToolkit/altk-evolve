@@ -14,6 +14,7 @@ from altk_evolve.config.llm import llm_settings  # noqa: F401
 from altk_evolve.config.evolve import evolve_config  # noqa: F401
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
+from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, subtask_slices
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.guidelines import (
     DEFAULT_TASK_DESCRIPTION,
@@ -379,7 +380,8 @@ def generate_guidelines(
     the evidence and for when to turn it back on.
 
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
-    trajectory when segmentation is disabled or produces fewer than 2 subtasks).
+    trajectory when segmentation is disabled, the trajectory has fewer than
+    SEGMENTATION_MIN_STEPS steps, or segmentation yields fewer than 2 distinct subtask slices).
     """
     options = options or GuidelineRuntime.from_settings()
     is_groq = options.custom_llm_provider == "groq" or options.guidelines_model.startswith("groq/")
@@ -400,7 +402,8 @@ def generate_guidelines(
     n_steps = len(steps_list)
 
     subtasks = []
-    if options.segmentation_enabled:
+    # Same gate as both consistency paths: a trajectory this short is generated in one pass.
+    if options.segmentation_enabled and n_steps >= SEGMENTATION_MIN_STEPS:
         from altk_evolve.llm.guidelines.segmentation import segment_trajectory  # avoid circular import
 
         try:
@@ -410,15 +413,7 @@ def generate_guidelines(
             subtasks = []
 
     if len(subtasks) >= 2:
-        valid_slices: list[tuple] = []
-        for subtask in subtasks:
-            start = min(max(0, subtask.start_step - 1), n_steps)
-            end = min(max(0, subtask.end_step), n_steps)
-            if start >= end:
-                logger.debug(f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
-                continue
-            valid_slices.append((subtask, steps_list[start:end]))
-
+        valid_slices = subtask_slices(subtasks, steps_list)
         if len(valid_slices) >= 2:
             return [
                 _generate_guidelines_for_segment(

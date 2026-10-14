@@ -873,6 +873,32 @@ class TestSegmentationFloorAndFastPathScope:
         mock_segment = self._run_fast(self._fast_trajectory(n), [self._subtask(1, 2), self._subtask(3, n)], monkeypatch)
         mock_segment.assert_called_once()
 
+    def test_fast_path_generates_a_repeated_subtask_range_once(self, monkeypatch):
+        """A segmenter that returns the same range twice must not turn one slice into two
+        generation calls (#293)."""
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        subtasks = [self._subtask(1, 3), self._subtask(1, 3), self._subtask(4, 6)]
+
+        with (
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            generate_consistency_guidelines_fast(self._fast_trajectory(6))
+
+        prompts = [c.kwargs["messages"][-1]["content"] for c in mock_completion.call_args_list]
+        assert len(prompts) == 2
+        assert "reasoning step 0" in prompts[0] and "reasoning step 3" not in prompts[0]
+        assert "reasoning step 3" in prompts[1] and "reasoning step 0" not in prompts[1]
+
     @pytest.mark.parametrize("n_scorable,should_segment", [(4, False), (5, True)])
     def test_accurate_path_floor_boundary(self, n_scorable, should_segment, monkeypatch):
         """Pins the 2 -> 5 floor: reverting it left the whole suite green.

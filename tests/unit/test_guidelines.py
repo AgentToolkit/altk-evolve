@@ -407,19 +407,21 @@ class TestSegmentationFlag:
     deterministic regardless of what the developer has in their environment.
     """
 
-    # Four assistant turns, each carrying a marker string that appears nowhere else (not in the
-    # prompt template, not in a subtask description). Multi-step segments over this fixture are
-    # what make the scoping assertions falsifiable: with single-step segments, "each segment got
-    # its own steps" and "each segment got everything" are indistinguishable.
+    # Five assistant turns (SEGMENTATION_MIN_STEPS, the shortest trajectory that is segmented),
+    # each carrying a marker string that appears nowhere else (not in the prompt template, not
+    # in a subtask description). Multi-step segments over this fixture are what make the
+    # scoping assertions falsifiable: with single-step segments, "each segment got its own
+    # steps" and "each segment got everything" are indistinguishable.
     MESSAGES = [
         {"role": "user", "content": "Find the retry settings for the acme service and summarize them"},
         {"role": "assistant", "content": "Listed the certificate directory to get my bearings."},
         {"role": "assistant", "content": "Opened the retry policy file that directory pointed to."},
         {"role": "assistant", "content": "Extracted the backoff ceiling it declares."},
+        {"role": "assistant", "content": "Converted the jitter window to seconds."},
         {"role": "assistant", "content": "Reported the effective timeout to the caller."},
     ]
     SEG1_MARKERS = ("certificate directory", "retry policy file")
-    SEG2_MARKERS = ("backoff ceiling", "effective timeout")
+    SEG2_MARKERS = ("backoff ceiling", "jitter window", "effective timeout")
 
     PAYLOAD = {
         "guidelines": [
@@ -501,7 +503,7 @@ class TestSegmentationFlag:
                 generalized_description="Read the values a configuration file declares",
                 purpose="Report the configured values",
                 start_step=3,
-                end_step=4,
+                end_step=5,
             ),
         ]
 
@@ -519,6 +521,59 @@ class TestSegmentationFlag:
         for m in self.SEG2_MARKERS:
             assert m in second, f"segment 2 prompt is missing its own step: {m}"
             assert m not in first, f"segment 1 prompt leaked a step from segment 2: {m}"
+
+    def _generate_with_subtasks(self, messages, subtasks, monkeypatch):
+        """Run generate_guidelines with segmentation on and the segmenter stubbed."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+        with (
+            patch("altk_evolve.llm.guidelines.guidelines.completion") as mock_completion,
+            patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"]),
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks) as mock_segment,
+        ):
+            mock_completion.return_value = _mock_completion_response(self.PAYLOAD)
+            results = generate_guidelines(messages)
+        return results, mock_segment, self._prompts(mock_completion)
+
+    @staticmethod
+    def _steps(n):
+        return [{"role": "user", "content": "Do the task"}] + [{"role": "assistant", "content": f"marker step {i + 1}."} for i in range(n)]
+
+    def test_trajectory_below_minimum_length_is_not_segmented(self, monkeypatch):
+        """#293: a short trajectory is generated in one pass, like both consistency paths do.
+
+        Before the gate, a one-step trajectory whose segmenter returned [1, 1] several times
+        produced one generation call per copy of that single step."""
+        from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS
+
+        repeated = [SubtaskSegment(generalized_description=f"Subtask {i}", purpose="p", start_step=1, end_step=1) for i in range(5)]
+        for n in (1, SEGMENTATION_MIN_STEPS - 1):
+            results, mock_segment, prompts = self._generate_with_subtasks(self._steps(n), repeated, monkeypatch)
+            mock_segment.assert_not_called()
+            assert len(prompts) == 1
+            assert [r.task_description for r in results] == ["Do the task"]
+
+    def test_repeated_subtask_range_is_generated_once(self, monkeypatch):
+        subtasks = [
+            SubtaskSegment(generalized_description="First half", purpose="p", start_step=1, end_step=3),
+            SubtaskSegment(generalized_description="First half again", purpose="p", start_step=1, end_step=3),
+            SubtaskSegment(generalized_description="Second half", purpose="p", start_step=4, end_step=6),
+        ]
+        results, _, prompts = self._generate_with_subtasks(self._steps(6), subtasks, monkeypatch)
+        assert [r.task_description for r in results] == ["First half", "Second half"]
+        assert "marker step 1." in prompts[0] and "marker step 4." not in prompts[0]
+        assert "marker step 4." in prompts[1] and "marker step 1." not in prompts[1]
+
+    def test_ranges_that_clamp_to_the_same_slice_count_once(self, monkeypatch):
+        """[1, 6] and [1, 9] are the same slice of a 6-step trajectory; with one distinct
+        slice left, generation falls back to a single whole-trajectory call."""
+        subtasks = [
+            SubtaskSegment(generalized_description="Everything", purpose="p", start_step=1, end_step=6),
+            SubtaskSegment(generalized_description="Everything, overshooting", purpose="p", start_step=1, end_step=9),
+        ]
+        results, _, prompts = self._generate_with_subtasks(self._steps(6), subtasks, monkeypatch)
+        assert len(prompts) == 1
+        assert [r.task_description for r in results] == ["Do the task"]
 
     @patch("altk_evolve.llm.guidelines.guidelines.completion")
     @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)

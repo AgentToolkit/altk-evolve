@@ -59,7 +59,9 @@ All configuration variables are prefixed with `EVOLVE_`.
 ### Trajectory segmentation
 
 `EVOLVE_SEGMENTATION_ENABLED` is **disabled by default**. With it enabled, a trajectory is
-split into subtasks and each subtask gets its own guideline-generation call.
+split into subtasks and each subtask gets its own guideline-generation call. A trajectory
+with fewer than five steps is still generated in one pass on every path, and subtasks that
+cover the same steps share one call.
 
 **Why it defaults to off.** A subtask boundary can fall between a failed attempt and the
 correction that followed it. The failing segment is then summarised on its own terms — its
