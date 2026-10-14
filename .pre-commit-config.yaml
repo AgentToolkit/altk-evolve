@@ -57,8 +57,8 @@ repos:
         exclude: 'package.lock.json|^explorations/agent-wiki/wikis/|^explorations/agent-wiki/docs/schema\.md$'
 
   # Plugin render-equality gate — fails if platform-integrations/ has drifted
-  # from plugin-source/. Runs whenever plugin-source/ or the rendered tree
-  # under platform-integrations/ has changed.
+  # from plugin-source/. Runs whenever plugin-source/, the rendered tree
+  # under platform-integrations/, or the generated .claude-plugin/ has changed.
   - repo: local
     hooks:
       - id: plugins-rendered
@@ -66,7 +66,7 @@ repos:
         entry: uv run python plugin-source/build_plugins.py check
         language: system
         pass_filenames: false
-        files: ^(plugin-source/|platform-integrations/)
+        files: ^(plugin-source/|platform-integrations/|\.claude-plugin/)
 
   # Latest-updates sync gate — fails if README's "Latest from Evolve" block has
   # drifted from the single-source snippet in includes/latest-updates.md.
