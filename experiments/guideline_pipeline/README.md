@@ -2,7 +2,9 @@
 
 Turns benchmark trajectories into guidelines with this checkout of Evolve. A
 dataset **adapter** reads one dataset format and yields records; a **stage**
-consumes them. This directory currently has one stage, `mine`.
+consumes them. `mine` writes guidelines into a namespace; `consolidate`,
+`export` and `lineage` read that namespace back and turn it into the static
+files a benchmark harness loads.
 
 ## Running `mine`
 
@@ -39,6 +41,68 @@ uv run python -m experiments.guideline_pipeline mine --adapter <name> --input <p
 - `--limit N` stops after N records read from the adapter, including skipped ones.
 - On macOS, `make_client()` first calls `runtime.stabilize_runtime()` to keep
   the embedding model off MPS. This is a temporary workaround.
+
+## Consolidating, exporting and lineage
+
+These stages read a namespace through `EvolveClient.get_all_entities`, the public
+read path, so read hooks apply. Every output path comes from `--out`; nothing is
+written into the repository by default. Files are written atomically (a temp
+file in the same directory, then a rename), so a failed run leaves the previous
+file intact. Each run prints one summary line; the exit code is 1 when reading
+`--input` or writing `--out` fails, and 2 for a usage error (unknown namespace,
+invalid thresholds, unrecognized evidence).
+
+```bash
+# Merge similar guidelines in place, with Evolve's consolidation (makes LLM calls).
+uv run python -m experiments.guideline_pipeline consolidate --namespace <ns> [--mode lossless] [--threshold 0.8]
+
+# Playbook: {"entries": [{"r": rule, "n": support, "e": evidence}]}
+uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/playbook.json [--min-support N]
+
+# Retrieval index: {"core": [rule], "singletons": [{"rule", "source_task", "source_instruction"}]}
+uv run python -m experiments.guideline_pipeline export retrieval-index --namespace <ns> --out <dir>/index.json \
+    [--core-support N] [--min-support N] [--adapter <name> --input <path>]
+
+# Lineage: each guideline's metadata.sources and source task ids
+uv run python -m experiments.guideline_pipeline lineage --namespace <ns> --out <dir>/lineage.json [--adapter <name> --input <path>]
+```
+
+**Support and thresholds.** `n` is the guideline's `support` with Evolve's own
+reading: missing or unusable values count as 1. `--min-support` and
+`--core-support` mean what `EVOLVE_MIN_SUPPORT` and `EVOLVE_CORE_SUPPORT` mean
+for retrieval (a guideline is kept at `support >= min`, and is core at
+`support >= core`), and default to those settings (1 and 3). `min-support` must
+not exceed `core-support`. How much to inject depends on the model, so there is
+no recommended value beyond those defaults.
+
+**Order.** Playbook entries, core rules and singletons are sorted by support
+descending, then by rule text (case-insensitive), then evidence and id, so the
+same namespace always exports the same file. The ordering lives in one function
+in `guidelines.py`.
+
+**Evidence.** `e` comes from `EVIDENCE_CODES` in `stages/export.py`: `success`
+is `s`, `failure` is `f`, and `both` and unknown (no outcome) are both `b`. Any
+other value is an error. Whether a harness reads `b` as "seen in both
+successes and failures" rather than "unknown" still needs to be confirmed
+before anything orders or filters on `e`.
+
+**Source instructions.** A singleton needs the instruction of the task it came
+from, and the store does not keep one per source: `metadata.sources` records
+the source task id (the adapter record's `trace_id`), conversation, user,
+agent and status, but no text. With `--adapter` and `--input` (the dataset the
+namespace was mined from), each source task's instruction is the first user
+message of that record, and a singleton backed by several tasks also lists them
+all under `source_tasks`. Without them, the guideline's own `task_description` is used,
+but only for a guideline with exactly one source task. Singletons that still
+can't be resolved are skipped, counted by reason in the summary, and listed on
+stderr, never dropped silently. Superseded sources are ignored.
+
+**Lineage** lists, per guideline, its stored `sources` verbatim (each gaining
+an `instruction` when `--input` has it), the supporting task ids, and whether
+the sources were `recorded`, `derived` from a legacy `source_task_id`, or
+`missing`. Guidelines written by `consolidate` currently have no sources, so
+they show up as `missing` and can't become singletons, until consolidation
+carries sources forward.
 
 ## Writing an adapter
 
@@ -100,4 +164,6 @@ never a copy of the real dataset. See `tests/fakes.py` for the pattern.
 uv run pytest -v experiments/
 ```
 
-They use a filesystem backend and an echo processor: no LLM calls, no network.
+They use a filesystem backend, an echo processor and a scripted guideline
+processor, with consolidation's clustering and merge mocked: no LLM calls, no
+network.
