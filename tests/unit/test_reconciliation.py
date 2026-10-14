@@ -122,6 +122,14 @@ def test_append_path_keeps_existing_association_times():
     assert [s["associated_at"] for s in sources] == [earlier]
 
 
+@pytest.mark.parametrize("supplied", ["2999-01-01T00:00:00+00:00", "2026-01-01T00:00:00", "not-a-time", 1767225600])
+def test_append_path_restamps_untrustworthy_association_times(supplied):
+    # Only a valid earlier time is kept; anything else could hold off every receipt.
+    entities = [Entity(type="guideline", content="moved", metadata={"sources": [_source("one", supplied)]})]
+    sources = prepare_additions(entities, "guideline", OBSERVED)[0].metadata["sources"]
+    assert [s["associated_at"] for s in sources] == [OBSERVED.isoformat()]
+
+
 def test_duplicate_associations_combine_conservatively():
     earlier, later = datetime(2026, 1, 1, tzinfo=UTC).isoformat(), datetime(2026, 6, 1, tzinfo=UTC).isoformat()
     members = [

@@ -411,6 +411,55 @@ def test_consolidation_marks_partial_provenance_incomplete(backend):
     assert merged.metadata["provenance_incomplete"] is True
 
 
+def deletion_times(entities, receipts):
+    """Collection.source_deletion_times against alice/a deletion receipts keyed by conversation."""
+
+    class Connection:
+        def execute(self, sql, values):
+            rows = [{"user_id": "alice", "agent_id": "a", "source_id": source, "deleted_at": when} for source, when in receipts.items()]
+            return SimpleNamespace(fetchall=lambda: rows)
+
+    collection = object.__new__(Collection)
+    collection.namespace = "n"
+    return collection.source_deletion_times(Connection(), entities)
+
+
+def test_supplied_future_association_time_cannot_block_collection(backend):
+    future = {"conversation_id": "one", "task_id": None, "user_id": "alice", "agent_id": "a", "status": "supporting"}
+    future["associated_at"] = "2999-01-01T00:00:00+00:00"
+    (written,) = backend.update_entities("n", [Entity(type="fact", content="x", metadata={"sources": [future]})], False)
+
+    (stored,) = backend.search_entities("n", filters={"id": written.id})
+    associated = datetime.fromisoformat(stored.metadata["sources"][0]["associated_at"])
+    assert associated <= datetime.now(UTC)
+    # Receipts compare at whole seconds, so this is the first one that applies.
+    receipt = associated.replace(microsecond=0) + timedelta(seconds=1)
+    assert deletion_times([stored], {"one": receipt}) == {stored.id: receipt}
+
+
+def test_consolidating_legacy_members_keeps_them_collectible(backend):
+    backend.update_entities("n", [guideline("A", "one"), guideline("B", "two")], False)
+    # Rewrite them as legacy memories: no stored associations, written months ago.
+    created = datetime(2026, 1, 1, tzinfo=UTC)
+    data = backend._load_namespace_data("n")
+    for entity in data.entities:
+        entity["metadata"].pop("sources")
+        entity["metadata"].pop("provenance_incomplete", None)
+        entity["created_at"] = created.isoformat()
+    backend._save_namespace_data("n", data)
+
+    consolidate(backend, [0, 1])
+
+    (merged,) = stored_guidelines(backend).values()
+    assert {s["conversation_id"]: s["associated_at"] for s in merged.metadata["sources"]} == {
+        "one": created.isoformat(),
+        "two": created.isoformat(),
+    }
+    # Receipts recorded after the members were written, but before consolidation, still apply.
+    receipt = datetime(2026, 3, 1, tzinfo=UTC)
+    assert deletion_times([merged], {"one": receipt, "two": receipt}) == {merged.id: receipt}
+
+
 def test_consolidation_of_members_without_provenance_adds_none(backend):
     backend.update_entities("n", [guideline("A"), guideline("B")], False)
 

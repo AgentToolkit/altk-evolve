@@ -346,7 +346,7 @@ class EvolveClient:
             ConsolidationResult with cluster/guideline counts and total support before/after.
         """
         from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members
-        from altk_evolve.schema.provenance import attach_sources, identity
+        from altk_evolve.schema.provenance import attach_sources, identity, with_association_times
 
         if mode is None:
             mode = getattr(self.config, "consolidation_mode", "lossless")
@@ -414,7 +414,7 @@ class EvolveClient:
                                 "evidence": guideline.evidence,
                             },
                             None,
-                            members,
+                            with_association_times(members),
                         ),
                     )
                     for guideline, members in attributed
