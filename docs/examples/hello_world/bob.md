@@ -1,59 +1,83 @@
 # "Hello World" with Evolve and IBM Bob
-In this tutorial, we will create a simple scaffolding project using `uv` and set up IBM Bob with Evolve.
+Agentic IDEs like IBM Bob often repeat the same mistakes, because every session starts fresh. Evolve gives Bob a memory of the project, so a lesson learned in one session is reused in the next.
+
+In this tutorial, Bob reads the EXIF metadata of a photo, hits a dead end on the way, and saves what it learned. In a new session, it recalls that lesson and goes straight to the approach that worked.
 
 ## Video Tutorial
 <div class="video-wrapper">
     <iframe width="1280" height="720" src="https://www.youtube.com/embed/YlTJoSJ4eDg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </div>
 
-## Requirements
-- [`uv` installed](https://docs.astral.sh/uv/getting-started/installation/)
-- IBM Bob IDE installed.
+!!! note "The video shows an earlier release"
+    The video was recorded in April 2026, when Evolve Lite for Bob used an `Evolve Lite` mode and explicit learn and recall skills. Current releases need neither: Bob reads Evolve's instructions in every session. The steps below follow what ships today.
 
-## Step 1: Create a new project using `uv`
-Create a new project directory and initialize it with `uv init`.
+## Requirements
+- IBM Bob IDE installed.
+- `python3` 3.8 or newer. The installer and Evolve's helper scripts use it.
+
+## Step 1: Create a project
+Create a project directory, and save [the sample photo](../../assets/sample.jpg) into it as `sample.jpg`.
 ```bash
 mkdir hello-world
 cd hello-world
-uv init
+curl -fsSL -o sample.jpg https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/docs/assets/sample.jpg
 ```
 
 ## Step 2: Install Evolve
-Install Evolve by following the [installation instructions →](../../installation/index.md#bob-quick-start), or run:
+From the project directory, install Evolve by following the [installation instructions →](../../installation/index.md#bob-quick-start), or run:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```
 
-## Step 3: Project Setup
-Open the project directory in IBM Bob IDE, and switch Bob's mode to `Evolve Lite`
+The installer puts Evolve's skills, slash commands and shared library in `hello-world/.bob/`. It also writes Evolve's instructions to `~/.bob/rules/00-evolve-lite.md`. Bob loads every file in `~/.bob/rules/` into every session, so there is no mode to switch to. Those instructions tell Bob two things:
 
-!!! failure "`Evolve Lite` mode not found?"
-    If Bob is running while you install Evolve, the `Evolve Lite` mode will not have been loaded. Try restarting IBM Bob IDE.
+- **Recall:** as its first step on a task, check `.evolve/entities/` for saved lessons that match, and record which ones it opened.
+- **Save:** near the end of a task, save anything durable it learned as an entity under `.evolve/entities/<type>/`.
 
-## Step 4: Testing Evolve with Bob
-If we test with the following example, at this point Bob doesn't know that this project is managed with `uv`, so Bob will probably get it wrong. It's entirely possible that Bob will still figure it out, so alternatively come up with something simple that Bob will get wrong.
+!!! failure "Installed into the wrong directory?"
+    The installer targets the current directory. If you ran it from somewhere else, such as your home directory or Desktop, rerun it from `hello-world`, or pass `--dir /path/to/hello-world`.
+
+## Step 3: Ask Bob
+Open the `hello-world` directory in IBM Bob IDE and start a new chat.
+
 !!! user-message "Let's Ask Bob"
-    Set up the python environment for this project
-
+    Where was the photo sample.jpg taken? Use EXIF metadata.
 
 !!! agent-message "A Likely Bob Response"
-    Bob should run some Evolve Lite skills to attempt to retrieve relevant guidelines from memory, and find nothing because it's a new project.
-    Bob will likely attempt to use `python` or `python3`'s `venv` to create a virtual environment.
-    ```bash
-    python3 -m venv .venv
-    ```
+    Bob checks `.evolve/entities/` first and finds nothing, because the project is new. It then reaches for a tool such as `exiftool` or Pillow. If that isn't installed, Bob falls back to a short Python script that reads the EXIF data with the standard library, and reports where the photo was taken.
 
-!!! system-message "Course Correcting"
-    
+!!! system-message "Learning From the Past"
+    Following Evolve's instructions, Bob saves the lesson as an entity under `.evolve/entities/<type>/`. For example, it might note that EXIF data can be read with the Python standard library when no image tools are installed. Bob decides on its own whether a task taught it anything worth keeping. If it saved nothing, ask it to:
+
 !!! user-message "Let's Ask Bob"
-    This is incorrect. This project is supposed to be managed by `uv`.
+    Save what you learned from this task to your Evolve memory.
+
+## Step 4: Ask again in a new session
+Start a new chat, so that Bob has no memory of the first conversation.
+
+!!! user-message "Let's Ask Bob"
+    What focal length was used to take the photo sample.jpg? Use EXIF metadata.
 
 !!! agent-message "A Likely Bob Response"
-    At this point, Bob will correct itself and eventually run `uv sync` and correctly run `uv run main.py`.
-    Bob should then run some Evolve Lite skills to save the learned correction into memory.
-    If it does not, the `/evolve:learn` command can be used to manually run the skill.
+    This time Bob finds the saved lesson in `.evolve/entities/`, records that it consulted it, and goes straight to the approach that worked, skipping the dead ends.
 
-In the future, Bob should remember via Evolve-Lite skills that `uv` is used for this project and not make the same mistake. This can be tested in this toy project by deleting the `.venv` directory and the `uv.lock` file and trying the same utterance again.
+## What Evolve wrote
+```text
+hello-world/
+  .bob/                          # Evolve's skills, slash commands and shared library
+  .evolve/
+    entities/
+      project/
+        read-exif-with-stdlib.md # the saved lesson (Bob picks the type and name)
+    audit.log                    # a "recall" line for each session that consulted an entity
+```
+
+Each entity is a Markdown file with `type` and `trigger` frontmatter. The trigger describes when the lesson applies, and it's what Bob matches against during recall. You can read, edit or delete entities at any time.
 
 ## Troubleshooting
-The `install.sh` script adds a section for Evolve into a shared `custom_modes.yaml` used by IBM Bob IDE. It is much like a `.bashrc` file, and so may become malformed. Check the project-level or user-level `custom_modes.yaml` for any issues.
+- **Bob doesn't seem to use Evolve.** Check that `~/.bob/rules/00-evolve-lite.md` exists. If Bob was already running when you installed, start a new chat. If that doesn't help, restart IBM Bob IDE.
+- **Check the install.** From the project directory, run:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- status
+  ```
+  For a lite install, every Bob row should show ✓ except `custom_modes.yaml` and `mcp (full mode)`, which belong to full mode.
