@@ -1,6 +1,6 @@
 # Evolve Lite
 
-Evolve Lite is a lightweight mode that runs as a Claude Code plugin — no vector store, no MCP servers, no API keys required. It stores entities as Markdown files with YAML frontmatter under `.evolve/entities/` in your project directory and uses Claude Code's built-in hooks to inject them automatically.
+Evolve Lite is a lightweight mode that runs as a Claude Code plugin — no vector store, no MCP servers, no API keys required. It stores entities as Markdown files with YAML frontmatter under `.evolve/entities/` in your project directory, and rides on Claude Code's own native memory rather than installing hooks of its own.
 
 ## Prerequisites
 
@@ -8,44 +8,49 @@ Evolve Lite is a lightweight mode that runs as a Claude Code plugin — no vecto
 
 ## Installation
 
-### From Local Directory
+Run the installer from your project root:
 
 ```bash
-claude --plugin-dir /path/to/altk-evolve/platform-integrations/claude/plugins/evolve-lite
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform claude
 ```
 
-### From Marketplace
+or, from a clone of the repo:
 
 ```bash
-claude plugin marketplace add AgentToolkit/altk-evolve
-claude plugin install evolve-lite@evolve-marketplace
+platform-integrations/install.sh install --platform claude --dir /path/to/your/project
 ```
 
-Verify the plugin is active:
+The installer installs the plugin from the marketplace (`evolve-lite@evolve-marketplace`), copies `EVOLVE.md` into `<project>/.evolve/`, adds its import line to the project's `CLAUDE.md`, installs `adapt_memory.py`, `audit_recall.py` and their shared `lib/` under `~/.claude/evolve-lite/`, and allowlists those scripts in `<project>/.claude/settings.json`.
+
+Installing only the plugin (`claude --plugin-dir …`, or `claude plugin install` on its own) loads the skills but skips the rest, so nothing reaches your sessions. Run the installer as well.
+
+Verify the install:
 
 ```bash
-claude plugin list
+claude plugin list        # the plugin is enabled
 ```
+
+Then run `/evolve-lite:doctor` in a Claude session to confirm `EVOLVE.md` is being loaded.
 
 ## How It Works
 
-Evolve Lite has two halves:
+Claude Code already recalls and saves memories on its own judgment: it decides what to look up at the start of a task and what to write down at the end. Evolve Lite does not intercept either. It adds the two things native memory lacks:
 
-1. **Learn** — You invoke `/evolve-lite:learn` at the end of a conversation. The plugin analyzes what happened, produces an entity JSON payload, and saves each entity as a Markdown file under `.evolve/entities/`.
+1. **Sharing** — When Claude saves a native memory, it invokes `/evolve-lite:adapt-memory`, which mirrors the same fact into `.evolve/entities/{type}/{name}.md` as a normal Evolve entity, where `{type}` is the native memory's type (`user`, `feedback`, `project` or `reference`). Publishing mirrored memories to a shared repo is not supported yet: `/evolve-lite:publish` only reads `.evolve/entities/guideline/` (tracked in [#373](https://github.com/AgentToolkit/altk-evolve/issues/373)).
 
-2. **Recall** — On every subsequent prompt, a `UserPromptSubmit` hook automatically loads stored entities and injects them into the conversation context. Claude applies whichever entities are relevant to the current task.
+2. **Provenance** — When Claude consults native memories, it runs `python3 ~/.claude/evolve-lite/audit_recall.py <type>/<name>`, recording what was actually opened so the store's value can be measured over time.
 
-No external services are involved. The entire loop is a directory of entity files and two Python scripts.
+Both steps come from one short instruction file. The installer copies it to `<repo>/.evolve/EVOLVE.md` and injects a single native import line, `@.evolve/EVOLVE.md`, into the repo's `CLAUDE.md`. Claude shows a one-time "allow external imports" dialog on the first session afterwards — you must Allow it, or the import is inert and neither step happens. Run `/evolve-lite:doctor` to check.
+
+No external services and no hooks are involved. Beyond the plugin itself, the whole mechanism is one imported Markdown file, a directory of entity files, a few Python scripts under `~/.claude/evolve-lite/`, and the allow-rules in `.claude/settings.json`.
 
 ## Example Walkthrough
 
-The examples below show the learn-then-recall loop across multiple sessions, starting with a simple preference and then a more complex recovery pattern.
+The examples below show a memory saved in one session being applied in the next, starting with a simple preference and then a more complex recovery pattern.
 
 ## Example 1 — Learning a user preference
 
-This example shows the full learn-then-recall loop across two sessions.
-
-### Session 1 — Learn a preference
+### Session 1 — Claude saves a preference
 
 ```text
 You: Tell me the distances between the 3 most populous cities in Canada.
@@ -63,24 +68,16 @@ You: For cities in Canada use km only.
 
 Claude: Got it — I'll use kilometres only for Canadian cities.
 
-You: /evolve-lite:learn
+        [saves a native memory: "When presenting distances between Canadian
+         cities, use kilometres only — do not include miles"]
 
-Claude: I've extracted the following entities from this conversation:
+        [invokes evolve-lite:adapt-memory]
 
-        {
-          "entities": [
-            {
-              "content": "When presenting distances between Canadian cities, use kilometres only — do not include miles",
-              "rationale": "User explicitly prefers metric units for Canadian geography",
-              "category": "strategy",
-              "trigger": "When discussing distances or travel between cities in Canada"
-            }
-          ]
-        }
-
-        Added 1 new entity(ies). Total: 1
-        Entities stored in: /path/to/project/.evolve/entities
+        Mirrored native memory into evolve store: /path/to/project/.evolve/entities/feedback/canada-km-only.md
+        Entity id: feedback/canada-km-only
 ```
+
+Claude decided to save that on its own — you did not invoke a skill. The `adapt-memory` step mirrors the saved fact into the project's evolve store as `.evolve/entities/feedback/canada-km-only.md`, where it is auditable like any other entity. (It cannot be published yet; see How It Works above.)
 
 ### Session 2 — Preference is applied automatically
 
@@ -99,36 +96,13 @@ Claude: The three most populous cities in Canada are Toronto, Montreal, and
         | Montreal ↔ Vancouver     | 4,810         |
 ```
 
-The entity was automatically injected via the `UserPromptSubmit` hook, so Claude used kilometres only — without being reminded.
+Claude recalled the memory itself and used kilometres only — without being reminded.
 
 ## Example 2 — Learning from failure in a sandboxed environment
 
-This example shows how Evolve Lite helps an agent avoid dead ends it encountered in a previous session. The agent runs in a Docker sandbox where common system tools are not installed.
+This example shows how Evolve Lite helps an agent avoid dead ends it encountered in a previous session. It assumes an environment where common tools — `exiftool` and the Pillow library — are not installed.
 
-To run it, first build the Docker image:
-
-```bash
-just sandbox-build
-```
-
-Then run a task to extract metadata from an image:
-
-```bash
-just trace=true learn=true sandbox-prompt 'where was the photo @sample.jpg taken. use exif metadata'
-```
-
-When you run the above, you will see that the agent hits some dead ends (exiftool not found, Pillow not installed), and that it learns guidelines to avoid them in the future (see `demo/workspace/.evolve/entities/`).
-
-Run the same task again in a new session:
-
-```bash
-just trace=true sandbox-prompt 'where was the photo @sample.jpg taken. use exif metadata'
-```
-
-You will see that the agent now is more efficient, avoiding the dead ends it encountered in the previous session such as trying to use exiftool.
-
-The instructions below walk you through the same example in interactive sessions.
-
+To reproduce it, install Evolve Lite into a project as described in [Installation](#installation), copy [`demo/workspace/sample.jpg`](https://github.com/AgentToolkit/altk-evolve/blob/main/demo/workspace/sample.jpg) into that project, and run the two sessions below as two separate interactive Claude sessions in the same project. Native memory persists between them because both sessions share the same `~/.claude/projects/<hash>/memory/` store.
 
 ### Session 1 — Solving the hard way
 
@@ -162,47 +136,29 @@ Claude: I'll extract the GPS coordinates from the photo's EXIF metadata.
         Google Maps: https://www.google.com/maps?q=51.493608,0.037561
 ```
 
-The agent got the right answer, but wasted two turns on dead ends (exiftool not found, Pillow not installed). Now the user runs `/evolve-lite:learn`:
+The agent got the right answer, but wasted two turns on dead ends (exiftool not found, Pillow not installed). Having learned something worth keeping, it saves memories and mirrors them:
 
 ```text
-You: /evolve-lite:learn
+Claude: [saves a native memory: "Use Python stdlib (struct module) to manually
+         parse JPEG EXIF/GPS metadata when no external tools are available" —
+         in sandboxed environments neither system tools (exiftool) nor
+         third-party libraries (PIL/Pillow) may be installed]
 
-Claude: I've extracted the following entities from this conversation:
+        [saves a native memory: "When system tools or pip packages are
+         unavailable, check if the task can be solved with Python stdlib
+         before attempting installs"]
 
-        {
-          "entities": [
-            {
-              "content": "Use Python stdlib (struct module) to manually parse JPEG
-                          EXIF/GPS metadata when no external tools are available",
-              "rationale": "In sandboxed environments, neither system tools (exiftool)
-                          nor third-party libraries (PIL/Pillow) may be installed.
-                          Python stdlib is always available and sufficient for JPEG
-                          binary parsing.",
-              "category": "strategy",
-              "trigger": "When extracting EXIF or GPS metadata from images in
-                          containerized or sandboxed environments"
-            },
-            {
-              "content": "When system tools or pip packages are unavailable, check if
-                          the task can be solved with Python stdlib before attempting
-                          installs",
-              "rationale": "Binary parsing, HTTP requests (urllib), JSON, CSV, and many
-                          common tasks are fully covered by stdlib. Attempting installs
-                          in sandboxes wastes time and often fails silently.",
-              "category": "recovery",
-              "trigger": "When a required CLI tool or Python package is missing in a
-                          restricted environment"
-            }
-          ]
-        }
+        [invokes evolve-lite:adapt-memory for each]
 
-        Added 2 new entity(ies). Total: 2
-        Entities stored in: /workspace/.evolve/entities
+        Mirrored native memory into evolve store: /path/to/project/.evolve/entities/project/parse-exif-with-python-stdlib.md
+        Entity id: project/parse-exif-with-python-stdlib
+        Mirrored native memory into evolve store: /path/to/project/.evolve/entities/project/prefer-stdlib-before-installs.md
+        Entity id: project/prefer-stdlib-before-installs
 ```
 
 ### Session 2 — No more dead ends
 
-In a new session, the user asks the same question. The stored entities are automatically injected via the `UserPromptSubmit` hook:
+In a new session, the user asks the same question. Claude recalls the memories it saved:
 
 ```text
 You: Where was this photo taken? [sample.jpg]
@@ -224,38 +180,50 @@ The agent skipped both `exiftool` and `Pillow` entirely — it went straight to 
 
 ## Available Skills
 
+There is no `learn` or `recall` skill on Claude — native memory owns both.
+
 | Skill | Description |
 |-------|-------------|
-| `/evolve-lite:learn` | Extract entities from the current conversation and save them |
-| `/evolve-lite:recall` | Manually retrieve and display stored entities |
-| `/evolve:save` | Capture a successful workflow as a reusable skill |
+| `/evolve-lite:adapt-memory` | Mirror a just-saved native memory into the project's evolve store |
+| `/evolve-lite:doctor` | Verify the `CLAUDE.md` import is actually loading `EVOLVE.md` |
+| `/evolve-lite:subscribe` | Add a shared guidelines repo (read-scope or write-scope) |
+| `/evolve-lite:publish` | Publish a local guideline to a write-scope repo |
+| `/evolve-lite:sync` | Pull the latest guidelines from every configured repo |
+| `/evolve-lite:unsubscribe` | Remove a repo and delete its local clone |
+| `/evolve-lite:provenance` | Report whether recalled guidelines influenced past sessions |
+| `/evolve-lite:retention` | Flag or delete stale entities and expired sessions (dry-run by default) |
+| `/evolve-lite:save` | Capture a successful workflow as a reusable skill |
+| `/evolve-lite:save-trajectory` | Export the conversation as a trajectory JSON file |
+| `/evolve-lite:synthesize-skill` | Turn a saved trajectory into an executable skill |
 
 ## Entities Storage
 
-Entities live in `.evolve/entities/` in the project root, organized into type-based subdirectories:
+Entities live in `.evolve/entities/` in the project root, organized into type-based subdirectories. A mirrored native memory lands under its native type (`user`, `feedback`, `project` or `reference`):
 
 ```text
 .evolve/entities/
-  strategy/
-    use-python-stdlib-struct-module-to-manually-parse-jpeg-exif-gps.md
+  feedback/
+    canada-km-only.md
+  project/
+    parse-exif-with-python-stdlib.md
 ```
 
 Each entity file uses Markdown with YAML frontmatter:
 
 ```markdown
 ---
-type: strategy
+type: project
 trigger: When extracting EXIF or GPS metadata from images in containerized or sandboxed environments
+source: native-memory
+native_path: /Users/you/.claude/projects/<hash>/memory/parse-exif-with-python-stdlib.md
 ---
 
-Use Python stdlib (struct module) to manually parse JPEG EXIF/GPS metadata when no external tools are available
-
-## Rationale
+Use Python stdlib (struct module) to manually parse JPEG EXIF/GPS metadata when no external tools are available.
 
 In sandboxed environments, neither system tools (exiftool) nor third-party libraries (PIL/Pillow) may be installed. Python stdlib is always available.
 ```
 
-Override the storage location with the `EVOLVE_ENTITIES_DIR` environment variable.
+The store always lives at `<project>/.evolve/`. Some helper scripts read an `EVOLVE_DIR` environment variable, but it is not supported end to end yet — `EVOLVE.md` and the installer always use `.evolve/`, and `subscribe` and `sync` resolve the project root from it differently — so leave it unset.
 
 ## Tradeoffs
 
@@ -268,17 +236,17 @@ Lite mode is easier to set up:
 
 But it has a number of limitations:
 
-- **Inefficient context usage** — Entity extraction and recall both happen inside the agent's context window, not in a separate process. Full Evolve offloads all processing to the MCP server, keeping the agent's context free for the actual task.
-- **Scalability** — All entities are injected on every prompt. Full Evolve uses semantic search to retrieve only the relevant subset, which scales to large entity sets.
-- **Single-trajectory visibility** — Lite mode only extracts entities from the current session. Full Evolve can ingest complete trajectories across multiple sessions and glean insights that a single-conversation view would miss.
+- **Inefficient context usage** — Saving and recalling both happen inside the agent's context window, not in a separate process. Full Evolve offloads all processing to the MCP server, keeping the agent's context free for the actual task.
+- **Scalability** — Recall is whatever the host's native memory decides to open; there is no semantic search over the store. Guidelines pulled in from subscribed repos land in `.evolve/entities/subscribed/`, but nothing on Claude reads that directory into a session, so they are not recalled at all today. Full Evolve retrieves only the relevant subset, which scales to large entity sets.
+- **Single-trajectory visibility** — Lite mode only ever captures what the current session learned. Full Evolve can ingest complete trajectories across multiple sessions and glean insights that a single-conversation view would miss.
 - **Entity consolidation** — Lite mode simply appends new entities. Full Evolve performs LLM-based conflict resolution to merge, supersede, or refine entities, and garbage-collects stale ones.
 
 | Capability | Evolve Lite | Full Evolve |
 |------------|-------------|-------------|
 | Entity storage | Markdown files in `.evolve/entities/` | Milvus vector store |
-| Retrieval | All entities injected via hooks | Semantic search via MCP |
+| Retrieval | Claude's native memory (no semantic search) | Semantic search via MCP |
 | Conflict resolution | Append-only | LLM-based merging + garbage collection |
-| Trajectory analysis | Current session only (`/evolve-lite:learn`) | Multi-session, automatic via MCP |
+| Trajectory analysis | Current session only | Multi-session, automatic via MCP |
 | Context efficiency | Consumes main agent context | Processes separately via MCP |
 | Observability | Not required | Ingests from agent logs / trace events |
 | Infrastructure | None | MCP server + vector DB + API key |
