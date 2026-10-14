@@ -12,8 +12,8 @@ or wrap that — it adds the two things native memory lacks, plus a set of skill
 for managing the resulting store.
 
 - **Sharing**: `/evolve-lite:adapt-memory` mirrors a just-saved native memory
-  into the in-repo store at `.evolve/entities/` as a normal Evolve entity
-  (publishing mirrored memories to a shared repo is not supported yet — see
+  into the in-repo store at `.evolve/entities/` as a normal Evolve entity,
+  which `/evolve-lite:publish` can share like any other (see
   [Publishing Guidelines](#publishing-guidelines))
 - **Provenance**: `audit_recall.py` records which memories a session actually
   consulted, so their value can be measured over time

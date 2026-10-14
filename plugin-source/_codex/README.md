@@ -16,7 +16,7 @@ The skills cover everything around that loop:
 
 - `evolve-lite:adapt-memory` — a no-op on Codex, which has no native memory
   store to mirror; the "Save" section of `EVOLVE.md` writes entities directly
-- `evolve-lite:publish` — publish a private guideline to a write-scope repo
+- `evolve-lite:publish` — publish a private entity (any type) to a write-scope repo
 - `evolve-lite:subscribe` / `evolve-lite:unsubscribe` — manage shared guideline repos
 - `evolve-lite:sync` — pull the latest from every configured repo
 - `evolve-lite:provenance` — report whether recalled entities influenced past sessions
@@ -32,12 +32,12 @@ Entities and sharing data are stored in the active workspace under:
   entities/
     feedback/                                          # saved per EVOLVE.md, one dir per type
       use-context-managers-for-file-operations.md     # (user / feedback / project / reference)
-    guideline/                                         # what publish reads (see below)
+    guideline/                                         # learned guidelines (also publishable)
       private-guideline.md
     subscribed/
-      memory/                                          # write-scope clone (publish target)
-        guideline/
-          my-published-guideline.md
+      memory/                                          # write-scope clone (publish target, by type)
+        feedback/
+          my-published-entity.md
       alice/                                           # read-scope clone
         guideline/
           prefer-small-functions.md
@@ -174,7 +174,7 @@ local clone at `.evolve/entities/subscribed/{name}/`.
 .evolve/
   entities/
     guideline/
-      private-guideline.md      # private local guideline (what publish reads)
+      private-guideline.md      # private local guideline (publishable, like any type)
     subscribed/
       memory/                   # write-scope clone — publishes land here
         guideline/

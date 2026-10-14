@@ -375,6 +375,29 @@ class TestPublishAnyEntityType:
         assert _typed_dest(typed_project, "feedback", "note.md").is_file()
         assert not source.exists()
 
+    @pytest.mark.parametrize("bad_type", ["..", ".", "../..", "", "/"])
+    def test_type_flag_cannot_escape_the_entities_dir(self, typed_project, bad_type):
+        """--type is a directory name under entities/, never a path: `--type ..` must not
+        reach .evolve/ itself (where audit.log and the config live)."""
+        audit = typed_project / ".evolve" / "audit.log"
+        audit.write_text('{"action": "seed"}\n')
+
+        result = run_publish(typed_project, ["--entity", "audit.log", "--type", bad_type], expect_success=False)
+
+        assert result.returncode != 0
+        assert audit.read_text() == '{"action": "seed"}\n'
+        assert not list((typed_project / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO).rglob("audit.log"))
+
+    def test_hidden_type_dirs_are_not_searched(self, typed_project):
+        """Dot-directories under entities/ (editor or tool state) are never a publish source."""
+        hidden = _write_private(typed_project, ".cache", "note.md")
+
+        result = run_publish(typed_project, ["--entity", "note.md"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "not found" in result.stderr
+        assert hidden.exists()
+
     def test_audit_log_records_type(self, typed_project):
         _write_private(typed_project, "feedback", "note.md")
         run_publish(typed_project, ["--entity", "note.md", "--user", "alice"])

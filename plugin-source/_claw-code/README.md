@@ -20,7 +20,7 @@ Local capture and recall:
 Sharing guidelines via git repos:
 
 - `evolve-lite:subscribe` adds a shared guidelines repo to the unified `repos:` list (read-scope subscription or write-scope publish target) and clones it under `.evolve/entities/subscribed/`.
-- `evolve-lite:publish` moves a private guideline into a configured **write-scope** repo, stamps `visibility`/`owner`/`published_at`, and commits + pushes it.
+- `evolve-lite:publish` moves a private entity (any type) into a configured **write-scope** repo, stamps `visibility`/`owner`/`published_at`, and commits + pushes it.
 - `evolve-lite:sync` pulls the latest changes from every configured repo (read-scope clones use `git fetch` + `git reset --hard`; write-scope clones use `git fetch` + `git rebase` to preserve unpushed publishes).
 - `evolve-lite:unsubscribe` removes a configured repo and deletes its local clone, with an extra warning before removing a write-scope repo.
 
@@ -215,7 +215,7 @@ The bundled skills use small helper scripts:
 - `skills/recall/scripts/retrieve_entities.py` reads and formats stored entities
 - `skills/save-trajectory/scripts/save_trajectory.py` writes trajectory JSON files
 - `skills/subscribe/scripts/subscribe.py` clones a guidelines repo and registers it in `evolve.config.yaml`
-- `skills/publish/scripts/publish.py` stamps and moves a private guideline into a write-scope clone
+- `skills/publish/scripts/publish.py` stamps and moves a private entity into a write-scope clone, keeping its `{type}/` directory
 - `skills/sync/scripts/sync.py` pulls all configured repos (write-scope rebases preserve unpushed work)
 - `skills/unsubscribe/scripts/unsubscribe.py` removes a repo from config and deletes its clone
 

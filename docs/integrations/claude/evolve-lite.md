@@ -77,7 +77,7 @@ Claude: Got it — I'll use kilometres only for Canadian cities.
         Entity id: feedback/canada-km-only
 ```
 
-Claude decided to save that on its own — you did not invoke a skill. The `adapt-memory` step mirrors the saved fact into the project's evolve store as `.evolve/entities/feedback/canada-km-only.md`, where it is auditable like any other entity. (It cannot be published yet; see How It Works above.)
+Claude decided to save that on its own — you did not invoke a skill. The `adapt-memory` step mirrors the saved fact into the project's evolve store as `.evolve/entities/feedback/canada-km-only.md`, where it is auditable like any other entity. It can be shared with `/evolve-lite:publish`, which keeps it under `feedback/` in the shared repo.
 
 ### Session 2 — Preference is applied automatically
 

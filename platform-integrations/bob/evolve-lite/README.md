@@ -64,12 +64,12 @@ read-scope subscriptions and write-scope publish targets live under
 .evolve/entities/
   project/                              # Saved by the agent, one dir per type
     use-context-managers.md
-  guideline/                            # What publish reads (see below)
+  guideline/                            # Learned guidelines (also publishable)
     private-guideline.md
   subscribed/
-    memory/                             # write-scope clone (publishes land here)
-      guideline/
-        my-published-guideline.md
+    memory/                             # write-scope clone (publishes land here, by type)
+      project/
+        my-published-entity.md
     alice/                              # read-scope clone
       guideline/
         her-guideline.md
@@ -194,12 +194,12 @@ publish commits, so the skill warns first.
   entities/
     project/                        # saved by the agent, one dir per type
       my-entity.md
-    guideline/                      # what publish reads
+    guideline/                      # learned guidelines (also publishable)
       my-guideline.md
     subscribed/
-      memory/                       # write-scope clone (publishes land here)
-        guideline/
-          my-published-guideline.md
+      memory/                       # write-scope clone (publishes land here, by type)
+        project/
+          my-published-entity.md
       alice/                        # read-scope clone (also serves as recall mirror)
         guideline/
           her-guideline.md
@@ -235,10 +235,10 @@ executable skill.
 
 ### `evolve-lite-publish`
 
-Publish private guidelines to a write-scope repo:
-- Lists available private guidelines
-- Moves selected guidelines into the write-scope clone at
-  `.evolve/entities/subscribed/{repo}/guideline/`
+Publish private entities to a write-scope repo:
+- Lists the private entities in each `.evolve/entities/{type}/` directory
+- Moves selected entities into the write-scope clone at
+  `.evolve/entities/subscribed/{repo}/{type}/`
 - Stamps with `owner`, `published_at`, and `source` metadata
 - Commits and pushes to the configured remote
 
