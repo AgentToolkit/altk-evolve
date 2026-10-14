@@ -1,36 +1,48 @@
 # Experiments
 
-Ad-hoc measurement scripts. Not part of the test suite — these aren't run in
-CI, don't assert anything, and exist to produce numbers and writeups.
+Measurement scripts and research pipelines that run against this checkout of
+Evolve. Nothing here is packaged (only `altk_evolve*` ships), but the code is
+linted, type-checked and collected by pytest like the rest of the repo.
+
+Each subdirectory is one experiment family:
+
+| Directory | What it measures | Needs |
+|-----------|------------------|-------|
+| [`recall_savings/`](recall_savings/) | Token, wall-clock and step savings when Claude Code recalls guidelines or synthesized skills | Docker, the `claude-sandbox` image, Anthropic credentials |
+| [`guideline_pipeline/`](guideline_pipeline/README.md) | Guidelines mined from benchmark datasets through processing profiles, via per-dataset adapters | An Evolve backend with atomic writes; LLM credentials for the chosen profile |
+
+Results, datasets and run output are written next to the code that produced
+them (for example `recall_savings/results/`) and are not committed; see
+[`.gitignore`](.gitignore).
 
 If a script here graduates into a regression check, move it under `tests/`.
 
-## Scripts
+## `recall_savings/`
 
-### `token_savings.py`
-
-Measures the token / wall-clock / step gap on utterance 2 when guidelines from
-utterance 1 are recallable vs. not. Adapted from
-`tests/e2e/test_claude_sandbox_learn_recall.py` but standalone — runs as a
-script, prints a comparison table, writes results to `results/`.
+Standalone scripts adapted from `tests/e2e/test_claude_sandbox_learn_recall.py`.
+They aren't run in CI and don't assert anything; they print a comparison table
+and write results to `experiments/recall_savings/results/`.
 
 **Requires:** Docker, the `claude-sandbox` image (`just sandbox-build claude`),
 and `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN`) in the environment.
 
-**Run:**
+### `token_savings.py`
+
+Measures the token / wall-clock / step gap on utterance 2 when guidelines from
+utterance 1 are recallable vs. not.
 
 ```bash
 # 3 runs per condition, fresh seed for every with-guidelines run
-python3 experiments/token_savings.py --runs 3
+python3 experiments/recall_savings/token_savings.py --runs 3
 
 # 5 measure runs against a single shared seed (cheaper, lower variance)
-python3 experiments/token_savings.py --runs 5 --shared-seed
+python3 experiments/recall_savings/token_savings.py --runs 5 --shared-seed
 
 # Keep the per-run workspaces afterwards (transcripts on disk for inspection)
-python3 experiments/token_savings.py --runs 5 --shared-seed --keep-workspaces
+python3 experiments/recall_savings/token_savings.py --runs 5 --shared-seed --keep-workspaces
 ```
 
-**Output** lands in `experiments/results/token_savings_<UTC-timestamp>/`:
+**Output** lands in `experiments/recall_savings/results/token_savings_<UTC-timestamp>/`:
 
 - `report.md` — auto-generated comparison table + per-turn breakdown for one
   representative run per condition.
@@ -43,8 +55,21 @@ python3 experiments/token_savings.py --runs 5 --shared-seed --keep-workspaces
 **Wall-clock budget:** roughly 25–35 min for `--runs 5`. The script prints
 per-run progress so you can see where it is.
 
-## Results layout
+### `skill_from_trajectory.py`
 
-`experiments/results/token_savings_<timestamp>/` per run. The timestamp is the
-UTC start time, so directory order = chronological order. Old result dirs are
-kept as-is — don't rename.
+Compares three recall conditions on the same utterances: no recall, recalled
+guidelines, and a skill synthesized from the seed trajectory by
+`/evolve-lite:synthesize-skill`. Reuses the helpers in `token_savings.py`.
+
+```bash
+python3 experiments/recall_savings/skill_from_trajectory.py --trials 5
+```
+
+**Output** lands in `experiments/recall_savings/results/skill_from_trajectory_<UTC-timestamp>/`
+(`report.md`, `raw.json`, `synthesized_skills/`).
+
+### Results layout
+
+One `results/<script>_<timestamp>/` directory per run. The timestamp is the UTC
+start time, so directory order = chronological order. Old result dirs are kept
+as-is — don't rename.

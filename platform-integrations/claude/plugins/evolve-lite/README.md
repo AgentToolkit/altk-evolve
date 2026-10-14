@@ -1,59 +1,105 @@
 # Evolve Lite Plugin for Claude Code
 
-A plugin that helps Claude Code learn from conversations by automatically extracting and applying entities.
+A plugin that makes Claude Code's native memory **shareable** and **auditable**.
 
 ⭐ Star the repo: https://github.com/AgentToolkit/altk-evolve
 
 ## Features
 
-- **Automatic Retrieval**: At the start of each prompt, relevant entities are automatically injected
-- **Manual Learning**: Use the `/evolve-lite:learn` skill to extract and save entities from conversations
-- **Automatic Learning**: After each task, entities are automatically extracted and saved via a Stop hook
-- **Zero-config Retrieval**: Hooks are automatically installed when the plugin is enabled
+Claude Code already has native, self-directed memory: it decides what to recall
+at the start of a task and what to save at the end. Evolve Lite does not replace
+or wrap that — it adds the two things native memory lacks, plus a set of skills
+for managing the resulting store.
+
+- **Sharing**: `/evolve-lite:adapt-memory` mirrors a just-saved native memory
+  into the in-repo store at `.evolve/entities/` as a normal Evolve entity
+  (publishing mirrored memories to a shared repo is not supported yet — see
+  [Publishing Guidelines](#publishing-guidelines))
+- **Provenance**: `audit_recall.py` records which memories a session actually
+  consulted, so their value can be measured over time
+- **Git-backed distribution**: `/evolve-lite:subscribe`, `/evolve-lite:publish`,
+  `/evolve-lite:sync`, `/evolve-lite:unsubscribe`
+- **Store maintenance**: `/evolve-lite:retention` (dry-run by default),
+  `/evolve-lite:doctor`, `/evolve-lite:provenance`
+- **Session capture**: `/evolve-lite:save`, `/evolve-lite:save-trajectory`,
+  `/evolve-lite:synthesize-skill`
+
+This plugin installs **no hooks**. Everything it does is driven by skills and a
+single instruction file Claude imports (see below).
 
 ## Installation
 
-### From Local Directory
+Run the installer from your project root:
 
 ```bash
-claude --plugin-dir /path/to/altk-evolve/platform-integrations/claude/plugins/evolve-lite
+curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform claude
 ```
 
-### From Marketplace
+or, from a clone of this repo:
 
-1. Add the marketplace and plugin:
-   ```bash
-   claude plugin marketplace add AgentToolkit/altk-evolve
-   claude plugin install evolve@evolve-marketplace
-   ```
+```bash
+platform-integrations/install.sh install --platform claude --dir /path/to/your/project
+```
 
+The installer:
+
+- installs the plugin (`claude plugin marketplace add` +
+  `claude plugin install evolve-lite@evolve-marketplace`);
+- copies `EVOLVE.md` to `<project>/.evolve/EVOLVE.md` and adds the import line
+  to the project's `CLAUDE.md` (see [How It Works](#how-it-works));
+- installs `adapt_memory.py`, `audit_recall.py` and their shared `lib/` under
+  `~/.claude/evolve-lite/`;
+- allowlists those scripts and `.evolve/` writes in `<project>/.claude/settings.json`
+  so they never trigger a per-use permission prompt.
+
+Installing only the plugin — `claude --plugin-dir …` or
+`claude plugin install evolve-lite@evolve-marketplace` on its own — loads the
+skills but skips the rest, so `EVOLVE.md` never reaches sessions and
+`/evolve-lite:doctor` reports `NOT_INSTALLED`. Run the installer as well.
 
 ## How It Works
 
-### Entity Retrieval (Automatic)
+Recall and save stay entirely native — Claude's own judgment, unchanged. The
+plugin's contract with Claude lives in one short instruction file. The installer
+copies it to `<repo>/.evolve/EVOLVE.md` and injects a single native import line
+into the repo's `CLAUDE.md`:
 
-When you submit a prompt, the plugin automatically:
-1. Loads all stored entities from `.evolve/entities/` (one markdown file per entity)
-2. Formats and injects them into the conversation context
-3. Claude applies relevant entities to the current task
+```text
+@.evolve/EVOLVE.md
+```
 
-### Entity Generation (Automatic)
+> On the first Claude session after install, Claude shows a one-time "allow
+> external imports" dialog. You must Allow it, or the import line is silently
+> inert and neither lifecycle step below happens.
 
-After Claude completes each task, the plugin automatically invokes the `/evolve-lite:learn` skill via a `Stop` hook:
-1. Claude finishes responding to your prompt
-2. The Stop hook triggers and instructs Claude to run `/evolve-lite:learn`
-3. The plugin analyzes the conversation trajectory
-4. Extracts actionable entities from what worked/failed
-5. Saves new entities as markdown files in `.evolve/entities/{type}/`
+That file asks Claude for two things:
 
-You can also manually invoke `/evolve-lite:learn` at any time.
+### After saving a memory — mirror it (sharing)
 
-> **UX note:** The Stop hook has an empty matcher (`""`), meaning it fires after *every* task and can add up to ~2 minutes of delay per interaction (the hook's `timeout` is 120s). It also invokes the Claude API on each stop, which incurs additional cost. Learned entities are stored as markdown files in `.evolve/entities/{type}/` — inspect or remove them there at any time.
->
-> **To disable or limit automatic learning**, edit `hooks/hooks.json` inside the plugin directory:
-> - Remove the entire `"Stop"` block to turn off auto-learning entirely.
-> - Set a specific `"matcher"` string to restrict triggering to prompts that contain that text.
-> - Reduce `"timeout"` to cap how long the learn step can run.
+When Claude saves a native memory, it invokes `/evolve-lite:adapt-memory`, which
+writes the same fact into `.evolve/entities/{type}/{name}.md` as a normal Evolve
+entity. `{type}` is the native memory's own type (`user`, `feedback`, `project`
+or `reference`), and the entity records `source: native-memory` plus the
+`native_path` it was mirrored from.
+
+> **Not yet publishable.** `/evolve-lite:publish` currently reads only
+> `.evolve/entities/guideline/`, so mirrored memories cannot be published to a
+> shared repo yet. Tracked in [#373](https://github.com/AgentToolkit/altk-evolve/issues/373).
+
+### After consulting memories — log it (provenance)
+
+When Claude reads native memories, it runs:
+
+```bash
+python3 ~/.claude/evolve-lite/audit_recall.py <type>/<name> ...
+```
+
+recording what was consulted. `/evolve-lite:provenance` later joins those audit
+events against saved trajectories to report whether a recalled guideline
+actually influenced the session.
+
+Entities are plain markdown under `.evolve/entities/{type}/` — inspect, edit, or
+remove them there at any time.
 
 ## Sharing Guidelines
 
@@ -82,7 +128,7 @@ repos:
     branch: main
     notes: private memory shared only within my org
 sync:
-  on_session_start: true  # auto-sync on each session start
+  on_session_start: true  # written by subscribe; not acted on yet (see Syncing Repos)
 ```
 
 - `scope: read` — pulled on sync. Cannot be published to.
@@ -104,9 +150,13 @@ write-scope publish target:
 > Scope: read
 ```
 
-The repo is cloned into `.evolve/entities/subscribed/alice/` so recall can
-pick it up immediately. Repo names must use only letters, numbers, `.`,
-`_`, and `-`.
+The repo is cloned into `.evolve/entities/subscribed/alice/`. Repo names must
+use only letters, numbers, `.`, `_`, and `-`.
+
+> **Note:** on Claude, recall stays native, and nothing reads
+> `.evolve/entities/subscribed/` into a session today. Subscribed guidelines
+> are on disk for you to browse, but Claude does not recall them
+> automatically.
 
 ### Publishing Guidelines
 
@@ -119,6 +169,11 @@ via a **write-scope** repo:
 4. Each selected file is moved into `.evolve/entities/subscribed/{repo}/guideline/`,
    stamped with `visibility: public`, `owner`, `published_at`, and
    `source`, committed, and pushed to the remote
+
+> **Limitation:** publish only looks in `.evolve/entities/guideline/`, and
+> nothing in this plugin writes there — `/evolve-lite:adapt-memory` writes
+> `entities/{user,feedback,project,reference}/`. Until [#373](https://github.com/AgentToolkit/altk-evolve/issues/373) is fixed,
+> only entity files you place under `guideline/` yourself can be published.
 
 Because the publish target is also a subscribed repo, your next sync will
 pull in anything other writers have pushed to the same repo.
@@ -133,8 +188,9 @@ repo (both scopes):
 > Synced 2 repo(s): memory [write] (+2 added, 0 updated, 0 removed), bob [read] (+0 added, 1 updated, 0 removed)
 ```
 
-If `sync.on_session_start: true` is set in config, this runs automatically
-at the start of each session.
+Sync runs only when you invoke it. This plugin installs no hooks, so
+`sync.on_session_start` in the config is not acted on — nothing syncs
+automatically at session start.
 
 > **Note:** Read-scope repos use `git fetch` + `git reset --hard`, so the
 > local clone always matches the remote exactly (deleted or modified files
@@ -152,7 +208,9 @@ before removing a write-scope repo (unpushed publishes would be lost).
 ```text
 .evolve/
   entities/
-    guideline/
+    feedback/                 # mirrored native memories, one dir per native type
+      canada-km-only.md
+    guideline/                # what publish reads (see the limitation above)
       private-guideline.md
     subscribed/
       memory/                 # write-scope clone — publishes land here
@@ -165,20 +223,38 @@ before removing a write-scope repo (unpushed publishes would be lost).
 
 ## Example Walkthrough
 
-See the [Evolve Lite guide](../../../../docs/integrations/claude/evolve-lite.md#example-walkthrough) for a step-by-step example showing the full learn-then-recall loop across two sessions.
+See the [Evolve Lite guide](https://github.com/AgentToolkit/altk-evolve/blob/main/docs/integrations/claude/evolve-lite.md#example-walkthrough) for a step-by-step example showing a memory saved in one session, mirrored into the shared store, and applied in the next.
 
 ## Skills Included
 
-### `/evolve-lite:learn`
+There is no `learn` or `recall` skill on Claude — native memory owns both.
 
-Manually invoke to extract entities from the current conversation:
-- Analyzes task, steps taken, successes and failures
-- Generates proactive entities (what to do, not what to avoid)
-- Outputs JSON that the save script persists as entity files
+### `/evolve-lite:adapt-memory`
 
-### `/evolve-lite:recall`
+Mirror a just-saved native memory into the project's Evolve store
+(`.evolve/entities/<native type>/`) so it becomes auditable. Normally invoked
+by Claude itself per the EVOLVE.md contract; you can also invoke it by hand.
 
-Manually invoke to retrieve and display stored entities.
+### `/evolve-lite:doctor`
+
+Diagnose the install — verifies the `CLAUDE.md` `@import` is actually loading
+`EVOLVE.md` into sessions (the one failure mode that silently disables
+everything). Run this first if Evolve seems inert.
+
+### `/evolve-lite:provenance`
+
+Analyze saved trajectories and recall-audit events offline to record whether
+recalled guidelines influenced completed sessions.
+
+### `/evolve-lite:retention`
+
+Apply data-retention rules to the local store — flag or delete stale and unused
+memories and expired sessions. Dry-run by default.
+
+### `/evolve-lite:synthesize-skill`
+
+Convert a saved trajectory into a reusable skill (SKILL.md plus supporting
+scripts), promoting a workflow from free-text guidance to something executable.
 
 ### `/evolve-lite:save`
 
@@ -207,76 +283,78 @@ Manually invoke to export the current conversation as a trajectory JSON file:
 
 ## Entities Storage
 
-Entities are stored as individual markdown files in `.evolve/entities/`, nested by type:
+Entities are stored as individual markdown files in `.evolve/entities/`, nested
+by type. A mirrored native memory lands under its native type:
 
 ```
 .evolve/entities/
-  guideline/
-    use-python-pil-for-image-metadata-extraction.md
-    cache-api-responses-locally.md
+  feedback/
+    canada-km-only.md
+  project/
+    use-pillow-for-image-metadata.md
 ```
 
 Each file uses markdown with YAML frontmatter:
 
 ```markdown
 ---
-type: guideline
-trigger: When extracting image metadata in containerized environments
+type: project
+trigger: When extracting image metadata in a sandbox without exiftool
+source: native-memory
+native_path: /Users/you/.claude/projects/<hash>/memory/use-pillow-for-image-metadata.md
 ---
 
-Use Python PIL/Pillow for image metadata extraction in sandboxed environments
+Use Python Pillow for image metadata extraction in sandboxed environments.
 
-## Rationale
-
-System tools like exiftool may not be available
+System tools like exiftool may not be installed in the sandbox.
 ```
 
 ## Environment Variables
 
-- `EVOLVE_DIR`: Override the default `.evolve` directory location (entities, trajectories, config, etc. are stored here)
+- `EVOLVE_DEBUG`: set to any non-empty value to append debug lines from the
+  helper scripts to `$TMPDIR/evolve-<uid>/evolve-plugin.log`.
+- `EVOLVE_DIR`: **not supported end to end yet.** Some scripts read it, but
+  `EVOLVE.md` and the installer always use `<project>/.evolve`, and
+  `subscribe` and `sync` resolve the project root from it differently. Leave
+  it unset.
 
 ## Verification
 
-After installation, run `claude plugin list` to confirm the plugin is enabled.
+After installation:
+
+1. `claude plugin list` confirms the plugin is enabled.
+2. `/evolve-lite:doctor` confirms `EVOLVE.md` is actually reaching sessions —
+   the import dialog above is easy to miss, and nothing else reports it.
 
 ## Plugin Structure
 
 ```text
-evolve/
+evolve-lite/
 ├── .claude-plugin/
-│   └── plugin.json              # Plugin manifest
+│   └── plugin.json                  # Plugin manifest (its `skills` key points
+│                                    # at ./skills/evolve-lite/)
+├── EVOLVE.md                        # The two-step contract, imported by CLAUDE.md
+├── lib/
+│   └── evolve-lite/                 # Shared helpers used by the skill scripts
+│       ├── audit_recall.py          # Also installed to ~/.claude/evolve-lite/
+│       ├── audit.py
+│       ├── config.py
+│       ├── entity_io.py
+│       └── retention.py
 ├── skills/
-│   ├── learn/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── save_entities.py
-│   ├── recall/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── retrieve_entities.py
-│   ├── subscribe/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── subscribe.py
-│   ├── publish/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── publish.py
-│   ├── sync/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── sync.py
-│   ├── unsubscribe/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── unsubscribe.py
-│   ├── save/
-│   │   └── SKILL.md
-│   └── save-trajectory/
-│       ├── SKILL.md
-│       └── scripts/
-│           └── save_trajectory.py
-├── hooks/
-│   └── hooks.json               # Auto-configured hooks
+│   └── evolve-lite/                 # Namespace dir → skills are `evolve-lite:<name>`
+│       ├── adapt-memory/
+│       ├── doctor/
+│       ├── provenance/
+│       ├── publish/
+│       ├── retention/
+│       ├── save/
+│       ├── save-trajectory/
+│       ├── subscribe/
+│       ├── sync/
+│       ├── synthesize-skill/
+│       └── unsubscribe/             # each: SKILL.md [+ scripts/]
 └── README.md
 ```
+
+No `hooks/` directory — this plugin ships no hooks.
