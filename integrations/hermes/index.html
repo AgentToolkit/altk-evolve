@@ -1767,7 +1767,7 @@
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
 <p>Both halves of the loop are automatic — they run from <code>MemoryProvider</code> callbacks, not from anything you type.</p>
 <p><strong>Recall.</strong> After each turn, the provider retrieves guidelines on a background thread; on the next turn they are injected as a numbered list under <code>Guidelines learned from previous sessions (apply when relevant):</code>. Retrieval is case-insensitive term overlap between your message and each guideline's trigger + content — lexical, not semantic. Recalled text is passed through Hermes's own context sanitizer before injection, so a guideline that contains something fence-shaped cannot forge a context boundary.</p>
-<p><strong>Capture.</strong> At session end, if the session had at least <code>min_turns</code> user turns, the conversation is flattened to an OpenAI-shaped trajectory (system prompts dropped, tool calls inlined, previously-injected guidelines stripped so Evolve cannot re-learn its own output), appended to <code>trajectories/&lt;session_id&gt;.jsonl</code>, and passed through a single structured LLM call that applies evolve-lite's <code>learn</code> criteria. Each guideline that comes back is saved as a Markdown entity. Capture never breaks a session: every failure mode — no LLM available, a malformed response, an unwritable store — ends in zero guidelines, not an error.</p>
+<p><strong>Capture.</strong> At session end, if the session had at least <code>min_turns</code> user turns, the conversation is flattened to an OpenAI-shaped trajectory (system prompts dropped, tool calls inlined, previously-injected guidelines stripped so Evolve cannot re-learn its own output), appended to <code>trajectories/&lt;session_id&gt;-&lt;digest&gt;.jsonl</code> (the readable part of the id, plus a truncated SHA-256 of the whole id — session ids are not all filename-safe, and folding them to something that is would let two sessions share a file), and passed through a single structured LLM call that applies evolve-lite's <code>learn</code> criteria. Each guideline that comes back is saved as a Markdown entity. Capture never breaks a session: every failure mode — no LLM available, a malformed response, an unwritable store — ends in zero guidelines, not an error.</p>
 <p>Two details worth knowing:</p>
 <ul>
 <li><strong>Only primary sessions write.</strong> Subagents and cron jobs get recall but never capture, so background work cannot pollute the store.</li>
@@ -1864,7 +1864,7 @@
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    guideline/
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>      use-make-check-for-tests.md
 <a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  trajectories/
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    &lt;session_id&gt;.jsonl
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    &lt;session_id&gt;-&lt;digest&gt;.jsonl
 </code></pre></div>
 <p>Entity files are the same Markdown-with-YAML-frontmatter format as every other Evolve integration:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>---
