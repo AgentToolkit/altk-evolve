@@ -89,12 +89,27 @@ class TrajectoryBatch(BaseModel):
         )
 
 
+class TrajectoryOutcome(BaseModel):
+    """How an evaluator judged the task this trajectory performed.
+
+    success sets each generated guideline's evidence. failed_checks and detail
+    describe a failure (failed requirements or assertions, the start of an
+    evaluation report) for processors that use them; they are not stored.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    success: bool
+    failed_checks: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+    detail: str | None = None
+
+
 class Trajectory(BaseModel):
     """A processing input, not necessarily a finished conversation.
 
     messages contains this batch's new material; context_messages is supporting
     history and must not be counted as another contribution. A batch identity
     enables per-processor durable deduplication. Without it, calls are untracked.
+    An outcome supplied after its batch was processed needs a new batch revision.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -105,6 +120,7 @@ class Trajectory(BaseModel):
     trace_id: str | None = None
     model: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    outcome: TrajectoryOutcome | None = None
 
 
 @dataclass(frozen=True)

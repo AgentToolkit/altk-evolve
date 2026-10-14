@@ -175,7 +175,13 @@ CLAUDE_ALLOW_RULES   = [
     "Bash(python3 ~/.claude/evolve-lite/" + ADAPT_SCRIPT + ":*)",
     "Bash(python3 ~/.claude/evolve-lite/" + AUDIT_SCRIPT + ":*)",
     "Read(.evolve/**)",
+    # Edit(path) covers every file-editing tool, Write included. Claude ignores
+    # Write(path) rules and warns about them on every session start.
     "Edit(.evolve/**)",
+]
+# Rules earlier installers merged in and that are no longer wanted. Install
+# strips them so upgraded repos stop warning; uninstall strips them too.
+CLAUDE_LEGACY_ALLOW_RULES = [
     "Write(.evolve/**)",
 ]
 
@@ -184,7 +190,7 @@ CLAUDE_ALLOW_RULES   = [
 # `; rm -rf` after it still prompts). We allowlist ONLY that command so the
 # recall-audit step stops prompting every session. We deliberately do NOT
 # touch the entity read/write prompts: Bob's file-tool allowlist is not
-# path-scopable to `.evolve/` the way Claude's `Write(.evolve/**)` is, and
+# path-scopable to `.evolve/` the way Claude's `Edit(.evolve/**)` is, and
 # enabling blanket auto-accept is too broad to do on the user's behalf. Lives in
 # `tools.allowed` of the GLOBAL ~/.bob/settings.json — the user's own config, so
 # we only ever add/remove this one rule and never own or delete the file.
@@ -1261,6 +1267,7 @@ class ClaudeInstaller:
         # merge the allow-rules into the repo's project settings (idempotent,
         # preserves existing rules/keys). See CLAUDE_ALLOW_RULES for the rationale.
         settings_path = Path(target_dir) / CLAUDE_SETTINGS_REL
+        self.ops.remove_json_permission_rules(settings_path, CLAUDE_LEGACY_ALLOW_RULES)
         self.ops.merge_json_permission_rules(settings_path, CLAUDE_ALLOW_RULES)
         success(f"Allowlisted evolve scripts + .evolve writes in {settings_path} (no per-use prompts)")
 
@@ -1312,7 +1319,7 @@ class ClaudeInstaller:
         self.ops.remove_marker_line(Path(target_dir) / "CLAUDE.md", CLAUDE_IMPORT_MARKER)
         self.ops.remove_file(Path(target_dir) / CLAUDE_EVOLVE_MD_REL)
         settings_path = Path(target_dir) / CLAUDE_SETTINGS_REL
-        self.ops.remove_json_permission_rules(settings_path, CLAUDE_ALLOW_RULES)
+        self.ops.remove_json_permission_rules(settings_path, CLAUDE_ALLOW_RULES + CLAUDE_LEGACY_ALLOW_RULES)
         self.ops.remove_dir_if_empty(Path(target_dir) / ".claude")
         claude_evolve_dir = Path.home() / ".claude" / "evolve-lite"
         self.ops.remove_file(claude_evolve_dir / AUDIT_SCRIPT)
