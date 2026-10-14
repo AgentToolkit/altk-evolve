@@ -23,7 +23,7 @@ Use this history to interpret the new steps below, not as additional steps to le
 **IMPORTANT TO REMEMBER:**
 {% if outcome %}{% if outcome.success %}1. The task succeeded. Return at most {{max_guidelines}} guidelines, and only for non-obvious patterns the agent had to work out: a discovery, a recovery, or a step it would easily have missed.
 2. If the agent succeeded without struggle, return an empty list.
-{% else %}1. The task failed. Return 1 to {{max_guidelines}} corrective guidelines that would have prevented this failure{% if failed_checks or detail %}, grounded in the failed checks and evaluation detail above{% endif %}.{% if segmented %} If this part of the trajectory did not contribute to the failure, return an empty list.{% endif %}
+{% else %}1. The task failed. Return 1 to {{max_guidelines}} corrective guidelines that would have prevented this failure{% if failed_checks or detail %}, grounded in the failed checks and evaluation detail above{% endif %}.{% if segmented %}{# Added in #351 review, not yet evaluated: compare guideline yield and quality on segmented failed runs with and without this clause. #} If this part of the trajectory did not contribute to the failure, return an empty list.{% endif %}
 2. Identify the step where the agent went wrong, and state what it should have done instead.
 {% endif %}3. An empty list is better than generic advice. Never return platitudes like "be careful" or "double-check your work".
 4. Write each guideline as an imperative instruction about a specific behavior.
