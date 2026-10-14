@@ -253,6 +253,22 @@ def test_options_and_task_selection(tmp_path: Path):
         CugaAdapter().configure({"include_summaries": "maybe"})
 
 
+def test_partitions_keep_other_splits_out():
+    # The fixture parent holds a dev and a train run; without a filter both are mined.
+    train = CugaAdapter().configure({"partitions": "test_normal_train"})
+    assert list(by_id(train)) == ["ccc0003_1"]
+    both = CugaAdapter().configure({"partitions": "test_normal_dev, test_normal_train"})
+    assert list(by_id(both)) == ["aaa0001_1", "aaa0001_2", "ccc0003_1"]
+
+    with pytest.raises(ValueError, match=r"Partitions not found .*\['dev'\] \(found \['test_normal_dev', 'test_normal_train'\]\)"):
+        next(CugaAdapter(partitions=frozenset({"dev"})).records(FIXTURES))
+    # A selected task outside the selected partitions is not found, not silently dropped.
+    with pytest.raises(ValueError, match=r"Task IDs not found .*\['aaa0001_1'\]"):
+        next(train.configure({"task_ids": "aaa0001_1"}).records(FIXTURES))
+    with pytest.raises(ValueError, match="cuga option partitions names nothing"):
+        CugaAdapter().configure({"partitions": ""})
+
+
 def test_records_stream_one_task_at_a_time(run_copy: Path):
     (run_copy / "aaa0001_2.json").write_text("{ truncated")
     records = CugaAdapter().records(run_copy)

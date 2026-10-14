@@ -60,14 +60,16 @@ class CugaAdapter:
 
     Options: include_system_prompt, include_summaries (booleans; add them as
     context_messages), task_ids (comma-separated), task_manifest (a JSON file with
-    ``task_ids`` or ``tasks[].task_id``, or one ID per line) and model (the agent's
-    model, recorded on the trajectory).
+    ``task_ids`` or ``tasks[].task_id``, or one ID per line), partitions
+    (comma-separated; only runs whose metadata.partition is listed) and model (the
+    agent's model, recorded on the trajectory).
     """
 
     name: str = "cuga"
     include_system_prompt: bool = False
     include_summaries: bool = False
     task_ids: frozenset[str] = field(default_factory=frozenset)
+    partitions: frozenset[str] = field(default_factory=frozenset)
     model: str | None = None
 
     def configure(self, options: Mapping[str, str]) -> CugaAdapter:
@@ -80,11 +82,13 @@ class CugaAdapter:
                 task_ids.update(_names(key, value))
             elif key == "task_manifest":
                 task_ids.update(load_task_manifest(Path(value)))
+            elif key == "partitions":
+                changes[key] = frozenset(_names(key, value))
             elif key == "model":
                 changes[key] = value or None
             else:
                 raise ValueError(
-                    f"Unknown cuga option {key!r} (expected include_system_prompt, include_summaries, task_ids, task_manifest, model)"
+                    f"Unknown cuga option {key!r} (expected include_system_prompt, include_summaries, task_ids, task_manifest, partitions, model)"
                 )
         return replace(self, **changes, task_ids=frozenset(task_ids))
 
@@ -92,6 +96,11 @@ class CugaAdapter:
         run_dirs = _run_dirs(path)
         if not run_dirs:
             raise ValueError(f"No CUGA run directory at {path}")
+        if self.partitions:
+            found_partitions = {_partition(run_dir.name) for run_dir in run_dirs}
+            if missing := sorted(self.partitions - found_partitions):
+                raise ValueError(f"Partitions not found beneath {path}: {missing} (found {sorted(found_partitions)})")
+            run_dirs = [run_dir for run_dir in run_dirs if _partition(run_dir.name) in self.partitions]
         if self.task_ids:
             found = {task_file.stem for run_dir in run_dirs for task_file in _task_files(run_dir)}
             if missing := sorted(self.task_ids - found):
@@ -114,7 +123,7 @@ class CugaAdapter:
         evaluation = _evaluation(steps, result)
         metadata = {
             "run": run,
-            "partition": run.split("_all_")[1].split("_")[0] if "_all_" in run else run,
+            "partition": _partition(run),
             "dataset": task.get("dataset_name") or None,
             "experiment": experiment,
             "model": self.model,  # also in metadata: the guideline processor stores metadata, not Trajectory.model
@@ -304,6 +313,11 @@ def _run_dirs(path: Path) -> list[Path]:
     if stray := sorted(f.name for f in path.glob("*.json")):
         logger.warning("ignored %s in %s: it holds run directories, so it is not a run itself", ", ".join(stray), path)
     return children
+
+
+def _partition(run: str) -> str:
+    """The split a run evaluated: "dev" in ``cuga_all_dev_<model>``, else the run's own name."""
+    return run.split("_all_")[1].split("_")[0] if "_all_" in run else run
 
 
 def _is_run_dir(path: Path) -> bool:

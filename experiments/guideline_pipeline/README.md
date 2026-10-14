@@ -115,6 +115,7 @@ run directory or a directory of them:
 ```text
 <input>/
   <run>/                      # e.g. test_normal_dev; becomes metadata.run and metadata.partition
+                              # (partition is dev for cuga_all_dev_<model>, else the run name)
     metadata.json             # optional: {"task_ids": [...], "experiment_name": ...}
     results.json              # optional: {"<task_id>": {"eval": <JSON string or object>, ...}}
     <task_id>.json            # {"intent", "score", "dataset_name", "steps": [{"name", "data", "prompts"?}]}
@@ -156,7 +157,12 @@ Options (`--adapter-option KEY=VALUE`):
 | `include_summaries=true` | Add each reflective `Summary` block from `User_return` steps as an assistant context message. |
 | `task_ids=a_1,b_2` | Only these tasks. A listed ID that is not found ends the run with an error, and so does a value that lists no IDs. |
 | `task_manifest=<file>` | Only the tasks in a JSON file (`task_ids` or `tasks[].task_id`) or a text file with one ID per line (`#` comments). Combines with `task_ids`. |
+| `partitions=dev,test` | Only runs whose `metadata.partition` is listed. A listed partition that is not found ends the run with an error, and so does a value that lists none. |
 | `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
+
+A directory of runs is mined into one namespace whatever its partitions, so mining
+train and dev runs together puts dev-derived guidelines into a namespace you may
+later evaluate on dev. Pass `partitions=` to mine one split.
 
 Context messages are supporting history: the extractor sees them, but they are
 not counted as steps and are rendered within a character budget that keeps the
