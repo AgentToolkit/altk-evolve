@@ -1281,34 +1281,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Installation">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#from-local-directory" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From Local Directory
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#from-marketplace" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From Marketplace
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -1346,10 +1318,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#session-1-learn-a-preference" class="md-nav__link">
+  <a href="#session-1-claude-saves-a-preference" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Session 1 — Learn a preference
+        Session 1 — Claude saves a preference
       
     </span>
   </a>
@@ -1694,34 +1666,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Installation">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#from-local-directory" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From Local Directory
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#from-marketplace" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From Marketplace
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -1759,10 +1703,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#session-1-learn-a-preference" class="md-nav__link">
+  <a href="#session-1-claude-saves-a-preference" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Session 1 — Learn a preference
+        Session 1 — Claude saves a preference
       
     </span>
   </a>
@@ -1926,38 +1870,40 @@
 
 
 <h1 id="evolve-lite">Evolve Lite<a class="headerlink" href="#evolve-lite" title="Permanent link">&para;</a></h1>
-<p>Evolve Lite is a lightweight mode that runs as a Claude Code plugin — no vector store, no MCP servers, no API keys required. It stores entities as Markdown files with YAML frontmatter under <code>.evolve/entities/</code> in your project directory and uses Claude Code's built-in hooks to inject them automatically.</p>
+<p>Evolve Lite is a lightweight mode that runs as a Claude Code plugin — no vector store, no MCP servers, no API keys required. It stores entities as Markdown files with YAML frontmatter under <code>.evolve/entities/</code> in your project directory, and rides on Claude Code's own native memory rather than installing hooks of its own.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> installed with credentials configured</li>
 </ul>
 <h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
-<h3 id="from-local-directory">From Local Directory<a class="headerlink" href="#from-local-directory" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>claude<span class="w"> </span>--plugin-dir<span class="w"> </span>/path/to/altk-evolve/platform-integrations/claude/plugins/evolve-lite
+<p>Run the installer from your project root:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>claude
 </code></pre></div>
-<h3 id="from-marketplace">From Marketplace<a class="headerlink" href="#from-marketplace" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>claude<span class="w"> </span>plugin<span class="w"> </span>marketplace<span class="w"> </span>add<span class="w"> </span>AgentToolkit/altk-evolve
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>claude<span class="w"> </span>plugin<span class="w"> </span>install<span class="w"> </span>evolve-lite@evolve-marketplace
+<p>or, from a clone of the repo:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>platform-integrations/install.sh<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>claude<span class="w"> </span>--dir<span class="w"> </span>/path/to/your/project
 </code></pre></div>
-<p>Verify the plugin is active:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>claude<span class="w"> </span>plugin<span class="w"> </span>list
+<p>The installer installs the plugin from the marketplace (<code>evolve-lite@evolve-marketplace</code>), copies <code>EVOLVE.md</code> into <code>&lt;project&gt;/.evolve/</code>, adds its import line to the project's <code>CLAUDE.md</code>, installs <code>adapt_memory.py</code>, <code>audit_recall.py</code> and their shared <code>lib/</code> under <code>~/.claude/evolve-lite/</code>, and allowlists those scripts in <code>&lt;project&gt;/.claude/settings.json</code>.</p>
+<p>Installing only the plugin (<code>claude --plugin-dir …</code>, or <code>claude plugin install</code> on its own) loads the skills but skips the rest, so nothing reaches your sessions. Run the installer as well.</p>
+<p>Verify the install:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>claude<span class="w"> </span>plugin<span class="w"> </span>list<span class="w">        </span><span class="c1"># the plugin is enabled</span>
 </code></pre></div>
+<p>Then run <code>/evolve-lite:doctor</code> in a Claude session to confirm <code>EVOLVE.md</code> is being loaded.</p>
 <h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
-<p>Evolve Lite has two halves:</p>
+<p>Claude Code already recalls and saves memories on its own judgment: it decides what to look up at the start of a task and what to write down at the end. Evolve Lite does not intercept either. It adds the two things native memory lacks:</p>
 <ol>
 <li>
-<p><strong>Learn</strong> — You invoke <code>/evolve-lite:learn</code> at the end of a conversation. The plugin analyzes what happened, produces an entity JSON payload, and saves each entity as a Markdown file under <code>.evolve/entities/</code>.</p>
+<p><strong>Sharing</strong> — When Claude saves a native memory, it invokes <code>/evolve-lite:adapt-memory</code>, which mirrors the same fact into <code>.evolve/entities/{type}/{name}.md</code> as a normal Evolve entity, where <code>{type}</code> is the native memory's type (<code>user</code>, <code>feedback</code>, <code>project</code> or <code>reference</code>). Publishing mirrored memories to a shared repo is not supported yet: <code>/evolve-lite:publish</code> only reads <code>.evolve/entities/guideline/</code> (tracked in <a href="https://github.com/AgentToolkit/altk-evolve/issues/373">#373</a>).</p>
 </li>
 <li>
-<p><strong>Recall</strong> — On every subsequent prompt, a <code>UserPromptSubmit</code> hook automatically loads stored entities and injects them into the conversation context. Claude applies whichever entities are relevant to the current task.</p>
+<p><strong>Provenance</strong> — When Claude consults native memories, it runs <code>python3 ~/.claude/evolve-lite/audit_recall.py &lt;type&gt;/&lt;name&gt;</code>, recording what was actually opened so the store's value can be measured over time.</p>
 </li>
 </ol>
-<p>No external services are involved. The entire loop is a directory of entity files and two Python scripts.</p>
+<p>Both steps come from one short instruction file. The installer copies it to <code>&lt;repo&gt;/.evolve/EVOLVE.md</code> and injects a single native import line, <code>@.evolve/EVOLVE.md</code>, into the repo's <code>CLAUDE.md</code>. Claude shows a one-time "allow external imports" dialog on the first session afterwards — you must Allow it, or the import is inert and neither step happens. Run <code>/evolve-lite:doctor</code> to check.</p>
+<p>No external services and no hooks are involved. Beyond the plugin itself, the whole mechanism is one imported Markdown file, a directory of entity files, a few Python scripts under <code>~/.claude/evolve-lite/</code>, and the allow-rules in <code>.claude/settings.json</code>.</p>
 <h2 id="example-walkthrough">Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permanent link">&para;</a></h2>
-<p>The examples below show the learn-then-recall loop across multiple sessions, starting with a simple preference and then a more complex recovery pattern.</p>
+<p>The examples below show a memory saved in one session being applied in the next, starting with a simple preference and then a more complex recovery pattern.</p>
 <h2 id="example-1-learning-a-user-preference">Example 1 — Learning a user preference<a class="headerlink" href="#example-1-learning-a-user-preference" title="Permanent link">&para;</a></h2>
-<p>This example shows the full learn-then-recall loop across two sessions.</p>
-<h3 id="session-1-learn-a-preference">Session 1 — Learn a preference<a class="headerlink" href="#session-1-learn-a-preference" title="Permanent link">&para;</a></h3>
+<h3 id="session-1-claude-saves-a-preference">Session 1 — Claude saves a preference<a class="headerlink" href="#session-1-claude-saves-a-preference" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>You: Tell me the distances between the 3 most populous cities in Canada.
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>Claude: The three most populous cities in Canada are Toronto, Montreal, and
@@ -1973,24 +1919,15 @@
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>Claude: Got it — I&#39;ll use kilometres only for Canadian cities.
 <a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>You: /evolve-lite:learn
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>Claude: I&#39;ve extracted the following entities from this conversation:
-<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>
-<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>        {
-<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>          &quot;entities&quot;: [
-<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>            {
-<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>              &quot;content&quot;: &quot;When presenting distances between Canadian cities, use kilometres only — do not include miles&quot;,
-<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>              &quot;rationale&quot;: &quot;User explicitly prefers metric units for Canadian geography&quot;,
-<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a>              &quot;category&quot;: &quot;strategy&quot;,
-<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>              &quot;trigger&quot;: &quot;When discussing distances or travel between cities in Canada&quot;
-<a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>            }
-<a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a>          ]
-<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a>        }
-<a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a>
-<a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a>        Added 1 new entity(ies). Total: 1
-<a id="__codelineno-3-32" name="__codelineno-3-32" href="#__codelineno-3-32"></a>        Entities stored in: /path/to/project/.evolve/entities
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>        [saves a native memory: &quot;When presenting distances between Canadian
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>         cities, use kilometres only — do not include miles&quot;]
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>        [invokes evolve-lite:adapt-memory]
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>        Mirrored native memory into evolve store: /path/to/project/.evolve/entities/feedback/canada-km-only.md
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>        Entity id: feedback/canada-km-only
 </code></pre></div>
+<p>Claude decided to save that on its own — you did not invoke a skill. The <code>adapt-memory</code> step mirrors the saved fact into the project's evolve store as <code>.evolve/entities/feedback/canada-km-only.md</code>, where it is auditable like any other entity. (It cannot be published yet; see How It Works above.)</p>
 <h3 id="session-2-preference-is-applied-automatically">Session 2 — Preference is applied automatically<a class="headerlink" href="#session-2-preference-is-applied-automatically" title="Permanent link">&para;</a></h3>
 <p>Start a new Claude Code session in the same project:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>You: Tell me the distances between the 3 most populous cities in Canada.
@@ -2004,102 +1941,74 @@
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>        | Toronto ↔ Vancouver      | 4,338         |
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>        | Montreal ↔ Vancouver     | 4,810         |
 </code></pre></div>
-<p>The entity was automatically injected via the <code>UserPromptSubmit</code> hook, so Claude used kilometres only — without being reminded.</p>
+<p>Claude recalled the memory itself and used kilometres only — without being reminded.</p>
 <h2 id="example-2-learning-from-failure-in-a-sandboxed-environment">Example 2 — Learning from failure in a sandboxed environment<a class="headerlink" href="#example-2-learning-from-failure-in-a-sandboxed-environment" title="Permanent link">&para;</a></h2>
-<p>This example shows how Evolve Lite helps an agent avoid dead ends it encountered in a previous session. The agent runs in a Docker sandbox where common system tools are not installed.</p>
-<p>To run it, first build the Docker image:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>just<span class="w"> </span>sandbox-build
-</code></pre></div>
-<p>Then run a task to extract metadata from an image:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>just<span class="w"> </span><span class="nv">trace</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="nv">learn</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span>sandbox-prompt<span class="w"> </span><span class="s1">&#39;where was the photo @sample.jpg taken. use exif metadata&#39;</span>
-</code></pre></div>
-<p>When you run the above, you will see that the agent hits some dead ends (exiftool not found, Pillow not installed), and that it learns guidelines to avoid them in the future (see <code>demo/workspace/.evolve/entities/</code>).</p>
-<p>Run the same task again in a new session:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>just<span class="w"> </span><span class="nv">trace</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span>sandbox-prompt<span class="w"> </span><span class="s1">&#39;where was the photo @sample.jpg taken. use exif metadata&#39;</span>
-</code></pre></div>
-<p>You will see that the agent now is more efficient, avoiding the dead ends it encountered in the previous session such as trying to use exiftool.</p>
-<p>The instructions below walk you through the same example in interactive sessions.</p>
+<p>This example shows how Evolve Lite helps an agent avoid dead ends it encountered in a previous session. It assumes an environment where common tools — <code>exiftool</code> and the Pillow library — are not installed.</p>
+<p>To reproduce it, install Evolve Lite into a project as described in <a href="#installation">Installation</a>, copy <a href="https://github.com/AgentToolkit/altk-evolve/blob/main/demo/workspace/sample.jpg"><code>demo/workspace/sample.jpg</code></a> into that project, and run the two sessions below as two separate interactive Claude sessions in the same project. Native memory persists between them because both sessions share the same <code>~/.claude/projects/&lt;hash&gt;/memory/</code> store.</p>
 <h3 id="session-1-solving-the-hard-way">Session 1 — Solving the hard way<a class="headerlink" href="#session-1-solving-the-hard-way" title="Permanent link">&para;</a></h3>
 <p>The user asks the agent to find where a photo was taken:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>You: Where was this photo taken? [sample.jpg]
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>Claude: I&#39;ll extract the GPS coordinates from the photo&#39;s EXIF metadata.
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>        [runs: exiftool sample.jpg]
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>        exiftool: command not found
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
-<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>        Let me try using Python with Pillow instead.
-<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>
-<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>        [runs: python3 -c &quot;from PIL import Image; ...&quot;]
-<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>
-<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>        ModuleNotFoundError: No module named &#39;PIL&#39;
-<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>
-<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>        I&#39;ll install Pillow first.
-<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>
-<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>        [runs: pip install Pillow]
-<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>        [runs: python3 script to extract EXIF GPS via Pillow]
-<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>
-<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>        The photo was taken at:
-<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a>        - Latitude:  51.4936° N
-<a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>        - Longitude: 0.0376° E
-<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>
-<a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a>        This places it in Wapping, East London, UK.
-<a id="__codelineno-8-25" name="__codelineno-8-25" href="#__codelineno-8-25"></a>        Google Maps: https://www.google.com/maps?q=51.493608,0.037561
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>You: Where was this photo taken? [sample.jpg]
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>Claude: I&#39;ll extract the GPS coordinates from the photo&#39;s EXIF metadata.
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>        [runs: exiftool sample.jpg]
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>        exiftool: command not found
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>        Let me try using Python with Pillow instead.
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>        [runs: python3 -c &quot;from PIL import Image; ...&quot;]
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>        ModuleNotFoundError: No module named &#39;PIL&#39;
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>        I&#39;ll install Pillow first.
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>        [runs: pip install Pillow]
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>        [runs: python3 script to extract EXIF GPS via Pillow]
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>        The photo was taken at:
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>        - Latitude:  51.4936° N
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>        - Longitude: 0.0376° E
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>        This places it in Wapping, East London, UK.
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>        Google Maps: https://www.google.com/maps?q=51.493608,0.037561
 </code></pre></div>
-<p>The agent got the right answer, but wasted two turns on dead ends (exiftool not found, Pillow not installed). Now the user runs <code>/evolve-lite:learn</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>You: /evolve-lite:learn
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>Claude: I&#39;ve extracted the following entities from this conversation:
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>        {
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>          &quot;entities&quot;: [
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>            {
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>              &quot;content&quot;: &quot;Use Python stdlib (struct module) to manually parse JPEG
-<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>                          EXIF/GPS metadata when no external tools are available&quot;,
-<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>              &quot;rationale&quot;: &quot;In sandboxed environments, neither system tools (exiftool)
-<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>                          nor third-party libraries (PIL/Pillow) may be installed.
-<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>                          Python stdlib is always available and sufficient for JPEG
-<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>                          binary parsing.&quot;,
-<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>              &quot;category&quot;: &quot;strategy&quot;,
-<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>              &quot;trigger&quot;: &quot;When extracting EXIF or GPS metadata from images in
-<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>                          containerized or sandboxed environments&quot;
-<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>            },
-<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>            {
-<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>              &quot;content&quot;: &quot;When system tools or pip packages are unavailable, check if
-<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>                          the task can be solved with Python stdlib before attempting
-<a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>                          installs&quot;,
-<a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>              &quot;rationale&quot;: &quot;Binary parsing, HTTP requests (urllib), JSON, CSV, and many
-<a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>                          common tasks are fully covered by stdlib. Attempting installs
-<a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>                          in sandboxes wastes time and often fails silently.&quot;,
-<a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a>              &quot;category&quot;: &quot;recovery&quot;,
-<a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a>              &quot;trigger&quot;: &quot;When a required CLI tool or Python package is missing in a
-<a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a>                          restricted environment&quot;
-<a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a>            }
-<a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a>          ]
-<a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a>        }
-<a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a>
-<a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a>        Added 2 new entity(ies). Total: 2
-<a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a>        Entities stored in: /workspace/.evolve/entities
+<p>The agent got the right answer, but wasted two turns on dead ends (exiftool not found, Pillow not installed). Having learned something worth keeping, it saves memories and mirrors them:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>Claude: [saves a native memory: &quot;Use Python stdlib (struct module) to manually
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>         parse JPEG EXIF/GPS metadata when no external tools are available&quot; —
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>         in sandboxed environments neither system tools (exiftool) nor
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>         third-party libraries (PIL/Pillow) may be installed]
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>        [saves a native memory: &quot;When system tools or pip packages are
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>         unavailable, check if the task can be solved with Python stdlib
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>         before attempting installs&quot;]
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>        [invokes evolve-lite:adapt-memory for each]
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>        Mirrored native memory into evolve store: /path/to/project/.evolve/entities/project/parse-exif-with-python-stdlib.md
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>        Entity id: project/parse-exif-with-python-stdlib
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>        Mirrored native memory into evolve store: /path/to/project/.evolve/entities/project/prefer-stdlib-before-installs.md
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>        Entity id: project/prefer-stdlib-before-installs
 </code></pre></div>
 <h3 id="session-2-no-more-dead-ends">Session 2 — No more dead ends<a class="headerlink" href="#session-2-no-more-dead-ends" title="Permanent link">&para;</a></h3>
-<p>In a new session, the user asks the same question. The stored entities are automatically injected via the <code>UserPromptSubmit</code> hook:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>You: Where was this photo taken? [sample.jpg]
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>Claude: I&#39;ll extract the GPS coordinates from the EXIF data using Python&#39;s
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>        struct module.
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>        [runs: python3 script using struct to parse JPEG EXIF binary data]
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>        The photo was taken at:
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>        - Latitude:  51.4936° N
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>        - Longitude: 0.0376° E
-<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>
-<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>        This places it in Wapping, East London, UK.
-<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>        Google Maps: https://www.google.com/maps?q=51.493608,0.037561
+<p>In a new session, the user asks the same question. Claude recalls the memories it saved:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>You: Where was this photo taken? [sample.jpg]
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>Claude: I&#39;ll extract the GPS coordinates from the EXIF data using Python&#39;s
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>        struct module.
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>        [runs: python3 script using struct to parse JPEG EXIF binary data]
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>        The photo was taken at:
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>        - Latitude:  51.4936° N
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>        - Longitude: 0.0376° E
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>        This places it in Wapping, East London, UK.
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>        Google Maps: https://www.google.com/maps?q=51.493608,0.037561
 </code></pre></div>
 <p>The agent skipped both <code>exiftool</code> and <code>Pillow</code> entirely — it went straight to the Python stdlib approach that it learned works in sandboxed environments. Two wasted turns eliminated.</p>
 <h2 id="available-skills">Available Skills<a class="headerlink" href="#available-skills" title="Permanent link">&para;</a></h2>
+<p>There is no <code>learn</code> or <code>recall</code> skill on Claude — native memory owns both.</p>
 <table>
 <thead>
 <tr>
@@ -2109,38 +2018,72 @@
 </thead>
 <tbody>
 <tr>
-<td><code>/evolve-lite:learn</code></td>
-<td>Extract entities from the current conversation and save them</td>
+<td><code>/evolve-lite:adapt-memory</code></td>
+<td>Mirror a just-saved native memory into the project's evolve store</td>
 </tr>
 <tr>
-<td><code>/evolve-lite:recall</code></td>
-<td>Manually retrieve and display stored entities</td>
+<td><code>/evolve-lite:doctor</code></td>
+<td>Verify the <code>CLAUDE.md</code> import is actually loading <code>EVOLVE.md</code></td>
 </tr>
 <tr>
-<td><code>/evolve:save</code></td>
+<td><code>/evolve-lite:subscribe</code></td>
+<td>Add a shared guidelines repo (read-scope or write-scope)</td>
+</tr>
+<tr>
+<td><code>/evolve-lite:publish</code></td>
+<td>Publish a local guideline to a write-scope repo</td>
+</tr>
+<tr>
+<td><code>/evolve-lite:sync</code></td>
+<td>Pull the latest guidelines from every configured repo</td>
+</tr>
+<tr>
+<td><code>/evolve-lite:unsubscribe</code></td>
+<td>Remove a repo and delete its local clone</td>
+</tr>
+<tr>
+<td><code>/evolve-lite:provenance</code></td>
+<td>Report whether recalled guidelines influenced past sessions</td>
+</tr>
+<tr>
+<td><code>/evolve-lite:retention</code></td>
+<td>Flag or delete stale entities and expired sessions (dry-run by default)</td>
+</tr>
+<tr>
+<td><code>/evolve-lite:save</code></td>
 <td>Capture a successful workflow as a reusable skill</td>
+</tr>
+<tr>
+<td><code>/evolve-lite:save-trajectory</code></td>
+<td>Export the conversation as a trajectory JSON file</td>
+</tr>
+<tr>
+<td><code>/evolve-lite:synthesize-skill</code></td>
+<td>Turn a saved trajectory into an executable skill</td>
 </tr>
 </tbody>
 </table>
 <h2 id="entities-storage">Entities Storage<a class="headerlink" href="#entities-storage" title="Permanent link">&para;</a></h2>
-<p>Entities live in <code>.evolve/entities/</code> in the project root, organized into type-based subdirectories:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>.evolve/entities/
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>  strategy/
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    use-python-stdlib-struct-module-to-manually-parse-jpeg-exif-gps.md
+<p>Entities live in <code>.evolve/entities/</code> in the project root, organized into type-based subdirectories. A mirrored native memory lands under its native type (<code>user</code>, <code>feedback</code>, <code>project</code> or <code>reference</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>.evolve/entities/
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  feedback/
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    canada-km-only.md
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  project/
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    parse-exif-with-python-stdlib.md
 </code></pre></div>
 <p>Each entity file uses Markdown with YAML frontmatter:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>---
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>type: strategy
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="gu">trigger: When extracting EXIF or GPS metadata from images in containerized or sandboxed environments</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="gu">---</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>Use Python stdlib (struct module) to manually parse JPEG EXIF/GPS metadata when no external tools are available
-<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>
-<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="gu">## Rationale</span>
-<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>In sandboxed environments, neither system tools (exiftool) nor third-party libraries (PIL/Pillow) may be installed. Python stdlib is always available.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>---
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>type: project
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>trigger: When extracting EXIF or GPS metadata from images in containerized or sandboxed environments
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>source: native-memory
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="gu">native_path: /Users/you/.claude/projects/&lt;hash&gt;/memory/parse-exif-with-python-stdlib.md</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="gu">---</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>Use Python stdlib (struct module) to manually parse JPEG EXIF/GPS metadata when no external tools are available.
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>In sandboxed environments, neither system tools (exiftool) nor third-party libraries (PIL/Pillow) may be installed. Python stdlib is always available.
 </code></pre></div>
-<p>Override the storage location with the <code>EVOLVE_ENTITIES_DIR</code> environment variable.</p>
+<p>The store always lives at <code>&lt;project&gt;/.evolve/</code>. Some helper scripts read an <code>EVOLVE_DIR</code> environment variable, but it is not supported end to end yet — <code>EVOLVE.md</code> and the installer always use <code>.evolve/</code>, and <code>subscribe</code> and <code>sync</code> resolve the project root from it differently — so leave it unset.</p>
 <h2 id="tradeoffs">Tradeoffs<a class="headerlink" href="#tradeoffs" title="Permanent link">&para;</a></h2>
 <p>Lite mode is easier to set up:</p>
 <ul>
@@ -2151,9 +2094,9 @@
 </ul>
 <p>But it has a number of limitations:</p>
 <ul>
-<li><strong>Inefficient context usage</strong> — Entity extraction and recall both happen inside the agent's context window, not in a separate process. Full Evolve offloads all processing to the MCP server, keeping the agent's context free for the actual task.</li>
-<li><strong>Scalability</strong> — All entities are injected on every prompt. Full Evolve uses semantic search to retrieve only the relevant subset, which scales to large entity sets.</li>
-<li><strong>Single-trajectory visibility</strong> — Lite mode only extracts entities from the current session. Full Evolve can ingest complete trajectories across multiple sessions and glean insights that a single-conversation view would miss.</li>
+<li><strong>Inefficient context usage</strong> — Saving and recalling both happen inside the agent's context window, not in a separate process. Full Evolve offloads all processing to the MCP server, keeping the agent's context free for the actual task.</li>
+<li><strong>Scalability</strong> — Recall is whatever the host's native memory decides to open; there is no semantic search over the store. Guidelines pulled in from subscribed repos land in <code>.evolve/entities/subscribed/</code>, but nothing on Claude reads that directory into a session, so they are not recalled at all today. Full Evolve retrieves only the relevant subset, which scales to large entity sets.</li>
+<li><strong>Single-trajectory visibility</strong> — Lite mode only ever captures what the current session learned. Full Evolve can ingest complete trajectories across multiple sessions and glean insights that a single-conversation view would miss.</li>
 <li><strong>Entity consolidation</strong> — Lite mode simply appends new entities. Full Evolve performs LLM-based conflict resolution to merge, supersede, or refine entities, and garbage-collects stale ones.</li>
 </ul>
 <table>
@@ -2172,7 +2115,7 @@
 </tr>
 <tr>
 <td>Retrieval</td>
-<td>All entities injected via hooks</td>
+<td>Claude's native memory (no semantic search)</td>
 <td>Semantic search via MCP</td>
 </tr>
 <tr>
@@ -2182,7 +2125,7 @@
 </tr>
 <tr>
 <td>Trajectory analysis</td>
-<td>Current session only (<code>/evolve-lite:learn</code>)</td>
+<td>Current session only</td>
 <td>Multi-session, automatic via MCP</td>
 </tr>
 <tr>
