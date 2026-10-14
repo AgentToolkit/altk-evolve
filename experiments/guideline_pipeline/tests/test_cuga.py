@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -41,6 +42,25 @@ def test_registered_and_discovers_tasks_by_manifest_or_glob(tmp_path: Path):
     assert list(by_id(CugaAdapter(), DEV)) == ["aaa0001_1", "aaa0001_2"]
     with pytest.raises(ValueError, match="No CUGA run directory"):
         next(CugaAdapter().records(tmp_path))
+
+
+def test_a_stray_json_beside_runs_is_ignored_not_read_as_the_run(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    runs = Path(shutil.copytree(FIXTURES, tmp_path / "runs"))
+    (runs / "summary.json").write_text(json.dumps({"total": 3}))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        assert list(by_id(CugaAdapter(), runs)) == ["aaa0001_1", "aaa0001_2", "ccc0003_1"]
+    assert "ignored summary.json" in caplog.text
+
+
+def test_a_task_without_an_intent_is_skipped_with_a_warning(run_copy: Path, caplog: pytest.LogCaptureFixture):
+    task = json.loads((run_copy / "aaa0001_2.json").read_text())
+    task["intent"] = "  "
+    (run_copy / "aaa0001_2.json").write_text(json.dumps(task))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        assert list(by_id(CugaAdapter(), run_copy)) == ["aaa0001_1"]
+    assert "skipped test_normal_dev/aaa0001_2: no intent" in caplog.text
 
 
 def test_messages_are_rebuilt_in_the_extractor_shape():

@@ -89,7 +89,7 @@ class CugaAdapter:
         return replace(self, **changes, task_ids=frozenset(task_ids))
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
-        run_dirs = [path] if _is_run_dir(path) else sorted(child for child in path.iterdir() if _is_run_dir(child)) if path.is_dir() else []
+        run_dirs = _run_dirs(path)
         if not run_dirs:
             raise ValueError(f"No CUGA run directory at {path}")
         if self.task_ids:
@@ -102,7 +102,11 @@ class CugaAdapter:
             for task_file in _task_files(run_dir):
                 if self.task_ids and task_file.stem not in self.task_ids:
                     continue
-                yield self.record(run_dir.name, task_file.stem, _read_json(task_file), results.get(task_file.stem), experiment=experiment)
+                task = _read_json(task_file)
+                if not str(task.get("intent") or "").strip():
+                    logger.warning("skipped %s/%s: no intent", run_dir.name, task_file.stem)
+                    continue
+                yield self.record(run_dir.name, task_file.stem, task, results.get(task_file.stem), experiment=experiment)
 
     def record(self, run: str, task_id: str, task: dict, result: dict | None, *, experiment: str | None = None) -> AdapterRecord:
         """Build one record from a parsed task file and its results.json entry (if any)."""
@@ -264,6 +268,22 @@ def load_task_manifest(path: Path) -> list[str]:
     if not task_ids or not all(isinstance(task_id, str) and task_id for task_id in task_ids):
         raise ValueError(f"No valid task IDs found in {path}")
     return list(task_ids)
+
+
+def _run_dirs(path: Path) -> list[Path]:
+    """path's child runs when it has any, else path itself when it is a run.
+
+    Child runs take precedence, so a stray JSON file beside them (a summary, a
+    config) is ignored with a warning instead of making path the only run.
+    """
+    if not path.is_dir():
+        return []
+    children = sorted(child for child in path.iterdir() if _is_run_dir(child))
+    if not children:
+        return [path] if _is_run_dir(path) else []
+    if stray := sorted(f.name for f in path.glob("*.json")):
+        logger.warning("ignored %s in %s: it holds run directories, so it is not a run itself", ", ".join(stray), path)
+    return children
 
 
 def _is_run_dir(path: Path) -> bool:

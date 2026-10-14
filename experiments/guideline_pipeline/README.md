@@ -121,9 +121,12 @@ run directory or a directory of them:
     appworld_sdk_*.json       # ignored
 ```
 
+When `--input` holds run directories, it is read as their parent and any JSON
+file directly inside it (a summary, a config) is ignored with a warning.
+
 When `metadata.json` lists `task_ids`, those are the tasks; otherwise every JSON
-file other than `results`, `metadata` and `appworld_sdk_*` is one. Each task
-becomes one record:
+file other than `results`, `metadata` and `appworld_sdk_*` is one. A task with
+no `intent` is skipped with a warning. Each other task becomes one record:
 
 - **messages**: the intent as the user message, then each `Raw_Assistant_Response`
   as an `execute_ipython` function call and each `User_output` / `Observation` /
