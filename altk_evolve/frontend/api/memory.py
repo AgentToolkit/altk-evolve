@@ -10,7 +10,9 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from opentelemetry import context, propagate, trace
+from altk_evolve.telemetry import operation as telemetry_operation
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from altk_evolve.frontend.client.evolve_client import EvolveClient
@@ -160,7 +162,25 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
     Scope dependencies must authenticate the caller and authorize any selected agent.
     They may also enforce the host's feature flag before returning MemoryScope.
     """
-    router = APIRouter(tags=["Evolve memory"])
+
+    async def request_trace(request: Request):
+        # A host's ASGI instrumentation has already extracted the remote parent.
+        # Keep that local span as our parent; only extract at an uninstrumented boundary.
+        token = None
+        if not trace.get_current_span().get_span_context().is_valid:
+            token = context.attach(propagate.extract(request.headers))
+        try:
+            with telemetry_operation("evolve.http.request", kind=trace.SpanKind.SERVER) as span:
+                span.set_attribute("http.request.method", request.method)
+                route = request.scope.get("route")
+                if route is not None:
+                    span.set_attribute("http.route", route.path)
+                yield
+        finally:
+            if token is not None:
+                context.detach(token)
+
+    router = APIRouter(tags=["Evolve memory"], dependencies=[Depends(request_trace)])
 
     def service(client: EvolveClient = Depends(client_dependency), scope: MemoryScope = Depends(scope_dependency)):
         if not isinstance(scope, MemoryScope):
@@ -186,8 +206,21 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
             raise HTTPException(exc.status, detail=exc.payload()) from exc
 
     @router.get("/memory/entities")
-    def inventory(limit: int = Query(50, ge=1, le=200), cursor: str | None = None, pair=Depends(service)):
-        result = invoke(pair, "list_entities", personal=True, limit=limit, cursor=cursor, include_content=True)
+    def inventory(
+        limit: int = Query(50, ge=1, le=200),
+        cursor: str | None = None,
+        exclude_entity_types: list[str] | None = Query(None),
+        pair=Depends(service),
+    ):
+        result = invoke(
+            pair,
+            "list_entities",
+            personal=True,
+            limit=limit,
+            cursor=cursor,
+            include_content=True,
+            exclude_entity_types=exclude_entity_types,
+        )
         result["items"] = [_project(item, admin=False) for item in result["items"]]
         return result
 
@@ -224,9 +257,16 @@ def build_memory_router(*, client_dependency: Callable[..., Any], scope_dependen
         return invoke(pair, "retrieve_user_facts", user_id=_user(pair[1]), agent_id=pair[1].agent_id, query=query, limit=limit)
 
     @router.get("/manage/memory/entities")
-    def admin_inventory(limit: int = Query(50, ge=1, le=200), cursor: str | None = None, pair=Depends(service)):
+    def admin_inventory(
+        limit: int = Query(50, ge=1, le=200),
+        cursor: str | None = None,
+        exclude_entity_types: list[str] | None = Query(None),
+        pair=Depends(service),
+    ):
         _manager(pair[1])
-        result = invoke(pair, "list_entities", agent_id=pair[1].agent_id, limit=limit, cursor=cursor)
+        result = invoke(
+            pair, "list_entities", agent_id=pair[1].agent_id, limit=limit, cursor=cursor, exclude_entity_types=exclude_entity_types
+        )
         result["items"] = [_project(item, admin=True) for item in result["items"]]
         return result
 

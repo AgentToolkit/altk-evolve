@@ -1,5 +1,6 @@
-<!-- evolve-import-canary EVOLVE_IMPORT_CANARY_v1 -->
 # Evolve — shared, auditable memory
+
+Evolve import canary: EVOLVE_IMPORT_CANARY_v2 (read only by /evolve-lite:doctor; ignore it otherwise)
 
 You already have native, self-directed memory: you decide what to recall at the
 start of a task and what to save at the end, on your own judgment. Evolve adds

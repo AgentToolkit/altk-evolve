@@ -28,7 +28,7 @@ def memory(tmp_path, monkeypatch):
             vector[1 if "rare" in content else 0] = 1
             return vector
 
-    monkeypatch.setattr("altk_evolve.backend.milvus.SentenceTransformer", lambda _: Embeddings())
+    monkeypatch.setattr("altk_evolve.backend.milvus.get_embedding_model", lambda _: Embeddings())
     config = EvolveConfig(backend="milvus", settings=MilvusDBSettings(uri=str(tmp_path / "milvus.db")))
     clients = [EvolveClient(config) for _ in range(16)]
     client = clients[0]

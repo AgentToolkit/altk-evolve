@@ -11,7 +11,7 @@ import litellm
 import numpy as np
 from jinja2 import Template
 from litellm import completion, get_supported_openai_params, supports_response_schema
-from sentence_transformers import SentenceTransformer
+from altk_evolve.embeddings import EmbeddingModel, get_embedding_model
 
 from altk_evolve.config.evolve import evolve_config
 from altk_evolve.config.llm import llm_settings
@@ -30,8 +30,8 @@ _COMBINE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/combin
 
 
 @lru_cache(maxsize=4)
-def _get_sentence_transformer(model_name: str) -> SentenceTransformer:
-    return SentenceTransformer(model_name)
+def _get_sentence_transformer(model_name: str) -> EmbeddingModel:
+    return get_embedding_model(model_name)
 
 
 def _union_find(n: int, pairs: list[tuple[int, int]]) -> list[list[int]]:

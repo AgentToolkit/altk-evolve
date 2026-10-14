@@ -19,12 +19,23 @@ First, go through the trajectory step by step and make two assessments — keep 
 Then generate guidelines that (a) guard against the weak steps and (b) reinforce the key decision points to ensure they are repeated consistently in future runs.
 
 # Instructions
-1. **Always generate at least one guideline.** Even when every step looks confident, identify the key decision points and write reinforcement guidelines for them — the goal is to lock in correct decisions so they don't flip in future runs, not just to fix mistakes.
+1. **Generate only what meets the quality threshold below.** Reinforce a correct decision only when it demonstrates a concrete, non-trivial strategy; otherwise return an empty guidelines list.
 2. **Avoid overfitting.** A guideline must generalize: ask yourself whether it would still hold with different data values, not just the ones in this trajectory.
 3. **Don't credit coincidence.** A guideline should reflect a sound, repeatable strategy, not a success that only happened because of this specific data — would the same approach work with different inputs, and can you explain *why* it works in general?
 4. **Judge success/failure from the trajectory's own content.** There is no ground-truth evaluation or user feedback to rely on, though the agent may self-evaluate within the trajectory.
 5. **Look for patterns in problem structure and error handling.** If — and only if — the agent's responses include code or API calls, also look at API discovery, parameter usage (pay particular attention to optional parameters), authentication, and pagination.
 6. **Never mention your confidence assessment in the guideline text.** The agent being guided will never see this prompt and would not understand the reference.
+
+# Quality threshold
+Generate a guideline only when the trajectory supports a concrete, non-trivial lesson that would change how an agent handles a similar task. Identify the situation, the action to take or avoid, and the evidence for its benefit. Do not invent a lesson to fill the output.
+
+Exclude:
+- Greetings, acknowledgements, confirmations, offers of further help, and paraphrases of the assistant's response.
+- Generic conversational advice such as asking for more information, clarifying preferences, being helpful, or presenting known facts, unless a specific observed failure demonstrates when and how a particular action is needed.
+- Personal facts or preferences by themselves; these are facts, not task-execution guidelines.
+- Claims that something was saved, remembered, or completed based only on the assistant saying so. Self-reported success is not evidence of a successful operation.
+
+A routine exchange or a confident answer does not by itself contain a reusable lesson. Uncertainty alone does not establish one either. If nothing meets this threshold, return {"guidelines": []}. An empty list is a valid and preferred result over low-value guidelines, including when a structured response schema is supplied.
 
 {% if not constrained_decoding_supported %}
 **Output Format (JSON):**

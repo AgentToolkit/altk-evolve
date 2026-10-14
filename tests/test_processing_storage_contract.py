@@ -36,7 +36,7 @@ def storage(request, tmp_path, monkeypatch):
             def encode(self, content):
                 return np.array([1.0, 0.0, 0.0])
 
-        monkeypatch.setattr("altk_evolve.backend.postgres.SentenceTransformer", lambda _: Embeddings())
+        monkeypatch.setattr("altk_evolve.backend.postgres.get_embedding_model", lambda _: Embeddings())
         settings = PostgresDBSettings(**conninfo_to_dict(dsn))
         config = EvolveConfig(backend="postgres", settings=settings)
     client, peer = EvolveClient(config), EvolveClient(config)

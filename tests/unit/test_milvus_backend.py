@@ -16,10 +16,16 @@ from altk_evolve.schema.exceptions import NamespaceNotFoundException, EvolveExce
 @pytest.fixture(scope="module")
 def milvus_backend(tmp_path_factory) -> MilvusEntityBackend:
     """Create a MilvusEntityBackend instance for testing."""
-    with patch("altk_evolve.backend.milvus.MilvusClient"), patch("altk_evolve.backend.milvus.SentenceTransformer"):
+    with patch("altk_evolve.backend.milvus.MilvusClient"), patch("altk_evolve.backend.milvus.get_embedding_model"):
         backend = MilvusEntityBackend()
         backend.sqlite_uri = str(tmp_path_factory.mktemp("milvus-metadata") / "metadata.db")
         return backend
+
+
+@pytest.fixture(autouse=True)
+def fresh_load_memo(milvus_backend: MilvusEntityBackend):
+    """The backend is shared by the module; each test starts as a freshly opened process would."""
+    milvus_backend._loaded.clear()
 
 
 @pytest.fixture
@@ -476,6 +482,240 @@ def test_update_entity_metadata_rejects_non_numeric_id(milvus_backend: MilvusEnt
     """Raises EvolveException immediately for non-numeric entity IDs."""
     with pytest.raises(EvolveException, match="must be numeric"):
         milvus_backend.update_entity_metadata("test_namespace", "not-an-id", {"visibility": "public"})
+
+
+class ReleasedCollection:
+    """Read surface of a collection opened by a fresh process: reads fail until it is loaded.
+
+    Mirrors milvus-lite >= 3, which raises code=101 on query/search against a released collection.
+    ``unloaded_state`` is what ``get_load_state`` reports before a Load; ``calls`` records each
+    call with the collection it named, so a call against the wrong namespace shows up too.
+    """
+
+    def __init__(self, has_index: bool = True, loaded: bool = False, can_load: bool = True, unloaded_state: str = "NotLoad"):
+        self.row = {
+            "id": 42,
+            "type": "guideline",
+            "content": "paginate fully",
+            "created_at": int(datetime.datetime.now(datetime.UTC).timestamp()),
+            "metadata": {},
+            "embedding": [0.1] * 384,
+        }
+        self.has_index = has_index
+        self.loaded = loaded
+        self.can_load = can_load
+        self.unloaded_state = unloaded_state
+        self.calls: list[tuple[str, str]] = []
+
+    def install(self, backend: MilvusEntityBackend, monkeypatch) -> None:
+        monkeypatch.setattr(backend.milvus, "has_collection", always_has_collection)
+        monkeypatch.setattr(backend.embedding_model, "encode", arbitrary_embedding)
+        for name in ("get_load_state", "list_indexes", "create_index", "load_collection", "query", "search", "upsert", "flush"):
+            monkeypatch.setattr(backend.milvus, name, getattr(self, name))
+
+    def actions(self) -> list[str]:
+        """The calls that change server state, in order."""
+        return [name for name, _ in self.calls if name in ("create_index", "load_collection")]
+
+    def get_load_state(self, collection_name, **kwargs):
+        from pymilvus.client.types import LoadState
+
+        self.calls.append(("get_load_state", collection_name))
+        return {"state": LoadState.Loaded if self.loaded else getattr(LoadState, self.unloaded_state)}
+
+    def list_indexes(self, collection_name, **kwargs):
+        self.calls.append(("list_indexes", collection_name))
+        return ["embedding_auto_idx"] if self.has_index else []
+
+    def create_index(self, collection_name, **kwargs):
+        self.calls.append(("create_index", collection_name))
+        self.has_index = True
+
+    def load_collection(self, collection_name, **kwargs):
+        from pymilvus.exceptions import MilvusException
+
+        self.calls.append(("load_collection", collection_name))
+        if not self.can_load:
+            raise MilvusException(code=65535, message="PrivilegeLoad: permission deny")
+        if not self.has_index:
+            raise MilvusException(code=700, message="index not found")
+        self.loaded = True
+
+    def _read(self, collection_name):
+        from pymilvus.exceptions import MilvusException
+
+        self.calls.append(("read", collection_name))
+        if not self.loaded:
+            raise MilvusException(code=101, message="Collection is in state 'released'; call load() before search/get/query")
+        return [dict(self.row)]
+
+    def query(self, collection_name, **kwargs):
+        return self._read(collection_name)
+
+    def search(self, collection_name, **kwargs):
+        # The engine nests output fields under "entity"; it never flattens them.
+        return [
+            [{"id": r["id"], "distance": 0.0, "entity": {k: v for k, v in r.items() if k != "id"}} for r in self._read(collection_name)]
+        ]
+
+    def upsert(self, **kwargs):
+        return {"ids": [42]}
+
+    def flush(self, *args, **kwargs):
+        pass
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("query", [None, "pagination"])
+def test_search_entities_loads_released_collection(milvus_backend: MilvusEntityBackend, monkeypatch, query):
+    """Listing and vector search both work on a namespace this process has not written to (#343)."""
+    collection = ReleasedCollection()
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.search_entities("test_namespace", query=query)
+
+    assert [entity.content for entity in result] == ["paginate fully"]
+    assert collection.actions() == ["load_collection"]
+    assert {name for _, name in collection.calls} == {"test_namespace"}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("state", ["Loading", "NotLoad"])
+def test_search_entities_loads_collection_unless_fully_loaded(milvus_backend: MilvusEntityBackend, monkeypatch, state):
+    """Only LoadState.Loaded may skip the Load: a Loading collection still rejects reads (code=101)."""
+    collection = ReleasedCollection(unloaded_state=state)
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.search_entities("test_namespace", query=None)
+
+    assert [entity.content for entity in result] == ["paginate fully"]
+    assert collection.actions() == ["load_collection"]
+
+
+@pytest.mark.unit
+def test_update_entity_metadata_loads_released_collection(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """The read inside a metadata patch works on a namespace this process has not written to (#343)."""
+    collection = ReleasedCollection()
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.update_entity_metadata("test_namespace", "42", {"visibility": "public"})
+
+    assert result.metadata["visibility"] == "public"
+
+
+@pytest.mark.unit
+def test_search_entities_creates_missing_index_before_loading_on_milvus_server(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """A Milvus server reports a collection with no index as not loaded, and refuses to load it.
+
+    Creating the index loads the collection, so there is exactly one Load. (milvus-lite
+    never reports this state; see the test below for what it does instead.)
+    """
+    collection = ReleasedCollection(has_index=False)
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.search_entities("test_namespace", query=None)
+
+    assert [entity.content for entity in result] == ["paginate fully"]
+    assert collection.actions() == ["create_index", "load_collection"]
+
+
+@pytest.mark.unit
+def test_search_entities_creates_missing_index_on_a_loaded_lite_collection(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """milvus-lite reports a collection with no index as loaded, and 3.x searches it by brute force.
+
+    Nothing then fails, so the "index not found" retry never fires; the index has to be
+    ensured even when the collection is already loaded, or the namespace never gets one.
+    """
+    collection = ReleasedCollection(has_index=False, loaded=True)
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.search_entities("test_namespace", query="pagination")
+
+    assert [entity.content for entity in result] == ["paginate fully"]
+    assert collection.actions() == ["create_index", "load_collection"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("query", [None, "pagination"])
+def test_search_entities_skips_load_when_already_loaded(milvus_backend: MilvusEntityBackend, monkeypatch, query):
+    """Read-only credentials lack the Load privilege, so a loaded collection is read without a Load request."""
+    collection = ReleasedCollection(loaded=True)
+    collection.install(milvus_backend, monkeypatch)
+
+    result = milvus_backend.search_entities("test_namespace", query=query)
+
+    assert [entity.content for entity in result] == ["paginate fully"]
+    assert collection.actions() == []
+
+
+@pytest.mark.unit
+def test_search_entities_propagates_a_denied_load(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """A collection that is not loaded, and a client that may not load it: the Load error surfaces as is."""
+    from pymilvus.exceptions import MilvusException
+
+    collection = ReleasedCollection(can_load=False)
+    collection.install(milvus_backend, monkeypatch)
+
+    with pytest.raises(MilvusException, match="permission deny"):
+        milvus_backend.search_entities("test_namespace", query=None)
+    assert milvus_backend._loaded == set()
+
+
+@pytest.mark.unit
+def test_load_state_is_probed_once_per_namespace(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """Nothing in Evolve releases a collection, so once loaded, later reads skip the probe."""
+    collection = ReleasedCollection()
+    collection.install(milvus_backend, monkeypatch)
+
+    milvus_backend.search_entities("test_namespace", query=None)
+    milvus_backend.search_entities("test_namespace", query="pagination")
+    milvus_backend.update_entity_metadata("test_namespace", "42", {"visibility": "public"})
+
+    assert [name for name, _ in collection.calls].count("get_load_state") == 1
+
+
+@pytest.mark.unit
+def test_deleting_a_namespace_forgets_its_load_state(milvus_backend: MilvusEntityBackend, db_manager, monkeypatch):
+    """A namespace dropped and recreated under the same id is a new, unloaded collection."""
+    collection = ReleasedCollection()
+    collection.install(milvus_backend, monkeypatch)
+    milvus_backend.search_entities("test_namespace", query=None)
+    monkeypatch.setattr(milvus_backend.milvus, "drop_collection", Mock())
+    monkeypatch.setattr("altk_evolve.backend.milvus.SQLiteManager", Mock(return_value=db_manager))
+
+    milvus_backend._delete_namespace_impl("test_namespace")
+
+    assert "test_namespace" not in milvus_backend._loaded
+
+
+@pytest.mark.unit
+def test_search_entities_reports_a_namespace_dropped_after_validation(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """get_load_state reports a missing collection as NotExist without raising; that is a missing namespace."""
+    collection = ReleasedCollection(unloaded_state="NotExist")
+    collection.install(milvus_backend, monkeypatch)
+
+    with pytest.raises(NamespaceNotFoundException):
+        milvus_backend.search_entities("test_namespace", query=None)
+
+
+@pytest.mark.unit
+def test_search_entities_reads_when_load_state_is_unavailable(milvus_backend: MilvusEntityBackend, monkeypatch):
+    """If the probe itself fails, the read goes ahead and decides; the namespace is not memoized."""
+    from pymilvus.exceptions import MilvusException
+
+    collection = ReleasedCollection(loaded=True)
+    collection.install(milvus_backend, monkeypatch)
+    monkeypatch.setattr(
+        milvus_backend.milvus,
+        "get_load_state",
+        Mock(side_effect=MilvusException(code=65535, message="PrivilegeGetLoadState: permission deny")),
+    )
+
+    result = milvus_backend.search_entities("test_namespace", query=None)
+
+    assert [entity.content for entity in result] == ["paginate fully"]
+    assert collection.actions() == []
+    assert milvus_backend._loaded == set()
 
 
 @pytest.mark.unit

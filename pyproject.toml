@@ -1,13 +1,17 @@
 [project]
 name = "altk-evolve"
-version = "1.4.1"
+version = "1.6.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "anyio>=4.1,<5",
+    "opentelemetry-api>=1.30,<2",
+    "opentelemetry-sdk>=1.41.1,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.41.1,<2",
     "arize-phoenix>=12.30.0",
     "croniter>=6.2.4,<7",
-    "fastmcp",
+    "fastmcp>=3.1,<4",
     "jinja2",
     "litellm>=1.84.0",
     "numpy",
@@ -22,6 +26,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+fastembed = ["fastembed>=0.7,<1"]
+fastembed-export = ["altk-evolve[fastembed]", "onnx>=1.17,<2"]
 build = ["uv"]
 
 tracing = [
@@ -284,7 +290,13 @@ module = [
     # IBM READI ships no py.typed marker; Presidio is an optional transitive of it.
     "risk_assessment.*",
     "presidio_analyzer.*",
+    # Optional READI spaCy backend is absent from the lean typing environment.
+    "spacy.*",
+    "thinc.*",
     "pymilvus.*",
+    "fastembed.*",
+    "onnx.*",
+    "onnxruntime.*",
     "smolagents.*",
     "milvus_lite.*",
     "openinference.*",

@@ -6,7 +6,8 @@ from json import JSONDecodeError
 from pathlib import Path
 
 from jinja2 import Template
-from litellm import completion, get_supported_openai_params, supports_response_schema
+from altk_evolve.telemetry import model_completion as completion
+from litellm import get_supported_openai_params, supports_response_schema
 from pydantic import ValidationError
 
 from altk_evolve.config.llm import llm_settings  # noqa: F401
