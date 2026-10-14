@@ -263,9 +263,12 @@ class TestCategoryRepair:
             ("optimization / strategy", "optimization"),
             ("recovery or strategy", "recovery"),
             ("strategy and optimization", "strategy"),
+            ("Strategy AND Recovery", "strategy"),  # the word separators are case-insensitive too
+            ("recovery OR strategy", "recovery"),
             ("Recovery", "recovery"),
             ("  optimization  ", "optimization"),
             (["recovery", "strategy"], "recovery"),
+            ('["strategy","recovery"]', "strategy"),  # a JSON array nested in the string field
             ("planning|recovery", "recovery"),  # skips a part that names nothing
         ],
     )

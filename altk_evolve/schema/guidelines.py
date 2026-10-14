@@ -26,7 +26,7 @@ _CATEGORY_BY_NAME: dict[str, GuidelineCategory] = {c: c for c in GUIDELINE_CATEG
 # one. The pipe is the common case and comes straight from the prompts, whose output template
 # spells the choice as "strategy|recovery|optimization" — a weaker model copies that literally
 # instead of picking. The rest are the other spellings of the same mistake.
-_CATEGORY_SEPARATOR_RE = re.compile(r"[|,;/+&]|\band\b|\bor\b")
+_CATEGORY_SEPARATOR_RE = re.compile(r"[|,;/+&]|\band\b|\bor\b", re.IGNORECASE)
 
 
 def resolve_guideline_category(value: object) -> GuidelineCategory | None:
@@ -34,7 +34,7 @@ def resolve_guideline_category(value: object) -> GuidelineCategory | None:
 
     Handles the off-contract shapes whose parts still *name* a real category: a differently-cased
     or padded value, several categories joined by a separator (``"strategy|recovery"``), or a JSON
-    array of them. Matching is on whole parts, not substrings, so free text that merely mentions a
+    array of them — parsed, or still a string (``'["strategy","recovery"]'``). Matching is on whole parts, not substrings, so free text that merely mentions a
     category ("performance optimization work") is not read as one.
 
     Multi-valued input resolves to the **first** category named — the model's own ordering is the
@@ -54,7 +54,7 @@ def resolve_guideline_category(value: object) -> GuidelineCategory | None:
         if not isinstance(candidate, str):
             continue
         for part in _CATEGORY_SEPARATOR_RE.split(candidate):
-            resolved = _CATEGORY_BY_NAME.get(part.strip().strip("\"'").lower())
+            resolved = _CATEGORY_BY_NAME.get(part.strip().strip("[]\"' ").lower())
             if resolved is not None:
                 return resolved
     return None
