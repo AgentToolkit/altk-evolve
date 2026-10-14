@@ -198,6 +198,8 @@ def test_multi_source_singletons_need_the_dataset_and_list_every_resolved_task()
     assert report.partial == 1 and "1 singletons missing some source tasks" in report.summary()
     missing, report = build_retrieval_index(rows, core_support=3, instructions={})
     assert missing["singletons"] == [] and dict(report.unresolved) == {"source task not in --input": 1}
+    blank, report = build_retrieval_index(rows, core_support=3, instructions={"task-1": "", "task-2": "  "})
+    assert blank["singletons"] == [] and dict(report.unresolved) == {"source task not in --input": 1}
 
 
 def test_atomic_write_replaces_or_leaves_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -241,3 +243,15 @@ def test_atomic_write_gives_the_mode_a_plain_write_would(tmp_path: Path, umask):
     out.chmod(0o600)
     write_json_atomic(out, {"entries": [{"r": "new"}]})
     assert oct(out.stat().st_mode & 0o777) == "0o600"
+
+
+def test_atomic_write_never_touches_the_process_umask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Setting the umask to read it is process-wide, so a file another thread creates meanwhile gets the wrong mode."""
+
+    def forbidden(*args):
+        raise AssertionError("write_json_atomic changed the process umask")
+
+    monkeypatch.setattr(os, "umask", forbidden)
+    write_json_atomic(tmp_path / "playbook.json", {"entries": []})
+    write_json_atomic(tmp_path / "playbook.json", {"entries": [{"r": "new"}]})
+    assert json.loads((tmp_path / "playbook.json").read_text()) == {"entries": [{"r": "new"}]}
