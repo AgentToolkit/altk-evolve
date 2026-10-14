@@ -344,7 +344,9 @@ def parse_openai_agents_trajectory(
     steps_list = []
     for i, step in enumerate(kept, 1):
         if step is None:
-            steps_list.append(f"**[... {steps_omitted} intermediate step(s) omitted ...]**")
+            # States the run's true length, not a range: labels number list positions, so a
+            # "steps a-b" range would contradict the label of the first tail step.
+            steps_list.append(f"**[... {steps_omitted} intermediate step(s) omitted; {len(agent_steps)} steps in the full run ...]**")
             continue
         step_type = step["type"]
         content = step["content"]

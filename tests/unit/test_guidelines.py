@@ -524,7 +524,7 @@ class TestTrajectoryLimits:
         assert "step 7" in result["steps_list"][6]  # last head step
         assert "step 58" in result["steps_list"][8]  # first tail step
         assert "step 60" in result["steps_list"][-1]
-        assert result["steps_list"][7] == "**[... 50 intermediate step(s) omitted ...]**"
+        assert result["steps_list"][7] == "**[... 50 intermediate step(s) omitted; 60 steps in the full run ...]**"
 
     def test_the_gap_takes_a_position_so_labels_still_match_indices(self, monkeypatch):
         """What `segment_trajectory`'s indices depend on. The marker holds position 8, which

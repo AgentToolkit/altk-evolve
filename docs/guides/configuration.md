@@ -79,7 +79,8 @@ EVOLVE_TRAJECTORY_TAIL_STEPS=10
 
 The tail comes **out of** `EVOLVE_TRAJECTORY_MAX_STEPS`, not on top of it, so the prompt
 never grows past the budget; the omitted middle is announced in the prompt as
-`[... N intermediate step(s) omitted ...]` rather than silently closed up. It must stay
+`[... N intermediate step(s) omitted; M steps in the full run ...]` rather than silently
+closed up. It must stay
 below `EVOLVE_TRAJECTORY_MAX_STEPS` — a tail that consumed the whole budget would leave no
 steps from the start of the run.
 
