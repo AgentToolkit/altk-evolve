@@ -209,6 +209,7 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
         raise HTTPException(status_code=422, detail="Entity content must be non-empty.")
 
     # 2. Enforce specific schema typing prior to insertion
+    metadata = req.metadata
     if entity_type == "guideline":
         from altk_evolve.schema.guidelines import Guideline
 
@@ -218,7 +219,9 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
             guideline_meta = {k: v for k, v in req.metadata.items() if k != "content"}
             structured_fields = {"rationale", "category", "trigger"}
             if structured_fields <= guideline_meta.keys():
-                Guideline(content=req.content, **guideline_meta)
+                validated = Guideline(content=req.content, **guideline_meta)
+                # Store the category the gate accepted, not the raw value it repaired.
+                metadata = {**req.metadata, "category": validated.category}
         except Exception as e:
             logger.error(f"Guideline validation failed: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid guideline metadata schema: {e}")
@@ -236,7 +239,7 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
 
     client = get_client()
     try:
-        new_entity = Entity(type=entity_type, content=req.content, metadata=req.metadata)
+        new_entity = Entity(type=entity_type, content=req.content, metadata=metadata)
         # Using enable_conflict_resolution=False for a direct insert
         updates = client.update_entities(namespace_id, [new_entity], enable_conflict_resolution=False)
         if not updates:
