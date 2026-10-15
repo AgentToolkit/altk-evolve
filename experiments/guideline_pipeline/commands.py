@@ -34,12 +34,44 @@ def _support_threshold(value: str) -> int:
     return number
 
 
+def adapter_option(value: str) -> tuple[str, str]:
+    """An --adapter-option KEY=VALUE pair (argparse type)."""
+    key, sep, setting = value.partition("=")
+    if not sep or not key.strip():
+        raise argparse.ArgumentTypeError("must be KEY=VALUE")
+    return key.strip(), setting
+
+
+def adapter_options(pairs: list[tuple[str, str]]) -> dict[str, str]:
+    options: dict[str, str] = {}
+    for key, value in pairs:
+        if key in options:
+            raise ValueError(f"--adapter-option {key} given twice")
+        options[key] = value
+    return options
+
+
+def add_adapter_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--adapter-option",
+        action="append",
+        default=[],
+        type=adapter_option,
+        metavar="KEY=VALUE",
+        help="adapter setting; repeatable (see the adapter's README section)",
+    )
+
+
 def _instructions(args: argparse.Namespace) -> Mapping[str, str] | None:
     if (args.adapter is None) != (args.input is None):
         raise ValueError("--adapter and --input go together")
     if args.adapter is None:
+        if args.adapter_option:
+            raise ValueError("--adapter-option needs --adapter")
         return None
-    return load_instructions(get_adapter(args.adapter).records(args.input))
+    # The options the namespace was mined with: they can decide which records exist and
+    # what their instructions are (AppWorld's appworld_root, for example).
+    return load_instructions(get_adapter(args.adapter, adapter_options(args.adapter_option)).records(args.input))
 
 
 def _guarded(run: Callable[[argparse.Namespace, EvolveClient], str], make_client: ClientFactory) -> Callable[[argparse.Namespace], int]:
@@ -108,6 +140,7 @@ def _min_support(parser: argparse.ArgumentParser) -> None:
 def _dataset(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--adapter", help="dataset adapter the namespace was mined with; looks up source task instructions")
     parser.add_argument("--input", type=Path, help="dataset path for --adapter")
+    add_adapter_option(parser)
 
 
 def add_output_stages(stages: Any, *, make_client: ClientFactory) -> None:
