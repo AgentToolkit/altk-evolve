@@ -157,7 +157,7 @@ def enable_tracing(
         _tracer_provider = tracer_provider
         logger.info(f"Phoenix tracing enabled: project={project}, endpoint={endpoint}")
     except ImportError:
-        logger.exception("Phoenix not available: Install with: pip install arize-phoenix")
+        logger.exception("Phoenix not available: Install with: pip install 'altk-evolve-core[tracing]'")
         return None
     except Exception:  # noqa: BLE001
         logger.exception("Failed to initialize Phoenix")

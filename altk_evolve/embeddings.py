@@ -20,7 +20,7 @@ _registration_lock = Lock()
 
 class EmbeddingSettings(FastEmbedCacheSettings):
     model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
-    embedding_provider: Literal["sentence_transformers", "fastembed"] = "sentence_transformers"
+    embedding_provider: Literal["sentence_transformers", "fastembed"] = "fastembed"
 
 
 class EmbeddingModel(Protocol):
@@ -37,7 +37,12 @@ class FastEmbedModel:
     """
 
     def __init__(self, model_name: str, cache_dir: str | None):
-        from fastembed import TextEmbedding
+        try:
+            from fastembed import TextEmbedding
+        except ModuleNotFoundError as exc:
+            if exc.name != "fastembed":
+                raise
+            raise ImportError("Install 'altk-evolve-core[fastembed]' or the 'altk-evolve' convenience package.") from exc
 
         if model_name.lower() == CODERANK_MODEL.lower():
             model_name = CODERANK_MODEL
@@ -106,7 +111,14 @@ def _load_embedding_model(provider: str, model_name: str, trust_remote_code: boo
         if trust_remote_code and model_name != CODERANK_MODEL:
             raise ValueError("FastEmbed does not support trust_remote_code; use a supported ONNX model")
         return FastEmbedModel(model_name, cache_dir)
-    from sentence_transformers import SentenceTransformer
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ModuleNotFoundError as exc:
+        if exc.name != "sentence_transformers":
+            raise
+        raise ImportError(
+            "Install 'altk-evolve-core[sentence-transformers]' to use EVOLVE_EMBEDDING_PROVIDER=sentence_transformers."
+        ) from exc
 
     if model_name == CODERANK_MODEL:
         # This built-in model uses reviewed, pinned upstream custom code.

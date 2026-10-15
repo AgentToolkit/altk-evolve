@@ -152,7 +152,7 @@ def configure_service_telemetry():
             from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
             from opentelemetry.metrics._internal import _ProxyMeterProvider
         except ImportError:
-            logging.getLogger(__name__).warning("OTLP export unavailable; reinstall altk-evolve with its declared dependencies")
+            logging.getLogger(__name__).warning("OTLP export unavailable; install altk-evolve-core[telemetry]")
             return None
 
         class EvolveSpanProcessor(SpanProcessor):
