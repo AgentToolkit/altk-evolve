@@ -1,0 +1,38 @@
+{
+  "aggregate": {
+    "task_goal_completion": 50.0,
+    "scenario_goal_completion": 0.0
+  },
+  "individual": {
+    "aaa0001_1": {
+      "success": true,
+      "difficulty": 1,
+      "num_tests": 1,
+      "passes": [
+        {
+          "requirement": "assert answers match.",
+          "label": "no_op_fail"
+        }
+      ],
+      "failures": []
+    },
+    "aaa0001_2": {
+      "success": false,
+      "difficulty": 2,
+      "num_tests": 2,
+      "passes": [
+        {
+          "requirement": "assert answers match.",
+          "label": "no_op_fail"
+        }
+      ],
+      "failures": [
+        {
+          "requirement": "assert todo 'buy milk' is marked done",
+          "trace": "AssertionError: False == True",
+          "label": "fail"
+        }
+      ]
+    }
+  }
+}
