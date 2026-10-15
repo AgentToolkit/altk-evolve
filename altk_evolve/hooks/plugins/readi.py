@@ -44,7 +44,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any, Protocol, runtime_checkable
 
 from altk_evolve.hooks.plugin import HookContext, HookPluginBase
-from altk_evolve.hooks.plugins.identity import IDENTITY_METADATA_KEYS
+from altk_evolve.hooks.plugins.identity import redactable_metadata, restore_structural
 
 DEFAULT_REDACTION_TEXT = "[REDACTED]"
 DEFAULT_EXTRACTOR = "default"
@@ -143,8 +143,8 @@ def redact_entities(
 
     ``content`` is always redacted; ``metadata`` values when ``redact_metadata``
     is set — **default True, to match the shipped regex plugin**. Root metadata
-    identity fields are preserved; arbitrary nested metadata is redacted even
-    when its keys share those names. Shipping the two PII plugins with opposite metadata defaults
+    identity fields and the association fields of ``sources`` are preserved;
+    any other nested metadata is redacted even when its keys share those names. Shipping the two PII plugins with opposite metadata defaults
     would be a silent parity gap, and the fail-safe default for a redactor is to
     mask more. It is an opt-*out* (``redact_metadata=False``): metadata can hold
     ids/paths/trace keys that redaction would corrupt, so a deployment that keys
@@ -162,10 +162,7 @@ def redact_entities(
             updated["content"] = content
             changed = True
         if redact_metadata and entity.get("metadata"):
-            metadata = {
-                key: value if key in IDENTITY_METADATA_KEYS else _redact_value(value, detect, mask=mask)
-                for key, value in entity["metadata"].items()
-            }
+            metadata = restore_structural(_redact_value(redactable_metadata(entity["metadata"]), detect, mask=mask), entity["metadata"])
             if metadata != entity["metadata"]:
                 updated["metadata"] = metadata
                 changed = True
