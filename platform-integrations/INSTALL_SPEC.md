@@ -107,12 +107,20 @@ All of lite mode, plus:
 
 Source: `platform-integrations/claude/plugins/evolve-lite/`
 
-1. Attempt `claude plugin install <abs-path-to-plugin-dir>` via subprocess
-2. If claude CLI not found or command fails, print clear manual instructions:
-   ```
-   claude --plugin-dir /path/to/platform-integrations/claude/plugins/evolve-lite
-   ```
-3. No file-system fallback for Claude (plugin system manages its own state)
+1. Deliver `<project>/.evolve/EVOLVE.md`, its `@.evolve/EVOLVE.md` import line in
+   `<project>/CLAUDE.md`, the scripts and shared `lib/` under `~/.claude/evolve-lite/`,
+   and the allow-rules in `<project>/.claude/settings.json`
+2. Pick the marketplace to register. Claude reads a local marketplace from its
+   registered path at every session start, so the path must outlive the installer:
+   - source is a local clone → register the clone itself
+   - source was downloaded (curl | bash) into a temp dir that is deleted on exit →
+     copy `.claude-plugin/` plus each plugin dir `marketplace.json` points at to
+     `~/.claude/evolve-lite/marketplace/` (replacing any earlier copy) and register
+     that copy
+   - no `.claude-plugin/marketplace.json` in the source → register `EVOLVE_REPO` (GitHub)
+3. Run `claude plugin marketplace add <marketplace>` then
+   `claude plugin install evolve-lite@evolve-marketplace` via subprocess
+4. If claude CLI not found or a command fails, print clear manual instructions
 
 ### Codex — Lite Mode
 
@@ -169,8 +177,10 @@ Hermes is lite-only. There is no full/server mode — `EVOLVE_MODE=server` raise
 5. (Full mode) Remove `mcpServers.evolve` key from `.bob/mcp.json`
 
 ### Claude
-1. Attempt `claude plugin uninstall evolve-lite` via subprocess
-2. If that fails, print manual instructions
+1. Remove the delivered `EVOLVE.md` copy, import line, allow-rules, and the scripts and `lib/` under `~/.claude/evolve-lite/`
+2. Attempt `claude plugin uninstall evolve-lite` and `claude plugin marketplace remove evolve-marketplace` via subprocess
+3. If that fails, print manual instructions
+4. Remove the marketplace copy at `~/.claude/evolve-lite/marketplace/` (if a downloaded install made one), then `~/.claude/evolve-lite/` if it is empty
 
 ### Codex
 1. Remove `plugins/evolve-lite/`
