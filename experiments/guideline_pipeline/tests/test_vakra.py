@@ -206,6 +206,20 @@ def test_long_text_is_chunked_and_long_trajectories_are_elided():
     assert parsed["steps_list"][-1] == "**Step 50 - Action:**\nlookup(i=59)"
 
 
+def test_long_tool_arguments_are_kept_whole():
+    args = {"query": "x" * 3000}
+    raw = {
+        "uuid": "u",
+        "trajectory": [{"type": "HumanMessage", "content": "q"}, {"type": "AIMessage", "tool_calls": [{"name": "search", "args": args}]}],
+    }
+    messages = VakraAdapter(include_tools=False).record(raw, "d", "train", None).messages
+
+    assert json.loads(messages[1]["content"][0]["function"]["arguments"]) == args
+    # The extractor still renders the call as name(key=value), bounded by its own step limit.
+    step = parse_openai_agents_trajectory(messages)["steps_list"][0]
+    assert step.startswith('**Step 1 - Action:**\nsearch(query="xxx') and step.endswith("...")
+
+
 def test_outcome_mapping():
     records = by_id(everything())
 

@@ -410,9 +410,13 @@ def _chunk(prefix: str, text: str) -> list[dict[str, Any]]:
 
 
 def _action(index: int, name: str, args: Any) -> dict[str, Any]:
-    """A tool call becomes an assistant function_call with the real tool name and arguments."""
+    """A tool call becomes an assistant function_call with the real tool name and arguments.
+
+    The arguments are kept whole: cut, they would no longer be JSON, and the extractor
+    bounds the rendered call itself.
+    """
     arguments = json.dumps(args if args is not None else {}, ensure_ascii=False)
-    call = {"type": "function_call", "id": f"call_{index}", "function": {"name": name or "tool_call", "arguments": arguments[:STEP_CHARS]}}
+    call = {"type": "function_call", "id": f"call_{index}", "function": {"name": name or "tool_call", "arguments": arguments}}
     return {"role": "assistant", "content": [call]}
 
 

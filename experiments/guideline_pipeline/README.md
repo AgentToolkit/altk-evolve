@@ -324,7 +324,7 @@ becomes one record:
   each later turn's query as a `USER MESSAGE:`). Message content is a string or a list of content blocks, whose
   text parts are joined; any other type is left out rather than rendered as a
   Python repr. Text longer than a step is split into `(part i/n)` steps rather
-  than truncated. Runs longer than the extractor's 50 steps are elided as for
+  than truncated, and tool-call arguments are kept whole (still valid JSON). Runs longer than the extractor's 50 steps are elided as for
   CUGA (the helper is shared, in `adapters/elision.py`).
 - **outcome**: from the record's `results.json` dialogue, matched by the domain
   file's name and the uuid (the evaluator names each results domain after its
