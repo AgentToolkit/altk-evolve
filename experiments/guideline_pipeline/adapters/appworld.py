@@ -249,7 +249,12 @@ def _first_prompt_task(path: Path) -> str | None:
     call = json.loads(line)
     request = call.get("input") if isinstance(call, dict) else None
     messages = request.get("messages") if isinstance(request, dict) else None
-    users = [message for message in messages or [] if isinstance(message, dict) and message.get("role") == "user"]
+    # Anything but a list has no user message, so the next instruction source is tried.
+    users = [
+        message
+        for message in (messages if isinstance(messages, list) else [])
+        if isinstance(message, dict) and message.get("role") == "user"
+    ]
     return task_from_prompt(_message_text(users[-1].get("content"))) if users else None
 
 

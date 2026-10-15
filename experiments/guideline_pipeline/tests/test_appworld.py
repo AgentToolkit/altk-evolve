@@ -346,6 +346,16 @@ def test_unreadable_instruction_sources_fall_through_with_a_warning(run_copy: Pa
     assert any(m.startswith("react_train/aaa0001_2: cannot read specs.json") for m in caplog.messages)
 
 
+def test_lm_call_messages_that_are_not_a_list_fall_through(run_copy: Path, caplog: pytest.LogCaptureFixture):
+    lm_calls = run_copy / "tasks" / "aaa0001_2" / "logs" / "lm_calls.jsonl"
+    for messages in (5, True, "Task: a string"):
+        lm_calls.write_text(json.dumps({"input": {"messages": messages}}) + "\n")
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            assert list(by_id(AppWorldAdapter(), run_copy)) == ["aaa0001_1"]
+        assert "skipped react_train/aaa0001_2: no task instruction found" in caplog.messages
+
+
 def test_malformed_evaluations_name_the_file(run_copy: Path):
     evaluation = run_copy / "evaluations" / "train.json"
     for text, reason in (("{ truncated", "Expecting"), ("[]", "not a JSON object"), ('{"aggregate": {}}', "no 'individual' mapping")):
