@@ -1108,7 +1108,15 @@ def test_llm_pre_call_fires_at_conflict_resolution_call_site():
         conflict_resolution.resolve_conflicts([_tagged_recorded_entity("1", "a")], [_tagged_recorded_entity("2", "b")])
 
     sent = mock_completion.call_args.kwargs["messages"]
-    assert sent[0]["content"].startswith("[tagged:conflict_resolution] ")
+    prompt = sent[0]["content"]
+    section = prompt.split("Below is a list of entities which I have collected up until now:", 1)[1]
+    existing = json.JSONDecoder().raw_decode(section.lstrip())[0]
+    incoming = json.loads(section.split("```", 2)[1])
+    assert existing[0]["content"] == "[tagged:conflict_resolution] a"
+    assert incoming[0]["content"] == "[tagged:conflict_resolution] b"
+    assert existing[0]["id"] == "1"
+    assert incoming[0]["id"] == "2"
+    assert not prompt.startswith("[tagged:conflict_resolution]")
 
 
 @pytest.mark.unit
