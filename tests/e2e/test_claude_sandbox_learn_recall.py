@@ -24,11 +24,14 @@ three sequential Claude sessions against the Dockerized sandbox:
   3. Run the offline provenance skill to record whether the recalled memory
      influenced session 2.
 
-Installation runs inside the image, the way a user installs from a clone: the
-repo is mounted read-only at ``/repo`` (the marketplace the plugin is read from)
-and the container's ``~/.claude`` is a per-test directory. Nothing touches your
-own ``~/.claude``, and the plugin registration, native memories and transcripts
-persist across the separate ``docker run`` sessions.
+Installation runs inside the image, the way a user installs from a clone: a
+per-test copy of the parts of this checkout the installer needs is mounted
+read-only at ``/repo`` (the marketplace the plugin is read from), and the
+container's ``~/.claude`` is a per-test directory. The checkout itself is never
+mounted, so its gitignored files (``.env``), ``.git`` and ``.venv`` stay out of
+the unrestricted agent sessions. Nothing touches your own ``~/.claude``, and the
+plugin registration, native memories and transcripts persist across the
+separate ``docker run`` sessions.
 
 Whether session 2 actually avoids exiftool is logged but not asserted: the
 memory's content is model-authored, so a valid memory ("pip install piexif and
@@ -77,6 +80,10 @@ CONTAINER_PROJECT_SLUG = "-workspace"
 CLAUDE_IMPORT_LINE = "@.evolve/EVOLVE.md"
 # Native memory types. adapt-memory mirrors each into .evolve/entities/<type>/.
 NATIVE_MEMORY_TYPES = {"user", "feedback", "project", "reference"}
+# All that install.sh needs from a clone to install the Claude plugin: the
+# marketplace manifest and platform-integrations/ (the installer, the rendered
+# plugin, EVOLVE.md and the scripts it names). Only these are mounted at /repo.
+INSTALL_SOURCE_PATHS = (".claude-plugin", "platform-integrations")
 
 
 @pytest.fixture(scope="session")
@@ -115,6 +122,7 @@ def sandbox_workspace(tmp_path, sandbox_image):
     workspace = tmp_path / "workspace"
     shutil.copytree(src, workspace, ignore=shutil.ignore_patterns(".evolve", "backup", "sandbox-backup"))
     _claude_home(workspace).mkdir()
+    _copy_install_source(_install_source(workspace))
 
     _install_evolve_lite(workspace)
     return workspace
@@ -123,6 +131,39 @@ def sandbox_workspace(tmp_path, sandbox_image):
 def _claude_home(workspace: Path) -> Path:
     """Host directory mounted as the container's ``~/.claude``."""
     return workspace.parent / "claude-home"
+
+
+def _install_source(workspace: Path) -> Path:
+    """Host directory mounted read-only as the container's ``/repo``."""
+    return workspace.parent / "repo"
+
+
+def _copy_install_source(dest: Path, repo_root: Path = REPO_ROOT) -> None:
+    """Copy the files under ``INSTALL_SOURCE_PATHS`` from the checkout's working tree to ``dest``.
+
+    Mounting the checkout itself would hand the ``--dangerously-skip-permissions``
+    sessions, which have network access, every gitignored file in it (a ``.env``
+    with API keys, ``.venv``) plus ``.git``. Only tracked and untracked,
+    not-ignored files are copied, so uncommitted edits to the plugin are still
+    what the test installs, and ignored files never are.
+    """
+    listed = subprocess.run(
+        ["git", "-C", str(repo_root), "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *INSTALL_SOURCE_PATHS],
+        capture_output=True,
+        check=False,
+    )
+    assert listed.returncode == 0, f"git ls-files failed in {repo_root}:\n{listed.stderr.decode(errors='replace')}"
+    copied = 0
+    for rel in filter(None, listed.stdout.decode().split("\0")):
+        src = repo_root / rel
+        if src.is_symlink() or not src.is_file():
+            # Deleted in the working tree, or a link that could point outside it.
+            continue
+        target = dest / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, target)
+        copied += 1
+    assert copied, f"nothing under {INSTALL_SOURCE_PATHS} in {repo_root}"
 
 
 def _docker_run_prefix(workspace: Path) -> list[str]:
@@ -134,7 +175,7 @@ def _docker_run_prefix(workspace: Path) -> list[str]:
         "-e",
         "EVOLVE_DEBUG=1",
         "-v",
-        f"{REPO_ROOT}:/repo:ro",
+        f"{_install_source(workspace)}:/repo:ro",
         "-v",
         f"{workspace}:/workspace",
         "-v",
@@ -147,7 +188,8 @@ def _docker_run_prefix(workspace: Path) -> list[str]:
 def _install_evolve_lite(workspace: Path) -> None:
     """Run the real installer inside the image, from the mounted repo.
 
-    This is the documented install from a clone. It registers ``/repo`` as the
+    This is the documented install from a clone (``/repo`` is the copy
+    ``_copy_install_source`` made, not the checkout). It registers ``/repo`` as the
     ``evolve-marketplace`` and installs ``evolve-lite`` from it, writes
     ``.evolve/EVOLVE.md`` and the CLAUDE.md import line into the workspace, and
     puts ``audit_recall.py`` and ``adapt_memory.py`` under ``~/.claude/evolve-lite/``.

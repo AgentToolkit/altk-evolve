@@ -41,8 +41,10 @@ workspace's `CLAUDE.md`, which asks Claude to mirror each memory it saves with
 `/evolve-lite:adapt-memory` and to log the memories it consults with
 `~/.claude/evolve-lite/audit_recall.py`.
 
-The test runs `install.sh` inside the image, from the repo mounted read-only
-at `/repo`. The container's `~/.claude` is a per-test directory, so your own
+The test runs `install.sh` inside the image, from a per-test copy of the
+repo's `.claude-plugin/` and `platform-integrations/` mounted read-only at
+`/repo`. Your checkout is not mounted, so its `.env`, `.git` and `.venv` stay out
+of the sessions. The container's `~/.claude` is a per-test directory, so your own
 `~/.claude` is never touched, and the plugin, native memories and transcripts
 persist across the separate `docker run` sessions. It then runs three
 sessions:
