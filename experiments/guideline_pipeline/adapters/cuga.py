@@ -135,7 +135,7 @@ class CugaAdapter:
             "pass_percentage": evaluation.get("pass_percentage"),
         }
         content: dict[str, Any] = {
-            "messages": [{"role": "user", "content": task.get("intent") or ""}, *elide_middle(_agent_steps(steps))],
+            "messages": [{"role": "user", "content": task.get("intent") or ""}, *elide_middle(agent_steps(steps))],
             "context_messages": self._context(steps),
             "trace_id": task_id,
             "model": self.model,
@@ -162,10 +162,11 @@ class CugaAdapter:
         return context
 
 
-def _agent_steps(steps: list[dict]) -> list[dict[str, Any]]:
+def agent_steps(steps: list[dict]) -> list[dict[str, Any]]:
     """Actions become function calls and observations become reasoning steps, one extractor step each.
 
     role "tool" would be dropped by the extractor, so observations are assistant messages.
+    Each step is cut to STEP_CHARS; steps with no data are left out.
     """
     messages: list[dict[str, Any]] = []
     calls = 0
@@ -198,12 +199,12 @@ def _step_evaluation(steps: list[dict]) -> dict:
 def _success(task: dict, steps: list[dict], result: dict | None) -> bool | None:
     """The verdict from the first source with a readable one: results.json, the EvaluationResult step, then score >= 1."""
     for evaluation in (_loads((result or {}).get("eval")), _step_evaluation(steps)):
-        if (verdict := _verdict(evaluation.get("success"))) is not None:
-            return verdict
+        if (found := verdict(evaluation.get("success"))) is not None:
+            return found
     return task["score"] >= 1.0 if isinstance(task.get("score"), (int, float)) else None
 
 
-def _verdict(value: Any) -> bool | None:
+def verdict(value: Any) -> bool | None:
     """A verdict stored as a bool, the integer 0 or 1, or the string "true"/"false" (any case); None for anything else.
 
     Runs are stringly typed, and bool("False") is True, so nothing else is coerced.
