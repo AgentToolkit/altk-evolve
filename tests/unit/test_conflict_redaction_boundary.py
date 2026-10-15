@@ -61,19 +61,29 @@ def test_conflict_prompt_keeps_ids_but_redacts_content(monkeypatch, event, retry
         lambda messages: [{"role": "user", "content": {}}],
         lambda messages: [{"role": "system", "content": "changed"}],
         lambda messages: [None],
+        lambda messages: messages * 2,
     ],
 )
 def test_conflict_filter_rejects_changed_shape(monkeypatch, change):
     monkeypatch.setattr(cr, "dispatch_llm_pre_call", lambda messages, **kwargs: change(messages))
-    with pytest.raises(ValueError, match="content structure"):
-        cr._filter_conflict_text(["sensitive"], "test")
+    with pytest.raises(ValueError, match="must return one user message containing text"):
+        cr._redact_content(["sensitive"], "test")
 
 
 def test_conflict_filter_preserves_nested_content_without_mutating_inputs(monkeypatch):
     value = {"text": ["alice@example.com", 0.8], "optional": None, "id": "private@example.com"}
     monkeypatch.setattr(cr, "dispatch_llm_pre_call", lambda messages, **kwargs: [{**m, "content": "[REDACTED]"} for m in messages])
-    assert cr._filter_conflict_text([value], "test") == [{"text": ["[REDACTED]", 0.8], "optional": None, "id": "[REDACTED]"}]
+    assert cr._redact_content([value], "test") == [{"text": ["[REDACTED]", 0.8], "optional": None, "id": "[REDACTED]"}]
     assert value["text"][0] == "alice@example.com"
+
+
+def test_hook_cannot_supply_operations_or_extra_messages(monkeypatch):
+    def redact(messages, **kwargs):
+        assert messages == [{"role": "user", "content": "alice@example.com"}]
+        return [{"role": "user", "content": "[REDACTED]", "id": "6", "event": "DELETE", "tool_calls": [{"id": "7"}]}]
+
+    monkeypatch.setattr(cr, "dispatch_llm_pre_call", redact)
+    assert cr._redact_content("alice@example.com", "test") == "[REDACTED]"
 
 
 def test_filter_failure_prevents_model_call(monkeypatch):
@@ -95,6 +105,6 @@ def test_conflict_filter_preserves_non_text_values_without_calling_hooks(monkeyp
         pytest.fail("No egress text to filter")
 
     monkeypatch.setattr(cr, "dispatch_llm_pre_call", unexpected)
-    assert cr._filter_conflict_text([{"probability": 0.8, "count": 6, "enabled": True, "optional": None}], "test") == [
+    assert cr._redact_content([{"probability": 0.8, "count": 6, "enabled": True, "optional": None}], "test") == [
         {"probability": 0.8, "count": 6, "enabled": True, "optional": None}
     ]

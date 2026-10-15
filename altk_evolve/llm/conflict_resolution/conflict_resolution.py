@@ -80,46 +80,29 @@ def _conflict_resolution_completion_options(settings: LLMSettings | None = None)
     return options
 
 
-def _filter_conflict_text(values: list, model: str) -> list:
-    """Filter content values before adding trusted conflict-routing structure.
+def _redact_content(value, model: str):
+    """Pass each text value to the hook and use only its returned text.
 
-    Only string values are egress text. Mapping keys and non-string scalars
-    retain their JSON structure, matching the memory redaction contract.
-    IDs, types and built-in instructions must never enter this projection.
-    Rebuild rather than mutate: stored entities remain authoritative.
+    Call this on memory content or custom instructions, never on a whole
+    entity or prompt. The hook does not receive entity IDs or types.
+    Lists and dictionaries are copied so the original memory stays unchanged.
     """
-    messages = []
-
-    def collect(value):
-        if isinstance(value, str):
-            messages.append({"role": "user", "content": value})
-        elif isinstance(value, list):
-            for item in value:
-                collect(item)
-        elif isinstance(value, dict):
-            for item in value.values():
-                collect(item)
-
-    for value in values:
-        collect(value)
-    filtered = dispatch_llm_pre_call(messages, purpose="conflict_resolution", model=model) if messages else []
-    if len(filtered) != len(messages) or any(
-        not isinstance(message, dict) or message.get("role") != "user" or not isinstance(message.get("content"), str)
-        for message in filtered
-    ):
-        raise ValueError("Conflict input filtering changed the content structure")
-    replacements = iter(message["content"] for message in filtered)
-
-    def rebuild(value):
-        if isinstance(value, str):
-            return next(replacements)
-        if isinstance(value, list):
-            return [rebuild(item) for item in value]
-        if isinstance(value, dict):
-            return {key: rebuild(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_content(item, model) for item in value]
+    if isinstance(value, dict):
+        return {key: _redact_content(item, model) for key, item in value.items()}
+    if not isinstance(value, str):
         return value
 
-    return [rebuild(value) for value in values]
+    messages = dispatch_llm_pre_call([{"role": "user", "content": value}], purpose="conflict_resolution", model=model)
+    if (
+        len(messages) != 1
+        or not isinstance(messages[0], dict)
+        or messages[0].get("role") != "user"
+        or not isinstance(messages[0].get("content"), str)
+    ):
+        raise ValueError("Conflict redaction hook must return one user message containing text")
+    return messages[0]["content"]
 
 
 @traced("evolve.memory.resolve_conflicts")
@@ -142,17 +125,12 @@ def resolve_conflicts(
     new_entities_by_content = {serialize_content(entity.content): entity for entity in new_entities}
     old_entities_by_id = {entity.id: entity for entity in old_entities}
 
-    # Redact existing and incoming content, not the rendered protocol. A generic
-    # redactor can otherwise mask numeric IDs, breaking validated decisions.
-    entities = simplified_old_entities + simplified_new_entities
-    inputs = [entity.content for entity in entities]
+    # Give hooks only the text they may change. Add IDs, types and built-in
+    # instructions afterward so a hook cannot replace them in its response.
+    for entity in simplified_old_entities + simplified_new_entities:
+        entity.content = _redact_content(entity.content, settings.conflict_resolution_model)
     if custom_update_entities_prompt is not None:
-        inputs.append(custom_update_entities_prompt)
-    filtered = _filter_conflict_text(inputs, settings.conflict_resolution_model)
-    for entity, content in zip(entities, filtered[: len(entities)], strict=True):
-        entity.content = content
-    if custom_update_entities_prompt is not None:
-        custom_update_entities_prompt = filtered[-1]
+        custom_update_entities_prompt = _redact_content(custom_update_entities_prompt, settings.conflict_resolution_model)
     prompt = get_update_entities_messages(simplified_old_entities, simplified_new_entities, custom_update_entities_prompt)
     llm_messages = [{"role": "user", "content": prompt}]
 
