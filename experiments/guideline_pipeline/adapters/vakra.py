@@ -466,10 +466,12 @@ def _evaluation_report(score: float, details: dict) -> str | None:
     for turn in turns:
         metadata = _dict(turn.get("metadata"))
         explanations = _dict(metadata.get("score_explanation"))
+        # VAKRA's scorer records a policy score only for a turn its policy judge failed.
+        policy = f" policy={metadata['policy_adherance_score']}" if "policy_adherance_score" in metadata else ""
         lines.append(
             f"-- turn {turn.get('turn_id')} score={turn.get('score')} "
             f"gt_steps={metadata.get('gt_steps')} pred_steps={metadata.get('pred_steps')} "
-            f"extra_steps={metadata.get('extra_steps')} exactmatch={metadata.get('exactmatch_score')} "
+            f"extra_steps={metadata.get('extra_steps')}{policy} exactmatch={metadata.get('exactmatch_score')} "
             f"answer={metadata.get('answer_score')} groundedness={metadata.get('groundedness_score')}"
         )
         for check, _ in _CHECKS:

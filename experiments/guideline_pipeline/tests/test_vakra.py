@@ -275,6 +275,29 @@ def test_failed_checks_are_only_the_checks_that_failed_a_turn():
     assert failed_checks({"turn_id": 0, "metadata": {"answer_score": 0.0}}) == ("answer (turn 0)",)
 
 
+def test_a_policy_failure_is_reported_with_its_score():
+    # The shape VAKRA's scorer writes when its policy judge fails a turn (the key is spelled as the scorer spells it).
+    metadata = {
+        "gt_steps": 1,
+        "pred_steps": 1,
+        "extra_steps": 0,
+        "policy_adherance_score": 0.0,
+        "exactmatch_score": None,
+        "answer_score": None,
+        "groundedness_score": None,
+        "score_explanation": {"policy": "Shared another user's data.", "answer": None, "exactmatch": None, "groundedness": None},
+    }
+    details = {"num_turns": 1, "per_turn": [{"turn_id": 1, "score": 0.0, "metadata": metadata}]}
+    outcome = everything().record({"uuid": "u"}, "d", "train", {"score": 0.0, "details": details}).outcome
+
+    assert outcome is not None and outcome.failed_checks == ("policy (turn 1): Shared another user's data.",)
+    assert outcome.detail == (
+        "dialogue_score=0.0 num_turns=1\n"
+        "-- turn 1 score=0.0 gt_steps=1 pred_steps=1 extra_steps=0 policy=0.0 exactmatch=None answer=None groundedness=None\n"
+        "  policy: Shared another user's data."
+    )
+
+
 def test_metadata_and_batch_identity():
     records = by_id(everything())
     record = records["auth-02"]
