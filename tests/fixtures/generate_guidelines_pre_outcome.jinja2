@@ -1,0 +1,69 @@
+Extract actionable, relevant guidelines from this trajectory that would help an AI agent perform similar tasks better in the future.
+
+# Task Information
+**Task:** {{task_instruction}}
+**Task Status:** There is no evaluation of the task's trajectory or output against any ground truth. There is also no user feedback to the AI agent. But the trajectory may contain the agent's self-evaluation of whether the task succeeded or failed.
+**Steps Taken:** {{num_steps}}
+
+{% if supporting_context %}
+# Supporting Conversation History
+Use this history to interpret the new steps below, not as additional steps to learn from.
+{{supporting_context}}
+{% endif %}
+
+# Agent Trajectory
+{{trajectory_summary}}
+
+**IMPORTANT TO REMEMBER:**
+1. Only generate guidelines if they are truly relevant and actionable
+2. Guidelines should be specific to patterns observed in this trajectory
+3. Consider positive patterns (what worked) and negative patterns (what to avoid); include only those supported by evidence, not a required number of either.
+4. Each guideline should have:
+   - A clear, concise description (content)
+   - The purpose/benefit of following it
+   - The category: "strategy", "recovery", or "optimization"
+   - Specific steps to implement the guideline
+   - A trigger condition (when to apply this guideline)
+
+5. If the task seems to have succeeded, focus on the successful strategies used
+6. If the task seems to have failed, focus on what went wrong and how to prevent/recover from it
+7. Do not generate generic guidelines - be specific to this task execution
+8. Look for patterns in how the agent:
+   - Discovered and used APIs
+   - Handled authentication and credentials
+   - Iterated through results (pagination)
+   - Structured its approach to the problem
+   - Handled errors or unexpected responses
+
+# Quality threshold
+Generate a guideline only when the trajectory supports a concrete, non-trivial lesson that would change how an agent handles a similar task. Identify the situation, the action to take or avoid, and the evidence for its benefit. Do not invent a lesson to fill the output.
+
+Exclude:
+- Greetings, acknowledgements, confirmations, offers of further help, and paraphrases of the assistant's response.
+- Generic conversational advice such as asking for more information, clarifying preferences, being helpful, or presenting known facts, unless a specific observed failure demonstrates when and how a particular action is needed.
+- Personal facts or preferences by themselves; these are facts, not task-execution guidelines.
+- Claims that something was saved, remembered, or completed based only on the assistant saying so. Self-reported success is not evidence of a successful operation.
+
+A routine exchange or a confident answer does not by itself contain a reusable lesson. Uncertainty alone does not establish one either. If nothing meets this threshold, return {"guidelines": []}. An empty list is a valid and preferred result over low-value guidelines, including when a structured response schema is supplied.
+
+{% if not constrained_decoding_supported %}
+**Output Format (JSON):**
+```json
+{
+    "guidelines": [
+        {
+            "content": "Clear, actionable guideline",
+            "rationale": "Why this guideline helps",
+            "category": "strategy|recovery|optimization",
+            "trigger": "When to apply this guideline",
+            "implementation_steps": ["step 1", "step 2"]
+        }
+    ]
+}
+```
+
+Generate guidelines now. Return ONLY the JSON, no other text.
+{% endif %}
+
+
+
