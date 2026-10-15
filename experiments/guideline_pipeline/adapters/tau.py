@@ -24,12 +24,15 @@ task_instructions), facts the agent never saw, so it is not part of the messages
 In the judge section, a check is recognised by tau2's result field names, one
 check per line: ``action_match=False`` marks an expected action the agent did not
 perform, and ``met=False`` an NL assertion (or communicate check) that failed.
-The criteria and final answer sections are not used: the outcome carries the
+When the flag is alone on its line (pretty-printed JSON or dict reprs), the check
+is named from the object around it: tau2's action name and arguments, or the
+``nl_assertion`` text. The criteria and final answer sections are not used: the outcome carries the
 verdict, and the final answer is the conversation's last turn.
 """
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import logging
@@ -248,18 +251,86 @@ def task_messages(turns: list[Turn]) -> list[dict[str, Any]]:
     return [*kept[:position], {"role": "user", "content": turns[first].text}, *kept[position:]]
 
 
-def _check_text(line: str, flag: re.Pattern[str]) -> str:
-    return " ".join(flag.sub("", line).split()).strip(" ,;-")[:300] or line.strip()
+def _enclosing_object(text: str, start: int, end: int) -> dict[str, Any] | None:
+    """The JSON object or Python dict repr around text[start:end], parsed; None when there is none or it does not parse."""
+    # JSON: the nearest "{" before the flag whose object reaches past it. The decoder skips braces inside strings.
+    decoder = json.JSONDecoder()
+    begin = text.rfind("{", 0, start)
+    while begin != -1:
+        try:
+            value, stop = decoder.raw_decode(text, begin)
+        except ValueError:
+            value, stop = None, -1
+        if stop >= end and isinstance(value, dict):
+            return value
+        begin = text.rfind("{", 0, begin)
+    return _enclosing_repr(text, start, end)
+
+
+def _enclosing_repr(text: str, start: int, end: int) -> dict[str, Any] | None:
+    """The Python dict repr around text[start:end], found by brace counting (best effort: braces in strings confuse it)."""
+    depth, begin = 0, start
+    while True:
+        if begin == 0:
+            return None
+        begin -= 1
+        if text[begin] == "}":
+            depth += 1
+        elif text[begin] == "{":
+            if depth == 0:
+                break
+            depth -= 1
+    depth, finish = 0, end
+    while True:
+        if finish == len(text):
+            return None
+        if text[finish] == "{":
+            depth += 1
+        elif text[finish] == "}":
+            if depth == 0:
+                break
+            depth -= 1
+        finish += 1
+    try:
+        value = ast.literal_eval(text[begin : finish + 1])
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _describe_check(check: dict[str, Any], flag: re.Pattern[str]) -> str:
+    """What a check object is about: tau2's action name and arguments, or the NL assertion's text."""
+    if flag is _ACTION_MATCH:
+        action = check["action"] if isinstance(check.get("action"), dict) else check
+        if isinstance(name := action.get("name"), str) and name:
+            arguments = action.get("arguments")
+            return name if arguments is None else f"{name}({json.dumps(arguments, ensure_ascii=False)})"
+    elif isinstance(assertion := check.get("nl_assertion"), str) and assertion:
+        return assertion
+    flag_key = "action_match" if flag is _ACTION_MATCH else "met"
+    return json.dumps({key: value for key, value in check.items() if key != flag_key}, ensure_ascii=False, default=str)
+
+
+def _check_text(judge: str, offset: int, line: str, flag: re.Pattern[str]) -> str:
+    """The check a flag line reports; when the line holds only the flag (pretty-printed JSON), its enclosing object's."""
+    text = " ".join(flag.sub("", line).split()).strip(" ,;-")
+    if not text.strip("{}[] ") and (match := flag.search(line)):
+        if (check := _enclosing_object(judge, offset + match.start(), offset + match.end())) is not None:
+            return _describe_check(check, flag)[:300]
+    return text[:300] or line.strip()
 
 
 def judge_outcome(reward: float, judge: str) -> TrajectoryOutcome:
     """success from the reward; failed checks and the start of the report from the judge section."""
     failed: list[str] = []
-    for line in judge.splitlines():
+    offset = 0
+    for raw in judge.splitlines(keepends=True):
+        line = raw.rstrip("\r\n")
         if (match := _ACTION_MATCH.search(line)) and match.group(2).lower() == "false":
-            failed.append(f"expected action not matched: {_check_text(line, _ACTION_MATCH)}")
+            failed.append(f"expected action not matched: {_check_text(judge, offset, line, _ACTION_MATCH)}")
         elif (match := _MET.search(line)) and match.group(2).lower() == "false":
-            failed.append(f"assertion not met: {_check_text(line, _MET)}")
+            failed.append(f"assertion not met: {_check_text(judge, offset, line, _MET)}")
+        offset += len(raw)
     return TrajectoryOutcome(success=reward >= SUCCESS_REWARD, failed_checks=tuple(failed), detail=judge[:DETAIL_CHARS] or None)
 
 

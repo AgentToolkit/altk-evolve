@@ -109,6 +109,32 @@ def test_json_shaped_judge_lines_become_failed_checks():
     assert judge_outcome(0.0, "{'action_match': False, 'action': 'x'}").failed_checks == ("expected action not matched: { 'action': 'x'}",)
 
 
+def test_pretty_printed_judge_checks_are_named_from_their_object():
+    # json.dumps(..., indent=2) of tau2's action_checks / nl_assertions puts each flag on its own line.
+    reward_info = {
+        "action_checks": [
+            {"action": {"action_id": "a0", "name": "get_order_details", "arguments": {"order_id": "#W1"}}, "action_match": True},
+            {
+                "action": {"action_id": "a1", "name": "exchange_delivered_order_items", "arguments": {"order_id": "#W1"}},
+                "action_match": False,
+            },
+        ],
+        "nl_assertions": [{"nl_assertion": "The agent confirms the new size.", "met": False, "justification": "it did not {sic"}],
+    }
+    expected = (
+        'expected action not matched: exchange_delivered_order_items({"order_id": "#W1"})',
+        "assertion not met: The agent confirms the new size.",
+    )
+
+    # A brace inside a string does not confuse JSON.
+    assert judge_outcome(0.0, "reward=0.0\n" + json.dumps(reward_info, indent=2)).failed_checks == expected
+    # The same as a pretty-printed Python repr.
+    python_repr = json.dumps(reward_info, indent=2).replace(" {sic", "").replace("true", "True").replace("false", "False")
+    assert judge_outcome(0.0, python_repr).failed_checks == expected
+    # A flag alone on a line with no object around it still counts, under its own text.
+    assert judge_outcome(0.0, "met: false").failed_checks == ("assertion not met: met: false",)
+
+
 def test_conversation_turns_and_tool_io():
     turns = parse_conversation(
         conversation(

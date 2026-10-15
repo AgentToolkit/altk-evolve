@@ -433,7 +433,9 @@ Each task becomes one record:
 - **outcome:** `success` when the reward is 1.0; judge lines with
   `action_match=False` or `met=False` (or the JSON / dict forms
   `"action_match": false`, `'met': False`) become `failed_checks`, and the start
-  of the judge section becomes `detail`.
+  of the judge section becomes `detail`. When pretty-printed JSON puts the flag
+  on its own line, the check is named from its object: the action's `name` and
+  `arguments`, or the `nl_assertion` text.
 - **trace_id / batch:** the file name (`task_12`). The conversation is the file
   name too, prefixed with the split when the header records one
   (`train/task_12`), because splits can reuse task numbers. The revision digests
