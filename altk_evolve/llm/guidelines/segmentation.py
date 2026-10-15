@@ -24,35 +24,44 @@ _SEGMENT_TEMPLATE = Template((Path(__file__).parent / "prompts/segment_trajector
 SEGMENTATION_MIN_STEPS = 5
 
 
-def subtask_slices(subtasks: list[SubtaskSegment], steps_list: list[str]) -> list[tuple[SubtaskSegment, list[str]]]:
-    """Pair each subtask with its slice of ``steps_list``, one generation call per slice.
+def subtask_slices(subtasks: list[SubtaskSegment], trajectory_data: dict) -> list[tuple[SubtaskSegment, list[str], int]]:
+    """Pair each subtask with its slice of ``trajectory_data["steps_list"]``, one generation call per slice.
 
-    ``start_step``/``end_step`` are 1-based and inclusive, and are clamped to the list. A
-    subtask whose range is empty after clamping, or the same as an earlier subtask's, is
-    skipped, so a segmenter that repeats a range cannot fan one slice out into several
-    near-identical generation calls.
+    ``trajectory_data`` is ``parse_openai_agents_trajectory``'s output, parsed with the same
+    options as the segmenter saw. Returns ``(subtask, slice, real_steps)`` per usable subtask.
+
+    ``start_step``/``end_step`` are 1-based, inclusive list positions, clamped to the list.
+    The elision marker (``marker_index``) holds a position but is not a step: a slice
+    spanning the gap keeps it, so the model knows steps are missing, without counting it in
+    ``real_steps``. A subtask is skipped when its slice has no real step (out of range, or
+    the marker alone), or when its clamped range is the same as an earlier subtask's, so a
+    segmenter that repeats a range cannot fan one slice out into several near-identical
+    generation calls.
     """
+    steps_list: list[str] = trajectory_data["steps_list"]
+    marker_index: int | None = trajectory_data["marker_index"]
     n_steps = len(steps_list)
-    slices: list[tuple[SubtaskSegment, list[str]]] = []
+    slices: list[tuple[SubtaskSegment, list[str], int]] = []
     seen: set[tuple[int, int]] = set()
     for subtask in subtasks:
         start = min(max(0, subtask.start_step - 1), n_steps)
         end = min(max(0, subtask.end_step), n_steps)
-        if start >= end or (start, end) in seen:
-            logger.debug(f"Skipping subtask with empty or repeated steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
+        real_steps = end - start - (marker_index is not None and start <= marker_index < end)
+        if real_steps <= 0 or (start, end) in seen:
+            logger.debug(f"Skipping subtask with no real or repeated steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
             continue
         seen.add((start, end))
-        slices.append((subtask, steps_list[start:end]))
+        slices.append((subtask, steps_list[start:end], real_steps))
     return slices
 
 
-def one_pass_task_description(slices: list[tuple[SubtaskSegment, list[str]]], task_instruction: str) -> str:
+def one_pass_task_description(slices: list[tuple[SubtaskSegment, list[str], int]], task_instruction: str) -> str:
     """``task_description`` for the single whole-trajectory call, given ``subtask_slices``' output.
 
-    With exactly one distinct step range left, that subtask's generalized description is kept,
-    however many copies of the range the segmenter returned. With none (segmentation off or
-    skipped, the segmenter failed or returned nothing usable), it is the first user message
-    verbatim.
+    With exactly one distinct usable step range left, that subtask's generalized description
+    is kept, however many copies of the range the segmenter returned. With none (segmentation
+    off or skipped, the segmenter failed, or it returned nothing usable — out-of-range
+    subtasks, or only the elision marker), it is the first user message verbatim.
     """
     return slices[0][0].generalized_description if len(slices) == 1 else task_instruction
 
@@ -71,7 +80,9 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
     # Import here to avoid circular import (guidelines.py imports this module)
     from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 
-    trajectory_data = parse_openai_agents_trajectory(messages)
+    # Same options as the caller's own parse: the step indices returned here are positions
+    # in that rendering, so a different window would move what they point at.
+    trajectory_data = parse_openai_agents_trajectory(messages, options=options)
 
     supported_params = get_supported_openai_params(
         model=options.guidelines_model,
@@ -86,7 +97,10 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
 
     prompt = _SEGMENT_TEMPLATE.render(
         trajectory_summary=trajectory_data["trajectory_summary"],
-        num_steps=trajectory_data["num_steps"],
+        # Positions, not real steps: under elision the marker takes a position, so the labels
+        # run one past num_steps and a model trusting num_steps could drop the final step.
+        num_steps=len(trajectory_data["steps_list"]),
+        steps_omitted=trajectory_data["steps_omitted"] if trajectory_data["marker_index"] is not None else 0,
         constrained_decoding_supported=constrained_decoding_supported,
     )
 

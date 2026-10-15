@@ -156,7 +156,12 @@ plugins receive isolated trajectory copies.
 Profiles store normalized defaults and plugin versions. Resolving a saved profile
 rejects changed processor versions or configuration drift; publish a new revision
 when processor compatibility changes. The built-in owns version `1`, independently
-of the Evolve package version; ordinary package releases do not invalidate profiles. A retained in-process plan keeps its processor class references.
+of the Evolve package version; ordinary package releases do not invalidate profiles.
+A processor that adds a config key without a version bump declares it in its config
+model's `config_additions`, mapped to the value earlier revisions ran with; resolving a revision
+stored without the key fills in that value (never the model's current, possibly
+environment-derived default), so pinned revisions replay as they ran. The built-in declares
+`trajectory_max_steps=50`, `trajectory_max_step_chars=2000`, and `trajectory_tail_steps=0`. A retained in-process plan keeps its processor class references.
 Hot replacement of installed Python code is unsupported.
 
 ## Built-ins, discovered packages, and local plugins
