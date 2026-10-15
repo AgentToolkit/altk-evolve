@@ -80,6 +80,21 @@ def _conflict_resolution_completion_options(settings: LLMSettings | None = None)
     return options
 
 
+def _apply_llm_pre_call(content: str | list | dict, model: str) -> str:
+    """Pass memory content as text to the hook and use only its returned text.
+
+    Serialize the whole content so dictionary keys and numbers are checked too.
+    IDs, types, metadata and conflict instructions are never passed here.
+    """
+    messages = dispatch_llm_pre_call([{"role": "user", "content": serialize_content(content)}], purpose="conflict_resolution", model=model)
+    if len(messages) != 1 or not isinstance(messages[0], dict) or messages[0].get("role") != "user":
+        raise ValueError("llm_pre_call must return one user message containing text")
+    text = messages[0].get("content")
+    if not isinstance(text, str):
+        raise ValueError("llm_pre_call must return one user message containing text")
+    return text
+
+
 @traced("evolve.memory.resolve_conflicts")
 def resolve_conflicts(
     old_entities: list[RecordedEntity],
@@ -100,10 +115,12 @@ def resolve_conflicts(
     new_entities_by_content = {serialize_content(entity.content): entity for entity in new_entities}
     old_entities_by_id = {entity.id: entity for entity in old_entities}
 
+    # Give hooks only the text they may change. Add IDs, types and built-in
+    # instructions afterward so a hook cannot replace them in its response.
+    for entity in simplified_old_entities + simplified_new_entities:
+        entity.content = _apply_llm_pre_call(entity.content, settings.conflict_resolution_model)
     prompt = get_update_entities_messages(simplified_old_entities, simplified_new_entities, custom_update_entities_prompt)
-    llm_messages = dispatch_llm_pre_call(
-        [{"role": "user", "content": prompt}], purpose="conflict_resolution", model=settings.conflict_resolution_model
-    )
+    llm_messages = [{"role": "user", "content": prompt}]
 
     llm_messages[-1]["content"] += (
         "\nFor each decision include incoming_ids: the IDs of incoming entities that support it. "
