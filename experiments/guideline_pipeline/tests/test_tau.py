@@ -388,6 +388,38 @@ def test_split_is_recorded_and_selects_tasks(tau_dir: Path, caplog: pytest.LogCa
         next(TauRetailAdapter(splits=frozenset({"dev", "train"})).records(tau_dir))
 
 
+def test_split_file_selects_tasks_by_number(tau_dir: Path, tmp_path: Path):
+    # tau2's split_tasks.json lists task IDs over the base set, so one run directory holds both
+    # splits and its headers can record at most split=base.
+    for number in (0, 3, 4, 10):
+        split_file(tau_dir, f"task_{number}.txt", "base")
+    table = tmp_path / "split_tasks.json"
+    table.write_text(json.dumps({"train": ["0", "2", "4"], "test": ["1", "3", "10"], "base": [str(n) for n in range(11)]}))
+
+    def mined(splits: str, path: Path = tau_dir) -> list[str]:
+        adapter = get_adapter("tau-retail", {"split_file": str(table), "splits": splits})
+        return [record.batch.batch_id for record in adapter.records(path)]
+
+    assert mined("train") == ["task_0", "task_2", "task_4"]
+    assert mined("test") == ["task_1", "task_3", "task_10"]
+    assert mined("train,test") == mined("base") == ["task_0", "task_1", "task_2", "task_3", "task_4", "task_10"]
+    assert mined("test", tau_dir / "task_2.txt") == []
+    # Numbers match without leading zeros, and IDs may be JSON numbers.
+    table.write_text(json.dumps({"train": [0, "002"]}))
+    assert mined("train") == ["task_0", "task_2"]
+
+    with pytest.raises(ValueError, match=r"split_file needs splits="):
+        get_adapter("tau-retail", {"split_file": str(table)})
+    with pytest.raises(ValueError, match=r"Splits not found in tau-retail split file .*\['dev'\] \(found \['train'\]\)"):
+        get_adapter("tau-retail", {"splits": "dev,train", "split_file": str(table)})
+    for bad in ('["0", "1"]', '{"train": "0"}', '{"train": [true]}', "{}", "not json"):
+        table.write_text(bad)
+        with pytest.raises(ValueError, match="split file"):
+            get_adapter("tau-retail", {"split_file": str(table), "splits": "train"})
+    with pytest.raises(ValueError, match="Cannot read tau-retail split file"):
+        get_adapter("tau-retail", {"split_file": str(tmp_path / "missing.json"), "splits": "train"})
+
+
 def test_reading_no_task_is_never_silent(tmp_path: Path, caplog: pytest.LogCaptureFixture):
     (tmp_path / "task_1.txt").write_text("not a trajectory")
     with caplog.at_level(logging.WARNING):

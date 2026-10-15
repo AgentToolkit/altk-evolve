@@ -454,19 +454,29 @@ Options (`--adapter-option KEY=VALUE`):
 | --- | --- |
 | `include_policy=true` | Add the agent domain policy as `system` context messages. It is the same in every task, so it is off by default. |
 | `include_scenario=true` | Add the user simulator's scenario as a `system` context message. It holds facts the agent never had, so guidelines mined with it can encode them. |
-| `splits=train` | Only tasks whose header records one of these `split=` values. A task without one is skipped with a warning; a listed split that no task records ends the run with an error, and so does a value that lists none. |
+| `splits=train` | Only tasks in these splits. Without `split_file`, a task's split is the `split=` its header records: a task without one is skipped with a warning, and a listed split that no task records ends the run with an error. A value that lists no split is an error. |
+| `split_file=<split_tasks.json>` | Take each task's split from tau2's `split_tasks.json` (a JSON object mapping each split to its task IDs) instead of the headers. A task is matched on the number in its file name (`task_12.txt` is task `12`). Needs `splits=`; a listed split that the file lacks is an error. |
 
 Context is supporting history: the extractor sees it, but it is not counted as
-new material. Mining a test-split run and then evaluating on that split leaks
-the test set into the namespace; record `split=` in the headers and pass
-`splits=train` to mine only the training tasks.
+new material.
+
+**Splits and leakage.** Mining test tasks and then evaluating on them leaks the
+test set into the namespace, and nothing is filtered by default. tau2's retail
+`train` and `test` splits are lists of task IDs over the `base` set, so a normal
+run over `base` holds both in one directory and its headers can record at most
+`split=base`. Pass tau2's split file to mine only the training tasks:
 
 ```bash
 uv run python -m experiments.guideline_pipeline mine --adapter tau-retail \
-    --input runs/tau-retail-train/trajectories --namespace tau_retail \
+    --input runs/tau-retail-base/trajectories --namespace tau_retail \
     --processing-profile guidelines-consistency \
-    --adapter-option include_policy=true --adapter-option splits=train --dry-run
+    --adapter-option include_policy=true \
+    --adapter-option split_file=tau2-bench/data/tau2/domains/retail/split_tasks.json \
+    --adapter-option splits=train --dry-run
 ```
+
+When the runs record their split in each header (`split=train`), `splits=train`
+alone selects on it.
 
 ## Writing an adapter
 

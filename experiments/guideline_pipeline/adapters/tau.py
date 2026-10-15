@@ -367,20 +367,56 @@ def _header_split(file: Path) -> str | None:
     return parse_header(header).get("split") if header else None
 
 
+def _task_key(task_id: str) -> str:
+    """A task ID as split files and file names are matched on: a number without leading zeros, else the ID itself."""
+    task_id = task_id.strip()
+    return str(int(task_id)) if task_id.isdecimal() else task_id
+
+
+def _file_task_key(file: Path) -> str:
+    number, _ = _task_number(file)
+    return str(number) if number >= 0 else file.stem
+
+
+def load_split_file(path: Path) -> dict[str, frozenset[str]]:
+    """tau2's ``split_tasks.json``: each split's name and task IDs. A ValueError naming the file if it is not one."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise ValueError(f"Cannot read {SOURCE} split file {path}: {exc}") from exc
+    if not (
+        isinstance(payload, dict)
+        and payload
+        and all(
+            isinstance(ids, list) and all(isinstance(task_id, (str, int)) and not isinstance(task_id, bool) for task_id in ids)
+            for ids in payload.values()
+        )
+    ):
+        raise ValueError(
+            f"{SOURCE} split file {path} must be a JSON object mapping each split to a list of task IDs, like tau2's split_tasks.json"
+        )
+    return {name: frozenset(_task_key(str(task_id)) for task_id in ids) for name, ids in payload.items()}
+
+
 @dataclass
 class TauRetailAdapter:
     """Reads a directory of ``task_*.txt`` files, or one such file, into one record per task.
 
     Options (``--adapter-option KEY=VALUE``): include_policy and include_scenario
     (booleans; add the agent domain policy or the user simulator's scenario as
-    context_messages) and splits (comma-separated; only tasks whose header records
-    one of these ``split=`` values).
+    context_messages), splits (comma-separated; only tasks in these splits) and
+    split_file (tau2's ``split_tasks.json``). With split_file, a task is in a split
+    when the file lists its number (``task_12.txt`` is task ``12``); without it,
+    when its header records that ``split=``.
     """
 
     name: str = SOURCE
     include_policy: bool = False
     include_scenario: bool = False
     splits: frozenset[str] = field(default_factory=frozenset)
+    split_file: Path | None = None
+    # The task keys split_file lists under splits; None selects by the header's split= instead.
+    split_task_keys: frozenset[str] | None = None
 
     def configure(self, options: Mapping[str, str]) -> TauRetailAdapter:
         changes: dict[str, Any] = {}
@@ -389,8 +425,18 @@ class TauRetailAdapter:
                 changes[key] = option_boolean(SOURCE, key, value)
             elif key == "splits":
                 changes[key] = frozenset(option_names(SOURCE, key, value))
+            elif key == "split_file":
+                changes[key] = Path(value)
             else:
-                raise ValueError(f"Unknown {SOURCE} option {key!r} (expected include_policy, include_scenario, splits)")
+                raise ValueError(f"Unknown {SOURCE} option {key!r} (expected include_policy, include_scenario, splits, split_file)")
+        if "split_file" in changes:
+            splits: frozenset[str] = changes.get("splits", self.splits)
+            if not splits:
+                raise ValueError(f"{SOURCE} option split_file needs splits= to say which of its splits to mine (say, splits=train)")
+            table = load_split_file(changes["split_file"])
+            if missing := sorted(splits - table.keys()):
+                raise ValueError(f"Splits not found in {SOURCE} split file {changes['split_file']}: {missing} (found {sorted(table)})")
+            changes["split_task_keys"] = frozenset().union(*(table[split] for split in splits))
         return replace(self, **changes)
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
@@ -398,11 +444,13 @@ class TauRetailAdapter:
 
         A malformed file is logged and skipped, so one bad task doesn't end the run
         (an exception here would stop mine's iteration); a missing or empty input
-        raises, because then nothing can be read at all, and so does a split filter
-        naming a split no task records. Reading no task at all logs a warning.
+        raises, because then nothing can be read at all, and so does a header split
+        filter naming a split no task records. Reading no task at all logs a warning.
         """
         files = _task_files(path)
-        if self.splits:
+        if self.split_task_keys is not None:
+            files = [file for file in files if _file_task_key(file) in self.split_task_keys]
+        elif self.splits:
             files = self._by_header_split(path, files)
         read = 0
         for file in files:
