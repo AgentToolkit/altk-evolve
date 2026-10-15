@@ -11,12 +11,13 @@ consistency scores across agent response samples, including:
 """
 
 import logging
+import math
+from collections import Counter
+from numbers import Real, Integral
 
 logger = logging.getLogger(__name__)
 import statistics as st
 import numpy as np
-import pandas as pd
-from scipy.stats import entropy
 
 from abc import ABC, abstractmethod
 
@@ -420,23 +421,46 @@ class CategoricalEntropyConsistencyMetric(ConsistencyMetric):
         return 1.0 - self._get_distance(samples)
 
     def _get_distance(self, samples: list) -> float:
-        # extract value series
-        val_series = pd.Series(samples)
-        unique_vals = val_series.value_counts(normalize=True)
-        val_probs = unique_vals.to_list()
-
-        # Calculate normalized entropy
-        val_entropy = entropy(val_probs, base=2)
-        max_entropy = np.log2(len(samples))
-
-        if max_entropy == 0:  # this can happen if we only have 1 sample
+        if len(samples) <= 1:
             return 0.0
 
-        normalized_entropy = val_entropy / max_entropy
-        if normalized_entropy > 1.0:  # correct anomalies from rounding errors
-            normalized_entropy = 1.0
-
-        return normalized_entropy
+        # The dispatcher supplies strings. Raw direct calls retain the old
+        # missing-value exclusion and numeric promotion, including rounding.
+        values = [
+            s
+            for s in samples
+            if s is not None
+            and not (isinstance(s, (float, np.floating)) and math.isnan(s))
+            and not (isinstance(s, (np.datetime64, np.timedelta64)) and np.isnat(s))
+        ]
+        numeric = values and all(isinstance(s, Real) and not isinstance(s, (bool, np.bool_, np.timedelta64)) for s in values)
+        integers = [int(s) for s in values if isinstance(s, Integral)] if numeric else []
+        if (
+            numeric
+            and (len(values) != len(samples) or any(not isinstance(s, Integral) for s in values))
+            and all(-(2**63) <= s < 2**64 for s in integers)
+            and not (integers and min(integers) < 0 and max(integers) >= 2**63)
+        ):
+            values = [float(s) for s in values]
+        try:
+            counts = list(Counter(values).values())
+        except TypeError:
+            # Preserve support for unhashable list/dict categories. The normal
+            # string path above remains linear in the number of observations.
+            categories: list = []
+            counts = []
+            for value in values:
+                for i, category in enumerate(categories):
+                    if value == category:
+                        counts[i] += 1
+                        break
+                else:
+                    categories.append(value)
+                    counts.append(1)
+        total = sum(counts)
+        val_entropy = -math.fsum((count / total) * math.log2(count / total) for count in counts)
+        # Keep the original denominator, including missing observations.
+        return min(1.0, val_entropy / math.log2(len(samples)))
 
     def get_distance_from_chosen_trajectory(self, samples: list, chosen, **kwargs) -> list:
         if not samples or chosen is None:
