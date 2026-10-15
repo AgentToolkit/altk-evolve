@@ -931,6 +931,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#trajectory-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trajectory limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#trajectory-segmentation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1743,6 +1754,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#trajectory-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trajectory limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#trajectory-segmentation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2027,6 +2049,21 @@
 <td><code>false</code></td>
 </tr>
 <tr>
+<td><code>EVOLVE_TRAJECTORY_MAX_STEPS</code></td>
+<td>Most trajectory steps rendered into a generation prompt (<code>standard</code> and <code>fast</code> consistency; not <code>accurate</code>) — see <a href="#trajectory-limits">Trajectory limits</a></td>
+<td><code>50</code></td>
+</tr>
+<tr>
+<td><code>EVOLVE_TRAJECTORY_MAX_STEP_CHARS</code></td>
+<td>Characters kept per step before truncation</td>
+<td><code>2000</code></td>
+</tr>
+<tr>
+<td><code>EVOLVE_TRAJECTORY_TAIL_STEPS</code></td>
+<td>How much of the step budget is reserved for the <strong>end</strong> of a long run. <code>0</code> truncates head-only, as before — see <a href="#trajectory-limits">Trajectory limits</a></td>
+<td><code>0</code></td>
+</tr>
+<tr>
 <td><code>EVOLVE_GUIDELINES_MODEL</code></td>
 <td>Model for guideline generation only</td>
 <td><code>EVOLVE_MODEL_NAME</code> -&gt; <code>gpt-4o</code></td>
@@ -2058,6 +2095,36 @@
 </tr>
 </tbody>
 </table>
+<h3 id="trajectory-limits">Trajectory limits<a class="headerlink" href="#trajectory-limits" title="Permanent link">&para;</a></h3>
+<p>A trajectory is rendered into the generation prompt as at most <code>EVOLVE_TRAJECTORY_MAX_STEPS</code>
+steps of at most <code>EVOLVE_TRAJECTORY_MAX_STEP_CHARS</code> characters each. Both were fixed at 50
+and 2000 before; the defaults are unchanged.</p>
+<p>These settings govern the <code>standard</code> path, trajectory segmentation, and the <code>fast</code>
+consistency method. The <code>accurate</code> consistency method does <strong>not</strong> use them: its prompt
+renderer keeps its own fixed window of the first 50 steps at 500 characters each, whatever
+these are set to.</p>
+<p><strong>Keeping the end of a long run.</strong> By default the window is head-only: a 200-step run is
+rendered as its first 50 steps, and the 150 that follow — including whatever the run
+finished with — are not in the prompt at all. A run's outcome is at its end, so a guideline
+mined from the head alone can state an approach that the run went on to abandon.
+<code>EVOLVE_TRAJECTORY_TAIL_STEPS</code> carves part of the budget out for the end:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 40 steps from the start, 10 from the end, the middle replaced by a marker</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">EVOLVE_TRAJECTORY_MAX_STEPS</span><span class="o">=</span><span class="m">50</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nv">EVOLVE_TRAJECTORY_TAIL_STEPS</span><span class="o">=</span><span class="m">10</span>
+</code></pre></div>
+<p>The tail comes <strong>out of</strong> <code>EVOLVE_TRAJECTORY_MAX_STEPS</code>, not on top of it, so the prompt
+never holds more than that many steps; the omitted middle is announced in the prompt as
+<code>[... N intermediate step(s) omitted; M steps in the full run ...]</code> rather than silently
+closed up. That marker takes one extra position, so an elided run renders as
+<code>EVOLVE_TRAJECTORY_MAX_STEPS + 1</code> numbered entries. It must stay
+below <code>EVOLVE_TRAJECTORY_MAX_STEPS</code> — a tail that consumed the whole budget would leave no
+steps from the start of the run.</p>
+<p>Leave it at <code>0</code> if you compare results against runs recorded earlier: it changes which steps
+reach the model, so guidelines mined before and after the change come from different views
+of the same trajectory. One interaction to know about: with elision in effect, the
+<code>accurate</code> consistency method skips segmentation on any trajectory long enough to be elided,
+because its step numbering and the segmenter's stop agreeing across the gap. Trajectories
+within the step budget are unaffected, as is the <code>fast</code> method.</p>
 <h3 id="trajectory-segmentation">Trajectory segmentation<a class="headerlink" href="#trajectory-segmentation" title="Permanent link">&para;</a></h3>
 <p><code>EVOLVE_SEGMENTATION_ENABLED</code> is <strong>disabled by default</strong>. With it enabled, a trajectory is
 split into subtasks and each subtask gets its own guideline-generation call.</p>
@@ -2230,14 +2297,14 @@ use a fresh namespace when you change this setting.</p>
 </tbody>
 </table>
 <h3 id="switching-backends">Switching Backends<a class="headerlink" href="#switching-backends" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Use Milvus backend (default)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>milvus
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Use Filesystem backend</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Use Postgres backend</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>postgres
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Use Milvus backend (default)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>milvus
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Use Filesystem backend</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Use Postgres backend</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>postgres
 </code></pre></div>
 <h3 id="filesystem-backend-details">Filesystem Backend Details<a class="headerlink" href="#filesystem-backend-details" title="Permanent link">&para;</a></h3>
 <p>The filesystem backend stores all data in JSON files - one file per namespace. This is ideal for:
@@ -2247,37 +2314,37 @@ use a fresh namespace when you change this setting.</p>
 - Quick prototyping without embedding model overhead</p>
 <p><strong>JSON File Structure:</strong></p>
 <p>Each namespace is stored as <code>&lt;data_dir&gt;/&lt;namespace_id&gt;.json</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_guidelines&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:29:51.986882+00:00&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">&quot;entities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;guideline&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Always write tests before code&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">      </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:30:00.023283+00:00&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="p">],</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span><span class="nt">&quot;next_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_guidelines&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:29:51.986882+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">&quot;entities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;guideline&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Always write tests before code&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">      </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:30:00.023283+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">      </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span><span class="p">],</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">  </span><span class="nt">&quot;next_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="p">}</span>
 </code></pre></div>
 <h2 id="low-code-tracing-phoenix-integration">Low-Code Tracing (Phoenix Integration)<a class="headerlink" href="#low-code-tracing-phoenix-integration" title="Permanent link">&para;</a></h2>
 <p>Evolve provides easy integration with Phoenix for tracing LLM calls.</p>
 <h3 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>evolve<span class="o">[</span>tracing<span class="o">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span>evolve<span class="o">[</span>tracing<span class="o">]</span>
 </code></pre></div>
 <h3 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h3>
 <p>First, enable auto-mode by setting the environment variable:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_AUTO_ENABLED</span><span class="o">=</span><span class="nb">true</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_AUTO_ENABLED</span><span class="o">=</span><span class="nb">true</span>
 </code></pre></div>
 <p>Then, add one import at the top of your agent to trigger the patching:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">altk_evolve.auto</span> <span class="c1"># noqa: F401</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="k">pass</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># Your existing code unchanged...</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">altk_evolve.auto</span> <span class="c1"># noqa: F401</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="k">pass</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="c1"># Your existing code unchanged...</span>
 </code></pre></div>
 <h3 id="tracing-environment-variables">Tracing Environment Variables<a class="headerlink" href="#tracing-environment-variables" title="Permanent link">&para;</a></h3>
 <table>
