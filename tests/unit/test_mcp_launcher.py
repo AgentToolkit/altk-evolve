@@ -87,7 +87,19 @@ def _run_stdio(monkeypatch, argv: list[str]) -> list[object]:
 
 @pytest.mark.parametrize(
     ("argv", "env"),
-    [(["--no-dashboard"], None), ([], "false"), ([], "0"), ([], "off"), (["--no-dashboard"], "true")],
+    [
+        (["--no-dashboard"], None),
+        ([], "false"),
+        ([], "0"),
+        ([], "off"),
+        ([], "no"),
+        # The spellings pydantic reads as False for every other EVOLVE_ boolean.
+        ([], "f"),
+        ([], "n"),
+        ([], " OFF "),
+        ([], "False"),
+        (["--no-dashboard"], "true"),
+    ],
 )
 def test_stdio_launcher_can_turn_the_dashboard_off(monkeypatch, runtime, caplog, argv, env) -> None:
     if env is None:
@@ -100,9 +112,40 @@ def test_stdio_launcher_can_turn_the_dashboard_off(monkeypatch, runtime, caplog,
     assert runtime == ["started", "stopped"]
 
 
+@pytest.mark.parametrize("env", ["true", "1", "yes", "on", "t", "y", " True "])
+def test_stdio_launcher_keeps_the_dashboard_on_for_true_values(monkeypatch, runtime, env) -> None:
+    monkeypatch.setenv("EVOLVE_DASHBOARD", env)
+    assert _run_stdio(monkeypatch, []) == [launcher.run_api_server]
+
+
+@pytest.mark.parametrize("env", ["fasle", "disable", "none", "2"])
+def test_unrecognised_dashboard_value_fails_closed(monkeypatch, runtime, caplog, env) -> None:
+    """A mistyped off switch must not leave the unauthenticated listener up."""
+    monkeypatch.setenv("EVOLVE_DASHBOARD", env)
+    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
+        assert _run_stdio(monkeypatch, []) == []
+    assert f"EVOLVE_DASHBOARD={env!r} is not a boolean" in caplog.text
+    assert "leaving the dashboard off" in caplog.text
+
+
 def test_dashboard_flag_overrides_the_environment(monkeypatch, runtime) -> None:
     monkeypatch.setenv("EVOLVE_DASHBOARD", "false")
     assert _run_stdio(monkeypatch, ["--dashboard"]) == [launcher.run_api_server]
+
+
+def test_dashboard_flag_overrides_an_unrecognised_value(monkeypatch, runtime, caplog) -> None:
+    monkeypatch.setenv("EVOLVE_DASHBOARD", "fasle")
+    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
+        assert _run_stdio(monkeypatch, ["--dashboard"]) == [launcher.run_api_server]
+    assert "is not a boolean" not in caplog.text
+
+
+@pytest.mark.parametrize(("dotenv", "expected_started"), [("EVOLVE_DASHBOARD=false\n", False), ("", True)])
+def test_empty_dashboard_value_counts_as_unset(monkeypatch, runtime, tmp_path, dotenv, expected_started) -> None:
+    """`EVOLVE_DASHBOARD=` in the environment doesn't hide `.env`, and on its own means the default (on)."""
+    (tmp_path / ".env").write_text(dotenv)
+    monkeypatch.setenv("EVOLVE_DASHBOARD", "")
+    assert (_run_stdio(monkeypatch, []) == [launcher.run_api_server]) is expected_started
 
 
 @pytest.mark.parametrize(("env", "expected_started"), [(None, False), ("true", True)])

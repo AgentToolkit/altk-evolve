@@ -5,6 +5,7 @@ import socket
 import sys
 import threading
 import uvicorn
+from pydantic import ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from altk_evolve.frontend.mcp.mcp_server import app, get_client, mcp
@@ -64,18 +65,39 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 class _DashboardSettings(BaseSettings):
-    """EVOLVE_DASHBOARD, read like every other EVOLVE_ setting: the environment, then `.env`."""
+    """EVOLVE_DASHBOARD, read like every other EVOLVE_ setting: the environment, then `.env`.
 
-    model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
-    dashboard: str | None = None
+    It is a pydantic bool, like the other EVOLVE_ switches, so `f`, `n`, `no` and `off` mean off.
+    An empty value counts as unset, so it doesn't hide a value in `.env`.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore", env_ignore_empty=True)
+    dashboard: bool | None = None
+
+    @field_validator("dashboard", mode="before")
+    @classmethod
+    def _strip(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
 
 def _dashboard_enabled(flag: bool | None) -> bool:
-    """The command-line flag wins; otherwise EVOLVE_DASHBOARD, which defaults to on."""
+    """The command-line flag wins; otherwise EVOLVE_DASHBOARD, which defaults to on.
+
+    An unrecognised value turns the dashboard off: a mistyped off switch must not leave an
+    unauthenticated listener running.
+    """
     if flag is not None:
         return flag
-    raw = _DashboardSettings().dashboard
-    return raw is None or raw.strip().lower() not in {"0", "false", "no", "off"}
+    try:
+        setting = _DashboardSettings().dashboard
+    except ValidationError as exc:
+        value = exc.errors()[0].get("input")
+        logger.warning(
+            "EVOLVE_DASHBOARD=%r is not a boolean (use true or false); leaving the dashboard off. Pass --dashboard to turn it on.",
+            value,
+        )
+        return False
+    return True if setting is None else setting
 
 
 class _DashboardServer(uvicorn.Server):
