@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 
 @pytest.fixture(scope="function", autouse=True)
-def mock_sentence_transformer(request):
+def mock_sentence_transformer(request, monkeypatch):
     """
     Mock SentenceTransformer for unit tests only to prevent network calls and hanging.
 
@@ -16,6 +16,7 @@ def mock_sentence_transformer(request):
     """
     # Only apply the mock for unit tests (check if test has the 'unit' marker)
     if request.node.get_closest_marker("unit"):
+        monkeypatch.setenv("EVOLVE_EMBEDDING_PROVIDER", "sentence_transformers")
         with patch("sentence_transformers.SentenceTransformer") as mock_st:
             from altk_evolve.llm.guidelines.consistency_analyzer import consistency_metric
 
