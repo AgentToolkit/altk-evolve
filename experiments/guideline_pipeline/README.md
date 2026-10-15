@@ -380,8 +380,8 @@ Options (`--adapter-option KEY=VALUE`):
 | `split=heldout` | Yield the held-out records instead of the train records (default `train`). |
 | `domains=authors,hockey` | Only these domain files (by name without `.json`). A missing domain ends the run with an error, and so does a value that names none. |
 | `include_tools=false` | Leave out the `TOOL SPACE` step. |
-| `results=<file>` | Read the evaluation from this file instead of `<input>/results.json`. |
-| `heldout_out=<file>` | Write the held-out manifest to this file. |
+| `results=<file>` | Read the evaluation from this file instead of `<input>/results.json`. Inside the run directory, it is not read as a domain file. |
+| `heldout_out=<file>` | Write the held-out manifest to this file. Inside the run directory, it is not read as a domain file. |
 
 ```bash
 # Check the split and write the held-out manifest, without touching storage.

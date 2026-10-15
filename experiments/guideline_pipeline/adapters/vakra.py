@@ -188,7 +188,8 @@ class VakraAdapter:
         return [{"role": "user", "content": _first_query(raw)}, *elide_middle(steps)]
 
     def _files(self, path: Path) -> list[Path]:
-        files = _domain_files(path)
+        # A results or heldout_out file kept in the run directory is not a domain file.
+        files = _domain_files(path, exclude={file.resolve() for file in (self.results, self.heldout_out) if file is not None})
         if self.domains:
             if missing := sorted(self.domains - {file.stem for file in files}):
                 raise ValueError(f"Domains not found in {path}: {missing}")
@@ -265,13 +266,13 @@ def _query_key(query: str) -> str:
     return " ".join(query.split()).casefold()
 
 
-def _domain_files(path: Path) -> list[Path]:
-    """The ``<domain>.json`` record files of one run directory.
+def _domain_files(path: Path, exclude: set[Path]) -> list[Path]:
+    """The ``<domain>.json`` record files of one run directory, other than the (resolved) paths in exclude.
 
     A parent of run directories has none of its own, so it is an error that names
     the runs beneath it; runs nested inside a run are not read, and get a warning.
     """
-    files = _json_files(path)
+    files = [file for file in _json_files(path) if file.resolve() not in exclude]
     nested = sorted(child.name for child in path.iterdir() if child.is_dir() and _json_files(child)) if path.is_dir() else []
     if not files:
         hint = f"; pass one run directory ({', '.join(nested)} hold domain files)" if nested else ""

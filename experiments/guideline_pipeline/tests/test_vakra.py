@@ -433,6 +433,19 @@ def test_heldout_manifest_contents_and_determinism(tmp_path: Path):
     assert out.read_bytes() == first
 
 
+def test_results_and_heldout_out_files_in_the_run_are_not_domain_files(data_copy: Path, monkeypatch: pytest.MonkeyPatch):
+    (data_copy / "results.json").rename(data_copy / "eval_cap2.json")
+    monkeypatch.chdir(data_copy)  # relative option paths name the same files
+    adapter = VakraAdapter(dev_frac=0.0).configure({"results": "eval_cap2.json", "heldout_out": str(data_copy / "heldout.json")})
+
+    first = by_id(adapter, data_copy)
+    assert list(first) == ALL and first["auth-01"].outcome is not None
+    assert (data_copy / "heldout.json").exists()
+    # The second run finds the manifest the first one wrote, and still reads only the domain files.
+    assert by_id(adapter, data_copy) == first
+    assert adapter.heldout_manifest(data_copy) == {"authors": [], "hockey": [], "movies": []}
+
+
 def test_heldout_manifest_merges_files_that_share_a_domain(data_copy: Path):
     records = json.loads((data_copy / "authors.json").read_text())
     (data_copy / "authors_extra.json").write_text(json.dumps([{**record, "uuid": record["uuid"] + "-x"} for record in records]))
