@@ -13,10 +13,12 @@ Reads JSON from stdin of the form:
   }
 
 Valid assessments are written even when others in the batch are not. Any
-assessment that cannot be recorded (not an object, no entity, or a verdict
-outside ``_ALLOWED_VERDICTS``) is named on stderr and makes the script exit 1,
+assessment that cannot be recorded (not an object, no entity, a verdict outside
+``_ALLOWED_VERDICTS``, or a verdict that conflicts with another assessment of
+the same entity in this batch) is named on stderr and makes the script exit 1,
 so a judgment is never lost behind a zero exit. Resending the whole batch after
-fixing it is safe: pairs already recorded are skipped as duplicates.
+fixing it is safe: pairs already recorded are skipped as duplicates. A recorded
+verdict is final, so a resend cannot change it.
 """
 
 import json
@@ -91,28 +93,57 @@ def main():
     evolve_dir = get_evolve_dir().resolve()
     existing_keys = existing_influence_keys(evolve_dir)
 
-    written = 0
-    duplicates = 0
     rejected = []
+    valid = []
     for index, assessment in enumerate(assessments):
         if not isinstance(assessment, dict):
             log(f"Rejecting non-dict assessment item: {assessment!r}")
-            rejected.append(f"assessments[{index}]: must be a JSON object, got {type(assessment).__name__}")
+            rejected.append((index, f"assessments[{index}]: must be a JSON object, got {type(assessment).__name__}"))
             continue
         entity = assessment.get("entity")
         verdict = assessment.get("verdict")
         evidence = assessment.get("evidence", "")
         if not isinstance(entity, str) or not entity:
             log(f"Rejecting assessment with non-string entity: {assessment!r}")
-            rejected.append(f"assessments[{index}]: must include a non-empty string `entity`")
+            rejected.append((index, f"assessments[{index}]: must include a non-empty string `entity`"))
             continue
         if not isinstance(verdict, str) or verdict not in _ALLOWED_VERDICTS:
             log(f"Rejecting invalid assessment verdict: {assessment}")
-            rejected.append(f"assessments[{index}] ({entity}): verdict must be one of {sorted(_ALLOWED_VERDICTS)}, got {verdict!r}")
+            rejected.append(
+                (index, f"assessments[{index}] ({entity}): verdict must be one of {sorted(_ALLOWED_VERDICTS)}, got {verdict!r}")
+            )
             continue
         if not isinstance(evidence, str):
             evidence = str(evidence)
+        valid.append((index, entity, verdict, evidence))
+
+    # A recorded verdict is final for its pair, so when one batch gives a new
+    # pair two different verdicts, recording either would silently settle the
+    # disagreement. Reject every item for that pair instead and let the caller
+    # resend the one it means. Repeats of the same verdict are plain duplicates,
+    # and a pair recorded before this batch stays a duplicate whatever it says.
+    verdicts_by_entity = {}
+    for _index, entity, verdict, _evidence in valid:
+        verdicts_by_entity.setdefault(entity, set()).add(verdict)
+    conflicting = {
+        entity for entity, verdicts in verdicts_by_entity.items() if len(verdicts) > 1 and (session_id, entity) not in existing_keys
+    }
+
+    written = 0
+    duplicates = 0
+    for index, entity, verdict, evidence in valid:
         key = (session_id, entity)
+        if entity in conflicting:
+            others = ", ".join(repr(other) for other in sorted(verdicts_by_entity[entity] - {verdict}))
+            log(f"Rejecting conflicting influence assessment: session_id={session_id} entity={entity} verdict={verdict}")
+            rejected.append(
+                (
+                    index,
+                    f"assessments[{index}] ({entity}): verdict {verdict!r} conflicts with {others}"
+                    " for the same entity in this batch; send only the one you mean",
+                )
+            )
+            continue
         if key in existing_keys:
             log(f"Skipping duplicate influence assessment: session_id={session_id} entity={entity}")
             duplicates += 1
@@ -135,7 +166,7 @@ def main():
     print(summary)
     if rejected:
         print(f"Error: rejected {len(rejected)} assessment(s); nothing was recorded for them:", file=sys.stderr)
-        for reason in rejected:
+        for _index, reason in sorted(rejected):
             print(f"  - {reason}", file=sys.stderr)
         sys.exit(1)
 

@@ -115,10 +115,14 @@ echo '{
 ```
 
 Both paths write the identical `influence` audit row and skip duplicates. If
-either exits non-zero, read its error: it names each verdict it rejected (for
-example, a misspelled verdict). Fix those and send them again; anything already
-recorded is skipped as a duplicate, so resending the whole batch is safe. The
-`entity` value must match the candidate's `entity_id` exactly, including any
+either exits non-zero, read its error: it names each assessment it rejected (for
+example, a misspelled verdict, an item with no `entity`, or two different
+verdicts for the same entity in one batch, in which case neither is recorded).
+Fix those and send them again; anything already recorded is skipped as a
+duplicate, so resending the whole batch is safe. A resend cannot change a
+verdict that was already recorded: the pair keeps its first verdict and the
+new one is skipped as a duplicate, so decide on the verdict before you send it.
+The `entity` value must match the candidate's `entity_id` exactly, including any
 `subscribed/<source>/` prefix.
 
 It is valid to record nothing when recall events exist but no recalled guideline
