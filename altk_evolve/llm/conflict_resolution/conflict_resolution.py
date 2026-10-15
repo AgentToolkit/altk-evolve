@@ -80,6 +80,48 @@ def _conflict_resolution_completion_options(settings: LLMSettings | None = None)
     return options
 
 
+def _filter_conflict_text(values: list, model: str) -> list:
+    """Filter content values before adding trusted conflict-routing structure.
+
+    Only string values are egress text. Mapping keys and non-string scalars
+    retain their JSON structure, matching the memory redaction contract.
+    IDs, types and built-in instructions must never enter this projection.
+    Rebuild rather than mutate: stored entities remain authoritative.
+    """
+    messages = []
+
+    def collect(value):
+        if isinstance(value, str):
+            messages.append({"role": "user", "content": value})
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                collect(item)
+
+    for value in values:
+        collect(value)
+    filtered = dispatch_llm_pre_call(messages, purpose="conflict_resolution", model=model) if messages else []
+    if len(filtered) != len(messages) or any(
+        not isinstance(message, dict) or message.get("role") != "user" or not isinstance(message.get("content"), str)
+        for message in filtered
+    ):
+        raise ValueError("Conflict input filtering changed the content structure")
+    replacements = iter(message["content"] for message in filtered)
+
+    def rebuild(value):
+        if isinstance(value, str):
+            return next(replacements)
+        if isinstance(value, list):
+            return [rebuild(item) for item in value]
+        if isinstance(value, dict):
+            return {key: rebuild(item) for key, item in value.items()}
+        return value
+
+    return [rebuild(value) for value in values]
+
+
 @traced("evolve.memory.resolve_conflicts")
 def resolve_conflicts(
     old_entities: list[RecordedEntity],
@@ -100,10 +142,19 @@ def resolve_conflicts(
     new_entities_by_content = {serialize_content(entity.content): entity for entity in new_entities}
     old_entities_by_id = {entity.id: entity for entity in old_entities}
 
+    # Redact existing and incoming content, not the rendered protocol. A generic
+    # redactor can otherwise mask numeric IDs, breaking validated decisions.
+    entities = simplified_old_entities + simplified_new_entities
+    inputs = [entity.content for entity in entities]
+    if custom_update_entities_prompt is not None:
+        inputs.append(custom_update_entities_prompt)
+    filtered = _filter_conflict_text(inputs, settings.conflict_resolution_model)
+    for entity, content in zip(entities, filtered[: len(entities)], strict=True):
+        entity.content = content
+    if custom_update_entities_prompt is not None:
+        custom_update_entities_prompt = filtered[-1]
     prompt = get_update_entities_messages(simplified_old_entities, simplified_new_entities, custom_update_entities_prompt)
-    llm_messages = dispatch_llm_pre_call(
-        [{"role": "user", "content": prompt}], purpose="conflict_resolution", model=settings.conflict_resolution_model
-    )
+    llm_messages = [{"role": "user", "content": prompt}]
 
     llm_messages[-1]["content"] += (
         "\nFor each decision include incoming_ids: the IDs of incoming entities that support it. "

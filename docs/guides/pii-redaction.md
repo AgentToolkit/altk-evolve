@@ -2,6 +2,10 @@
 
 Evolve redacts PII at the [memory hook seam](memory-hooks.md): before entities are persisted (`memory_pre_write`) and before messages leave the process for an LLM (`llm_pre_call`). PII detection ships as **two methods** — regex and semantic — each its own plugin and extra. They are not either/or: **running both is the recommended defence-in-depth default** (regex for structured identifiers, semantic for names and other free-form entities), and enabling or disabling either is a YAML edit, not a code change.
 
+Conflict resolution applies the egress hook to the string values in existing and incoming entity `content`, plus any custom conflict instructions, **before** rendering the prompt. Entity IDs, types, and built-in protocol instructions are then added unchanged. This prevents a detector from masking the identifiers needed to apply a decision. Filtering only after conflict resolution would expose sensitive input to the model.
+
+For structured content, dictionary keys and non-string scalars retain their shape, matching the semantic memory-redaction contract. All nested string values remain eligible, including values under keys named `id` or `type` inside `content`; only the outer, system-owned entity fields are protected. The hook receives these strings as individual user messages with purpose `conflict_resolution`, and must preserve their count, order, roles, and string content type. A changed count, role, or content type aborts before calling the model. Input entities are not mutated, and normal validation of returned IDs, types, and source references still applies.
+
 | Method | Plugin | Engine | Catches | Extra |
 |---|---|---|---|---|
 | Regex (lighter, deterministic) | `PIIFilterMemoryPlugin` | `cpex-pii-filter` (Rust regex) | Structured identifiers: email, phone, SSN, card, IP, IBAN, … | `[pii-regex]` |
