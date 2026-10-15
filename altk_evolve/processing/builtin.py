@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from collections.abc import Callable
-from typing import ClassVar, Literal, Self, cast
+from typing import Any, ClassVar, Literal, Self, cast
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -30,6 +30,16 @@ class GuidelineConfig(GuidelineRuntime):
     trajectory_max_steps: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_max_steps, ge=1)
     trajectory_max_step_chars: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_max_step_chars, ge=1)
     trajectory_tail_steps: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_tail_steps, ge=0)
+
+    # Keys added since GuidelineProcessor version "1" was first published, mapped to the
+    # behaviour of a revision stored without them, so ProcessingManager.resolve() can still
+    # replay it. These are the historical constants, not the defaults above, which follow the
+    # env. Declared on the schema, not the processor, so it travels with these fields.
+    config_additions: ClassVar[dict[str, Any]] = {
+        "trajectory_max_steps": 50,
+        "trajectory_max_step_chars": 2000,
+        "trajectory_tail_steps": 0,
+    }
 
     @model_validator(mode="after")
     def capture_analysis(self):

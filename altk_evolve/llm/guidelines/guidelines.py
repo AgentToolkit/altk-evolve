@@ -195,8 +195,9 @@ def trajectory_step_window(total_steps: int, *, max_steps: int, tail_steps: int)
 
     The tail is carved out of the ``max_steps`` budget rather than added to it, so the
     rendered step count never exceeds the budget however the two are set. ``tail_steps`` is
-    clamped to leave at least one head step, which keeps a directly-constructed
-    ``GuidelineRuntime`` (no validator) from rendering a trajectory with no beginning.
+    clamped to leave at least one head step. ``EvolveConfig`` and ``GuidelineRuntime`` both
+    reject ``tail_steps >= max_steps``, so the clamp only matters to a caller passing raw
+    numbers (or an unvalidated ``model_construct``); it is a guard, not the rule.
 
     Returns ``(head, tail)``. A trajectory within budget returns ``(total_steps, 0)``, and so
     does any configuration with ``tail_steps == 0`` — that is the historical head-only

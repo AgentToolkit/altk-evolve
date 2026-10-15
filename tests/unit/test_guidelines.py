@@ -554,6 +554,12 @@ class TestTrajectoryLimits:
         assert result["num_steps"] == 6
         assert "step 60" in result["steps_list"][-1]
 
+    @pytest.mark.parametrize("tail_steps", [6, 7])
+    def test_an_explicit_runtime_rejects_a_tail_that_consumes_the_budget(self, tail_steps):
+        """Same rule as EvolveConfig; GuidelineConfig (processing profiles) inherits it."""
+        with pytest.raises(ValueError, match="must be < trajectory_max_steps"):
+            GuidelineRuntime(trajectory_max_steps=6, trajectory_tail_steps=tail_steps)
+
     @pytest.mark.parametrize(
         ("total_steps", "max_steps", "tail_steps", "expected"),
         [
@@ -568,8 +574,8 @@ class TestTrajectoryLimits:
         ],
     )
     def test_step_window(self, total_steps, max_steps, tail_steps, expected):
-        """`GuidelineRuntime` is constructible directly, bypassing EvolveConfig's validator,
-        so the clamp — not the validator — is what guarantees a head step survives."""
+        """The settings models reject a tail that consumes the budget; this pins the clamp
+        that still guarantees a head step to a caller passing raw numbers."""
         assert trajectory_step_window(total_steps, max_steps=max_steps, tail_steps=tail_steps) == expected
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class GuidelineRuntime(BaseModel):
@@ -19,6 +19,18 @@ class GuidelineRuntime(BaseModel):
     trajectory_max_step_chars: int = Field(default=2000, ge=1)
     trajectory_tail_steps: int = Field(default=0, ge=0)
     analysis_config: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _check_trajectory_window(self):
+        # Same rule as EvolveConfig._check_trajectory_window, enforced here too because an
+        # explicit runtime, and a processing profile's GuidelineConfig, never pass through it.
+        if self.trajectory_tail_steps >= self.trajectory_max_steps:
+            raise ValueError(
+                f"trajectory_tail_steps ({self.trajectory_tail_steps}) must be < trajectory_max_steps "
+                f"({self.trajectory_max_steps}); the tail is carved out of the step budget, so a tail "
+                "that consumes all of it would leave no steps from the start of the run."
+            )
+        return self
 
     @classmethod
     def from_settings(cls):
