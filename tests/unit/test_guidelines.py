@@ -792,10 +792,12 @@ class TestOutcomePrompt:
 
     def test_every_segment_receives_the_outcome(self, monkeypatch):
         monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
-        messages = [*self.MESSAGES, {"role": "assistant", "content": "Reported the refund."}]
+        # Five steps, so the trajectory clears the segmentation length gate (SEGMENTATION_MIN_STEPS).
+        checks = [{"role": "assistant", "content": f"Checked charge {i}."} for i in range(3)]
+        messages = [*self.MESSAGES, *checks, {"role": "assistant", "content": "Reported the refund."}]
         subtasks = [
-            SubtaskSegment(generalized_description="Issue a refund", purpose="Refund", start_step=1, end_step=1),
-            SubtaskSegment(generalized_description="Report the result", purpose="Report", start_step=2, end_step=2),
+            SubtaskSegment(generalized_description="Issue a refund", purpose="Refund", start_step=1, end_step=4),
+            SubtaskSegment(generalized_description="Report the result", purpose="Report", start_step=5, end_step=5),
         ]
 
         with patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks):
