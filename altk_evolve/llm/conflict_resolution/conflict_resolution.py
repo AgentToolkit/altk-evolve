@@ -80,29 +80,19 @@ def _conflict_resolution_completion_options(settings: LLMSettings | None = None)
     return options
 
 
-def _apply_llm_pre_call(value, model: str):
-    """Pass each text value to the hook and use only its returned text.
+def _apply_llm_pre_call(content: str | list | dict, model: str) -> str:
+    """Pass memory content as text to the hook and use only its returned text.
 
-    Call this only on memory content, never on a whole entity or prompt.
-    The hook does not receive IDs, types, or conflict instructions.
-    Lists and dictionaries are copied so the original memory stays unchanged.
+    Serialize the whole content so dictionary keys and numbers are checked too.
+    IDs, types, metadata and conflict instructions are never passed here.
     """
-    if isinstance(value, list):
-        return [_apply_llm_pre_call(item, model) for item in value]
-    if isinstance(value, dict):
-        return {key: _apply_llm_pre_call(item, model) for key, item in value.items()}
-    if not isinstance(value, str):
-        return value
-
-    messages = dispatch_llm_pre_call([{"role": "user", "content": value}], purpose="conflict_resolution", model=model)
-    if (
-        len(messages) != 1
-        or not isinstance(messages[0], dict)
-        or messages[0].get("role") != "user"
-        or not isinstance(messages[0].get("content"), str)
-    ):
+    messages = dispatch_llm_pre_call([{"role": "user", "content": serialize_content(content)}], purpose="conflict_resolution", model=model)
+    if len(messages) != 1 or not isinstance(messages[0], dict) or messages[0].get("role") != "user":
         raise ValueError("llm_pre_call must return one user message containing text")
-    return messages[0]["content"]
+    text = messages[0].get("content")
+    if not isinstance(text, str):
+        raise ValueError("llm_pre_call must return one user message containing text")
+    return text
 
 
 @traced("evolve.memory.resolve_conflicts")

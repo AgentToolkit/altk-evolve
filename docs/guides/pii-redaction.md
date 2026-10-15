@@ -4,7 +4,7 @@ Evolve redacts PII at the [memory hook seam](memory-hooks.md): before entities a
 
 Conflict resolution uses `_apply_llm_pre_call` to send only memory content through the general-purpose `llm_pre_call` hook before building the prompt. Redaction is one use of this hook. IDs, types, custom instructions, and built-in instructions are added afterward. The hook never receives these fields, and only its returned text is used. The model's ADD, UPDATE, DELETE, and NONE decisions are produced later; they are not passed to this hook.
 
-Each string is sent separately as one user message with purpose `conflict_resolution`. The hook must return one user message containing text; otherwise processing stops before the model is called. Extra response fields are ignored. For lists and dictionaries, only string values are sent; keys and non-string values remain unchanged. Strings under keys such as `id` inside memory content are still redacted. Original memories are not modified.
+Each memory’s content is serialized to text and sent as one user message with purpose `conflict_resolution`. The hook must return one user message containing text; otherwise processing stops before the model is called. Extra response fields are ignored. Serialization includes dictionary keys and numeric values, so they are checked too. The returned content stays text; it need not remain valid JSON after filtering. Fields named `id` inside memory content are also eligible for filtering. Original memories are not modified.
 
 This limits what a hook can change through its response. A hook can still change the meaning of the text the model reads, and Python plugins are not sandboxed. Returned model decisions still undergo the existing ID, type, and source checks.
 

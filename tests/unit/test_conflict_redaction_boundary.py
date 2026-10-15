@@ -75,11 +75,25 @@ def test_conflict_filter_rejects_changed_shape(monkeypatch, change):
         cr._apply_llm_pre_call(["sensitive"], "test")
 
 
-def test_conflict_filter_preserves_nested_content_without_mutating_inputs(monkeypatch):
-    value = {"text": ["alice@example.com", 0.8], "optional": None, "id": "private@example.com"}
-    monkeypatch.setattr(cr, "dispatch_llm_pre_call", lambda messages, **kwargs: [{**m, "content": "[REDACTED]"} for m in messages])
-    assert cr._apply_llm_pre_call([value], "test") == [{"text": ["[REDACTED]", 0.8], "optional": None, "id": "[REDACTED]"}]
-    assert value["text"][0] == "alice@example.com"
+@pytest.mark.parametrize(
+    "content",
+    [
+        {"alice@example.com": "contact", "phone": 2025550147},
+        [{"nested": {"alice@example.com": [2025550147]}}],
+    ],
+)
+def test_content_keys_and_numbers_reach_hook_without_mutating_inputs(monkeypatch, content):
+    original = json.dumps(content)
+
+    def redact(messages, **kwargs):
+        assert messages == [{"role": "user", "content": original}]
+        return [{"role": "user", "content": original.replace("alice@example.com", "[REDACTED]").replace("2025550147", "[REDACTED]")}]
+
+    monkeypatch.setattr(cr, "dispatch_llm_pre_call", redact)
+    result = cr._apply_llm_pre_call(content, "test")
+    assert "alice@example.com" not in result and "2025550147" not in result
+    assert "[REDACTED]" in result
+    assert json.dumps(content) == original
 
 
 def test_hook_cannot_supply_operations_or_extra_messages(monkeypatch):
@@ -105,11 +119,7 @@ def test_filter_failure_prevents_model_call(monkeypatch):
         cr.resolve_conflicts([], [entity])
 
 
-def test_conflict_filter_preserves_non_text_values_without_calling_hooks(monkeypatch):
-    def unexpected(*args, **kwargs):
-        pytest.fail("No egress text to filter")
-
-    monkeypatch.setattr(cr, "dispatch_llm_pre_call", unexpected)
-    assert cr._apply_llm_pre_call([{"probability": 0.8, "count": 6, "enabled": True, "optional": None}], "test") == [
-        {"probability": 0.8, "count": 6, "enabled": True, "optional": None}
-    ]
+def test_unchanged_structured_content_uses_storage_serialization(monkeypatch):
+    monkeypatch.setattr(cr, "dispatch_llm_pre_call", lambda messages, **kwargs: messages)
+    content = {"probability": 0.8, "count": 6, "enabled": True, "optional": None}
+    assert json.loads(cr._apply_llm_pre_call(content, "test")) == content
