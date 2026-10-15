@@ -13,7 +13,7 @@ In this tutorial, Bob reads the EXIF metadata of a photo, hits a dead end on the
 
 ## Requirements
 - IBM Bob IDE installed.
-- `python3` 3.8 or newer. The installer and Evolve's helper scripts use it.
+- `python3` 3.9 or newer. The installer and the recall step in this tutorial run under it.
 
 ## Step 1: Create a project
 Create a project directory, and save [the sample photo](../../assets/sample.jpg) into it as `sample.jpg`.
@@ -29,13 +29,27 @@ From the project directory, install Evolve by following the [installation instru
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- install --platform bob --mode lite
 ```
 
-The installer puts Evolve's skills, slash commands and shared library in `hello-world/.bob/`. It also writes Evolve's instructions to `~/.bob/rules/00-evolve-lite.md`. Bob loads every file in `~/.bob/rules/` into every session, so there is no mode to switch to. Those instructions tell Bob two things:
+The installer puts Evolve's skills, slash commands and shared library in `hello-world/.bob/`. It also makes three changes in `~/.bob/`, which apply to every project:
+
+- It writes Evolve's instructions to `~/.bob/rules/00-evolve-lite.md`. Bob loads every file in `~/.bob/rules/` into every session, so there is no mode to switch to.
+- It installs `~/.bob/evolve-lite/audit_recall.py`, the script Bob runs to record a recall.
+- It adds that script's command to `tools.allowed` in your `~/.bob/settings.json`, so Bob can run it without asking. Your other settings are kept.
+
+The instructions tell Bob two things:
 
 - **Recall:** as its first step on a task, check `.evolve/entities/` for saved lessons that match, and record which ones it opened.
 - **Save:** near the end of a task, save anything durable it learned as an entity under `.evolve/entities/<type>/`.
 
 !!! failure "Installed into the wrong directory?"
-    The installer targets the current directory. If you ran it from somewhere else, such as your home directory or Desktop, rerun it from `hello-world`, or pass `--dir /path/to/hello-world`.
+    The installer targets the current directory, or the one you pass with `--dir`. If you ran it from somewhere else, such as your home directory or Desktop, fix it in this order:
+
+    1. From the directory you installed into by mistake, uninstall:
+        ```bash
+        curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh | bash -s -- uninstall --platform bob
+        ```
+    2. Run the install command again from `hello-world`, or pass `--dir /path/to/hello-world`.
+
+    The order matters. `uninstall` removes the stray copy, but it also undoes the three `~/.bob/` changes described above, which every project uses. Step 2 puts them back.
 
 ## Step 3: Ask Bob
 Open the `hello-world` directory in IBM Bob IDE and start a new chat.
