@@ -22,7 +22,10 @@ def test_pyproject_exports_mcp_launcher_script() -> None:
 
 
 @pytest.fixture
-def runtime(monkeypatch):
+def runtime(monkeypatch, tmp_path):
+    # main() reads EVOLVE_DASHBOARD from ./.env. Run from an empty directory so a developer's
+    # repo-root .env (e.g. EVOLVE_DASHBOARD=false) can't change what these tests see.
+    monkeypatch.chdir(tmp_path)
     events = []
     client = object()
     monkeypatch.setattr(launcher, "get_client", lambda: client)
