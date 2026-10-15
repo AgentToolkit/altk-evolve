@@ -206,7 +206,7 @@ def test_missing_exporter_does_not_prevent_startup(monkeypatch, caplog):
     monkeypatch.setattr(trace, "get_tracer_provider", trace.ProxyTracerProvider)
     monkeypatch.setattr(builtins, "__import__", without_sdk)
     assert telemetry.configure_service_telemetry() is None
-    assert "reinstall altk-evolve" in caplog.text
+    assert "install altk-evolve-core[telemetry]" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -438,7 +438,17 @@ def test_exporter_minimum_versions_are_required_dependencies():
     import tomllib
 
     project = tomllib.loads((Path(__file__).resolve().parents[2] / "pyproject.toml").read_text())["project"]
-    # These must apply even when no extras are selected: older exporters can
-    # retry beyond their timeout and block process exit after collector failures.
-    assert "opentelemetry-sdk>=1.41.1,<2" in project["dependencies"]
-    assert "opentelemetry-exporter-otlp-proto-http>=1.41.1,<2" in project["dependencies"]
+    # Every extra that configures export must retain the timeout fixes.
+    for extra in ("telemetry",):
+        dependencies = project["optional-dependencies"][extra]
+        assert "opentelemetry-sdk>=1.41.1,<2" in dependencies
+        assert "opentelemetry-exporter-otlp-proto-http>=1.41.1,<2" in dependencies
+
+
+def test_server_and_tracing_include_telemetry():
+    from pathlib import Path
+    import tomllib
+
+    project = tomllib.loads((Path(__file__).resolve().parents[2] / "pyproject.toml").read_text())["project"]
+    for extra in ("server", "tracing"):
+        assert "altk-evolve-core[telemetry]" in project["optional-dependencies"][extra]

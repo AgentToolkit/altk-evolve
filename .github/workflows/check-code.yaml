@@ -5,6 +5,39 @@ on:
   pull_request:
 
 jobs:
+  check-distributions:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: 'altk_evolve/frontend/ui/package-lock.json'
+      - name: Build packaged UI
+        working-directory: altk_evolve/frontend/ui
+        run: npm ci && npm run build
+      - name: Build both distributions from their sdists
+        run: |
+          uv run --no-project python scripts/sync_convenience.py --check
+          uv build --all-packages
+      - name: Test clean core and convenience installations
+        run: |
+          uv venv /tmp/evolve-core
+          uv venv /tmp/evolve-convenience
+          uv pip install --python /tmp/evolve-core/bin/python dist/altk_evolve_core-*.whl
+          uv pip install --python /tmp/evolve-convenience/bin/python dist/*.whl
+          cd /tmp
+          uv run --no-project --python /tmp/evolve-core/bin/python python "$GITHUB_WORKSPACE/scripts/smoke_distribution.py" core
+          uv run --no-project --python /tmp/evolve-convenience/bin/python python "$GITHUB_WORKSPACE/scripts/smoke_distribution.py" convenience
   check-lockfile:
     strategy:
       fail-fast: false
@@ -24,7 +57,9 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
       - name: Check uv Lockfile
-        run: uv lock --check
+        run: |
+          uv run --no-project python scripts/sync_convenience.py --check
+          uv lock --check
   check-linting:
     runs-on: ubuntu-latest
     strategy:
