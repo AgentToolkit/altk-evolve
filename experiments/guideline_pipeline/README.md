@@ -64,10 +64,11 @@ uv run python -m experiments.guideline_pipeline export playbook --namespace <ns>
 
 # Retrieval index: {"core": [rule], "singletons": [{"rule", "source_task", "source_instruction"}]}
 uv run python -m experiments.guideline_pipeline export retrieval-index --namespace <ns> --out <dir>/index.json \
-    [--core-support N] [--min-support N] [--adapter <name> --input <path>]
+    [--core-support N] [--min-support N] [--adapter <name> --input <path> [--adapter-option KEY=VALUE ...]]
 
 # Lineage: each guideline's metadata.sources and source task ids
-uv run python -m experiments.guideline_pipeline lineage --namespace <ns> --out <dir>/lineage.json [--adapter <name> --input <path>]
+uv run python -m experiments.guideline_pipeline lineage --namespace <ns> --out <dir>/lineage.json \
+    [--adapter <name> --input <path> [--adapter-option KEY=VALUE ...]]
 ```
 
 **Support and thresholds.** `n` is the guideline's `support` with Evolve's own
@@ -93,9 +94,9 @@ before anything orders or filters on `e`.
 from, and the store does not keep one per source: `metadata.sources` records
 the source task id (the adapter record's `trace_id`), conversation, user,
 agent and status, but no text. With `--adapter` and `--input` (the dataset the
-namespace was mined from), each source task's instruction is the first user
-message of that record, and a singleton backed by several tasks also lists them
-all under `source_tasks`. Without them, the guideline's own `task_description` is used,
+namespace was mined from, plus any `--adapter-option` it was mined with), each
+source task's instruction is the first user message of that record, and a
+singleton backed by several tasks also lists them all under `source_tasks`. Without them, the guideline's own `task_description` is used,
 but only for a guideline with exactly one source task. Singletons that still
 can't be resolved are skipped, counted by reason in the summary, and listed on
 stderr, never dropped silently. Superseded sources are ignored.
@@ -194,6 +195,93 @@ uv run python -m experiments.guideline_pipeline mine --adapter cuga --input path
 Drop `--dry-run` to mine. The built-in processor sets each guideline's `evidence`
 from the outcome, and its standard generator grounds extraction in the outcome's
 `failed_checks` and `detail`.
+
+## AppWorld
+
+The `appworld` adapter reads the output tree of AppWorld's own ReAct runner as
+it is. `--input` is one run directory or a directory of them:
+
+```text
+<input>/
+  <run>/                          # becomes metadata.run; any directory with a tasks/ child is a run
+    evaluations/<split>.json      # optional: {"individual": {"<task_id>": {"success", "difficulty", ...}}}
+    tasks/<task_id>/
+      tips_subtask.json           # optional: {"task_instruction", ...}
+      logs/environment_io.md      # required: the agent's code and the environment's output
+      logs/lm_calls.jsonl         # optional: one LM call per line, {"input": {"messages": [...]}}
+      logs/logger.jsonl           # optional: {"role", "content", ...} per line
+```
+
+When `--input` is a directory of runs, any child directory without `tasks/` is
+named in an `ignored ...` warning. AppWorld's legacy agents nest their runs as
+`<agent>/<provider>/<model>/<split>/`, so pass the directory that directly holds
+them. A selection that reads no task logs a warning.
+
+Each task becomes one record:
+
+- **Instruction** (the user message), from the first source that has it, recorded
+  in `metadata.instruction_source`:
+  1. `tips_subtask` — `task_instruction` in `tips_subtask.json`.
+  2. `lm_calls` — the last user message of the first LM call. Its few-shot examples
+     and any injected playbook come first, so the adapter takes the text from the
+     last `Task:`, starting at the `My name is:` line before it when that is within
+     600 characters (keeping the user's identity), else 200 characters before
+     `Task:`. A prompt with no `Task:` has no instruction.
+  3. `logger` — the first `role: "task"` entry in `logger.jsonl`.
+  4. `specs` — `instruction` in `<appworld_root>/data/tasks/<task_id>/specs.json`,
+     only when the `appworld_root` option is set.
+- **messages**: after the instruction, each `### Environment Interaction N` block in
+  `environment_io.md` gives its code as an `execute_ipython` function call and its
+  output as an `OBSERVATION:` assistant message, rendered and cut to 2000 characters
+  exactly as the CUGA adapter does. Long runs keep the first 6 and last 43 steps,
+  as there.
+- **outcome**: `success` from the task's entry in `evaluations/<split>.json`. As for
+  CUGA, a verdict counts only as a bool, the integer `0`/`1` or the string
+  `"true"`/`"false"` in any case. Any other value, or a task missing from the
+  evaluations, gives no outcome. Failed requirements are not yet mapped to
+  `failed_checks` or `detail`.
+- **metadata**: `run`, `split` (the evaluations file name, when the task is
+  evaluated), `difficulty`, `model` and `instruction_source`.
+- **batch**: source `appworld`, conversation `<run>/<task_id>`, batch `<task_id>`,
+  and a revision that digests the record's content, as for CUGA. A task listed in
+  two evaluations files of one run is an error.
+
+A task with no readable `environment_io.md`, no interactions in it, or no
+recoverable instruction is skipped with a `skipped <run>/<task_id>: ...` warning on
+stderr, so the rest of the run is still mined; it is never mined with an empty
+instruction. An instruction source that cannot be read (malformed JSON, such as the
+truncated last line a killed run leaves, or a non-object) gets a
+`<run>/<task_id>: cannot read <file>` warning and the next source is tried. An
+evaluations file that is malformed or has no `individual` mapping ends the run with
+an error that names it, since every outcome in it would otherwise be lost.
+
+Options (`--adapter-option KEY=VALUE`):
+
+| Key | Effect |
+| --- | --- |
+| `task_ids=a_1,b_2` | Only these tasks. A listed ID with no task directory ends the run with an error, and so does a value that lists no IDs. |
+| `task_manifest=<file>` | Only the tasks in a JSON file (`task_ids` or `tasks[].task_id`) or a text file with one ID per line (`#` comments). Combines with `task_ids`. |
+| `splits=train,dev` | Only tasks evaluated in a listed split (an `evaluations/<split>.json` name, such as `test_normal`). A task with no evaluation has no known split, so it is left out. A listed split that is not found ends the run with an error, and so does a value that lists none. |
+| `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
+| `appworld_root=<dir>` | An AppWorld root whose `data/tasks/<task_id>/specs.json` is the last instruction source. The run tree does not contain it. It must be an existing directory; an empty value is an error. Pass it to `export retrieval-index` and `lineage` as well, or tasks whose instruction came from it are not found in `--input`. |
+
+Without `splits=`, every task under `tasks/` is mined whatever its split, and any
+run whose selected tasks include a `test*` split gets a `read test-split tasks ...`
+warning: guidelines mined from a test split leak into any later evaluation on it.
+Pass `splits=` to mine only the splits you mean to.
+
+[profiles/appworld.json](profiles/appworld.json) is the same sample profile as
+CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, model and
+provider captured when published.
+
+```bash
+uv run evolve processing-profiles apply appworld-guidelines \
+    --file experiments/guideline_pipeline/profiles/appworld.json --expected-revision 0
+
+uv run python -m experiments.guideline_pipeline mine --adapter appworld --input path/to/appworld_runs \
+    --namespace appworld --processing-profile appworld-guidelines \
+    --adapter-option model=gpt-4.1 --dry-run
+```
 
 ## Writing an adapter
 
