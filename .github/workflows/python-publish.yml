@@ -16,6 +16,15 @@ jobs:
       name: pypi
       url: https://pypi.org/project/altk-evolve
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+      - name: Normalize release version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: uv run --no-project --with packaging python -c 'import os; from packaging.version import Version; print("RELEASE_VERSION=" + str(Version(os.environ["TAG"])))' >> "$GITHUB_ENV"
       # Wait for the release assets instead of assuming they are already there.
       #
       # GitHub fires `release: published` as soon as the release is published,
@@ -106,7 +115,7 @@ jobs:
             prune_unusable
             sdists=(dist/*.tar.gz)
             wheels=(dist/*.whl)
-            if [ ${#sdists[@]} -gt 0 ] && [ ${#wheels[@]} -gt 0 ]; then
+            if uv run --no-project python scripts/check_release_artifacts.py dist "$RELEASE_VERSION"; then
               echo "Got a usable sdist and wheel for $TAG on attempt $attempt."
               break
             fi
@@ -124,16 +133,28 @@ jobs:
           # incomplete set.
           sdists=(dist/*.tar.gz)
           wheels=(dist/*.whl)
-          if [ ${#sdists[@]} -eq 0 ] || [ ${#wheels[@]} -eq 0 ]; then
+          if ! uv run --no-project python scripts/check_release_artifacts.py dist "$RELEASE_VERSION"; then
             echo "::error::Expected a usable sdist and a usable wheel for $TAG; found ${#sdists[@]} sdist(s) and ${#wheels[@]} wheel(s) after $attempt attempts over ~5 minutes."
             ls -la dist/ || true
             exit 1
           fi
           echo "Found ${#sdists[@]} sdist(s) and ${#wheels[@]} wheel(s):"
           ls -la dist/
-      - name: Publish release distributions to PyPI
+      - name: Separate distributions
+        run: |
+          mkdir -p dist-core dist-convenience
+          mv dist/altk_evolve_core-* dist-core/
+          mv dist/altk_evolve-* dist-convenience/
+      - name: Publish core to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist
+          packages-dir: dist-core
+          skip-existing: true
+          print-hash: true
+      - name: Publish convenience package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-convenience
+          skip-existing: true
           print-hash: true
           verbose: true
