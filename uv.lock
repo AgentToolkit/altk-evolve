@@ -193,7 +193,7 @@ wheels = [
 
 [[package]]
 name = "altk-evolve"
-version = "1.6.1"
+version = "1.7.0"
 source = { editable = "packages/altk-evolve" }
 dependencies = [
     { name = "altk-evolve-core", extra = ["cli", "fastembed", "server", "tracing"] },
@@ -281,7 +281,7 @@ provides-extras = ["telemetry", "server", "cli", "fastembed", "sentence-transfor
 
 [[package]]
 name = "altk-evolve-core"
-version = "1.6.1"
+version = "1.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
