@@ -107,13 +107,16 @@ Codex home (the workspace's `.codex-home/`, mounted at `/codex-home`), so it
 never touches your own `~/.codex`. It then runs three sessions:
 
 1. **Session 1** asks where `sample.jpg` was taken. The sandbox has neither
-   `exiftool` nor Pillow. Following the "Save" section of `EVOLVE.md`, the
-   agent saves what it learned as `.evolve/entities/<type>/<name>.md`, where
-   `<type>` is `user`, `feedback`, `project` or `reference`.
+   `exiftool` nor Pillow. The prompt asks the agent to save what it learned,
+   since `EVOLVE.md` alone leaves saving to its judgment. Following the "Save"
+   section, it writes `.evolve/entities/<type>/<name>.md`, where `<type>` is
+   `user`, `feedback`, `project` or `reference`.
 2. **Session 2** asks a related EXIF question. Following the "Recall" section,
    the agent's first action is to check `.evolve/entities/` and record what it
    opened with `python3 ~/.codex/evolve-lite/audit_recall.py`. The test asserts
-   that the `recall` event in `.evolve/audit.log` names a session-1 entity.
+   that session 2 appended a `recall` event to `.evolve/audit.log` naming a
+   session-1 entity, and that session 2's saved trajectory carries the same
+   session id. Provenance needs that id to find the trajectory.
 3. **Session 3** runs the `provenance` skill, and the test asserts that an
    influence verdict was recorded for that recall.
 

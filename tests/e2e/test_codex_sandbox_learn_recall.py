@@ -37,6 +37,7 @@ import shlex
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
 from typing import Iterable
 
@@ -58,6 +59,7 @@ FORWARDED_ENV_VARS = (
     "CODEX_MODEL",
 )
 CODEX_PROVIDER_ENV_KEY_VAR = "CODEX_MODEL_PROVIDER_ENV_KEY"
+CONTAINER_NAME_PREFIX = "evolve-codex-e2e"
 
 # The marker install.sh puts on the AGENTS.md pointer line (MANAGED_MARKER).
 EVOLVE_POINTER_MARKER = "<!-- evolve-lite:managed -->"
@@ -93,10 +95,19 @@ def codex_sandbox_ready(codex_sandbox_image):
     if not os.environ.get(credential_env_var):
         pytest.skip(f"{credential_env_var} not set in environment")
 
-    # Gateway routing needs CODEX_MODEL_PROVIDER and a base URL together: the
-    # [model_providers.<name>] table is only written when both are set. Half a
-    # pair sends the run to the wrong endpoint, so fail here with the real cause
-    # rather than inside session 1.
+    return True
+
+
+def _require_consistent_provider_env() -> None:
+    """Fail with the real cause when the gateway env vars are only half set.
+
+    Gateway routing needs CODEX_MODEL_PROVIDER and a base URL together: the
+    ``[model_providers.<name>]`` table is only written when both are set. Half
+    a pair sends the run to the wrong endpoint. With a provider and no base
+    URL, even the workspace fixture's ``codex plugin`` commands fail ("Model
+    provider `<name>` not found"), so this runs wherever config.toml is
+    written, not just in the credentialed test.
+    """
     provider = os.environ.get("CODEX_MODEL_PROVIDER")
     provider_base_url = os.environ.get("CODEX_MODEL_PROVIDER_BASE_URL")
 
@@ -120,8 +131,6 @@ def codex_sandbox_ready(codex_sandbox_image):
             "pointed at an undefined provider and fail to authenticate. Set a base "
             "URL, or unset CODEX_MODEL_PROVIDER to use the default OpenAI provider."
         )
-
-    return True
 
 
 @pytest.fixture
@@ -181,6 +190,7 @@ def _toml_str(value: str) -> str:
 
 
 def _codex_config_lines() -> list[str]:
+    _require_consistent_provider_env()
     lines: list[str] = []
     if model := os.environ.get("CODEX_MODEL"):
         lines.append(f"model = {_toml_str(model)}")
@@ -232,12 +242,7 @@ def _register_codex_plugin_for_container(workspace: Path) -> None:
     marketplace_json = workspace / ".agents" / "plugins" / "marketplace.json"
     marketplace = json.loads(marketplace_json.read_text(encoding="utf-8"))["name"]
     register = f"codex plugin marketplace add /workspace && codex plugin add {shlex.quote(f'evolve-lite@{marketplace}')}"
-    result = subprocess.run(
-        _docker_run_prefix(workspace) + ["sh", "-c", register],
-        capture_output=True,
-        text=True,
-        timeout=PREFLIGHT_TIMEOUT_SECONDS,
-    )
+    result = _run_in_container(workspace, ["sh", "-c", register], PREFLIGHT_TIMEOUT_SECONDS)
     assert result.returncode == 0, f"codex plugin registration failed\nstdout:\n{result.stdout[-2000:]}\nstderr:\n{result.stderr[-2000:]}"
 
 
@@ -248,9 +253,9 @@ def _forwarded_env_vars() -> Iterable[str]:
         yield provider_env_key
 
 
-def _docker_run_prefix(workspace: Path) -> list[str]:
+def _docker_run_prefix(workspace: Path, name: str) -> list[str]:
     codex_home = workspace / ".codex-home"
-    cmd = ["docker", "run", "--rm"]
+    cmd = ["docker", "run", "--rm", "--name", name]
     for var in _forwarded_env_vars():
         if os.environ.get(var):
             cmd += ["-e", var]
@@ -268,8 +273,32 @@ def _docker_run_prefix(workspace: Path) -> list[str]:
     return cmd
 
 
+def _run_in_container(workspace: Path, args: list[str], timeout: int) -> subprocess.CompletedProcess:
+    """Run ``args`` in a fresh sandbox container; remove the container on timeout.
+
+    On a timeout, subprocess kills only the ``docker run`` client. That does
+    not stop the container, and ``--rm`` only fires once it exits, so a hung
+    Codex session would keep running after the test failed. Naming each
+    container lets the timeout path remove it.
+    """
+    name = f"{CONTAINER_NAME_PREFIX}-{uuid.uuid4().hex[:12]}"
+    try:
+        return subprocess.run(
+            _docker_run_prefix(workspace, name) + args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        try:
+            subprocess.run(["docker", "rm", "--force", name], capture_output=True, check=False, timeout=PREFLIGHT_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            log.warning(f"could not remove timed-out container {name}")
+        raise
+
+
 def _run_codex_prompt(workspace: Path, prompt: str) -> subprocess.CompletedProcess:
-    cmd = _docker_run_prefix(workspace) + [
+    args = [
         "codex",
         "exec",
         "--skip-git-repo-check",
@@ -279,7 +308,7 @@ def _run_codex_prompt(workspace: Path, prompt: str) -> subprocess.CompletedProce
         "/workspace",
         prompt,
     ]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=SESSION_TIMEOUT_SECONDS)
+    return _run_in_container(workspace, args, SESSION_TIMEOUT_SECONDS)
 
 
 def _audit_events(evolve_dir: Path) -> list[dict]:
@@ -287,6 +316,26 @@ def _audit_events(evolve_dir: Path) -> list[dict]:
     if not audit_log.is_file():
         return []
     return [json.loads(line) for line in audit_log.read_text().splitlines() if line.strip()]
+
+
+def _recall_events(evolve_dir: Path, since: int = 0) -> list[dict]:
+    """``recall`` rows appended to audit.log after its first ``since`` rows."""
+    return [event for event in _audit_events(evolve_dir)[since:] if event.get("event") == "recall"]
+
+
+def _trajectory_session_ids(paths: Iterable[Path]) -> set[str]:
+    """The ``session_id`` values the given saved trajectories carry.
+
+    In the container this field is the only way provenance can tie a recall
+    to its trajectory: ``--ephemeral`` sessions write no Codex rollout files,
+    so its native-transcript lookup has nothing to find.
+    """
+    session_ids: set[str] = set()
+    for path in paths:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("session_id"), str):
+            session_ids.add(data["session_id"])
+    return session_ids
 
 
 def _frontmatter_value(text: str, key: str) -> str | None:
@@ -329,12 +378,7 @@ def test_codex_sandbox_delivers_evolve_md(codex_workspace):
     Codex is never told to read EVOLVE.md, or cannot see the skills it is asked
     to invoke.
     """
-    prompt_input = subprocess.run(
-        _docker_run_prefix(codex_workspace) + ["codex", "debug", "prompt-input", "hello"],
-        capture_output=True,
-        text=True,
-        timeout=PREFLIGHT_TIMEOUT_SECONDS,
-    )
+    prompt_input = _run_in_container(codex_workspace, ["codex", "debug", "prompt-input", "hello"], PREFLIGHT_TIMEOUT_SECONDS)
     assert prompt_input.returncode == 0, (
         f"codex debug prompt-input exited {prompt_input.returncode}\n"
         f"stdout:\n{prompt_input.stdout[-2000:]}\nstderr:\n{prompt_input.stderr[-2000:]}"
@@ -349,12 +393,10 @@ def test_codex_sandbox_delivers_evolve_md(codex_workspace):
 
     # The pointer and EVOLVE.md name these paths with `~`. Resolve them with the
     # container's own HOME rather than assuming where it points.
-    files = subprocess.run(
-        _docker_run_prefix(codex_workspace)
-        + ["sh", "-c", "test -f ~/.codex/evolve-lite/EVOLVE.md && test -f ~/.codex/evolve-lite/audit_recall.py"],
-        capture_output=True,
-        text=True,
-        timeout=PREFLIGHT_TIMEOUT_SECONDS,
+    files = _run_in_container(
+        codex_workspace,
+        ["sh", "-c", "test -f ~/.codex/evolve-lite/EVOLVE.md && test -f ~/.codex/evolve-lite/audit_recall.py"],
+        PREFLIGHT_TIMEOUT_SECONDS,
     )
     assert files.returncode == 0, (
         "~/.codex/evolve-lite/EVOLVE.md or audit_recall.py is missing inside the "
@@ -377,8 +419,9 @@ def test_codex_save_then_recall_flow(codex_sandbox_ready, codex_workspace):
         codex_workspace,
         (
             "Where was the photo @sample.jpg taken? Use EXIF metadata. "
-            "If this task taught you something durable, save it the way your Evolve "
-            "memory instructions describe. "
+            "Before you finish, save what you learned about reading EXIF metadata in "
+            "this environment as an Evolve memory entity, the way your Evolve memory "
+            "instructions describe. "
             "When done, invoke the evolve-lite save-trajectory skill."
         ),
     )
@@ -402,6 +445,10 @@ def test_codex_save_then_recall_flow(codex_sandbox_ready, codex_workspace):
         assert _frontmatter_value(text, "type") == entity_type, f"{path} frontmatter type does not match its directory:\n{text}"
         assert _frontmatter_value(text, "trigger"), f"{path} has no trigger, so recall has nothing to match:\n{text}"
 
+    # Only rows that session 2 appends count as its recall. A recall row that
+    # session 1 wrote (of the entity it had just saved, say) must not pass.
+    audit_rows_before_session2 = len(_audit_events(evolve_dir))
+
     log.info("codex session 2: running related task to exercise EVOLVE.md recall...")
     t1 = time.time()
     result2 = _run_codex_prompt(
@@ -419,17 +466,26 @@ def test_codex_save_then_recall_flow(codex_sandbox_ready, codex_workspace):
     session2_trajectories = {path for path in trajectories_dir.glob("*.json")} - set(trajectories)
     assert session2_trajectories, f"no Codex trajectory saved for session 2 in {trajectories_dir}"
 
-    events = _audit_events(evolve_dir)
-    recall_events = [event for event in events if event.get("event") == "recall"]
+    recall_events = _recall_events(evolve_dir, since=audit_rows_before_session2)
     assert recall_events, (
-        "no recall audit event recorded: session 2 skipped the EVOLVE.md recall step "
-        f"(it never ran ~/.codex/evolve-lite/audit_recall.py). all events: {events}\n"
+        "session 2 recorded no recall audit event: it skipped the EVOLVE.md recall step "
+        f"(it never ran ~/.codex/evolve-lite/audit_recall.py). all events: {_audit_events(evolve_dir)}\n"
         f"stdout:\n{result2.stdout[-2000:]}"
     )
     task_recall_event = recall_events[-1]
     task_session_id = task_recall_event["session_id"]
     task_recalled_ids = set(task_recall_event.get("entities", []))
     assert task_recalled_ids & set(saved), f"task recall ids {task_recalled_ids} did not include saved ids {set(saved)}"
+
+    # Session 3's provenance can only judge this recall if session 2's
+    # trajectory carries the same session id. Check it here, so a missing id
+    # fails as a session-2 problem instead of an unexplained session-3 one.
+    trajectory_session_ids = _trajectory_session_ids(session2_trajectories)
+    assert task_session_id in trajectory_session_ids, (
+        f"session 2 logged its recall under session id {task_session_id!r}, but its trajectory carries "
+        f"{sorted(trajectory_session_ids) or 'no session_id'}, so provenance cannot match the two. "
+        "audit_recall.py takes the id from CODEX_THREAD_ID; save-trajectory has to write the same id."
+    )
 
     log.info("codex session 3: running offline provenance analysis...")
     t2 = time.time()
