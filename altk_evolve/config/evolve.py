@@ -12,9 +12,10 @@ class EvolveConfig(BaseSettings):
     settings: BaseSettings | None = None
     clustering_threshold: float = 0.80
     segmentation_enabled: bool = False
-    # Trajectory rendering limits, applied by parse_openai_agents_trajectory to every
-    # generation path. Defaults reproduce the previously hard-coded 50 steps / 2000
-    # characters, head-only.
+    # Trajectory rendering limits, applied by parse_openai_agents_trajectory: the standard
+    # path, segmentation, and the fast consistency method. Not the accurate consistency
+    # method, whose renderer keeps its own 50-step / 500-character window. Defaults
+    # reproduce the previously hard-coded 50 steps / 2000 characters, head-only.
     #   trajectory_tail_steps  - how much of the step budget is reserved for the *end* of a
     #                            long run. 0 (default) keeps today's head-only truncation;
     #                            raise it to keep the final steps, which is where a run's

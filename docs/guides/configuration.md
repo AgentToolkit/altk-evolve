@@ -49,7 +49,7 @@ All configuration variables are prefixed with `EVOLVE_`.
 | `EVOLVE_CONSISTENCY_METHOD` | Consistency mode only: `fast` (LLM self-judged) or `accurate` (resampling based) — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method) | `fast` |
 | `EVOLVE_CONSISTENCY_RESAMPLE_MAX_WORKERS` | `accurate` method only: how many resampling calls run in parallel when a provider won't return several completions in one call — see [Enabling Guidelines](guidelines.md#choosing-a-consistency-method). Raise it to cut resampling wall-clock, lower it to `1` if the provider rate-limits you | `4` |
 | `EVOLVE_SEGMENTATION_ENABLED` | Segment trajectories into logical subtasks before generating guidelines. Governs all three generation paths (`standard`, and both `consistency` methods). Disabled by default — see [Trajectory segmentation](#trajectory-segmentation) | `false` |
-| `EVOLVE_TRAJECTORY_MAX_STEPS` | Most trajectory steps rendered into a generation prompt — see [Trajectory limits](#trajectory-limits) | `50` |
+| `EVOLVE_TRAJECTORY_MAX_STEPS` | Most trajectory steps rendered into a generation prompt (`standard` and `fast` consistency; not `accurate`) — see [Trajectory limits](#trajectory-limits) | `50` |
 | `EVOLVE_TRAJECTORY_MAX_STEP_CHARS` | Characters kept per step before truncation | `2000` |
 | `EVOLVE_TRAJECTORY_TAIL_STEPS` | How much of the step budget is reserved for the **end** of a long run. `0` truncates head-only, as before — see [Trajectory limits](#trajectory-limits) | `0` |
 | `EVOLVE_GUIDELINES_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
@@ -65,6 +65,11 @@ A trajectory is rendered into the generation prompt as at most `EVOLVE_TRAJECTOR
 steps of at most `EVOLVE_TRAJECTORY_MAX_STEP_CHARS` characters each. Both were fixed at 50
 and 2000 before; the defaults are unchanged.
 
+These settings govern the `standard` path, trajectory segmentation, and the `fast`
+consistency method. The `accurate` consistency method does **not** use them: its prompt
+renderer keeps its own fixed window of the first 50 steps at 500 characters each, whatever
+these are set to.
+
 **Keeping the end of a long run.** By default the window is head-only: a 200-step run is
 rendered as its first 50 steps, and the 150 that follow — including whatever the run
 finished with — are not in the prompt at all. A run's outcome is at its end, so a guideline
@@ -78,9 +83,10 @@ EVOLVE_TRAJECTORY_TAIL_STEPS=10
 ```
 
 The tail comes **out of** `EVOLVE_TRAJECTORY_MAX_STEPS`, not on top of it, so the prompt
-never grows past the budget; the omitted middle is announced in the prompt as
+never holds more than that many steps; the omitted middle is announced in the prompt as
 `[... N intermediate step(s) omitted; M steps in the full run ...]` rather than silently
-closed up. It must stay
+closed up. That marker takes one extra position, so an elided run renders as
+`EVOLVE_TRAJECTORY_MAX_STEPS + 1` numbered entries. It must stay
 below `EVOLVE_TRAJECTORY_MAX_STEPS` — a tail that consumed the whole budget would leave no
 steps from the start of the run.
 
