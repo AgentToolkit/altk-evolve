@@ -93,8 +93,8 @@ def test_fastembed_rejects_remote_code(fastembed):
 
 
 @pytest.mark.unit
-def test_sentence_transformers_stays_default(monkeypatch, mock_sentence_transformer):
-    monkeypatch.delenv("EVOLVE_EMBEDDING_PROVIDER", raising=False)
+def test_sentence_transformers_explicit_provider(monkeypatch, mock_sentence_transformer):
+    monkeypatch.setenv("EVOLVE_EMBEDDING_PROVIDER", "sentence_transformers")
     get_embedding_model("custom-model", trust_remote_code=True)
     mock_sentence_transformer.assert_called_once_with("custom-model", trust_remote_code=True)
 
@@ -118,3 +118,22 @@ def test_fastembed_cache_path_from_dotenv(fastembed, monkeypatch, tmp_path):
     monkeypatch.setenv("FASTEMBED_CACHE_PATH", "/environment/cache")
     get_embedding_model("BAAI/bge-small-en-v1.5")
     assert fastembed.calls[-1]["cache_dir"] == "/environment/cache"
+
+
+@pytest.mark.unit
+def test_fastembed_is_default(fastembed, monkeypatch):
+    monkeypatch.delenv("EVOLVE_EMBEDDING_PROVIDER", raising=False)
+    get_embedding_model("BAAI/bge-small-en-v1.5")
+    assert len(fastembed.calls) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "provider,module,extra",
+    [("fastembed", "fastembed", "fastembed"), ("sentence_transformers", "sentence_transformers", "sentence-transformers")],
+)
+def test_missing_provider_has_install_hint(provider, module, extra, monkeypatch):
+    monkeypatch.setenv("EVOLVE_EMBEDDING_PROVIDER", provider)
+    monkeypatch.setitem(sys.modules, module, None)
+    with pytest.raises(ImportError, match=rf"altk-evolve-core\[{extra}\]"):
+        get_embedding_model("custom-model")
