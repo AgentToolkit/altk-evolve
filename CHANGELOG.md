@@ -4,6 +4,242 @@
 
 <!-- version list -->
 
+## v1.7.0 (2026-10-15)
+
+### Bug Fixes
+
+- **api**: Store the repaired guideline category and match separators case-insensitively
+  ([#346](https://github.com/AgentToolkit/altk-evolve/pull/346),
+  [`6c04a17`](https://github.com/AgentToolkit/altk-evolve/commit/6c04a17d899439413a0a193f5985b2eba6460a28))
+
+- **claude**: Drop the ignored Write(.evolve/**) allow-rule and strip it on upgrade
+  ([#379](https://github.com/AgentToolkit/altk-evolve/pull/379),
+  [`797e6ba`](https://github.com/AgentToolkit/altk-evolve/commit/797e6ba779af24ef6dde4615b28ff3abd418b2a2))
+
+- **claude**: Working doctor import check, drop ignored Write allow-rule
+  ([#379](https://github.com/AgentToolkit/altk-evolve/pull/379),
+  [`797e6ba`](https://github.com/AgentToolkit/altk-evolve/commit/797e6ba779af24ef6dde4615b28ff3abd418b2a2))
+
+- **codex**: Probe skills codex actually ships in install.sh status
+  ([#337](https://github.com/AgentToolkit/altk-evolve/pull/337),
+  [`5581ee6`](https://github.com/AgentToolkit/altk-evolve/commit/5581ee6ceee70cb29c0927f9852e7a7276ae3e11))
+
+- **doctor**: Detect the EVOLVE.md import from the session's own context
+  ([#379](https://github.com/AgentToolkit/altk-evolve/pull/379),
+  [`797e6ba`](https://github.com/AgentToolkit/altk-evolve/commit/797e6ba779af24ef6dde4615b28ff3abd418b2a2))
+
+- **embeddings**: Correct type annotations and type-check optional extras in CI
+  ([#375](https://github.com/AgentToolkit/altk-evolve/pull/375),
+  [`34cd03e`](https://github.com/AgentToolkit/altk-evolve/commit/34cd03e6975a98ea9b212a60ea1a2a702cdc85fc))
+
+- **experiments**: Create export files without touching the process umask and skip blank source
+  instructions ([#395](https://github.com/AgentToolkit/altk-evolve/pull/395),
+  [`0fa7af1`](https://github.com/AgentToolkit/altk-evolve/commit/0fa7af111462e7f487286b55921ab9a953d8cbe7))
+
+- **experiments**: Decide a CUGA run by a task with an intent, not by marker files, and reject
+  malformed task manifests ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **experiments**: Let a CUGA run's own files mark it as a run, read 0/1 verdicts and require a
+  string intent ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **experiments**: Parse CUGA string verdicts instead of coercing them with bool()
+  ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **experiments**: Read CUGA child runs past a stray JSON file and skip tasks without an intent
+  ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **experiments**: Reject a CUGA task_ids option that lists no IDs
+  ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **experiments**: Report unhashable evidence cleanly and keep plain-write file modes
+  ([#364](https://github.com/AgentToolkit/altk-evolve/pull/364),
+  [`37255e6`](https://github.com/AgentToolkit/altk-evolve/commit/37255e62802fd45dd0f06b785ed9ce68bc60f9d9))
+
+- **experiments**: Skip malformed CUGA evaluation checks
+  ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **experiments**: Warn about CUGA runs left unread and tolerate a parent's bad metadata.json
+  ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **guidelines**: Bound the length of each failed check in the outcome prompt
+  ([#351](https://github.com/AgentToolkit/altk-evolve/pull/351),
+  [`d2140e8`](https://github.com/AgentToolkit/altk-evolve/commit/d2140e891c7b6710706227e9393df42d8f72b026))
+
+- **guidelines**: Keep segmentation in step with the elision marker
+  ([#350](https://github.com/AgentToolkit/altk-evolve/pull/350),
+  [`7fc8cb2`](https://github.com/AgentToolkit/altk-evolve/commit/7fc8cb273907a9f1399348cbec5a863fc65d24bc))
+
+- **guidelines**: Let a segment of a failed run that did not cause the failure return no guidelines
+  ([#351](https://github.com/AgentToolkit/altk-evolve/pull/351),
+  [`d2140e8`](https://github.com/AgentToolkit/altk-evolve/commit/d2140e891c7b6710706227e9393df42d8f72b026))
+
+- **guidelines**: Repair multi-valued categories instead of dropping the response
+  ([#346](https://github.com/AgentToolkit/altk-evolve/pull/346),
+  [`6c04a17`](https://github.com/AgentToolkit/altk-evolve/commit/6c04a17d899439413a0a193f5985b2eba6460a28))
+
+- **guidelines**: State the full run length in the elision marker
+  ([#350](https://github.com/AgentToolkit/altk-evolve/pull/350),
+  [`7fc8cb2`](https://github.com/AgentToolkit/altk-evolve/commit/7fc8cb273907a9f1399348cbec5a863fc65d24bc))
+
+- **hermes**: Keep the empty-id fallback out of the digest
+  ([#338](https://github.com/AgentToolkit/altk-evolve/pull/338),
+  [`7bbd835`](https://github.com/AgentToolkit/altk-evolve/commit/7bbd8354a38d60430785dc92ef9e9975033f73f8))
+
+- **hermes**: Make trajectory filenames injective so provenance cannot misattribute sessions
+  ([#338](https://github.com/AgentToolkit/altk-evolve/pull/338),
+  [`7bbd835`](https://github.com/AgentToolkit/altk-evolve/commit/7bbd8354a38d60430785dc92ef9e9975033f73f8))
+
+- **hermes**: Make trajectory filenames injective so provenance cannot misattribute sessions (#331)
+  ([#338](https://github.com/AgentToolkit/altk-evolve/pull/338),
+  [`7bbd835`](https://github.com/AgentToolkit/altk-evolve/commit/7bbd8354a38d60430785dc92ef9e9975033f73f8))
+
+- **hermes**: Write only the digest-suffixed trajectory name
+  ([#338](https://github.com/AgentToolkit/altk-evolve/pull/338),
+  [`7bbd835`](https://github.com/AgentToolkit/altk-evolve/commit/7bbd8354a38d60430785dc92ef9e9975033f73f8))
+
+- **hooks**: Keep source association identifiers out of PII redaction
+  ([#358](https://github.com/AgentToolkit/altk-evolve/pull/358),
+  [`9ece967`](https://github.com/AgentToolkit/altk-evolve/commit/9ece9676b47001cae502f5c0998a7194ef8abfed))
+
+- **install**: Register a stable marketplace copy for curl | bash Claude installs
+  ([#390](https://github.com/AgentToolkit/altk-evolve/pull/390),
+  [`8b23c88`](https://github.com/AgentToolkit/altk-evolve/commit/8b23c8852b548f91f5498a458c3d9e0ec4f6ba86))
+
+- **memory**: Carry association times forward only for consolidation
+  ([#358](https://github.com/AgentToolkit/altk-evolve/pull/358),
+  [`9ece967`](https://github.com/AgentToolkit/altk-evolve/commit/9ece9676b47001cae502f5c0998a7194ef8abfed))
+
+- **memory**: Ignore an untrustworthy stored association time when combining records
+  ([#358](https://github.com/AgentToolkit/altk-evolve/pull/358),
+  [`9ece967`](https://github.com/AgentToolkit/altk-evolve/commit/9ece9676b47001cae502f5c0998a7194ef8abfed))
+
+- **memory**: Leave guidelines with a non-scalar scope out of consolidation
+  ([#358](https://github.com/AgentToolkit/altk-evolve/pull/358),
+  [`9ece967`](https://github.com/AgentToolkit/altk-evolve/commit/9ece9676b47001cae502f5c0998a7194ef8abfed))
+
+- **memory**: Preserve scope metadata through consolidation
+  ([#358](https://github.com/AgentToolkit/altk-evolve/pull/358),
+  [`9ece967`](https://github.com/AgentToolkit/altk-evolve/commit/9ece9676b47001cae502f5c0998a7194ef8abfed))
+
+- **memory**: Reject untrustworthy association times and age legacy members from created_at
+  ([#358](https://github.com/AgentToolkit/altk-evolve/pull/358),
+  [`9ece967`](https://github.com/AgentToolkit/altk-evolve/commit/9ece9676b47001cae502f5c0998a7194ef8abfed))
+
+- **milvus**: Ensure the index on every first read, bound the Load, and probe load state once per
+  namespace ([#344](https://github.com/AgentToolkit/altk-evolve/pull/344),
+  [`982e4fc`](https://github.com/AgentToolkit/altk-evolve/commit/982e4fcca8561d4ac7e6eaa06c28b3a4e92d3f10))
+
+- **milvus**: Load the collection before every read
+  ([#344](https://github.com/AgentToolkit/altk-evolve/pull/344),
+  [`982e4fc`](https://github.com/AgentToolkit/altk-evolve/commit/982e4fcca8561d4ac7e6eaa06c28b3a4e92d3f10))
+
+- **milvus**: Skip the Load request when the collection is already loaded
+  ([#344](https://github.com/AgentToolkit/altk-evolve/pull/344),
+  [`982e4fc`](https://github.com/AgentToolkit/altk-evolve/commit/982e4fcca8561d4ac7e6eaa06c28b3a4e92d3f10))
+
+- **packaging**: Validate paired release requirements and missing dates
+  ([#408](https://github.com/AgentToolkit/altk-evolve/pull/408),
+  [`d629e4f`](https://github.com/AgentToolkit/altk-evolve/commit/d629e4f4ed5cda4963cb33f9e0a59120debf988a))
+
+- **processing**: Replay profiles stored before the trajectory window and reject a tail that
+  consumes it ([#350](https://github.com/AgentToolkit/altk-evolve/pull/350),
+  [`7fc8cb2`](https://github.com/AgentToolkit/altk-evolve/commit/7fc8cb273907a9f1399348cbec5a863fc65d24bc))
+
+- **processing**: Resolve trajectory window settings from the environment in GuidelineConfig
+  ([#350](https://github.com/AgentToolkit/altk-evolve/pull/350),
+  [`7fc8cb2`](https://github.com/AgentToolkit/altk-evolve/commit/7fc8cb273907a9f1399348cbec5a863fc65d24bc))
+
+### Documentation
+
+- **claude**: Use the positional form for the sandbox-build target
+  ([#337](https://github.com/AgentToolkit/altk-evolve/pull/337),
+  [`5581ee6`](https://github.com/AgentToolkit/altk-evolve/commit/5581ee6ceee70cb29c0927f9852e7a7276ae3e11))
+
+- **config**: Say the accurate consistency method keeps its own trajectory window
+  ([#350](https://github.com/AgentToolkit/altk-evolve/pull/350),
+  [`7fc8cb2`](https://github.com/AgentToolkit/altk-evolve/commit/7fc8cb273907a9f1399348cbec5a863fc65d24bc))
+
+- **experiments**: Point the CUGA README at the outcome-grounded prompt
+  ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **experiments**: Say a consolidated guideline is recorded only when a member had sources
+  ([#358](https://github.com/AgentToolkit/altk-evolve/pull/358),
+  [`9ece967`](https://github.com/AgentToolkit/altk-evolve/commit/9ece9676b47001cae502f5c0998a7194ef8abfed))
+
+- **guidelines**: Flag the segment clause in failure prompts as not yet evaluated
+  ([#351](https://github.com/AgentToolkit/altk-evolve/pull/351),
+  [`d2140e8`](https://github.com/AgentToolkit/altk-evolve/commit/d2140e891c7b6710706227e9393df42d8f72b026))
+
+- **hermes**: Scope the filename injectivity claim to str ids and pin the on-disk name
+  ([#338](https://github.com/AgentToolkit/altk-evolve/pull/338),
+  [`7bbd835`](https://github.com/AgentToolkit/altk-evolve/commit/7bbd8354a38d60430785dc92ef9e9975033f73f8))
+
+- **plugins**: Address #337 review — qualify publish gap, harden marketplace build, widen
+  excluded-skill guard ([#337](https://github.com/AgentToolkit/altk-evolve/pull/337),
+  [`5581ee6`](https://github.com/AgentToolkit/altk-evolve/commit/5581ee6ceee70cb29c0927f9852e7a7276ae3e11))
+
+- **plugins**: Describe what the claude, codex, and bob builds actually ship
+  ([#337](https://github.com/AgentToolkit/altk-evolve/pull/337),
+  [`5581ee6`](https://github.com/AgentToolkit/altk-evolve/commit/5581ee6ceee70cb29c0927f9852e7a7276ae3e11))
+
+- **plugins**: Refresh the claude, codex, and bob plugin docs to match what each build ships
+  ([#337](https://github.com/AgentToolkit/altk-evolve/pull/337),
+  [`5581ee6`](https://github.com/AgentToolkit/altk-evolve/commit/5581ee6ceee70cb29c0927f9852e7a7276ae3e11))
+
+### Features
+
+- **build**: Generate .claude-plugin/marketplace.json from plugin.toml
+  ([#337](https://github.com/AgentToolkit/altk-evolve/pull/337),
+  [`5581ee6`](https://github.com/AgentToolkit/altk-evolve/commit/5581ee6ceee70cb29c0927f9852e7a7276ae3e11))
+
+- **experiments**: Add a CUGA partitions option
+  ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **experiments**: Add CUGA adapter ([#359](https://github.com/AgentToolkit/altk-evolve/pull/359),
+  [`b224bb4`](https://github.com/AgentToolkit/altk-evolve/commit/b224bb40769570a7048c18bebcca6d61defd8a90))
+
+- **experiments**: Export playbooks and retrieval indexes
+  ([#364](https://github.com/AgentToolkit/altk-evolve/pull/364),
+  [`37255e6`](https://github.com/AgentToolkit/altk-evolve/commit/37255e62802fd45dd0f06b785ed9ce68bc60f9d9))
+
+- **experiments**: Scaffold guideline pipeline
+  ([#354](https://github.com/AgentToolkit/altk-evolve/pull/354),
+  [`ceeee6d`](https://github.com/AgentToolkit/altk-evolve/commit/ceeee6d7f8546a97056c9e9ff206f849802266b5))
+
+- **guidelines**: Make the trajectory window configurable and keep the end of long runs
+  ([#350](https://github.com/AgentToolkit/altk-evolve/pull/350),
+  [`7fc8cb2`](https://github.com/AgentToolkit/altk-evolve/commit/7fc8cb273907a9f1399348cbec5a863fc65d24bc))
+
+- **guidelines**: Use an outcome-grounded extraction prompt when a trajectory has an outcome
+  ([#351](https://github.com/AgentToolkit/altk-evolve/pull/351),
+  [`d2140e8`](https://github.com/AgentToolkit/altk-evolve/commit/d2140e891c7b6710706227e9393df42d8f72b026))
+
+- **memory**: Keep source provenance on consolidated guidelines
+  ([#358](https://github.com/AgentToolkit/altk-evolve/pull/358),
+  [`9ece967`](https://github.com/AgentToolkit/altk-evolve/commit/9ece9676b47001cae502f5c0998a7194ef8abfed))
+
+- **packaging**: Split core and convenience distributions
+  ([#408](https://github.com/AgentToolkit/altk-evolve/pull/408),
+  [`d629e4f`](https://github.com/AgentToolkit/altk-evolve/commit/d629e4f4ed5cda4963cb33f9e0a59120debf988a))
+
+- **processing**: Accept a task outcome on trajectories and set evidence from it
+  ([#354](https://github.com/AgentToolkit/altk-evolve/pull/354),
+  [`ceeee6d`](https://github.com/AgentToolkit/altk-evolve/commit/ceeee6d7f8546a97056c9e9ff206f849802266b5))
+
+- **processing**: Accept a task outcome on trajectories and set evidence from it
+  ([#347](https://github.com/AgentToolkit/altk-evolve/pull/347),
+  [`22f99fe`](https://github.com/AgentToolkit/altk-evolve/commit/22f99fec6bebce66ec8f8ed770d6ab87018975c2))
+
+
 ## v1.6.1 (2026-10-08)
 
 ### Bug Fixes

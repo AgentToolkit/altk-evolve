@@ -66,7 +66,7 @@ From Source
 git clone https://github.com/agenttoolkit/altk-evolve.git
 cd altk-evolve
 uv venv --python=3.12 && source .venv/bin/activate
-uv sync
+uv sync --package altk-evolve
 # Build the UI
 cd frontend/ui
 npm ci && npm run build
@@ -76,6 +76,39 @@ From PyPI
 ```bash
 pip install altk-evolve
 ```
+
+**Choose your installation:**
+
+- `altk-evolve` bundles `altk-evolve-core[server,cli,fastembed,tracing]` at the same version.
+- `altk-evolve-core` contains the Python implementation without server/CLI dependencies,
+  an embedding runtime, or a Phoenix server. Libraries should depend on core and select the extras they need.
+- Add `[server]` for the HTTP/MCP server and its telemetry exporters, or `[cli]`
+  for the command-line interface. `[telemetry]` provides the SDK and OTLP exporter
+  independently; both `[server]` and `[tracing]` include it. Core retains the OpenTelemetry API so host applications
+  can supply their own telemetry providers.
+- All extras belong to core. Existing `altk-evolve[pgvector]`, `[pii-semantic]`, and
+  other extras forward to core while retaining the convenience defaults.
+- Install `altk-evolve-core[phoenix]` (or `altk-evolve[phoenix]`) only to run the
+  local Phoenix server. Remote tracing uses the separate `arize-phoenix-otel` package.
+
+Both packages use the same `altk_evolve` imports and `evolve` / `evolve-mcp` commands;
+only core owns those files. Core-only filesystem storage works without an embedding
+runtime. Features that embed text require `[fastembed]` or `[sentence-transformers]`.
+
+**Embedding migration:** FastEmbed is now the default provider. To retain the
+previous runtime, install `altk-evolve-core[sentence-transformers]` and set
+`EVOLVE_EMBEDDING_PROVIDER=sentence_transformers`. Validate retrieval quality before
+switching an existing vector store to another runtime; changing models requires
+re-embedding stored vectors. The specialized `sbert_large` CodeRank metric requires
+an exported CodeRank ONNX artifact with FastEmbed, or the Sentence Transformers
+provider. `[fastembed-export]` includes both runtimes for that export.
+
+**Source development and releases:** The root project is core. Use
+`uv sync --package altk-evolve` for the convenience bundle, or select root extras
+explicitly. After changing the version or extras, run
+`uv run --no-project python scripts/sync_convenience.py` and `uv lock`.
+`uv build --all-packages` builds both distributions. Releases publish core first,
+then the exactly matching convenience package through the same trusted publisher.
 
 **Optional Backend Dependencies:**
 
@@ -254,7 +287,8 @@ The [public retention service](docs/guides/retention-api.md) is available as `cl
 Evolve's Python operations use the OpenTelemetry API and inherit the host's
 provider. Constructing `EvolveClient` never installs or replaces a provider.
 Standalone MCP services export telemetry by default. Compatible SDK and exporter
-versions are declared as dependencies and enforced at installation. To configure a destination:
+versions are included in the `[server]` and `[tracing]` extras (both included by
+the convenience package). To configure a destination:
 
 ```bash
 uv pip install altk-evolve
