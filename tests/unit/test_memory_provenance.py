@@ -556,3 +556,37 @@ def test_a_mixed_scope_cluster_is_skipped_before_the_merge_model_sees_it(backend
     completion.assert_not_called()
     assert result.clusters_found == 0
     assert backend.scan_entities("n") == before
+
+
+def test_a_non_scalar_scope_value_does_not_stop_consolidation(backend):
+    # MCP create_entity accepts any JSON metadata, so a scope key can hold a list.
+    backend.update_entities("n", [guideline("A", "one"), guideline("B", "two"), guideline("X", "three", user=["bob"])], False)
+    (odd,) = [e for e in backend.scan_entities("n") if e.content == "X"]
+
+    result = consolidate(backend, [0, 1])
+
+    assert result.clusters_found == 1
+    stored = stored_guidelines(backend)
+    assert conversations(stored["merged [0, 1]"]) == {"one", "two"}
+    # The guideline without a well-defined scope is left alone.
+    assert stored["X"] == odd
+
+
+def test_a_cluster_with_a_non_scalar_scope_value_is_skipped(backend):
+    from altk_evolve.frontend.client.evolve_client import EvolveClient
+
+    backend.update_entities("n", [guideline("A", "one", user=["bob"]), guideline("B", "two", user=["bob"])], False)
+    before = backend.scan_entities("n")
+    client = EvolveClient.__new__(EvolveClient)
+    client.backend = backend
+    client.config = SimpleNamespace(clustering_threshold=0.8, consolidation_mode="lossless")
+
+    with (
+        patch.object(client, "_cluster_guideline_entities", return_value=[before]),
+        patch("altk_evolve.llm.guidelines.clustering.completion") as completion,
+    ):
+        result = client.consolidate_guidelines("n")
+
+    completion.assert_not_called()
+    assert result.clusters_found == 0
+    assert backend.scan_entities("n") == before

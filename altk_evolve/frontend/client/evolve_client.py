@@ -324,16 +324,21 @@ class EvolveClient:
 
         Clustering runs separately inside each memory scope (user, owner, agent,
         visibility), the same exact-identity rule reconciliation uses, so a cluster
-        never mixes memories from different scopes.
+        never mixes memories from different scopes. A guideline whose scope value is
+        not a scalar (e.g. a list) has no well-defined scope and is left out.
         """
         from altk_evolve.llm.guidelines.clustering import cluster_entities
-        from altk_evolve.schema.provenance import identity
+        from altk_evolve.schema.provenance import scope_key
 
         if threshold is None:
             threshold = self.config.clustering_threshold
         by_scope: dict[tuple, list[RecordedEntity]] = {}
         for entity in entities:
-            by_scope.setdefault(identity(entity), []).append(entity)
+            key = scope_key(entity)
+            if key is None:
+                logger.warning("Guideline %s has a non-scalar scope value; leaving it out of clustering.", entity.id)
+                continue
+            by_scope.setdefault(key, []).append(entity)
         return [cluster for scoped in by_scope.values() for cluster in cluster_entities(scoped, threshold=threshold)]
 
     def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None, mode: str | None = None) -> ConsolidationResult:
@@ -353,7 +358,7 @@ class EvolveClient:
             ConsolidationResult with cluster/guideline counts and total support before/after.
         """
         from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members
-        from altk_evolve.schema.provenance import attach_sources, identity, with_association_times
+        from altk_evolve.schema.provenance import attach_sources, scope_key, with_association_times
 
         if mode is None:
             mode = getattr(self.config, "consolidation_mode", "lossless")
@@ -390,11 +395,12 @@ class EvolveClient:
         for cluster in clusters:
             # Never merge (or show the merge model) memories from different scopes.
             # Clustering already partitions by scope; this guards the write boundary.
-            scopes = {identity(entity) for entity in cluster}
-            if len(scopes) != 1:
-                logger.warning("Cluster mixes memory scopes (IDs: %s); skipping.", [e.id for e in cluster])
+            scopes = {scope_key(entity) for entity in cluster}
+            shared = scopes.pop() if len(scopes) == 1 else None
+            if shared is None:
+                logger.warning("Cluster mixes memory scopes or has a non-scalar scope (IDs: %s); skipping.", [e.id for e in cluster])
                 continue
-            scope = {key: value for key, value in zip(("user_id", "owner_id", "agent_id", "visibility"), scopes.pop()) if value is not None}
+            scope = {key: value for key, value in zip(("user_id", "owner_id", "agent_id", "visibility"), shared) if value is not None}
 
             # Phase 1: combine + insert (skip cluster on failure)
             try:

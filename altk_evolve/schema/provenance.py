@@ -13,6 +13,16 @@ def identity(entity: Entity) -> tuple[Any, Any, Any, Any]:
     return tuple(metadata.get(key) for key in ("user_id", "owner_id", "agent_id", "visibility"))  # type: ignore[return-value]
 
 
+def scope_key(entity: Entity) -> tuple | None:
+    """``identity(entity)`` as a grouping key, or None if a scope value is not hashable (e.g. a list)."""
+    key = identity(entity)
+    try:
+        hash(key)
+    except TypeError:
+        return None
+    return key
+
+
 def sources(entity: Entity) -> list[dict]:
     metadata = entity.metadata or {}
     if "sources" in metadata:
