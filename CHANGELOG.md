@@ -4,6 +4,29 @@
 
 <!-- version list -->
 
+## v1.7.1 (2026-10-15)
+
+### Bug Fixes
+
+- **memory**: Include content keys and numbers in pre-call hooks
+  ([#412](https://github.com/AgentToolkit/altk-evolve/pull/412),
+  [`6691d7d`](https://github.com/AgentToolkit/altk-evolve/commit/6691d7d106c438047a32485f676317cee3b3d6fe))
+
+- **memory**: Preserve conflict routing fields during redaction
+  ([#412](https://github.com/AgentToolkit/altk-evolve/pull/412),
+  [`6691d7d`](https://github.com/AgentToolkit/altk-evolve/commit/6691d7d106c438047a32485f676317cee3b3d6fe))
+
+- **memory**: Redact conflict content before rendering routing fields
+  ([#412](https://github.com/AgentToolkit/altk-evolve/pull/412),
+  [`6691d7d`](https://github.com/AgentToolkit/altk-evolve/commit/6691d7d106c438047a32485f676317cee3b3d6fe))
+
+### Features
+
+- **experiments**: Add AppWorld adapter
+  ([#369](https://github.com/AgentToolkit/altk-evolve/pull/369),
+  [`ffe81ba`](https://github.com/AgentToolkit/altk-evolve/commit/ffe81ba2a7d4a0675bdd12ee014867e866468a99))
+
+
 ## v1.7.0 (2026-10-15)
 
 ### Bug Fixes
