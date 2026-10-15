@@ -9,6 +9,7 @@ from altk_evolve.backend.reconciliation import reconcile_decisions, attach_proce
 from altk_evolve.schema.core import Entity, RecordedEntity
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.exceptions import EvolveException
+from altk_evolve.schema.provenance import attach_sources
 
 pytestmark = pytest.mark.unit
 OBSERVED = datetime(2026, 9, 30, tzinfo=UTC)
@@ -101,3 +102,90 @@ def test_append_path_is_deterministic_and_copies_nested_content():
     assert result[0].metadata["memory_revision"] == 1
     result[0].content["value"].append("mutation")
     assert entities[0].content == {"value": []}
+
+
+def _source(conversation, associated_at, status="supporting"):
+    return {
+        "conversation_id": conversation,
+        "task_id": None,
+        "user_id": "alice",
+        "agent_id": "a",
+        "status": status,
+        "associated_at": associated_at,
+    }
+
+
+def test_only_moved_associations_keep_their_earlier_times():
+    earlier = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    entities = [Entity(type="guideline", content="moved", metadata={"sources": [_source("one", earlier)]})]
+    moved = prepare_additions(entities, "guideline", OBSERVED, carry_association_times=True)[0].metadata["sources"]
+    assert [s["associated_at"] for s in moved] == [earlier]
+    # Any other writer is making a new association, however it is dated, so receipts
+    # recorded before this write cannot apply to it.
+    written = prepare_additions(entities, "guideline", OBSERVED)[0].metadata["sources"]
+    assert [s["associated_at"] for s in written] == [OBSERVED.isoformat()]
+
+
+@pytest.mark.parametrize("carry", [True, False])
+@pytest.mark.parametrize("supplied", ["2999-01-01T00:00:00+00:00", "2026-01-01T00:00:00", "not-a-time", 1767225600])
+def test_append_path_restamps_untrustworthy_association_times(supplied, carry):
+    # Only a valid earlier time is kept; anything else could hold off every receipt.
+    entities = [Entity(type="guideline", content="moved", metadata={"sources": [_source("one", supplied)]})]
+    sources = prepare_additions(entities, "guideline", OBSERVED, carry_association_times=carry)[0].metadata["sources"]
+    assert [s["associated_at"] for s in sources] == [OBSERVED.isoformat()]
+
+
+def test_duplicate_associations_combine_conservatively():
+    earlier, later = datetime(2026, 1, 1, tzinfo=UTC).isoformat(), datetime(2026, 6, 1, tzinfo=UTC).isoformat()
+    members = [
+        Entity(type="guideline", content="a", metadata={"sources": [_source("one", earlier)]}),
+        Entity(type="guideline", content="b", metadata={"sources": [_source("one", later, status="superseded")]}),
+    ]
+    for ordered in (members, members[::-1]):
+        (source,) = attach_sources({}, None, ordered, associated_at=OBSERVED, carry_association_times=True)["sources"]
+        # Still supporting if either record was; aged from the later association.
+        assert (source["status"], source["associated_at"]) == ("supporting", later)
+    superseded = [
+        Entity(type="guideline", content=m.content, metadata={"sources": [{**m.metadata["sources"][0], "status": "superseded"}]})
+        for m in members
+    ]
+    for ordered in (superseded, superseded[::-1]):
+        (source,) = attach_sources({}, None, ordered, associated_at=OBSERVED, carry_association_times=True)["sources"]
+        # Superseded by both records stays superseded.
+        assert (source["status"], source["associated_at"]) == ("superseded", later)
+
+
+def test_partly_timestamped_associations_take_the_entity_time_only_where_missing():
+    from altk_evolve.schema.provenance import with_association_times
+
+    earlier, created = datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 3, 1, tzinfo=UTC)
+    legacy = {key: value for key, value in _source("two", None).items() if key != "associated_at"}
+    member = RecordedEntity(
+        id="1",
+        type="guideline",
+        content="m",
+        created_at=created,
+        metadata={"sources": [_source("one", earlier.isoformat()), legacy]},
+    )
+    (timed,) = with_association_times([member])
+    assert {s["conversation_id"]: s["associated_at"] for s in timed.metadata["sources"]} == {
+        "one": earlier.isoformat(),
+        "two": created.isoformat(),
+    }
+    assert "associated_at" not in member.metadata["sources"][1]
+
+
+def test_a_fresh_observation_repairs_a_stored_future_time():
+    # The later of two records normally wins, but a stored future time would hold off
+    # every receipt for this conversation; a new observation must replace it.
+    stored = "2999-01-01T00:00:00+00:00"
+    old = RecordedEntity(
+        id="1",
+        type="fact",
+        content="x",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        metadata={"user_id": "alice", "agent_id": "a", "sources": [_source("one", stored)]},
+    )
+    incoming = Entity(type="fact", content="x", metadata={"user_id": "alice", "agent_id": "a", "thread_id": "one"})
+    (source,) = attach_sources({}, old, [incoming], associated_at=OBSERVED)["sources"]
+    assert (source["status"], source["associated_at"]) == ("supporting", OBSERVED.isoformat())
