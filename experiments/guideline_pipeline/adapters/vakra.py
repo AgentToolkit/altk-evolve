@@ -426,15 +426,21 @@ def _outcome(dialogue: dict | None) -> TrajectoryOutcome | None:
 
 
 def _failed_checks(details: dict) -> tuple[str, ...]:
-    """Each turn sub-check that scored 0, with the judge's explanation."""
+    """The sub-checks that failed a turn, with the judge's explanation.
+
+    As VAKRA's scorer decides a turn: a turn that scored 1 failed nothing, and an exact
+    match of 0 only hands the turn to the answer judge, so it fails the turn only when
+    the answer did not pass as well.
+    """
     checks: list[str] = []
     for turn in _list(details.get("per_turn")):
-        if not isinstance(turn, dict):
+        if not isinstance(turn, dict) or ((score := _score(turn.get("score"))) is not None and score >= 1.0):
             continue
         metadata = _dict(turn.get("metadata"))
         explanations = _dict(metadata.get("score_explanation"))
+        answer_passed = (answer := _score(metadata.get("answer_score"))) is not None and answer >= 1.0
         for check, key in _CHECKS:
-            if _score(metadata.get(key)) == 0:
+            if _score(metadata.get(key)) == 0 and not (check == "exactmatch" and answer_passed):
                 label = f"{check} (turn {turn.get('turn_id')})"
                 explanation = " ".join(_text(explanations.get(check)).split())
                 checks.append(f"{label}: {explanation[:CHECK_CHARS]}" if explanation else label)

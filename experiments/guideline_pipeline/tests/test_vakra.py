@@ -225,11 +225,9 @@ def test_outcome_mapping():
         "answer (turn 1): The expected answer is Grace, not Ada.",
     )
     assert failed.detail is not None and "  answer: The expected answer is Grace,\nnot Ada." in failed.detail
+    # exactmatch 0 but answer 1: the answer judge passed it, so only groundedness failed the turn.
     hockey = records["hock-02"].outcome
-    assert hockey is not None and hockey.failed_checks == (
-        "exactmatch (turn 1)",
-        "groundedness (turn 1): No tool output supports the number.",
-    )
+    assert hockey is not None and hockey.failed_checks == ("groundedness (turn 1): No tool output supports the number.",)
 
     # A score without details is just the verdict; status "error" does not decide it.
     assert records["auth-03"].outcome == TrajectoryOutcome(success=True)
@@ -237,6 +235,30 @@ def test_outcome_mapping():
     # No results entry: no outcome, not a guess from status.
     assert records["mov-01"].outcome is None
     assert VakraAdapter().record({"uuid": "u"}, "d", "train", {"uuid": "u", "score": None}).outcome is None
+
+
+def test_failed_checks_are_only_the_checks_that_failed_a_turn():
+    """As VAKRA's scorer decides a turn: exact match 0 sends it to the answer judge, and a passing answer goes on to groundedness."""
+
+    def turn(turn_id: int, score: float, exactmatch: float, answer: float | None, groundedness: float | None) -> dict:
+        explanations = {"exactmatch": "Different tool sequence.", "answer": "Wrong answer.", "groundedness": "Not grounded."}
+        metadata = {"exactmatch_score": exactmatch, "answer_score": answer, "groundedness_score": groundedness}
+        return {"turn_id": turn_id, "score": score, "metadata": {**metadata, "score_explanation": explanations}}
+
+    def failed_checks(*turns: dict) -> tuple[str, ...]:
+        outcome = everything().record({"uuid": "u"}, "d", "train", {"score": 0.0, "details": {"per_turn": list(turns)}}).outcome
+        assert outcome is not None and not outcome.success
+        return outcome.failed_checks
+
+    # Turn 0 passed through the answer judge, so it failed nothing; turn 1 failed both checks.
+    assert failed_checks(turn(0, 1.0, 0.0, 1.0, 1.0), turn(1, 0.0, 0.0, 0.0, None)) == (
+        "exactmatch (turn 1): Different tool sequence.",
+        "answer (turn 1): Wrong answer.",
+    )
+    # The answer passed but was not grounded: groundedness failed the turn, the exact match did not.
+    assert failed_checks(turn(0, 0.0, 0.0, 1.0, 0.0)) == ("groundedness (turn 0): Not grounded.",)
+    # A turn without a readable score is still checked.
+    assert failed_checks({"turn_id": 0, "metadata": {"answer_score": 0.0}}) == ("answer (turn 0)",)
 
 
 def test_metadata_and_batch_identity():

@@ -330,8 +330,11 @@ becomes one record:
   `score >= 1` for a finite numeric score. Any other score (NaN, a string, a
   bool) is ignored with a warning, so it gives no outcome rather than a failure.
   The record's `status` is execution status only and is not used. A failed
-  dialogue's `failed_checks` are its turns' sub-checks (policy, exact match,
-  answer, groundedness) that scored 0, with the judge's explanation. The `detail`
+  dialogue's `failed_checks` are the sub-checks (policy, exact match, answer,
+  groundedness) that failed one of its turns, with the judge's explanation. As in
+  VAKRA's scorer, a turn that scored 1 contributes none, and an exact match of 0
+  counts only when the answer judge failed the turn too (otherwise it merely sent
+  the turn to that judge). The `detail`
   is the per-turn scores and explanations, cut to 2000 characters. A dialogue
   with only a score gets just `success`; a record with no results entry has no
   outcome.
