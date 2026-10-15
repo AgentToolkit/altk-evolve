@@ -211,6 +211,11 @@ it is. `--input` is one run directory or a directory of them:
       logs/logger.jsonl           # optional: {"role", "content", ...} per line
 ```
 
+When `--input` is a directory of runs, any child directory without `tasks/` is
+named in an `ignored ...` warning. AppWorld's legacy agents nest their runs as
+`<agent>/<provider>/<model>/<split>/`, so pass the directory that directly holds
+them. A selection that reads no task logs a warning.
+
 Each task becomes one record:
 
 - **Instruction** (the user message), from the first source that has it, recorded
@@ -229,29 +234,34 @@ Each task becomes one record:
   output as an `OBSERVATION:` assistant message, rendered and cut to 2000 characters
   exactly as the CUGA adapter does. Long runs keep the first 6 and last 43 steps,
   as there.
-- **outcome**: `success` from the task's entry in `evaluations/<split>.json`, which
-  may be a boolean or the string `"True"` / `"False"`. Any other value, or a task
-  missing from the evaluations, gives no outcome. Failed requirements are not yet
-  mapped to `failed_checks` or `detail`.
+- **outcome**: `success` from the task's entry in `evaluations/<split>.json`. As for
+  CUGA, a verdict counts only as a bool, the integer `0`/`1` or the string
+  `"true"`/`"false"` in any case. Any other value, or a task missing from the
+  evaluations, gives no outcome. Failed requirements are not yet mapped to
+  `failed_checks` or `detail`.
 - **metadata**: `run`, `split` (the evaluations file name, when the task is
   evaluated), `difficulty`, `model` and `instruction_source`.
 - **batch**: source `appworld`, conversation `<run>/<task_id>`, batch `<task_id>`,
   and a revision that digests the record's content, as for CUGA. A task listed in
   two evaluations files of one run is an error.
 
-A task with no `environment_io.md`, no interactions in it, or no recoverable
-instruction is skipped with a `skipped <run>/<task_id>: ...` warning on stderr, so
-the rest of the run is still mined; it is never mined with an empty instruction.
-An unreadable JSON file ends the run, as for CUGA.
+A task with no readable `environment_io.md`, no interactions in it, or no
+recoverable instruction is skipped with a `skipped <run>/<task_id>: ...` warning on
+stderr, so the rest of the run is still mined; it is never mined with an empty
+instruction. An instruction source that cannot be read (malformed JSON, such as the
+truncated last line a killed run leaves, or a non-object) gets a
+`<run>/<task_id>: cannot read <file>` warning and the next source is tried. An
+evaluations file that is malformed or has no `individual` mapping ends the run with
+an error that names it, since every outcome in it would otherwise be lost.
 
 Options (`--adapter-option KEY=VALUE`):
 
 | Key | Effect |
 | --- | --- |
-| `task_ids=a_1,b_2` | Only these tasks. A listed ID with no task directory ends the run with an error. |
+| `task_ids=a_1,b_2` | Only these tasks. A listed ID with no task directory ends the run with an error, and so does a value that lists no IDs. |
 | `task_manifest=<file>` | Only the tasks in a JSON file (`task_ids` or `tasks[].task_id`) or a text file with one ID per line (`#` comments). Combines with `task_ids`. |
 | `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
-| `appworld_root=<dir>` | An AppWorld root whose `data/tasks/<task_id>/specs.json` is the last instruction source. The run tree does not contain it. |
+| `appworld_root=<dir>` | An AppWorld root whose `data/tasks/<task_id>/specs.json` is the last instruction source. The run tree does not contain it. It must be an existing directory; an empty value is an error. |
 
 [profiles/appworld.json](profiles/appworld.json) is the same sample profile as
 CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, model and

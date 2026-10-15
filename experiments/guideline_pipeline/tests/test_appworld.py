@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -151,7 +152,8 @@ def test_outcome_from_typed_or_string_evaluations(root: Path):
     assert records["bbb0002_2"].outcome is None
 
     adapter = AppWorldAdapter()
-    for verdict in ("maybe", None, 1, "", ["True"]):
+    # The CUGA adapter's verdict rule: a bool, 0 or 1, or "true"/"false" in any case; bool("False") is True.
+    for verdict in ("maybe", None, 2, "", ["True"], "yes"):
         evaluation = ("train", {"success": verdict})
         record = adapter.record("run", "t_1", instruction="x", instruction_source="tips_subtask", environment_io="", evaluation=evaluation)
         assert record.outcome is None
@@ -159,6 +161,10 @@ def test_outcome_from_typed_or_string_evaluations(root: Path):
         "run", "t_1", instruction="x", instruction_source="s", environment_io="", evaluation=("train", {"success": " true "})
     )
     assert lowered.outcome == TrajectoryOutcome(success=True)
+    for value, success in ((1, True), (0, False)):
+        evaluation = ("train", {"success": value})
+        numeric = adapter.record("run", "t_1", instruction="x", instruction_source="s", environment_io="", evaluation=evaluation)
+        assert numeric.outcome == TrajectoryOutcome(success=success)
 
 
 def test_identity_metadata_and_model():
@@ -245,13 +251,13 @@ def test_options_and_task_selection(tmp_path: Path, root: Path):
 
 
 def test_records_stream_one_task_at_a_time(run_copy: Path):
-    (run_copy / "tasks" / "aaa0001_2" / "tips_subtask.json").write_text("{ truncated")
     records = AppWorldAdapter().records(run_copy)
 
     assert isinstance(records, Iterator)
-    assert next(records).trace_id == "aaa0001_1"  # the broken second task is not read yet
-    with pytest.raises(json.JSONDecodeError):
-        next(records)
+    assert next(records).trace_id == "aaa0001_1"
+    # The second task is not read until it is asked for, so this edit is what it sees.
+    (run_copy / "tasks" / "aaa0001_2" / "logs" / "environment_io.md").write_text("# nothing ran\n")
+    assert list(records) == []
 
 
 def test_sample_profile_validates_with_the_builtin_processor():
@@ -296,3 +302,94 @@ def test_mine_checkpoints_each_task_and_stamps_evidence(client: EvolveClient, ru
     evaluation.write_text(json.dumps(payload))
     regraded = run()
     assert (regraded.processed, regraded.skipped) == (1, 1)
+
+
+def blk(number: int, code: str, output: str) -> str:
+    return f"### Environment Interaction {number}\n----------\n```python\n{code}\n```\n\n```\n{output}\n```\n\n\n"
+
+
+def test_empty_option_values_are_errors_not_no_filter():
+    for options in ({"task_ids": ""}, {"task_ids": " , "}):
+        with pytest.raises(ValueError, match="names nothing"):
+            AppWorldAdapter().configure(options)
+    # Path("") is the working directory, so an empty root would silently search it.
+    with pytest.raises(ValueError, match="appworld_root must be a directory"):
+        AppWorldAdapter().configure({"appworld_root": " "})
+
+
+def test_unreadable_instruction_sources_fall_through_with_a_warning(run_copy: Path, root: Path, caplog: pytest.LogCaptureFixture):
+    logs = run_copy / "tasks" / "aaa0001_2" / "logs"
+    (run_copy / "tasks" / "aaa0001_2" / "tips_subtask.json").write_text("{ truncated")
+    with caplog.at_level(logging.WARNING):
+        records = by_id(AppWorldAdapter(), run_copy)
+    assert records["aaa0001_2"].metadata["instruction_source"] == "lm_calls"
+    assert any(m.startswith("react_train/aaa0001_2: cannot read tips_subtask.json") for m in caplog.messages)
+
+    # A truncated first LM call with nothing after it: the task is skipped, and the run goes on.
+    (logs / "lm_calls.jsonl").write_text("{truncated\n")
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert list(by_id(AppWorldAdapter(), run_copy)) == ["aaa0001_1"]
+    assert any(m.startswith("react_train/aaa0001_2: cannot read lm_calls.jsonl") for m in caplog.messages)
+    assert "skipped react_train/aaa0001_2: no task instruction found" in caplog.messages
+
+    # logger.jsonl and specs.json are read the same way.
+    (logs / "logger.jsonl").write_text('{"role": "agent"\n')
+    specs = root / "data" / "tasks" / "aaa0001_2" / "specs.json"
+    specs.parent.mkdir(parents=True)
+    specs.write_text("[not an object]")
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert list(by_id(AppWorldAdapter(appworld_root=root), run_copy)) == ["aaa0001_1"]
+    assert any(m.startswith("react_train/aaa0001_2: cannot read logger.jsonl") for m in caplog.messages)
+    assert any(m.startswith("react_train/aaa0001_2: cannot read specs.json") for m in caplog.messages)
+
+
+def test_malformed_evaluations_name_the_file(run_copy: Path):
+    evaluation = run_copy / "evaluations" / "train.json"
+    for text, reason in (("{ truncated", "Expecting"), ("[]", "not a JSON object"), ('{"aggregate": {}}', "no 'individual' mapping")):
+        evaluation.write_text(text)
+        with pytest.raises(ValueError, match=rf"Cannot read {re.escape(str(evaluation))}: .*{reason}"):
+            next(AppWorldAdapter().records(run_copy))
+
+
+def test_unreadable_environment_io_is_skipped(run_copy: Path, caplog: pytest.LogCaptureFixture):
+    (run_copy / "tasks" / "aaa0001_2" / "logs" / "environment_io.md").write_bytes(b"\xff\xfe not utf-8")
+    with caplog.at_level(logging.WARNING):
+        assert list(by_id(AppWorldAdapter(), run_copy)) == ["aaa0001_1"]
+    assert any(m.startswith("skipped react_train/aaa0001_2: cannot read logs/environment_io.md") for m in caplog.messages)
+
+
+def test_an_observation_holding_a_fenced_block_is_kept_whole():
+    markdown = "Here:\n```\ninner\n```\nend of doc"
+    steps = parse_environment_io(blk(1, "print(doc)", markdown) + blk(2, "apis.supervisor.complete_task()", "done"))
+    assert [step["data"] for step in steps] == ["print(doc)", markdown, "apis.supervisor.complete_task()", "done"]
+    # An interaction missing its output fence does not swallow the next one.
+    broken = "### Environment Interaction 1\n```python\nx\n```\n\n```\nno closing fence\n\n"
+    assert [step["data"] for step in parse_environment_io(broken + blk(2, "y", "z"))] == ["y", "z"]
+
+
+def test_non_string_prompt_content_is_not_an_instruction(run_copy: Path):
+    lm_calls = run_copy / "tasks" / "aaa0001_2" / "logs" / "lm_calls.jsonl"
+    for content in ({"text": "Task: from a dict"}, [{"type": "text", "text": {"Task:": "x"}}], 7):
+        lm_calls.write_text(json.dumps({"input": {"messages": [{"role": "user", "content": content}]}}) + "\n")
+        assert "aaa0001_2" not in by_id(AppWorldAdapter(), run_copy)
+    parts = [{"type": "text", "text": "My name is: A.\n"}, {"type": "image"}, {"type": "text", "text": "Task: from parts."}]
+    lm_calls.write_text(json.dumps({"input": {"messages": [{"role": "user", "content": parts}]}}) + "\n")
+    assert by_id(AppWorldAdapter(), run_copy)["aaa0001_2"].messages[0]["content"] == "My name is: A.\n\nTask: from parts."
+
+
+def test_layouts_that_read_nothing_warn(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    # AppWorld's legacy agents nest runs as <agent>/<provider>/<model>/<split>/tasks.
+    shutil.copytree(TRAIN, tmp_path / "outputs" / "legacy_react_code_agent" / "openai" / "gpt-4o" / "test_normal")
+    shutil.copytree(TRAIN, tmp_path / "outputs" / "react_train")
+    with caplog.at_level(logging.WARNING):
+        assert list(by_id(AppWorldAdapter(), tmp_path / "outputs")) == ["aaa0001_1", "aaa0001_2"]
+    assert f"ignored legacy_react_code_agent in {tmp_path / 'outputs'}: no tasks/ directory" in caplog.messages
+
+    empty = tmp_path / "empty_run"
+    (empty / "tasks").mkdir(parents=True)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert list(by_id(AppWorldAdapter(), empty)) == []
+    assert f"read no AppWorld task beneath {empty}" in caplog.messages

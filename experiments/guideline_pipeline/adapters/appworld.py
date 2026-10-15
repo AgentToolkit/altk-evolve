@@ -12,7 +12,7 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -20,7 +20,7 @@ from typing import Any
 from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
 from experiments.guideline_pipeline.adapters.base import AdapterRecord
-from experiments.guideline_pipeline.adapters.cuga import agent_steps, elide_middle, load_task_manifest
+from experiments.guideline_pipeline.adapters.cuga import agent_steps, elide_middle, load_task_manifest, verdict
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +30,16 @@ IDENTITY_WINDOW = 600
 # Without that line, the instruction starts this far before "Task:".
 TASK_CONTEXT = 200
 
-# One "### Environment Interaction N" block: an optional dashes line, a ```python
-# fenced action, then a plain fenced observation. An opening fence ends at its own
-# line ([ \t]*, not \s*), so an empty block cannot swallow the next interaction.
+# The log is split at its "### Environment Interaction N" headers, so a block missing a
+# fence cannot swallow the next interaction. Each block is an optional dashes line, a
+# ```python fenced action, then a plain fenced observation. An opening fence ends at its
+# own line ([ \t]*, not \s*), so an empty block cannot swallow the next fence. The
+# observation runs to the block's last fence, so printed Markdown with fences of its
+# own is kept whole.
+_HEADER = re.compile(r"^### Environment Interaction \d+[ \t]*$", re.MULTILINE)
 _INTERACTION = re.compile(
-    r"^### Environment Interaction \d+\s*\n(?:-+\s*\n)?```python[ \t]*\n(?P<action>.*?)\n```\s*\n\s*```[ \t]*\n(?P<observation>.*?)\n```",
-    re.MULTILINE | re.DOTALL,
+    r"\A\n(?:-+[ \t]*\n)?```python[ \t]*\n(?P<action>.*?)\n```[ \t]*\n\s*```[ \t]*\n(?P<observation>.*)\n```\s*\Z",
+    re.DOTALL,
 )
 
 
@@ -59,14 +63,14 @@ class AppWorldAdapter:
         task_ids = set(self.task_ids)
         for key, value in options.items():
             if key == "task_ids":
-                task_ids.update(item.strip() for item in value.split(",") if item.strip())
+                task_ids.update(_names(key, value))
             elif key == "task_manifest":
                 task_ids.update(load_task_manifest(Path(value)))
             elif key == "model":
                 changes[key] = value or None
             elif key == "appworld_root":
-                root = Path(value).expanduser()
-                if not root.is_dir():
+                root = Path(value.strip()).expanduser()
+                if not value.strip() or not root.is_dir():  # Path("") is the working directory
                     raise ValueError(f"appworld option appworld_root must be a directory, not {value!r}")
                 changes[key] = root
             else:
@@ -74,20 +78,24 @@ class AppWorldAdapter:
         return replace(self, **changes, task_ids=frozenset(task_ids))
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
-        run_dirs = [path] if _is_run_dir(path) else sorted(child for child in path.iterdir() if _is_run_dir(child)) if path.is_dir() else []
+        run_dirs = _run_dirs(path)
         if not run_dirs:
             raise ValueError(f"No AppWorld run directory (one containing tasks/) at {path}")
         if self.task_ids:
             found = {task_dir.name for run_dir in run_dirs for task_dir in _task_dirs(run_dir)}
             if missing := sorted(self.task_ids - found):
                 raise ValueError(f"Task IDs not found beneath {path}: {missing}")
+        read = 0
         for run_dir in run_dirs:
             evaluations = _load_evaluations(run_dir)
             for task_dir in _task_dirs(run_dir):
                 if self.task_ids and task_dir.name not in self.task_ids:
                     continue
                 if (record := self.task_record(run_dir.name, task_dir, evaluations.get(task_dir.name))) is not None:
+                    read += 1
                     yield record
+        if not read:
+            logger.warning("read no AppWorld task beneath %s", path)
 
     def task_record(self, run: str, task_dir: Path, evaluation: tuple[str, dict] | None) -> AdapterRecord | None:
         """Read one task directory; None (with a warning) for a task that cannot be mined."""
@@ -95,7 +103,12 @@ class AppWorldAdapter:
         if not environment_io.exists():
             logger.warning("skipped %s/%s: no logs/environment_io.md", run, task_dir.name)
             return None
-        if (found := self._instruction(task_dir)) is None:
+        try:
+            text = environment_io.read_text()
+        except (OSError, ValueError) as exc:  # ValueError: not UTF-8
+            logger.warning("skipped %s/%s: cannot read logs/environment_io.md (%s)", run, task_dir.name, exc)
+            return None
+        if (found := self._instruction(run, task_dir)) is None:
             logger.warning("skipped %s/%s: no task instruction found", run, task_dir.name)
             return None
         instruction, instruction_source = found
@@ -104,7 +117,7 @@ class AppWorldAdapter:
             task_dir.name,
             instruction=instruction,
             instruction_source=instruction_source,
-            environment_io=environment_io.read_text(),
+            environment_io=text,
             evaluation=evaluation,
         )
         if len(record.messages) < 2:
@@ -131,7 +144,7 @@ class AppWorldAdapter:
             "model": self.model,  # also in metadata: the guideline processor stores metadata, not Trajectory.model
             "instruction_source": instruction_source,
         }
-        success = _boolean_value(entry.get("success"))
+        success = verdict(entry.get("success"))
         content: dict[str, Any] = {
             "messages": [{"role": "user", "content": instruction}, *elide_middle(agent_steps(parse_environment_io(environment_io)))],
             "trace_id": task_id,
@@ -146,26 +159,39 @@ class AppWorldAdapter:
         batch = TrajectoryBatch(source=SOURCE, conversation_id=f"{run}/{task_id}", batch_id=task_id, revision=digest)
         return AdapterRecord(**content, batch=batch)
 
-    def _instruction(self, task_dir: Path) -> tuple[str, str] | None:
-        """(instruction, source) from the first source that has it: tips, the first LM prompt, logger.jsonl, specs.json."""
-        tips = task_dir / "tips_subtask.json"
-        if tips.exists() and (text := _text(_read_json(tips).get("task_instruction"))):
-            return text, "tips_subtask"
-        if (text := _first_prompt_task(task_dir / "logs" / "lm_calls.jsonl")) is not None:
-            return text, "lm_calls"
-        if (text := _logger_task(task_dir / "logs" / "logger.jsonl")) is not None:
-            return text, "logger"
+    def _instruction(self, run: str, task_dir: Path) -> tuple[str, str] | None:
+        """(instruction, source) from the first source that has it: tips, the first LM prompt, logger.jsonl, specs.json.
+
+        A source that cannot be read (a run killed mid-write leaves a truncated line) is
+        reported and the next one is tried, so one bad file never ends the run.
+        """
+        sources: list[tuple[str, Path, Callable[[Path], str | None]]] = [
+            ("tips_subtask", task_dir / "tips_subtask.json", lambda path: _text(_read_json(path).get("task_instruction"))),
+            ("lm_calls", task_dir / "logs" / "lm_calls.jsonl", _first_prompt_task),
+            ("logger", task_dir / "logs" / "logger.jsonl", _logger_task),
+        ]
         if self.appworld_root is not None:
             specs = self.appworld_root / "data" / "tasks" / task_dir.name / "specs.json"
-            if specs.exists() and (text := _text(_read_json(specs).get("instruction"))):
-                return text, "specs"
+            sources.append(("specs", specs, lambda path: _text(_read_json(path).get("instruction"))))
+        for source, path, read in sources:
+            if not path.exists():
+                continue
+            try:
+                text = read(path)
+            except (OSError, ValueError) as exc:  # ValueError: malformed JSON, a non-object, or not UTF-8
+                logger.warning("%s/%s: cannot read %s (%s); trying the next instruction source", run, task_dir.name, path.name, exc)
+                continue
+            if text is not None:
+                return text, source
         return None
 
 
 def parse_environment_io(text: str) -> list[dict[str, str]]:
     """Each interaction's code and output, as CUGA-shaped action and observation steps."""
     steps: list[dict[str, str]] = []
-    for match in _INTERACTION.finditer(text):
+    for block in _HEADER.split(text)[1:]:
+        if (match := _INTERACTION.match(block)) is None:
+            continue
         steps.append({"name": "Raw_Assistant_Response", "data": match.group("action")})
         steps.append({"name": "User_output", "data": match.group("observation")})
     return steps
@@ -188,8 +214,6 @@ def task_from_prompt(prompt: str) -> str | None:
 
 def _first_prompt_task(path: Path) -> str | None:
     """The task in the last user message of the first LM call; only that line of the (large) file is read."""
-    if not path.exists():
-        return None
     with path.open() as handle:
         line = next((line for line in handle if line.strip()), None)
     if line is None:
@@ -202,8 +226,7 @@ def _first_prompt_task(path: Path) -> str | None:
 
 
 def _logger_task(path: Path) -> str | None:
-    if not path.exists():
-        return None
+    """The first non-blank role "task" entry in logger.jsonl."""
     with path.open() as handle:
         for line in handle:
             if line.strip() and isinstance(entry := json.loads(line), dict) and entry.get("role") == "task":
@@ -216,14 +239,38 @@ def _load_evaluations(run_dir: Path) -> dict[str, tuple[str, dict]]:
     """Each evaluated task's split (its evaluations file name) and entry."""
     evaluations: dict[str, tuple[str, dict]] = {}
     for path in sorted((run_dir / "evaluations").glob("*.json")):
-        individual = _read_json(path).get("individual")
-        if not isinstance(individual, dict):
-            continue
+        try:
+            individual = _read_json(path).get("individual")
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"Cannot read {path}: {exc}") from exc
+        if not isinstance(individual, dict):  # outcomes would silently go missing for every task
+            raise ValueError(f"Cannot read {path}: no 'individual' mapping of task IDs to evaluations")
         for task_id, entry in individual.items():
             if task_id in evaluations:
                 raise ValueError(f"Task {task_id} is evaluated in both {evaluations[task_id][0]}.json and {path.name} in {run_dir}")
             evaluations[task_id] = (path.stem, entry if isinstance(entry, dict) else {})
     return evaluations
+
+
+def _run_dirs(path: Path) -> list[Path]:
+    """path itself when it is a run, else its child runs; children that are not runs are reported, not silently passed over.
+
+    AppWorld's legacy agents nest runs deeper (``<agent>/<provider>/<model>/<split>``),
+    so such a child is named in a warning: pass the run, or its parent, as --input.
+    """
+    if _is_run_dir(path):
+        return [path]
+    if not path.is_dir():
+        return []
+    children, other = [], []
+    for child in sorted(path.iterdir()):
+        if _is_run_dir(child):
+            children.append(child)
+        elif child.is_dir():
+            other.append(child.name)
+    if children and other:
+        logger.warning("ignored %s in %s: no tasks/ directory", ", ".join(other), path)
+    return children
 
 
 def _task_dirs(run_dir: Path) -> list[Path]:
@@ -232,15 +279,6 @@ def _task_dirs(run_dir: Path) -> list[Path]:
 
 def _is_run_dir(path: Path) -> bool:
     return (path / "tasks").is_dir()
-
-
-def _boolean_value(value: Any) -> bool | None:
-    """A verdict stored as a bool or as the string "True"/"False"; None for anything else."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
-        return value.strip().lower() == "true"
-    return None
 
 
 def _integer(value: Any) -> int | None:
@@ -252,14 +290,27 @@ def _integer(value: Any) -> int | None:
 
 
 def _message_text(content: Any) -> str:
-    """A chat message's text, whether content is a string or a list of text parts."""
+    """A chat message's text, whether content is a string or a list of text parts; "" for anything else.
+
+    Nothing else is stringified: the repr of a dict could still contain "Task:".
+    """
+    if isinstance(content, str):
+        return content
     if isinstance(content, list):
-        return "\n".join(str(part.get("text") or "") for part in content if isinstance(part, dict))
-    return str(content or "")
+        return "\n".join(part["text"] for part in content if isinstance(part, dict) and isinstance(part.get("text"), str))
+    return ""
 
 
 def _text(value: Any) -> str | None:
     return (value.strip() or None) if isinstance(value, str) else None
+
+
+def _names(key: str, value: str) -> set[str]:
+    """A comma-separated filter option. One that names nothing would mean "no filter", so it is an error."""
+    names = {item.strip() for item in value.split(",") if item.strip()}
+    if not names:
+        raise ValueError(f"appworld option {key} names nothing: {value!r}")
+    return names
 
 
 def _read_json(path: Path) -> dict:
