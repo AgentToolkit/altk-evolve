@@ -502,11 +502,15 @@ class TauRetailAdapter:
             context.extend(_system_context("USER SCENARIO (the user simulator's brief; the agent did not see it)", scenario))
 
         task_id = file.stem
+        # Splits can reuse task numbers (tau-bench's train and test sets both start at 0), so a recorded
+        # split is part of the task's identity: the trace_id (each guideline's source_task_id, which
+        # lineage and export key on) and the conversation.
+        source_task = f"{header['split']}/{task_id}" if "split" in header else task_id
         outcome = judge_outcome(header["reward"], section_body(sections.get("JUDGE", "")))
         content: dict[str, Any] = {
             "messages": task_messages(turns),
             "context_messages": context,
-            "trace_id": task_id,
+            "trace_id": source_task,
             "model": header.get("model"),
             "metadata": {key: value for key, value in header.items() if key != "model"},
         }
@@ -514,7 +518,5 @@ class TauRetailAdapter:
         # changes the content is reprocessed, and nothing else is.
         plain = {**content, "outcome": outcome.model_dump(mode="json")}
         revision = hashlib.sha256(json.dumps(plain, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
-        # Splits can reuse task numbers, so a recorded split is part of the conversation's identity.
-        conversation = f"{header['split']}/{task_id}" if "split" in header else task_id
-        batch = TrajectoryBatch(source=SOURCE, conversation_id=conversation, batch_id=task_id, revision=revision)
+        batch = TrajectoryBatch(source=SOURCE, conversation_id=source_task, batch_id=task_id, revision=revision)
         return AdapterRecord(**content, outcome=outcome, batch=batch)

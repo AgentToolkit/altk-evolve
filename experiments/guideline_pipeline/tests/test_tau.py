@@ -376,12 +376,15 @@ def test_split_is_recorded_and_selects_tasks(tau_dir: Path, caplog: pytest.LogCa
     split_file(tau_dir, "task_4.txt", "test")
 
     tasks = records(tau_dir)
-    assert (tasks["task_3"].metadata["split"], "split" in tasks["task_1"].metadata) == ("train", False)
-    # Splits can reuse task numbers, so a known split is part of the conversation identity.
-    assert (tasks["task_3"].batch.conversation_id, tasks["task_1"].batch.conversation_id) == ("train/task_3", "task_1")
+    assert (tasks["train/task_3"].metadata["split"], "split" in tasks["task_1"].metadata) == ("train", False)
+    # Splits can reuse task numbers, so a known split is part of the task's identity: the trace_id
+    # (each guideline's source_task_id) and the conversation alike.
+    assert (tasks["train/task_3"].batch.conversation_id, tasks["task_1"].batch.conversation_id) == ("train/task_3", "task_1")
+    assert tasks["train/task_3"].batch.batch_id == "task_3"
+    assert sorted(tasks) == ["task_1", "task_2", "test/task_4", "train/task_3"]
 
     with caplog.at_level(logging.WARNING):
-        assert list(records(tau_dir, splits=frozenset({"train"}))) == ["task_3"]
+        assert list(records(tau_dir, splits=frozenset({"train"}))) == ["train/task_3"]
     assert "records no split" in caplog.text and "task_1.txt" in caplog.text and "task_2.txt" in caplog.text
 
     with pytest.raises(ValueError, match=r"Splits not found in .*\['dev'\] \(found \['test', 'train'\]\)"):

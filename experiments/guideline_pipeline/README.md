@@ -436,9 +436,9 @@ Each task becomes one record:
   of the judge section becomes `detail`. When pretty-printed JSON puts the flag
   on its own line, the check is named from its object: the action's `name` and
   `arguments`, or the `nl_assertion` text.
-- **trace_id / batch:** the file name (`task_12`). The conversation is the file
-  name too, prefixed with the split when the header records one
-  (`train/task_12`), because splits can reuse task numbers. The revision digests
+- **trace_id / batch:** the file name (`task_12`), prefixed with the split when
+  the header records one (`train/task_12`), because splits can reuse task
+  numbers. The conversation is the same; the batch is the file name. The revision digests
   the record's content, so editing a task, or changing an option that changes
   what is processed, reprocesses that task; re-running unchanged input skips it.
 - **metadata:** the header's reward, breakdown, termination reason, `split` and
