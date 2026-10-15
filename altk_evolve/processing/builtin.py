@@ -85,7 +85,10 @@ class GuidelineProcessor:
                 (
                     "standard",
                     lambda trajectory: generate_guidelines(
-                        trajectory.messages, context_messages=trajectory.context_messages, options=options
+                        trajectory.messages,
+                        context_messages=trajectory.context_messages,
+                        options=options,
+                        outcome=trajectory.outcome,
                     ),
                 )
             )
