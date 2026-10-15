@@ -235,6 +235,18 @@ def test_sse_launcher_skips_ui_thread(monkeypatch, runtime) -> None:
     assert sse_calls == [("0.0.0.0", 9300)]
 
 
+@pytest.mark.parametrize(("flag", "expect_notice"), [(["--dashboard"], True), (["--no-dashboard"], False), ([], False)])
+def test_sse_launcher_says_the_dashboard_flag_is_stdio_only(monkeypatch, runtime, caplog, flag, expect_notice) -> None:
+    sse_calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(launcher.threading, "Thread", lambda *a, **k: pytest.fail("SSE must not start the dashboard thread"))
+    monkeypatch.setattr(launcher, "run_sse_server", lambda host, port: sse_calls.append((host, port)))
+    monkeypatch.setattr(launcher.sys, "argv", ["evolve-mcp", "--transport", "sse", *flag])
+    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
+        launcher.main()
+    assert sse_calls == [("127.0.0.1", 8201)]
+    assert ("--dashboard applies to the stdio transport only" in caplog.text) is expect_notice
+
+
 def test_run_sse_server_uses_resilient_http_transport(monkeypatch) -> None:
     resilient_app = object()
     captured: list[dict] = []
