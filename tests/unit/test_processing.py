@@ -597,7 +597,7 @@ def test_builtin_factory_selects_generation_steps(mode, method, monkeypatch):
     calls = []
 
     def generator(name):
-        def run(data, *, options, context_messages=None):
+        def run(data, *, options, context_messages=None, outcome=None):
             calls.append((name, data, options.guidelines_model))
             return [
                 GuidelineGenerationResult(
@@ -641,7 +641,7 @@ def test_builtin_admin_update_changes_next_trajectory_not_running_steps(monkeypa
     started, resume = Event(), Event()
     calls = []
 
-    def standard(messages, *, options, context_messages=None):
+    def standard(messages, *, options, context_messages=None, outcome=None):
         calls.append(("standard", options.guidelines_model))
         started.set()
         assert resume.wait(10)
@@ -833,6 +833,24 @@ def test_builtin_outcome_sets_evidence_on_every_guideline(success, evidence):
     assert [entity.metadata["evidence"] for entity in result.entities] == [evidence, evidence]
     for entity in result.entities:
         assert not {"outcome", "failed_checks", "detail"} & entity.metadata.keys()
+
+
+def test_builtin_passes_outcome_to_standard_generation(monkeypatch):
+    from altk_evolve.processing.builtin import GuidelineConfig, GuidelineProcessor
+    from altk_evolve.processing.models import ProcessorContext, Trajectory, TrajectoryOutcome
+
+    seen = []
+
+    def generate(messages, *, outcome=None, **kwargs):
+        seen.append(outcome)
+        return []
+
+    monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.generate_guidelines", generate)
+    processor = GuidelineProcessor.from_config(GuidelineConfig(guidelines_mode="standard"))
+    outcome = TrajectoryOutcome(success=False, failed_checks=("total matches cart",))
+    processor.process(Trajectory(messages=[], outcome=outcome), context=ProcessorContext("operation"))
+    processor.process(Trajectory(messages=[]), context=ProcessorContext("operation"))
+    assert seen == [outcome, None]
 
 
 def test_builtin_without_outcome_keeps_caller_evidence():
