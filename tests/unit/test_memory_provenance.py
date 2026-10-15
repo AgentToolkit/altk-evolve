@@ -104,21 +104,21 @@ def test_all_supporting_sources_must_have_receipts():
     entity.metadata["sources"] = [dict(conversation_id=c, user_id="alice", agent_id="a", status="supporting") for c in ["first", "second"]]
     receipts = {"first": now - timedelta(days=10)}
 
-    class Connection:
-        def execute(self, sql, values):
-            return SimpleNamespace(
-                fetchall=lambda: [
-                    {"user_id": "alice", "agent_id": "a", "source_id": source, "deleted_at": when} for source, when in receipts.items()
-                ]
-            )
-
-    collection = object.__new__(Collection)
-    collection.namespace = "n"
-    assert collection.source_deletion_times(Connection(), [entity]) == {}
+    assert deletion_times([entity], receipts) == {}
     receipts["second"] = now - timedelta(days=1)
-    assert collection.source_deletion_times(Connection(), [entity]) == {"1": receipts["second"]}
+    assert deletion_times([entity], receipts) == {"1": receipts["second"]}
     entity.metadata["provenance_incomplete"] = True
-    assert collection.source_deletion_times(Connection(), [entity]) == {}
+    assert deletion_times([entity], receipts) == {}
+
+
+def test_receipts_must_match_the_sources_user_and_agent():
+    now = datetime.now(UTC)
+    entity = RecordedEntity(**fact("first").model_dump(), id="1", created_at=now - timedelta(days=30))
+    entity.metadata["sources"] = [dict(conversation_id="first", user_id="alice", agent_id="a", status="supporting")]
+    receipt = now - timedelta(days=1)
+    assert deletion_times([entity], {"first": receipt}) == {"1": receipt}
+    for user, agent in [("bob", "a"), ("alice", "b"), ("a", "alice")]:
+        assert deletion_times([entity], {"first": receipt}, user=user, agent=agent) == {}
 
 
 def test_independent_filesystem_clients_preserve_concurrent_sources(backend):
@@ -411,12 +411,22 @@ def test_consolidation_marks_partial_provenance_incomplete(backend):
     assert merged.metadata["provenance_incomplete"] is True
 
 
-def deletion_times(entities, receipts):
-    """Collection.source_deletion_times against alice/a deletion receipts keyed by conversation."""
+def deletion_times(entities, receipts, user="alice", agent="a"):
+    """Collection.source_deletion_times against `user`/`agent` deletion receipts keyed by conversation.
+
+    Like the real query, the connection returns only the receipts of the requested
+    namespace and (user_id, agent_id, source_id) keys.
+    """
 
     class Connection:
         def execute(self, sql, values):
-            rows = [{"user_id": "alice", "agent_id": "a", "source_id": source, "deleted_at": when} for source, when in receipts.items()]
+            namespace, users, agents, conversations = values
+            requested = set(zip(users, agents, conversations, strict=True))
+            rows = [
+                {"user_id": user, "agent_id": agent, "source_id": source, "deleted_at": when}
+                for source, when in receipts.items()
+                if namespace == "n" and (user, agent, source) in requested
+            ]
             return SimpleNamespace(fetchall=lambda: rows)
 
     collection = object.__new__(Collection)

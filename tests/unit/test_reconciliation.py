@@ -145,6 +145,34 @@ def test_duplicate_associations_combine_conservatively():
         (source,) = attach_sources({}, None, ordered, associated_at=OBSERVED, carry_association_times=True)["sources"]
         # Still supporting if either record was; aged from the later association.
         assert (source["status"], source["associated_at"]) == ("supporting", later)
+    superseded = [
+        Entity(type="guideline", content=m.content, metadata={"sources": [{**m.metadata["sources"][0], "status": "superseded"}]})
+        for m in members
+    ]
+    for ordered in (superseded, superseded[::-1]):
+        (source,) = attach_sources({}, None, ordered, associated_at=OBSERVED, carry_association_times=True)["sources"]
+        # Superseded by both records stays superseded.
+        assert (source["status"], source["associated_at"]) == ("superseded", later)
+
+
+def test_partly_timestamped_associations_take_the_entity_time_only_where_missing():
+    from altk_evolve.schema.provenance import with_association_times
+
+    earlier, created = datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 3, 1, tzinfo=UTC)
+    legacy = {key: value for key, value in _source("two", None).items() if key != "associated_at"}
+    member = RecordedEntity(
+        id="1",
+        type="guideline",
+        content="m",
+        created_at=created,
+        metadata={"sources": [_source("one", earlier.isoformat()), legacy]},
+    )
+    (timed,) = with_association_times([member])
+    assert {s["conversation_id"]: s["associated_at"] for s in timed.metadata["sources"]} == {
+        "one": earlier.isoformat(),
+        "two": created.isoformat(),
+    }
+    assert "associated_at" not in member.metadata["sources"][1]
 
 
 def test_a_fresh_observation_repairs_a_stored_future_time():
