@@ -81,6 +81,24 @@ def test_a_rule_inside_a_turn_does_not_end_the_conversation(tau_dir: Path):
     assert set(split_sections(path.read_text())) == {"HEADER", "SCENARIO", "CRITERIA", "POLICY", "CONVERSATION", "FINAL", "JUDGE"}
 
 
+@pytest.mark.parametrize(
+    "line", ["FINAL ANSWER: refund issued", "JUDGE the size yourself", "USER SCENARIO recap", "CONVERSATION summary", "TASK 2 is done"]
+)
+def test_a_rule_inside_a_turn_before_a_title_like_line_is_never_silent(tau_dir: Path, caplog: pytest.LogCaptureFixture, line: str):
+    # Such a rule still splits the file, so the section appears twice: the task is skipped with a reason
+    # instead of losing its later turns, replacing its conversation or losing its reward.
+    turns = ["[USER]", "hi", "[ASSISTANT]", "Summary", "==========", line, "more agent text", "[USER]", "thanks", "[ASSISTANT]", "bye"]
+    path = task_file(tau_dir, "task_9.txt", turns)
+    split_file(tau_dir, "task_3.txt", "train")
+    path.write_text(path.read_text().replace("trial=0", "trial=0  split=train", 1))
+
+    for adapter in (TauRetailAdapter(), TauRetailAdapter(splits=frozenset({"train"}))):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            assert [record.batch.batch_id for record in adapter.records(tau_dir)][-1] == "task_3"
+        assert "task_9.txt: section " in caplog.text and "appears twice" in caplog.text
+
+
 def test_json_shaped_judge_lines_become_failed_checks():
     judge = '{"action_match": false, "action": "cancel_pending_order"}\n  "met": false, "nl": "confirms first"\n  {"met": true}'
 

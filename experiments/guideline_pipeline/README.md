@@ -411,6 +411,9 @@ a single `task_*.txt` file. Each file has `=====`-ruled sections: a
 `<- RESULT ...`), `FINAL ANSWER`, and `JUDGE / REWARD DETAILS`. See
 `tests/fixtures/tau/` for the exact layout. A rule starts a section only when a
 section title follows it, so a `=====` line inside a turn stays in that turn.
+A title is recognised by how its line starts, so when a `=====` line inside a
+turn is followed by a line like `FINAL ANSWER: ...`, that section appears twice
+and the task is skipped with a warning rather than read with turns missing.
 
 Each task becomes one record:
 

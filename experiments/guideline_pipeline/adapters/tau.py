@@ -14,7 +14,8 @@ named by its first line and optionally underlined with ``----``::
     JUDGE / REWARD DETAILS             per-action matches and assertion results
 
 The TASK header (with a reward) and a CONVERSATION with a user turn are required; a
-file without them is skipped with a warning (see ``TauRetailAdapter.records``).
+file without them, or with a section that appears twice, is skipped with a warning
+(see ``TauRetailAdapter.records``).
 
 The task is the conversation's first user turn: that is what the agent was asked.
 The USER SCENARIO is what the simulator was told (reason_for_call, known_info,
@@ -95,12 +96,21 @@ class Turn:
 
 
 def split_sections(text: str) -> dict[str, str]:
-    """Map each recognised section name to its block, title line included."""
+    """Map each recognised section name to its block, title line included.
+
+    Raises MalformedTrajectory when a section appears twice: a ===== line inside a
+    turn, followed by a line that starts like a section title, splits the file
+    there, and keeping either copy would silently drop or replace turns.
+    """
     sections: dict[str, str] = {}
     for block in _RULE.split(text):
         first = next((line.strip() for line in block.splitlines() if line.strip()), "")
         for prefix, name in _SECTIONS:
             if first.startswith(prefix):
+                if name in sections:
+                    raise MalformedTrajectory(
+                        f"section {name} appears twice (is a ===== line inside a turn followed by a line starting {prefix.strip()!r}?)"
+                    )
                 sections[name] = block.strip("\n")
                 break
     return sections
@@ -281,7 +291,7 @@ def _task_files(path: Path) -> list[Path]:
 
 
 def _header_split(file: Path) -> str | None:
-    """The split the task's header records, if any; None for a file without a readable header."""
+    """The split the task's header records, if any; None for a file without a header. Raises MalformedTrajectory."""
     header = split_sections(file.read_bytes().decode("utf-8", errors="replace")).get("HEADER")
     return parse_header(header).get("split") if header else None
 
@@ -321,20 +331,10 @@ class TauRetailAdapter:
         naming a split no task records. Reading no task at all logs a warning.
         """
         files = _task_files(path)
-        splits: dict[Path, str | None] = {}
         if self.splits:
-            splits = {file: _header_split(file) for file in files}
-            found = {split for split in splits.values() if split is not None}
-            if missing := sorted(self.splits - found):
-                raise ValueError(f"Splits not found in {path}: {missing} (found {sorted(found)})")
+            files = self._by_header_split(path, files)
         read = 0
         for file in files:
-            if self.splits and splits[file] not in self.splits:
-                if splits[file] is None:
-                    logger.warning(
-                        "skipping %s: its header records no split, so splits=%s cannot select it", file, ",".join(sorted(self.splits))
-                    )
-                continue
             try:
                 record = self.record(file)
             except MalformedTrajectory as exc:
@@ -344,6 +344,24 @@ class TauRetailAdapter:
             yield record
         if not read:
             logger.warning("read no %s task in %s", SOURCE, path)
+
+    def _by_header_split(self, path: Path, files: list[Path]) -> list[Path]:
+        """The files whose header records one of self.splits; a ValueError when a listed split is recorded nowhere."""
+        splits: dict[Path, str | None] = {}
+        for file in files:
+            try:
+                splits[file] = _header_split(file)
+            except MalformedTrajectory as exc:
+                logger.warning("skipping %s: %s", file, exc)
+        found = {split for split in splits.values() if split is not None}
+        if missing := sorted(self.splits - found):
+            raise ValueError(f"Splits not found in {path}: {missing} (found {sorted(found)})")
+        for file, split in splits.items():
+            if split is None:
+                logger.warning(
+                    "skipping %s: its header records no split, so splits=%s cannot select it", file, ",".join(sorted(self.splits))
+                )
+        return [file for file, split in splits.items() if split in self.splits]
 
     def record(self, file: Path) -> AdapterRecord:
         """Build the record for one task file; raises MalformedTrajectory if a required section is missing."""
