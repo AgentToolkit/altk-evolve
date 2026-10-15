@@ -23,8 +23,10 @@ def group_incoming(entities: list[Entity], observed_at: datetime) -> list[list[R
     return list(groups.values())
 
 
-def new_memory_metadata(metadata: dict, contributors: list[Entity], observed_at: datetime) -> dict:
-    result = attach_sources(metadata, None, contributors, associated_at=observed_at)
+def new_memory_metadata(
+    metadata: dict, contributors: list[Entity], observed_at: datetime, *, carry_association_times: bool = False
+) -> dict:
+    result = attach_sources(metadata, None, contributors, associated_at=observed_at, carry_association_times=carry_association_times)
     if result.get("sources"):
         result["memory_revision"] = 1
     return result
@@ -119,14 +121,21 @@ def attach_processing_provenance(
     return result
 
 
-def prepare_additions(entities: list[Entity], entity_type: str, observed_at: datetime) -> list[EntityUpdate]:
+def prepare_additions(
+    entities: list[Entity], entity_type: str, observed_at: datetime, *, carry_association_times: bool = False
+) -> list[EntityUpdate]:
+    """Append ``entities`` as new memories.
+
+    ``carry_association_times`` is for entities whose source associations were moved
+    from existing memories (consolidation): their valid earlier times are kept.
+    """
     return [
         EntityUpdate(
             id="",
             type=entity_type,
             content=deepcopy(entity.content),
             event="ADD",
-            metadata=new_memory_metadata(entity.metadata or {}, [entity], observed_at),
+            metadata=new_memory_metadata(entity.metadata or {}, [entity], observed_at, carry_association_times=carry_association_times),
         )
         for entity in entities
     ]
