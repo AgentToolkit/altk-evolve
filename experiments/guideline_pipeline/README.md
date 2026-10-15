@@ -260,8 +260,14 @@ Options (`--adapter-option KEY=VALUE`):
 | --- | --- |
 | `task_ids=a_1,b_2` | Only these tasks. A listed ID with no task directory ends the run with an error, and so does a value that lists no IDs. |
 | `task_manifest=<file>` | Only the tasks in a JSON file (`task_ids` or `tasks[].task_id`) or a text file with one ID per line (`#` comments). Combines with `task_ids`. |
+| `splits=train,dev` | Only tasks evaluated in a listed split (an `evaluations/<split>.json` name, such as `test_normal`). A task with no evaluation has no known split, so it is left out. A listed split that is not found ends the run with an error, and so does a value that lists none. |
 | `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
 | `appworld_root=<dir>` | An AppWorld root whose `data/tasks/<task_id>/specs.json` is the last instruction source. The run tree does not contain it. It must be an existing directory; an empty value is an error. |
+
+Without `splits=`, every task under `tasks/` is mined whatever its split, and any
+run whose selected tasks include a `test*` split gets a `read test-split tasks ...`
+warning: guidelines mined from a test split leak into any later evaluation on it.
+Pass `splits=` to mine only the splits you mean to.
 
 [profiles/appworld.json](profiles/appworld.json) is the same sample profile as
 CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, model and

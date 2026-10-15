@@ -48,13 +48,16 @@ class AppWorldAdapter:
     """Yields one AdapterRecord per AppWorld task. Configure with ``--adapter-option KEY=VALUE``.
 
     Options: task_ids (comma-separated), task_manifest (a JSON file with
-    ``task_ids`` or ``tasks[].task_id``, or one ID per line), model (the agent's
-    model, recorded on the trajectory) and appworld_root (an AppWorld checkout or
-    data root whose ``data/tasks/<task_id>/specs.json`` is the last instruction source).
+    ``task_ids`` or ``tasks[].task_id``, or one ID per line), splits
+    (comma-separated; only tasks evaluated in a listed ``evaluations/<split>.json``),
+    model (the agent's model, recorded on the trajectory) and appworld_root (an
+    AppWorld checkout or data root whose ``data/tasks/<task_id>/specs.json`` is the
+    last instruction source).
     """
 
     name: str = "appworld"
     task_ids: frozenset[str] = field(default_factory=frozenset)
+    splits: frozenset[str] = field(default_factory=frozenset)
     model: str | None = None
     appworld_root: Path | None = None
 
@@ -66,6 +69,8 @@ class AppWorldAdapter:
                 task_ids.update(_names(key, value))
             elif key == "task_manifest":
                 task_ids.update(load_task_manifest(Path(value)))
+            elif key == "splits":
+                changes[key] = frozenset(_names(key, value))
             elif key == "model":
                 changes[key] = value or None
             elif key == "appworld_root":
@@ -74,26 +79,43 @@ class AppWorldAdapter:
                     raise ValueError(f"appworld option appworld_root must be a directory, not {value!r}")
                 changes[key] = root
             else:
-                raise ValueError(f"Unknown appworld option {key!r} (expected task_ids, task_manifest, model, appworld_root)")
+                raise ValueError(f"Unknown appworld option {key!r} (expected task_ids, task_manifest, splits, model, appworld_root)")
         return replace(self, **changes, task_ids=frozenset(task_ids))
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
         run_dirs = _run_dirs(path)
         if not run_dirs:
             raise ValueError(f"No AppWorld run directory (one containing tasks/) at {path}")
+        runs = [(run_dir, _load_evaluations(run_dir)) for run_dir in run_dirs]
+        if self.splits:
+            found_splits = {split for _, evaluations in runs for split, _ in evaluations.values()}
+            if missing := sorted(self.splits - found_splits):
+                raise ValueError(f"Splits not found beneath {path}: {missing} (found {sorted(found_splits)})")
+        # A task with no evaluation has no known split, so a split filter leaves it out.
+        tasks = [
+            (run_dir.name, task_dir, evaluations.get(task_dir.name))
+            for run_dir, evaluations in runs
+            for task_dir in _task_dirs(run_dir)
+            if not self.splits or (task_dir.name in evaluations and evaluations[task_dir.name][0] in self.splits)
+        ]
         if self.task_ids:
-            found = {task_dir.name for run_dir in run_dirs for task_dir in _task_dirs(run_dir)}
-            if missing := sorted(self.task_ids - found):
-                raise ValueError(f"Task IDs not found beneath {path}: {missing}")
+            if missing := sorted(self.task_ids - {task_dir.name for _, task_dir, _ in tasks}):
+                in_splits = f" in splits {sorted(self.splits)}" if self.splits else ""
+                raise ValueError(f"Task IDs not found beneath {path}{in_splits}: {missing}")
+            tasks = [task for task in tasks if task[1].name in self.task_ids]
+        if not self.splits:
+            # Guidelines mined from a test split are leaked into any later evaluation on it.
+            test_splits: dict[str, set[str]] = {}
+            for run, _, evaluation in tasks:
+                if evaluation is not None and evaluation[0].startswith("test"):
+                    test_splits.setdefault(run, set()).add(evaluation[0])
+            for run, splits in test_splits.items():
+                logger.warning("read test-split tasks from %s (%s); pass splits= to choose splits", run, ", ".join(sorted(splits)))
         read = 0
-        for run_dir in run_dirs:
-            evaluations = _load_evaluations(run_dir)
-            for task_dir in _task_dirs(run_dir):
-                if self.task_ids and task_dir.name not in self.task_ids:
-                    continue
-                if (record := self.task_record(run_dir.name, task_dir, evaluations.get(task_dir.name))) is not None:
-                    read += 1
-                    yield record
+        for run, task_dir, evaluation in tasks:
+            if (record := self.task_record(run, task_dir, evaluation)) is not None:
+                read += 1
+                yield record
         if not read:
             logger.warning("read no AppWorld task beneath %s", path)
 

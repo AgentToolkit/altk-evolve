@@ -309,7 +309,7 @@ def blk(number: int, code: str, output: str) -> str:
 
 
 def test_empty_option_values_are_errors_not_no_filter():
-    for options in ({"task_ids": ""}, {"task_ids": " , "}):
+    for options in ({"task_ids": ""}, {"task_ids": " , "}, {"splits": ""}, {"splits": ","}):
         with pytest.raises(ValueError, match="names nothing"):
             AppWorldAdapter().configure(options)
     # Path("") is the working directory, so an empty root would silently search it.
@@ -393,3 +393,27 @@ def test_layouts_that_read_nothing_warn(tmp_path: Path, caplog: pytest.LogCaptur
     with caplog.at_level(logging.WARNING):
         assert list(by_id(AppWorldAdapter(), empty)) == []
     assert f"read no AppWorld task beneath {empty}" in caplog.messages
+
+
+def test_splits_option_selects_evaluated_tasks_by_split(caplog: pytest.LogCaptureFixture):
+    assert list(by_id(AppWorldAdapter().configure({"splits": "train"}))) == ["aaa0001_1", "aaa0001_2"]
+    # bbb0002_2 has no evaluation, so its split is unknown and a split filter leaves it out.
+    assert list(by_id(AppWorldAdapter().configure({"splits": "test_normal"}))) == ["bbb0002_1"]
+    assert list(by_id(AppWorldAdapter().configure({"splits": "train, test_normal"}))) == ["bbb0002_1", "aaa0001_1", "aaa0001_2"]
+
+    with pytest.raises(ValueError, match=r"Splits not found beneath .*: \['dev'\] \(found \['test_normal', 'train'\]\)"):
+        next(AppWorldAdapter().configure({"splits": "train,dev"}).records(FIXTURES))
+    # A selected task outside the selected splits is not found, rather than silently dropped.
+    with pytest.raises(ValueError, match=r"Task IDs not found beneath .*\['bbb0002_1'\]"):
+        next(AppWorldAdapter().configure({"splits": "train", "task_ids": "bbb0002_1"}).records(FIXTURES))
+
+
+def test_mining_test_split_tasks_without_naming_them_warns(caplog: pytest.LogCaptureFixture):
+    with caplog.at_level(logging.WARNING):
+        by_id(AppWorldAdapter())
+    assert "read test-split tasks from playbook_test_normal (test_normal); pass splits= to choose splits" in caplog.messages
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        by_id(AppWorldAdapter().configure({"splits": "test_normal"}))
+        by_id(AppWorldAdapter(), TRAIN)
+    assert not [message for message in caplog.messages if "test-split" in message]
