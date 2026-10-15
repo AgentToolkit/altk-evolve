@@ -218,12 +218,20 @@ class ProcessingManager:
                 raise ProcessingError("Conflicting profile revision arguments")
             reference = ProfileReference(id=reference.id, revision=revision)
         record = self.get(reference.id, reference.revision)
-        manifest = record["manifest"]
+        # Copied: the back-fill below must not write into the repository's record.
+        manifest = deepcopy(record["manifest"])
         try:
             for item in manifest["processors"]:
                 descriptor = self.registry.get(item["plugin"])
                 if descriptor.version != item["version"] or descriptor.api_version != item["api_version"]:
                     raise ProcessingError(f"Processor version changed: {item['plugin']}; publish a new profile revision")
+                # A key added to a processor's config after a revision was stored is filled with
+                # the value that revision actually ran with, as declared by its config model, never
+                # with the config model's default: that may read today's environment, and then
+                # replaying a pinned revision would not reproduce it.
+                if isinstance(item.get("config"), dict):
+                    for key, value in getattr(descriptor.config_model, "config_additions", {}).items():
+                        item["config"].setdefault(key, deepcopy(value))
             plan = self.validate(
                 {"processors": [{k: p[k] for k in ("id", "plugin", "config")} for p in manifest["processors"]]},
                 conflict_settings=manifest["conflict_resolution"],

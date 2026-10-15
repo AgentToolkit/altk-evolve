@@ -33,7 +33,9 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
     # Import here to avoid circular import (guidelines.py imports this module)
     from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 
-    trajectory_data = parse_openai_agents_trajectory(messages)
+    # Same options as the caller's own parse: the step indices returned here are positions
+    # in that rendering, so a different window would move what they point at.
+    trajectory_data = parse_openai_agents_trajectory(messages, options=options)
 
     supported_params = get_supported_openai_params(
         model=options.guidelines_model,
@@ -48,7 +50,10 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
 
     prompt = _SEGMENT_TEMPLATE.render(
         trajectory_summary=trajectory_data["trajectory_summary"],
-        num_steps=trajectory_data["num_steps"],
+        # Positions, not real steps: under elision the marker takes a position, so the labels
+        # run one past num_steps and a model trusting num_steps could drop the final step.
+        num_steps=len(trajectory_data["steps_list"]),
+        steps_omitted=trajectory_data["steps_omitted"] if trajectory_data["marker_index"] is not None else 0,
         constrained_decoding_supported=constrained_decoding_supported,
     )
 

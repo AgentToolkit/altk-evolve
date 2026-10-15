@@ -103,9 +103,10 @@ stderr, never dropped silently. Superseded sources are ignored.
 **Lineage** lists, per guideline, its stored `sources` verbatim (each gaining
 an `instruction` when `--input` has it), the supporting task ids, and whether
 the sources were `recorded`, `derived` from a legacy `source_task_id`, or
-`missing`. Guidelines written by `consolidate` currently have no sources, so
-they show up as `missing` and can't become singletons, until consolidation
-carries sources forward.
+`missing`. A guideline written by `consolidate` carries the union of whatever
+sources the guidelines merged into it had. It shows up as `recorded` with their
+task ids only when at least one of them had source provenance; otherwise it
+has no `sources` and shows up as `missing`.
 
 ## CUGA
 

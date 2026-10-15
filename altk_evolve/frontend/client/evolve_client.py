@@ -172,9 +172,15 @@ class EvolveClient:
         *,
         conflict_settings: LLMSettings | None = None,
         processing_provenance: dict | None = None,
+        carry_association_times: bool = False,
     ) -> list[EntityUpdate]:
-        """Add multiple entities to a namespace."""
-        if conflict_settings is None and processing_provenance is None:
+        """Add multiple entities to a namespace.
+
+        ``carry_association_times`` is for writing source associations moved from
+        existing memories (consolidation), without conflict resolution: each keeps a
+        valid earlier ``associated_at``. Every other write stamps them as new.
+        """
+        if conflict_settings is None and processing_provenance is None and not carry_association_times:
             return self.backend.update_entities(namespace_id, entities, enable_conflict_resolution)
         return self.backend.update_entities(
             namespace_id,
@@ -182,6 +188,7 @@ class EvolveClient:
             enable_conflict_resolution,
             conflict_settings=conflict_settings,
             processing_provenance=processing_provenance,
+            carry_association_times=carry_association_times,
         )
 
     @traced("evolve.memory.search")
@@ -313,12 +320,26 @@ class EvolveClient:
         return self._cluster_guideline_entities(entities, threshold=threshold)
 
     def _cluster_guideline_entities(self, entities: list[RecordedEntity], threshold: float | None = None) -> list[list[RecordedEntity]]:
-        """Cluster a pre-fetched list of guideline entities by task similarity."""
+        """Cluster a pre-fetched list of guideline entities by task similarity.
+
+        Clustering runs separately inside each memory scope (user, owner, agent,
+        visibility), the same exact-identity rule reconciliation uses, so a cluster
+        never mixes memories from different scopes. A guideline whose scope value is
+        not a scalar (e.g. a list) has no well-defined scope and is left out.
+        """
         from altk_evolve.llm.guidelines.clustering import cluster_entities
+        from altk_evolve.schema.provenance import scope_key
 
         if threshold is None:
             threshold = self.config.clustering_threshold
-        return cluster_entities(entities, threshold=threshold)
+        by_scope: dict[tuple, list[RecordedEntity]] = {}
+        for entity in entities:
+            key = scope_key(entity)
+            if key is None:
+                logger.warning("Guideline %s has a non-scalar scope value; leaving it out of clustering.", entity.id)
+                continue
+            by_scope.setdefault(key, []).append(entity)
+        return [cluster for scoped in by_scope.values() for cluster in cluster_entities(scoped, threshold=threshold)]
 
     def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None, mode: str | None = None) -> ConsolidationResult:
         """Cluster similar guidelines and combine each cluster into consolidated guidelines.
@@ -336,7 +357,8 @@ class EvolveClient:
         Returns:
             ConsolidationResult with cluster/guideline counts and total support before/after.
         """
-        from altk_evolve.llm.guidelines.clustering import combine_cluster
+        from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members
+        from altk_evolve.schema.provenance import attach_sources, scope_key, with_association_times
 
         if mode is None:
             mode = getattr(self.config, "consolidation_mode", "lossless")
@@ -371,26 +393,45 @@ class EvolveClient:
         support_after = 0
 
         for cluster in clusters:
+            # Never merge (or show the merge model) memories from different scopes.
+            # Clustering already partitions by scope; this guards the write boundary.
+            scopes = {scope_key(entity) for entity in cluster}
+            shared = scopes.pop() if len(scopes) == 1 else None
+            if shared is None:
+                logger.warning("Cluster mixes memory scopes or has a non-scalar scope (IDs: %s); skipping.", [e.id for e in cluster])
+                continue
+            scope = {key: value for key, value in zip(("user_id", "owner_id", "agent_id", "visibility"), shared) if value is not None}
+
             # Phase 1: combine + insert (skip cluster on failure)
             try:
-                consolidated_guidelines = combine_cluster(cluster, mode=combine_mode)
+                attributed = combine_cluster_with_members(cluster, mode=combine_mode)
+                consolidated_guidelines = [guideline for guideline, _ in attributed]
 
                 task_description = (cluster[0].metadata or {}).get("task_description", "")
+                # Each member is attributed to exactly one output, so each output carries
+                # the union of its own members' source associations (original times kept)
+                # and the scope every member shares.
                 new_entities = [
                     Entity(
                         content=guideline.content,
                         type="guideline",
-                        metadata={
-                            "task_description": task_description,
-                            "rationale": guideline.rationale,
-                            "category": guideline.category,
-                            "trigger": guideline.trigger,
-                            "implementation_steps": guideline.implementation_steps,
-                            "support": guideline.support,
-                            "evidence": guideline.evidence,
-                        },
+                        metadata=attach_sources(
+                            {
+                                **scope,
+                                "task_description": task_description,
+                                "rationale": guideline.rationale,
+                                "category": guideline.category,
+                                "trigger": guideline.trigger,
+                                "implementation_steps": guideline.implementation_steps,
+                                "support": guideline.support,
+                                "evidence": guideline.evidence,
+                            },
+                            None,
+                            with_association_times(members),
+                            carry_association_times=True,
+                        ),
                     )
-                    for guideline in consolidated_guidelines
+                    for guideline, members in attributed
                 ]
                 if not new_entities:
                     logger.warning(
@@ -398,7 +439,7 @@ class EvolveClient:
                         [e.id for e in cluster],
                     )
                     continue
-                self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False)
+                self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False, carry_association_times=True)
             except Exception:
                 logger.warning(
                     "Failed to consolidate cluster of %d entities (IDs: %s); skipping.",
