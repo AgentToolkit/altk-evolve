@@ -285,9 +285,12 @@ class BaseEntityBackend(ABC):
         *,
         conflict_settings=None,
         processing_provenance: dict | None = None,
+        carry_association_times: bool = False,
     ) -> PreparedWrites:
         from altk_evolve.backend.reconciliation import prepare_additions, attach_processing_provenance
 
+        if carry_association_times and enable_conflict_resolution:
+            raise EvolveException("carry_association_times applies only to writes without conflict resolution")
         self._validate_namespace(namespace_id)
         if not entities:
             logger.warning("No entities to update.")
@@ -302,7 +305,7 @@ class BaseEntityBackend(ABC):
         if enable_conflict_resolution:
             changes, stored = self._reconcile_entities(namespace_id, incoming, entity_type, observed_at, conflict_settings)
         else:
-            changes, stored = prepare_additions(incoming, entity_type, observed_at), {}
+            changes, stored = prepare_additions(incoming, entity_type, observed_at, carry_association_times=carry_association_times), {}
         changes = attach_processing_provenance(changes, stored, processing_provenance)
         return self._prepare_checked_writes(namespace_id, changes, stored, int(observed_at.timestamp()))
 
@@ -565,6 +568,7 @@ class BaseEntityBackend(ABC):
         *,
         conflict_settings=None,
         processing_provenance: dict | None = None,
+        carry_association_times: bool = False,
     ) -> list[EntityUpdate]:
         for attempt in range(3):
             prepared = self.prepare_updates(
@@ -573,6 +577,7 @@ class BaseEntityBackend(ABC):
                 enable_conflict_resolution,
                 conflict_settings=conflict_settings,
                 processing_provenance=processing_provenance,
+                carry_association_times=carry_association_times,
             )
             try:
                 return self.commit_prepared(namespace_id, [prepared]) or []

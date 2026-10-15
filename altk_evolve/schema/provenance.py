@@ -34,8 +34,20 @@ def sources(entity: Entity) -> list[dict]:
 
 
 def attach_sources(
-    metadata: dict, old: Entity | None, incoming: Sequence[Entity], *, supersedes: bool = False, associated_at: datetime | None = None
+    metadata: dict,
+    old: Entity | None,
+    incoming: Sequence[Entity],
+    *,
+    supersedes: bool = False,
+    associated_at: datetime | None = None,
+    carry_association_times: bool = False,
 ) -> dict:
+    """Combine ``old``'s source associations with those of ``incoming`` onto ``metadata``.
+
+    Incoming associations are fresh observations and are stamped with the observation
+    time. Only a caller moving existing associations onto another memory (consolidation)
+    sets ``carry_association_times``, so each keeps a valid earlier time it already has.
+    """
     result = deepcopy(metadata)
     if old is None and not any(sources(entity) for entity in incoming):
         return result
@@ -55,12 +67,11 @@ def attach_sources(
         additions = sources(entity)
         complete = complete and bool(additions) and not (entity.metadata or {}).get("provenance_incomplete", False)
         for source in additions:
-            # A fresh observation is stamped now. An association that already carries a
-            # valid earlier time (e.g. moved onto a consolidated memory) keeps it, so
-            # deletion receipts recorded before the move still apply. Any other supplied
-            # time (future, naive or unparseable) is re-stamped: trusting it could keep a
-            # memory whose source was deleted from ever being collected.
-            if not _is_prior_time(source.get("associated_at"), observed_at):
+            # A moved association keeps a valid earlier time, so deletion receipts
+            # recorded before the move still apply. Any other supplied time (future,
+            # naive or unparseable) is re-stamped: trusting it could keep a memory whose
+            # source was deleted from ever being collected.
+            if not (carry_association_times and _is_prior_time(source.get("associated_at"), observed_at)):
                 source["associated_at"] = now
             key = _association_key(source)
             for previous in [v for v in associations if _association_key(v) == key]:

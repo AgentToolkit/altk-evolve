@@ -115,18 +115,23 @@ def _source(conversation, associated_at, status="supporting"):
     }
 
 
-def test_append_path_keeps_existing_association_times():
+def test_only_moved_associations_keep_their_earlier_times():
     earlier = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
     entities = [Entity(type="guideline", content="moved", metadata={"sources": [_source("one", earlier)]})]
-    sources = prepare_additions(entities, "guideline", OBSERVED)[0].metadata["sources"]
-    assert [s["associated_at"] for s in sources] == [earlier]
+    moved = prepare_additions(entities, "guideline", OBSERVED, carry_association_times=True)[0].metadata["sources"]
+    assert [s["associated_at"] for s in moved] == [earlier]
+    # Any other writer is making a new association, however it is dated, so receipts
+    # recorded before this write cannot apply to it.
+    written = prepare_additions(entities, "guideline", OBSERVED)[0].metadata["sources"]
+    assert [s["associated_at"] for s in written] == [OBSERVED.isoformat()]
 
 
+@pytest.mark.parametrize("carry", [True, False])
 @pytest.mark.parametrize("supplied", ["2999-01-01T00:00:00+00:00", "2026-01-01T00:00:00", "not-a-time", 1767225600])
-def test_append_path_restamps_untrustworthy_association_times(supplied):
+def test_append_path_restamps_untrustworthy_association_times(supplied, carry):
     # Only a valid earlier time is kept; anything else could hold off every receipt.
     entities = [Entity(type="guideline", content="moved", metadata={"sources": [_source("one", supplied)]})]
-    sources = prepare_additions(entities, "guideline", OBSERVED)[0].metadata["sources"]
+    sources = prepare_additions(entities, "guideline", OBSERVED, carry_association_times=carry)[0].metadata["sources"]
     assert [s["associated_at"] for s in sources] == [OBSERVED.isoformat()]
 
 
@@ -137,6 +142,6 @@ def test_duplicate_associations_combine_conservatively():
         Entity(type="guideline", content="b", metadata={"sources": [_source("one", later, status="superseded")]}),
     ]
     for ordered in (members, members[::-1]):
-        (source,) = attach_sources({}, None, ordered, associated_at=OBSERVED)["sources"]
+        (source,) = attach_sources({}, None, ordered, associated_at=OBSERVED, carry_association_times=True)["sources"]
         # Still supporting if either record was; aged from the later association.
         assert (source["status"], source["associated_at"]) == ("supporting", later)

@@ -437,6 +437,22 @@ def test_supplied_future_association_time_cannot_block_collection(backend):
     assert deletion_times([stored], {"one": receipt}) == {stored.id: receipt}
 
 
+def test_a_new_write_cannot_backdate_its_associations(backend):
+    backdated = {"conversation_id": "one", "task_id": None, "user_id": "alice", "agent_id": "a", "status": "supporting"}
+    backdated["associated_at"] = "2000-01-01T00:00:00+00:00"
+    (written,) = backend.update_entities("n", [Entity(type="fact", content="x", metadata={"sources": [backdated]})], False)
+
+    (stored,) = backend.search_entities("n", filters={"id": written.id})
+    # A receipt recorded before the memory existed does not apply to it.
+    assert deletion_times([stored], {"one": datetime.now(UTC) - timedelta(days=1)}) == {}
+
+
+def test_only_a_plain_append_can_carry_association_times(backend):
+    with pytest.raises(EvolveException, match="carry_association_times"):
+        backend.update_entities("n", [fact("one")], carry_association_times=True)
+    assert backend.scan_entities("n") == []
+
+
 def test_consolidating_legacy_members_keeps_them_collectible(backend):
     backend.update_entities("n", [guideline("A", "one"), guideline("B", "two")], False)
     # Rewrite them as legacy memories: no stored associations, written months ago.

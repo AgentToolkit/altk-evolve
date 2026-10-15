@@ -172,9 +172,15 @@ class EvolveClient:
         *,
         conflict_settings: LLMSettings | None = None,
         processing_provenance: dict | None = None,
+        carry_association_times: bool = False,
     ) -> list[EntityUpdate]:
-        """Add multiple entities to a namespace."""
-        if conflict_settings is None and processing_provenance is None:
+        """Add multiple entities to a namespace.
+
+        ``carry_association_times`` is for writing source associations moved from
+        existing memories (consolidation), without conflict resolution: each keeps a
+        valid earlier ``associated_at``. Every other write stamps them as new.
+        """
+        if conflict_settings is None and processing_provenance is None and not carry_association_times:
             return self.backend.update_entities(namespace_id, entities, enable_conflict_resolution)
         return self.backend.update_entities(
             namespace_id,
@@ -182,6 +188,7 @@ class EvolveClient:
             enable_conflict_resolution,
             conflict_settings=conflict_settings,
             processing_provenance=processing_provenance,
+            carry_association_times=carry_association_times,
         )
 
     @traced("evolve.memory.search")
@@ -415,6 +422,7 @@ class EvolveClient:
                             },
                             None,
                             with_association_times(members),
+                            carry_association_times=True,
                         ),
                     )
                     for guideline, members in attributed
@@ -425,7 +433,7 @@ class EvolveClient:
                         [e.id for e in cluster],
                     )
                     continue
-                self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False)
+                self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False, carry_association_times=True)
             except Exception:
                 logger.warning(
                     "Failed to consolidate cluster of %d entities (IDs: %s); skipping.",
