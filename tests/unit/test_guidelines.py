@@ -636,6 +636,42 @@ class TestSegmentationFlag:
         ]
         results, _, prompts = self._generate_with_subtasks(self._steps(6), subtasks, monkeypatch)
         assert len(prompts) == 1
+        assert [r.task_description for r in results] == ["Everything"]
+
+    @pytest.mark.parametrize(
+        "ranges",
+        [
+            pytest.param([(1, 3)], id="returned-once"),
+            pytest.param([(1, 3), (1, 3)], id="returned-twice"),
+            pytest.param([(1, 3), (9, 9)], id="with-an-out-of-range-subtask"),
+        ],
+    )
+    def test_one_distinct_range_keeps_its_generalized_description(self, ranges, monkeypatch):
+        """The one-pass call is keyed the same way whether the segmenter returned a range once
+        or repeated it; dedupe must not swap a generalized key for the raw user message."""
+        subtasks = [
+            SubtaskSegment(generalized_description=f"Kept {i}", purpose="p", start_step=a, end_step=b) for i, (a, b) in enumerate(ranges)
+        ]
+        results, _, prompts = self._generate_with_subtasks(self._steps(6), subtasks, monkeypatch)
+        assert len(prompts) == 1
+        assert [r.task_description for r in results] == ["Kept 0"]
+        assert "marker step 1." in prompts[0] and "marker step 6." in prompts[0]
+
+    @pytest.mark.parametrize(
+        "ranges",
+        [
+            pytest.param([], id="no-subtasks"),
+            pytest.param([(9, 9)], id="one-out-of-range"),
+            pytest.param([(7, 9), (8, 8)], id="all-out-of-range"),
+        ],
+    )
+    def test_no_usable_range_uses_the_first_user_message(self, ranges, monkeypatch):
+        subtasks = [
+            SubtaskSegment(generalized_description=f"Unusable {i}", purpose="p", start_step=a, end_step=b)
+            for i, (a, b) in enumerate(ranges)
+        ]
+        results, _, prompts = self._generate_with_subtasks(self._steps(6), subtasks, monkeypatch)
+        assert len(prompts) == 1
         assert [r.task_description for r in results] == ["Do the task"]
 
     @patch("altk_evolve.llm.guidelines.guidelines.completion")

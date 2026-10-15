@@ -15,7 +15,7 @@ from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
 from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
 from altk_evolve.llm.guidelines.guidelines import parse_guideline_response, parse_openai_agents_trajectory
-from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, subtask_slices
+from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, one_pass_task_description, subtask_slices
 
 from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
@@ -930,30 +930,28 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
             logger.warning(f"Trajectory segmentation failed, falling back to full trajectory: {e}")
             subtasks = []
 
-    if len(subtasks) >= 2:
-        valid_slices = subtask_slices(subtasks, steps_list)
-        if len(valid_slices) >= 2:
-            results = [
-                _generate_fast_guideline_result(
-                    task_description=subtask.generalized_description,
-                    trajectory_slice="\n\n".join(slice_steps),
-                    num_steps=len(slice_steps),
-                    constrained_decoding_supported=constrained_decoding_supported,
-                    debug_dir=debug_dir,
-                    trace_id=trace_id,
-                    debug_suffix=f"_seg{i}",
-                    options=options,
-                    supporting_context=render_supporting_context(trajectory.get("context_messages")),
-                )
-                for i, (subtask, slice_steps) in enumerate(valid_slices, 1)
-            ]
-            if debug_dir:
-                _write_guidelines_debug(debug_dir, trace_id, results, "_consistency-fast")
-            return results
-        # Fewer than 2 valid subtask slices — fall through to full-trajectory fallback.
+    valid_slices = subtask_slices(subtasks, steps_list)
+    if len(valid_slices) >= 2:
+        results = [
+            _generate_fast_guideline_result(
+                task_description=subtask.generalized_description,
+                trajectory_slice="\n\n".join(slice_steps),
+                num_steps=len(slice_steps),
+                constrained_decoding_supported=constrained_decoding_supported,
+                debug_dir=debug_dir,
+                trace_id=trace_id,
+                debug_suffix=f"_seg{i}",
+                options=options,
+                supporting_context=render_supporting_context(trajectory.get("context_messages")),
+            )
+            for i, (subtask, slice_steps) in enumerate(valid_slices, 1)
+        ]
+        if debug_dir:
+            _write_guidelines_debug(debug_dir, trace_id, results, "_consistency-fast")
+        return results
 
-    # Fallback: full trajectory (use segmented description if exactly 1 subtask was found)
-    desc = subtasks[0].generalized_description if len(subtasks) == 1 else task_instruction
+    # Fallback: full trajectory.
+    desc = one_pass_task_description(valid_slices, task_instruction)
     result = _generate_fast_guideline_result(
         task_description=desc,
         trajectory_slice=trajectory_data["trajectory_summary"],

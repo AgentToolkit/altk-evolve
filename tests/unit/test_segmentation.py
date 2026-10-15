@@ -110,3 +110,24 @@ def test_subtask_segment_accepts_valid_range():
     )
     assert seg.start_step == 3
     assert seg.end_step == 7
+
+
+def _seg(start: int, end: int, description: str = "d") -> SubtaskSegment:
+    return SubtaskSegment(generalized_description=description, start_step=start, end_step=end, purpose="p")
+
+
+@pytest.mark.parametrize(
+    "ranges,expected",
+    [
+        pytest.param([], "verbatim request", id="no-subtasks"),
+        pytest.param([(1, 3)], "Gen 0", id="one-range"),
+        pytest.param([(1, 3), (1, 3)], "Gen 0", id="one-range-repeated"),
+        pytest.param([(9, 9)], "verbatim request", id="out-of-range-only"),
+    ],
+)
+def test_one_pass_task_description(ranges, expected):
+    from altk_evolve.llm.guidelines.segmentation import one_pass_task_description, subtask_slices
+
+    steps = [f"s{i}" for i in range(1, 7)]
+    subtasks = [_seg(a, b, f"Gen {i}") for i, (a, b) in enumerate(ranges)]
+    assert one_pass_task_description(subtask_slices(subtasks, steps), "verbatim request") == expected

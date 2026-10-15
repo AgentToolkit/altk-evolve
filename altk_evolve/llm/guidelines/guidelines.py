@@ -15,7 +15,7 @@ from altk_evolve.config.llm import llm_settings  # noqa: F401
 from altk_evolve.config.evolve import evolve_config  # noqa: F401
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
-from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, subtask_slices
+from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, one_pass_task_description, subtask_slices
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.guidelines import (
     DEFAULT_TASK_DESCRIPTION,
@@ -459,26 +459,24 @@ def generate_guidelines(
             logger.warning(f"Trajectory segmentation failed, falling back to full trajectory: {e}")
             subtasks = []
 
-    if len(subtasks) >= 2:
-        valid_slices = subtask_slices(subtasks, steps_list)
-        if len(valid_slices) >= 2:
-            return [
-                _generate_guidelines_for_segment(
-                    task_description=subtask.generalized_description,
-                    trajectory_slice="\n\n".join(slice_steps),
-                    num_steps=len(slice_steps),
-                    constrained_decoding_supported=constrained_decoding_supported,
-                    options=options,
-                    supporting_context=render_supporting_context(context_messages),
-                    outcome=outcome,
-                    segmented=True,
-                )
-                for subtask, slice_steps in valid_slices
-            ]
-        # Fewer than 2 valid subtask slices — fall through to full-trajectory fallback.
+    valid_slices = subtask_slices(subtasks, steps_list)
+    if len(valid_slices) >= 2:
+        return [
+            _generate_guidelines_for_segment(
+                task_description=subtask.generalized_description,
+                trajectory_slice="\n\n".join(slice_steps),
+                num_steps=len(slice_steps),
+                constrained_decoding_supported=constrained_decoding_supported,
+                options=options,
+                supporting_context=render_supporting_context(context_messages),
+                outcome=outcome,
+                segmented=True,
+            )
+            for subtask, slice_steps in valid_slices
+        ]
 
-    # Fallback: full trajectory (use segmented description if exactly 1 subtask was found)
-    desc = subtasks[0].generalized_description if len(subtasks) == 1 else task_instruction
+    # Fallback: full trajectory.
+    desc = one_pass_task_description(valid_slices, task_instruction)
     return [
         _generate_guidelines_for_segment(
             task_description=desc,

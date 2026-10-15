@@ -899,6 +899,41 @@ class TestSegmentationFloorAndFastPathScope:
         assert "reasoning step 0" in prompts[0] and "reasoning step 3" not in prompts[0]
         assert "reasoning step 3" in prompts[1] and "reasoning step 0" not in prompts[1]
 
+    @pytest.mark.parametrize(
+        "ranges,expected",
+        [
+            pytest.param([(1, 3)], "Kept 0", id="one-range-returned-once"),
+            pytest.param([(1, 3), (1, 3)], "Kept 0", id="one-range-returned-twice"),
+            pytest.param([(9, 9)], "do the thing", id="no-usable-range"),
+        ],
+    )
+    def test_fast_path_one_pass_description_depends_on_distinct_ranges(self, ranges, expected, monkeypatch):
+        """A range the segmenter repeated is keyed like one it returned once: by its
+        generalized description, not the raw user message."""
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+        from altk_evolve.schema.guidelines import SubtaskSegment
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        subtasks = [
+            SubtaskSegment(generalized_description=f"Kept {i}", purpose="p", start_step=a, end_step=b) for i, (a, b) in enumerate(ranges)
+        ]
+
+        with (
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            results = generate_consistency_guidelines_fast(self._fast_trajectory(6))
+
+        assert mock_completion.call_count == 1
+        assert [r.task_description for r in results] == [expected]
+
     @pytest.mark.parametrize("n_scorable,should_segment", [(4, False), (5, True)])
     def test_accurate_path_floor_boundary(self, n_scorable, should_segment, monkeypatch):
         """Pins the 2 -> 5 floor: reverting it left the whole suite green.

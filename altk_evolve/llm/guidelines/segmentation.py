@@ -46,6 +46,17 @@ def subtask_slices(subtasks: list[SubtaskSegment], steps_list: list[str]) -> lis
     return slices
 
 
+def one_pass_task_description(slices: list[tuple[SubtaskSegment, list[str]]], task_instruction: str) -> str:
+    """``task_description`` for the single whole-trajectory call, given ``subtask_slices``' output.
+
+    With exactly one distinct step range left, that subtask's generalized description is kept,
+    however many copies of the range the segmenter returned. With none (segmentation off or
+    skipped, the segmenter failed or returned nothing usable), it is the first user message
+    verbatim.
+    """
+    return slices[0][0].generalized_description if len(slices) == 1 else task_instruction
+
+
 def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None = None) -> list[SubtaskSegment]:
     """Segment a trajectory into logical subtasks with generalized descriptions.
 
