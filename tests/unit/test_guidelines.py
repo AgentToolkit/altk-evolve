@@ -1080,3 +1080,91 @@ class TestSegmentationUnderElision:
         assert "intermediate step(s) omitted" in spanning
         assert "**Steps Taken:** 5" in spanning
         assert "**Steps Taken:** 1" in last
+
+
+class TestSegmentationUnderElisionWithDedupe:
+    """How #382's repeated-range dedupe, one-pass description and length gate combine with
+    the elision marker on the standard path. Same 12-step trajectory and window as
+    TestSegmentationUnderElision: real steps 1-4 at positions 1-4, the marker at 5, real steps
+    11-12 at positions 6-7. The segmenter is stubbed at segment_trajectory."""
+
+    OPTIONS = TestSegmentationUnderElision.OPTIONS
+    MESSAGES = TestSegmentationUnderElision.MESSAGES
+
+    @pytest.fixture(autouse=True)
+    def _head_only_env(self, monkeypatch):
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 50)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_tail_steps", 0)
+        monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.supports_response_schema", lambda **_: True)
+        monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", lambda **_: ["response_format"])
+
+    def _run(self, monkeypatch, segments, *, options=None):
+        """Run generate_guidelines; return (results, generation prompts, segmenter calls)."""
+        subtasks = [SubtaskSegment(generalized_description=f"Phase {a}-{b}", start_step=a, end_step=b, purpose="p") for a, b in segments]
+        prompts: list[str] = []
+        segmenter_calls: list[int] = []
+
+        def segment(messages, *, options=None):
+            segmenter_calls.append(1)
+            return subtasks
+
+        def generation_completion(**kwargs):
+            prompts.append(kwargs["messages"][-1]["content"])
+            return _mock_completion_response({"guidelines": [_GUIDELINE]})
+
+        monkeypatch.setattr("altk_evolve.llm.guidelines.segmentation.segment_trajectory", segment)
+        monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.completion", generation_completion)
+        results = generate_guidelines(self.MESSAGES, options=options or self.OPTIONS)
+        return results, prompts, len(segmenter_calls)
+
+    def test_a_repeated_range_spanning_the_gap_is_generated_once(self, monkeypatch):
+        """[1,6] twice is one slice (5 real steps plus the marker), so one call, not two."""
+        results, prompts, _ = self._run(monkeypatch, [(1, 6), (1, 6), (7, 7)])
+
+        assert [r.task_description for r in results] == ["Phase 1-6", "Phase 7-7"]
+        assert len(prompts) == 2
+        assert "**Steps Taken:** 5" in prompts[0] and "intermediate step(s) omitted" in prompts[0]
+
+    def test_a_repeated_marker_only_range_is_dropped(self, monkeypatch):
+        """Dedupe keeps one copy of [5,5]; the marker filter must still drop that copy."""
+        results, prompts, _ = self._run(monkeypatch, [(1, 4), (5, 5), (5, 5), (6, 7)])
+
+        assert [r.task_description for r in results] == ["Phase 1-4", "Phase 6-7"]
+        assert all("omitted" not in p for p in prompts)
+
+    @pytest.mark.parametrize(
+        "segments,expected",
+        [
+            pytest.param([(5, 5), (1, 7)], "Phase 1-7", id="one-usable-range-after-the-marker-filter"),
+            pytest.param([(5, 5), (1, 7), (1, 7)], "Phase 1-7", id="one-usable-range-repeated"),
+            pytest.param([(5, 5), (5, 5)], "Do the thing", id="marker-only"),
+        ],
+    )
+    def test_one_pass_description_counts_usable_ranges_after_the_marker_filter(self, monkeypatch, segments, expected):
+        """Two subtasks, but [5,5] is the marker alone: one usable range is left, so the run is
+        generated in one pass and keyed by that range's generalized description."""
+        results, prompts, _ = self._run(monkeypatch, segments)
+
+        assert len(prompts) == 1
+        assert [r.task_description for r in results] == [expected]
+
+    @pytest.mark.parametrize(
+        "max_steps,real_steps,segmented",
+        [
+            pytest.param(5, 5, True, id="5-real-steps-plus-marker"),
+            pytest.param(4, 4, False, id="4-real-steps-plus-marker"),
+        ],
+    )
+    def test_the_length_gate_counts_real_steps_not_the_marker(self, monkeypatch, max_steps, real_steps, segmented):
+        """With tail_steps=1, max_steps real steps render in max_steps + 1 positions. The gate
+        counts real steps, so 4 real steps plus the marker (5 positions) stay one pass."""
+        from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
+
+        options = GuidelineRuntime(trajectory_max_steps=max_steps, trajectory_tail_steps=1, segmentation_enabled=True)
+        parsed = parse_openai_agents_trajectory(self.MESSAGES, options=options)
+        assert (parsed["num_steps"], len(parsed["steps_list"]), parsed["marker_index"]) == (real_steps, real_steps + 1, real_steps - 1)
+
+        _, prompts, segmenter_calls = self._run(monkeypatch, [(1, 2), (3, real_steps + 1)], options=options)
+
+        assert segmenter_calls == int(segmented)
+        assert len(prompts) == (2 if segmented else 1)
