@@ -291,10 +291,19 @@ The `vakra` adapter reads VAKRA benchmark output. `--input` is one run directory
 <input>/
   <domain>.json               # a list of records: {"uuid", "domain", "status", "model_input": {"tools", ...},
                               #   "trajectory": [{"type": "HumanMessage" | "AIMessage" | "ToolMessage", ...}],
-                              #   "output": [{"turn_id", "query", "answer", ...}]}
+                              #   "output": [{"turn_id", "query", "answer", "sequence": {"tool_call": [{"name", "arguments"}]}}]}
   <domain>_tools.json         # ignored
   results.json                # optional evaluator output: {"domains": {"<domain>": {"dialogues": [{"uuid", "score", "details"}]}}}
 ```
+
+VAKRA's current runner (`benchmark/runner_helpers.py::save_results_ground_truth`
+at IBM/vakra `00dc68f`) writes neither `model_input` nor `trajectory`: the
+trajectory goes only to `run.log`. A record whose trajectory holds no
+`AIMessage` or `ToolMessage` is therefore rebuilt from its `output` turns: each
+turn's `sequence.tool_call` calls, then its answer. Those records carry no
+reasoning or observations, and each domain file logs how many of them it has,
+plus the uuids of any record left with no agent step at all (it would be mined
+as its task and score alone).
 
 A parent of run directories is an error that names the runs beneath it, and a
 run nested inside the input run is not read (with a warning). Domain files are
@@ -311,7 +320,8 @@ becomes one record:
   each of its `tool_calls` as a function call with the real tool name and
   arguments, its `content` as the answer, each `ToolMessage` result as an
   `OBSERVATION:` (a structured result as JSON), and any later `HumanMessage` as a
-  `USER MESSAGE:`. Message content is a string or a list of content blocks, whose
+  `USER MESSAGE:` (without a trajectory, the output turns' calls and answers, and
+  each later turn's query as a `USER MESSAGE:`). Message content is a string or a list of content blocks, whose
   text parts are joined; any other type is left out rather than rendered as a
   Python repr. Text longer than a step is split into `(part i/n)` steps rather
   than truncated. Runs longer than the extractor's 50 steps are elided as for

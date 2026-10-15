@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,6 +24,7 @@ from experiments.guideline_pipeline.stages.mine import mine
 pytestmark = pytest.mark.unit
 
 FIXTURES = Path(__file__).parent / "fixtures" / "vakra"
+LOGGER = "experiments.guideline_pipeline.adapters.vakra"
 ALL = ["auth-01", "auth-02", "auth-03", "auth-04", "auth-05", "auth-06", "auth-07", "auth-08", "auth-09", "hock-01", "hock-02", "mov-01"]
 # Under the default dev_frac=0.3, by the sha256 of each uuid.
 TRAIN = ["auth-02", "auth-05", "auth-07", "auth-08", "auth-09", "hock-02"]
@@ -99,8 +102,86 @@ def test_follow_ups_calls_and_the_task_fallback():
         {"role": "assistant", "content": "AGENT MESSAGE (answer):\nAda wrote the most papers."},
     ]
     assert records["auth-06"].messages == [{"role": "user", "content": "Query 6"}]
-    # No HumanMessage in the trajectory: the task is the first turn's query.
-    assert records["auth-09"].messages == [{"role": "user", "content": "Query 9"}]
+    # No trajectory: the task is the first turn's query, and the turn's answer is the agent's step.
+    assert records["auth-09"].messages == [
+        {"role": "user", "content": "Query 9"},
+        {"role": "assistant", "content": "AGENT MESSAGE (answer):\nAnswer 9"},
+    ]
+
+
+# A record as VAKRA's current runner writes it (IBM/vakra 00dc68f, save_results_ground_truth): no trajectory, no model_input.
+RUNNER_RECORD: dict[str, Any] = {
+    "uuid": "hock-09",
+    "domain": "hockey",
+    "status": "success",
+    "error": None,
+    "duration_s": 1.2,
+    "output": [
+        {
+            "turn_id": 1,
+            "query": "Which team won in 1991?",
+            "answer": "The Penguins.",
+            "sequence": {"tool_call": [{"name": "get_winners", "arguments": {"year": 1991}}, {"name": "get_team", "arguments": {"id": 7}}]},
+        }
+    ],
+}
+
+
+def test_records_without_a_trajectory_are_mined_from_their_output_turns(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    later = {
+        "turn_id": 2,
+        "query": "And in 1992?",
+        "answer": 1992,
+        "sequence": {"tool_call": ["bad", {"name": "get_winners", "arguments": {"year": 1992}}]},
+    }
+    raw = {**RUNNER_RECORD, "output": [*RUNNER_RECORD["output"], later]}
+
+    assert everything().record(raw, "hockey", "train", None).messages == [
+        {"role": "user", "content": "Which team won in 1991?"},
+        {"role": "assistant", "content": "TOOL SPACE:\ntools chosen in this trajectory: get_winners, get_team"},
+        {
+            "role": "assistant",
+            "content": [{"type": "function_call", "id": "call_0", "function": {"name": "get_winners", "arguments": '{"year": 1991}'}}],
+        },
+        {
+            "role": "assistant",
+            "content": [{"type": "function_call", "id": "call_1", "function": {"name": "get_team", "arguments": '{"id": 7}'}}],
+        },
+        {"role": "assistant", "content": "AGENT MESSAGE (answer):\nThe Penguins."},
+        {"role": "assistant", "content": "USER MESSAGE:\nAnd in 1992?"},
+        {
+            "role": "assistant",
+            "content": [{"type": "function_call", "id": "call_2", "function": {"name": "get_winners", "arguments": '{"year": 1992}'}}],
+        },
+        {"role": "assistant", "content": "AGENT MESSAGE (answer):\n1992"},
+    ]
+    parsed = parse_openai_agents_trajectory(VakraAdapter(include_tools=False).record(RUNNER_RECORD, "hockey", "train", None).messages)
+    assert (parsed["num_steps"], [call["name"] for call in parsed["function_calls"]]) == (3, ["get_winners", "get_team"])
+
+    # A trajectory with agent messages wins over the output's calls.
+    traced = {
+        **RUNNER_RECORD,
+        "trajectory": [{"type": "HumanMessage", "content": "q"}, {"type": "AIMessage", "content": "From the trajectory."}],
+    }
+    assert everything().record(traced, "hockey", "train", None).messages[1:] == [
+        {"role": "assistant", "content": "AGENT MESSAGE (answer):\nFrom the trajectory."}
+    ]
+
+    # Each file reports its records with no trajectory, and the ones with no agent step at all.
+    empty = {
+        "uuid": "hock-10",
+        "domain": "hockey",
+        "status": "error",
+        "output": [{"turn_id": 1, "query": "Q", "answer": None, "sequence": {"tool_call": []}}],
+    }
+    (tmp_path / "hockey.json").write_text(json.dumps([RUNNER_RECORD, empty]))
+    with caplog.at_level("WARNING", logger=LOGGER):
+        assert list(by_id(everything(), tmp_path)) == ["hock-09", "hock-10"]
+    assert [r.getMessage() for r in caplog.records] == [
+        "hockey.json: 2 train, 0 held out (dev_frac=0.0)",
+        "hockey.json: 2 of 2 train records have no agent message in a trajectory; their steps are the output's tool calls and answers, without observations",
+        "hockey.json: 1 train record(s) have no agent step, so only the task is mined: hock-10",
+    ]
 
 
 def test_long_text_is_chunked_and_long_trajectories_are_elided():
@@ -235,6 +316,7 @@ def test_split_counts_are_reported_per_file(caplog: pytest.LogCaptureFixture):
         list(VakraAdapter().records(FIXTURES))
     assert [r.getMessage() for r in caplog.records] == [
         "authors.json: 5 train, 4 held out (dev_frac=0.3)",
+        "authors.json: 1 of 5 train records have no agent message in a trajectory; their steps are the output's tool calls and answers, without observations",
         "hockey.json: 1 train, 1 held out (dev_frac=0.3)",
         "movies.json: 0 train, 1 held out (dev_frac=0.3)",
     ]
@@ -384,12 +466,9 @@ def test_mine_checkpoints_each_dialogue_and_stamps_evidence(client: EvolveClient
     assert {batch: e.metadata["success"] for batch, e in stored.items()} == {"hock-01": True, "hock-02": False, "mov-01": None}
 
 
-LOGGER = "experiments.guideline_pipeline.adapters.vakra"
-
-
 def warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
-    """The adapter's warnings other than the per-file split counts."""
-    return [r.getMessage() for r in caplog.records if r.name == LOGGER and " train, " not in r.getMessage()]
+    """The adapter's warnings other than the per-file summaries (split counts and step sources)."""
+    return [r.getMessage() for r in caplog.records if r.name == LOGGER and not re.match(r"\S+\.json: ", r.getMessage())]
 
 
 def write_results(directory: Path, payload: object) -> None:

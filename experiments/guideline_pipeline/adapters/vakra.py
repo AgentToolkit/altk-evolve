@@ -3,9 +3,13 @@
 A run directory holds one ``<domain>.json`` per domain, a list of records
 ``{"uuid", "domain", "status", "model_input": {"messages", "tools"}, "trajectory":
 [{"type": "HumanMessage" | "AIMessage" | "ToolMessage", ...}], "output": [{"turn_id",
-"query", "answer", ...}]}``, an ignored ``<domain>_tools.json`` per domain, and
-optionally the evaluator's ``results.json``, ``{"domains": {<domain>: {"dialogues":
-[{"uuid", "score", "details"}]}}}``.
+"query", "answer", "sequence": {"tool_call": [{"name", "arguments"}]}}]}``, an ignored
+``<domain>_tools.json`` per domain, and optionally the evaluator's ``results.json``,
+``{"domains": {<domain>: {"dialogues": [{"uuid", "score", "details"}]}}}``.
+
+VAKRA's current runner writes no ``model_input`` or ``trajectory`` (only ``output``),
+so a record without agent messages is rebuilt from its output turns' tool calls and
+answers, and each domain file reports how many records that applies to.
 
 Each record is assigned to train or held-out by a hash of its uuid, so its side
 does not depend on file order or on which other records a run holds. Only one
@@ -15,6 +19,7 @@ split is yielded (train by default), so held-out queries never reach ``mine``.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import logging
 import math
@@ -112,7 +117,9 @@ class VakraAdapter:
             train, heldout = self.split_records(_read_records(file))
             # On stderr, so a dry run shows a domain that holds out nothing (or keeps nothing to mine).
             logger.warning("%s: %d train, %d held out (dev_frac=%s)", file.name, len(train), len(heldout), self.dev_frac)
-            for raw in train if self.split == "train" else heldout:
+            selected = train if self.split == "train" else heldout
+            _report_steps(file, self.split, [raw for raw in selected if _first_query(raw)])
+            for raw in selected:
                 if not _first_query(raw):
                     logger.warning("skipped %s/%s: no task (no HumanMessage text and no output query)", file.name, raw["uuid"])
                     continue
@@ -175,25 +182,9 @@ class VakraAdapter:
 
         role "tool" would be dropped by the extractor, so observations are assistant messages.
         """
-        trajectory = [message for message in _list(raw.get("trajectory")) if isinstance(message, dict)]
-        steps = _tool_space(raw, trajectory) if self.include_tools else []
-        calls = 0
-        first_human_seen = False
-        for message in trajectory:
-            kind = message.get("type")
-            if kind == "HumanMessage":
-                if not first_human_seen:
-                    first_human_seen = True  # already the user message
-                    continue
-                steps += _chunk("USER MESSAGE", _text(message.get("content")))
-            elif kind == "AIMessage":
-                steps += _chunk("AGENT REASONING", _text(message.get("reasoning")))
-                for call in _calls(message):
-                    steps.append(_action(calls, _name(call), call.get("args")))
-                    calls += 1
-                steps += _chunk("AGENT MESSAGE (answer)", _text(message.get("content")))
-            elif kind == "ToolMessage":
-                steps += _chunk("OBSERVATION", _observation(message))
+        steps, used = _agent_steps(raw)
+        if self.include_tools:
+            steps = _tool_space(raw, used) + steps
         return [{"role": "user", "content": _first_query(raw)}, *elide_middle(steps)]
 
     def _files(self, path: Path) -> list[Path]:
@@ -226,6 +217,26 @@ class VakraAdapter:
                 if isinstance(dialogue, dict) and isinstance(dialogue.get("uuid"), str) and dialogue["uuid"]:
                     index[dialogue["uuid"]] = dialogue
         return index
+
+
+def _report_steps(file: Path, split: str, records: list[dict]) -> None:
+    """Warn about records whose steps come from the output rather than a trajectory, and about records with no steps.
+
+    Neither fails the run, but a dry run must show both: a record with no agent step
+    would be mined as its task and score alone.
+    """
+    if untraced := sum(not _has_trajectory(raw) for raw in records):
+        logger.warning(
+            "%s: %d of %d %s records have no agent message in a trajectory; their steps are the output's tool calls and answers, without observations",
+            file.name,
+            untraced,
+            len(records),
+            split,
+        )
+    if empty := [raw["uuid"] for raw in records if not _agent_steps(raw)[0]]:
+        logger.warning(
+            "%s: %d %s record(s) have no agent step, so only the task is mined: %s", file.name, len(empty), split, ", ".join(empty)
+        )
 
 
 def _read_records(file: Path) -> list[dict]:
@@ -306,15 +317,71 @@ def _observation(message: dict) -> str:
     return _text(message.get("content"))
 
 
-def _tool_space(raw: dict, trajectory: list[dict]) -> list[dict[str, Any]]:
+def _trajectory(raw: dict) -> list[dict]:
+    return [message for message in _list(raw.get("trajectory")) if isinstance(message, dict)]
+
+
+def _has_trajectory(raw: dict) -> bool:
+    """Whether the record's trajectory holds any agent message (VAKRA's current runner writes no trajectory)."""
+    return any(message.get("type") in ("AIMessage", "ToolMessage") for message in _trajectory(raw))
+
+
+def _agent_steps(raw: dict) -> tuple[list[dict[str, Any]], list[str]]:
+    """The agent's steps, and the names of the tools it called in order of first use.
+
+    From the trajectory when it holds agent messages. Otherwise from the output turns,
+    which is all VAKRA's current runner (``save_results_ground_truth``) writes: each
+    turn's ``sequence.tool_call`` calls and its answer, with no reasoning or observations.
+    """
+    steps: list[dict[str, Any]] = []
+    used: list[str] = []
+    numbers = itertools.count()  # calls are numbered across the whole record
+
+    def call(name: str, args: Any) -> None:
+        steps.append(_action(next(numbers), name, args))
+        if name and name not in used:
+            used.append(name)
+
+    if _has_trajectory(raw):
+        first_human_seen = False
+        for message in _trajectory(raw):
+            kind = message.get("type")
+            if kind == "HumanMessage":
+                if not first_human_seen:
+                    first_human_seen = True  # already the user message
+                    continue
+                steps += _chunk("USER MESSAGE", _text(message.get("content")))
+            elif kind == "AIMessage":
+                steps += _chunk("AGENT REASONING", _text(message.get("reasoning")))
+                for tool_call in _calls(message):
+                    call(_name(tool_call), tool_call.get("args"))
+                steps += _chunk("AGENT MESSAGE (answer)", _text(message.get("content")))
+            elif kind == "ToolMessage":
+                steps += _chunk("OBSERVATION", _observation(message))
+        return steps, used
+
+    for index, turn in enumerate(_list(raw.get("output"))):
+        if not isinstance(turn, dict):
+            continue
+        if index:  # the first turn's query is already the user message
+            steps += _chunk("USER MESSAGE", _text(turn.get("query")))
+        for tool_call in _list(_dict(turn.get("sequence")).get("tool_call")):
+            if isinstance(tool_call, dict):
+                call(_name(tool_call), tool_call.get("arguments"))
+        steps += _chunk("AGENT MESSAGE (answer)", _answer(turn.get("answer")))
+    return steps, used
+
+
+def _answer(value: Any) -> str:
+    """An output turn's answer: a string as is, a structured answer as JSON, nothing for None."""
+    if value is None:
+        return ""
+    return value.strip() if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+
+
+def _tool_space(raw: dict, used: list[str]) -> list[dict[str, Any]]:
     """The tools the agent chose and the names of all it was offered (names only: the catalog is large)."""
     tools = _list(_dict(raw.get("model_input")).get("tools"))
-    used: list[str] = []
-    for message in trajectory:
-        if message.get("type") == "AIMessage":
-            for call in _calls(message):
-                if (name := _name(call)) and name not in used:
-                    used.append(name)
     names = [name for tool in tools if isinstance(tool, dict) and (name := _name(tool))]
     summary = ""
     if used:
