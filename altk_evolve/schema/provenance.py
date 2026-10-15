@@ -76,7 +76,7 @@ def attach_sources(
             key = _association_key(source)
             for previous in [v for v in associations if _association_key(v) == key]:
                 associations.remove(previous)
-                source.update(_combine_duplicate(previous, source))
+                source.update(_combine_duplicate(previous, source, observed_at))
             associations.append(source)
     result["sources"] = associations
     result["provenance_incomplete"] = not complete
@@ -116,19 +116,20 @@ def _association_key(source: dict) -> tuple:
     return tuple(source.get(k) for k in ("conversation_id", "task_id", "user_id", "agent_id"))
 
 
-def _combine_duplicate(previous: dict, source: dict) -> dict:
+def _combine_duplicate(previous: dict, source: dict, observed_at: datetime) -> dict:
     """Two records of one association combine conservatively for retention.
 
     It stays supporting if either record was, and ages from the later time. For a fresh
     observation (stamped now, supporting) this is the same as letting it replace the old
-    record; it only matters when both records were already stamped.
+    record; it only matters when both records were already stamped. ``source``'s time is
+    already validated; ``previous`` may be a stored record, so its time counts only if it
+    is a valid time no later than ``observed_at``.
     """
     combined: dict = {}
     if previous.get("status") == "supporting":
         combined["status"] = "supporting"
-    try:
-        if datetime.fromisoformat(previous["associated_at"]) > datetime.fromisoformat(source["associated_at"]):
-            combined["associated_at"] = previous["associated_at"]
-    except (KeyError, TypeError, ValueError):
-        pass
+    if _is_prior_time(previous.get("associated_at"), observed_at) and datetime.fromisoformat(
+        previous["associated_at"]
+    ) > datetime.fromisoformat(source["associated_at"]):
+        combined["associated_at"] = previous["associated_at"]
     return combined

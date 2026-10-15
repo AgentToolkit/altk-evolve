@@ -145,3 +145,19 @@ def test_duplicate_associations_combine_conservatively():
         (source,) = attach_sources({}, None, ordered, associated_at=OBSERVED, carry_association_times=True)["sources"]
         # Still supporting if either record was; aged from the later association.
         assert (source["status"], source["associated_at"]) == ("supporting", later)
+
+
+def test_a_fresh_observation_repairs_a_stored_future_time():
+    # The later of two records normally wins, but a stored future time would hold off
+    # every receipt for this conversation; a new observation must replace it.
+    stored = "2999-01-01T00:00:00+00:00"
+    old = RecordedEntity(
+        id="1",
+        type="fact",
+        content="x",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        metadata={"user_id": "alice", "agent_id": "a", "sources": [_source("one", stored)]},
+    )
+    incoming = Entity(type="fact", content="x", metadata={"user_id": "alice", "agent_id": "a", "thread_id": "one"})
+    (source,) = attach_sources({}, old, [incoming], associated_at=OBSERVED)["sources"]
+    assert (source["status"], source["associated_at"]) == ("supporting", OBSERVED.isoformat())
