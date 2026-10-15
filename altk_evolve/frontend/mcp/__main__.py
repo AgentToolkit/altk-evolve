@@ -125,9 +125,14 @@ def run_api_server(host: str = DASHBOARD_HOST, port: int = DASHBOARD_PORT) -> No
         server.run()
     except SystemExit:
         # uvicorn logs the bind error (e.g. the port is in use) and exits; only this thread stops.
-        logger.warning("Evolve dashboard did not start on http://%s:%d/. The MCP server keeps running over stdio.", host, port)
+        pass
     except Exception as e:
         logger.error(f"Failed to start UI server: {e}")
+        return
+    if not server.started:
+        # A bind failure lands here via SystemExit; a failed app lifespan startup returns
+        # from run() without one. uvicorn has already logged the cause in both cases.
+        logger.warning("Evolve dashboard did not start on http://%s:%d/. The MCP server keeps running over stdio.", host, port)
 
 
 def run_sse_server(host: str, port: int) -> None:

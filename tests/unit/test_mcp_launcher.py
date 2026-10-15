@@ -4,10 +4,11 @@ import socket
 import threading
 import time
 import tomllib
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 
 from altk_evolve.frontend.mcp import __main__ as launcher
 
@@ -191,6 +192,22 @@ def test_dashboard_bind_failure_is_reported_and_does_not_raise(caplog) -> None:
         with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
             launcher.run_api_server(host="127.0.0.1", port=port)
     assert f"Evolve dashboard did not start on http://127.0.0.1:{port}/" in caplog.text
+    assert "listening on" not in caplog.text
+
+
+def test_dashboard_lifespan_failure_is_reported(monkeypatch, caplog) -> None:
+    """A failed app lifespan startup makes uvicorn return without SystemExit and without binding.
+    That must still be reported as "did not start", and never as "listening"."""
+
+    @asynccontextmanager
+    async def failing_lifespan(_app):
+        raise RuntimeError("lifespan startup failed")
+        yield
+
+    monkeypatch.setattr(launcher, "app", FastAPI(lifespan=failing_lifespan))
+    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
+        launcher.run_api_server(host="127.0.0.1", port=0)
+    assert "Evolve dashboard did not start on http://127.0.0.1:0/" in caplog.text
     assert "listening on" not in caplog.text
 
 
