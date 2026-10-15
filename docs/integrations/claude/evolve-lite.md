@@ -20,7 +20,7 @@ or, from a clone of the repo:
 platform-integrations/install.sh install --platform claude --dir /path/to/your/project
 ```
 
-The installer installs the plugin from the marketplace (`evolve-lite@evolve-marketplace`), copies `EVOLVE.md` into `<project>/.evolve/`, adds its import line to the project's `CLAUDE.md`, installs `adapt_memory.py`, `audit_recall.py` and their shared `lib/` under `~/.claude/evolve-lite/`, and allowlists those scripts in `<project>/.claude/settings.json`.
+The installer installs the plugin from the marketplace (`evolve-lite@evolve-marketplace`). Claude loads the plugin from the registered marketplace directory at every session start, so that directory has to stay: the `curl | bash` form copies the marketplace to `~/.claude/evolve-lite/marketplace/` and registers that copy, while an install from a clone registers the clone itself, so keep the clone where it is. The installer also copies `EVOLVE.md` into `<project>/.evolve/`, adds its import line to the project's `CLAUDE.md`, installs `adapt_memory.py`, `audit_recall.py` and their shared `lib/` under `~/.claude/evolve-lite/`, and allowlists those scripts in `<project>/.claude/settings.json`.
 
 Installing only the plugin (`claude --plugin-dir …`, or `claude plugin install` on its own) loads the skills but skips the rest, so nothing reaches your sessions. Run the installer as well.
 

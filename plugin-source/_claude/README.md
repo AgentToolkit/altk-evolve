@@ -44,7 +44,11 @@ platform-integrations/install.sh install --platform claude --dir /path/to/your/p
 The installer:
 
 - installs the plugin (`claude plugin marketplace add` +
-  `claude plugin install evolve-lite@evolve-marketplace`);
+  `claude plugin install evolve-lite@evolve-marketplace`). Claude loads the
+  plugin from the registered marketplace directory at every session start, so
+  that directory has to stay. The `curl | bash` form copies the marketplace to
+  `~/.claude/evolve-lite/marketplace/` and registers that copy. An install from
+  a clone registers the clone itself, so keep the clone where it is;
 - copies `EVOLVE.md` to `<project>/.evolve/EVOLVE.md` and adds the import line
   to the project's `CLAUDE.md` (see [How It Works](#how-it-works));
 - installs `adapt_memory.py`, `audit_recall.py` and their shared `lib/` under
