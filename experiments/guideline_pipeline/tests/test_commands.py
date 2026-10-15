@@ -56,10 +56,15 @@ def mock_consolidation(monkeypatch: pytest.MonkeyPatch) -> None:
         merged = ConsolidatedGuideline(
             content="Check the answer before finishing.", rationale="merged", category="strategy", trigger="always", support=support
         )
-        return [merged.model_copy(update={"evidence": evidence, "source_indices": list(range(len(cluster)))})]
+        return [(merged.model_copy(update={"evidence": evidence, "source_indices": list(range(len(cluster)))}), list(cluster))]
+
+    def no_llm(*args, **kwargs):
+        raise AssertionError("consolidation reached the real LLM: the merge mock no longer matches what it calls")
 
     monkeypatch.setattr(clustering, "cluster_entities", cluster)
-    monkeypatch.setattr(clustering, "combine_cluster", combine)
+    monkeypatch.setattr(clustering, "combine_cluster_with_members", combine)
+    # If consolidation stops going through the mocked merge, refuse the LLM call so the test fails offline.
+    monkeypatch.setattr(clustering, "completion", no_llm)
 
 
 def test_export_playbook_command(mined: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
@@ -133,8 +138,8 @@ def test_consolidate_command_then_export(mined: Path, tmp_path: Path, monkeypatc
     ]
     code, stdout, _ = run(capsys, "lineage", "--namespace", "memories", "--out", str(lineage))
     merged = json.loads(lineage.read_text())["guidelines"][0]
-    assert (merged["sources_origin"], merged["source_task_ids"]) == ("missing", [])
-    assert "1 with recorded sources, 0 derived from source_task_id, 1 without sources" in stdout
+    assert (merged["sources_origin"], merged["source_task_ids"]) == ("recorded", ["task-1", "task-3"])
+    assert "2 with recorded sources, 0 derived from source_task_id, 0 without sources" in stdout
 
     assert run(capsys, "consolidate", "--namespace", "memories", "--mode", "none")[1] == "consolidate memories: mode none, nothing changed"
 
