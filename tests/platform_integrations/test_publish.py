@@ -60,6 +60,19 @@ def run_publish(project_dir, args, expect_success=True):
     )
 
 
+def run_publish_default_env(project_dir, args, expect_success=True):
+    """Run publish the way a real install does: EVOLVE_DIR unset, so it resolves `.evolve` from cwd."""
+    env = {k: v for k, v in os.environ.items() if k != "EVOLVE_DIR"}
+    return subprocess.run(
+        [sys.executable, str(PUBLISH_SCRIPT)] + args,
+        capture_output=True,
+        text=True,
+        cwd=str(project_dir),
+        env=env,
+        check=expect_success,
+    )
+
+
 def run_publish_script(script_path, project_dir, args, expect_success=True):
     env = {**os.environ, "EVOLVE_DIR": str(project_dir / ".evolve")}
     return subprocess.run(
@@ -288,6 +301,9 @@ class TestPublishAnyEntityType:
         assert "Always report distances in km." in content
         assert "visibility: public" in content
         assert "owner: alice" in content
+        # The publisher's local path to the native memory stays local.
+        assert "native_path" not in content
+        assert str(native.parent) not in content
         assert not (typed_project / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO / "guideline").exists()
 
     @pytest.mark.parametrize("entity_type", ["user", "feedback", "project", "reference", "guideline"])
@@ -363,6 +379,48 @@ class TestPublishAnyEntityType:
         assert theirs.exists()
         assert not _typed_dest(typed_project, "feedback", "note.md").exists()
 
+    def test_symlinked_type_dir_cannot_reach_into_subscribed_with_default_evolve_dir(self, typed_project):
+        """Same layout as above, but with EVOLVE_DIR unset, so `.evolve` is relative to cwd."""
+        read_clone = typed_project / ".evolve" / "entities" / "subscribed" / "read" / "feedback"
+        read_clone.mkdir(parents=True)
+        theirs = read_clone / "note.md"
+        theirs.write_text("---\ntype: feedback\n---\n\nSomeone else's.\n")
+        (typed_project / ".evolve" / "entities" / "feedback").symlink_to(read_clone, target_is_directory=True)
+
+        result = run_publish_default_env(typed_project, ["--entity", "note.md"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "not found" in result.stderr
+        assert theirs.exists()
+
+    def test_symlinked_clone_dir_is_still_protected(self, typed_project, tmp_path):
+        """A subscribed clone that is itself a symlink to somewhere else is still a subscribed clone."""
+        real_clone = tmp_path / "clones" / "read"
+        (real_clone / "feedback").mkdir(parents=True)
+        theirs = real_clone / "feedback" / "note.md"
+        theirs.write_text("---\ntype: feedback\n---\n\nSomeone else's.\n")
+        subscribed = typed_project / ".evolve" / "entities" / "subscribed"
+        (subscribed / "read").symlink_to(real_clone, target_is_directory=True)
+        (typed_project / ".evolve" / "entities" / "feedback").symlink_to(Path("subscribed") / "read" / "feedback", target_is_directory=True)
+
+        for run in (run_publish, run_publish_default_env):
+            result = run(typed_project, ["--entity", "note.md"], expect_success=False)
+            assert result.returncode != 0
+            assert "not found" in result.stderr
+        assert theirs.exists()
+        assert not _typed_dest(typed_project, "feedback", "note.md").exists()
+
+    def test_type_flag_selects_a_dir_whose_name_is_not_sanitized(self, typed_project):
+        """`--type` matches existing dirs by their sanitized name, so hand-made dirs stay selectable."""
+        mine = _write_private(typed_project, "my_notes", "dup.md", body="my notes")
+        other = _write_private(typed_project, "guideline", "dup.md", body="a guideline")
+
+        run_publish(typed_project, ["--entity", "dup.md", "--type", "my_notes"])
+
+        assert not mine.exists()
+        assert other.exists()
+        assert "my notes" in _typed_dest(typed_project, "my_notes", "dup.md").read_text()
+
     def test_symlinked_type_dir_outside_subscribed_still_publishes(self, typed_project, tmp_path):
         """Symlinking a type directory elsewhere (e.g. a shared drive) is a legitimate layout."""
         elsewhere = tmp_path / "elsewhere" / "feedback"
@@ -381,11 +439,15 @@ class TestPublishAnyEntityType:
         reach .evolve/ itself (where audit.log and the config live)."""
         audit = typed_project / ".evolve" / "audit.log"
         audit.write_text('{"action": "seed"}\n')
+        # Reachable only through an empty type (entities/ itself), so this checks `not entity_type`.
+        loose = typed_project / ".evolve" / "entities" / "audit.log"
+        loose.write_text("loose\n")
 
         result = run_publish(typed_project, ["--entity", "audit.log", "--type", bad_type], expect_success=False)
 
         assert result.returncode != 0
         assert audit.read_text() == '{"action": "seed"}\n'
+        assert loose.read_text() == "loose\n"
         assert not list((typed_project / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO).rglob("audit.log"))
 
     def test_hidden_type_dirs_are_not_searched(self, typed_project):

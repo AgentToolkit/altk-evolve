@@ -47,31 +47,53 @@ def _resolve_source(repo, effective_user):
 _NON_PRIVATE_DIRS = {"subscribed"}
 
 
+def _subscribed_dirs(entities_dir):
+    """`entities/subscribed/` and every clone in it, symlinked clones included."""
+    root = entities_dir / "subscribed"
+    if not root.is_dir():
+        return []
+    return [root, *(child for child in root.iterdir() if child.is_dir())]
+
+
+def _inside_any(path, roots):
+    """True if `path` or one of its parents is the same directory as one of `roots`.
+
+    Compared by device and inode rather than by spelling, so neither a symlinked
+    clone, a differently-cased name on a case-insensitive filesystem, nor an
+    alternate mount path makes a subscribed clone look like a private type dir.
+    """
+    for ancestor in (path, *path.parents):
+        if ancestor.exists() and any(os.path.samefile(ancestor, root) for root in roots):
+            return True
+    return False
+
+
 def _find_private_entity(entities_dir, filename, requested_type):
     """Locate the private entity `filename` under ``entities/<type>/``.
 
     Searches every private type directory unless `requested_type` names one.
     Returns ``(type, path, None)`` on success or ``(None, None, error)``.
     """
+    private = (
+        sorted(d.name for d in entities_dir.iterdir() if d.is_dir() and d.name not in _NON_PRIVATE_DIRS and not d.name.startswith("."))
+        if entities_dir.is_dir()
+        else []
+    )
     if requested_type is not None:
         entity_type = sanitize_type(requested_type)
         if not entity_type or entity_type in _NON_PRIVATE_DIRS:
             return None, None, f"invalid entity type: {requested_type!r}"
-        types = [entity_type]
-    elif entities_dir.is_dir():
-        types = sorted(
-            d.name for d in entities_dir.iterdir() if d.is_dir() and d.name not in _NON_PRIVATE_DIRS and not d.name.startswith(".")
-        )
+        # Match on the sanitized name so a hand-made dir like `my_notes` is selectable.
+        types = [d for d in private if sanitize_type(d) == entity_type] or [entity_type]
     else:
-        types = []
+        types = private
 
-    # Resolved, so a symlinked type directory can't reach into subscribed clones.
-    non_private = [(entities_dir / name).resolve() for name in _NON_PRIVATE_DIRS]
+    protected = _subscribed_dirs(entities_dir)
     matches = []
     for entity_type in types:
         type_dir = (entities_dir / entity_type).resolve()
         path = (entities_dir / entity_type / filename).resolve()
-        if not path.is_relative_to(type_dir) or any(path.is_relative_to(d) for d in non_private):
+        if not path.is_relative_to(type_dir) or _inside_any(path, protected):
             continue
         if path.is_file():
             matches.append((entity_type, path))
@@ -137,6 +159,9 @@ def main():
     effective_user = args.user or (identity.get("user") if isinstance(identity, dict) else None)
 
     entity = markdown_to_entity(src_path)
+    # Where the publisher's native memory lives on their machine; meaningless to
+    # subscribers and it exposes the publisher's home directory and project path.
+    entity.pop("native_path", None)
     entity["visibility"] = "public"
     if effective_user:
         entity["owner"] = effective_user
