@@ -116,6 +116,23 @@ def _seg(start: int, end: int, description: str = "d") -> SubtaskSegment:
     return SubtaskSegment(generalized_description=description, start_step=start, end_step=end, purpose="p")
 
 
+def test_subtask_slices_keeps_ranges_that_share_a_start():
+    """Dedupe compares the whole clamped range: [1,2] and [1,4] are different slices."""
+    from altk_evolve.llm.guidelines.segmentation import subtask_slices
+
+    steps = [f"s{i}" for i in range(1, 7)]
+    slices = subtask_slices([_seg(1, 2), _seg(1, 4), _seg(5, 6)], steps)
+    assert [s for _, s in slices] == [["s1", "s2"], ["s1", "s2", "s3", "s4"], ["s5", "s6"]]
+
+
+def test_subtask_slices_drops_ranges_that_share_an_end_only_when_equal():
+    from altk_evolve.llm.guidelines.segmentation import subtask_slices
+
+    steps = [f"s{i}" for i in range(1, 7)]
+    slices = subtask_slices([_seg(1, 6), _seg(3, 6), _seg(1, 9)], steps)
+    assert [s for _, s in slices] == [steps, ["s3", "s4", "s5", "s6"]]
+
+
 @pytest.mark.parametrize(
     "ranges,expected",
     [

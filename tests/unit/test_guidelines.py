@@ -674,6 +674,32 @@ class TestSegmentationFlag:
         assert len(prompts) == 1
         assert [r.task_description for r in results] == ["Do the task"]
 
+    def test_length_gate_counts_parsed_steps_not_assistant_messages(self, monkeypatch):
+        """Three assistant messages with two native tool calls each parse into six steps, so
+        the trajectory clears SEGMENTATION_MIN_STEPS and is segmented."""
+        messages: list[dict] = [{"role": "user", "content": "Do the task"}]
+        for i in range(3):
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {"id": f"c{i}", "type": "function", "function": {"name": f"act_{i}", "arguments": "{}"}},
+                        {"id": f"d{i}", "type": "function", "function": {"name": f"also_{i}", "arguments": "{}"}},
+                    ],
+                }
+            )
+            messages.append({"role": "tool", "tool_call_id": f"c{i}", "content": "ok"})
+        subtasks = [
+            SubtaskSegment(generalized_description="First half", purpose="p", start_step=1, end_step=3),
+            SubtaskSegment(generalized_description="Second half", purpose="p", start_step=4, end_step=6),
+        ]
+        results, mock_segment, prompts = self._generate_with_subtasks(messages, subtasks, monkeypatch)
+        mock_segment.assert_called_once()
+        assert [r.task_description for r in results] == ["First half", "Second half"]
+        assert "act_0" in prompts[0] and "act_2" not in prompts[0]
+        assert "act_2" in prompts[1] and "act_0" not in prompts[1]
+
     @patch("altk_evolve.llm.guidelines.guidelines.completion")
     @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
@@ -692,9 +718,11 @@ class TestSegmentationFlag:
         with patch(
             "altk_evolve.llm.guidelines.segmentation.segment_trajectory",
             side_effect=RuntimeError("segmenter unavailable"),
-        ):
+        ) as mock_segment:
             results = generate_guidelines(self.MESSAGES)
 
+        # Otherwise the length gate alone could produce this result, and the error path untested.
+        mock_segment.assert_called_once()
         mock_completion.assert_called_once()
         assert len(results) == 1
         assert results[0].task_description == "Find the retry settings for the acme service and summarize them"
