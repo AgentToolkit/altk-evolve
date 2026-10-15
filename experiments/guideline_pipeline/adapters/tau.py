@@ -4,7 +4,7 @@ Each file is a run of sections separated by ``=====`` rules (five or more), each
 named by its first line and optionally underlined with ``----``::
 
     TASK <n>  reward=<r>  breakdown={...}  [termination_reason=... model=... ...]
-    USER SCENARIO                      the task the simulated user wanted done
+    USER SCENARIO                      the user simulator's hidden instructions
     GROUND-TRUTH EVALUATION CRITERIA   the expected tool calls
     AGENT DOMAIN POLICY                the policy handed to the agent
     CONVERSATION                       [ASSISTANT] / [USER] turns, and tool I/O as
@@ -13,8 +13,12 @@ named by its first line and optionally underlined with ``----``::
     FINAL ANSWER
     JUDGE / REWARD DETAILS             per-action matches and assertion results
 
-The TASK header, USER SCENARIO and a non-empty CONVERSATION are required; a file
-without them is skipped with a warning (see ``TauRetailAdapter.records``).
+The TASK header (with a reward) and a CONVERSATION with a user turn are required; a
+file without them is skipped with a warning (see ``TauRetailAdapter.records``).
+
+The task is the conversation's first user turn: that is what the agent was asked.
+The USER SCENARIO is what the simulator was told (reason_for_call, known_info,
+task_instructions), facts the agent never saw, so it is not part of the messages.
 
 In the judge section, a check is recognised by tau2's result field names, one
 check per line: ``action_match=False`` marks an expected action the agent did not
@@ -44,7 +48,7 @@ logger = logging.getLogger(__name__)
 SOURCE = "tau-retail"
 INCLUDE_POLICY_ENV = "TAU_RETAIL_INCLUDE_POLICY"
 # Part of every batch revision: bump it when the records built from an unchanged file change.
-FORMAT_VERSION = "1"
+FORMAT_VERSION = "2"
 SUCCESS_REWARD = 1.0  # τ-bench rewards are 0 or 1; anything below full reward is a failure
 DETAIL_CHARS = 2000
 # render_supporting_context truncates each JSON-rendered context message at 2000 chars;
@@ -230,6 +234,24 @@ def elide_head_tail(steps: list[dict[str, Any]], limit: int = PARSER_STEP_LIMIT)
     return [*steps[:head], _reasoning(f"... ({elided} conversation steps elided) ..."), *steps[-tail:]]
 
 
+def task_messages(turns: list[Turn]) -> list[dict[str, Any]]:
+    """The first user turn as the task (what the agent was actually asked), the other turns as steps, in order.
+
+    Turns before it (usually the agent's greeting) stay before it: the parser takes the
+    first user message as the task wherever it is, and reads every assistant message as
+    a step. Raises MalformedTrajectory when the conversation has no user turn.
+    """
+    first = next((i for i, turn in enumerate(turns) if turn.kind == "user"), None)
+    if first is None:
+        raise MalformedTrajectory("conversation has no user turn")
+    leading = conversation_steps(turns[:first])
+    steps = leading + conversation_steps(turns[first + 1 :])
+    kept = elide_head_tail(steps)
+    # Elision keeps the head, so the task stays right after the leading steps it kept.
+    position = len(leading) if kept is steps else min(len(leading), PARSER_STEP_LIMIT // 2)
+    return [*kept[:position], {"role": "user", "content": turns[first].text}, *kept[position:]]
+
+
 def _check_text(line: str, flag: re.Pattern[str]) -> str:
     return " ".join(flag.sub("", line).split()).strip(" ,;-")[:300] or line.strip()
 
@@ -301,22 +323,22 @@ class TauRetailAdapter:
         """Build the record for one task file; raises MalformedTrajectory if a required section is missing."""
         raw = file.read_bytes()
         sections = split_sections(raw.decode("utf-8", errors="replace"))
-        missing = [name for name in ("HEADER", "SCENARIO", "CONVERSATION") if name not in sections]
+        missing = [name for name in ("HEADER", "CONVERSATION") if name not in sections]
         if missing:
             raise MalformedTrajectory(f"missing section(s): {', '.join(missing)}")
         header = parse_header(sections["HEADER"])
         if "reward" not in header:
             raise MalformedTrajectory("TASK header has no reward")
-        scenario = section_body(sections["SCENARIO"])
         turns = parse_conversation(sections["CONVERSATION"])
-        if not scenario or not turns:
-            raise MalformedTrajectory("empty user scenario" if not scenario else "conversation has no turns")
+        if not turns:
+            raise MalformedTrajectory("conversation has no turns")
+        messages = task_messages(turns)
         policy = section_body(sections.get("POLICY", "")) if include_policy else ""
 
         task_id = file.stem
         revision_input = b"\0".join([FORMAT_VERSION.encode(), b"policy" if policy else b"", raw])
         return AdapterRecord(
-            messages=[{"role": "user", "content": scenario}, *elide_head_tail(conversation_steps(turns))],
+            messages=messages,
             context_messages=_policy_context(policy) if policy else [],
             trace_id=task_id,
             model=header.get("model"),

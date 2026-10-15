@@ -123,22 +123,45 @@ def test_messages_rebuild_the_conversation_with_tool_calls():
     record = records()["task_1"]
     messages = record.messages
 
-    assert messages[0] == {"role": "user", "content": section_body(split_sections((FIXTURES / "task_1.txt").read_text())["SCENARIO"])}
+    assert messages[0] == {"role": "user", "content": "Hi, where is my latest order?"}
     assert all(message["role"] == "assistant" for message in messages[1:])
-    assert messages[1]["content"] == "USER MESSAGE:\nHi, where is my latest order?"
+    assert messages[1]["content"] == "AGENT MESSAGE:\nI can help with that. Could you give me your name and zip code?"
+    assert messages[2]["content"] == "USER MESSAGE:\nAda Example, zip 00000."
     calls = [message["content"][0] for message in messages if isinstance(message["content"], list)]
     assert [call["function"]["name"] for call in calls] == ["find_user_id_by_name_zip", "get_order_details"]
     assert json.loads(calls[0]["function"]["arguments"]) == {"first_name": "Ada", "last_name": "Example", "zip": "00000"}
-    assert messages[5]["content"] == "OBSERVATION:\n(ok)\n     ada_example_0000"
+    assert messages[4]["content"] == "OBSERVATION:\n(ok)\n     ada_example_0000"
     assert messages[-1]["content"] == "AGENT MESSAGE:\nYour order #W0000001 has shipped."
     # The final answer and the ground truth are not injected as messages.
     assert not any("GROUND-TRUTH" in str(message["content"]) or "FINAL ANSWER" in str(message["content"]) for message in messages)
 
-    # The library parser sees the scenario as the task and every call as an action.
+    # The library parser sees the agent's first input as the task and every call as an action.
     parsed = parse_openai_agents_trajectory(messages, context_messages=record.context_messages)
     assert parsed["task_instruction"] == messages[0]["content"]
     assert [call["name"] for call in parsed["function_calls"]] == ["find_user_id_by_name_zip", "get_order_details"]
     assert parsed["num_steps"] == len(messages) - 1
+
+
+def test_the_agents_first_user_turn_is_the_task_not_the_hidden_scenario():
+    record = records()["task_1"]
+    parsed = parse_openai_agents_trajectory(record.messages, context_messages=record.context_messages)
+
+    assert parsed["task_instruction"] == "Hi, where is my latest order?"
+    # The simulator's instructions (reason_for_call, known_info, ...) never reach the extractor.
+    assert not any("known_info" in str(message["content"]) or "reason_for_call" in str(message["content"]) for message in record.messages)
+    assert "Hi, where is my latest order?" not in [step.split(":\n", 1)[-1] for step in parsed["steps_list"]]
+
+
+def test_turns_before_the_first_user_turn_stay_in_order(tau_dir: Path):
+    turns = ["[ASSISTANT]", "Hi! How can I help?", "[USER]", "Where is my order?", "[ASSISTANT]", "It shipped."]
+    messages = TauRetailAdapter().record(task_file(tau_dir, "task_9.txt", turns)).messages
+
+    assert messages == [
+        {"role": "assistant", "content": "AGENT MESSAGE:\nHi! How can I help?"},
+        {"role": "user", "content": "Where is my order?"},
+        {"role": "assistant", "content": "AGENT MESSAGE:\nIt shipped."},
+    ]
+    assert parse_openai_agents_trajectory(messages)["task_instruction"] == "Where is my order?"
 
 
 def test_arguments_that_are_not_a_json_object_are_kept_raw():
@@ -185,6 +208,7 @@ def test_malformed_files_are_skipped_with_a_warning(tau_dir: Path, caplog: pytes
     (tau_dir / "task_6.txt").write_text(
         text.replace("[USER]", "").replace("[ASSISTANT]", "").replace("-> CALL", "").replace("<- RESULT", "")
     )
+    task_file(tau_dir, "task_7.txt", ["[ASSISTANT]", "Hello?"])
 
     with caplog.at_level(logging.WARNING):
         assert list(records(tau_dir)) == ["task_1", "task_2"]
@@ -192,8 +216,9 @@ def test_malformed_files_are_skipped_with_a_warning(tau_dir: Path, caplog: pytes
     assert [record.getMessage().split(": ", 1)[1] for record in caplog.records] == [
         "TASK header has no reward",
         "missing section(s): CONVERSATION",
-        "missing section(s): HEADER, SCENARIO, CONVERSATION",
+        "missing section(s): HEADER, CONVERSATION",
         "conversation has no turns",
+        "conversation has no user turn",
     ]
 
 
@@ -205,7 +230,7 @@ def test_missing_or_empty_input_raises(tmp_path: Path):
 
 
 def test_records_stream_in_task_order_and_a_single_file_is_accepted(tau_dir: Path):
-    task_file(tau_dir, "task_10.txt", ["[ASSISTANT]", "hello"])
+    task_file(tau_dir, "task_10.txt", ["[USER]", "hello"])
     stream = TauRetailAdapter().records(tau_dir)
 
     assert isinstance(stream, Iterator)
@@ -236,8 +261,9 @@ def test_long_conversations_keep_their_head_and_tail(tau_dir: Path):
     turns = [line for i in range(40) for line in ("[USER]", f"question {i}", "[ASSISTANT]", f"answer {i}")]
     messages = TauRetailAdapter().record(task_file(tau_dir, "task_9.txt", turns)).messages
     assert len(messages) == 1 + PARSER_STEP_LIMIT
-    assert messages[1]["content"] == "USER MESSAGE:\nquestion 0"
-    assert messages[26]["content"] == "... (31 conversation steps elided) ..."
+    assert messages[0] == {"role": "user", "content": "question 0"}
+    assert messages[1]["content"] == "AGENT MESSAGE:\nanswer 0"
+    assert messages[26]["content"] == "... (30 conversation steps elided) ..."
     assert messages[-1]["content"] == "AGENT MESSAGE:\nanswer 39"
     # The ending now survives the parser's step cap.
     assert parse_openai_agents_trajectory(messages)["steps_list"][-1].endswith("answer 39")
@@ -245,7 +271,7 @@ def test_long_conversations_keep_their_head_and_tail(tau_dir: Path):
 
 def test_long_turns_are_split_so_per_step_truncation_drops_nothing(tau_dir: Path):
     body = "".join(f"{i:05d}" for i in range(1000))  # 5000 chars
-    messages = TauRetailAdapter().record(task_file(tau_dir, "task_9.txt", ["[ASSISTANT]", body])).messages
+    messages = TauRetailAdapter().record(task_file(tau_dir, "task_9.txt", ["[USER]", "hi", "[ASSISTANT]", body])).messages
 
     parts = [message["content"] for message in messages[1:]]
     assert len(parts) == 3 and all(len(part) <= 2000 for part in parts)
@@ -268,8 +294,8 @@ def test_policy_context_is_opt_in(monkeypatch: pytest.MonkeyPatch, tau_dir: Path
     ]
     # Context is never mistaken for the task, and the CLI opts in through the environment.
     record = records(include_policy=True)["task_1"]
-    assert parse_openai_agents_trajectory(record.messages, context_messages=record.context_messages)["task_instruction"].startswith(
-        "domain:"
+    assert parse_openai_agents_trajectory(record.messages, context_messages=record.context_messages)["task_instruction"] == (
+        "Hi, where is my latest order?"
     )
     monkeypatch.setenv(INCLUDE_POLICY_ENV, "1")
     assert records()["task_1"].context_messages == context

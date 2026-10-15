@@ -414,9 +414,13 @@ section title follows it, so a `=====` line inside a turn stays in that turn.
 
 Each task becomes one record:
 
-- **messages:** the user scenario as the task, then the conversation. Each call
-  is an assistant function call with its tool name and arguments; results and
-  both speakers' turns are labelled assistant messages. A conversation longer
+- **messages:** the conversation's first `[USER]` turn as the task (what the
+  agent was actually asked, so guidelines are keyed like the queries that will
+  retrieve them), then the other turns in order. Each call is an assistant
+  function call with its tool name and arguments; results and both speakers'
+  other turns are labelled assistant messages. The `USER SCENARIO` is the user
+  simulator's hidden brief (`reason_for_call`, `known_info`,
+  `task_instructions`), which the agent never saw, so it is left out. A conversation longer
   than the extractor's 50-step limit keeps its first and last steps around an
   elision marker (temporary, until that limit is configurable).
 - **outcome:** `success` when the reward is 1.0; judge lines with
@@ -428,8 +432,8 @@ Each task becomes one record:
 - **metadata:** the header's reward, breakdown, termination reason and the other
   fields it carries; `model=` in the header sets the record's model.
 
-A file without the header (and its reward), the user scenario or any
-conversation turn is skipped with a warning on stderr, and the run continues.
+A file without the header (and its reward), a conversation or a user turn in it
+is skipped with a warning on stderr, and the run continues.
 
 The domain policy is left out by default, because it is the same in every task.
 To add it as context (`context_messages`), set `TAU_RETAIL_INCLUDE_POLICY=1`.
