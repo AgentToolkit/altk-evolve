@@ -148,6 +148,11 @@ class Processor(Protocol):
     Return any entity types; choose whether semantic reconciliation is useful.
     Concurrent deliveries can execute a plugin more than once, although only one
     output commit per batch/processor succeeds. External effects must be idempotent.
+
+    Optionally, ``config_model`` may declare ``config_additions: ClassVar[dict]``,
+    mapping config keys added after a ``version`` was published to the values that
+    revisions stored without them ran with; resolving such a revision fills them in
+    instead of rejecting it as drift.
     """
 
     id: ClassVar[str]

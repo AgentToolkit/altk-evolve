@@ -211,6 +211,115 @@ def test_builtin_mode_and_config_are_captured(monkeypatch):
         manager.validate({"processors": [{"id": "g", "plugin": "evolve.guidelines", "config": {"guidelines_mode": "typo"}}]})
 
 
+def test_default_plan_captures_trajectory_window_from_settings(monkeypatch):
+    from altk_evolve.config.evolve import evolve_config
+    from altk_evolve.config.guidelines import guidelines_settings
+    from altk_evolve.processing.builtin import GuidelineProcessor
+    from altk_evolve.schema.guidelines import GuidelineGenerationResult
+
+    monkeypatch.setattr(evolve_config, "trajectory_max_steps", 5)
+    monkeypatch.setattr(evolve_config, "trajectory_max_step_chars", 40)
+    monkeypatch.setattr(evolve_config, "trajectory_tail_steps", 2)
+    monkeypatch.setattr(guidelines_settings, "guidelines_mode", "standard")
+    calls = []
+
+    def generate(messages, *, context_messages=None, options, outcome=None):
+        calls.append(options)
+        return [GuidelineGenerationResult(task_description="task", guidelines=[])]
+
+    monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.generate_guidelines", generate)
+    manager = make_manager(processor_type=GuidelineProcessor)
+    plan = manager.default_plan()
+    config = plan.manifest()["processors"][0]["config"]
+    assert (config["trajectory_max_steps"], config["trajectory_max_step_chars"], config["trajectory_tail_steps"]) == (5, 40, 2)
+    manager.process({"messages": [{"role": "user", "content": "task"}]}, plan=plan)
+    assert (calls[0].trajectory_max_steps, calls[0].trajectory_max_step_chars, calls[0].trajectory_tail_steps) == (5, 40, 2)
+
+
+_TRAJECTORY_KEYS = ("trajectory_max_steps", "trajectory_max_step_chars", "trajectory_tail_steps")
+
+
+def test_profile_stored_before_the_trajectory_window_resolves_as_it_ran(monkeypatch):
+    """A revision published before the trajectory_* keys existed lacks them. Resolving it
+    fills in the window it actually ran with (50 / 2000 / head-only), not today's env."""
+    from altk_evolve.config.evolve import evolve_config
+    from altk_evolve.processing.builtin import GuidelineProcessor
+    from altk_evolve.schema.guidelines import GuidelineGenerationResult
+
+    manager = make_manager(processor_type=GuidelineProcessor)
+    legacy = manager.validate(
+        {"processors": [{"id": "g", "plugin": "evolve.guidelines", "config": {"guidelines_mode": "standard"}}]}
+    ).manifest()
+    for key in _TRAJECTORY_KEYS:
+        del legacy["processors"][0]["config"][key]
+    manager.repository.put("legacy", legacy, expected_revision=0)
+
+    monkeypatch.setattr(evolve_config, "trajectory_max_steps", 8)
+    monkeypatch.setattr(evolve_config, "trajectory_max_step_chars", 99)
+    monkeypatch.setattr(evolve_config, "trajectory_tail_steps", 3)
+    plan = manager.resolve("legacy", revision=1)
+
+    config = plan.manifest()["processors"][0]["config"]
+    assert tuple(config[key] for key in _TRAJECTORY_KEYS) == (50, 2000, 0)
+    assert manager.get("legacy", 1)["manifest"] == legacy  # the stored record is not rewritten
+    calls = []
+
+    def generate(messages, *, context_messages=None, options, outcome=None):
+        calls.append(options)
+        return [GuidelineGenerationResult(task_description="task", guidelines=[])]
+
+    monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.generate_guidelines", generate)
+    manager.process({"messages": [{"role": "user", "content": "task"}]}, plan=plan)
+    assert tuple(getattr(calls[0], key) for key in _TRAJECTORY_KEYS) == (50, 2000, 0)
+
+
+def test_back_fill_does_not_hide_other_drift():
+    """Only the declared additions are filled; any other missing key is still drift."""
+    from altk_evolve.processing.builtin import GuidelineProcessor
+
+    manager = make_manager(processor_type=GuidelineProcessor)
+    stored = manager.validate({"processors": [{"id": "g", "plugin": "evolve.guidelines", "config": {}}]}).manifest()
+    del stored["processors"][0]["config"]["segmentation_enabled"]
+    manager.repository.put("drifted", stored, expected_revision=0)
+    with pytest.raises(ProcessingError, match="no longer resolves identically"):
+        manager.resolve("drifted")
+
+
+def test_back_fill_follows_the_config_model_not_the_processor_class():
+    """A GuidelineProcessor subclass with its own config schema must not receive the
+    built-in schema's additions, which its model would reject as unknown keys."""
+    from altk_evolve.processing.builtin import GuidelineProcessor
+
+    class Scripted(GuidelineProcessor):
+        id = "tests.scripted"
+        config_model = EchoConfig
+
+    manager = make_manager(processor_type=Scripted)
+    saved = manager.put("scripted", definition(plugin="tests.scripted"), expected_revision=0)
+    assert manager.resolve("scripted").manifest() == saved["manifest"]
+
+
+@pytest.mark.parametrize(
+    ("env_tail", "config"),
+    [
+        (10, {"trajectory_max_steps": 7}),  # the tail is inherited from the env
+        (0, {"trajectory_max_steps": 5, "trajectory_tail_steps": 99}),
+        (0, {"trajectory_max_steps": 5, "trajectory_tail_steps": 5}),
+    ],
+)
+def test_profile_with_a_tail_that_consumes_the_step_budget_is_not_published(monkeypatch, env_tail, config):
+    from altk_evolve.config.evolve import evolve_config
+    from altk_evolve.processing.builtin import GuidelineProcessor
+
+    monkeypatch.setattr(evolve_config, "trajectory_tail_steps", env_tail)
+    manager = make_manager(processor_type=GuidelineProcessor)
+    profile = {"processors": [{"id": "g", "plugin": "evolve.guidelines", "config": config}]}
+    with pytest.raises(ProcessingError, match="must be < trajectory_max_steps"):
+        manager.put("short-window", profile, expected_revision=0)
+    with pytest.raises(ProfileNotFound):
+        manager.get("short-window")
+
+
 def test_conflict_resolution_uses_captured_settings_and_stamps_after_model(client, monkeypatch):
     from altk_evolve.schema.conflict_resolution import EntityUpdate
     from altk_evolve.config.llm import llm_settings
@@ -597,7 +706,7 @@ def test_builtin_factory_selects_generation_steps(mode, method, monkeypatch):
     calls = []
 
     def generator(name):
-        def run(data, *, options, context_messages=None):
+        def run(data, *, options, context_messages=None, outcome=None):
             calls.append((name, data, options.guidelines_model))
             return [
                 GuidelineGenerationResult(
@@ -641,7 +750,7 @@ def test_builtin_admin_update_changes_next_trajectory_not_running_steps(monkeypa
     started, resume = Event(), Event()
     calls = []
 
-    def standard(messages, *, options, context_messages=None):
+    def standard(messages, *, options, context_messages=None, outcome=None):
         calls.append(("standard", options.guidelines_model))
         started.set()
         assert resume.wait(10)
@@ -833,6 +942,24 @@ def test_builtin_outcome_sets_evidence_on_every_guideline(success, evidence):
     assert [entity.metadata["evidence"] for entity in result.entities] == [evidence, evidence]
     for entity in result.entities:
         assert not {"outcome", "failed_checks", "detail"} & entity.metadata.keys()
+
+
+def test_builtin_passes_outcome_to_standard_generation(monkeypatch):
+    from altk_evolve.processing.builtin import GuidelineConfig, GuidelineProcessor
+    from altk_evolve.processing.models import ProcessorContext, Trajectory, TrajectoryOutcome
+
+    seen = []
+
+    def generate(messages, *, outcome=None, **kwargs):
+        seen.append(outcome)
+        return []
+
+    monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.generate_guidelines", generate)
+    processor = GuidelineProcessor.from_config(GuidelineConfig(guidelines_mode="standard"))
+    outcome = TrajectoryOutcome(success=False, failed_checks=("total matches cart",))
+    processor.process(Trajectory(messages=[], outcome=outcome), context=ProcessorContext("operation"))
+    processor.process(Trajectory(messages=[]), context=ProcessorContext("operation"))
+    assert seen == [outcome, None]
 
 
 def test_builtin_without_outcome_keeps_caller_evidence():

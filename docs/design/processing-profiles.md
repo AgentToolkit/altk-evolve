@@ -156,7 +156,12 @@ plugins receive isolated trajectory copies.
 Profiles store normalized defaults and plugin versions. Resolving a saved profile
 rejects changed processor versions or configuration drift; publish a new revision
 when processor compatibility changes. The built-in owns version `1`, independently
-of the Evolve package version; ordinary package releases do not invalidate profiles. A retained in-process plan keeps its processor class references.
+of the Evolve package version; ordinary package releases do not invalidate profiles.
+A processor that adds a config key without a version bump declares it in its config
+model's `config_additions`, mapped to the value earlier revisions ran with; resolving a revision
+stored without the key fills in that value (never the model's current, possibly
+environment-derived default), so pinned revisions replay as they ran. The built-in declares
+`trajectory_max_steps=50`, `trajectory_max_step_chars=2000`, and `trajectory_tail_steps=0`. A retained in-process plan keeps its processor class references.
 Hot replacement of installed Python code is unsupported.
 
 ## Built-ins, discovered packages, and local plugins
@@ -288,7 +293,16 @@ generates from that trajectory: `"success"` or `"failure"`. This overrides any
 `evidence` in `trajectory.metadata`, and enables `evidence_filter` at retrieval and
 evidence merging during consolidation. `failed_checks` and `detail` are optional and
 are not stored on entities; they are available to processors through
-`trajectory.outcome`. Without an outcome, behavior is unchanged. The Python client,
+`trajectory.outcome`. Standard generation also switches to an outcome-grounded prompt:
+a failure yields 1–3 corrective guidelines grounded in the failed checks and detail, a
+success at most 2 non-obvious patterns, and either may yield none rather than generic
+advice. Extra guidelines are dropped. The prompt renders the first 10 failed checks,
+each cut to 500 characters, and the first 2,500 characters of `detail`. With
+segmentation, each segment receives the same outcome and these limits apply per segment,
+and a failed run's segment that did not contribute to the failure may yield none.
+This clause was added during review and has not been evaluated; compare guideline yield
+and quality on segmented failed runs with and without it before relying on it.
+Consistency generation is unchanged. Without an outcome, behavior is unchanged. The Python client,
 REST, MCP `process_trajectory`, and CLI input JSON all accept it. An outcome supplied
 after its batch was processed needs a new `batch.revision`, or the processor is skipped.
 

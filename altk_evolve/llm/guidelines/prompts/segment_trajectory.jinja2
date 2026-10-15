@@ -17,7 +17,8 @@ Identify the distinct logical phases of work the agent performed. For each phase
 - `start_step` and `end_step` are the step numbers shown in the trajectory above (inclusive)
 - Prefer contiguous, non-overlapping ranges where the trajectory allows it
 - A single step can be its own subtask if it represents a clearly distinct phase
-- `purpose` should describe what this subtask achieves, not how it does it
+{% if steps_omitted %}- The `[... omitted ...]` entry is not a step: it stands for {{steps_omitted}} steps elided from the middle of a long run. Never make it a subtask of its own
+{% endif %}- `purpose` should describe what this subtask achieves, not how it does it
 
 {% if not constrained_decoding_supported %}
 **Output Format (JSON):**

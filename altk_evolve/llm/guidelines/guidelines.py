@@ -4,6 +4,7 @@ import logging
 import re
 from json import JSONDecodeError
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from jinja2 import Template
 from altk_evolve.telemetry import model_completion as completion
@@ -20,12 +21,25 @@ from altk_evolve.schema.guidelines import (
     Guideline,
     GuidelineGenerationResponse,
     GuidelineGenerationResult,
+    SubtaskSegment,
 )
 from altk_evolve.utils.utils import clean_llm_response
+
+if TYPE_CHECKING:
+    from altk_evolve.processing.models import TrajectoryOutcome
 
 logger = logging.getLogger(__name__)
 
 _GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_guidelines.jinja2").read_text())
+
+# With an outcome, a failure yields 1-3 corrective guidelines and a success at most 2
+# non-obvious ones. The prompt states these limits and the parser enforces them.
+_MAX_FAILURE_GUIDELINES = 3
+_MAX_SUCCESS_GUIDELINES = 2
+# Bounds on the evaluator's report rendered into the prompt.
+_MAX_FAILED_CHECKS = 10
+_MAX_CHECK_CHARS = 500
+_MAX_DETAIL_CHARS = 2500
 
 # Matches one escape at a time: group 1 is a complete, valid JSON escape (\u only counts
 # when four hex digits follow, so LaTeX like \underbrace is repaired rather than left as
@@ -177,9 +191,46 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
     return None
 
 
-def parse_openai_agents_trajectory(messages: list[dict], *, context_messages: list[dict] | None = None) -> dict:
+def trajectory_step_window(total_steps: int, *, max_steps: int, tail_steps: int) -> tuple[int, int]:
+    """How many steps to keep from the start and the end of a ``total_steps``-step trajectory.
+
+    The tail is carved out of the ``max_steps`` budget rather than added to it, so the
+    rendered step count never exceeds the budget however the two are set. ``tail_steps`` is
+    clamped to leave at least one head step. ``EvolveConfig`` and ``GuidelineRuntime`` both
+    reject ``tail_steps >= max_steps``, so the clamp only matters to a caller passing raw
+    numbers (or an unvalidated ``model_construct``); it is a guard, not the rule.
+
+    Returns ``(head, tail)``. A trajectory within budget returns ``(total_steps, 0)``, and so
+    does any configuration with ``tail_steps == 0`` — that is the historical head-only
+    truncation, which is still the default.
+    """
+    if total_steps <= max_steps:
+        return total_steps, 0
+    tail = min(max(tail_steps, 0), max_steps - 1)
+    return max_steps - tail, tail
+
+
+def parse_openai_agents_trajectory(
+    messages: list[dict], *, context_messages: list[dict] | None = None, options: GuidelineRuntime | None = None
+) -> dict:
     """
     Parse OpenAI Agents SDK trajectory from streamer.to_input_list().
+
+    Rendering is bounded by three settings on ``options`` (defaulting to the ``EVOLVE_*``
+    environment, see ``EvolveConfig``): ``trajectory_max_steps`` steps,
+    ``trajectory_max_step_chars`` characters per step, and ``trajectory_tail_steps`` of the
+    step budget reserved for the end of the run. The defaults reproduce the previously
+    hard-coded 50 steps / 2000 characters, head-only.
+
+    **Head+tail elision.** With ``trajectory_tail_steps`` above 0, a trajectory over budget
+    keeps its first and last steps and drops the middle, because the end of a run is where
+    its outcome is and a head-only window never shows it. The gap is rendered as a marker
+    entry in ``steps_list``, not silently closed: ``steps_list`` and
+    ``trajectory_summary`` must stay the same sequence (the summary is the joined list), or
+    the 1-based indices ``segment_trajectory`` returns would address different steps than
+    the segmenter saw. For the same reason ``**Step n**`` labels number *list positions*,
+    so the marker occupies a position of its own and the label of a step still equals its
+    index. ``num_steps`` counts real steps only.
 
     Returns:
         dict with:
@@ -188,7 +239,10 @@ def parse_openai_agents_trajectory(messages: list[dict], *, context_messages: li
         - function_calls: List of tool/function calls made
         - num_steps: Total number of agent actions
         - steps_list: Individual formatted step strings (before joining), for subtask slicing
+        - steps_omitted: Steps dropped to fit the budget (0 when the whole run is rendered)
+        - marker_index: 0-based position of the elision marker in steps_list, or None
     """
+    options = options or GuidelineRuntime.from_settings()
     agent_steps: list[dict[str, str | dict]] = []
     function_calls: list[dict[str, str | dict]] = []
     task_instruction: str | None = next(
@@ -278,13 +332,30 @@ def parse_openai_agents_trajectory(messages: list[dict], *, context_messages: li
                     )
             # Any other shape (e.g. empty content and no tool_calls) contributes no steps.
 
+    head, tail = trajectory_step_window(len(agent_steps), max_steps=options.trajectory_max_steps, tail_steps=options.trajectory_tail_steps)
+    steps_omitted = len(agent_steps) - head - tail
+    kept: list[dict[str, str | dict] | None] = list(agent_steps[:head])
+    if tail:
+        # None marks the gap. It takes a position in the list so that a step's label still
+        # matches its index, and travels into any subtask slice that spans the elision.
+        # Only the elided window gets a marker: head-only truncation is the historical
+        # default, and announcing it would change what every existing caller's prompt says.
+        kept.append(None)
+        kept.extend(agent_steps[-tail:])
+
+    max_step_chars = options.trajectory_max_step_chars
     steps_list = []
-    for i, step in enumerate(agent_steps[:50], 1):
+    for i, step in enumerate(kept, 1):
+        if step is None:
+            # States the run's true length, not a range: labels number list positions, so a
+            # "steps a-b" range would contradict the label of the first tail step.
+            steps_list.append(f"**[... {steps_omitted} intermediate step(s) omitted; {len(agent_steps)} steps in the full run ...]**")
+            continue
         step_type = step["type"]
         content = step["content"]
         # Truncate long content
-        if len(content) > 2000:
-            content = content[:2000] + "..."
+        if len(content) > max_step_chars:
+            content = content[:max_step_chars] + "..."
 
         if step_type == "reasoning":
             steps_list.append(f"**Step {i} - Reasoning:**\n{content}")
@@ -296,8 +367,33 @@ def parse_openai_agents_trajectory(messages: list[dict], *, context_messages: li
         "trajectory_summary": "\n\n".join(steps_list),
         "steps_list": steps_list,
         "function_calls": function_calls,
-        "num_steps": len([s for s in agent_steps[:50] if s["type"] in ["action", "reasoning"]]),
+        "num_steps": len([s for s in kept if s is not None and s["type"] in ["action", "reasoning"]]),
+        "steps_omitted": steps_omitted,
+        "marker_index": head if tail else None,
     }
+
+
+def slice_subtasks(subtasks: list[SubtaskSegment], trajectory_data: dict) -> list[tuple[SubtaskSegment, list[str], int]]:
+    """Slice ``trajectory_data["steps_list"]`` by each subtask's 1-based, inclusive positions.
+
+    Returns ``(subtask, slice, real_steps)`` per usable subtask. Positions are clamped to the
+    list. The elision marker holds a position but is not a step: a slice spanning the gap
+    keeps it, so the model knows steps are missing, without counting it in ``real_steps``;
+    a slice with no real step (out of range, or the marker alone) is dropped.
+    """
+    steps_list: list[str] = trajectory_data["steps_list"]
+    marker_index = trajectory_data["marker_index"]
+    n_steps = len(steps_list)
+    slices = []
+    for subtask in subtasks:
+        start = min(max(0, subtask.start_step - 1), n_steps)
+        end = min(max(0, subtask.end_step), n_steps)
+        real_steps = end - start - (marker_index is not None and start <= marker_index < end)
+        if real_steps <= 0:
+            logger.debug(f"Skipping subtask with no real steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
+            continue
+        slices.append((subtask, steps_list[start:end], real_steps))
+    return slices
 
 
 def _generate_guidelines_for_segment(
@@ -308,14 +404,41 @@ def _generate_guidelines_for_segment(
     *,
     options: GuidelineRuntime,
     supporting_context: str = "",
+    outcome: "TrajectoryOutcome | None" = None,
+    segmented: bool = False,
 ) -> GuidelineGenerationResult:
-    """Generate guidelines for a single trajectory slice (full or subtask)."""
+    """Generate guidelines for a single trajectory slice (full or subtask).
+
+    An outcome switches the prompt to its outcome-grounded rules; without one the
+    prompt is unchanged. ``segmented`` marks the slice as one subtask of a longer
+    trajectory, so a failure prompt allows an empty result for a slice that did not
+    contribute to the failure.
+    """
+    max_guidelines = None
+    outcome_context: dict = {}
+    if outcome is not None:
+        max_guidelines = _MAX_SUCCESS_GUIDELINES if outcome.success else _MAX_FAILURE_GUIDELINES
+        detail = outcome.detail
+        if detail and len(detail) > _MAX_DETAIL_CHARS:
+            detail = detail[:_MAX_DETAIL_CHARS] + "\n... [truncated]"
+        outcome_context = {
+            "outcome": outcome,
+            "failed_checks": [
+                check if len(check) <= _MAX_CHECK_CHARS else check[:_MAX_CHECK_CHARS] + " ... [truncated]"
+                for check in outcome.failed_checks[:_MAX_FAILED_CHECKS]
+            ],
+            "omitted_checks": max(0, len(outcome.failed_checks) - _MAX_FAILED_CHECKS),
+            "detail": detail,
+            "max_guidelines": max_guidelines,
+            "segmented": segmented,
+        }
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         supporting_context=supporting_context,
         num_steps=num_steps,
         trajectory_summary=trajectory_slice,
         constrained_decoding_supported=constrained_decoding_supported,
+        **outcome_context,
     )
 
     llm_messages = dispatch_llm_pre_call(
@@ -349,12 +472,19 @@ def _generate_guidelines_for_segment(
     if not clean_response:
         logger.warning(f"LLM returned empty response for guideline generation. Model: {options.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
-    guidelines = parse_guideline_response(clean_response, "standard")
-    return GuidelineGenerationResult(guidelines=guidelines or [], task_description=task_description)
+    guidelines = parse_guideline_response(clean_response, "standard") or []
+    if max_guidelines is not None and len(guidelines) > max_guidelines:
+        logger.info(f"Keeping the first {max_guidelines} of {len(guidelines)} guidelines the outcome prompt allows.")
+        guidelines = guidelines[:max_guidelines]
+    return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
 
 
 def generate_guidelines(
-    messages: list[dict], *, options: GuidelineRuntime | None = None, context_messages: list[dict] | None = None
+    messages: list[dict],
+    *,
+    options: GuidelineRuntime | None = None,
+    context_messages: list[dict] | None = None,
+    outcome: "TrajectoryOutcome | None" = None,
 ) -> list[GuidelineGenerationResult]:
     """Generate guidelines from a trajectory, optionally segmented into subtasks.
 
@@ -394,10 +524,8 @@ def generate_guidelines(
     )
     constrained_decoding_supported = bool(not is_groq and supports_response_format and response_schema_enabled)
 
-    trajectory_data = parse_openai_agents_trajectory(messages, context_messages=context_messages)
+    trajectory_data = parse_openai_agents_trajectory(messages, context_messages=context_messages, options=options)
     task_instruction = trajectory_data["task_instruction"]
-    steps_list: list[str] = trajectory_data["steps_list"]
-    n_steps = len(steps_list)
 
     subtasks = []
     if options.segmentation_enabled:
@@ -410,26 +538,21 @@ def generate_guidelines(
             subtasks = []
 
     if len(subtasks) >= 2:
-        valid_slices: list[tuple] = []
-        for subtask in subtasks:
-            start = min(max(0, subtask.start_step - 1), n_steps)
-            end = min(max(0, subtask.end_step), n_steps)
-            if start >= end:
-                logger.debug(f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
-                continue
-            valid_slices.append((subtask, steps_list[start:end]))
+        valid_slices = slice_subtasks(subtasks, trajectory_data)
 
         if len(valid_slices) >= 2:
             return [
                 _generate_guidelines_for_segment(
                     task_description=subtask.generalized_description,
                     trajectory_slice="\n\n".join(slice_steps),
-                    num_steps=len(slice_steps),
+                    num_steps=real_steps,
                     constrained_decoding_supported=constrained_decoding_supported,
                     options=options,
                     supporting_context=render_supporting_context(context_messages),
+                    outcome=outcome,
+                    segmented=True,
                 )
-                for subtask, slice_steps in valid_slices
+                for subtask, slice_steps, real_steps in valid_slices
             ]
         # Fewer than 2 valid subtask slices — fall through to full-trajectory fallback.
 
@@ -443,5 +566,6 @@ def generate_guidelines(
             constrained_decoding_supported=constrained_decoding_supported,
             options=options,
             supporting_context=render_supporting_context(context_messages),
+            outcome=outcome,
         )
     ]
