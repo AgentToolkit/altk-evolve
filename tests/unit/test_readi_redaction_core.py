@@ -436,3 +436,28 @@ def test_semantic_redaction_preserves_identity_but_redacts_free_text():
     assert subject not in result["content"]
     assert result["metadata"]["notes"] == {"owner_id": "[REDACTED]", "nested": [{"user_id": "[REDACTED]"}]}
     assert entity["metadata"]["notes"]["owner_id"] == subject
+
+
+def test_semantic_redaction_preserves_source_associations_but_redacts_their_free_text():
+    from altk_evolve.hooks.plugins.readi import redact_entities
+
+    subject = "alice@example.com"
+
+    def detect(text):
+        start = text.find(subject)
+        return [(start, start + len(subject))] if start >= 0 else []
+
+    association = {
+        "conversation_id": subject,
+        "task_id": subject,
+        "user_id": subject,
+        "agent_id": subject,
+        "status": "supporting",
+        "associated_at": "2026-01-01T00:00:00+00:00",
+    }
+    entity = {"content": "x", "metadata": {"sources": [{**association, "note": subject}], "notes": [{"user_id": subject}]}}
+    result = redact_entities([entity], detect)[0]
+    assert result["metadata"]["sources"] == [{**association, "note": "[REDACTED]"}]
+    # Only the provenance list is structural; the same shape elsewhere is free text.
+    assert result["metadata"]["notes"] == [{"user_id": "[REDACTED]"}]
+    assert entity["metadata"]["sources"][0]["note"] == subject

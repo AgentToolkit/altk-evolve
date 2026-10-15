@@ -485,3 +485,54 @@ def test_pii_redacts_free_text_without_changing_email_subject_or_provenance(tmp_
     assert entity.metadata["trace_id"] == "alice@example.com"
     assert "alice@example.com" not in entity.content
     assert "alice@example.com" not in entity.metadata["title"]
+
+
+@pytest.mark.unit
+def test_pii_keeps_source_identities_on_consolidated_guidelines(tmp_path):
+    # Consolidation hands pre-built sources to memory_pre_write. Their identity fields are
+    # what deletion receipts match on, so redacting them would leave the merged guideline
+    # uncollectible; any other field of a source record is still redacted.
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    pytest.importorskip("cpex_pii_filter")
+    client = make_client(tmp_path, PII_SPEC)
+    client.ensure_namespace("ns")
+    subject = "alice@example.com"
+    members = [
+        Entity(
+            type="guideline",
+            content=content,
+            metadata={"task_description": "t", "category": "strategy", "user_id": subject, "agent_id": subject, "thread_id": thread},
+        )
+        for content, thread in [("A", subject), ("B", "t2")]
+    ]
+    client.update_entities("ns", members, enable_conflict_resolution=False)
+    note = {"conversation_id": "t3", "task_id": subject, "user_id": subject, "agent_id": subject, "status": "supporting"}
+    client.update_entities(
+        "ns",
+        [Entity(type="fact", content="x", metadata={"sources": [{**note, "note": f"Contact {subject}"}]})],
+        enable_conflict_resolution=False,
+    )
+    body = {"guidelines": [{"content": "merged", "rationale": "", "category": "strategy", "trigger": "", "source_indices": [0, 1]}]}
+    reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(body)))])
+    with (
+        patch("altk_evolve.llm.guidelines.clustering.cluster_entities", side_effect=lambda entities, threshold: [entities]),
+        patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[]),
+        patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False),
+        patch("altk_evolve.llm.guidelines.clustering.completion", return_value=reply),
+    ):
+        assert client.consolidate_guidelines("ns").clusters_found == 1
+
+    (merged,) = client.scan_entities("ns", filters={"type": "guideline"})
+    assert merged.content == "merged"
+    assert {(s["user_id"], s["agent_id"], s["conversation_id"]) for s in merged.metadata["sources"]} == {
+        (subject, subject, subject),
+        (subject, subject, "t2"),
+    }
+    assert merged.metadata["provenance_incomplete"] is False
+    (fact,) = client.scan_entities("ns", filters={"type": "fact"})
+    (source,) = fact.metadata["sources"]
+    assert {key: source[key] for key in note} == note
+    assert source["note"] == "Contact [REDACTED]"
