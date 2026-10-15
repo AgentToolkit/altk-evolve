@@ -898,7 +898,7 @@ def get_compliance_status(namespace_id: str | None = None) -> str:
         )
 
     try:
-        package_version = version("altk-evolve")
+        package_version = version("altk-evolve-core")
     except PackageNotFoundError:
         package_version = "unknown"
 
