@@ -26,7 +26,7 @@ pytestmark = pytest.mark.unit
 
 FIXTURES = Path(__file__).parent / "fixtures" / "appworld"
 TRAIN = FIXTURES / "react_train"
-PLAYBOOK = FIXTURES / "playbook_test_normal"
+PLAYBOOK = FIXTURES / "playbook_dev"
 PROFILE = Path(__file__).parents[1] / "profiles" / "appworld.json"
 IDENTITY = "My name is: Test User. My personal email is test.user@example.com and phone number is 0000000000."
 
@@ -130,8 +130,8 @@ def test_tasks_that_cannot_be_mined_are_skipped_and_reported(caplog: pytest.LogC
         records = by_id(AppWorldAdapter(), PLAYBOOK)
 
     assert list(records) == ["bbb0002_1", "bbb0002_2"]
-    assert "skipped playbook_test_normal/bbb0002_3: no task instruction found" in caplog.messages
-    assert "skipped playbook_test_normal/bbb0002_4: no logs/environment_io.md" in caplog.messages
+    assert "skipped playbook_dev/bbb0002_3: no task instruction found" in caplog.messages
+    assert "skipped playbook_dev/bbb0002_4: no logs/environment_io.md" in caplog.messages
 
 
 def test_environment_io_without_interactions_is_skipped(run_copy: Path, caplog: pytest.LogCaptureFixture):
@@ -183,13 +183,13 @@ def test_identity_metadata_and_model():
         "instruction_source": "lm_calls",
     }
     assert records["bbb0002_1"].metadata == {
-        "run": "playbook_test_normal",
-        "split": "test_normal",
+        "run": "playbook_dev",
+        "split": "dev",
         "difficulty": 2,
         "model": "gpt-4.1",
         "instruction_source": "lm_calls",
     }
-    assert records["bbb0002_2"].metadata == {"run": "playbook_test_normal", "model": "gpt-4.1", "instruction_source": "logger"}
+    assert records["bbb0002_2"].metadata == {"run": "playbook_dev", "model": "gpt-4.1", "instruction_source": "logger"}
 
 
 def test_a_task_evaluated_twice_is_an_error(run_copy: Path):
@@ -396,27 +396,49 @@ def test_layouts_that_read_nothing_warn(tmp_path: Path, caplog: pytest.LogCaptur
     assert f"read no AppWorld task beneath {empty}" in caplog.messages
 
 
-def test_splits_option_selects_evaluated_tasks_by_split(caplog: pytest.LogCaptureFixture):
+@pytest.fixture
+def with_test_split(tmp_path: Path) -> Path:
+    """The fixtures, with the playbook run's evaluations file renamed to the test_normal split."""
+    runs = Path(shutil.copytree(FIXTURES, tmp_path / "appworld"))
+    evaluations = runs / "playbook_dev" / "evaluations"
+    (evaluations / "dev.json").rename(evaluations / "test_normal.json")
+    return runs
+
+
+def test_splits_option_selects_evaluated_tasks_by_split(with_test_split: Path):
     assert list(by_id(AppWorldAdapter().configure({"splits": "train"}))) == ["aaa0001_1", "aaa0001_2"]
     # bbb0002_2 has no evaluation, so its split is unknown and a split filter leaves it out.
-    assert list(by_id(AppWorldAdapter().configure({"splits": "test_normal"}))) == ["bbb0002_1"]
-    assert list(by_id(AppWorldAdapter().configure({"splits": "train, test_normal"}))) == ["bbb0002_1", "aaa0001_1", "aaa0001_2"]
+    assert list(by_id(AppWorldAdapter().configure({"splits": "dev"}))) == ["bbb0002_1"]
+    assert list(by_id(AppWorldAdapter().configure({"splits": "train, test_normal"}), with_test_split)) == [
+        "bbb0002_1",
+        "aaa0001_1",
+        "aaa0001_2",
+    ]
 
-    with pytest.raises(ValueError, match=r"Splits not found beneath .*: \['dev'\] \(found \['test_normal', 'train'\]\)"):
-        next(AppWorldAdapter().configure({"splits": "train,dev"}).records(FIXTURES))
+    with pytest.raises(ValueError, match=r"Splits not found beneath .*: \['test'\] \(found \['dev', 'train'\]\)"):
+        next(AppWorldAdapter().configure({"splits": "train,test"}).records(FIXTURES))
     # A selected task outside the selected splits is not found, rather than silently dropped.
-    with pytest.raises(ValueError, match=r"Task IDs not found beneath .*\['bbb0002_1'\]"):
+    with pytest.raises(ValueError, match=r"Task IDs not found beneath .* in splits \['train'\]: \['bbb0002_1'\]"):
         next(AppWorldAdapter().configure({"splits": "train", "task_ids": "bbb0002_1"}).records(FIXTURES))
 
 
-def test_mining_test_split_tasks_without_naming_them_warns(caplog: pytest.LogCaptureFixture):
+def test_test_splits_are_mined_only_when_named(with_test_split: Path, caplog: pytest.LogCaptureFixture):
+    # Guidelines mined from a test split leak into any later evaluation on it.
     with caplog.at_level(logging.WARNING):
-        by_id(AppWorldAdapter())
-    assert "read test-split tasks from playbook_test_normal (test_normal); pass splits= to choose splits" in caplog.messages
+        # bbb0002_2 has no evaluation, so it is not known to be a test task and is still read.
+        assert list(by_id(AppWorldAdapter(), with_test_split)) == ["bbb0002_2", "aaa0001_1", "aaa0001_2"]
+    assert "skipped test-split tasks in playbook_dev (test_normal); name the split in splits= to mine it" in caplog.messages
+    assert list(by_id(AppWorldAdapter().configure({"splits": "test_normal"}), with_test_split)) == ["bbb0002_1"]
+
+    # Naming a test task without its split is an error, not a silent skip.
+    with pytest.raises(ValueError, match=r"Task IDs not found beneath .* outside test splits: \['bbb0002_1'\]"):
+        next(AppWorldAdapter().configure({"task_ids": "bbb0002_1"}).records(with_test_split))
+
     caplog.clear()
     with caplog.at_level(logging.WARNING):
-        by_id(AppWorldAdapter().configure({"splits": "test_normal"}))
-        by_id(AppWorldAdapter(), TRAIN)
+        by_id(AppWorldAdapter().configure({"splits": "test_normal"}), with_test_split)
+        by_id(AppWorldAdapter().configure({"task_ids": "bbb0002_2"}), with_test_split)
+        by_id(AppWorldAdapter())
     assert not [message for message in caplog.messages if "test-split" in message]
 
 
