@@ -1,0 +1,1 @@
+{"id": "call-1", "input": {"model": "synthetic-model", "messages": [{"role": "user", "content": "My name is: Test User.\nTask: A task whose run left no environment log.\n"}]}, "output": {"content": "print('crash')"}}
