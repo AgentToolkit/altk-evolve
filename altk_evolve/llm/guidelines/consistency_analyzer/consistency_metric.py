@@ -426,9 +426,15 @@ class CategoricalEntropyConsistencyMetric(ConsistencyMetric):
 
         # The dispatcher supplies strings. Raw direct calls retain the old
         # missing-value exclusion and numeric promotion, including rounding.
-        values = [s for s in samples if s is not None and not (isinstance(s, (float, np.floating)) and math.isnan(s))]
-        numeric = values and all(isinstance(s, Real) and not isinstance(s, (bool, np.bool_)) for s in values)
-        integers = [int(s) for s in values if isinstance(s, Integral)]
+        values = [
+            s
+            for s in samples
+            if s is not None
+            and not (isinstance(s, (float, np.floating)) and math.isnan(s))
+            and not (isinstance(s, (np.datetime64, np.timedelta64)) and np.isnat(s))
+        ]
+        numeric = values and all(isinstance(s, Real) and not isinstance(s, (bool, np.bool_, np.timedelta64)) for s in values)
+        integers = [int(s) for s in values if isinstance(s, Integral)] if numeric else []
         if (
             numeric
             and (len(values) != len(samples) or any(not isinstance(s, Integral) for s in values))

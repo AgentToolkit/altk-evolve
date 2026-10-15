@@ -1,6 +1,7 @@
 """Categorical entropy contracts without pandas or SciPy at test/runtime."""
 
 import math
+import numpy as np
 
 from hypothesis import given, settings, strategies as st
 import pytest
@@ -54,3 +55,10 @@ def test_dispatcher_preserves_string_categories(samples):
 )
 def test_direct_call_legacy_results(samples, expected):
     assert CategoricalEntropyConsistencyMetric().get_consistency_and_distance(samples) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("kind", [np.datetime64, np.timedelta64])
+def test_missing_temporal_values_do_not_form_categories(kind):
+    samples = [kind("NaT"), kind(1, "D"), kind(2, "D")]
+    distance = 1 / math.log2(3)
+    assert CategoricalEntropyConsistencyMetric().get_consistency_and_distance(samples) == pytest.approx((1 - distance, distance))

@@ -115,7 +115,7 @@ jobs:
             prune_unusable
             sdists=(dist/*.tar.gz)
             wheels=(dist/*.whl)
-            if uv run --no-project python scripts/check_release_artifacts.py dist "$RELEASE_VERSION"; then
+            if uv run --no-project --with packaging python scripts/check_release_artifacts.py dist "$RELEASE_VERSION"; then
               echo "Got a usable sdist and wheel for $TAG on attempt $attempt."
               break
             fi
@@ -133,7 +133,7 @@ jobs:
           # incomplete set.
           sdists=(dist/*.tar.gz)
           wheels=(dist/*.whl)
-          if ! uv run --no-project python scripts/check_release_artifacts.py dist "$RELEASE_VERSION"; then
+          if ! uv run --no-project --with packaging python scripts/check_release_artifacts.py dist "$RELEASE_VERSION"; then
             echo "::error::Expected a usable sdist and a usable wheel for $TAG; found ${#sdists[@]} sdist(s) and ${#wheels[@]} wheel(s) after $attempt attempts over ~5 minutes."
             ls -la dist/ || true
             exit 1
