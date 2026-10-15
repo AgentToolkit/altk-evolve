@@ -108,7 +108,7 @@ class CugaAdapter:
         read = 0
         for run_dir in run_dirs:
             results = _load_results(run_dir)
-            experiment = _read_json(run_dir / "metadata.json").get("experiment_name") if (run_dir / "metadata.json").exists() else None
+            experiment = _metadata(run_dir).get("experiment_name")
             for task_file in _task_files(run_dir):
                 if self.task_ids and task_file.stem not in self.task_ids:
                     continue
@@ -276,16 +276,40 @@ def _load_results(run_dir: Path) -> dict[str, dict]:
     return {task_id: entry for task_id, entry in results.items() if isinstance(entry, dict)}
 
 
-def _task_files(run_dir: Path, *, warn: bool = True) -> list[Path]:
-    """The manifest's tasks (metadata.json task_ids), else every JSON that is not a run-level file."""
-    manifest = _read_json(run_dir / "metadata.json").get("task_ids") if (run_dir / "metadata.json").exists() else None
+def _metadata(run_dir: Path) -> dict:
+    """The run's metadata.json, {} if it has none; a ValueError naming the file if it is unreadable or its task_ids is not a list."""
+    path = run_dir / "metadata.json"
+    if not path.exists():
+        return {}
+    try:
+        metadata = _read_json(path)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Cannot read {path}: {exc}") from exc
+    if not isinstance(metadata.get("task_ids") or [], list):
+        raise ValueError(f"Cannot read {path}: task_ids is not a list")
+    return metadata
+
+
+def _task_files(run_dir: Path, *, detecting: bool = False) -> list[Path]:
+    """The manifest's tasks (metadata.json task_ids), else every JSON that is not a run-level file.
+
+    Reading a run with a bad metadata.json fails: the manifest is authoritative, and the glob
+    could read tasks it leaves out. Detection falls back to the glob instead, so a parent's
+    bad metadata.json neither hides its child runs nor ends the mine.
+    """
+    try:
+        manifest = _metadata(run_dir).get("task_ids")
+    except ValueError:
+        if not detecting:
+            raise
+        manifest = None
     if manifest:
         files = []
         for task_id in manifest:
             task_file = run_dir / f"{task_id}.json"
             if task_file.exists():
                 files.append(task_file)
-            elif warn:
+            elif not detecting:
                 logger.warning("manifest task %s has no trajectory file in %s", task_id, run_dir.name)
         return sorted(files)
     return sorted(f for f in run_dir.glob("*.json") if f.stem not in _NOT_TASKS and not f.stem.startswith("appworld_sdk_"))
@@ -316,14 +340,24 @@ def _run_dirs(path: Path) -> list[Path]:
 
     What makes a run is a task, not a marker file: neither a subdirectory of JSON inside
     a run (logs, traces) nor a parent's own results, metadata, appworld_sdk or summary
-    file can make a directory the wrong kind. JSON files beside child runs are ignored
-    with a warning.
+    file can make a directory the wrong kind. Whatever is left unread gets a warning:
+    child runs beneath a run, a parent's own JSON files, and child directories with
+    JSON but no readable task.
     """
     if _is_run_dir(path):
+        if nested := sorted(child.name for child in path.iterdir() if _is_run_dir(child)):
+            logger.warning("read %s as one run; not read: %s, which also hold tasks", path, ", ".join(nested))
         return [path]
     if not path.is_dir():
         return []
-    children = sorted(child for child in path.iterdir() if _is_run_dir(child))
+    children, unread = [], []
+    for child in sorted(path.iterdir()):
+        if _is_run_dir(child):
+            children.append(child)
+        elif child.is_dir() and any(child.glob("*.json")):
+            unread.append(child.name)
+    if unread:
+        logger.warning("skipped %s in %s: no readable task file with an intent", ", ".join(unread), path)
     if children and (stray := sorted(f.name for f in path.glob("*.json"))):
         logger.warning("ignored %s in %s: it holds run directories, so it is not a run itself", ", ".join(stray), path)
     return children
@@ -336,7 +370,7 @@ def _partition(run: str) -> str:
 
 def _is_run_dir(path: Path) -> bool:
     """A directory with at least one task file (by its manifest, if any) that records() would read: one with an intent."""
-    return path.is_dir() and any(_has_intent(task_file) for task_file in _task_files(path, warn=False))
+    return path.is_dir() and any(_has_intent(task_file) for task_file in _task_files(path, detecting=True))
 
 
 def _has_intent(task_file: Path) -> bool:

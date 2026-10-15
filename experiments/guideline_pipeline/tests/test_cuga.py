@@ -76,6 +76,64 @@ def test_a_parent_with_run_level_files_of_its_own_is_still_a_parent(tmp_path: Pa
     assert f"ignored {', '.join(sorted(own_files))}" in caplog.text
 
 
+@pytest.mark.parametrize("metadata", ['{"task_ids": 3}', "{ truncated", "[]"], ids=["task_ids-not-a-list", "malformed", "not-an-object"])
+def test_a_parent_with_a_bad_metadata_json_still_yields_its_child_runs(tmp_path: Path, caplog: pytest.LogCaptureFixture, metadata: str):
+    runs = Path(shutil.copytree(FIXTURES, tmp_path / "runs"))
+    (runs / "metadata.json").write_text(metadata)
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        assert list(by_id(CugaAdapter(), runs)) == ["aaa0001_1", "aaa0001_2", "ccc0003_1"]
+    assert "ignored metadata.json" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("metadata", "error"),
+    [('{"task_ids": 3}', "task_ids is not a list"), ("{ truncated", "Cannot read"), ("[]", "is not a JSON object")],
+    ids=["task_ids-not-a-list", "malformed", "not-an-object"],
+)
+def test_reading_a_run_with_a_bad_metadata_json_fails_instead_of_guessing_its_tasks(run_copy: Path, metadata: str, error: str):
+    # The manifest is authoritative: the glob would read zzz9999_1, which it leaves out.
+    (run_copy / "metadata.json").write_text(metadata)
+
+    with pytest.raises(ValueError, match=f"metadata.json.*{error}|{error}.*metadata.json"):
+        list(CugaAdapter().records(run_copy))
+
+
+def test_child_runs_beneath_a_run_are_named_in_a_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    # The path decides first: a task at the top makes it the run, but its child runs are not dropped silently.
+    runs = Path(shutil.copytree(FIXTURES, tmp_path / "runs"))
+    (runs / "example_task.json").write_text(json.dumps({"intent": "a copied example", "steps": []}))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        assert list(by_id(CugaAdapter(), runs)) == ["example_task"]
+    assert "not read: test_normal_dev, test_normal_train, which also hold tasks" in caplog.text
+
+
+def _no_intents(run: Path) -> None:
+    for name in ("aaa0001_1", "aaa0001_2"):
+        task = json.loads((run / f"{name}.json").read_text())
+        (run / f"{name}.json").write_text(json.dumps({**task, "intent": None}))
+
+
+@pytest.mark.parametrize(
+    "break_run",
+    [
+        _no_intents,  # zzz9999_1 still has one, but the manifest leaves it out, so detection must honor the manifest
+        lambda run: (run / "metadata.json").write_text(json.dumps({"task_ids": ["gone_1", "gone_2"]})),
+        lambda run: [(run / f"{name}.json").write_text("{ truncated") for name in ("aaa0001_1", "aaa0001_2")],
+        lambda run: [(run / f"{name}.json").write_text("[1]") for name in ("aaa0001_1", "aaa0001_2")],
+    ],
+    ids=["no-intents-in-the-manifest", "manifest-names-missing-files", "malformed-tasks", "non-object-tasks"],
+)
+def test_a_child_with_json_but_no_readable_task_is_skipped_with_a_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture, break_run):
+    runs = Path(shutil.copytree(FIXTURES, tmp_path / "runs"))
+    break_run(runs / "test_normal_dev")
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        assert list(by_id(CugaAdapter(), runs)) == ["ccc0003_1"]
+    assert "skipped test_normal_dev in" in caplog.text
+
+
 @pytest.mark.parametrize("run", ["test_normal_dev", "test_normal_train", "bare"])
 def test_a_json_subdirectory_inside_a_run_does_not_make_it_a_parent(tmp_path: Path, caplog: pytest.LogCaptureFixture, run: str):
     # dev has results.json and metadata.json, train only an appworld_sdk file, bare only its task files.

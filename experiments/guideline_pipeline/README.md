@@ -125,10 +125,13 @@ run directory or a directory of them:
 A directory is a run when it holds at least one task file (as defined below)
 with an intent. `results.json`, `metadata.json`, `appworld_sdk_*.json` and
 subdirectories (logs, traces) neither make a directory a run nor stop it being
-one. Otherwise `--input` is read as the parent of the runs directly inside it, and
-any JSON file of its own (a sweep's metadata, results or summary) is ignored with
-a warning. A path where neither it nor a child directory holds a task is an error,
-and a selection that reads no task logs a warning.
+one. Otherwise `--input` is read as the parent of the runs directly inside it.
+Anything left unread gets a warning: child runs beneath a directory that is itself
+a run, a parent's own JSON files (a sweep's metadata, results or summary, even a
+malformed one), and a child directory with JSON but no readable task with an
+intent. A path where neither it nor a child directory holds a task is an error,
+and a selection that reads no task logs a warning. Reading a run whose
+`metadata.json` is malformed, or whose `task_ids` is not a list, is an error.
 
 When `metadata.json` lists `task_ids`, those are the tasks; otherwise every JSON
 file other than `results`, `metadata` and `appworld_sdk_*` is one. A task whose
@@ -188,9 +191,8 @@ uv run python -m experiments.guideline_pipeline mine --adapter cuga --input path
 ```
 
 Drop `--dry-run` to mine. The built-in processor sets each guideline's `evidence`
-from the outcome. Once #351 merges, its standard generator also grounds extraction
-in the outcome's `failed_checks` and `detail`; until then they reach processors
-through `trajectory.outcome` but not the extraction prompt.
+from the outcome, and its standard generator grounds extraction in the outcome's
+`failed_checks` and `detail`.
 
 ## Writing an adapter
 
