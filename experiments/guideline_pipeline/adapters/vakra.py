@@ -124,7 +124,7 @@ class VakraAdapter:
                     logger.warning("skipped %s/%s: no task (no HumanMessage text and no output query)", file.name, raw["uuid"])
                     continue
                 read += 1
-                yield self.record(raw, _domain(raw, file), self.split, results.get(raw["uuid"]))
+                yield self.record(raw, _domain(raw, file), self.split, results.get((file.stem, raw["uuid"])))
         if not read:
             logger.warning("read no VAKRA %s record from %s", self.split, path)
 
@@ -148,7 +148,7 @@ class VakraAdapter:
             for raw in heldout:
                 if query := _first_query(raw):
                     answer = _first_turn(raw).get("answer")
-                    score = _score((results.get(raw["uuid"]) or {}).get("score"))
+                    score = _score((results.get((file.stem, raw["uuid"])) or {}).get("score"))
                     manifest[_domain(raw, file)].append(
                         {"uuid": raw["uuid"], "query": query, "answer": "" if answer is None else answer, "score": score}
                     )
@@ -195,8 +195,13 @@ class VakraAdapter:
             files = [file for file in files if file.stem in self.domains]
         return files
 
-    def _results(self, path: Path) -> dict[str, dict]:
-        """uuid -> dialogue evaluation; {} when the run has no results.json and none was given.
+    def _results(self, path: Path) -> dict[tuple[str, str], dict]:
+        """(domain, uuid) -> dialogue evaluation; {} when the run has no results.json and none was given.
+
+        VAKRA's evaluator names each results domain after its ground-truth file, pairs it
+        with the prediction file of the same name, and pairs dialogues by uuid only within
+        a domain, so a record is matched by its file's name and its uuid: a uuid that
+        recurs in another domain does not take that domain's evaluation.
 
         A file without the evaluator's {"domains": {<domain>: {"dialogues": [...]}}} shape
         is an error naming it: read as empty, every record would silently lose its outcome.
@@ -208,14 +213,14 @@ class VakraAdapter:
         domains = payload.get("domains") if isinstance(payload, dict) else None
         if not isinstance(domains, dict):
             raise ValueError(f'Cannot read {results_path}: expected {{"domains": {{<domain>: {{"dialogues": [...]}}}}}}')
-        index: dict[str, dict] = {}
+        index: dict[tuple[str, str], dict] = {}
         for name, domain in domains.items():
             dialogues = domain.get("dialogues") if isinstance(domain, dict) else None
             if not isinstance(dialogues, list):
                 raise ValueError(f"Cannot read {results_path}: domains.{name}.dialogues is not a list")
             for dialogue in dialogues:
                 if isinstance(dialogue, dict) and isinstance(dialogue.get("uuid"), str) and dialogue["uuid"]:
-                    index[dialogue["uuid"]] = dialogue
+                    index[(name, dialogue["uuid"])] = dialogue
         return index
 
 

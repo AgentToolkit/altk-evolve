@@ -326,7 +326,10 @@ becomes one record:
   Python repr. Text longer than a step is split into `(part i/n)` steps rather
   than truncated. Runs longer than the extractor's 50 steps are elided as for
   CUGA (the helper is shared, in `adapters/elision.py`).
-- **outcome**: from the record's `results.json` dialogue. `success` is
+- **outcome**: from the record's `results.json` dialogue, matched by the domain
+  file's name and the uuid (the evaluator names each results domain after its
+  file and pairs uuids only within a domain, so a uuid repeated in another domain
+  keeps its own evaluation). `success` is
   `score >= 1` for a finite numeric score. Any other score (NaN, a string, a
   bool) is ignored with a warning, so it gives no outcome rather than a failure.
   The record's `status` is execution status only and is not used. A failed

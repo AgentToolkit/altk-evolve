@@ -388,6 +388,24 @@ def test_results_option_reads_an_evaluation_elsewhere(data_copy: Path):
     assert records["auth-01"].outcome is not None and records["auth-01"].outcome.success
 
 
+def test_results_are_matched_within_their_domain(tmp_path: Path):
+    """VAKRA pairs dialogues by uuid within a domain only, so a uuid repeated in two domains keeps each its own evaluation."""
+    for domain in ("hockey", "movies"):
+        (tmp_path / f"{domain}.json").write_text(json.dumps([{"uuid": "dup", "domain": domain, "output": [{"query": f"{domain}?"}]}]))
+    write_results(
+        tmp_path,
+        {"domains": {domain: {"dialogues": [{"uuid": "dup", "score": score}]} for domain, score in (("hockey", 1.0), ("movies", 0.0))}},
+    )
+
+    records = list(everything().records(tmp_path))
+    assert [(r.metadata["domain"], r.metadata["score"], r.outcome) for r in records] == [
+        ("hockey", 1.0, TrajectoryOutcome(success=True)),
+        ("movies", 0.0, TrajectoryOutcome(success=False)),
+    ]
+    manifest = VakraAdapter(dev_frac=0.99).heldout_manifest(tmp_path)
+    assert {domain: [item["score"] for item in items] for domain, items in manifest.items()} == {"hockey": [1.0], "movies": [0.0]}
+
+
 def test_heldout_manifest_contents_and_determinism(tmp_path: Path):
     manifest = VakraAdapter().heldout_manifest(FIXTURES)
     assert manifest == {
