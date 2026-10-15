@@ -122,10 +122,13 @@ run directory or a directory of them:
     appworld_sdk_*.json       # ignored
 ```
 
-A directory holding `results.json`, `metadata.json` or an `appworld_sdk_*.json`
-is a run, whatever subdirectories it has (logs, per-task artifacts). Otherwise,
-when `--input` holds run directories, it is read as their parent and any JSON
-file directly inside it (a summary, a config) is ignored with a warning.
+A directory is a run when it holds at least one task file (as defined below)
+with an intent. `results.json`, `metadata.json`, `appworld_sdk_*.json` and
+subdirectories (logs, traces) neither make a directory a run nor stop it being
+one. Otherwise `--input` is read as the parent of the runs directly inside it, and
+any JSON file of its own (a sweep's metadata, results or summary) is ignored with
+a warning. A path where neither it nor a child directory holds a task is an error,
+and a selection that reads no task logs a warning.
 
 When `metadata.json` lists `task_ids`, those are the tasks; otherwise every JSON
 file other than `results`, `metadata` and `appworld_sdk_*` is one. A task whose

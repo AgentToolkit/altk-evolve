@@ -4,7 +4,7 @@ A run directory holds one ``<task_id>.json`` per task, ``{"intent", "task_id",
 "score", "steps": [{"name", "data", "prompts"?}, ...]}``, a ``results.json``
 mapping task IDs to their evaluation, and optionally a ``metadata.json`` whose
 ``task_ids`` list is the authoritative task manifest. ``--input`` is either a
-run directory or a parent of run directories.
+run directory (one holding a task file with an intent) or a parent of run directories.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ FAIL_TRACE_CHARS = 600
 _ACTION_STEPS = ("Raw_Assistant_Response", "Assistant_response")
 _OBSERVATION_STEPS = ("User_output", "Observation", "Tool_output")
 _NOT_TASKS = ("results", "metadata")
-_RUN_MARKERS = ("results.json", "metadata.json")
 
 # TEMPORARY: parse_openai_agents_trajectory keeps only the first 50 agent steps, so a
 # long CUGA run would lose its ending (where it succeeds or fails). Until those
@@ -96,7 +95,7 @@ class CugaAdapter:
     def records(self, path: Path) -> Iterator[AdapterRecord]:
         run_dirs = _run_dirs(path)
         if not run_dirs:
-            raise ValueError(f"No CUGA run directory at {path}")
+            raise ValueError(f"No CUGA run directory at {path}: neither it nor a child holds a task file with an intent")
         if self.partitions:
             found_partitions = {_partition(run_dir.name) for run_dir in run_dirs}
             if missing := sorted(self.partitions - found_partitions):
@@ -106,6 +105,7 @@ class CugaAdapter:
             found = {task_file.stem for run_dir in run_dirs for task_file in _task_files(run_dir)}
             if missing := sorted(self.task_ids - found):
                 raise ValueError(f"Task IDs not found beneath {path}: {missing}")
+        read = 0
         for run_dir in run_dirs:
             results = _load_results(run_dir)
             experiment = _read_json(run_dir / "metadata.json").get("experiment_name") if (run_dir / "metadata.json").exists() else None
@@ -116,7 +116,10 @@ class CugaAdapter:
                 if not (isinstance(intent := task.get("intent"), str) and intent.strip()):
                     logger.warning("skipped %s/%s: no intent", run_dir.name, task_file.stem)
                     continue
+                read += 1
                 yield self.record(run_dir.name, task_file.stem, task, results.get(task_file.stem), experiment=experiment)
+        if not read:
+            logger.warning("read no CUGA task beneath %s", path)
 
     def record(self, run: str, task_id: str, task: dict, result: dict | None, *, experiment: str | None = None) -> AdapterRecord:
         """Build one record from a parsed task file and its results.json entry (if any)."""
@@ -273,7 +276,7 @@ def _load_results(run_dir: Path) -> dict[str, dict]:
     return {task_id: entry for task_id, entry in results.items() if isinstance(entry, dict)}
 
 
-def _task_files(run_dir: Path) -> list[Path]:
+def _task_files(run_dir: Path, *, warn: bool = True) -> list[Path]:
     """The manifest's tasks (metadata.json task_ids), else every JSON that is not a run-level file."""
     manifest = _read_json(run_dir / "metadata.json").get("task_ids") if (run_dir / "metadata.json").exists() else None
     if manifest:
@@ -282,7 +285,7 @@ def _task_files(run_dir: Path) -> list[Path]:
             task_file = run_dir / f"{task_id}.json"
             if task_file.exists():
                 files.append(task_file)
-            else:
+            elif warn:
                 logger.warning("manifest task %s has no trajectory file in %s", task_id, run_dir.name)
         return sorted(files)
     return sorted(f for f in run_dir.glob("*.json") if f.stem not in _NOT_TASKS and not f.stem.startswith("appworld_sdk_"))
@@ -290,34 +293,38 @@ def _task_files(run_dir: Path) -> list[Path]:
 
 def load_task_manifest(path: Path) -> list[str]:
     """Task IDs from a JSON file (``task_ids`` or ``tasks[].task_id``) or one ID per line (``#`` comments)."""
-    if path.suffix == ".json":
-        payload = json.loads(path.read_text())
-        task_ids = payload.get("task_ids")
-        if task_ids is None:
-            task_ids = [item.get("task_id") for item in payload.get("tasks", [])]
+    try:
+        text = path.read_text()
+        payload = json.loads(text) if path.suffix == ".json" else None
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Cannot read task manifest {path}: {exc}") from exc
+    if payload is None:
+        task_ids: Any = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    elif isinstance(payload, dict) and "task_ids" in payload:
+        task_ids = payload["task_ids"]
+    elif isinstance(payload, dict) and isinstance(tasks := payload.get("tasks"), list):
+        task_ids = [item.get("task_id") if isinstance(item, dict) else None for item in tasks]
     else:
-        task_ids = [line.strip() for line in path.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
-    if not task_ids or not all(isinstance(task_id, str) and task_id for task_id in task_ids):
-        raise ValueError(f"No valid task IDs found in {path}")
-    return list(task_ids)
+        task_ids = None
+    if not (isinstance(task_ids, list) and task_ids and all(isinstance(task_id, str) and task_id for task_id in task_ids)):
+        raise ValueError(f"No valid task IDs found in task manifest {path} (expected task_ids or tasks[].task_id)")
+    return task_ids
 
 
 def _run_dirs(path: Path) -> list[Path]:
-    """path itself when its own files mark it as a run, else its child runs.
+    """path itself when it is a run, else its child runs.
 
-    A run's marker files decide first, so a subdirectory of JSON inside a run (logs,
-    per-task artifacts) never turns it into a parent. Without them, child runs take
-    precedence, so a stray JSON file beside them (a summary, a config) is ignored with
-    a warning instead of making path the only run.
+    What makes a run is a task, not a marker file: neither a subdirectory of JSON inside
+    a run (logs, traces) nor a parent's own results, metadata, appworld_sdk or summary
+    file can make a directory the wrong kind. JSON files beside child runs are ignored
+    with a warning.
     """
+    if _is_run_dir(path):
+        return [path]
     if not path.is_dir():
         return []
-    if any((path / name).exists() for name in _RUN_MARKERS) or any(path.glob("appworld_sdk_*.json")):
-        return [path]
     children = sorted(child for child in path.iterdir() if _is_run_dir(child))
-    if not children:
-        return [path] if _is_run_dir(path) else []
-    if stray := sorted(f.name for f in path.glob("*.json")):
+    if children and (stray := sorted(f.name for f in path.glob("*.json"))):
         logger.warning("ignored %s in %s: it holds run directories, so it is not a run itself", ", ".join(stray), path)
     return children
 
@@ -328,7 +335,16 @@ def _partition(run: str) -> str:
 
 
 def _is_run_dir(path: Path) -> bool:
-    return path.is_dir() and any(path.glob("*.json"))
+    """A directory with at least one task file (by its manifest, if any) that records() would read: one with an intent."""
+    return path.is_dir() and any(_has_intent(task_file) for task_file in _task_files(path, warn=False))
+
+
+def _has_intent(task_file: Path) -> bool:
+    try:
+        task = _read_json(task_file)
+    except (OSError, ValueError):  # a malformed or non-object file is not a task here; reading a run reports it
+        return False
+    return isinstance(intent := task.get("intent"), str) and bool(intent.strip())
 
 
 def _data(step: dict) -> str:

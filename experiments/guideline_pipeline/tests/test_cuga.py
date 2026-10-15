@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -53,16 +54,60 @@ def test_a_stray_json_beside_runs_is_ignored_not_read_as_the_run(tmp_path: Path,
     assert "ignored summary.json" in caplog.text
 
 
-@pytest.mark.parametrize("run", ["test_normal_dev", "test_normal_train"])
+@pytest.mark.parametrize(
+    "own_files",
+    [
+        {"metadata.json": {"experiment_name": "sweep"}},
+        {"metadata.json": {"task_ids": ["aaa0001_1", "ccc0003_1"]}},
+        {"results.json": {}},
+        {"appworld_sdk_20260101_000000.json": {"note": "sweep"}},
+        {"metadata.json": {"experiment_name": "sweep"}, "summary.json": {"total": 3}},
+    ],
+    ids=["metadata", "metadata-manifest", "results", "appworld_sdk", "metadata-and-summary"],
+)
+def test_a_parent_with_run_level_files_of_its_own_is_still_a_parent(tmp_path: Path, caplog: pytest.LogCaptureFixture, own_files: dict):
+    # A sweep can keep its own config or summary at the top; with no task of its own it is not a run.
+    runs = Path(shutil.copytree(FIXTURES, tmp_path / "runs"))
+    for name, payload in own_files.items():
+        (runs / name).write_text(json.dumps(payload))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        assert list(by_id(CugaAdapter(), runs)) == ["aaa0001_1", "aaa0001_2", "ccc0003_1"]
+    assert f"ignored {', '.join(sorted(own_files))}" in caplog.text
+
+
+@pytest.mark.parametrize("run", ["test_normal_dev", "test_normal_train", "bare"])
 def test_a_json_subdirectory_inside_a_run_does_not_make_it_a_parent(tmp_path: Path, caplog: pytest.LogCaptureFixture, run: str):
-    # dev is marked by results.json and metadata.json, train only by its appworld_sdk file.
-    single = Path(shutil.copytree(FIXTURES / run, tmp_path / run))
+    # dev has results.json and metadata.json, train only an appworld_sdk file, bare only its task files.
+    single = Path(shutil.copytree(FIXTURES / ("test_normal_train" if run == "bare" else run), tmp_path / run))
+    if run == "bare":
+        (single / "appworld_sdk_20260101_000000.json").unlink()
     (single / "logs").mkdir()
     (single / "logs" / "trace.json").write_text("{}")
 
     with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
-        assert list(by_id(CugaAdapter(), single)) == list(by_id(CugaAdapter(), FIXTURES / run))
+        assert list(by_id(CugaAdapter(), single)) == (["ccc0003_1"] if run == "bare" else list(by_id(CugaAdapter(), FIXTURES / run)))
     assert "ignored" not in caplog.text
+
+
+def test_a_directory_without_a_task_is_not_a_run(tmp_path: Path):
+    # Only trace files, no task with an intent: an error, not a silent mine of 0 records.
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "trace.json").write_text("{}")
+    (tmp_path / "summary.json").write_text(json.dumps({"total": 0}))
+
+    with pytest.raises(ValueError, match="No CUGA run directory"):
+        next(CugaAdapter().records(tmp_path))
+
+
+def test_a_selection_that_reads_no_task_warns(run_copy: Path, caplog: pytest.LogCaptureFixture):
+    task = json.loads((run_copy / "aaa0001_2.json").read_text())
+    task["intent"] = None
+    (run_copy / "aaa0001_2.json").write_text(json.dumps(task))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        assert list(by_id(CugaAdapter(task_ids=frozenset({"aaa0001_2"})), run_copy)) == []
+    assert "read no CUGA task" in caplog.text
 
 
 @pytest.mark.parametrize("intent", [None, "", "  ", 5, ["a"], {"k": 1}])
@@ -264,6 +309,18 @@ def test_options_and_task_selection(tmp_path: Path):
 
     with pytest.raises(ValueError, match="Task IDs not found"):
         next(CugaAdapter(task_ids=frozenset({"nope_1"})).records(FIXTURES))
+    for name, text in [
+        ("list.json", "[]"),
+        ("ids_string.json", json.dumps({"task_ids": "aaa0001_1"})),
+        ("tasks_not_objects.json", json.dumps({"tasks": ["aaa0001_1"]})),
+        ("tasks_not_a_list.json", json.dumps({"tasks": "aaa0001_1"})),
+        ("malformed.json", "{ truncated"),
+    ]:
+        (tmp_path / name).write_text(text)
+        with pytest.raises(ValueError, match=re.escape(f"task manifest {tmp_path / name}")):
+            CugaAdapter().configure({"task_manifest": str(tmp_path / name)})
+    with pytest.raises(ValueError, match="Cannot read task manifest"):
+        CugaAdapter().configure({"task_manifest": str(tmp_path / "missing.txt")})
     with pytest.raises(ValueError, match="Unknown cuga option 'rubric_mode'"):
         CugaAdapter().configure({"rubric_mode": "review"})
     with pytest.raises(ValueError, match="must be true or false"):
