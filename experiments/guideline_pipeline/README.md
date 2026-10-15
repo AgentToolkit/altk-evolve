@@ -316,34 +316,40 @@ Domain files are read one at a time, in name order. Each record becomes one reco
   has no outcome.
 - **trace_id** and **batch**: the record's `uuid` is the trace, conversation and
   batch ID (source `vakra`); the revision digests the record's content, as for CUGA.
-- **metadata**: `domain`, `split` (`train` or `heldout`) and `score`.
+- **metadata**: `domain` (the record's `domain`, else its file's name), `split`
+  (`train` or `heldout`) and `score`.
 
 ### Train / held-out split
 
-Each domain is split by position, in file order and without shuffling, and only
-one side is yielded. By default that is the train side, so `mine` never sees a
-held-out query.
+A record is held out when the first 8 bytes of `sha256(uuid)`, read as a fraction
+of 2^64, fall below `dev_frac` (default 0.3, so about 30% of records). Only one side
+is yielded. By default that is the train side, so `mine` never sees a held-out query.
 
-- `train_n=N` (default 7): the first N records of each domain are train; the rest are held out.
-- `dev_frac=F` (0 <= F < 1): the last `round(n * F)` records of each domain are held
-  out. Rounding means a one-record domain stays in train and a two-record domain
-  splits 1 / 1 at `dev_frac=0.3`. Use it when domain sizes vary too much for one `train_n`.
-- Setting both is a usage error.
+The hash looks only at the record's own uuid, so its side never changes when a
+dataset revision inserts, removes or reorders records, or when another run of the
+same dialogues is mined into the namespace. A record mined once can therefore
+never later turn up held out, as long as `dev_frac` stays the same: keep one
+`dev_frac` per namespace, because raising it moves train records (perhaps already
+mined) into held-out. The cost is that each domain's split is only
+approximately `dev_frac`, and a small domain can end up with nothing held out or
+nothing to mine. Reading logs each file's counts to stderr
+(`authors.json: 5 train, 4 held out (dev_frac=0.3)`), so check them in a dry run.
 
 The held-out side is recorded in a manifest, `{domain: [{uuid, query, answer, score}, ...]}`,
 for a later retrieval evaluation. Set `heldout_out=<file>` and the adapter writes it
 when reading starts, from the same options as the split it yields, so the
-manifest is exactly the complement of the mined records. The file is
-deterministic: the same input and options always produce the same bytes. A dry
-run writes it too, without an LLM call. From Python, `VakraAdapter(...).heldout_manifest(path)`
-returns the same dict.
+manifest is exactly the complement of the mined records. Domain files whose
+records share a `domain` share one list. A held-out record whose query (ignoring
+case and whitespace) is also a train record's query is not really unseen, so
+building the manifest logs those uuids. The file is deterministic: the same input
+and options always produce the same bytes. A dry run writes it too, without an
+LLM call. From Python, `VakraAdapter(...).heldout_manifest(path)` returns the same dict.
 
 Options (`--adapter-option KEY=VALUE`):
 
 | Key | Effect |
 | --- | --- |
-| `train_n=N` | The first N records of each domain are train (default 7). |
-| `dev_frac=F` | Instead, hold out the last `round(n * F)` records of each domain. |
+| `dev_frac=F` | Hold out records whose uuid hash is below F, `0 <= F < 1` (default 0.3). |
 | `split=heldout` | Yield the held-out records instead of the train records (default `train`). |
 | `domains=authors,hockey` | Only these domain files (by name without `.json`). A missing domain ends the run with an error. |
 | `include_tools=false` | Leave out the `TOOL SPACE` step. |
@@ -354,11 +360,11 @@ Options (`--adapter-option KEY=VALUE`):
 # Check the split and write the held-out manifest, without touching storage.
 uv run python -m experiments.guideline_pipeline mine --adapter vakra --input path/to/vakra_run \
     --namespace vakra --processing-profile vakra-guidelines \
-    --adapter-option dev_frac=0.3 --adapter-option heldout_out=vakra_heldout.json --dry-run
+    --adapter-option heldout_out=vakra_heldout.json --dry-run
 
 # Mine the train split with the same options.
 uv run python -m experiments.guideline_pipeline mine --adapter vakra --input path/to/vakra_run \
-    --namespace vakra --processing-profile vakra-guidelines --adapter-option dev_frac=0.3
+    --namespace vakra --processing-profile vakra-guidelines
 ```
 
 The CUGA sample profile works here too (publish it under another ID). Evaluating

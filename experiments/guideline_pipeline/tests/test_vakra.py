@@ -23,6 +23,9 @@ pytestmark = pytest.mark.unit
 
 FIXTURES = Path(__file__).parent / "fixtures" / "vakra"
 ALL = ["auth-01", "auth-02", "auth-03", "auth-04", "auth-05", "auth-06", "auth-07", "auth-08", "auth-09", "hock-01", "hock-02", "mov-01"]
+# Under the default dev_frac=0.3, by the sha256 of each uuid.
+TRAIN = ["auth-02", "auth-05", "auth-07", "auth-08", "auth-09", "hock-02"]
+HELDOUT = ["auth-01", "auth-03", "auth-04", "auth-06", "hock-01", "mov-01"]
 
 
 def by_id(adapter: VakraAdapter, path: Path = FIXTURES) -> dict[str, AdapterRecord]:
@@ -31,6 +34,11 @@ def by_id(adapter: VakraAdapter, path: Path = FIXTURES) -> dict[str, AdapterReco
 
 def manifest_ids(manifest: dict[str, list[dict]]) -> list[str]:
     return [item["uuid"] for items in manifest.values() for item in items]
+
+
+def everything() -> VakraAdapter:
+    """dev_frac=0: every record is train."""
+    return VakraAdapter(dev_frac=0.0)
 
 
 def write_domain(directory: Path, domain: str, count: int) -> None:
@@ -48,13 +56,13 @@ def data_copy(tmp_path: Path) -> Path:
 def test_registered_and_reads_domain_files_only(tmp_path: Path):
     assert isinstance(ADAPTERS["vakra"], VakraAdapter)
     # authors_tools.json and results.json are not domain files; every domain is read, in name order.
-    assert list(by_id(VakraAdapter(train_n=100))) == ALL
+    assert list(by_id(everything())) == ALL
     with pytest.raises(ValueError, match="No VAKRA domain files"):
         next(VakraAdapter().records(tmp_path))
 
 
 def test_messages_are_rebuilt_as_the_port_does():
-    record = by_id(VakraAdapter())["auth-01"]
+    record = by_id(everything())["auth-01"]
 
     assert record.messages == [
         {"role": "user", "content": "Which conference had the most papers in 2012?"},
@@ -79,7 +87,7 @@ def test_messages_are_rebuilt_as_the_port_does():
 
 
 def test_follow_ups_calls_and_the_task_fallback():
-    records = by_id(VakraAdapter(train_n=100, include_tools=False))
+    records = by_id(VakraAdapter(dev_frac=0.0, include_tools=False))
     messages = records["auth-02"].messages
 
     # Calls are numbered across the trajectory, an empty observation is dropped,
@@ -118,7 +126,7 @@ def test_long_text_is_chunked_and_long_trajectories_are_elided():
 
 
 def test_outcome_mapping():
-    records = by_id(VakraAdapter(train_n=100))
+    records = by_id(everything())
 
     passed = records["auth-01"].outcome
     assert passed is not None and passed.success and passed.failed_checks == ()
@@ -151,26 +159,26 @@ def test_outcome_mapping():
 
 
 def test_metadata_and_batch_identity():
-    records = by_id(VakraAdapter())
+    records = by_id(everything())
     record = records["auth-02"]
 
     assert record.trace_id == "auth-02"
     assert (record.batch.source, record.batch.conversation_id, record.batch.batch_id) == ("vakra", "auth-02", "auth-02")
     assert record.metadata == {"domain": "authors", "split": "train", "score": 0.0}
     assert records["mov-01"].metadata == {"domain": "movies", "split": "train"}
-    assert by_id(VakraAdapter(split="heldout"))["auth-09"].metadata == {"domain": "authors", "split": "heldout", "score": 0.0}
+    assert by_id(VakraAdapter(split="heldout"))["auth-01"].metadata == {"domain": "authors", "split": "heldout", "score": 1.0}
     with pytest.raises(ValueError, match="has no uuid"):
         VakraAdapter().record({"trajectory": []}, "authors", "train", None)
 
 
 def test_batch_is_stable_and_the_revision_follows_content(data_copy: Path):
-    first = by_id(VakraAdapter(), data_copy)
-    assert by_id(VakraAdapter(), data_copy) == first
+    first = by_id(everything(), data_copy)
+    assert by_id(everything(), data_copy) == first
 
     records = json.loads((data_copy / "authors.json").read_text())
     records[1]["trajectory"][-1]["content"] = "Grace wrote the most papers."
     (data_copy / "authors.json").write_text(json.dumps(records))
-    edited = by_id(VakraAdapter(), data_copy)
+    edited = by_id(everything(), data_copy)
     assert edited["auth-01"].batch == first["auth-01"].batch
     assert edited["auth-02"].batch.batch_id == first["auth-02"].batch.batch_id
     assert edited["auth-02"].batch.revision != first["auth-02"].batch.revision
@@ -178,46 +186,61 @@ def test_batch_is_stable_and_the_revision_follows_content(data_copy: Path):
     results = json.loads((data_copy / "results.json").read_text())
     results["domains"]["authors"]["dialogues"][2]["score"] = 0.0
     (data_copy / "results.json").write_text(json.dumps(results))
-    regraded = by_id(VakraAdapter(), data_copy)
+    regraded = by_id(everything(), data_copy)
     assert regraded["auth-03"].batch.revision != first["auth-03"].batch.revision
     assert regraded["auth-04"].batch == first["auth-04"].batch
 
     # Dropping the tool summary changes what processors see, so it is a new revision too.
-    assert by_id(VakraAdapter(include_tools=False), data_copy)["auth-01"].batch.revision != regraded["auth-01"].batch.revision
+    assert by_id(VakraAdapter(dev_frac=0.0, include_tools=False), data_copy)["auth-01"].batch.revision != regraded["auth-01"].batch.revision
 
 
-def test_train_n_split():
-    # Default train_n=7: authors keeps 7 of 9; the 2-record and 1-record domains are all train.
-    assert list(by_id(VakraAdapter())) == [*ALL[:7], "hock-01", "hock-02", "mov-01"]
-    assert list(by_id(VakraAdapter(split="heldout"))) == ["auth-08", "auth-09"]
-    assert list(by_id(VakraAdapter(train_n=1))) == ["auth-01", "hock-01", "mov-01"]
-    assert list(by_id(VakraAdapter(train_n=0))) == []
-    assert len(by_id(VakraAdapter(train_n=0, split="heldout"))) == len(ALL)
+def test_split_is_by_uuid_hash():
+    assert list(by_id(VakraAdapter())) == TRAIN
+    assert list(by_id(VakraAdapter(split="heldout"))) == HELDOUT
+    # Held out when the first 8 bytes of sha256(uuid) fall below dev_frac: auth-01's are about 0.108.
+    assert VakraAdapter(dev_frac=0.11).is_heldout("auth-01") and not VakraAdapter(dev_frac=0.10).is_heldout("auth-01")
+    assert list(by_id(everything())) == ALL
+    assert list(by_id(VakraAdapter(dev_frac=0.0, split="heldout"))) == []
 
 
-def test_dev_frac_split_rounds_the_held_out_count(tmp_path: Path):
-    # The last round(n * 0.3) records are held out: 9 -> 3, 2 -> 1, and a lone record stays in train.
-    assert list(by_id(VakraAdapter(dev_frac=0.3), FIXTURES)) == [
-        "auth-01",
-        "auth-02",
-        "auth-03",
-        "auth-04",
-        "auth-05",
-        "auth-06",
-        "hock-01",
-        "mov-01",
+def test_split_survives_insertions_removals_and_reordering(data_copy: Path):
+    """No dataset revision moves an already-mined record into held-out (or a held-out one into train)."""
+    mined = set(by_id(VakraAdapter(), data_copy))
+    heldout = set(by_id(VakraAdapter(split="heldout"), data_copy))
+
+    records = json.loads((data_copy / "authors.json").read_text())
+    added = [{**records[2], "uuid": f"auth-new-{i}"} for i in range(20)]
+    (data_copy / "authors.json").write_text(json.dumps([*added, *reversed(records[1:])]))  # prepend, drop auth-01, reverse
+
+    revised_train = set(by_id(VakraAdapter(), data_copy))
+    revised_heldout = set(by_id(VakraAdapter(split="heldout"), data_copy))
+    assert not revised_heldout & mined
+    assert not revised_train & heldout
+    assert revised_train - {f"auth-new-{i}" for i in range(20)} == mined
+
+
+def test_dev_frac_is_the_held_out_fraction(tmp_path: Path):
+    write_domain(tmp_path, "big", 2000)
+    for dev_frac in (0.1, 0.3, 0.5):
+        heldout = len(by_id(VakraAdapter(dev_frac=dev_frac, split="heldout"), tmp_path))
+        assert abs(heldout / 2000 - dev_frac) < 0.04
+    # A larger dev_frac only adds held-out records.
+    assert set(by_id(VakraAdapter(dev_frac=0.1, split="heldout"), tmp_path)) < set(
+        by_id(VakraAdapter(dev_frac=0.3, split="heldout"), tmp_path)
+    )
+
+
+def test_split_counts_are_reported_per_file(caplog: pytest.LogCaptureFixture):
+    with caplog.at_level("WARNING", logger="experiments.guideline_pipeline.adapters.vakra"):
+        list(VakraAdapter().records(FIXTURES))
+    assert [r.getMessage() for r in caplog.records] == [
+        "authors.json: 5 train, 4 held out (dev_frac=0.3)",
+        "hockey.json: 1 train, 1 held out (dev_frac=0.3)",
+        "movies.json: 0 train, 1 held out (dev_frac=0.3)",
     ]
-    assert list(by_id(VakraAdapter(dev_frac=0.3, split="heldout"))) == ["auth-07", "auth-08", "auth-09", "hock-02"]
-
-    for count in (1, 2, 4, 10):
-        write_domain(tmp_path, f"d{count}", count)
-    heldout = by_id(VakraAdapter(dev_frac=0.3, split="heldout"), tmp_path)
-    # 1 * 0.3 -> 0, 2 * 0.3 -> 1, 4 * 0.3 = 1.2 -> 1, 10 * 0.3 -> 3; always the last records.
-    assert list(heldout) == ["d10-7", "d10-8", "d10-9", "d2-1", "d4-3"]
-    assert len(by_id(VakraAdapter(dev_frac=0.0, split="heldout"), tmp_path)) == 0
 
 
-@pytest.mark.parametrize("options", [{}, {"train_n": "3"}, {"dev_frac": "0.3"}, {"dev_frac": "0.5"}])
+@pytest.mark.parametrize("options", [{}, {"dev_frac": "0"}, {"dev_frac": "0.3"}, {"dev_frac": "0.5"}])
 def test_train_and_heldout_are_disjoint_and_cover_everything(options: dict[str, str]):
     train = list(by_id(VakraAdapter().configure(options)))
     heldout = list(by_id(VakraAdapter().configure({**options, "split": "heldout"})))
@@ -231,17 +254,15 @@ def test_train_and_heldout_are_disjoint_and_cover_everything(options: dict[str, 
 def test_options_and_usage_errors(tmp_path: Path):
     adapter = get_adapter("vakra", {"dev_frac": "0.3", "split": "heldout", "domains": "hockey, movies", "include_tools": "no"})
     assert isinstance(adapter, VakraAdapter) and adapter is not ADAPTERS["vakra"]
-    assert (adapter.dev_frac, adapter.train_n, adapter.split, adapter.include_tools) == (0.3, None, "heldout", False)
-    assert list(by_id(adapter)) == ["hock-02"]
+    assert (adapter.dev_frac, adapter.split, adapter.include_tools) == (0.3, "heldout", False)
+    assert list(by_id(adapter)) == ["hock-01", "mov-01"]
 
-    with pytest.raises(ValueError, match="train_n and dev_frac are mutually exclusive"):
-        VakraAdapter().configure({"train_n": "7", "dev_frac": "0.3"})
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        VakraAdapter(train_n=7).configure({"dev_frac": "0.3"})
     for options, message in (
         ({"dev_frac": "1.0"}, r"dev_frac must be in \[0.0, 1.0\)"),
-        ({"train_n": "-1"}, "train_n must be >= 0"),
-        ({"train_n": "seven"}, "train_n must be a number"),
+        ({"dev_frac": "-0.1"}, r"dev_frac must be in \[0.0, 1.0\)"),
+        ({"dev_frac": "nan"}, r"dev_frac must be in \[0.0, 1.0\)"),
+        ({"dev_frac": "seven"}, "dev_frac must be a number"),
+        ({"train_n": "7"}, "Unknown vakra option 'train_n'"),
         ({"split": "dev"}, "split must be train or heldout"),
         ({"include_tools": "maybe"}, "must be true or false"),
         ({"shuffle": "true"}, "Unknown vakra option 'shuffle'"),
@@ -259,7 +280,7 @@ def test_results_option_reads_an_evaluation_elsewhere(data_copy: Path):
     (data_copy / "results.json").rename(elsewhere)
     assert all(record.outcome is None for record in VakraAdapter().records(data_copy))
 
-    records = by_id(VakraAdapter(results=elsewhere), data_copy)
+    records = by_id(VakraAdapter(dev_frac=0.0, results=elsewhere), data_copy)
     assert records["auth-01"].outcome is not None and records["auth-01"].outcome.success
 
 
@@ -267,16 +288,16 @@ def test_heldout_manifest_contents_and_determinism(tmp_path: Path):
     manifest = VakraAdapter().heldout_manifest(FIXTURES)
     assert manifest == {
         "authors": [
-            {"uuid": "auth-08", "query": "Query 8", "answer": "Answer 8", "score": 1.0},
-            {"uuid": "auth-09", "query": "Query 9", "answer": "Answer 9", "score": 0.0},
+            {"uuid": "auth-01", "query": "Which conference had the most papers in 2012?", "answer": "ICML", "score": 1.0},
+            {"uuid": "auth-03", "query": "Query 3", "answer": "Answer 3", "score": 1.0},
+            {"uuid": "auth-04", "query": "Query 4", "answer": "Answer 4", "score": 1.0},
+            {"uuid": "auth-06", "query": "Query 6", "answer": "", "score": 0.0},
         ],
-        "hockey": [],
-        "movies": [],
+        "hockey": [{"uuid": "hock-01", "query": "Which team won in 1999?", "answer": "Stars", "score": 1.0}],
+        "movies": [{"uuid": "mov-01", "query": "Who directed the oldest film?", "answer": "A synthetic director.", "score": None}],
     }
-    assert VakraAdapter(dev_frac=0.3).heldout_manifest(FIXTURES)["hockey"] == [
-        {"uuid": "hock-02", "query": "How many goals in 2001?", "answer": "312", "score": 0.0}
-    ]
-    assert VakraAdapter(domains=frozenset({"movies"})).heldout_manifest(FIXTURES) == {"movies": []}
+    # A selected domain that holds nothing out still has its (empty) entry.
+    assert VakraAdapter(dev_frac=0.0, domains=frozenset({"movies"})).heldout_manifest(FIXTURES) == {"movies": []}
 
     # heldout_out writes it when reading starts, byte-for-byte the same on every run.
     out = tmp_path / "vakra_heldout.json"
@@ -290,12 +311,37 @@ def test_heldout_manifest_contents_and_determinism(tmp_path: Path):
     assert out.read_bytes() == first
 
 
+def test_heldout_manifest_merges_files_that_share_a_domain(data_copy: Path):
+    records = json.loads((data_copy / "authors.json").read_text())
+    (data_copy / "authors_extra.json").write_text(json.dumps([{**record, "uuid": record["uuid"] + "-x"} for record in records]))
+
+    heldout = list(by_id(VakraAdapter(split="heldout"), data_copy))
+    manifest = VakraAdapter().heldout_manifest(data_copy)
+    assert any(uuid.endswith("-x") for uuid in heldout) and any(uuid.startswith("auth") and not uuid.endswith("-x") for uuid in heldout)
+    assert manifest_ids(manifest) == heldout
+    assert list(manifest) == ["authors", "hockey", "movies"]
+
+
+def test_heldout_manifest_reports_a_query_that_is_also_in_train(data_copy: Path, caplog: pytest.LogCaptureFixture):
+    records = json.loads((data_copy / "authors.json").read_text())
+    records[2]["trajectory"][0]["content"] = "  query   5 "  # auth-03 (held out) now asks auth-05's (train) question
+    (data_copy / "authors.json").write_text(json.dumps(records))
+
+    with caplog.at_level("WARNING", logger="experiments.guideline_pipeline.adapters.vakra"):
+        VakraAdapter().heldout_manifest(data_copy)
+    assert [r.getMessage() for r in caplog.records] == ["1 held-out record(s) repeat a train query: auth-03"]
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="experiments.guideline_pipeline.adapters.vakra"):
+        VakraAdapter().heldout_manifest(FIXTURES)
+    assert caplog.records == []
+
+
 def test_records_stream_one_domain_at_a_time(data_copy: Path):
     (data_copy / "movies.json").write_text("{ truncated")
-    records = VakraAdapter().records(data_copy)
+    records = everything().records(data_copy)
 
     assert isinstance(records, Iterator)
-    assert [next(records).trace_id for _ in range(9)][-1] == "hock-02"  # movies.json is not read yet
+    assert [next(records).trace_id for _ in range(11)][-1] == "hock-02"  # movies.json is not read yet
     with pytest.raises(json.JSONDecodeError):
         next(records)
     (data_copy / "movies.json").write_text(json.dumps({"not": "a list"}))
@@ -310,23 +356,26 @@ def test_mine_dry_run_from_the_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(cli, "make_client", no_client)
     argv = ["mine", "--adapter", "vakra", "--input", str(FIXTURES), "--namespace", "x", "--processing-profile", "x", "--dry-run"]
 
-    # Only the train split by default: 7 + 2 + 1 of the 12 records.
+    # Only the train split by default: 6 of the 12 records.
     assert cli.main(argv) == 0
-    assert capsys.readouterr().out.strip() == "dry run: 10 valid, 0 failed"
+    assert capsys.readouterr().out.strip() == "dry run: 6 valid, 0 failed"
     out = tmp_path / "heldout.json"
-    assert cli.main([*argv, "--adapter-option", "dev_frac=0.3", "--adapter-option", f"heldout_out={out}"]) == 0
-    assert capsys.readouterr().out.strip() == "dry run: 8 valid, 0 failed"
-    assert manifest_ids(json.loads(out.read_text())) == ["auth-07", "auth-08", "auth-09", "hock-02"]
+    assert cli.main([*argv, "--adapter-option", "dev_frac=0.5", "--adapter-option", f"heldout_out={out}"]) == 0
+    assert capsys.readouterr().out.strip() == "dry run: 5 valid, 0 failed"
+    assert manifest_ids(json.loads(out.read_text())) == ["auth-01", "auth-03", "auth-04", "auth-06", "hock-01", "hock-02", "mov-01"]
     assert cli.main([*argv, "--adapter-option", "split=heldout"]) == 0
-    assert capsys.readouterr().out.strip() == "dry run: 2 valid, 0 failed"
-    assert cli.main([*argv, "--adapter-option", "train_n=7", "--adapter-option", "dev_frac=0.3"]) == 2
-    assert "mutually exclusive" in capsys.readouterr().err
+    assert capsys.readouterr().out.strip() == "dry run: 6 valid, 0 failed"
+    assert cli.main([*argv, "--adapter-option", "dev_frac=1"]) == 2
+    assert "dev_frac must be in" in capsys.readouterr().err
 
 
 def test_mine_checkpoints_each_dialogue_and_stamps_evidence(client: EvolveClient, data_copy: Path):
     def run():
         return mine(
-            VakraAdapter(domains=frozenset({"hockey", "movies"})).records(data_copy), client, namespace_id="m", processing_profile="echo"
+            VakraAdapter(dev_frac=0.0, domains=frozenset({"hockey", "movies"})).records(data_copy),
+            client,
+            namespace_id="m",
+            processing_profile="echo",
         )
 
     first, again = run(), run()

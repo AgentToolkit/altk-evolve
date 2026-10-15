@@ -7,15 +7,16 @@ A run directory holds one ``<domain>.json`` per domain, a list of records
 optionally the evaluator's ``results.json``, ``{"domains": {<domain>: {"dialogues":
 [{"uuid", "score", "details"}]}}}``.
 
-Each domain is split by position, never shuffled: the first records are train and
-the rest are held out. Only one split is yielded (train by default), so held-out
-queries never reach ``mine``.
+Each record is assigned to train or held-out by a hash of its uuid, so its side
+does not depend on file order or on which other records a run holds. Only one
+split is yielded (train by default), so held-out queries never reach ``mine``.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -26,11 +27,13 @@ from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 from experiments.guideline_pipeline.adapters.base import AdapterRecord
 from experiments.guideline_pipeline.adapters.elision import elide_middle
 
+logger = logging.getLogger(__name__)
+
 SOURCE = "vakra"
 STEP_CHARS = 2000  # the extractor truncates each step to 2000 characters, so longer text is chunked
 DETAIL_CHARS = 2000
 CHECK_CHARS = 500
-DEFAULT_TRAIN_N = 7
+DEFAULT_DEV_FRAC = 0.3
 SPLITS = ("train", "heldout")
 # Each turn's sub-checks: the name used in score_explanation, and the score key.
 _CHECKS = (
@@ -45,16 +48,14 @@ _CHECKS = (
 class VakraAdapter:
     """Yields one AdapterRecord per VAKRA dialogue in one split. Configure with ``--adapter-option KEY=VALUE``.
 
-    Options: train_n (the first N records of each domain are train; default 7) or
-    dev_frac (the last round(n * dev_frac) records are held out), split (train or
-    heldout), domains (comma-separated file stems), include_tools (boolean; default
-    true), results (a results.json elsewhere) and heldout_out (write the held-out
-    manifest to this file when reading starts).
+    Options: dev_frac (the fraction of records held out, by uuid hash; default 0.3),
+    split (train or heldout), domains (comma-separated file stems), include_tools
+    (boolean; default true), results (a results.json elsewhere) and heldout_out
+    (write the held-out manifest to this file when reading starts).
     """
 
     name: str = "vakra"
-    train_n: int | None = None
-    dev_frac: float | None = None
+    dev_frac: float = DEFAULT_DEV_FRAC
     split: str = "train"
     domains: frozenset[str] = field(default_factory=frozenset)
     include_tools: bool = True
@@ -62,11 +63,7 @@ class VakraAdapter:
     heldout_out: Path | None = None
 
     def __post_init__(self) -> None:
-        if self.train_n is not None and self.dev_frac is not None:
-            raise ValueError("vakra options train_n and dev_frac are mutually exclusive")
-        if self.train_n is not None and self.train_n < 0:
-            raise ValueError(f"vakra option train_n must be >= 0, not {self.train_n}")
-        if self.dev_frac is not None and not 0.0 <= self.dev_frac < 1.0:
+        if not 0.0 <= self.dev_frac < 1.0:
             raise ValueError(f"vakra option dev_frac must be in [0.0, 1.0), not {self.dev_frac}")
         if self.split not in SPLITS:
             raise ValueError(f"vakra option split must be train or heldout, not {self.split!r}")
@@ -74,10 +71,8 @@ class VakraAdapter:
     def configure(self, options: Mapping[str, str]) -> VakraAdapter:
         changes: dict[str, Any] = {}
         for key, value in options.items():
-            if key == "train_n":
-                changes[key] = _number(key, value, int)
-            elif key == "dev_frac":
-                changes[key] = _number(key, value, float)
+            if key == "dev_frac":
+                changes[key] = _number(key, value)
             elif key == "split":
                 changes[key] = value.strip()
             elif key == "domains":
@@ -87,51 +82,64 @@ class VakraAdapter:
             elif key in ("results", "heldout_out"):
                 changes[key] = Path(value) if value else None
             else:
-                raise ValueError(
-                    f"Unknown vakra option {key!r} (expected train_n, dev_frac, split, domains, include_tools, results, heldout_out)"
-                )
+                raise ValueError(f"Unknown vakra option {key!r} (expected dev_frac, split, domains, include_tools, results, heldout_out)")
         return replace(self, **changes)
 
-    def split_records(self, records: list[dict]) -> tuple[list[dict], list[dict]]:
-        """(train, heldout) for one domain's records, in file order.
+    def is_heldout(self, uuid: str) -> bool:
+        """Whether the record with this uuid is held out: the first 8 bytes of sha256(uuid), as a fraction of 2**64, are below dev_frac.
 
-        With dev_frac the last round(n * dev_frac) records are held out, so a
-        single-record domain keeps its record in train; otherwise the first
-        train_n records are train.
+        Deterministic and independent of file order or of the other records, so
+        inserting, removing or reordering records never moves one across the split.
         """
-        if self.dev_frac is not None:
-            n_train = len(records) - round(len(records) * self.dev_frac)
-        else:
-            n_train = DEFAULT_TRAIN_N if self.train_n is None else self.train_n
-        return records[:n_train], records[n_train:]
+        return int.from_bytes(hashlib.sha256(uuid.encode()).digest()[:8], "big") < self.dev_frac * 2**64
+
+    def split_records(self, records: list[dict]) -> tuple[list[dict], list[dict]]:
+        """(train, heldout) for records that each have a uuid, in file order."""
+        train = [raw for raw in records if not self.is_heldout(raw["uuid"])]
+        heldout = [raw for raw in records if self.is_heldout(raw["uuid"])]
+        return train, heldout
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
         files = self._files(path)
         results = self._results(path)
         if self.heldout_out is not None:
             self.heldout_out.write_text(json.dumps(self.heldout_manifest(path), indent=2) + "\n")
-        for domain, train, heldout in _domains(files, self):
+        for file in files:
+            train, heldout = self.split_records(_read_records(file))
+            # On stderr, so a dry run shows a domain that holds out nothing (or keeps nothing to mine).
+            logger.warning("%s: %d train, %d held out (dev_frac=%s)", file.name, len(train), len(heldout), self.dev_frac)
             for raw in train if self.split == "train" else heldout:
-                yield self.record(raw, domain, self.split, results.get(str(raw.get("uuid") or "")))
+                yield self.record(raw, _domain(raw, file), self.split, results.get(raw["uuid"]))
 
     def heldout_manifest(self, path: Path) -> dict[str, list[dict[str, Any]]]:
         """The held-out records of every selected domain, ``{domain: [{uuid, query, answer, score}]}``.
 
-        Exactly the complement of the train split under the same options, in file order.
+        Exactly the complement of the train split under the same options, in file
+        order; records of one domain spread over several files share its list. A
+        held-out query that is also a train query is reported, since it is not
+        really unseen.
         """
         results = self._results(path)
-        return {
-            domain: [
-                {
-                    "uuid": raw.get("uuid", ""),
-                    "query": _first_query(raw),
-                    "answer": (raw.get("output") or [{}])[0].get("answer") if raw.get("output") else "",
-                    "score": (results.get(str(raw.get("uuid") or "")) or {}).get("score"),
-                }
-                for raw in heldout
-            ]
-            for domain, _, heldout in _domains(self._files(path), self)
-        }
+        manifest: dict[str, list[dict[str, Any]]] = {}
+        train_queries: set[str] = set()
+        for file in self._files(path):
+            records = _read_records(file)
+            train, heldout = self.split_records(records)
+            for raw in records:
+                manifest.setdefault(_domain(raw, file), [])
+            train_queries.update(_query_key(_first_query(raw)) for raw in train)
+            for raw in heldout:
+                manifest[_domain(raw, file)].append(
+                    {
+                        "uuid": raw["uuid"],
+                        "query": _first_query(raw),
+                        "answer": (raw.get("output") or [{}])[0].get("answer") if raw.get("output") else "",
+                        "score": (results.get(raw["uuid"]) or {}).get("score"),
+                    }
+                )
+        if repeated := [item["uuid"] for items in manifest.values() for item in items if _query_key(item["query"]) in train_queries]:
+            logger.warning("%d held-out record(s) repeat a train query: %s", len(repeated), ", ".join(repeated))
+        return manifest
 
     def record(self, raw: dict, domain: str, split: str, dialogue: dict | None) -> AdapterRecord:
         """Build one record from a domain file's record and its results.json dialogue (if any)."""
@@ -202,15 +210,25 @@ class VakraAdapter:
         return index
 
 
-def _domains(files: list[Path], adapter: VakraAdapter) -> Iterator[tuple[str, list[dict], list[dict]]]:
-    """(domain, train, heldout) per domain file, reading one file at a time."""
-    for file in files:
-        records = _read_json(file)
-        if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
-            raise ValueError(f"{file} is not a JSON list of records")
-        domain = str((records[0].get("domain") if records else None) or file.stem)
-        train, heldout = adapter.split_records(records)
-        yield domain, train, heldout
+def _read_records(file: Path) -> list[dict]:
+    """One domain file's records; a ValueError naming the file unless each is an object with a uuid."""
+    records = _read_json(file)
+    if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
+        raise ValueError(f"{file} is not a JSON list of records")
+    for index, record in enumerate(records):
+        if not (isinstance(record.get("uuid"), str) and record["uuid"]):
+            raise ValueError(f"{file}: record {index} has no uuid (a non-empty string)")
+    return records
+
+
+def _domain(raw: dict, file: Path) -> str:
+    """The record's domain field, else its file's name."""
+    domain = raw.get("domain")
+    return domain if isinstance(domain, str) and domain else file.stem
+
+
+def _query_key(query: str) -> str:
+    return " ".join(query.split()).casefold()
 
 
 def _domain_files(path: Path) -> list[Path]:
@@ -342,9 +360,9 @@ def _plain(content: dict) -> dict:
     return {**content, "outcome": None if outcome is None else outcome.model_dump(mode="json")}
 
 
-def _number(key: str, value: str, kind: type[int] | type[float]) -> int | float:
+def _number(key: str, value: str) -> float:
     try:
-        return kind(value.strip())
+        return float(value.strip())
     except ValueError:
         raise ValueError(f"vakra option {key} must be a number, not {value!r}") from None
 
