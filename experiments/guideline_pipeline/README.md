@@ -296,24 +296,35 @@ The `vakra` adapter reads VAKRA benchmark output. `--input` is one run directory
   results.json                # optional evaluator output: {"domains": {"<domain>": {"dialogues": [{"uuid", "score", "details"}]}}}
 ```
 
-Domain files are read one at a time, in name order. Each record becomes one record:
+A parent of run directories is an error that names the runs beneath it, and a
+run nested inside the input run is not read (with a warning). Domain files are
+read one at a time, in name order. A file that is not JSON, is not a list of
+objects, or has a record without a string `uuid` ends the run with an error
+naming it, and so does a `results.json` without that `domains` / `dialogues`
+shape (read as empty, every record would silently lose its outcome). Each record
+becomes one record:
 
-- **messages**: the first `HumanMessage` (else the first turn's `query`) as the
-  user message, then, as assistant steps: a `TOOL SPACE` summary (the tools the
-  agent called, then the names of all tools it was offered), each `AIMessage`'s
-  `reasoning`, each of its `tool_calls` as a function call with the real tool
-  name and arguments, its `content` as the answer, each `ToolMessage` result as an
-  `OBSERVATION:`, and any later `HumanMessage` as a `USER MESSAGE:`. Text longer
-  than a step is split into `(part i/n)` steps rather than truncated. Runs longer
-  than the extractor's 50 steps are elided as for CUGA (the helper is shared, in
-  `adapters/elision.py`).
+- **messages**: the first `HumanMessage` with text (else the first turn's
+  `query`) as the user message; a record with neither is skipped with a warning.
+  Then, as assistant steps: a `TOOL SPACE` summary (the tools the agent called,
+  then the names of all tools it was offered), each `AIMessage`'s `reasoning`,
+  each of its `tool_calls` as a function call with the real tool name and
+  arguments, its `content` as the answer, each `ToolMessage` result as an
+  `OBSERVATION:` (a structured result as JSON), and any later `HumanMessage` as a
+  `USER MESSAGE:`. Message content is a string or a list of content blocks, whose
+  text parts are joined; any other type is left out rather than rendered as a
+  Python repr. Text longer than a step is split into `(part i/n)` steps rather
+  than truncated. Runs longer than the extractor's 50 steps are elided as for
+  CUGA (the helper is shared, in `adapters/elision.py`).
 - **outcome**: from the record's `results.json` dialogue. `success` is
-  `score >= 1`; the record's `status` is execution status only and is not used. A
-  failed dialogue's `failed_checks` are its turns' sub-checks (policy, exact
-  match, answer, groundedness) that scored 0, with the judge's explanation. The
-  `detail` is the per-turn scores and explanations, cut to 2000 characters. A
-  dialogue with only a score gets just `success`; a record with no results entry
-  has no outcome.
+  `score >= 1` for a finite numeric score. Any other score (NaN, a string, a
+  bool) is ignored with a warning, so it gives no outcome rather than a failure.
+  The record's `status` is execution status only and is not used. A failed
+  dialogue's `failed_checks` are its turns' sub-checks (policy, exact match,
+  answer, groundedness) that scored 0, with the judge's explanation. The `detail`
+  is the per-turn scores and explanations, cut to 2000 characters. A dialogue
+  with only a score gets just `success`; a record with no results entry has no
+  outcome.
 - **trace_id** and **batch**: the record's `uuid` is the trace, conversation and
   batch ID (source `vakra`); the revision digests the record's content, as for CUGA.
 - **metadata**: `domain` (the record's `domain`, else its file's name), `split`
@@ -351,7 +362,7 @@ Options (`--adapter-option KEY=VALUE`):
 | --- | --- |
 | `dev_frac=F` | Hold out records whose uuid hash is below F, `0 <= F < 1` (default 0.3). |
 | `split=heldout` | Yield the held-out records instead of the train records (default `train`). |
-| `domains=authors,hockey` | Only these domain files (by name without `.json`). A missing domain ends the run with an error. |
+| `domains=authors,hockey` | Only these domain files (by name without `.json`). A missing domain ends the run with an error, and so does a value that names none. |
 | `include_tools=false` | Leave out the `TOOL SPACE` step. |
 | `results=<file>` | Read the evaluation from this file instead of `<input>/results.json`. |
 | `heldout_out=<file>` | Write the held-out manifest to this file. |

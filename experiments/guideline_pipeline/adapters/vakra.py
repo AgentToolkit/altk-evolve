@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -76,11 +77,13 @@ class VakraAdapter:
             elif key == "split":
                 changes[key] = value.strip()
             elif key == "domains":
-                changes[key] = frozenset(item.strip() for item in value.split(",") if item.strip())
+                changes[key] = frozenset(_names(key, value))
             elif key == "include_tools":
                 changes[key] = _boolean(key, value)
             elif key in ("results", "heldout_out"):
-                changes[key] = Path(value) if value else None
+                if not value.strip():
+                    raise ValueError(f"vakra option {key} names no file")
+                changes[key] = Path(value)
             else:
                 raise ValueError(f"Unknown vakra option {key!r} (expected dev_frac, split, domains, include_tools, results, heldout_out)")
         return replace(self, **changes)
@@ -104,20 +107,27 @@ class VakraAdapter:
         results = self._results(path)
         if self.heldout_out is not None:
             self.heldout_out.write_text(json.dumps(self.heldout_manifest(path), indent=2) + "\n")
+        read = 0
         for file in files:
             train, heldout = self.split_records(_read_records(file))
             # On stderr, so a dry run shows a domain that holds out nothing (or keeps nothing to mine).
             logger.warning("%s: %d train, %d held out (dev_frac=%s)", file.name, len(train), len(heldout), self.dev_frac)
             for raw in train if self.split == "train" else heldout:
+                if not _first_query(raw):
+                    logger.warning("skipped %s/%s: no task (no HumanMessage text and no output query)", file.name, raw["uuid"])
+                    continue
+                read += 1
                 yield self.record(raw, _domain(raw, file), self.split, results.get(raw["uuid"]))
+        if not read:
+            logger.warning("read no VAKRA %s record from %s", self.split, path)
 
     def heldout_manifest(self, path: Path) -> dict[str, list[dict[str, Any]]]:
         """The held-out records of every selected domain, ``{domain: [{uuid, query, answer, score}]}``.
 
         Exactly the complement of the train split under the same options, in file
         order; records of one domain spread over several files share its list. A
-        held-out query that is also a train query is reported, since it is not
-        really unseen.
+        record with no task is left out, as records() skips it. A held-out query
+        that is also a train query is reported, since it is not really unseen.
         """
         results = self._results(path)
         manifest: dict[str, list[dict[str, Any]]] = {}
@@ -129,14 +139,12 @@ class VakraAdapter:
                 manifest.setdefault(_domain(raw, file), [])
             train_queries.update(_query_key(_first_query(raw)) for raw in train)
             for raw in heldout:
-                manifest[_domain(raw, file)].append(
-                    {
-                        "uuid": raw["uuid"],
-                        "query": _first_query(raw),
-                        "answer": (raw.get("output") or [{}])[0].get("answer") if raw.get("output") else "",
-                        "score": (results.get(raw["uuid"]) or {}).get("score"),
-                    }
-                )
+                if query := _first_query(raw):
+                    answer = _first_turn(raw).get("answer")
+                    score = _score((results.get(raw["uuid"]) or {}).get("score"))
+                    manifest[_domain(raw, file)].append(
+                        {"uuid": raw["uuid"], "query": query, "answer": "" if answer is None else answer, "score": score}
+                    )
         if repeated := [item["uuid"] for items in manifest.values() for item in items if _query_key(item["query"]) in train_queries]:
             logger.warning("%d held-out record(s) repeat a train query: %s", len(repeated), ", ".join(repeated))
         return manifest
@@ -146,7 +154,9 @@ class VakraAdapter:
         uuid = raw.get("uuid")
         if not isinstance(uuid, str) or not uuid:
             raise ValueError(f"A {domain} record has no uuid")
-        score = dialogue.get("score") if dialogue else None
+        raw_score = (dialogue or {}).get("score")
+        if (score := _score(raw_score)) is None and raw_score is not None:
+            logger.warning("ignored the score of %s: %r is not a finite number", uuid, raw_score)
         metadata = {"domain": domain, "split": split, "score": score}
         content: dict[str, Any] = {
             "messages": self._messages(raw),
@@ -165,7 +175,7 @@ class VakraAdapter:
 
         role "tool" would be dropped by the extractor, so observations are assistant messages.
         """
-        trajectory = [message for message in raw.get("trajectory") or [] if isinstance(message, dict)]
+        trajectory = [message for message in _list(raw.get("trajectory")) if isinstance(message, dict)]
         steps = _tool_space(raw, trajectory) if self.include_tools else []
         calls = 0
         first_human_seen = False
@@ -178,12 +188,12 @@ class VakraAdapter:
                 steps += _chunk("USER MESSAGE", _text(message.get("content")))
             elif kind == "AIMessage":
                 steps += _chunk("AGENT REASONING", _text(message.get("reasoning")))
-                for call in message.get("tool_calls") or []:
-                    steps.append(_action(calls, call.get("name") or "", call.get("args")))
+                for call in _calls(message):
+                    steps.append(_action(calls, _name(call), call.get("args")))
                     calls += 1
                 steps += _chunk("AGENT MESSAGE (answer)", _text(message.get("content")))
             elif kind == "ToolMessage":
-                steps += _chunk("OBSERVATION", _text(message.get("result") or message.get("content")))
+                steps += _chunk("OBSERVATION", _observation(message))
         return [{"role": "user", "content": _first_query(raw)}, *elide_middle(steps)]
 
     def _files(self, path: Path) -> list[Path]:
@@ -195,18 +205,26 @@ class VakraAdapter:
         return files
 
     def _results(self, path: Path) -> dict[str, dict]:
-        """uuid -> dialogue evaluation; {} when the run has no results.json and none was given."""
+        """uuid -> dialogue evaluation; {} when the run has no results.json and none was given.
+
+        A file without the evaluator's {"domains": {<domain>: {"dialogues": [...]}}} shape
+        is an error naming it: read as empty, every record would silently lose its outcome.
+        """
         results_path = self.results or path / "results.json"
         if self.results is None and not results_path.exists():
             return {}
         payload = _read_json(results_path)
-        if not isinstance(payload, dict):
-            raise ValueError(f"{results_path} is not a JSON object")
+        domains = payload.get("domains") if isinstance(payload, dict) else None
+        if not isinstance(domains, dict):
+            raise ValueError(f'Cannot read {results_path}: expected {{"domains": {{<domain>: {{"dialogues": [...]}}}}}}')
         index: dict[str, dict] = {}
-        for domain in (payload.get("domains") or {}).values():
-            for dialogue in (domain or {}).get("dialogues") or []:
-                if isinstance(dialogue, dict) and dialogue.get("uuid"):
-                    index[str(dialogue["uuid"])] = dialogue
+        for name, domain in domains.items():
+            dialogues = domain.get("dialogues") if isinstance(domain, dict) else None
+            if not isinstance(dialogues, list):
+                raise ValueError(f"Cannot read {results_path}: domains.{name}.dialogues is not a list")
+            for dialogue in dialogues:
+                if isinstance(dialogue, dict) and isinstance(dialogue.get("uuid"), str) and dialogue["uuid"]:
+                    index[dialogue["uuid"]] = dialogue
         return index
 
 
@@ -232,36 +250,72 @@ def _query_key(query: str) -> str:
 
 
 def _domain_files(path: Path) -> list[Path]:
-    """The ``<domain>.json`` record files: not the ``*_tools.json`` catalogs, not results.json."""
-    files = (
-        sorted(file for file in path.glob("*.json") if not file.stem.endswith("_tools") and file.stem != "results") if path.is_dir() else []
-    )
+    """The ``<domain>.json`` record files of one run directory.
+
+    A parent of run directories has none of its own, so it is an error that names
+    the runs beneath it; runs nested inside a run are not read, and get a warning.
+    """
+    files = _json_files(path)
+    nested = sorted(child.name for child in path.iterdir() if child.is_dir() and _json_files(child)) if path.is_dir() else []
     if not files:
-        raise ValueError(f"No VAKRA domain files in {path}")
+        hint = f"; pass one run directory ({', '.join(nested)} hold domain files)" if nested else ""
+        raise ValueError(f"No VAKRA domain files in {path}{hint}")
+    if nested:
+        logger.warning("read %s as one run; not read: %s, which also hold domain files", path, ", ".join(nested))
     return files
 
 
+def _json_files(path: Path) -> list[Path]:
+    """Every JSON file in path except the ``*_tools.json`` catalogs and results.json."""
+    if not path.is_dir():
+        return []
+    return sorted(file for file in path.glob("*.json") if not file.stem.endswith("_tools") and file.stem != "results")
+
+
 def _first_query(raw: dict) -> str:
-    """The task: the first non-empty HumanMessage, else the first turn's query."""
-    for message in raw.get("trajectory") or []:
-        if isinstance(message, dict) and message.get("type") == "HumanMessage" and _text(message.get("content")):
-            return _text(message.get("content"))
-    output = raw.get("output") or []
-    if output and isinstance(output[0], dict):
-        return _text(output[0].get("query"))
-    return ""
+    """The task: the first HumanMessage with text, else the first turn's query; "" when neither is text."""
+    for message in _list(raw.get("trajectory")):
+        if isinstance(message, dict) and message.get("type") == "HumanMessage" and (text := _text(message.get("content"))):
+            return text
+    query = _first_turn(raw).get("query")
+    return query.strip() if isinstance(query, str) else ""
+
+
+def _first_turn(raw: dict) -> dict:
+    output = _list(raw.get("output"))
+    return output[0] if output and isinstance(output[0], dict) else {}
+
+
+def _calls(message: dict) -> list[dict]:
+    return [call for call in _list(message.get("tool_calls")) if isinstance(call, dict)]
+
+
+def _name(call: dict) -> str:
+    name = call.get("name")
+    return name.strip() if isinstance(name, str) else ""
+
+
+def _observation(message: dict) -> str:
+    """A ToolMessage's result, else its content; a structured result is rendered as JSON, not a Python repr."""
+    result = message.get("result")
+    if isinstance(result, str):
+        if result.strip():
+            return result.strip()
+    elif result is not None and result != [] and result != {}:
+        return json.dumps(result, ensure_ascii=False, default=str)
+    return _text(message.get("content"))
 
 
 def _tool_space(raw: dict, trajectory: list[dict]) -> list[dict[str, Any]]:
     """The tools the agent chose and the names of all it was offered (names only: the catalog is large)."""
-    tools = (raw.get("model_input") or {}).get("tools") or []
+    tools = _list(_dict(raw.get("model_input")).get("tools"))
     used: list[str] = []
     for message in trajectory:
         if message.get("type") == "AIMessage":
-            for call in message.get("tool_calls") or []:
-                if call.get("name") and call["name"] not in used:
-                    used.append(call["name"])
-    names = [tool["name"] for tool in tools if isinstance(tool, dict) and tool.get("name")]
+            for call in _calls(message):
+                if (name := _name(call)) and name not in used:
+                    used.append(name)
+    names = [name for tool in tools if isinstance(tool, dict) and (name := _name(tool))]
     summary = ""
     if used:
         summary += "tools chosen in this trajectory: " + ", ".join(used) + "\n"
@@ -290,12 +344,11 @@ def _action(index: int, name: str, args: Any) -> dict[str, Any]:
 
 
 def _outcome(dialogue: dict | None) -> TrajectoryOutcome | None:
-    """success is the dialogue score >= 1 (the record's status is execution status only); no score, no outcome."""
-    score = (dialogue or {}).get("score")
-    if not isinstance(score, (int, float)) or isinstance(score, bool):
+    """success is the dialogue score >= 1 (the record's status is execution status only); no readable score, no outcome."""
+    score = _score((dialogue or {}).get("score"))
+    if score is None:
         return None
-    details = (dialogue or {}).get("details")
-    details = details if isinstance(details, dict) else {}
+    details = _dict((dialogue or {}).get("details"))
     success = score >= 1.0
     detail = _evaluation_report(score, details)
     return TrajectoryOutcome(
@@ -308,13 +361,13 @@ def _outcome(dialogue: dict | None) -> TrajectoryOutcome | None:
 def _failed_checks(details: dict) -> tuple[str, ...]:
     """Each turn sub-check that scored 0, with the judge's explanation."""
     checks: list[str] = []
-    for turn in details.get("per_turn") or []:
+    for turn in _list(details.get("per_turn")):
         if not isinstance(turn, dict):
             continue
-        metadata = turn.get("metadata") or {}
-        explanations = metadata.get("score_explanation") or {}
+        metadata = _dict(turn.get("metadata"))
+        explanations = _dict(metadata.get("score_explanation"))
         for check, key in _CHECKS:
-            if _is_zero(metadata.get(key)):
+            if _score(metadata.get(key)) == 0:
                 label = f"{check} (turn {turn.get('turn_id')})"
                 explanation = " ".join(_text(explanations.get(check)).split())
                 checks.append(f"{label}: {explanation[:CHECK_CHARS]}" if explanation else label)
@@ -323,13 +376,13 @@ def _failed_checks(details: dict) -> tuple[str, ...]:
 
 def _evaluation_report(score: float, details: dict) -> str | None:
     """The dialogue score and each turn's sub-scores and explanations; None without per-turn details."""
-    turns = [turn for turn in details.get("per_turn") or [] if isinstance(turn, dict)]
+    turns = [turn for turn in _list(details.get("per_turn")) if isinstance(turn, dict)]
     if not turns:
         return None
     lines = [f"dialogue_score={score} num_turns={details.get('num_turns')}"]
     for turn in turns:
-        metadata = turn.get("metadata") or {}
-        explanations = metadata.get("score_explanation") or {}
+        metadata = _dict(turn.get("metadata"))
+        explanations = _dict(metadata.get("score_explanation"))
         lines.append(
             f"-- turn {turn.get('turn_id')} score={turn.get('score')} "
             f"gt_steps={metadata.get('gt_steps')} pred_steps={metadata.get('pred_steps')} "
@@ -342,17 +395,42 @@ def _evaluation_report(score: float, details: dict) -> str | None:
     return "\n".join(lines)
 
 
-def _is_zero(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0
+def _score(value: Any) -> float | None:
+    """A score that is a finite number; None for anything else.
+
+    JSON allows NaN, and NaN >= 1 is False, so a NaN score would read as a failure; a
+    bool or a string is not coerced either.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
 
 
 def _text(value: Any) -> str:
-    return str(value or "").strip()
+    """Message text: a string, or the text parts of a list of content blocks; "" for anything else (never a repr)."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = (part if isinstance(part, str) else part.get("text") if isinstance(part, dict) else None for part in value)
+        return "\n".join(part.strip() for part in parts if isinstance(part, str) and part.strip())
+    return ""
+
+
+def _list(value: Any) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _dict(value: Any) -> dict:
+    return value if isinstance(value, dict) else {}
 
 
 def _read_json(path: Path) -> Any:
-    with path.open() as handle:
-        return json.load(handle)
+    """The parsed file; a ValueError naming it if it cannot be read or is not JSON."""
+    try:
+        with path.open() as handle:
+            return json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Cannot read {path}: {exc}") from exc
 
 
 def _plain(content: dict) -> dict:
@@ -365,6 +443,14 @@ def _number(key: str, value: str) -> float:
         return float(value.strip())
     except ValueError:
         raise ValueError(f"vakra option {key} must be a number, not {value!r}") from None
+
+
+def _names(key: str, value: str) -> set[str]:
+    """A comma-separated filter option. One that names nothing would mean "no filter", so it is an error."""
+    names = {item.strip() for item in value.split(",") if item.strip()}
+    if not names:
+        raise ValueError(f"vakra option {key} names nothing: {value!r}")
+    return names
 
 
 def _boolean(key: str, value: str) -> bool:

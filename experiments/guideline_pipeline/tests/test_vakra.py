@@ -271,7 +271,7 @@ def test_options_and_usage_errors(tmp_path: Path):
             VakraAdapter().configure(options)
     with pytest.raises(ValueError, match=r"Domains not found .*\['nope'\]"):
         next(VakraAdapter(domains=frozenset({"nope"})).records(FIXTURES))
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ValueError, match=r"Cannot read .*missing\.json"):
         next(VakraAdapter(results=tmp_path / "missing.json").records(FIXTURES))
 
 
@@ -342,7 +342,7 @@ def test_records_stream_one_domain_at_a_time(data_copy: Path):
 
     assert isinstance(records, Iterator)
     assert [next(records).trace_id for _ in range(11)][-1] == "hock-02"  # movies.json is not read yet
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(ValueError, match=r"Cannot read .*movies\.json"):
         next(records)
     (data_copy / "movies.json").write_text(json.dumps({"not": "a list"}))
     with pytest.raises(ValueError, match="not a JSON list of records"):
@@ -382,3 +382,133 @@ def test_mine_checkpoints_each_dialogue_and_stamps_evidence(client: EvolveClient
     assert (first.processed, first.skipped, again.processed, again.skipped) == (3, 0, 0, 3)
     stored = {e.metadata["processing"]["source_batch"]["batch_id"]: e for e in client.get_all_entities("m")}
     assert {batch: e.metadata["success"] for batch, e in stored.items()} == {"hock-01": True, "hock-02": False, "mov-01": None}
+
+
+LOGGER = "experiments.guideline_pipeline.adapters.vakra"
+
+
+def warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """The adapter's warnings other than the per-file split counts."""
+    return [r.getMessage() for r in caplog.records if r.name == LOGGER and " train, " not in r.getMessage()]
+
+
+def write_results(directory: Path, payload: object) -> None:
+    (directory / "results.json").write_text(json.dumps(payload))
+
+
+def test_options_that_name_nothing_are_errors_not_no_filter():
+    for options, message in (
+        ({"domains": ""}, "domains names nothing"),
+        ({"domains": " , "}, "domains names nothing"),
+        ({"results": ""}, "results names no file"),
+        ({"heldout_out": " "}, "heldout_out names no file"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            VakraAdapter().configure(options)
+
+
+def test_a_score_that_is_not_a_finite_number_gives_no_outcome(caplog: pytest.LogCaptureFixture):
+    adapter = everything()
+    for score in (float("nan"), float("inf"), "1.0", True):
+        record = adapter.record({"uuid": "u", "output": [{"query": "q"}]}, "d", "train", {"uuid": "u", "score": score})
+        assert record.outcome is None and "score" not in record.metadata
+    assert len([m for m in warnings(caplog) if m.startswith("ignored the score of u")]) == 4
+
+    # A NaN sub-score is not a zero, so it is not reported as a failed check.
+    turn = {"turn_id": 1, "metadata": {"answer_score": float("nan"), "exactmatch_score": 0}}
+    outcome = adapter.record({"uuid": "u"}, "d", "train", {"score": 0.0, "details": {"per_turn": [turn]}}).outcome
+    assert outcome is not None and outcome.failed_checks == ("exactmatch (turn 1)",)
+
+
+def test_malformed_results_fail_naming_the_file(data_copy: Path):
+    for payload, message in (
+        ({"auth-01": {"score": 1.0}}, "expected"),
+        ({"domains": []}, "expected"),
+        ([], "expected"),
+        ({"domains": {"authors": {"dialogues": {"auth-01": {}}}}}, "domains.authors.dialogues is not a list"),
+    ):
+        write_results(data_copy, payload)
+        with pytest.raises(ValueError, match=rf"Cannot read {data_copy / 'results.json'}: {message}"):
+            next(VakraAdapter().records(data_copy))
+    (data_copy / "results.json").write_text("{ truncated")
+    with pytest.raises(ValueError, match=r"Cannot read .*results\.json"):
+        VakraAdapter().heldout_manifest(data_copy)
+
+
+def test_malformed_evaluation_details_are_skipped_not_a_crash():
+    turns = [
+        {"turn_id": 1, "metadata": ["not", "a", "dict"]},
+        {"turn_id": 2, "metadata": {"answer_score": 0, "score_explanation": "x"}},
+        "turn",
+    ]
+    outcome = everything().record({"uuid": "u"}, "d", "train", {"score": 0.0, "details": {"per_turn": turns}}).outcome
+    assert outcome is not None and not outcome.success
+    assert outcome.failed_checks == ("answer (turn 2)",)
+    assert everything().record({"uuid": "u"}, "d", "train", {"score": 1, "details": {"per_turn": "x"}}).outcome == TrajectoryOutcome(
+        success=True
+    )
+
+
+def test_non_string_fields_are_read_as_text_or_left_out():
+    raw = {
+        "uuid": "u",
+        "model_input": ["not", "a", "dict"],
+        "trajectory": [
+            {"type": "HumanMessage", "content": [{"type": "text", "text": "Count the papers."}, {"type": "image_url"}]},
+            {"type": "AIMessage", "content": [{"type": "text", "text": "Calling."}], "tool_calls": ["bad", {"name": 5, "args": {"a": 1}}]},
+            {"type": "ToolMessage", "result": [{"count": 3}]},
+            {"type": "AIMessage", "content": {"unexpected": "dict"}},
+        ],
+    }
+    assert everything().record(raw, "d", "train", None).messages == [
+        {"role": "user", "content": "Count the papers."},
+        {
+            "role": "assistant",
+            "content": [{"type": "function_call", "id": "call_0", "function": {"name": "tool_call", "arguments": '{"a": 1}'}}],
+        },
+        {"role": "assistant", "content": "AGENT MESSAGE (answer):\nCalling."},
+        {"role": "assistant", "content": 'OBSERVATION:\n[{"count": 3}]'},
+    ]
+    # A query that is not a string is no task, rather than its repr.
+    assert everything().record({"uuid": "u", "output": [{"query": 42}]}, "d", "train", None).messages == [{"role": "user", "content": ""}]
+
+
+def test_records_without_a_task_are_skipped_and_an_empty_read_is_reported(data_copy: Path, caplog: pytest.LogCaptureFixture):
+    records = json.loads((data_copy / "movies.json").read_text())
+    (data_copy / "movies.json").write_text(json.dumps([*records, {"uuid": "mov-02", "trajectory": [], "output": [{"query": 7}]}]))
+
+    assert "mov-02" not in by_id(VakraAdapter(dev_frac=0.0), data_copy)
+    assert warnings(caplog) == ["skipped movies.json/mov-02: no task (no HumanMessage text and no output query)"]
+    assert "mov-02" not in manifest_ids(VakraAdapter(dev_frac=0.99).heldout_manifest(data_copy))
+    caplog.clear()
+
+    assert list(VakraAdapter(domains=frozenset({"movies"})).records(data_copy)) == []  # mov-01 is held out
+    assert warnings(caplog)[-1] == f"read no VAKRA train record from {data_copy}"
+
+
+def test_domain_file_errors_name_the_file(data_copy: Path):
+    for records, message in (([{"domain": "movies"}], "record 0 has no uuid"), ([{"uuid": "m"}, {"uuid": 7}], "record 1 has no uuid")):
+        (data_copy / "movies.json").write_text(json.dumps(records))
+        with pytest.raises(ValueError, match=rf"{data_copy / 'movies.json'}: {message}"):
+            list(everything().records(data_copy))
+
+
+def test_a_parent_of_runs_is_an_error_naming_them_and_a_nested_run_is_reported(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    shutil.copytree(FIXTURES, tmp_path / "run_a")
+    shutil.copytree(FIXTURES, tmp_path / "run_b")
+    (tmp_path / "notes").mkdir()
+    with pytest.raises(ValueError, match=r"No VAKRA domain files in .*; pass one run directory \(run_a, run_b hold domain files\)"):
+        next(VakraAdapter().records(tmp_path))
+
+    shutil.copytree(FIXTURES, tmp_path / "run_a" / "retry")
+    assert list(by_id(everything(), tmp_path / "run_a")) == ALL
+    assert warnings(caplog) == [f"read {tmp_path / 'run_a'} as one run; not read: retry, which also hold domain files"]
+
+
+def test_mine_reports_an_unreadable_file_by_name(data_copy: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    monkeypatch.setattr(cli, "make_client", lambda: None)
+    (data_copy / "results.json").write_text("{ truncated")
+    argv = ["mine", "--adapter", "vakra", "--input", str(data_copy), "--namespace", "x", "--processing-profile", "x", "--dry-run"]
+
+    assert cli.main(argv) == 1
+    assert f"failed <adapter>: ValueError: Cannot read {data_copy / 'results.json'}: " in capsys.readouterr().err
