@@ -1,6 +1,6 @@
 [project]
 name = "altk-evolve-core"
-version = "1.7.0"
+version = "1.7.1"
 description = "Composable agent memory and self-improvement"
 readme = "README.md"
 requires-python = ">=3.12"
