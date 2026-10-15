@@ -56,7 +56,6 @@ POLICY_CHUNK_CHARS = 1500
 PARSER_STEP_LIMIT = 50
 PARSER_STEP_CHARS = 2000
 
-_RULE = re.compile(r"^={5,}\s*$", re.M)
 _SECTIONS = (
     ("TASK ", "HEADER"),
     ("USER SCENARIO", "SCENARIO"),
@@ -66,12 +65,18 @@ _SECTIONS = (
     ("FINAL ANSWER", "FINAL"),
     ("JUDGE", "JUDGE"),
 )
+# A rule separates sections only when a section title (or the end of the file) follows it,
+# so a ===== line inside a conversation turn stays part of that turn.
+_RULE = re.compile(
+    r"^={5,}[ \t]*(?:\n|\Z)(?=(?:[ \t]*\n)*[ \t]*(?:" + "|".join(re.escape(prefix) for prefix, _ in _SECTIONS) + r"|\Z))", re.M
+)
 _HEADER_KEYS = ("termination_reason", "duration", "messages", "agent_cost", "user_cost", "sim_id", "trial", "seed", "model")
 _SPEAKER = re.compile(r"^\[(ASSISTANT|USER)\](?:\s*@\S+)?\s*(.*)$")
 _CALL = re.compile(r"^\s*->\s*CALL\s+([A-Za-z0-9_]+)\s*(\(.*)$")
 _RESULT = re.compile(r"^\s*<-\s*RESULT\b\s*(.*)$")
-_ACTION_MATCH = re.compile(r"(?<!\w)action_match\s*[=:]\s*(true|false)\b,?", re.I)
-_MET = re.compile(r"(?<!\w)met\s*[=:]\s*(true|false)\b,?", re.I)
+# key=False, or key: false as JSON or a Python dict repr writes it (quoted key, optionally quoted value).
+_ACTION_MATCH = re.compile(r"""(?<!\w)(["']?)action_match\1\s*[=:]\s*["']?(true|false)\b["']?,?""", re.I)
+_MET = re.compile(r"""(?<!\w)(["']?)met\1\s*[=:]\s*["']?(true|false)\b["']?,?""", re.I)
 
 
 class MalformedTrajectory(ValueError):
@@ -233,9 +238,9 @@ def judge_outcome(reward: float, judge: str) -> TrajectoryOutcome:
     """success from the reward; failed checks and the start of the report from the judge section."""
     failed: list[str] = []
     for line in judge.splitlines():
-        if (match := _ACTION_MATCH.search(line)) and match.group(1).lower() == "false":
+        if (match := _ACTION_MATCH.search(line)) and match.group(2).lower() == "false":
             failed.append(f"expected action not matched: {_check_text(line, _ACTION_MATCH)}")
-        elif (match := _MET.search(line)) and match.group(1).lower() == "false":
+        elif (match := _MET.search(line)) and match.group(2).lower() == "false":
             failed.append(f"assertion not met: {_check_text(line, _MET)}")
     return TrajectoryOutcome(success=reward >= SUCCESS_REWARD, failed_checks=tuple(failed), detail=judge[:DETAIL_CHARS] or None)
 

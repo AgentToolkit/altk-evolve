@@ -21,6 +21,7 @@ from experiments.guideline_pipeline.adapters.tau import (
     TauRetailAdapter,
     Turn,
     elide_head_tail,
+    judge_outcome,
     parse_conversation,
     parse_header,
     section_body,
@@ -69,6 +70,27 @@ def test_sections_and_header_are_parsed():
         "messages": "7",
         "model": "example-model",
     }
+
+
+def test_a_rule_inside_a_turn_does_not_end_the_conversation(tau_dir: Path):
+    # Only a rule followed by a section title starts a section; any other ===== line is turn text.
+    turns = ["[USER]", "Where is my order?", "[ASSISTANT]", "Your order:", "==========", "#W0000001 has shipped.", "[USER]", "thanks"]
+    path = task_file(tau_dir, "task_9.txt", turns)
+
+    messages = TauRetailAdapter().record(path).messages
+    assert messages[-2]["content"] == "AGENT MESSAGE:\nYour order:\n==========\n#W0000001 has shipped."
+    assert messages[-1]["content"] == "USER MESSAGE:\nthanks"
+    assert set(split_sections(path.read_text())) == {"HEADER", "SCENARIO", "CRITERIA", "POLICY", "CONVERSATION", "FINAL", "JUDGE"}
+
+
+def test_json_shaped_judge_lines_become_failed_checks():
+    judge = '{"action_match": false, "action": "cancel_pending_order"}\n  "met": false, "nl": "confirms first"\n  {"met": true}'
+
+    assert judge_outcome(0.0, judge).failed_checks == (
+        'expected action not matched: { "action": "cancel_pending_order"}',
+        'assertion not met: "nl": "confirms first"',
+    )
+    assert judge_outcome(0.0, "{'action_match': False, 'action': 'x'}").failed_checks == ("expected action not matched: { 'action': 'x'}",)
 
 
 def test_conversation_turns_and_tool_io():

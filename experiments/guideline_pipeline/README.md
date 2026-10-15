@@ -409,7 +409,8 @@ a single `task_*.txt` file. Each file has `=====`-ruled sections: a
 `GROUND-TRUTH EVALUATION CRITERIA`, `AGENT DOMAIN POLICY`, `CONVERSATION`
 (`[ASSISTANT]` / `[USER]` turns, `-> CALL name(...)` with `args: {...}`, and
 `<- RESULT ...`), `FINAL ANSWER`, and `JUDGE / REWARD DETAILS`. See
-`tests/fixtures/tau/` for the exact layout.
+`tests/fixtures/tau/` for the exact layout. A rule starts a section only when a
+section title follows it, so a `=====` line inside a turn stays in that turn.
 
 Each task becomes one record:
 
@@ -419,8 +420,9 @@ Each task becomes one record:
   than the extractor's 50-step limit keeps its first and last steps around an
   elision marker (temporary, until that limit is configurable).
 - **outcome:** `success` when the reward is 1.0; judge lines with
-  `action_match=False` or `met=False` become `failed_checks`, and the start of the
-  judge section becomes `detail`.
+  `action_match=False` or `met=False` (or the JSON / dict forms
+  `"action_match": false`, `'met': False`) become `failed_checks`, and the start
+  of the judge section becomes `detail`.
 - **trace_id / batch:** the file name (`task_12`); the batch revision is a hash of
   the file, so editing a task reprocesses only that task.
 - **metadata:** the header's reward, breakdown, termination reason and the other
