@@ -19,7 +19,10 @@ def test_conflict_prompt_keeps_ids_but_redacts_content(monkeypatch, event, retry
     old = RecordedEntity(id="6", type="guideline", content="Email alice@example.com with 6 reports", created_at=datetime.now())
     new = RecordedEntity(id="7", type="guideline", content="Email bob@example.com with 8 reports", created_at=datetime.now())
 
+    seen_content = []
+
     def redact(messages, **kwargs):
+        seen_content.extend(m["content"] for m in messages)
         return [{**m, "content": re.sub(r"\b\d+\b|\w+@example\.com", "[REDACTED]", m["content"])} for m in messages]
 
     attempts = []
@@ -33,7 +36,8 @@ def test_conflict_prompt_keeps_ids_but_redacts_content(monkeypatch, event, retry
         assert existing[0]["id"] == "6"
         assert incoming[0]["id"] == "7"
         assert existing[0]["type"] == incoming[0]["type"] == "guideline"
-        assert "alice@example.com" not in prompt and "bob@example.com" not in prompt and "admin@example.com" not in prompt
+        assert "alice@example.com" not in prompt and "bob@example.com" not in prompt
+        assert "Compare memories; contact admin@example.com for 5 issues." in prompt
         assert "with 6 reports" not in prompt and "with 8 reports" not in prompt
         target = incoming[0] if event == "ADD" else existing[0]
         decisions = [{**target, "event": event, "incoming_ids": ["7"]}]
@@ -50,6 +54,7 @@ def test_conflict_prompt_keeps_ids_but_redacts_content(monkeypatch, event, retry
     assert result[0].incoming_ids == ["7"]
     assert result[0].event == event
     assert len(attempts) == (2 if retry else 1)
+    assert seen_content == [old.content, new.content]
     assert old.content == "Email alice@example.com with 6 reports"
     assert new.content == "Email bob@example.com with 8 reports"
 
@@ -67,13 +72,13 @@ def test_conflict_prompt_keeps_ids_but_redacts_content(monkeypatch, event, retry
 def test_conflict_filter_rejects_changed_shape(monkeypatch, change):
     monkeypatch.setattr(cr, "dispatch_llm_pre_call", lambda messages, **kwargs: change(messages))
     with pytest.raises(ValueError, match="must return one user message containing text"):
-        cr._redact_content(["sensitive"], "test")
+        cr._apply_llm_pre_call(["sensitive"], "test")
 
 
 def test_conflict_filter_preserves_nested_content_without_mutating_inputs(monkeypatch):
     value = {"text": ["alice@example.com", 0.8], "optional": None, "id": "private@example.com"}
     monkeypatch.setattr(cr, "dispatch_llm_pre_call", lambda messages, **kwargs: [{**m, "content": "[REDACTED]"} for m in messages])
-    assert cr._redact_content([value], "test") == [{"text": ["[REDACTED]", 0.8], "optional": None, "id": "[REDACTED]"}]
+    assert cr._apply_llm_pre_call([value], "test") == [{"text": ["[REDACTED]", 0.8], "optional": None, "id": "[REDACTED]"}]
     assert value["text"][0] == "alice@example.com"
 
 
@@ -83,7 +88,7 @@ def test_hook_cannot_supply_operations_or_extra_messages(monkeypatch):
         return [{"role": "user", "content": "[REDACTED]", "id": "6", "event": "DELETE", "tool_calls": [{"id": "7"}]}]
 
     monkeypatch.setattr(cr, "dispatch_llm_pre_call", redact)
-    assert cr._redact_content("alice@example.com", "test") == "[REDACTED]"
+    assert cr._apply_llm_pre_call("alice@example.com", "test") == "[REDACTED]"
 
 
 def test_filter_failure_prevents_model_call(monkeypatch):
@@ -105,6 +110,6 @@ def test_conflict_filter_preserves_non_text_values_without_calling_hooks(monkeyp
         pytest.fail("No egress text to filter")
 
     monkeypatch.setattr(cr, "dispatch_llm_pre_call", unexpected)
-    assert cr._redact_content([{"probability": 0.8, "count": 6, "enabled": True, "optional": None}], "test") == [
+    assert cr._apply_llm_pre_call([{"probability": 0.8, "count": 6, "enabled": True, "optional": None}], "test") == [
         {"probability": 0.8, "count": 6, "enabled": True, "optional": None}
     ]

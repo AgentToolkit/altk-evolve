@@ -2,7 +2,7 @@
 
 Evolve redacts PII at the [memory hook seam](memory-hooks.md): before entities are persisted (`memory_pre_write`) and before messages leave the process for an LLM (`llm_pre_call`). PII detection ships as **two methods** — regex and semantic — each its own plugin and extra. They are not either/or: **running both is the recommended defence-in-depth default** (regex for structured identifiers, semantic for names and other free-form entities), and enabling or disabling either is a YAML edit, not a code change.
 
-Conflict resolution sends memory content and custom instructions through the hook before building the prompt. IDs, types, and built-in instructions are added afterward. The hook never receives these fields, and only its returned text is used. The model's ADD, UPDATE, DELETE, and NONE decisions are produced later; they are not passed to this hook.
+Conflict resolution uses `_apply_llm_pre_call` to send only memory content through the general-purpose `llm_pre_call` hook before building the prompt. Redaction is one use of this hook. IDs, types, custom instructions, and built-in instructions are added afterward. The hook never receives these fields, and only its returned text is used. The model's ADD, UPDATE, DELETE, and NONE decisions are produced later; they are not passed to this hook.
 
 Each string is sent separately as one user message with purpose `conflict_resolution`. The hook must return one user message containing text; otherwise processing stops before the model is called. Extra response fields are ignored. For lists and dictionaries, only string values are sent; keys and non-string values remain unchanged. Strings under keys such as `id` inside memory content are still redacted. Original memories are not modified.
 

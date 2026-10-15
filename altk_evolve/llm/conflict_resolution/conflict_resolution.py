@@ -80,17 +80,17 @@ def _conflict_resolution_completion_options(settings: LLMSettings | None = None)
     return options
 
 
-def _redact_content(value, model: str):
+def _apply_llm_pre_call(value, model: str):
     """Pass each text value to the hook and use only its returned text.
 
-    Call this on memory content or custom instructions, never on a whole
-    entity or prompt. The hook does not receive entity IDs or types.
+    Call this only on memory content, never on a whole entity or prompt.
+    The hook does not receive IDs, types, or conflict instructions.
     Lists and dictionaries are copied so the original memory stays unchanged.
     """
     if isinstance(value, list):
-        return [_redact_content(item, model) for item in value]
+        return [_apply_llm_pre_call(item, model) for item in value]
     if isinstance(value, dict):
-        return {key: _redact_content(item, model) for key, item in value.items()}
+        return {key: _apply_llm_pre_call(item, model) for key, item in value.items()}
     if not isinstance(value, str):
         return value
 
@@ -101,7 +101,7 @@ def _redact_content(value, model: str):
         or messages[0].get("role") != "user"
         or not isinstance(messages[0].get("content"), str)
     ):
-        raise ValueError("Conflict redaction hook must return one user message containing text")
+        raise ValueError("llm_pre_call must return one user message containing text")
     return messages[0]["content"]
 
 
@@ -128,9 +128,7 @@ def resolve_conflicts(
     # Give hooks only the text they may change. Add IDs, types and built-in
     # instructions afterward so a hook cannot replace them in its response.
     for entity in simplified_old_entities + simplified_new_entities:
-        entity.content = _redact_content(entity.content, settings.conflict_resolution_model)
-    if custom_update_entities_prompt is not None:
-        custom_update_entities_prompt = _redact_content(custom_update_entities_prompt, settings.conflict_resolution_model)
+        entity.content = _apply_llm_pre_call(entity.content, settings.conflict_resolution_model)
     prompt = get_update_entities_messages(simplified_old_entities, simplified_new_entities, custom_update_entities_prompt)
     llm_messages = [{"role": "user", "content": prompt}]
 
