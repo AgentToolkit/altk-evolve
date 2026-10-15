@@ -468,6 +468,65 @@ class TestCanSegmentTrajectory:
         ]
         assert _can_segment_trajectory(messages) is True
 
+    @staticmethod
+    def _long_trajectory(n_steps: int) -> list[dict]:
+        return [{"role": "user", "content": "hi"}] + [{"role": "assistant", "content": f"step {i}"} for i in range(1, n_steps + 1)]
+
+    def test_a_long_trajectory_is_safe_with_the_default_head_only_window(self, monkeypatch):
+        """Head-only truncation shortens the segmenter's reach without moving any index:
+        position n is still positional step n, which is what the IR numbering counts."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 5)
+        assert _can_segment_trajectory(self._long_trajectory(20)) is True
+
+    def test_an_elided_trajectory_is_not_safe(self, monkeypatch):
+        """With a tail configured, the kept tail steps sit at list positions that no longer
+        equal their positional step numbers, while transform_trajectory_to_IR counts straight
+        through the gap — so the indices segment_trajectory returns would address the wrong
+        IR steps."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 5)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_tail_steps", 2)
+        assert _can_segment_trajectory(self._long_trajectory(20)) is False
+
+    def test_a_short_trajectory_stays_safe_when_elision_is_configured(self, monkeypatch):
+        """Nothing is elided below the step budget, so the setting alone must not disable
+        segmentation for trajectories it never touches."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 5)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_tail_steps", 2)
+        assert _can_segment_trajectory(self._long_trajectory(4)) is True
+
+    def test_an_unparseable_trajectory_falls_back_instead_of_raising_under_elision(self, caplog):
+        """With a tail set, the guard parses the messages itself. A parser error there must
+        degrade to "don't segment", as the same error inside segment_trajectory does, rather
+        than escape after resampling has already run."""
+        from altk_evolve.llm.guidelines import consistency_guidelines as module
+
+        messages = [{"role": "user", "content": [{"type": "text", "text": "task"}]}] + [
+            {"role": "assistant", "content": f"step {i}"} for i in range(1, 21)
+        ]
+        options = GuidelineRuntime(segmentation_enabled=True, trajectory_tail_steps=2, analysis_config={})
+        resampled = []
+
+        def resample(*args, **kwargs):
+            resampled.append(True)
+            return module.transform_trajectory_to_IR({"messages": messages})
+
+        with (
+            patch.object(module, "resample_trajectory", side_effect=resample),
+            patch.object(
+                module,
+                "analyze_consistency",
+                side_effect=lambda **kw: ({"steps": [], "aggregate_trajectory_uncertainty": 0.5}, kw["trajectory"]),
+            ),
+            patch.object(module, "_generate_guideline_result", return_value=MagicMock(guidelines=[])) as mock_gen,
+            caplog.at_level(logging.WARNING),
+        ):
+            results = module.generate_consistency_guidelines({"trace_id": "t", "messages": messages}, options=options)
+
+        assert resampled
+        assert len(results) == 1
+        assert mock_gen.call_args.kwargs.get("step_range") is None
+        assert "falling back to full trajectory" in caplog.text
+
     def test_mixed_safe_messages_are_safe(self):
         # string content step followed by single-function_call step
         messages = [
@@ -1720,3 +1779,30 @@ class TestSegmentationFlagFastPipeline(_SegmentationFixture):
             assert m in first and m not in second
         for m in self.SEG2_MARKERS:
             assert m in second and m not in first
+
+
+def test_fast_path_skips_a_segment_holding_only_the_elision_marker(monkeypatch):
+    """12 steps under max_steps=6, tail_steps=2 put the marker at position 5; a [5,5]
+    segment has no step to learn from and must not cost a generation call."""
+    from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+    from altk_evolve.schema.guidelines import SubtaskSegment
+
+    messages = [{"role": "user", "content": "Do the thing"}] + [{"role": "assistant", "content": f"<s{i:02d}>"} for i in range(1, 13)]
+    options = GuidelineRuntime(trajectory_max_steps=6, trajectory_tail_steps=2, segmentation_enabled=True)
+    segments = [
+        SubtaskSegment(generalized_description=f"Phase {a}-{b}", purpose="p", start_step=a, end_step=b) for a, b in [(1, 4), (5, 5), (6, 7)]
+    ]
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.content = json.dumps({"guidelines": []})
+
+    with (
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+        patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=segments),
+    ):
+        results = generate_consistency_guidelines_fast({"trace_id": "t", "messages": messages}, options=options)
+
+    assert [r.task_description for r in results] == ["Phase 1-4", "Phase 6-7"]
+    assert mock_completion.call_count == 2
