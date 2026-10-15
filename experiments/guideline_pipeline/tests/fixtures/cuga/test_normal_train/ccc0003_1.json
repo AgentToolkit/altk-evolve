@@ -1,0 +1,19 @@
+{
+  "task_id": "ccc0003_1",
+  "intent": "Say hello.",
+  "dataset_name": "",
+  "steps": [
+    {
+      "name": "Raw_Assistant_Response",
+      "data": "print('hello')"
+    },
+    {
+      "name": "Tool_output",
+      "data": "hello"
+    },
+    {
+      "name": "Observation",
+      "data": ""
+    }
+  ]
+}
