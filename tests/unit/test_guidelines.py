@@ -4,13 +4,17 @@ from altk_evolve.config.guideline_runtime import GuidelineRuntime
 
 import json
 import logging
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from jinja2 import Template
 
 from altk_evolve.llm.guidelines import guidelines as guidelines_module
+from altk_evolve.llm.guidelines.context import render_supporting_context
 from altk_evolve.llm.guidelines.guidelines import generate_guidelines, parse_guideline_response, parse_openai_agents_trajectory
-from altk_evolve.schema.guidelines import SubtaskSegment
+from altk_evolve.processing import TrajectoryOutcome
+from altk_evolve.schema.guidelines import Guideline, SubtaskSegment, resolve_guideline_category
 
 
 def _mock_completion_response(payload: dict | list) -> MagicMock:
@@ -231,6 +235,65 @@ class TestParseGuidelineResponse:
         guidelines = parse_guideline_response(json.dumps({"guidelines": [bad]}), "standard")
         assert guidelines is None
         assert "Failed to parse standard guideline response" in caplog.text
+
+
+@pytest.mark.unit
+class TestCategoryRepair:
+    """A category naming real categories in the wrong shape must not cost the generation.
+
+    Validation is per response, so one off-contract label used to fail
+    ``GuidelineGenerationResponse`` and discard every guideline mined from that trajectory.
+    Only providers without constrained decoding get here; gpt-oss emits ``"strategy|recovery"``,
+    which the prompts invite by spelling the choice as ``"strategy|recovery|optimization"``.
+    """
+
+    def test_multi_valued_category_keeps_the_whole_response(self, caplog):
+        """The regression this exists for: the *sibling* guideline was the real loss."""
+        multi = {**_GUIDELINE, "content": "Retry with a smaller page size", "category": "strategy|recovery"}
+        with caplog.at_level(logging.INFO):
+            guidelines = parse_guideline_response(json.dumps({"guidelines": [multi, _GUIDELINE]}), "standard")
+        assert guidelines is not None
+        assert [g.category for g in guidelines] == ["strategy", "strategy"]
+        assert [g.content for g in guidelines] == ["Retry with a smaller page size", "Validate files before parsing"]
+        assert "Repaired off-contract guideline category 'strategy|recovery'" in caplog.text
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("strategy|recovery", "strategy"),
+            ("recovery|strategy", "recovery"),  # first named wins — not a fixed precedence
+            ("strategy|recovery|optimization", "strategy"),  # the prompt placeholder, copied verbatim
+            ("recovery, optimization", "recovery"),
+            ("optimization / strategy", "optimization"),
+            ("recovery or strategy", "recovery"),
+            ("strategy and optimization", "strategy"),
+            ("Strategy AND Recovery", "strategy"),  # the word separators are case-insensitive too
+            ("recovery OR strategy", "recovery"),
+            ("Recovery", "recovery"),
+            ("  optimization  ", "optimization"),
+            (["recovery", "strategy"], "recovery"),
+            ('["strategy","recovery"]', "strategy"),  # a JSON array nested in the string field
+            ("planning|recovery", "recovery"),  # skips a part that names nothing
+        ],
+    )
+    def test_resolves_the_shapes_models_emit(self, raw, expected):
+        assert resolve_guideline_category(raw) == expected
+
+    @pytest.mark.parametrize("raw", ["not-a-real-category", "performance optimization work", "", "   ", None, 7, []])
+    def test_returns_none_when_no_part_names_a_category(self, raw):
+        """Including free text that merely mentions one — matching is on whole parts.
+
+        None is what preserves ``test_returns_none_for_a_wrong_category_value``: an invented
+        label means the model never picked from the choices, so it reaches the ``Literal`` and
+        is rejected rather than being filed under a default that would hide it.
+        """
+        assert resolve_guideline_category(raw) is None
+
+    def test_a_contract_category_is_not_reported_as_repaired(self, caplog):
+        """Only off-contract output gets logged, so the signal stays worth watching."""
+        with caplog.at_level(logging.INFO):
+            Guideline(content="c", rationale="r", category="recovery", trigger="t")
+        assert "guideline category" not in caplog.text
 
 
 @pytest.mark.unit
@@ -544,3 +607,148 @@ class TestSegmentationFlag:
         mock_completion.assert_called_once()
         assert len(results) == 1
         assert results[0].task_description == "Find the retry settings for the acme service and summarize them"
+
+
+_PRE_OUTCOME_TEMPLATE = Path(__file__).parents[1] / "fixtures" / "generate_guidelines_pre_outcome.jinja2"
+
+
+@pytest.mark.unit
+class TestOutcomePrompt:
+    """The outcome-grounded prompt is used only when a trajectory carries an outcome."""
+
+    MESSAGES = [
+        {"role": "user", "content": "Refund the duplicate charge on the latest order"},
+        {"role": "assistant", "content": "Refunded the most recent charge without comparing amounts."},
+    ]
+
+    @staticmethod
+    def _prompt(mock_completion) -> str:
+        return str(mock_completion.call_args.kwargs["messages"][-1]["content"])
+
+    @pytest.fixture(autouse=True)
+    def _llm(self, monkeypatch):
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
+        with (
+            patch("altk_evolve.llm.guidelines.guidelines.completion") as mock_completion,
+            patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True) as mock_schema,
+            patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            mock_completion.return_value = _mock_completion_response({"guidelines": [_GUIDELINE]})
+            self.mock_completion, self.mock_schema = mock_completion, mock_schema
+            yield
+
+    @pytest.mark.parametrize("constrained", [True, False])
+    @pytest.mark.parametrize("context_messages", [None, [{"role": "user", "content": "Earlier request"}]])
+    def test_without_outcome_prompt_is_unchanged(self, constrained, context_messages):
+        """Pins the default path: callers that pass no outcome get the pre-outcome prompt byte for byte."""
+        self.mock_schema.return_value = constrained
+        generate_guidelines(self.MESSAGES, context_messages=context_messages)
+
+        data = parse_openai_agents_trajectory(self.MESSAGES, context_messages=context_messages)
+        expected = Template(_PRE_OUTCOME_TEMPLATE.read_text()).render(
+            task_instruction=data["task_instruction"],
+            supporting_context=render_supporting_context(context_messages),
+            num_steps=data["num_steps"],
+            trajectory_summary=data["trajectory_summary"],
+            constrained_decoding_supported=constrained,
+        )
+        assert self._prompt(self.mock_completion) == expected
+
+    def test_failure_renders_status_failed_checks_and_detail(self):
+        outcome = TrajectoryOutcome(success=False, failed_checks=("refund matches duplicate amount",), detail="Expected 19.99")
+        generate_guidelines(self.MESSAGES, outcome=outcome)
+
+        prompt = self._prompt(self.mock_completion)
+        assert "**Task Status:** FAILED, as judged by an external evaluation" in prompt
+        assert "- refund matches duplicate amount\n" in prompt
+        assert "**Evaluation detail:**\nExpected 19.99\n" in prompt
+        assert "Return 1 to 3 corrective guidelines that would have prevented this failure, grounded in" in prompt
+        assert "An empty list is better than generic advice" in prompt
+        assert "leave out task IDs" in prompt
+        assert "There is no evaluation" not in prompt
+        assert "Consider positive patterns" not in prompt
+        assert "did not contribute to the failure" not in prompt
+
+    def test_success_asks_only_for_non_obvious_patterns(self):
+        generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=True))
+
+        prompt = self._prompt(self.mock_completion)
+        assert "**Task Status:** SUCCEEDED" in prompt
+        assert "Return at most 2 guidelines" in prompt
+        assert "If the agent succeeded without struggle, return an empty list." in prompt
+        assert "Failed checks" not in prompt
+        assert "Evaluation detail" not in prompt
+        assert "corrective" not in prompt
+
+    def test_failure_without_checks_or_detail_is_not_told_to_ground_in_them(self):
+        generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=False))
+
+        prompt = self._prompt(self.mock_completion)
+        assert "Return 1 to 3 corrective guidelines that would have prevented this failure.\n" in prompt
+        assert "grounded in" not in prompt
+
+    def test_outcome_inputs_are_bounded(self):
+        checks = tuple(f"check {i}" for i in range(12))
+        generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=False, failed_checks=checks, detail="x" * 3000))
+
+        prompt = self._prompt(self.mock_completion)
+        assert "- check 9\n" in prompt
+        assert "check 10" not in prompt
+        assert "- ... and 2 more\n" in prompt
+        assert "x" * 2500 + "\n... [truncated]" in prompt
+        assert "x" * 2501 not in prompt
+
+    def test_each_failed_check_is_bounded(self):
+        checks = ("y" * 600, "short check")
+        generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=False, failed_checks=checks))
+
+        prompt = self._prompt(self.mock_completion)
+        assert "- " + "y" * 500 + " ... [truncated]\n" in prompt
+        assert "y" * 501 not in prompt
+        assert "- short check\n" in prompt
+
+    @pytest.mark.parametrize(("success", "limit"), [(False, 3), (True, 2)])
+    def test_outcome_limits_are_enforced(self, success, limit, caplog):
+        payload = {"guidelines": [{**_GUIDELINE, "content": f"guideline {i}"} for i in range(5)]}
+        self.mock_completion.return_value = _mock_completion_response(payload)
+
+        with caplog.at_level(logging.INFO):
+            results = generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=success))
+
+        assert [g.content for g in results[0].guidelines] == [f"guideline {i}" for i in range(limit)]
+        assert f"Keeping the first {limit} of 5" in caplog.text
+
+    @pytest.mark.parametrize("success", [False, True])
+    def test_outcome_prompt_keeps_the_quality_threshold(self, success):
+        """The outcome rules replace the no-outcome rules, not the quality threshold that follows them."""
+        generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=success))
+
+        prompt = self._prompt(self.mock_completion)
+        assert "\n\n# Quality threshold\n" in prompt
+        assert "Self-reported success is not evidence of a successful operation." in prompt
+        assert 'If nothing meets this threshold, return {"guidelines": []}.' in prompt
+
+    def test_success_with_nothing_new_returns_no_guidelines(self):
+        self.mock_completion.return_value = _mock_completion_response({"guidelines": []})
+
+        results = generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=True))
+
+        assert results[0].guidelines == []
+
+    def test_every_segment_receives_the_outcome(self, monkeypatch):
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+        messages = [*self.MESSAGES, {"role": "assistant", "content": "Reported the refund."}]
+        subtasks = [
+            SubtaskSegment(generalized_description="Issue a refund", purpose="Refund", start_step=1, end_step=1),
+            SubtaskSegment(generalized_description="Report the result", purpose="Report", start_step=2, end_step=2),
+        ]
+
+        with patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks):
+            generate_guidelines(messages, outcome=TrajectoryOutcome(success=False, failed_checks=("refund amount",)))
+
+        prompts = [c.kwargs["messages"][-1]["content"] for c in self.mock_completion.call_args_list]
+        assert len(prompts) == 2
+        assert all("**Task Status:** FAILED" in p and "- refund amount\n" in p for p in prompts)
+        # A segment that had nothing to do with the failure may return nothing.
+        allows_empty = "evaluation detail above. If this part of the trajectory did not contribute to the failure, return an empty list.\n"
+        assert all(allows_empty in p for p in prompts)

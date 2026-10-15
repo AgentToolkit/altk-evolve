@@ -91,7 +91,8 @@ def resolve_source_tasks(row: GuidelineRow, instructions: Mapping[str, str] | No
     if not task_ids:
         return SourceResolution([], "no source task")
     if instructions is not None:
-        tasks = [{"source_task": task, "source_instruction": instructions[task]} for task in task_ids if task in instructions]
+        # A blank instruction is no instruction: the harness embeds this field.
+        tasks = [{"source_task": task, "source_instruction": instructions[task]} for task in task_ids if instructions.get(task, "").strip()]
         problem = "source task not in --input"
     else:
         description = _usable_description(row) if len(task_ids) == 1 else None
