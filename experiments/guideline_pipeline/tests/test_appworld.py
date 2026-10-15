@@ -20,6 +20,7 @@ from experiments.guideline_pipeline.adapters import ADAPTERS, AdapterRecord, get
 from experiments.guideline_pipeline.adapters.appworld import AppWorldAdapter, parse_environment_io, task_from_prompt
 from experiments.guideline_pipeline.adapters.cuga import PARSER_STEP_LIMIT
 from experiments.guideline_pipeline.stages.mine import mine
+from experiments.guideline_pipeline.tests.fakes import store_guidelines
 
 pytestmark = pytest.mark.unit
 
@@ -417,3 +418,29 @@ def test_mining_test_split_tasks_without_naming_them_warns(caplog: pytest.LogCap
         by_id(AppWorldAdapter().configure({"splits": "test_normal"}))
         by_id(AppWorldAdapter(), TRAIN)
     assert not [message for message in caplog.messages if "test-split" in message]
+
+
+def test_lineage_and_export_read_the_dataset_with_adapter_options(
+    client: EvolveClient, root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.setattr(cli, "make_client", lambda: client)
+    store_guidelines(client, "appworld", ("List playlists by title.", {"source_task_id": "bbb0002_3"}))
+    out = tmp_path / "lineage.json"
+    argv = ["lineage", "--namespace", "appworld", "--out", str(out), "--adapter", "appworld", "--input", str(FIXTURES)]
+
+    # bbb0002_3's instruction is only in specs.json, so without appworld_root it is not in --input.
+    assert cli.main(argv) == 0
+    assert capsys.readouterr().out.endswith(f"1 distinct source tasks, 0 found in --input; wrote {out}\n")
+    assert cli.main([*argv, "--adapter-option", f"appworld_root={root}"]) == 0
+    assert capsys.readouterr().out.endswith(f"1 distinct source tasks, 1 found in --input; wrote {out}\n")
+    assert json.loads(out.read_text())["guidelines"][0]["sources"][0]["instruction"] == "List the titles of my playlists."
+
+    index = tmp_path / "index.json"
+    export = ["export", "retrieval-index", "--namespace", "appworld", "--out", str(index)]
+    dataset = ["--adapter", "appworld", "--input", str(FIXTURES)]
+    assert cli.main([*export, *dataset, "--adapter-option", f"appworld_root={root}"]) == 0
+    assert json.loads(index.read_text())["singletons"][0]["source_instruction"] == "List the titles of my playlists."
+    assert cli.main([*export, *dataset, "--adapter-option", "nope=1"]) == 2
+    assert "Unknown appworld option 'nope'" in capsys.readouterr().err
+    assert cli.main([*export, "--adapter-option", "model=m"]) == 2
+    assert "--adapter-option needs --adapter" in capsys.readouterr().err

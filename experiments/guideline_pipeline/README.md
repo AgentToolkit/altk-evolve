@@ -64,10 +64,11 @@ uv run python -m experiments.guideline_pipeline export playbook --namespace <ns>
 
 # Retrieval index: {"core": [rule], "singletons": [{"rule", "source_task", "source_instruction"}]}
 uv run python -m experiments.guideline_pipeline export retrieval-index --namespace <ns> --out <dir>/index.json \
-    [--core-support N] [--min-support N] [--adapter <name> --input <path>]
+    [--core-support N] [--min-support N] [--adapter <name> --input <path> [--adapter-option KEY=VALUE ...]]
 
 # Lineage: each guideline's metadata.sources and source task ids
-uv run python -m experiments.guideline_pipeline lineage --namespace <ns> --out <dir>/lineage.json [--adapter <name> --input <path>]
+uv run python -m experiments.guideline_pipeline lineage --namespace <ns> --out <dir>/lineage.json \
+    [--adapter <name> --input <path> [--adapter-option KEY=VALUE ...]]
 ```
 
 **Support and thresholds.** `n` is the guideline's `support` with Evolve's own
@@ -93,9 +94,9 @@ before anything orders or filters on `e`.
 from, and the store does not keep one per source: `metadata.sources` records
 the source task id (the adapter record's `trace_id`), conversation, user,
 agent and status, but no text. With `--adapter` and `--input` (the dataset the
-namespace was mined from), each source task's instruction is the first user
-message of that record, and a singleton backed by several tasks also lists them
-all under `source_tasks`. Without them, the guideline's own `task_description` is used,
+namespace was mined from, plus any `--adapter-option` it was mined with), each
+source task's instruction is the first user message of that record, and a
+singleton backed by several tasks also lists them all under `source_tasks`. Without them, the guideline's own `task_description` is used,
 but only for a guideline with exactly one source task. Singletons that still
 can't be resolved are skipped, counted by reason in the summary, and listed on
 stderr, never dropped silently. Superseded sources are ignored.
@@ -262,7 +263,7 @@ Options (`--adapter-option KEY=VALUE`):
 | `task_manifest=<file>` | Only the tasks in a JSON file (`task_ids` or `tasks[].task_id`) or a text file with one ID per line (`#` comments). Combines with `task_ids`. |
 | `splits=train,dev` | Only tasks evaluated in a listed split (an `evaluations/<split>.json` name, such as `test_normal`). A task with no evaluation has no known split, so it is left out. A listed split that is not found ends the run with an error, and so does a value that lists none. |
 | `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
-| `appworld_root=<dir>` | An AppWorld root whose `data/tasks/<task_id>/specs.json` is the last instruction source. The run tree does not contain it. It must be an existing directory; an empty value is an error. |
+| `appworld_root=<dir>` | An AppWorld root whose `data/tasks/<task_id>/specs.json` is the last instruction source. The run tree does not contain it. It must be an existing directory; an empty value is an error. Pass it to `export retrieval-index` and `lineage` as well, or tasks whose instruction came from it are not found in `--input`. |
 
 Without `splits=`, every task under `tasks/` is mined whatever its split, and any
 run whose selected tasks include a `test*` split gets a `read test-split tasks ...`
