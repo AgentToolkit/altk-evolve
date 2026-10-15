@@ -21,6 +21,7 @@ from altk_evolve.schema.guidelines import (
     Guideline,
     GuidelineGenerationResponse,
     GuidelineGenerationResult,
+    SubtaskSegment,
 )
 from altk_evolve.utils.utils import clean_llm_response
 
@@ -239,6 +240,7 @@ def parse_openai_agents_trajectory(
         - num_steps: Total number of agent actions
         - steps_list: Individual formatted step strings (before joining), for subtask slicing
         - steps_omitted: Steps dropped to fit the budget (0 when the whole run is rendered)
+        - marker_index: 0-based position of the elision marker in steps_list, or None
     """
     options = options or GuidelineRuntime.from_settings()
     agent_steps: list[dict[str, str | dict]] = []
@@ -367,7 +369,31 @@ def parse_openai_agents_trajectory(
         "function_calls": function_calls,
         "num_steps": len([s for s in kept if s is not None and s["type"] in ["action", "reasoning"]]),
         "steps_omitted": steps_omitted,
+        "marker_index": head if tail else None,
     }
+
+
+def slice_subtasks(subtasks: list[SubtaskSegment], trajectory_data: dict) -> list[tuple[SubtaskSegment, list[str], int]]:
+    """Slice ``trajectory_data["steps_list"]`` by each subtask's 1-based, inclusive positions.
+
+    Returns ``(subtask, slice, real_steps)`` per usable subtask. Positions are clamped to the
+    list. The elision marker holds a position but is not a step: a slice spanning the gap
+    keeps it, so the model knows steps are missing, without counting it in ``real_steps``;
+    a slice with no real step (out of range, or the marker alone) is dropped.
+    """
+    steps_list: list[str] = trajectory_data["steps_list"]
+    marker_index = trajectory_data["marker_index"]
+    n_steps = len(steps_list)
+    slices = []
+    for subtask in subtasks:
+        start = min(max(0, subtask.start_step - 1), n_steps)
+        end = min(max(0, subtask.end_step), n_steps)
+        real_steps = end - start - (marker_index is not None and start <= marker_index < end)
+        if real_steps <= 0:
+            logger.debug(f"Skipping subtask with no real steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
+            continue
+        slices.append((subtask, steps_list[start:end], real_steps))
+    return slices
 
 
 def _generate_guidelines_for_segment(
@@ -500,8 +526,6 @@ def generate_guidelines(
 
     trajectory_data = parse_openai_agents_trajectory(messages, context_messages=context_messages, options=options)
     task_instruction = trajectory_data["task_instruction"]
-    steps_list: list[str] = trajectory_data["steps_list"]
-    n_steps = len(steps_list)
 
     subtasks = []
     if options.segmentation_enabled:
@@ -514,28 +538,21 @@ def generate_guidelines(
             subtasks = []
 
     if len(subtasks) >= 2:
-        valid_slices: list[tuple] = []
-        for subtask in subtasks:
-            start = min(max(0, subtask.start_step - 1), n_steps)
-            end = min(max(0, subtask.end_step), n_steps)
-            if start >= end:
-                logger.debug(f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
-                continue
-            valid_slices.append((subtask, steps_list[start:end]))
+        valid_slices = slice_subtasks(subtasks, trajectory_data)
 
         if len(valid_slices) >= 2:
             return [
                 _generate_guidelines_for_segment(
                     task_description=subtask.generalized_description,
                     trajectory_slice="\n\n".join(slice_steps),
-                    num_steps=len(slice_steps),
+                    num_steps=real_steps,
                     constrained_decoding_supported=constrained_decoding_supported,
                     options=options,
                     supporting_context=render_supporting_context(context_messages),
                     outcome=outcome,
                     segmented=True,
                 )
-                for subtask, slice_steps in valid_slices
+                for subtask, slice_steps, real_steps in valid_slices
             ]
         # Fewer than 2 valid subtask slices — fall through to full-trajectory fallback.
 

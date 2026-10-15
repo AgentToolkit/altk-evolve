@@ -870,3 +870,91 @@ class TestOutcomePrompt:
         # A segment that had nothing to do with the failure may return nothing.
         allows_empty = "evaluation detail above. If this part of the trajectory did not contribute to the failure, return an empty list.\n"
         assert all(allows_empty in p for p in prompts)
+
+
+@pytest.mark.unit
+class TestSegmentationUnderElision:
+    """Segmentation over an elided trajectory, with the real segmenter and the LLM stubbed.
+
+    12 steps under ``max_steps=6, tail_steps=2`` render as real steps 1-4 at positions 1-4,
+    the marker at position 5, and real steps 11-12 at positions 6-7. The window comes only
+    from an explicit runtime, with the env pinned to the head-only default, which is the
+    processing-profile case.
+    """
+
+    OPTIONS = GuidelineRuntime(trajectory_max_steps=6, trajectory_tail_steps=2, segmentation_enabled=True)
+    MESSAGES = [{"role": "user", "content": "Do the thing"}] + [{"role": "assistant", "content": f"<s{i:02d}>"} for i in range(1, 13)]
+    PAYLOAD = {"guidelines": [_GUIDELINE]}
+
+    @pytest.fixture(autouse=True)
+    def _head_only_env(self, monkeypatch):
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_max_steps", 50)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.trajectory_tail_steps", 0)
+        for target in ("guidelines", "segmentation"):
+            monkeypatch.setattr(f"altk_evolve.llm.guidelines.{target}.supports_response_schema", lambda **_: True)
+            monkeypatch.setattr(f"altk_evolve.llm.guidelines.{target}.get_supported_openai_params", lambda **_: ["response_format"])
+
+    def _run(self, monkeypatch, segments: list[tuple[int, int]], messages: list[dict] | None = None):
+        """Run generate_guidelines; return (segmentation prompt, generation prompts)."""
+        segmentation = {
+            "subtasks": [{"generalized_description": f"Phase {a}-{b}", "start_step": a, "end_step": b, "purpose": "p"} for a, b in segments]
+        }
+        prompts: dict[str, list[str]] = {"segmentation": [], "generation": []}
+
+        def segment_completion(**kwargs):
+            prompts["segmentation"].append(kwargs["messages"][-1]["content"])
+            return _mock_completion_response(segmentation)
+
+        def generation_completion(**kwargs):
+            prompts["generation"].append(kwargs["messages"][-1]["content"])
+            return _mock_completion_response(self.PAYLOAD)
+
+        monkeypatch.setattr("altk_evolve.llm.guidelines.segmentation.completion", segment_completion)
+        monkeypatch.setattr("altk_evolve.llm.guidelines.guidelines.completion", generation_completion)
+        generate_guidelines(messages or self.MESSAGES, options=self.OPTIONS)
+        (segmentation_prompt,) = prompts["segmentation"]
+        return segmentation_prompt, prompts["generation"]
+
+    def test_the_segmenter_parses_with_the_callers_explicit_window(self, monkeypatch):
+        """segment_trajectory must render with the caller's options, not the env: its indices
+        are positions in the caller's steps_list, so the two parses have to agree."""
+        segmentation_prompt, generation = self._run(monkeypatch, [(1, 4), (6, 7)])
+
+        assert "6 intermediate step(s) omitted; 12 steps in the full run" in segmentation_prompt
+        assert "<s05>" not in segmentation_prompt and "<s12>" in segmentation_prompt
+        first, second = generation
+        assert all(f"<s{i:02d}>" in first for i in range(1, 5)) and "<s11>" not in first
+        assert "<s11>" in second and "<s12>" in second and "<s04>" not in second
+
+    def test_the_segmenter_is_told_how_many_positions_it_can_cite(self, monkeypatch):
+        """The labels run to 7 under elision; a total of 6 would invite a last subtask that
+        stops short of the final step, the one the tail exists to keep."""
+        segmentation_prompt, _ = self._run(monkeypatch, [(1, 4), (6, 7)])
+
+        assert "**Total Steps:** 7" in segmentation_prompt
+        assert "**Step 7 - Reasoning:**" in segmentation_prompt
+        assert "it stands for 6 steps elided" in segmentation_prompt
+
+    def test_the_marker_note_is_absent_without_elision(self, monkeypatch):
+        """A trajectory within budget renders the segmentation prompt exactly as before."""
+        segmentation_prompt, _ = self._run(monkeypatch, [(1, 2), (3, 4)], messages=self.MESSAGES[:5])
+
+        assert "**Total Steps:** 4" in segmentation_prompt
+        assert "omitted" not in segmentation_prompt
+
+    def test_a_segment_holding_only_the_marker_is_not_generated(self, monkeypatch):
+        """[5,5] is the marker alone: no step to learn from, so no generation call."""
+        _, generation = self._run(monkeypatch, [(1, 4), (5, 5), (6, 7)])
+
+        assert len(generation) == 2
+        assert all("omitted" not in prompt for prompt in generation)
+
+    def test_a_segment_spanning_the_gap_counts_only_real_steps(self, monkeypatch):
+        """The marker stays in a spanning slice, so the model knows steps are missing, but
+        it is not counted as a step taken."""
+        _, generation = self._run(monkeypatch, [(1, 6), (7, 7)])
+
+        spanning, last = generation
+        assert "intermediate step(s) omitted" in spanning
+        assert "**Steps Taken:** 5" in spanning
+        assert "**Steps Taken:** 1" in last

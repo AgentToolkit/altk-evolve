@@ -14,7 +14,7 @@ from altk_evolve.config.evolve import evolve_config  # noqa: F401
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.llm.guidelines.consistency_analyzer.consistency_analysis import analyze_consistency
 from altk_evolve.llm.guidelines.consistency_analyzer.resampling import resample_trajectory
-from altk_evolve.llm.guidelines.guidelines import parse_guideline_response, parse_openai_agents_trajectory
+from altk_evolve.llm.guidelines.guidelines import parse_guideline_response, parse_openai_agents_trajectory, slice_subtasks
 
 from altk_evolve.config.guidelines import guidelines_settings
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
@@ -280,8 +280,17 @@ def _can_segment_trajectory(messages: list[dict], *, options: GuidelineRuntime |
     # would be a second thing to keep in step with it, and parsing is pure and cheap next to
     # this path's resampling calls.
     options = options or GuidelineRuntime.from_settings()
-    if options.trajectory_tail_steps and parse_openai_agents_trajectory(messages, options=options)["steps_omitted"]:
-        return False
+    if options.trajectory_tail_steps:
+        try:
+            elided = parse_openai_agents_trajectory(messages, options=options)["steps_omitted"]
+        except Exception as e:
+            # segment_trajectory would hit the same parse error inside the caller's try and
+            # fall back to the full trajectory; declining here keeps that outcome instead of
+            # raising after resampling has already been paid for.
+            logger.warning(f"Segmentation failed, falling back to full trajectory: {e}")
+            return False
+        if elided:
+            return False
     return True
 
 
@@ -928,8 +937,7 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
 
     trajectory_data = parse_openai_agents_trajectory(messages, context_messages=trajectory.get("context_messages"), options=options)
     task_instruction = trajectory_data["task_instruction"]
-    steps_list: list[str] = trajectory_data["steps_list"]
-    n_steps = len(steps_list)
+    n_steps = len(trajectory_data["steps_list"])
 
     subtasks = []
     # No _can_segment_trajectory guard here: that checks alignment with
@@ -948,21 +956,14 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
             subtasks = []
 
     if len(subtasks) >= 2:
-        valid_slices: list[tuple] = []
-        for subtask in subtasks:
-            start = min(max(0, subtask.start_step - 1), n_steps)
-            end = min(max(0, subtask.end_step), n_steps)
-            if start >= end:
-                logger.debug(f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
-                continue
-            valid_slices.append((subtask, steps_list[start:end]))
+        valid_slices = slice_subtasks(subtasks, trajectory_data)
 
         if len(valid_slices) >= 2:
             results = [
                 _generate_fast_guideline_result(
                     task_description=subtask.generalized_description,
                     trajectory_slice="\n\n".join(slice_steps),
-                    num_steps=len(slice_steps),
+                    num_steps=real_steps,
                     constrained_decoding_supported=constrained_decoding_supported,
                     debug_dir=debug_dir,
                     trace_id=trace_id,
@@ -970,7 +971,7 @@ def generate_consistency_guidelines_fast(trajectory: dict, *, options: Guideline
                     options=options,
                     supporting_context=render_supporting_context(trajectory.get("context_messages")),
                 )
-                for i, (subtask, slice_steps) in enumerate(valid_slices, 1)
+                for i, (subtask, slice_steps, real_steps) in enumerate(valid_slices, 1)
             ]
             if debug_dir:
                 _write_guidelines_debug(debug_dir, trace_id, results, "_consistency-fast")
