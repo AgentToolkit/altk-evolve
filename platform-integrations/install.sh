@@ -185,6 +185,41 @@ CLAUDE_LEGACY_ALLOW_RULES = [
     "Write(.evolve/**)",
 ]
 
+# Claude registers a local marketplace by path and reads the plugin from that
+# path on every session start (it does not cache a copy). A curl | bash install
+# downloads the source into a temp dir that is deleted when the installer exits,
+# so registering that dir leaves the plugin unloadable (#387). For downloaded
+# installs we therefore copy the marketplace into this installer-owned dir
+# (under ~/.claude/evolve-lite/) and register it instead. Installs from a local
+# clone keep registering the clone itself.
+CLAUDE_MARKETPLACE_COPY_DIRNAME = "marketplace"
+CLAUDE_MARKETPLACE_MANIFEST_REL = os.path.join(".claude-plugin", "marketplace.json")
+
+
+def _claude_marketplace_subset(source_root):
+    """Return the relative paths a Claude directory marketplace at `source_root` needs.
+
+    That is the `.claude-plugin/` dir holding marketplace.json plus every plugin
+    dir its entries point at with a relative `source`. Entries with a remote
+    (non-string) source need nothing local. A source that is absolute, the
+    marketplace root itself, or escapes it via `..` is refused rather than copied.
+    """
+    source_root = Path(source_root)
+    manifest = json.loads((source_root / CLAUDE_MARKETPLACE_MANIFEST_REL).read_text())
+    rel_paths = [os.path.dirname(CLAUDE_MARKETPLACE_MANIFEST_REL)]
+    for plugin in manifest.get("plugins", []):
+        src = plugin.get("source")
+        if not isinstance(src, str):
+            continue
+        rel = os.path.normpath(src)
+        if os.path.isabs(rel) or rel == "." or rel == ".." or rel.startswith(".." + os.sep):
+            raise RuntimeError(f"marketplace.json plugin source must be a subdirectory of the marketplace: {src!r}")
+        if not (source_root / rel).is_dir():
+            raise RuntimeError(f"marketplace.json plugin source not found: {source_root / rel}")
+        if rel not in rel_paths:
+            rel_paths.append(rel)
+    return rel_paths
+
 # Bob (a Gemini-CLI fork) prefix-matches its shell allowlist and splits chained
 # commands, so allowlisting the exact recall-audit command can't widen (a
 # `; rm -rf` after it still prompts). We allowlist ONLY that command so the
@@ -358,6 +393,45 @@ class FileOps:
             debug(f"Removed empty dir: {path}")
             return True
         return False
+
+    def remove_owned_dir(self, path):
+        """Remove an installer-owned path without ever following a symlink.
+
+        If `path` is a symlink (or a stray file), only it is removed, never what
+        a link points at, so nothing outside the installer-owned location can
+        be deleted."""
+        path = str(path)
+        if os.path.islink(path) or os.path.isfile(path):
+            os.unlink(path)
+            debug(f"Removed: {path}")
+            return True
+        return self.remove_dir(path)
+
+    def replace_tree_subset(self, src_root, rel_paths, dst):
+        """Make `dst` an exact copy of `rel_paths` under `src_root`, keeping their layout.
+
+        The copy is built in a sibling staging dir and swapped in, so a
+        reinstall leaves no stale files from an older version, and a failed
+        copy leaves the previous `dst` untouched."""
+        src_root, dst = Path(src_root), Path(dst)
+        staging = dst.with_name(dst.name + ".staging")
+        old = dst.with_name(dst.name + ".old")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        # Leftovers from an interrupted earlier run.
+        self.remove_owned_dir(staging)
+        self.remove_owned_dir(old)
+        try:
+            staging.mkdir()
+            for rel in rel_paths:
+                shutil.copytree(src_root / rel, staging / rel)
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+        if os.path.lexists(dst):
+            os.replace(dst, old)
+        os.replace(staging, dst)
+        self.remove_owned_dir(old)
+        debug(f"Replaced {dst} with {', '.join(str(r) for r in rel_paths)} from {src_root}")
 
     def run_subprocess(self, cmd_list):
         return subprocess.run(cmd_list)
@@ -812,6 +886,14 @@ class DryRunFileOps(FileOps):
         dryrun(f"remove dir if empty → {path}")
         return True
 
+    def remove_owned_dir(self, path):
+        dryrun(f"remove dir  → {path}")
+        return True
+
+    def replace_tree_subset(self, src_root, rel_paths, dst):
+        what = ", ".join(str(r) for r in rel_paths) if rel_paths else "the downloaded marketplace"
+        dryrun(f"replace dir → {dst}/ (fresh copy of: {what})")
+
     def run_subprocess(self, cmd_list):
         dryrun(f"run: {' '.join(cmd_list)}")
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -1255,6 +1337,32 @@ class ClaudeInstaller:
         self.ops.copy_tree(lib_src, lib_dst)
         success(f"Installed shared lib → {lib_dst}")
 
+    def _marketplace_copy_dir(self):
+        return Path.home() / ".claude" / "evolve-lite" / CLAUDE_MARKETPLACE_COPY_DIRNAME
+
+    def _marketplace_source(self):
+        """Return (source, origin label) to pass to `claude plugin marketplace add`.
+
+        Claude reads a local marketplace from the registered path at every
+        session start, so the path must outlive the installer. A local clone
+        does, and is registered as-is. The curl | bash download lives in a temp
+        dir removed at exit, so its marketplace is first copied to the stable
+        installer-owned dir and that copy is registered (#387).
+        """
+        downloaded = _tmpdir_download is not None and SOURCE_DIR == _tmpdir_download
+        would_download = self.ops.is_dry_run and not SOURCE_DIR
+        has_manifest = bool(SOURCE_DIR) and (Path(SOURCE_DIR) / CLAUDE_MARKETPLACE_MANIFEST_REL).is_file()
+        if would_download or (downloaded and has_manifest):
+            copy_dir = self._marketplace_copy_dir()
+            rel_paths = _claude_marketplace_subset(SOURCE_DIR) if has_manifest else []
+            self.ops.replace_tree_subset(SOURCE_DIR, rel_paths, copy_dir)
+            if not self.ops.is_dry_run:
+                success(f"Copied the marketplace → {copy_dir}")
+            return str(copy_dir), f"copy of the downloaded evolve {EVOLVE_VERSION}"
+        if has_manifest:
+            return str(Path(SOURCE_DIR).resolve()), "local"
+        return EVOLVE_REPO, "GitHub"
+
     def install(self, target_dir):
         info("Installing Claude plugin via marketplace")
 
@@ -1271,13 +1379,9 @@ class ClaudeInstaller:
         self.ops.merge_json_permission_rules(settings_path, CLAUDE_ALLOW_RULES)
         success(f"Allowlisted evolve scripts + .evolve writes in {settings_path} (no per-use prompts)")
 
-        marketplace_dir = Path(SOURCE_DIR).resolve() if SOURCE_DIR else None
-        has_local_marketplace = marketplace_dir is not None and (marketplace_dir / ".claude-plugin" / "marketplace.json").is_file()
-        marketplace_source = str(marketplace_dir) if has_local_marketplace else EVOLVE_REPO
-        if has_local_marketplace:
-            info(f"📁 Marketplace source: {_c('1', marketplace_source)} (local)")
-        else:
-            info(f"🌐 Marketplace source: {_c('1', marketplace_source)} (GitHub)")
+        marketplace_source, origin = self._marketplace_source()
+        icon = "🌐" if origin == "GitHub" else "📁"
+        info(f"{icon} Marketplace source: {_c('1', marketplace_source)} ({origin})")
 
         claude = shutil.which("claude")
         if not claude:
@@ -1325,7 +1429,6 @@ class ClaudeInstaller:
         self.ops.remove_file(claude_evolve_dir / AUDIT_SCRIPT)
         self.ops.remove_file(claude_evolve_dir / ADAPT_SCRIPT)
         self.ops.remove_dir(claude_evolve_dir / "lib")
-        self.ops.remove_dir_if_empty(claude_evolve_dir)
 
         # Legacy migration: remove orphan plugin data dirs left by older installs
         # (e.g. evolve-lite-inline, evolve-lite-evolve-marketplace). GLOBAL, only
@@ -1353,10 +1456,24 @@ class ClaudeInstaller:
                     self.ops.remove_dir(evolve_cache)
                     self.ops.remove_dir_if_empty(marketplace_dir)
 
+        self._uninstall_via_cli()
+
+        # Remove the marketplace copy a downloaded install registered (#387),
+        # plus any staging leftovers from an interrupted install. Done after the
+        # CLI has unregistered the marketplace, and only ever these
+        # installer-owned paths under ~/.claude/evolve-lite/.
+        copy_dir = self._marketplace_copy_dir()
+        for path in (copy_dir, copy_dir.with_name(copy_dir.name + ".staging"), copy_dir.with_name(copy_dir.name + ".old")):
+            if os.path.lexists(path):
+                self.ops.remove_owned_dir(path)
+        self.ops.remove_dir_if_empty(claude_evolve_dir)
+
+    def _uninstall_via_cli(self):
         claude = shutil.which("claude")
         if not claude:
             warn("Could not uninstall Claude plugin automatically.")
             warn(f"Run manually: claude plugin uninstall {CLAUDE_PLUGIN}")
+            warn("               claude plugin marketplace remove evolve-marketplace")
             return
 
         result = self.ops.run_subprocess([claude, "plugin", "uninstall", CLAUDE_PLUGIN])
