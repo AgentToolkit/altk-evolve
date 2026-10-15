@@ -32,33 +32,33 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import re
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
 from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
-from experiments.guideline_pipeline.adapters.base import AdapterRecord
+from experiments.guideline_pipeline.adapters.base import AdapterRecord, option_boolean, option_names
+from experiments.guideline_pipeline.adapters.cuga import elide_middle
 
 logger = logging.getLogger(__name__)
 
 SOURCE = "tau-retail"
-INCLUDE_POLICY_ENV = "TAU_RETAIL_INCLUDE_POLICY"
-# Part of every batch revision: bump it when the records built from an unchanged file change.
-FORMAT_VERSION = "2"
 SUCCESS_REWARD = 1.0  # τ-bench rewards are 0 or 1; anything below full reward is a failure
 DETAIL_CHARS = 2000
 # render_supporting_context truncates each JSON-rendered context message at 2000 chars;
 # leave room for the JSON envelope and escaped newlines.
-POLICY_CHUNK_CHARS = 1500
+CONTEXT_CHUNK_CHARS = 1500
 
-# Temporary, until parse_openai_agents_trajectory's limits are configurable: it keeps
-# only the first 50 agent steps and truncates each step to 2000 chars.
-PARSER_STEP_LIMIT = 50
+# parse_openai_agents_trajectory's default window (EVOLVE_TRAJECTORY_*): the first 50
+# agent steps, each truncated to 2000 chars. Long turns are split under the per-step
+# cap, and a long conversation keeps its first ELISION_HEAD steps and its ending
+# around one marker (the CUGA adapter's elide_middle), so the ending reaches the
+# default head-only window.
 PARSER_STEP_CHARS = 2000
+ELISION_HEAD = 25
 
 _SECTIONS = (
     ("TASK ", "HEADER"),
@@ -74,7 +74,7 @@ _SECTIONS = (
 _RULE = re.compile(
     r"^={5,}[ \t]*(?:\n|\Z)(?=(?:[ \t]*\n)*[ \t]*(?:" + "|".join(re.escape(prefix) for prefix, _ in _SECTIONS) + r"|\Z))", re.M
 )
-_HEADER_KEYS = ("termination_reason", "duration", "messages", "agent_cost", "user_cost", "sim_id", "trial", "seed", "model")
+_HEADER_KEYS = ("termination_reason", "duration", "messages", "agent_cost", "user_cost", "sim_id", "trial", "seed", "model", "split")
 _SPEAKER = re.compile(r"^\[(ASSISTANT|USER)\](?:\s*@\S+)?\s*(.*)$")
 _CALL = re.compile(r"^\s*->\s*CALL\s+([A-Za-z0-9_]+)\s*(\(.*)$")
 _RESULT = re.compile(r"^\s*<-\s*RESULT\b\s*(.*)$")
@@ -220,20 +220,6 @@ def conversation_steps(turns: list[Turn]) -> list[dict[str, Any]]:
     return steps
 
 
-def elide_head_tail(steps: list[dict[str, Any]], limit: int = PARSER_STEP_LIMIT) -> list[dict[str, Any]]:
-    """Keep the first and last steps around a marker, so a conversation's ending survives the step cap.
-
-    Temporary: parse_openai_agents_trajectory keeps only the first 50 steps. Remove
-    this once that limit is configurable.
-    """
-    if len(steps) <= limit:
-        return steps
-    head = limit // 2
-    tail = limit - head - 1  # one step for the marker
-    elided = len(steps) - head - tail
-    return [*steps[:head], _reasoning(f"... ({elided} conversation steps elided) ..."), *steps[-tail:]]
-
-
 def task_messages(turns: list[Turn]) -> list[dict[str, Any]]:
     """The first user turn as the task (what the agent was actually asked), the other turns as steps, in order.
 
@@ -246,9 +232,9 @@ def task_messages(turns: list[Turn]) -> list[dict[str, Any]]:
         raise MalformedTrajectory("conversation has no user turn")
     leading = conversation_steps(turns[:first])
     steps = leading + conversation_steps(turns[first + 1 :])
-    kept = elide_head_tail(steps)
+    kept = elide_middle(steps, head=ELISION_HEAD)
     # Elision keeps the head, so the task stays right after the leading steps it kept.
-    position = len(leading) if kept is steps else min(len(leading), PARSER_STEP_LIMIT // 2)
+    position = len(leading) if kept is steps else min(len(leading), ELISION_HEAD)
     return [*kept[:position], {"role": "user", "content": turns[first].text}, *kept[position:]]
 
 
@@ -267,12 +253,11 @@ def judge_outcome(reward: float, judge: str) -> TrajectoryOutcome:
     return TrajectoryOutcome(success=reward >= SUCCESS_REWARD, failed_checks=tuple(failed), detail=judge[:DETAIL_CHARS] or None)
 
 
-def _policy_context(policy: str) -> list[dict[str, Any]]:
-    """The domain policy as system context: never the task instruction, never counted as new material."""
-    pieces = _chunks(policy, POLICY_CHUNK_CHARS)
-    label = "AGENT DOMAIN POLICY"
+def _system_context(label: str, text: str) -> list[dict[str, Any]]:
+    """Text as system context, chunked: never the task instruction, never counted as new material."""
+    pieces = _chunks(text, CONTEXT_CHUNK_CHARS)
     if len(pieces) == 1:
-        return [{"role": "system", "content": f"{label}:\n{policy}"}]
+        return [{"role": "system", "content": f"{label}:\n{text}"}]
     return [{"role": "system", "content": f"{label} (part {i}/{len(pieces)}):\n{piece}"} for i, piece in enumerate(pieces, 1)]
 
 
@@ -281,48 +266,88 @@ def _task_number(path: Path) -> tuple[int, str]:
     return (int(match.group(1)) if match else -1, path.name)
 
 
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+def _task_files(path: Path) -> list[Path]:
+    """path itself when it is a file, else its task_*.txt files in task-number order; a FileNotFoundError when there are none."""
+    if path.is_file():
+        return [path]
+    if not path.is_dir():
+        raise FileNotFoundError(f"no such file or directory: {path}")
+    files = sorted(path.glob("task_*.txt"), key=_task_number)
+    if not files:
+        nested = sorted(child.name for child in path.iterdir() if child.is_dir() and any(child.glob("task_*.txt")))
+        hint = f"; found some in {', '.join(nested)}, so pass that directory as --input" if nested else ""
+        raise FileNotFoundError(f"no task_*.txt files in {path}{hint}")
+    return files
 
 
+def _header_split(file: Path) -> str | None:
+    """The split the task's header records, if any; None for a file without a readable header."""
+    header = split_sections(file.read_bytes().decode("utf-8", errors="replace")).get("HEADER")
+    return parse_header(header).get("split") if header else None
+
+
+@dataclass
 class TauRetailAdapter:
     """Reads a directory of ``task_*.txt`` files, or one such file, into one record per task.
 
-    include_policy adds the agent domain policy as context_messages. None reads
-    TAU_RETAIL_INCLUDE_POLICY from the environment, which is how the CLI opts in.
+    Options (``--adapter-option KEY=VALUE``): include_policy and include_scenario
+    (booleans; add the agent domain policy or the user simulator's scenario as
+    context_messages) and splits (comma-separated; only tasks whose header records
+    one of these ``split=`` values).
     """
 
-    name = SOURCE
+    name: str = SOURCE
+    include_policy: bool = False
+    include_scenario: bool = False
+    splits: frozenset[str] = field(default_factory=frozenset)
 
-    def __init__(self, *, include_policy: bool | None = None):
-        self.include_policy = include_policy
+    def configure(self, options: Mapping[str, str]) -> TauRetailAdapter:
+        changes: dict[str, Any] = {}
+        for key, value in options.items():
+            if key in ("include_policy", "include_scenario"):
+                changes[key] = option_boolean(SOURCE, key, value)
+            elif key == "splits":
+                changes[key] = frozenset(option_names(SOURCE, key, value))
+            else:
+                raise ValueError(f"Unknown {SOURCE} option {key!r} (expected include_policy, include_scenario, splits)")
+        return replace(self, **changes)
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
         """Yield one record per task file, reading each file only when its record is requested.
 
         A malformed file is logged and skipped, so one bad task doesn't end the run
         (an exception here would stop mine's iteration); a missing or empty input
-        raises, because then nothing can be read at all.
+        raises, because then nothing can be read at all, and so does a split filter
+        naming a split no task records. Reading no task at all logs a warning.
         """
-        include_policy = _env_flag(INCLUDE_POLICY_ENV) if self.include_policy is None else self.include_policy
-        if path.is_file():
-            files = [path]
-        elif path.is_dir():
-            files = sorted(path.glob("task_*.txt"), key=_task_number)
-            if not files:
-                raise FileNotFoundError(f"no task_*.txt files in {path}")
-        else:
-            raise FileNotFoundError(f"no such file or directory: {path}")
+        files = _task_files(path)
+        splits: dict[Path, str | None] = {}
+        if self.splits:
+            splits = {file: _header_split(file) for file in files}
+            found = {split for split in splits.values() if split is not None}
+            if missing := sorted(self.splits - found):
+                raise ValueError(f"Splits not found in {path}: {missing} (found {sorted(found)})")
+        read = 0
         for file in files:
+            if self.splits and splits[file] not in self.splits:
+                if splits[file] is None:
+                    logger.warning(
+                        "skipping %s: its header records no split, so splits=%s cannot select it", file, ",".join(sorted(self.splits))
+                    )
+                continue
             try:
-                yield self.record(file, include_policy=include_policy)
+                record = self.record(file)
             except MalformedTrajectory as exc:
                 logger.warning("skipping %s: %s", file, exc)
+                continue
+            read += 1
+            yield record
+        if not read:
+            logger.warning("read no %s task in %s", SOURCE, path)
 
-    def record(self, file: Path, *, include_policy: bool = False) -> AdapterRecord:
+    def record(self, file: Path) -> AdapterRecord:
         """Build the record for one task file; raises MalformedTrajectory if a required section is missing."""
-        raw = file.read_bytes()
-        sections = split_sections(raw.decode("utf-8", errors="replace"))
+        sections = split_sections(file.read_bytes().decode("utf-8", errors="replace"))
         missing = [name for name in ("HEADER", "CONVERSATION") if name not in sections]
         if missing:
             raise MalformedTrajectory(f"missing section(s): {', '.join(missing)}")
@@ -332,19 +357,27 @@ class TauRetailAdapter:
         turns = parse_conversation(sections["CONVERSATION"])
         if not turns:
             raise MalformedTrajectory("conversation has no turns")
-        messages = task_messages(turns)
-        policy = section_body(sections.get("POLICY", "")) if include_policy else ""
+        context: list[dict[str, Any]] = []
+        if self.include_policy and (policy := section_body(sections.get("POLICY", ""))):
+            context.extend(_system_context("AGENT DOMAIN POLICY", policy))
+        if self.include_scenario and (scenario := section_body(sections.get("SCENARIO", ""))):
+            # Last, because the context renderer keeps the most recent messages within its budget.
+            context.extend(_system_context("USER SCENARIO (the user simulator's brief; the agent did not see it)", scenario))
 
         task_id = file.stem
-        revision_input = b"\0".join([FORMAT_VERSION.encode(), b"policy" if policy else b"", raw])
-        return AdapterRecord(
-            messages=messages,
-            context_messages=_policy_context(policy) if policy else [],
-            trace_id=task_id,
-            model=header.get("model"),
-            metadata={key: value for key, value in header.items() if key != "model"},
-            batch=TrajectoryBatch(
-                source=SOURCE, conversation_id=task_id, batch_id=task_id, revision=hashlib.sha256(revision_input).hexdigest()[:16]
-            ),
-            outcome=judge_outcome(header["reward"], section_body(sections.get("JUDGE", ""))),
-        )
+        outcome = judge_outcome(header["reward"], section_body(sections.get("JUDGE", "")))
+        content: dict[str, Any] = {
+            "messages": task_messages(turns),
+            "context_messages": context,
+            "trace_id": task_id,
+            "model": header.get("model"),
+            "metadata": {key: value for key, value in header.items() if key != "model"},
+        }
+        # The revision digests exactly what processors see, so an edited task or an option that
+        # changes the content is reprocessed, and nothing else is.
+        plain = {**content, "outcome": outcome.model_dump(mode="json")}
+        revision = hashlib.sha256(json.dumps(plain, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+        # Splits can reuse task numbers, so a recorded split is part of the conversation's identity.
+        conversation = f"{header['split']}/{task_id}" if "split" in header else task_id
+        batch = TrajectoryBatch(source=SOURCE, conversation_id=conversation, batch_id=task_id, revision=revision)
+        return AdapterRecord(**content, outcome=outcome, batch=batch)

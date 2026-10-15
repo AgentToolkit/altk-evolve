@@ -420,30 +420,47 @@ Each task becomes one record:
   function call with its tool name and arguments; results and both speakers'
   other turns are labelled assistant messages. The `USER SCENARIO` is the user
   simulator's hidden brief (`reason_for_call`, `known_info`,
-  `task_instructions`), which the agent never saw, so it is left out. A conversation longer
-  than the extractor's 50-step limit keeps its first and last steps around an
-  elision marker (temporary, until that limit is configurable).
+  `task_instructions`), which the agent never saw, so it is left out unless
+  `include_scenario=true`.
+- **Long runs:** long turns are split into parts under the extractor's
+  2000-character step cap. The extractor's default window is the first 50 steps
+  (`EVOLVE_TRAJECTORY_*`), so, as the CUGA adapter does, a longer conversation
+  keeps its first 25 and last 24 steps with one `[N steps elided ...]` marker
+  between them. The adapter caps at 50 whatever the extractor's settings.
 - **outcome:** `success` when the reward is 1.0; judge lines with
   `action_match=False` or `met=False` (or the JSON / dict forms
   `"action_match": false`, `'met': False`) become `failed_checks`, and the start
   of the judge section becomes `detail`.
-- **trace_id / batch:** the file name (`task_12`); the batch revision is a hash of
-  the file, so editing a task reprocesses only that task.
-- **metadata:** the header's reward, breakdown, termination reason and the other
-  fields it carries; `model=` in the header sets the record's model.
+- **trace_id / batch:** the file name (`task_12`). The conversation is the file
+  name too, prefixed with the split when the header records one
+  (`train/task_12`), because splits can reuse task numbers. The revision digests
+  the record's content, so editing a task, or changing an option that changes
+  what is processed, reprocesses that task; re-running unchanged input skips it.
+- **metadata:** the header's reward, breakdown, termination reason, `split` and
+  the other fields it carries; `model=` in the header sets the record's model.
 
 A file without the header (and its reward), a conversation or a user turn in it
-is skipped with a warning on stderr, and the run continues.
+is skipped with a warning on stderr, and the run continues. A run that reads no
+task logs a warning too.
 
-The domain policy is left out by default, because it is the same in every task.
-To add it as context (`context_messages`), set `TAU_RETAIL_INCLUDE_POLICY=1`.
-Context is not counted as new material, and including it changes every batch
-revision, so a re-run with the policy processes every task again.
+Options (`--adapter-option KEY=VALUE`):
+
+| Key | Effect |
+| --- | --- |
+| `include_policy=true` | Add the agent domain policy as `system` context messages. It is the same in every task, so it is off by default. |
+| `include_scenario=true` | Add the user simulator's scenario as a `system` context message. It holds facts the agent never had, so guidelines mined with it can encode them. |
+| `splits=train` | Only tasks whose header records one of these `split=` values. A task without one is skipped with a warning; a listed split that no task records ends the run with an error, and so does a value that lists none. |
+
+Context is supporting history: the extractor sees it, but it is not counted as
+new material. Mining a test-split run and then evaluating on that split leaks
+the test set into the namespace; record `split=` in the headers and pass
+`splits=train` to mine only the training tasks.
 
 ```bash
-TAU_RETAIL_INCLUDE_POLICY=1 uv run python -m experiments.guideline_pipeline mine --adapter tau-retail \
+uv run python -m experiments.guideline_pipeline mine --adapter tau-retail \
     --input runs/tau-retail-train/trajectories --namespace tau_retail \
-    --processing-profile guidelines-consistency --dry-run
+    --processing-profile guidelines-consistency \
+    --adapter-option include_policy=true --adapter-option splits=train --dry-run
 ```
 
 ## Writing an adapter
@@ -500,6 +517,8 @@ ADAPTERS = {adapter.name: adapter for adapter in (MyDatasetAdapter(),)}
 To take `--adapter-option` settings, also implement `configure(options)`, which
 validates the `KEY=VALUE` strings and returns a configured copy (see
 `ConfigurableAdapter` in `adapters/base.py` and `adapters/cuga.py`).
+`option_boolean` and `option_names` in `adapters/base.py` parse boolean and
+comma-separated options strictly: a typo or an empty filter is an error.
 
 If long runs can exceed the extractor's 50-step cap, keep their ending with
 `adapters/elision.py`'s `elide_middle`.

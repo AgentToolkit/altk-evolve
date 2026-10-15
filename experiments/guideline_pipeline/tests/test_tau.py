@@ -15,12 +15,10 @@ from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 
 from experiments.guideline_pipeline import __main__ as cli
 from experiments.guideline_pipeline.adapters import ADAPTERS, get_adapter
+from experiments.guideline_pipeline.adapters.cuga import PARSER_STEP_LIMIT
 from experiments.guideline_pipeline.adapters.tau import (
-    INCLUDE_POLICY_ENV,
-    PARSER_STEP_LIMIT,
     TauRetailAdapter,
     Turn,
-    elide_head_tail,
     judge_outcome,
     parse_conversation,
     parse_header,
@@ -247,25 +245,23 @@ def test_batch_identity_is_stable_and_revision_tracks_content(tau_dir: Path):
     path.write_text(path.read_text().replace("reward=0.0  breakdown", "reward=1.0  breakdown"))
     corrected = records(tau_dir)["task_2"].batch
     assert corrected.batch_id == first.batch_id and corrected.revision != first.revision
-    # Including the policy changes what is processed, so it is a new revision too.
+    # An option that changes what is processed is a new revision too.
     assert records(tau_dir, include_policy=True)["task_2"].batch.revision != corrected.revision
+    assert records(tau_dir, include_scenario=True)["task_2"].batch.revision != corrected.revision
     assert records(tau_dir)["task_1"].batch.revision == records(FIXTURES)["task_1"].batch.revision
 
 
 def test_long_conversations_keep_their_head_and_tail(tau_dir: Path):
-    steps = [{"role": "assistant", "content": f"step {i}"} for i in range(10)]
-    assert elide_head_tail(steps, limit=10) == steps
-    elided = elide_head_tail(steps, limit=5)
-    assert [step["content"] for step in elided] == ["step 0", "step 1", "... (6 conversation steps elided) ...", "step 8", "step 9"]
-
     turns = [line for i in range(40) for line in ("[USER]", f"question {i}", "[ASSISTANT]", f"answer {i}")]
     messages = TauRetailAdapter().record(task_file(tau_dir, "task_9.txt", turns)).messages
+
+    # The shared elision (the CUGA adapter's), with the head at 25 steps.
     assert len(messages) == 1 + PARSER_STEP_LIMIT
     assert messages[0] == {"role": "user", "content": "question 0"}
     assert messages[1]["content"] == "AGENT MESSAGE:\nanswer 0"
-    assert messages[26]["content"] == "... (30 conversation steps elided) ..."
+    assert messages[26]["content"] == "[30 steps elided: the trajectory continues below]"
     assert messages[-1]["content"] == "AGENT MESSAGE:\nanswer 39"
-    # The ending now survives the parser's step cap.
+    # The ending survives the parser's default step window.
     assert parse_openai_agents_trajectory(messages)["steps_list"][-1].endswith("answer 39")
 
 
@@ -279,32 +275,87 @@ def test_long_turns_are_split_so_per_step_truncation_drops_nothing(tau_dir: Path
     assert "".join(part.split(":\n", 1)[1] for part in parts) == body
 
 
-def test_policy_context_is_opt_in(monkeypatch: pytest.MonkeyPatch, tau_dir: Path):
-    monkeypatch.delenv(INCLUDE_POLICY_ENV, raising=False)
-    assert records()["task_1"].context_messages == []
+POLICY = (
+    "AGENT DOMAIN POLICY:\n# Retail agent policy (synthetic)\n"
+    "Authenticate the user by email, or by name and zip code, before acting.\n"
+    "Only act on orders that belong to the authenticated user."
+)
 
-    context = records(include_policy=True)["task_1"].context_messages
-    assert context == [
-        {
-            "role": "system",
-            "content": "AGENT DOMAIN POLICY:\n# Retail agent policy (synthetic)\n"
-            "Authenticate the user by email, or by name and zip code, before acting.\n"
-            "Only act on orders that belong to the authenticated user.",
-        }
+
+def test_policy_and_scenario_context_are_opt_in(tau_dir: Path):
+    assert records()["task_1"].context_messages == []
+    assert records(include_policy=True)["task_1"].context_messages == [{"role": "system", "content": POLICY}]
+
+    record = records(include_policy=True, include_scenario=True)["task_1"]
+    scenario = section_body(split_sections((FIXTURES / "task_1.txt").read_text())["SCENARIO"])
+    assert record.context_messages == [
+        {"role": "system", "content": POLICY},
+        {"role": "system", "content": f"USER SCENARIO (the user simulator's brief; the agent did not see it):\n{scenario}"},
     ]
-    # Context is never mistaken for the task, and the CLI opts in through the environment.
-    record = records(include_policy=True)["task_1"]
-    assert parse_openai_agents_trajectory(record.messages, context_messages=record.context_messages)["task_instruction"] == (
-        "Hi, where is my latest order?"
-    )
-    monkeypatch.setenv(INCLUDE_POLICY_ENV, "1")
-    assert records()["task_1"].context_messages == context
-    assert records(include_policy=False)["task_1"].context_messages == []
+    # Context is never mistaken for the task.
+    parsed = parse_openai_agents_trajectory(record.messages, context_messages=record.context_messages)
+    assert parsed["task_instruction"] == "Hi, where is my latest order?"
 
     path = tau_dir / "task_1.txt"
     path.write_text(path.read_text().replace("Only act", "Only act " + "x" * 4000))
-    long_policy = records(tau_dir)["task_1"].context_messages
+    long_policy = records(tau_dir, include_policy=True)["task_1"].context_messages
     assert len(long_policy) == 3 and long_policy[0]["content"].startswith("AGENT DOMAIN POLICY (part 1/3):\n")
+
+
+def test_adapter_options_configure_a_copy():
+    adapter = get_adapter("tau-retail", {"include_policy": "true", "include_scenario": "yes", "splits": "train, dev"})
+
+    assert isinstance(adapter, TauRetailAdapter) and adapter is not ADAPTERS["tau-retail"]
+    assert (adapter.include_policy, adapter.include_scenario, adapter.splits) == (True, True, frozenset({"train", "dev"}))
+    assert ADAPTERS["tau-retail"] == TauRetailAdapter()
+    with pytest.raises(ValueError, match="Unknown tau-retail option 'policy'"):
+        get_adapter("tau-retail", {"policy": "true"})
+    # A typo is an error, not a silent false (bool("False") is True, and "ture" is not false either).
+    for value in ("maybe", "ture", "2"):
+        with pytest.raises(ValueError, match="tau-retail option include_policy must be true or false"):
+            get_adapter("tau-retail", {"include_policy": value})
+    # An empty filter (say, an unset shell variable) would mean "no filter", so it is refused.
+    for empty in ("", " , "):
+        with pytest.raises(ValueError, match="tau-retail option splits names nothing"):
+            get_adapter("tau-retail", {"splits": empty})
+
+
+def split_file(directory: Path, name: str, split: str | None) -> Path:
+    path = task_file(directory, name, ["[USER]", f"question for {name}"])
+    if split is not None:
+        path.write_text(path.read_text().replace("trial=0", f"trial=0  split={split}", 1))
+    return path
+
+
+def test_split_is_recorded_and_selects_tasks(tau_dir: Path, caplog: pytest.LogCaptureFixture):
+    split_file(tau_dir, "task_3.txt", "train")
+    split_file(tau_dir, "task_4.txt", "test")
+
+    tasks = records(tau_dir)
+    assert (tasks["task_3"].metadata["split"], "split" in tasks["task_1"].metadata) == ("train", False)
+    # Splits can reuse task numbers, so a known split is part of the conversation identity.
+    assert (tasks["task_3"].batch.conversation_id, tasks["task_1"].batch.conversation_id) == ("train/task_3", "task_1")
+
+    with caplog.at_level(logging.WARNING):
+        assert list(records(tau_dir, splits=frozenset({"train"}))) == ["task_3"]
+    assert "records no split" in caplog.text and "task_1.txt" in caplog.text and "task_2.txt" in caplog.text
+
+    with pytest.raises(ValueError, match=r"Splits not found in .*\['dev'\] \(found \['test', 'train'\]\)"):
+        next(TauRetailAdapter(splits=frozenset({"dev", "train"})).records(tau_dir))
+
+
+def test_reading_no_task_is_never_silent(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    (tmp_path / "task_1.txt").write_text("not a trajectory")
+    with caplog.at_level(logging.WARNING):
+        assert list(TauRetailAdapter().records(tmp_path)) == []
+    assert "read no tau-retail task" in caplog.text
+
+    # Task files one level down (a run directory instead of its trajectories/) are named in the error.
+    nested = tmp_path / "run" / "trajectories"
+    nested.mkdir(parents=True)
+    shutil.copy(FIXTURES / "task_1.txt", nested)
+    with pytest.raises(FileNotFoundError, match=r"no task_\*\.txt files in .*run; found some in trajectories"):
+        list(TauRetailAdapter().records(tmp_path / "run"))
 
 
 def test_registered_and_mined_end_to_end(client: EvolveClient, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
@@ -314,6 +365,12 @@ def test_registered_and_mined_end_to_end(client: EvolveClient, capsys: pytest.Ca
 
     assert cli.main([*argv, "--dry-run"]) == 0
     assert capsys.readouterr().out.strip() == "dry run: 2 valid, 0 failed"
+    assert cli.main([*argv, "--dry-run", "--adapter-option", "include_policy=true"]) == 0
+    assert capsys.readouterr().out.strip() == "dry run: 2 valid, 0 failed"
+    assert cli.main([*argv, "--dry-run", "--adapter-option", "include_policy=maybe"]) == 2
+    assert "tau-retail option include_policy must be true or false" in capsys.readouterr().err
+    assert cli.main([*argv, "--dry-run", "--adapter-option", "splits="]) == 2
+    assert "tau-retail option splits names nothing" in capsys.readouterr().err
 
     # Through a profile, the outcome becomes evidence and a re-run skips both checkpointed tasks.
     report = mine(ADAPTERS["tau-retail"].records(FIXTURES), client, namespace_id="memories", processing_profile="echo")
