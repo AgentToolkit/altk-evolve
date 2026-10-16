@@ -74,6 +74,6 @@ default_prompt = [
     "Save new Evolve learnings from this session.",
     "Analyze saved trajectories for Evolve guideline provenance.",
     "Show me the entities stored for this repo.",
-    "Publish one of my Evolve guidelines.",
+    "Publish one of my Evolve entities.",
     "Subscribe to a teammate's Evolve guidelines repo.",
 ]
