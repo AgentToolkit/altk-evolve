@@ -12,8 +12,8 @@ or wrap that — it adds the two things native memory lacks, plus a set of skill
 for managing the resulting store.
 
 - **Sharing**: `/evolve-lite:adapt-memory` mirrors a just-saved native memory
-  into the in-repo store at `.evolve/entities/` as a normal Evolve entity
-  (publishing mirrored memories to a shared repo is not supported yet — see
+  into the in-repo store at `.evolve/entities/` as a normal Evolve entity,
+  which `/evolve-lite:publish` can share like any other (see
   [Publishing Guidelines](#publishing-guidelines))
 - **Provenance**: `audit_recall.py` records which memories a session actually
   consulted, so their value can be measured over time
@@ -86,9 +86,9 @@ entity. `{type}` is the native memory's own type (`user`, `feedback`, `project`
 or `reference`), and the entity records `source: native-memory` plus the
 `native_path` it was mirrored from.
 
-> **Not yet publishable.** `/evolve-lite:publish` currently reads only
-> `.evolve/entities/guideline/`, so mirrored memories cannot be published to a
-> shared repo yet. Tracked in [#373](https://github.com/AgentToolkit/altk-evolve/issues/373).
+Mirrored memories are publishable like any other entity: `/evolve-lite:publish`
+moves them into the shared repo under the same `{type}/` directory (see
+[Publishing Guidelines](#publishing-guidelines)).
 
 ### After consulting memories — log it (provenance)
 
@@ -164,20 +164,18 @@ use only letters, numbers, `.`, `_`, and `-`.
 
 ### Publishing Guidelines
 
-Use `/evolve-lite:publish` to share one or more of your local guidelines
-via a **write-scope** repo:
+Use `/evolve-lite:publish` to share one or more of your local entities
+(guidelines, or memories mirrored by adapt-memory) via a **write-scope** repo:
 
 1. The skill selects (or asks about) the write-scope target repo
-2. It lists files in `.evolve/entities/guideline/`
+2. It lists files in each `.evolve/entities/{type}/` directory (skipping `subscribed/`)
 3. You pick which ones to publish
-4. Each selected file is moved into `.evolve/entities/subscribed/{repo}/guideline/`,
+4. Each selected file is moved into `.evolve/entities/subscribed/{repo}/{type}/`,
    stamped with `visibility: public`, `owner`, `published_at`, and
    `source`, committed, and pushed to the remote
 
-> **Limitation:** publish only looks in `.evolve/entities/guideline/`, and
-> nothing in this plugin writes there — `/evolve-lite:adapt-memory` writes
-> `entities/{user,feedback,project,reference}/`. Until [#373](https://github.com/AgentToolkit/altk-evolve/issues/373) is fixed,
-> only entity files you place under `guideline/` yourself can be published.
+If the same file name exists in more than one type directory, publish refuses
+and asks for `--type`, so it never guesses which entity you meant.
 
 Because the publish target is also a subscribed repo, your next sync will
 pull in anything other writers have pushed to the same repo.
@@ -214,7 +212,7 @@ before removing a write-scope repo (unpushed publishes would be lost).
   entities/
     feedback/                 # mirrored native memories, one dir per native type
       canada-km-only.md
-    guideline/                # what publish reads (see the limitation above)
+    guideline/                # learned guidelines (also publishable)
       private-guideline.md
     subscribed/
       memory/                 # write-scope clone — publishes land here
