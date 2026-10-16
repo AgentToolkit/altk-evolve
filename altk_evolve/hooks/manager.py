@@ -462,8 +462,8 @@ def _native_adapter_cls() -> Any:
             view = None
             if isinstance(backend, HookBackend):
                 # A per-call view, revoked once this call is over (with every view
-                # its nested hooks create), so a timed-out call that is still
-                # running cannot patch the store late.
+                # created by hooks it dispatches through it), so a timed-out call
+                # that is still running cannot patch the store late.
                 backend = view = state["backend"] = backend._for_call()
             hook_ctx = HookContext(
                 backend=backend,
@@ -471,7 +471,7 @@ def _native_adapter_cls() -> Any:
                 request_id=getattr(gc, "request_id", "") if gc else "",
             )
             try:
-                out = await self._runner.run(started, _call_native, view, method, plain, hook_ctx)
+                out = await self._runner.run(started, method, plain, hook_ctx)
             except HookPolicyViolation as violation:
                 return PluginResult(
                     continue_processing=False,
@@ -620,15 +620,6 @@ def _used_up_timeout(started: float) -> bool:
     if not isinstance(timeout, (int, float)):
         return True
     return time.monotonic() - started >= timeout * 0.95
-
-
-def _call_native(view: Any, method: Any, plain: Any, hook_ctx: Any) -> Any:
-    """Call a native method with ``view`` as the parent of any backend view its nested hooks create."""
-    if view is not None:
-        from altk_evolve.hooks.backend import _calling_view
-
-        _calling_view.set(view)
-    return method(plain, hook_ctx)
 
 
 _RUNNERS: weakref.WeakSet[_SyncHookRunner] = weakref.WeakSet()

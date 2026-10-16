@@ -265,9 +265,9 @@ class SlowPreWrite:
         return None
 
 
-def _enable_chain(*plugins: tuple[Any, str, list[str], str]) -> None:
+def _enable_chain(*plugins: tuple[Any, str, list[str], str], timeout: float = 0.5) -> None:
     pm = _initialize_manager("", [], 30)
-    pm.executor.timeout = 0.5
+    pm.executor.timeout = timeout
     for priority, (plugin, name, hooks, on_error) in enumerate(plugins):
         config = PluginConfig(
             name=name, kind=f"tests.{name}", hooks=hooks, mode=PluginMode.SEQUENTIAL, on_error=OnError(on_error), priority=priority
@@ -370,6 +370,74 @@ def test_revocation_reaches_views_created_by_nested_hooks(tmp_path: Path):
     assert stamper.errors and "hook call" in str(stamper.errors[0])
     stored = client.get_entity_by_id("ns", target_id)
     assert stored is not None and "stamped_late" not in stored.metadata
+
+
+class ReadOnAHelperThreadThenWait:
+    """Like ReadThenWait, but the read runs on the plugin's own pool thread (no contextvars copied)."""
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.4)
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            pool.submit(context.backend.search_entities, payload.namespace_id, limit=5).result()
+        return None
+
+
+@pytest.mark.unit
+def test_revocation_reaches_views_created_from_a_plugin_helper_thread(tmp_path: Path):
+    client, target_id = _client_with_one_entity(tmp_path)
+    stamper = StampAfterAPause()
+    _enable_chain(
+        (ReadOnAHelperThreadThenWait(), "x", ["memory_pre_write"], "ignore"),
+        (stamper, "y", ["memory_post_read"], "ignore"),
+        (SlowPreWrite(), "z", ["memory_pre_write"], "fail"),
+    )
+
+    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+    assert stamper.finished.wait(5)
+
+    assert stamper.errors and "hook call" in str(stamper.errors[0])
+    stored = client.get_entity_by_id("ns", target_id)
+    assert stored is not None and "stamped_late" not in stored.metadata
+
+
+class ReadThroughBackend:
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        context.backend.search_entities(payload.namespace_id, limit=1)
+        return None
+
+
+@pytest.mark.unit
+def test_work_handed_off_by_a_finished_call_is_not_revoked(tmp_path: Path):
+    """Work a plugin starts with a copy of its context, and that later uses the public API, is not tied to the call."""
+    client, _ = _client_with_one_entity(tmp_path)
+    outcome: dict[str, Any] = {}
+    done = threading.Event()
+
+    class HandOff:
+        def memory_post_read(self, payload: Any, context: Any) -> Any:
+            if outcome:
+                return None
+            outcome["started"] = True
+
+            def later() -> None:
+                time.sleep(0.1)
+                try:
+                    client.update_entities("ns", [Entity(content="follow-up", type="note")], enable_conflict_resolution=False)
+                    outcome["later"] = "ok"
+                except BaseException as exc:  # noqa: BLE001 - inspected by the test
+                    outcome["later"] = exc
+                done.set()
+
+            threading.Thread(target=contextvars.copy_context().run, args=(later,)).start()
+            return None
+
+    _enable_chain(
+        (ReadThroughBackend(), "reader", ["memory_pre_write"], "fail"), (HandOff(), "handoff", ["memory_post_read"], "ignore"), timeout=3
+    )
+
+    client.search_entities("ns", limit=1)
+    assert done.wait(5)
+    assert outcome["later"] == "ok", outcome["later"]
 
 
 class StampNearTheDeadline:

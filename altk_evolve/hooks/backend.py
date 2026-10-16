@@ -28,8 +28,10 @@ class _PendingPatches:
 
 _pending: ContextVar[_PendingPatches | None] = ContextVar("hook_metadata_patches", default=None)
 
-# The view handed to the native plugin call running in this context. A view
-# created under it (by a hook that call dispatches) is revoked along with it.
+# Set while a HookBackend method dispatches nested hooks: a view created by
+# those hooks records it as its parent and is revoked along with it. It is set
+# inside the method, so the link follows the capability onto whatever thread
+# uses it, and work outside a ``context.backend`` call is not linked.
 _calling_view: ContextVar[HookBackend | None] = ContextVar("hook_calling_view", default=None)
 
 # Makes revoking a view and accepting a patch through it mutually exclusive.
@@ -94,12 +96,23 @@ class HookBackend:
         with _revoke_lock:
             self.__revoked = True
 
-    def _check(self, namespace_id: str):
+    def _check_revoked(self) -> None:
         view: HookBackend | None = self
         while view is not None:
             if view.__revoked:
                 raise EvolveException("The hook call that received this backend has finished")
             view = view.__parent
+
+    @contextmanager
+    def _dispatching(self):
+        token = _calling_view.set(self)
+        try:
+            yield
+        finally:
+            _calling_view.reset(token)
+
+    def _check(self, namespace_id: str):
+        self._check_revoked()
         if self.__pending is not None:
             if self.__pending.closed:
                 raise EvolveException("Hook preparation has finished")
@@ -124,16 +137,21 @@ class HookBackend:
 
         entities = self._read(namespace_id, query, filters, limit)
         self._check(namespace_id)
-        return dispatch_memory_post_read(self.__backend, namespace_id, entities, query=query, filters=filters)
+        with self._dispatching():
+            return dispatch_memory_post_read(self.__backend, namespace_id, entities, query=query, filters=filters)
 
     def get_namespace_details(self, namespace_id: str) -> Namespace:
         self._check(namespace_id)
         return self.__backend.get_namespace_details(namespace_id)
 
     def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
+        self._check(namespace_id)
+        with self._dispatching():
+            return self._update_entity_metadata(namespace_id, entity_id, metadata_patch)
+
+    def _update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> RecordedEntity:
         from altk_evolve.hooks.manager import dispatch_memory_pre_metadata_patch, dispatch_memory_post_read
 
-        self._check(namespace_id)
         if self.__pending is None:
             # The backend's update_entity_metadata template, with a revocation
             # check after the patch hooks, right before the write starts.
