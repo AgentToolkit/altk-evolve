@@ -1,0 +1,4 @@
+[
+  {"uuid": "hock-01", "domain": "hockey", "status": "success", "trajectory": [{"type": "HumanMessage", "content": "Which team won in 1999?"}, {"type": "AIMessage", "content": "", "tool_calls": [{"id": "tc-1", "name": "get_winners", "args": {"year": 1999}}]}, {"type": "ToolMessage", "tool_name": "get_winners", "result": "Stars"}, {"type": "AIMessage", "content": "The Stars."}], "output": [{"turn_id": 1, "query": "Which team won in 1999?", "answer": "Stars"}]},
+  {"uuid": "hock-02", "domain": "hockey", "status": "success", "trajectory": [{"type": "HumanMessage", "content": "How many goals in 2001?"}, {"type": "AIMessage", "content": "About 300 goals."}], "output": [{"turn_id": 1, "query": "How many goals in 2001?", "answer": "312"}]}
+]
