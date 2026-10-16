@@ -5,9 +5,10 @@ from collections.abc import Mapping
 from experiments.guideline_pipeline.adapters.appworld import AppWorldAdapter
 from experiments.guideline_pipeline.adapters.base import Adapter, AdapterRecord, ConfigurableAdapter
 from experiments.guideline_pipeline.adapters.cuga import CugaAdapter
+from experiments.guideline_pipeline.adapters.tau import TauRetailAdapter
 from experiments.guideline_pipeline.adapters.vakra import VakraAdapter
 
-ADAPTERS: dict[str, Adapter] = {adapter.name: adapter for adapter in (AppWorldAdapter(), CugaAdapter(), VakraAdapter())}
+ADAPTERS: dict[str, Adapter] = {adapter.name: adapter for adapter in (AppWorldAdapter(), CugaAdapter(), TauRetailAdapter(), VakraAdapter())}
 
 
 def get_adapter(name: str, options: Mapping[str, str] | None = None) -> Adapter:
