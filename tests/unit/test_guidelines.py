@@ -1125,6 +1125,13 @@ class TestSegmentationUnderElisionWithDedupe:
         assert len(prompts) == 2
         assert "**Steps Taken:** 5" in prompts[0] and "intermediate step(s) omitted" in prompts[0]
 
+    def test_ranges_differing_only_by_the_marker_are_generated_once(self, monkeypatch):
+        """[1,4] and [1,5] both cover real steps 1-4; [1,5] only adds the marker at its end."""
+        results, prompts, _ = self._run(monkeypatch, [(1, 4), (1, 5), (6, 7)])
+
+        assert [r.task_description for r in results] == ["Phase 1-4", "Phase 6-7"]
+        assert len(prompts) == 2
+
     def test_a_repeated_marker_only_range_is_dropped(self, monkeypatch):
         """Dedupe keeps one copy of [5,5]; the marker filter must still drop that copy."""
         results, prompts, _ = self._run(monkeypatch, [(1, 4), (5, 5), (5, 5), (6, 7)])
