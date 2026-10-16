@@ -2127,7 +2127,17 @@ because its step numbering and the segmenter's stop agreeing across the gap. Tra
 within the step budget are unaffected, as is the <code>fast</code> method.</p>
 <h3 id="trajectory-segmentation">Trajectory segmentation<a class="headerlink" href="#trajectory-segmentation" title="Permanent link">&para;</a></h3>
 <p><code>EVOLVE_SEGMENTATION_ENABLED</code> is <strong>disabled by default</strong>. With it enabled, a trajectory is
-split into subtasks and each subtask gets its own guideline-generation call.</p>
+split into subtasks and each subtask gets its own guideline-generation call. A trajectory
+with fewer than five steps is still generated in one pass on every path, and its
+<code>task_description</code> is the first user message verbatim, as with segmentation off. Under
+<a href="#trajectory-limits">head+tail elision</a> that count is of real steps in the rendered window:
+the omitted-steps marker is not a step. On the standard and consistency-fast paths, subtasks
+that cover the same steps share one call, a subtask covering only the marker is dropped, and
+a trajectory whose subtasks reduce to fewer than two distinct step ranges is generated in
+one pass. If exactly one distinct range remains, however many subtasks repeated it, that
+pass keeps the subtask's generalized description; if none remains, it uses the first user
+message verbatim. The consistency-accurate path uses the first user message verbatim
+whenever it generates in one pass.</p>
 <p><strong>Why it defaults to off.</strong> A subtask boundary can fall between a failed attempt and the
 correction that followed it. The failing segment is then summarised on its own terms — its
 description asserts the wrong approach — and the generator writes confident guidelines from
@@ -2145,9 +2155,9 @@ stored entity metadata. If your trajectories are single-purpose, this costs litt
 trajectory routinely spans unrelated subtasks, weigh enabling it.</p>
 <p><strong>Turning it on later (mixed corpora).</strong> Entities written while segmentation was off carry
 verbatim request text as <code>task_description</code>; entities written with it on carry generalized
-subtask descriptions. Both are embedded in the same space, so a namespace written across a
-change of this setting holds two kinds of key. Nothing breaks and no migration is required
-— clustering and retrieval keep working — but similarity between the two kinds is lower
+subtask descriptions, except for the verbatim one-pass cases above. Both are embedded in the same
+space, so a namespace written across a change of this setting holds two kinds of key.
+Nothing breaks and no migration is required — clustering and retrieval keep working — but similarity between the two kinds is lower
 than within either, so recurrence spanning the change may go undetected. To avoid the mix,
 use a fresh namespace when you change this setting.</p>
 <h3 id="milvus-backend-settings">Milvus Backend Settings<a class="headerlink" href="#milvus-backend-settings" title="Permanent link">&para;</a></h3>
