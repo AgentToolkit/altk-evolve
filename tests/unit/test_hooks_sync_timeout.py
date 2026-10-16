@@ -524,3 +524,48 @@ def test_no_hang_at_loop_or_interpreter_shutdown():
     timings = dict(line.split() for line in proc.stdout.splitlines())
     assert float(timings["no-loop"]) < 1.5 and float(timings["in-loop"]) < 1.5, timings
     assert total < 15, f"interpreter exit waited for the stuck plugin ({total:.1f}s)"
+
+
+@pytest.mark.unit
+def test_forked_child_is_not_blocked_by_the_parents_timed_out_call():
+    """The parent's abandoned call has no thread in a forked child, so it must not make the child fail fast."""
+    code = textwrap.dedent(
+        """
+        import multiprocessing, os, time, warnings
+        warnings.simplefilter("ignore", DeprecationWarning)  # fork with threads alive
+        from cpex.framework.models import OnError, PluginConfig, PluginMode
+        from altk_evolve.hooks import manager as m
+
+        class Tag:
+            calls = 0
+            def llm_pre_call(self, payload, context):
+                Tag.calls += 1
+                if Tag.calls == 1:
+                    time.sleep(10)  # the parent's first call times out and keeps running
+                return payload.replace(messages=[{"role": "user", "content": "TAGGED"}])
+
+        def call(_=None):
+            try:
+                return m.dispatch_llm_pre_call([{"role": "user", "content": "x"}], purpose="t")[0]["content"]
+            except m.MemoryPolicyViolation as exc:
+                return "busy" if "still running" in exc.reason else "timeout"
+
+        if __name__ == "__main__":
+            pm = m._initialize_manager("", [], 1)
+            pm.executor.timeout = 0.3
+            config = PluginConfig(name="tag", kind="x.tag", hooks=["llm_pre_call"], mode=PluginMode.SEQUENTIAL, on_error=OnError.FAIL)
+            pm._registry.register(m._build_native_adapter(Tag(), config))
+            print("parent", call(), call(), flush=True)
+            pid = os.fork()
+            if pid == 0:
+                print("child", call(), call(), flush=True)
+                os._exit(0)
+            os.waitpid(pid, 0)
+            with multiprocessing.get_context("fork").Pool(2) as pool:
+                print("pool", *pool.map(call, range(4)))
+        """
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.splitlines()
+    assert lines == ["parent timeout busy", "child TAGGED TAGGED", "pool TAGGED TAGGED TAGGED TAGGED"], proc.stdout

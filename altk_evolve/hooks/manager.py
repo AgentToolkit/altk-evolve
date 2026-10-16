@@ -59,8 +59,10 @@ import contextvars
 import copy
 import importlib
 import logging
+import os
 import threading
 import uuid
+import weakref
 from typing import TYPE_CHECKING, Any
 
 from altk_evolve.config.hooks import discover_hooks_config_path
@@ -555,6 +557,9 @@ class _SyncHookRunner:
       running, a new call to the plugin raises at once (fail-closed under
       ``on_error="fail"``) instead of starting another thread.
     - **contextvars** (tracing, re-entrancy guards) are copied into each call.
+    - **Fork-safe.** A forked child has none of the parent's threads, so
+      :func:`_reset_runners_after_fork` clears the inherited abandoned calls
+      and replaces a lock another parent thread may have held at fork time.
     """
 
     _MAX_ABANDONED = 1
@@ -563,6 +568,7 @@ class _SyncHookRunner:
         self._name = name
         self._lock = threading.Lock()
         self._abandoned: set[concurrent.futures.Future] = set()
+        _RUNNERS.add(self)
 
     async def run(self, fn: Any, *args: Any) -> Any:
         with self._lock:
@@ -592,6 +598,19 @@ class _SyncHookRunner:
     def _release(self, future: concurrent.futures.Future) -> None:
         with self._lock:
             self._abandoned.discard(future)
+
+
+_RUNNERS: weakref.WeakSet[_SyncHookRunner] = weakref.WeakSet()
+
+
+def _reset_runners_after_fork() -> None:
+    for runner in list(_RUNNERS):
+        runner._lock = threading.Lock()
+        runner._abandoned = set()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_runners_after_fork)
 
 
 def _run_call(future: concurrent.futures.Future, ctx: contextvars.Context, fn: Any, args: tuple[Any, ...]) -> None:
