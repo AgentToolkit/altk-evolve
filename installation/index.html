@@ -609,10 +609,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#claude-code-plugin-marketplace" class="md-nav__link">
+  <a href="#claude-code-quick-start" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Claude Code Plugin Marketplace
+        Claude Code Quick Start
       
     </span>
   </a>
@@ -1582,10 +1582,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#claude-code-plugin-marketplace" class="md-nav__link">
+  <a href="#claude-code-quick-start" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Claude Code Plugin Marketplace
+        Claude Code Quick Start
       
     </span>
   </a>
@@ -1664,11 +1664,17 @@
 <p><div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>bob<span class="w"> </span>--mode<span class="w"> </span>lite
 </code></pre></div>
 Next: <a href="../examples/hello_world/bob/">Hello World with IBM Bob</a></p>
-<h3 id="claude-code-plugin-marketplace">Claude Code Plugin Marketplace<a class="headerlink" href="#claude-code-plugin-marketplace" title="Permanent link">&para;</a></h3>
-<p><div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>claude<span class="w"> </span>plugin<span class="w"> </span>marketplace<span class="w"> </span>add<span class="w"> </span>AgentToolkit/altk-evolve
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>claude<span class="w"> </span>plugin<span class="w"> </span>install<span class="w"> </span>evolve-lite
+<h3 id="claude-code-quick-start">Claude Code Quick Start<a class="headerlink" href="#claude-code-quick-start" title="Permanent link">&para;</a></h3>
+<p>Run the installer from a clone, for the project you want Evolve in. Keep the clone: the plugin is read from it.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/AgentToolkit/altk-evolve.git<span class="w"> </span>~/altk-evolve
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>~/altk-evolve/platform-integrations/install.sh<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>claude<span class="w"> </span>--dir<span class="w"> </span>/path/to/your/project
 </code></pre></div>
-Next: <a href="../examples/hello_world/claude/">Hello World with Claude Code</a></p>
+Besides installing the <code>evolve-lite</code> plugin, the installer adds <code>.evolve/EVOLVE.md</code> and its import line to the project's <code>CLAUDE.md</code>, and installs the scripts that file names. Installing only the plugin (<code>claude plugin install</code>) skips all of that, so <code>/evolve-lite:doctor</code> reports <code>NOT_INSTALLED</code>. See <a href="../integrations/claude/evolve-lite/">Evolve Lite for Claude Code</a>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Installing without a clone</p>
+<p>An installer without the fix for <a href="https://github.com/AgentToolkit/altk-evolve/issues/387">#387</a>, run without a clone around it (the piped <code>curl … | bash</code> form, or a downloaded <code>install.sh</code>), registers its temporary download directory as the plugin's marketplace and deletes that directory on exit. The plugin then fails to load: <code>claude plugin list</code> shows <code>✘ failed to load</code> and <code>cache-miss</code>. If you see that, reinstall from a clone as above.</p>
+</div>
+<p>Next: <a href="../examples/hello_world/claude/">Hello World with Claude Code</a></p>
 <h3 id="hermes-quick-start">Hermes Quick Start<a class="headerlink" href="#hermes-quick-start" title="Permanent link">&para;</a></h3>
 <p><div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>hermes
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>hermes<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>memory.provider<span class="w"> </span>evolve

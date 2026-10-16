@@ -1673,6 +1673,7 @@
 <p>Agentic IDEs like Claude Code often repeat the same mistakes over and over again because they start from fresh every time. Using Evolve, we can alleviate this problem.
 In this tutorial, we will use Evolve and Claude Code to create a Python script to automate a simple task. Using Evolve, we will then instruct Claude Code that it should use this script in the future for similar tasks.</p>
 <h2 id="video-tutorial">Video Tutorial<a class="headerlink" href="#video-tutorial" title="Permanent link">&para;</a></h2>
+<p>The plugin has changed since this video was recorded and no longer has a <code>/evolve-lite:learn</code> skill. Where the video and the steps below differ, follow the steps.</p>
 <div class="video-wrapper">
     <iframe width="1280" height="720" src="https://www.youtube.com/embed/XIlYA79pYp4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </div>
@@ -1698,14 +1699,20 @@ In this tutorial, we will use Evolve and Claude Code to create a Python script t
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>my-claude<span class="w"> </span>bash
 </code></pre></div>
 <h2 id="step-1-install-evolve">Step 1: Install Evolve<a class="headerlink" href="#step-1-install-evolve" title="Permanent link">&para;</a></h2>
-<p>Install Evolve by following the <a href="../../../installation/#claude-code-plugin-marketplace">installation instructions →</a> or run:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>claude<span class="w"> </span>plugin<span class="w"> </span>marketplace<span class="w"> </span>add<span class="w"> </span>AgentToolkit/altk-evolve
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>claude<span class="w"> </span>plugin<span class="w"> </span>install<span class="w"> </span>evolve-lite
+<p>Evolve Lite needs more than the plugin: the installer also puts <code>.evolve/EVOLVE.md</code> in your project, imports it from the project's <code>CLAUDE.md</code>, and installs two small scripts under <code>~/.claude/evolve-lite/</code>. Installing only the plugin (<code>claude plugin install</code>) loads the skills but none of the rest, and <code>/evolve-lite:doctor</code> then reports <code>NOT_INSTALLED</code>.</p>
+<p>Clone Evolve somewhere it can stay (the plugin is read from the clone), create a project directory, and run the installer for it. See the <a href="../../../installation/#claude-code-quick-start">installation instructions →</a> for details.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/AgentToolkit/altk-evolve.git<span class="w"> </span>~/altk-evolve
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>mkdir<span class="w"> </span>exif-demo<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>exif-demo<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>init
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>~/altk-evolve/platform-integrations/install.sh<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>claude<span class="w"> </span>--dir<span class="w"> </span>.
 </code></pre></div></p>
 <h2 id="step-2-running-in-claude-code">Step 2: Running in Claude Code<a class="headerlink" href="#step-2-running-in-claude-code" title="Permanent link">&para;</a></h2>
-<p>In a terminal, run:
+<p>In the project directory, run:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>claude
 </code></pre></div></p>
+<div class="admonition note">
+<p class="admonition-title">Allow the import</p>
+<p>On the first session, Claude may ask whether to allow the project's <code>CLAUDE.md</code> to import <code>.evolve/EVOLVE.md</code>. Allow it, or Evolve's instructions never reach Claude. Run <code>/evolve-lite:doctor</code> to check that the import is loading.</p>
+</div>
 <div class="admonition user-message">
 <p class="admonition-title">Let's Ask Claude</p>
 <p>Can you download this image?</p>
@@ -1721,15 +1728,11 @@ In this tutorial, we will use Evolve and Claude Code to create a Python script t
 </div>
 <div class="admonition user-message">
 <p class="admonition-title">Let's Ask Claude</p>
-<p>summarize what steps you took, including tool calls, failed attempts, and reasoning guidelines.</p>
-</div>
-<div class="admonition agent-message">
-<p class="admonition-title">A Likely Claude Response</p>
-<p>Claude probably attempted to use a system utility like <code>exiftool</code>, but because we intentionally ran it in a docker container, that utility wasn't available, so Claude created a script to read the exif data instead.</p>
+<p>remember for future sessions how to read EXIF metadata from photos in this project, including which tools did and did not work.</p>
 </div>
 <div class="admonition system-message">
 <p class="admonition-title">Learning From the Past</p>
-<p><code>/evolve-lite:learn</code> will produce new guidelines from this experience.</p>
+<p>Claude saves this as one of its own native memories. Evolve's instructions (<code>.evolve/EVOLVE.md</code>) then have it run <code>/evolve-lite:adapt-memory</code>, which mirrors the memory into the project as <code>.evolve/entities/&lt;type&gt;/&lt;name&gt;.md</code>, where you can inspect or edit it. Claude may also save a memory like this without being asked.</p>
 </div>
 <div class="admonition system-message">
 <p class="admonition-title">One Eternity Later</p>
@@ -1741,7 +1744,11 @@ In this tutorial, we will use Evolve and Claude Code to create a Python script t
 </div>
 <div class="admonition agent-message">
 <p class="admonition-title">A Likely Claude Response</p>
-<p>This time, Claude learns from the guidelines produced by Evolve to use the generated script directly saving time.</p>
+<p>This time, Claude reads the memory it saved and goes straight to the approach that worked, saving time. Because it consulted that memory, it also runs <code>python3 ~/.claude/evolve-lite/audit_recall.py &lt;type&gt;/&lt;name&gt;</code>, which records the recall in <code>.evolve/audit.log</code>.</p>
+</div>
+<div class="admonition system-message">
+<p class="admonition-title">Did It Help?</p>
+<p>Later, run <code>/evolve-lite:provenance</code>. It reads the recall events in <code>.evolve/audit.log</code> and each session's transcript, and records whether the recalled memory was followed in that session.</p>
 </div>
 
 

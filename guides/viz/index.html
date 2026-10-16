@@ -1616,7 +1616,7 @@
 </tr>
 </tbody>
 </table>
-<p>Entities are linked to their source trajectory via the <code>trajectory</code> frontmatter field, which the <a href="../../integrations/claude/evolve-lite/">learn skill</a> sets automatically when saving guidelines.</p>
+<p>Entities are linked to their source trajectory via the <code>trajectory</code> frontmatter field. The Claw Code <code>learn</code> skill sets it automatically when saving guidelines. Claude Code has no <code>learn</code> skill: entities that <code>adapt-memory</code> mirrors from its native memory carry no <code>trajectory</code> field, so they aren't linked to a trajectory.</p>
 <h2 id="options">Options<a class="headerlink" href="#options" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
