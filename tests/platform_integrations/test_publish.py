@@ -154,6 +154,161 @@ class TestPublish:
         assert dest.read_text() == "---\ntype: guideline\nvisibility: public\n---\n\nExisting public content.\n"
         assert (project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md").exists()
 
+    def test_name_collision_with_another_owner_names_them(self, project_dir):
+        """Two teammates' same-named entities: don't tell the second one to delete the first's."""
+        dest = _dest_path(project_dir, "my-guideline.md")
+        dest.parent.mkdir(parents=True)
+        theirs = "---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlice's guideline.\n"
+        dest.write_text(theirs)
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md"
+
+        result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "carol"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "name collision" in result.stderr
+        assert "alice" in result.stderr
+        assert "Rename your memory or entity" in result.stderr
+        assert "Unpublish it first" not in result.stderr
+        assert dest.read_text() == theirs
+        assert source.exists()
+
+    @pytest.mark.parametrize("existing_owner", ["carol", None], ids=["same-owner", "no-owner"])
+    def test_already_published_by_same_or_unknown_owner_keeps_unpublish_hint(self, project_dir, existing_owner):
+        dest = _dest_path(project_dir, "my-guideline.md")
+        dest.parent.mkdir(parents=True)
+        owner_line = f"owner: {existing_owner}\n" if existing_owner else ""
+        existing = f"---\ntype: guideline\n{owner_line}visibility: public\n---\n\nEarlier copy.\n"
+        dest.write_text(existing)
+
+        result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "carol"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "already published" in result.stderr
+        assert "Unpublish it first or delete it manually." in result.stderr
+        assert "name collision" not in result.stderr
+        assert dest.read_text() == existing
+
+    @pytest.mark.parametrize("where", ["outside", "inside"])
+    def test_refuses_a_symlinked_type_dir_in_the_clone(self, project_dir, tmp_path, where):
+        """A repo member can commit `guideline -> ../../../../outside` into the shared repo;
+        publish must not follow it, whether it points out of the clone or elsewhere in it."""
+        clone = project_dir / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO
+        if where == "outside":
+            target = tmp_path / "outside"
+        else:
+            target = clone / "elsewhere"
+        target.mkdir()
+        (clone / "guideline").symlink_to(target, target_is_directory=True)
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md"
+
+        result = run_publish(project_dir, ["--entity", "my-guideline.md"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "symlink" in result.stderr
+        assert list(target.iterdir()) == []
+        assert source.exists()
+
+    def test_publishes_into_a_write_clone_that_is_itself_a_symlink(self, project_dir, tmp_path):
+        """The clone root may live elsewhere (e.g. a shared checkout); only its type dirs are checked."""
+        subscribed = project_dir / ".evolve" / "entities" / "subscribed"
+        real_clone = tmp_path / "real-clone"
+        (subscribed / _DEFAULT_WRITE_REPO / ".git").rename(tmp_path / "git-dir")
+        (subscribed / _DEFAULT_WRITE_REPO).rmdir()
+        real_clone.mkdir()
+        (tmp_path / "git-dir").rename(real_clone / ".git")
+        (subscribed / _DEFAULT_WRITE_REPO).symlink_to(real_clone, target_is_directory=True)
+
+        run_publish(project_dir, ["--entity", "my-guideline.md"])
+
+        assert (real_clone / "guideline" / "my-guideline.md").is_file()
+
+    @pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores directory permissions")
+    def test_unremovable_source_is_refused_before_anything_is_written(self, project_dir):
+        """If the private copy can't be removed, publish must fail up front, not leave two copies."""
+        type_dir = project_dir / ".evolve" / "entities" / "guideline"
+        source = type_dir / "my-guideline.md"
+        type_dir.chmod(0o555)
+        try:
+            result = run_publish(project_dir, ["--entity", "my-guideline.md"], expect_success=False)
+        finally:
+            type_dir.chmod(0o755)
+
+        assert result.returncode != 0
+        assert "Traceback" not in result.stderr
+        assert "not writable" in result.stderr
+        assert source.exists()
+        assert not _dest_path(project_dir, "my-guideline.md").parent.exists()
+        assert not (project_dir / ".evolve" / "audit.log").exists()
+
+    def test_source_unlink_failure_after_publishing_is_reported_and_audited(self, project_dir):
+        """If removing the private copy still fails after the write, keep the published copy,
+        say which private copy is left over, and record the publish in the audit log."""
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md"
+        wrapper = (
+            "import pathlib, runpy, sys\n"
+            "_unlink = pathlib.Path.unlink\n"
+            "def unlink(self, *a, **k):\n"
+            "    if self.name == 'my-guideline.md' and self.parent.name == 'guideline' and 'subscribed' not in self.parts:\n"
+            "        raise PermissionError(13, 'Permission denied', str(self))\n"
+            "    return _unlink(self, *a, **k)\n"
+            "pathlib.Path.unlink = unlink\n"
+            "sys.argv = sys.argv[1:]\n"
+            "runpy.run_path(sys.argv[0], run_name='__main__')\n"
+        )
+        env = {**os.environ, "EVOLVE_DIR": str(project_dir / ".evolve")}
+        result = subprocess.run(
+            [sys.executable, "-c", wrapper, str(PUBLISH_SCRIPT), "--entity", "my-guideline.md", "--user", "alice"],
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "Traceback" not in result.stderr
+        assert "could not remove the private copy" in result.stderr
+        assert str(source.resolve()) in result.stderr
+        assert _dest_path(project_dir, "my-guideline.md").is_file()
+        assert source.exists()
+        entry = json.loads((project_dir / ".evolve" / "audit.log").read_text().strip())
+        assert entry["action"] == "publish"
+        assert entry["entity"] == "my-guideline.md"
+        assert entry["source_removed"] is False
+
+    def _write_with_trajectory(self, project_dir, trajectory):
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md"
+        source.write_text(f"---\ntype: guideline\ntrajectory: {trajectory}\n---\n\nPrefer composition.\n")
+
+    def test_absolute_trajectory_inside_the_project_is_published_relative(self, project_dir):
+        """The manual learn flow stores save_trajectory's absolute path; it must not reach the shared repo."""
+        absolute = project_dir.resolve() / ".evolve" / "trajectories" / "trajectory_2026-10-16_abc.json"
+        self._write_with_trajectory(project_dir, absolute)
+
+        run_publish(project_dir, ["--entity", "my-guideline.md"])
+
+        content = _dest_path(project_dir, "my-guideline.md").read_text()
+        assert "trajectory: .evolve/trajectories/trajectory_2026-10-16_abc.json" in content
+        assert str(project_dir.resolve()) not in content
+
+    def test_absolute_trajectory_outside_the_project_is_dropped(self, project_dir, tmp_path):
+        absolute = tmp_path / "elsewhere" / "trajectories" / "trajectory_2026-10-16_abc.json"
+        self._write_with_trajectory(project_dir, absolute)
+
+        run_publish(project_dir, ["--entity", "my-guideline.md"])
+
+        content = _dest_path(project_dir, "my-guideline.md").read_text()
+        assert "trajectory" not in content
+        assert str(tmp_path) not in content
+
+    def test_relative_trajectory_is_published_unchanged(self, project_dir):
+        """The stop-hook flow already writes a project-relative path."""
+        self._write_with_trajectory(project_dir, ".evolve/trajectories/claude-transcript_abc.jsonl")
+
+        run_publish(project_dir, ["--entity", "my-guideline.md"])
+
+        content = _dest_path(project_dir, "my-guideline.md").read_text()
+        assert "trajectory: .evolve/trajectories/claude-transcript_abc.jsonl" in content
+
     def test_rejects_path_traversal_in_entity_name(self, project_dir):
         result = run_publish(project_dir, ["--entity", "../../etc/passwd"], expect_success=False)
         assert result.returncode != 0
@@ -410,6 +565,27 @@ class TestPublishAnyEntityType:
         assert theirs.exists()
         assert not _typed_dest(typed_project, "feedback", "note.md").exists()
 
+    def test_symlink_with_differently_cased_target_cannot_reach_into_subscribed(self, typed_project):
+        """On a case-insensitive filesystem `SUBSCRIBED/read/feedback` is the subscribed clone, but
+        `resolve()` keeps the spelling, so a string-prefix check would miss it. Identity must catch it."""
+        probe = typed_project / ".case-probe"
+        probe.write_text("")
+        if not (typed_project / ".CASE-PROBE").exists():
+            pytest.skip("filesystem is case-sensitive")
+        read_clone = typed_project / ".evolve" / "entities" / "subscribed" / "read" / "feedback"
+        read_clone.mkdir(parents=True)
+        theirs = read_clone / "note.md"
+        theirs.write_text("---\ntype: feedback\n---\n\nSomeone else's.\n")
+        (typed_project / ".evolve" / "entities" / "feedback").symlink_to(Path("SUBSCRIBED") / "read" / "feedback", target_is_directory=True)
+
+        for run in (run_publish, run_publish_default_env):
+            for args in (["--entity", "note.md"], ["--entity", "note.md", "--type", "feedback"]):
+                result = run(typed_project, args, expect_success=False)
+                assert result.returncode != 0
+                assert "not found" in result.stderr
+        assert theirs.exists()
+        assert not _typed_dest(typed_project, "feedback", "note.md").exists()
+
     def test_type_flag_selects_a_dir_whose_name_is_not_sanitized(self, typed_project):
         """`--type` matches existing dirs by their sanitized name, so hand-made dirs stay selectable."""
         mine = _write_private(typed_project, "my_notes", "dup.md", body="my notes")
@@ -420,6 +596,30 @@ class TestPublishAnyEntityType:
         assert not mine.exists()
         assert other.exists()
         assert "my notes" in _typed_dest(typed_project, "my_notes", "dup.md").read_text()
+
+    @pytest.mark.parametrize(("picked", "other"), [("my_notes", "my-notes"), ("my-notes", "my_notes")])
+    def test_type_flag_prefers_the_exact_dir_name_over_sanitized_matches(self, typed_project, picked, other):
+        """`my_notes` and `my-notes` both sanitize to `my-notes`; `--type` must still pick the one named."""
+        chosen = _write_private(typed_project, picked, "x.md", body=f"from {picked}")
+        left = _write_private(typed_project, other, "x.md", body=f"from {other}")
+
+        run_publish(typed_project, ["--entity", "x.md", "--type", picked])
+
+        assert not chosen.exists()
+        assert left.exists(), "the other dir's entity must be left alone"
+        assert f"from {picked}" in _typed_dest(typed_project, picked, "x.md").read_text()
+        assert not _typed_dest(typed_project, other, "x.md").exists()
+
+    def test_dirs_that_sanitize_alike_are_still_ambiguous_without_type(self, typed_project):
+        underscore = _write_private(typed_project, "my_notes", "x.md")
+        hyphen = _write_private(typed_project, "my-notes", "x.md")
+
+        for args in (["--entity", "x.md"], ["--entity", "x.md", "--type", "My_Notes"]):
+            result = run_publish(typed_project, args, expect_success=False)
+            assert result.returncode != 0
+            assert "ambiguous" in result.stderr
+            assert "my-notes/x.md" in result.stderr and "my_notes/x.md" in result.stderr
+        assert underscore.exists() and hyphen.exists()
 
     def test_symlinked_type_dir_outside_subscribed_still_publishes(self, typed_project, tmp_path):
         """Symlinking a type directory elsewhere (e.g. a shared drive) is a legitimate layout."""
@@ -432,6 +632,28 @@ class TestPublishAnyEntityType:
         run_publish(typed_project, ["--entity", "note.md"])
         assert _typed_dest(typed_project, "feedback", "note.md").is_file()
         assert not source.exists()
+
+    @pytest.mark.parametrize("type_args", [[], ["--type", "feedback"]], ids=["no-type", "with-type"])
+    @pytest.mark.parametrize(("platform_name", "publish_script"), PUBLISH_SCRIPT_VARIANTS)
+    def test_symlinked_entity_file_pointing_outside_its_type_dir_is_refused(self, typed_project, publish_script, platform_name, type_args):
+        """An entity *file* symlinked out of its type dir must not be published: publish
+        unlinks the resolved source, so this would delete data outside `.evolve`."""
+        outside = typed_project / "outside" / "native.md"
+        outside.parent.mkdir()
+        original = "---\ntype: feedback\n---\n\nNot an entity of this project.\n"
+        outside.write_text(original)
+        type_dir = typed_project / ".evolve" / "entities" / "feedback"
+        type_dir.mkdir(parents=True)
+        (type_dir / "note.md").symlink_to(Path("..") / ".." / ".." / "outside" / "native.md")
+        clone = typed_project / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO
+
+        result = run_publish_script(publish_script, typed_project, ["--entity", "note.md", *type_args], expect_success=False)
+
+        assert result.returncode != 0
+        assert "not found" in result.stderr
+        assert outside.read_text() == original
+        assert (type_dir / "note.md").is_symlink()
+        assert sorted(p.name for p in clone.iterdir()) == [".git"]
 
     @pytest.mark.parametrize("bad_type", ["..", ".", "../..", "", "/"])
     def test_type_flag_cannot_escape_the_entities_dir(self, typed_project, bad_type):

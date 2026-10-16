@@ -104,7 +104,7 @@ Minimal structure:
 
 ```yaml
 identity:
-  user: yourname          # used to stamp ownership on published guidelines
+  user: yourname          # used to stamp ownership on published entities
 
 repos:
   - name: memory
@@ -139,7 +139,7 @@ evolve-lite-subscribe
 The repo is cloned directly into `.evolve/entities/subscribed/{name}/`
 (this directory serves as both the git clone and the recall mirror).
 
-### Publishing Guidelines
+### Publishing Entities
 
 Use `evolve-lite-publish` to share local entities via a **write-scope** repo:
 
