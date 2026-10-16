@@ -140,7 +140,7 @@ and publish skills will help you create one if it is missing. Structure:
 
 ```yaml
 identity:
-  user: yourname          # used to stamp ownership on published guidelines
+  user: yourname          # used to stamp ownership on published entities
 repos:
   - name: memory
     scope: write
