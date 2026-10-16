@@ -190,8 +190,17 @@ def main():
         )
         sys.exit(1)
     dest_dir = clone_root / entity_type
+    # The clone is a shared repo: anyone with push access can commit `<type> -> elsewhere`.
+    # Following it would write outside the clone (or to a path `git add` then refuses), so
+    # the type dir must be a real directory that stays inside the clone.
+    if dest_dir.is_symlink():
+        print(f"Error: refusing to publish into {dest_dir}: it is a symlink in the target repo clone.", file=sys.stderr)
+        sys.exit(1)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_base = dest_dir.resolve()
+    if not dest_base.is_relative_to(clone_root.resolve()):
+        print(f"Error: refusing to publish into {dest_dir}: it resolves outside the target repo clone.", file=sys.stderr)
+        sys.exit(1)
     dest_path = (dest_dir / args.entity).resolve()
     if not dest_path.is_relative_to(dest_base):
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)

@@ -188,6 +188,40 @@ class TestPublish:
         assert "name collision" not in result.stderr
         assert dest.read_text() == existing
 
+    @pytest.mark.parametrize("where", ["outside", "inside"])
+    def test_refuses_a_symlinked_type_dir_in_the_clone(self, project_dir, tmp_path, where):
+        """A repo member can commit `guideline -> ../../../../outside` into the shared repo;
+        publish must not follow it, whether it points out of the clone or elsewhere in it."""
+        clone = project_dir / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO
+        if where == "outside":
+            target = tmp_path / "outside"
+        else:
+            target = clone / "elsewhere"
+        target.mkdir()
+        (clone / "guideline").symlink_to(target, target_is_directory=True)
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md"
+
+        result = run_publish(project_dir, ["--entity", "my-guideline.md"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "symlink" in result.stderr
+        assert list(target.iterdir()) == []
+        assert source.exists()
+
+    def test_publishes_into_a_write_clone_that_is_itself_a_symlink(self, project_dir, tmp_path):
+        """The clone root may live elsewhere (e.g. a shared checkout); only its type dirs are checked."""
+        subscribed = project_dir / ".evolve" / "entities" / "subscribed"
+        real_clone = tmp_path / "real-clone"
+        (subscribed / _DEFAULT_WRITE_REPO / ".git").rename(tmp_path / "git-dir")
+        (subscribed / _DEFAULT_WRITE_REPO).rmdir()
+        real_clone.mkdir()
+        (tmp_path / "git-dir").rename(real_clone / ".git")
+        (subscribed / _DEFAULT_WRITE_REPO).symlink_to(real_clone, target_is_directory=True)
+
+        run_publish(project_dir, ["--entity", "my-guideline.md"])
+
+        assert (real_clone / "guideline" / "my-guideline.md").is_file()
+
     def test_rejects_path_traversal_in_entity_name(self, project_dir):
         result = run_publish(project_dir, ["--entity", "../../etc/passwd"], expect_success=False)
         assert result.returncode != 0
