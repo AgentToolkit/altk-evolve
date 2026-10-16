@@ -124,7 +124,8 @@ reduce to fewer than two distinct step ranges is generated in one pass. If exact
 distinct range remains, however many subtasks repeated it, that pass keeps the subtask's
 generalized description. Otherwise a one-pass `task_description` is the first user message,
 as with segmentation off; this includes a trajectory below five steps. The
-consistency-accurate path always uses the first user message for its one pass.
+consistency-accurate path also generates a repeated range once, and always uses the first
+user message for its one pass.
 
 "The first user message" is the first user message in `context_messages`, if there is one,
 or else the first in the trajectory. The standard and consistency-fast paths cut a message

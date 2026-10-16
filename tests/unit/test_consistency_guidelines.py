@@ -1710,7 +1710,7 @@ class TestSegmentationFlagAccuratePipeline(_SegmentationFixture):
             "steps": [step(i, m["content"]) for i, m in enumerate(self.MESSAGES[1:], 1)],
         }
 
-    def _run(self, monkeypatch, *, enabled, segmenter_raises=False):
+    def _run(self, monkeypatch, *, enabled, segmenter_raises=False, subtasks=None):
         """Drive generate_consistency_guidelines with resampling/scoring/LLM all stubbed.
 
         Returns (mock_segment, mock_gen, results).
@@ -1724,7 +1724,7 @@ class TestSegmentationFlagAccuratePipeline(_SegmentationFixture):
         if segmenter_raises:
             mock_segment = MagicMock(side_effect=RuntimeError("segmenter unavailable"))
         else:
-            mock_segment = MagicMock(return_value=self.subtasks())
+            mock_segment = MagicMock(return_value=self.subtasks() if subtasks is None else subtasks)
         sampled_ir = self._make_sampled_ir()
 
         with (
@@ -1768,6 +1768,36 @@ class TestSegmentationFlagAccuratePipeline(_SegmentationFixture):
             "Locate a configuration file on disk",
             "Read the values a configuration file declares",
         ]
+
+    @pytest.mark.parametrize(
+        "ranges,expected",
+        [
+            pytest.param([(1, 2), (1, 2), (3, 5)], [(1, 2), (3, 5)], id="repeated"),
+            pytest.param([(1, 2), (1, 5), (3, 5)], [(1, 2), (1, 5), (3, 5)], id="sharing-a-start-or-an-end"),
+        ],
+    )
+    def test_a_repeated_range_is_generated_once(self, monkeypatch, ranges, expected):
+        """[1,2], [1,2], [3,5]: two calls, not three, as on the other two paths. Ranges that
+        only share a start or an end are different subtasks and are all kept."""
+        from altk_evolve.schema.guidelines import SubtaskSegment
+
+        subtasks = [SubtaskSegment(generalized_description=f"Phase {a}-{b}", purpose="p", start_step=a, end_step=b) for a, b in ranges]
+        _, mock_gen, results = self._run(monkeypatch, enabled=True, subtasks=subtasks)
+
+        assert len(results) == len(expected)
+        assert [c.kwargs["step_range"] for c in mock_gen.call_args_list] == expected
+        assert [c.kwargs["task_description"] for c in mock_gen.call_args_list] == [f"Phase {a}-{b}" for a, b in expected]
+
+    def test_one_distinct_range_falls_back_to_one_full_pass(self, monkeypatch):
+        """[1,2] twice is one distinct range, fewer than two, so one full-trajectory pass keyed
+        by the IR task, as for a single subtask."""
+        first, _ = self.subtasks()
+        _, mock_gen, results = self._run(monkeypatch, enabled=True, subtasks=[first, first])
+
+        assert len(results) == 1
+        assert mock_gen.call_count == 1
+        assert mock_gen.call_args.kwargs["step_range"] is None
+        assert mock_gen.call_args.kwargs["task_description"] == self.TASK
 
     def test_enabled_but_segmenter_raises_falls_back_to_full_trajectory(self, monkeypatch):
         """Opting in must not make the accurate pipeline fail closed either: a segmenter error
