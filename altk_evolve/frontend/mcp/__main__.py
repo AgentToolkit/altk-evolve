@@ -129,6 +129,11 @@ def _dashboard_enabled(flag: bool | None) -> bool:
     return True if setting is None else setting
 
 
+def _http_url(host: str, port: int) -> str:
+    """The dashboard's URL, with an IPv6 host in brackets (RFC 3986), e.g. http://[::1]:8000/."""
+    return f"http://[{host}]:{port}/" if ":" in host else f"http://{host}:{port}/"
+
+
 class _DashboardServer(uvicorn.Server):
     """Announces the dashboard once its socket is bound, so the log never claims a port it lost."""
 
@@ -138,10 +143,9 @@ class _DashboardServer(uvicorn.Server):
             bound = [sock.getsockname() for server in self.servers for sock in server.sockets or ()]
             host, port = bound[0][:2] if bound else (self.config.host, self.config.port)
             logger.warning(
-                "Evolve dashboard and REST API listening on http://%s:%d/ without authentication: any local process can "
+                "Evolve dashboard and REST API listening on %s without authentication: any local process can "
                 "read and change memories. Disable with --no-dashboard or EVOLVE_DASHBOARD=false.",
-                host,
-                port,
+                _http_url(host, port),
             )
 
 
@@ -161,7 +165,7 @@ def run_api_server(host: str = DASHBOARD_HOST, port: int = DASHBOARD_PORT) -> No
     if not server.started:
         # A bind failure lands here via SystemExit; a failed app lifespan startup returns
         # from run() without one. uvicorn has already logged the cause in both cases.
-        logger.warning("Evolve dashboard did not start on http://%s:%d/. The MCP server keeps running over stdio.", host, port)
+        logger.warning("Evolve dashboard did not start on %s. The MCP server keeps running over stdio.", _http_url(host, port))
 
 
 def run_sse_server(host: str, port: int) -> None:

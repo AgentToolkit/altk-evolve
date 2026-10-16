@@ -218,17 +218,30 @@ def _bound(server) -> list[tuple[str, int]]:
     return [sock.getsockname()[:2] for listener in server.servers for sock in listener.sockets]
 
 
-def test_dashboard_logs_the_address_it_bound(caplog) -> None:
-    """The listener is announced, with its real address, only once the socket is bound."""
+def _can_bind(host: str) -> bool:
+    try:
+        with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET) as sock:
+            sock.bind((host, 0))
+    except OSError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize(("host", "url_host"), [("127.0.0.1", "127.0.0.1"), ("::1", "[::1]")])
+def test_dashboard_logs_the_address_it_bound(caplog, host, url_host) -> None:
+    """The listener is announced, with its real address, only once the socket is bound.
+    An IPv6 address is bracketed, so the logged URL can be opened as is."""
+    if not _can_bind(host):
+        pytest.skip(f"cannot bind {host} here")
 
     async def asgi(scope, receive, send):  # minimal app; lifespan is disabled below
         raise RuntimeError("no requests expected")
 
-    server = launcher._DashboardServer(launcher.uvicorn.Config(asgi, host="127.0.0.1", port=0, log_level="warning", lifespan="off"))
+    server = launcher._DashboardServer(launcher.uvicorn.Config(asgi, host=host, port=0, log_level="warning", lifespan="off"))
     with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
         with _serving(lambda: asyncio.run(server.serve()), lambda: server):
             (_, port), *_ = _bound(server)
-    assert f"listening on http://127.0.0.1:{port}/ without authentication" in caplog.text
+    assert f"listening on http://{url_host}:{port}/ without authentication" in caplog.text
     assert "--no-dashboard" in caplog.text
 
 
@@ -253,6 +266,19 @@ def test_dashboard_binds_loopback_only(monkeypatch) -> None:
     with _real_api_server(monkeypatch) as server:
         hosts = {host for host, _ in _bound(server)}
     assert hosts == {"127.0.0.1"}
+
+
+@pytest.mark.parametrize(
+    ("host", "url"),
+    [
+        ("127.0.0.1", "http://127.0.0.1:8000/"),
+        ("localhost", "http://localhost:8000/"),
+        ("::1", "http://[::1]:8000/"),
+        ("::", "http://[::]:8000/"),
+    ],
+)
+def test_dashboard_url_brackets_ipv6_hosts(host, url) -> None:
+    assert launcher._http_url(host, 8000) == url
 
 
 def test_dashboard_bind_failure_is_reported_and_does_not_raise(caplog) -> None:
