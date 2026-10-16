@@ -126,6 +126,52 @@ class TestContainerTimeout:
         assert name.startswith(e2e.CONTAINER_NAME_PREFIX)
         assert rm_cmd == ["docker", "rm", "--force", name]
 
+    def test_interrupted_container_is_removed(self, e2e, tmp_path, monkeypatch):
+        # Ctrl-C during a session: subprocess kills only the docker client, so
+        # the container (and the Codex session in it) must be removed too.
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd[:2] == ["docker", "run"]:
+                raise KeyboardInterrupt
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(e2e.subprocess, "run", fake_run)
+
+        with pytest.raises(KeyboardInterrupt):
+            e2e._run_in_container(tmp_path, ["codex", "exec", "hi"], timeout=5)
+
+        run_cmd, rm_cmd = calls
+        assert rm_cmd == ["docker", "rm", "--force", run_cmd[run_cmd.index("--name") + 1]]
+
+    def test_failed_cleanup_does_not_mask_the_original_exception(self, e2e, tmp_path, monkeypatch):
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd[:2] == ["docker", "run"]:
+                raise KeyboardInterrupt
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+
+        monkeypatch.setattr(e2e.subprocess, "run", fake_run)
+
+        with pytest.raises(KeyboardInterrupt):
+            e2e._run_in_container(tmp_path, ["codex", "exec", "hi"], timeout=5)
+        assert calls[1][:3] == ["docker", "rm", "--force"]
+
+    def test_successful_run_does_not_remove_the_container(self, e2e, tmp_path, monkeypatch):
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 1, "", "")
+
+        monkeypatch.setattr(e2e.subprocess, "run", fake_run)
+
+        assert e2e._run_in_container(tmp_path, ["false"], timeout=5).returncode == 1
+        assert [cmd[:2] for cmd in calls] == [["docker", "run"]]
+
     def test_each_run_gets_its_own_container_name(self, e2e, tmp_path, monkeypatch):
         names: list[str] = []
 

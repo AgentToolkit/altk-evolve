@@ -274,12 +274,14 @@ def _docker_run_prefix(workspace: Path, name: str) -> list[str]:
 
 
 def _run_in_container(workspace: Path, args: list[str], timeout: int) -> subprocess.CompletedProcess:
-    """Run ``args`` in a fresh sandbox container; remove the container on timeout.
+    """Run ``args`` in a fresh sandbox container; remove the container if the run is cut short.
 
-    On a timeout, subprocess kills only the ``docker run`` client. That does
-    not stop the container, and ``--rm`` only fires once it exits, so a hung
-    Codex session would keep running after the test failed. Naming each
-    container lets the timeout path remove it.
+    On a timeout, a Ctrl-C or any other exception, subprocess kills only the
+    ``docker run`` client. That does not stop the container, and ``--rm`` only
+    fires once it exits, so the Codex session would keep running (and calling
+    the model) after the test stopped. Naming each container lets this path
+    remove it. The original exception always propagates; a failed cleanup is
+    only logged.
     """
     name = f"{CONTAINER_NAME_PREFIX}-{uuid.uuid4().hex[:12]}"
     try:
@@ -289,11 +291,11 @@ def _run_in_container(workspace: Path, args: list[str], timeout: int) -> subproc
             text=True,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
+    except BaseException:
         try:
             subprocess.run(["docker", "rm", "--force", name], capture_output=True, check=False, timeout=PREFLIGHT_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            log.warning(f"could not remove timed-out container {name}")
+        except Exception as cleanup_error:
+            log.warning(f"could not remove container {name}: {cleanup_error!r}")
         raise
 
 
