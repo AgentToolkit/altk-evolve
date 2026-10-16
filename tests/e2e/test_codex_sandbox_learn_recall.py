@@ -458,9 +458,13 @@ def test_codex_save_then_recall_flow(codex_sandbox_ready, codex_workspace):
         f"session 1 exited {result1.returncode}\nstdout:\n{result1.stdout[-2000:]}\nstderr:\n{result1.stderr[-2000:]}"
     )
 
-    assert trajectories_dir.is_dir(), f"{trajectories_dir} was not created"
+    assert trajectories_dir.is_dir(), (
+        f"{trajectories_dir} was not created\nstdout:\n{result1.stdout[-2000:]}\nstderr:\n{result1.stderr[-2000:]}"
+    )
     trajectories = list(trajectories_dir.glob("*.json"))
-    assert trajectories, f"no Codex trajectory JSON files found in {trajectories_dir}"
+    assert trajectories, (
+        f"no Codex trajectory JSON files found in {trajectories_dir}\nstdout:\n{result1.stdout[-2000:]}\nstderr:\n{result1.stderr[-2000:]}"
+    )
 
     saved = _saved_entities(entities_dir)
     assert saved, (
@@ -492,7 +496,9 @@ def test_codex_save_then_recall_flow(codex_sandbox_ready, codex_workspace):
     )
 
     session2_trajectories = {path for path in trajectories_dir.glob("*.json")} - set(trajectories)
-    assert session2_trajectories, f"no Codex trajectory saved for session 2 in {trajectories_dir}"
+    assert session2_trajectories, (
+        f"no Codex trajectory saved for session 2 in {trajectories_dir}\nstdout:\n{result2.stdout[-2000:]}\nstderr:\n{result2.stderr[-2000:]}"
+    )
 
     recall_events = _recall_events(evolve_dir, since=audit_rows_before_session2)
     assert recall_events, (
