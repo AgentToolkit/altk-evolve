@@ -6,7 +6,7 @@ import platform
 import sys
 import zipfile
 from pathlib import Path
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Optional, cast
 
 import typer
 from rich.console import Console
@@ -352,22 +352,46 @@ def show_entity(
 def consolidate_entities(
     namespace: Annotated[str, typer.Argument(help="Namespace to consolidate entities in")],
     threshold: Annotated[Optional[float], typer.Option("--threshold", "-t", help="Cosine similarity threshold (0-1)")] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show clusters without modifying anything")] = True,
+    dry_run: Annotated[bool, typer.Option("--dry-run/--no-dry-run", help="Show clusters without modifying anything")] = True,
+    cluster_key: Annotated[
+        Optional[str],
+        typer.Option("--cluster-key", help="What to cluster on: task_description or guideline_text (default: config)"),
+    ] = None,
+    max_cluster_size: Annotated[
+        Optional[int],
+        typer.Option("--max-cluster-size", min=2, help="Split larger clusters into chunks of at most this size (default: config)"),
+    ] = None,
+    max_rounds: Annotated[
+        Optional[int],
+        typer.Option("--max-rounds", min=1, help="Re-cluster and merge up to this many times (default: config)"),
+    ] = None,
 ):
-    """Cluster similar guideline entities by task description similarity."""
+    """Cluster similar guideline entities by task description or guideline text similarity."""
     from altk_evolve.config.evolve import evolve_config
+    from altk_evolve.llm.guidelines.clustering import CLUSTERING_KEYS, ClusteringKey
+
+    if cluster_key is not None and cluster_key not in CLUSTERING_KEYS:
+        console.print(f"[red]Invalid --cluster-key '{cluster_key}'. Choose: {', '.join(CLUSTERING_KEYS)}[/red]")
+        raise typer.Exit(1)
 
     client = get_client()
 
     effective_threshold = threshold if threshold is not None else evolve_config.clustering_threshold
+    effective_key = cast(ClusteringKey, cluster_key or evolve_config.clustering_key)
+    effective_max_size = max_cluster_size if max_cluster_size is not None else evolve_config.consolidation_max_cluster_size
+    effective_rounds = max_rounds if max_rounds is not None else evolve_config.consolidation_max_rounds
 
     console.print(f"[bold]Clustering entities in '{namespace}'[/bold]")
     console.print(f"  Threshold: {effective_threshold}")
+    console.print(f"  Cluster key: {effective_key}")
+    console.print(f"  Max cluster size: {effective_max_size if effective_max_size is not None else 'unbounded'}")
     console.print(f"  Dry run: {dry_run}")
     console.print()
 
     try:
-        clusters = client.cluster_guidelines(namespace, threshold=effective_threshold)
+        clusters = client.cluster_guidelines(
+            namespace, threshold=effective_threshold, key=effective_key, max_cluster_size=effective_max_size
+        )
     except NamespaceNotFoundException:
         console.print(f"[red]Namespace '{namespace}' not found.[/red]")
         raise typer.Exit(1)
@@ -377,7 +401,8 @@ def consolidate_entities(
         raise typer.Exit(1)
 
     if not clusters:
-        console.print("[yellow]No clusters found. Guidelines have dissimilar task descriptions.[/yellow]")
+        what = "guideline texts" if effective_key == "guideline_text" else "task descriptions"
+        console.print(f"[yellow]No clusters found. Guidelines have dissimilar {what}.[/yellow]")
         return
 
     console.print(f"[green]Found {len(clusters)} cluster(s)[/green]\n")
@@ -404,13 +429,22 @@ def consolidate_entities(
     console.print(f"[dim]Total: {total_entities} entities in {len(clusters)} clusters[/dim]")
 
     if dry_run:
+        if effective_rounds > 1:
+            console.print(f"[dim]Showing round 1 only; consolidation may run up to {effective_rounds} rounds.[/dim]")
         console.print("\n[yellow]Dry run — no changes made. Use --no-dry-run to consolidate.[/yellow]")
         return
 
     console.print("\n[bold]Consolidating clusters...[/bold]")
     try:
-        result = client.consolidate_guidelines(namespace, threshold=effective_threshold)
+        result = client.consolidate_guidelines(
+            namespace,
+            threshold=effective_threshold,
+            key=effective_key,
+            max_cluster_size=effective_max_size,
+            max_rounds=effective_rounds,
+        )
         console.print("[green]Consolidation complete:[/green]")
+        console.print(f"  Rounds: {result.rounds}")
         console.print(f"  Clusters combined: {result.clusters_found}")
         console.print(f"  Guidelines before: {result.guidelines_before}")
         console.print(f"  Guidelines after: {result.guidelines_after}")

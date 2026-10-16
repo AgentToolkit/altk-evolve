@@ -1,4 +1,4 @@
-"""Cluster guideline entities by task description similarity."""
+"""Cluster guideline entities by the similarity of their task descriptions or of their own text."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import logging
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal, get_args
 
 import litellm
 import numpy as np
@@ -31,6 +32,11 @@ from altk_evolve.utils.utils import clean_llm_response
 logger = logging.getLogger(__name__)
 
 MAX_CLUSTER_ENTITIES = 5000
+
+# What clustering embeds: the task a guideline was learned on (the default), or the
+# guideline's own text, so the same advice learned on dissimilar tasks can merge.
+ClusteringKey = Literal["task_description", "guideline_text"]
+CLUSTERING_KEYS: tuple[str, ...] = get_args(ClusteringKey)
 
 _COMBINE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/combine_guidelines.jinja2").read_text())
 
@@ -75,30 +81,46 @@ def cluster_entities(
     entities: list[RecordedEntity],
     threshold: float = 0.80,
     embedding_model: str | None = None,
+    key: ClusteringKey = "task_description",
+    max_cluster_size: int | None = None,
 ) -> list[list[RecordedEntity]]:
-    """Cluster entities by cosine similarity of their task descriptions.
+    """Cluster entities by cosine similarity of their task descriptions or of their own text.
 
     Args:
         entities: Guideline entities with optional ``task_description`` in metadata.
         threshold: Cosine similarity threshold for clustering (0-1).
         embedding_model: SentenceTransformer model name. Defaults to the model
             configured in ``evolve.config.milvus``.
+        key: ``"task_description"`` clusters on ``metadata.task_description`` and leaves out
+            entities without one. ``"guideline_text"`` clusters on the entity's content.
+        max_cluster_size: Split any cluster larger than this into chunks of at most this
+            many entities (see ``_split_oversized``). ``None`` leaves clusters whole.
 
     Returns:
         List of clusters (each a list of ``RecordedEntity``), excluding
         single-entity clusters.
+
+    Raises:
+        ValueError: If ``key`` is not a clustering key or ``max_cluster_size`` is below 2.
     """
+    if key not in CLUSTERING_KEYS:
+        raise ValueError(f"Unknown clustering key {key!r} (expected one of {', '.join(CLUSTERING_KEYS)})")
+    if max_cluster_size is not None and max_cluster_size < 2:
+        raise ValueError(f"max_cluster_size must be at least 2, not {max_cluster_size}")
+
     if embedding_model is None:
         from altk_evolve.config.milvus import milvus_other_settings
 
         embedding_model = milvus_other_settings.embedding_model
 
-    # Filter to entities that have a task_description
+    # Filter to entities that have the text being clustered on
     filtered: list[tuple[int, RecordedEntity]] = []
+    texts: list[str] = []
     for idx, entity in enumerate(entities):
-        td = (entity.metadata or {}).get("task_description")
-        if td:
+        text = _clustering_text(entity, key)
+        if text:
             filtered.append((idx, entity))
+            texts.append(text)
 
     if len(filtered) < 2:
         return []
@@ -111,11 +133,10 @@ def cluster_entities(
             MAX_CLUSTER_ENTITIES,
         )
         filtered = filtered[:MAX_CLUSTER_ENTITIES]
-
-    descriptions = [e.metadata["task_description"] for _, e in filtered]
+        texts = texts[:MAX_CLUSTER_ENTITIES]
 
     model = _get_sentence_transformer(embedding_model)
-    embeddings = model.encode(descriptions, normalize_embeddings=True)
+    embeddings = model.encode(texts, normalize_embeddings=True)
     similarity_matrix = np.asarray(embeddings) @ np.asarray(embeddings).T
 
     # Find pairs meeting threshold (vectorized upper-triangle extraction)
@@ -125,6 +146,8 @@ def cluster_entities(
     pairs: list[tuple[int, int]] = list(zip(rows.tolist(), cols.tolist()))
 
     groups = _union_find(n, pairs)
+    if max_cluster_size is not None:
+        groups = [chunk for group in groups for chunk in _split_oversized(group, similarity_matrix, max_cluster_size, threshold)]
 
     # Convert index groups back to entity clusters, excluding singletons
     clusters: list[list[RecordedEntity]] = []
@@ -134,6 +157,52 @@ def cluster_entities(
         clusters.append([filtered[i][1] for i in group])
 
     return clusters
+
+
+def _clustering_text(entity: RecordedEntity, key: ClusteringKey) -> str:
+    """The text an entity is clustered on; empty when it has none and is left out."""
+    if key == "guideline_text":
+        return str(entity.content).strip()
+    return (entity.metadata or {}).get("task_description") or ""
+
+
+def _split_oversized(group: list[int], similarity: np.ndarray, max_size: int, threshold: float) -> list[list[int]]:
+    """Split a connected group into chunks of at most ``max_size`` indices.
+
+    Union-find is transitive, so a chain of pairwise matches (A~B, B~C, ...) can join
+    entities that are not similar to each other into one group too large for a single
+    merge call. Each chunk is the group's first remaining index plus up to
+    ``max_size - 1`` of its nearest remaining neighbours at or above ``threshold``, so
+    every member of a chunk is similar to its seed; a seed with no such neighbour left
+    is a chunk of its own. Once the remainder fits, it is split into its connected
+    components, since taking chunks out can disconnect it. A group within the limit is
+    returned as is. Duplicates that land in different chunks can still meet in a later
+    consolidation round.
+    """
+    if len(group) <= max_size:
+        return [list(group)]
+    remaining = list(group)
+    chunks: list[list[int]] = []
+    while len(remaining) > max_size:
+        seed, others = remaining[0], np.asarray(remaining[1:])
+        sims = similarity[seed, others]
+        close = np.flatnonzero(sims >= threshold)
+        # A stable sort keeps ties in the group's (input) order, so the split is deterministic.
+        nearest = others[close[np.argsort(-sims[close], kind="stable")][: max_size - 1]].tolist()
+        chunk = sorted([seed, *nearest])
+        chunks.append(chunk)
+        taken = set(chunk)
+        remaining = [i for i in remaining if i not in taken]
+    pairs = [
+        (a, b) for a in range(len(remaining)) for b in range(a + 1, len(remaining)) if similarity[remaining[a], remaining[b]] >= threshold
+    ]
+    chunks.extend([remaining[i] for i in component] for component in _union_find(len(remaining), pairs))
+    return chunks
+
+
+def stored_support(entity: RecordedEntity) -> int:
+    """A stored guideline's support count: ``metadata.support``, at least 1."""
+    return max(1, int((entity.metadata or {}).get("support", 1) or 1))
 
 
 def _normalize_steps(raw: object) -> list[str]:
@@ -234,7 +303,9 @@ def _attribute_support(
     return out
 
 
-def combine_cluster(entities: list[RecordedEntity], mode: str = "lossless") -> list[Guideline]:
+def combine_cluster(
+    entities: list[RecordedEntity], mode: str = "lossless", clustering_key: ClusteringKey = "task_description"
+) -> list[Guideline]:
     """Combine guidelines from a cluster of related entities into consolidated guidelines.
 
     Uses an LLM to merge related guidelines while conserving each guideline's ``support``
@@ -245,6 +316,8 @@ def combine_cluster(entities: list[RecordedEntity], mode: str = "lossless") -> l
         mode: Merge style — ``"lossless"`` (merge only equivalent advice; default) or
             ``"lossy"`` (merge more aggressively). Support is conserved either way; no
             advice is dropped in this step.
+        clustering_key: What the cluster was formed on. With ``"guideline_text"`` the
+            prompt says the guidelines share advice, not a task.
 
     Returns:
         Consolidated list of guidelines with ``support``/``evidence`` populated.
@@ -252,10 +325,12 @@ def combine_cluster(entities: list[RecordedEntity], mode: str = "lossless") -> l
     Raises:
         EvolveException: If the LLM call fails after 3 attempts.
     """
-    return [guideline for guideline, _ in combine_cluster_with_members(entities, mode=mode)]
+    return [guideline for guideline, _ in combine_cluster_with_members(entities, mode=mode, clustering_key=clustering_key)]
 
 
-def combine_cluster_with_members(entities: list[RecordedEntity], mode: str = "lossless") -> list[tuple[Guideline, list[RecordedEntity]]]:
+def combine_cluster_with_members(
+    entities: list[RecordedEntity], mode: str = "lossless", clustering_key: ClusteringKey = "task_description"
+) -> list[tuple[Guideline, list[RecordedEntity]]]:
     """Like :func:`combine_cluster`, but also return the members each guideline was built from.
 
     Every entity in ``entities`` is attributed to exactly one returned guideline.
@@ -281,7 +356,7 @@ def combine_cluster_with_members(entities: list[RecordedEntity], mode: str = "lo
     )
 
     # Per-member support/evidence carried in metadata (defaults: support 1, evidence unknown).
-    member_support = [max(1, int((e.metadata or {}).get("support", 1) or 1)) for e in entities]
+    member_support = [stored_support(e) for e in entities]
     member_evidence: list[Evidence | None] = [(e.metadata or {}).get("evidence") for e in entities]
 
     guidelines = [
@@ -299,6 +374,7 @@ def combine_cluster_with_members(entities: list[RecordedEntity], mode: str = "lo
 
     prompt = _COMBINE_GUIDELINES_TEMPLATE.render(
         task_descriptions=task_descriptions,
+        clustering_key=clustering_key,
         guidelines=guidelines,
         constrained_decoding_supported=constrained_decoding_supported,
         merge_style="aggressive" if mode == "lossy" else "conservative",

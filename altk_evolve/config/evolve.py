@@ -35,6 +35,18 @@ class EvolveConfig(BaseSettings):
     # time, not by deleting entities here.
     consolidation_mode: Literal["none", "lossless", "lossy"] = "lossless"
     lossy_target_num_guidelines: int = 12
+    # What consolidation clusters on:
+    #   task_description - the task each guideline was learned on (default); guidelines
+    #                      without one are left out
+    #   guideline_text   - the guideline's own text, so the same advice learned on
+    #                      dissimilar tasks can merge. Calibrate clustering_threshold for it:
+    #                      guidelines share phrasing, so unrelated ones can still score high.
+    clustering_key: Literal["task_description", "guideline_text"] = "task_description"
+    # Split clusters larger than this into chunks of nearest neighbours, so a chain of
+    # pairwise matches cannot send hundreds of guidelines to one merge call. None = unbounded.
+    consolidation_max_cluster_size: int | None = Field(default=None, ge=2)
+    # Re-cluster and merge again until a round reduces nothing or this many rounds have run.
+    consolidation_max_rounds: int = Field(default=1, ge=1)
     # Dosage-aware retrieval knobs (see docs: capability-dependent dosage).
     #   static    - inject the whole playbook (best for strong models; current default behavior)
     #   retrieval - inject core (support >= core_support) + top-k task-relevant guidelines

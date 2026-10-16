@@ -49,10 +49,15 @@ def _support(entity: RecordedEntity) -> int:
         return 1
 
 
-def _key_text(entity: RecordedEntity, similarity_key: SimilarityKey) -> str:
-    if similarity_key == "source_task":
-        return str((entity.metadata or {}).get("task_description", "") or entity.content)
-    return str(entity.content)
+def _source_tasks(entity: RecordedEntity) -> list[str]:
+    """The source tasks a candidate is ranked by under ``"source_task"``.
+
+    A guideline merged across tasks carries all of them in ``source_tasks``; any other
+    guideline has its ``task_description``, or failing that its own content.
+    """
+    md = entity.metadata or {}
+    tasks = [str(task) for task in md.get("source_tasks") or [] if task]
+    return tasks or [str(md.get("task_description", "") or entity.content)]
 
 
 def _embed(texts: list[str], embedding_model: str) -> np.ndarray:
@@ -84,7 +89,8 @@ def select_guidelines(
             core/candidate split. Callers should keep ``min_support <= core_support`` (enforced
             by ``EvolveConfig``) so the floor never drops a guideline that qualifies for the core.
         similarity_key: Retrieve by the source ``task_description`` (default) or by the
-            guideline text itself. For ``"source_task"``, a candidate lacking a
+            guideline text itself. For ``"source_task"``, a candidate merged across tasks
+            scores as the best match among its ``source_tasks``, and a candidate lacking a
             ``task_description`` falls back to being ranked by its own content.
         near_core_thresh: Drop a candidate whose content cosine to any core guideline is
             >= this (already covered by the core).
@@ -109,25 +115,28 @@ def select_guidelines(
 
     core_content_emb = _embed([str(e.content) for e in core], embedding_model) if core else None
     cand_content_emb = _embed([str(e.content) for e in candidates], embedding_model)
-    cand_key_emb = (
-        cand_content_emb
-        if similarity_key == "guideline_text"
-        else _embed([_key_text(e, similarity_key) for e in candidates], embedding_model)
-    )
     query_emb = _embed([task_query], embedding_model)[0]
+    if similarity_key == "guideline_text":
+        relevance = cand_content_emb @ query_emb
+    else:
+        # A candidate with several source tasks scores as its best-matching one.
+        tasks = [_source_tasks(e) for e in candidates]
+        task_scores = _embed([task for ts in tasks for task in ts], embedding_model) @ query_emb
+        bounds = np.cumsum([0, *(len(ts) for ts in tasks)])
+        relevance = np.array([task_scores[start:end].max() for start, end in zip(bounds[:-1], bounds[1:])])
 
     # Drop candidates already covered by the core, then dedup the remainder, then rank by
     # similarity of the source task to the current task.
     kept: list[tuple[int, float]] = []  # (candidate index, relevance score)
     kept_content: list[np.ndarray] = []
-    order = sorted(range(len(candidates)), key=lambda i: float(cand_key_emb[i] @ query_emb), reverse=True)
+    order = sorted(range(len(candidates)), key=lambda i: float(relevance[i]), reverse=True)
     for i in order:
         content_vec = cand_content_emb[i]
         if core_content_emb is not None and float(np.max(core_content_emb @ content_vec)) >= near_core_thresh:
             continue
         if kept_content and float(np.max(np.stack(kept_content) @ content_vec)) >= dedup_thresh:
             continue
-        kept.append((i, float(cand_key_emb[i] @ query_emb)))
+        kept.append((i, float(relevance[i])))
         kept_content.append(content_vec)
         if len(kept) >= top_k:
             break
