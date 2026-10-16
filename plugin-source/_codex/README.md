@@ -16,7 +16,7 @@ The skills cover everything around that loop:
 
 - `evolve-lite:adapt-memory` — a no-op on Codex, which has no native memory
   store to mirror; the "Save" section of `EVOLVE.md` writes entities directly
-- `evolve-lite:publish` — publish a private guideline to a write-scope repo
+- `evolve-lite:publish` — publish a private entity (any type) to a write-scope repo
 - `evolve-lite:subscribe` / `evolve-lite:unsubscribe` — manage shared guideline repos
 - `evolve-lite:sync` — pull the latest from every configured repo
 - `evolve-lite:provenance` — report whether recalled entities influenced past sessions
@@ -32,12 +32,12 @@ Entities and sharing data are stored in the active workspace under:
   entities/
     feedback/                                          # saved per EVOLVE.md, one dir per type
       use-context-managers-for-file-operations.md     # (user / feedback / project / reference)
-    guideline/                                         # what publish reads (see below)
+    guideline/                                         # learned guidelines (also publishable)
       private-guideline.md
     subscribed/
-      memory/                                          # write-scope clone (publish target)
-        guideline/
-          my-published-guideline.md
+      memory/                                          # write-scope clone (publish target, by type)
+        feedback/
+          my-published-entity.md
       alice/                                           # read-scope clone
         guideline/
           prefer-small-functions.md
@@ -134,22 +134,20 @@ Names must use only letters, numbers, `.`, `_`, and `-`.
 
 ### Publishing Guidelines
 
-Use `evolve-lite:publish` to share local guidelines via a **write-scope**
+Use `evolve-lite:publish` to share local entities via a **write-scope**
 repo:
 
 1. The skill selects (or asks about) the write-scope target repo
-2. Pick a file from `.evolve/entities/guideline/`
-3. Publish moves it into `.evolve/entities/subscribed/{repo}/guideline/`,
+2. Pick a file from a `.evolve/entities/{type}/` directory (skipping `subscribed/`)
+3. Publish moves it into `.evolve/entities/subscribed/{repo}/{type}/`,
    stamps it with `visibility: public`, `published_at`, `owner`, and a
    `source` label derived from the repo's remote
-4. The original private guideline is removed from
-   `.evolve/entities/guideline/`
+4. The original private entity is removed from
+   `.evolve/entities/{type}/`
 
-> **Limitation:** publish only looks in `.evolve/entities/guideline/`, but
-> the "Save" step in `EVOLVE.md` writes entities under
-> `entities/{user,feedback,project,reference}/`, so nothing Codex saves is
-> publishable yet. Until [#373](https://github.com/AgentToolkit/altk-evolve/issues/373) is fixed, only entity files you place under
-> `guideline/` yourself can be published.
+Entities saved by the "Save" step in `EVOLVE.md` (`entities/{user,feedback,project,reference}/`)
+are publishable this way. If the same file name exists in more than one type
+directory, publish refuses and asks for `--type`.
 
 Because the publish target is also a subscribed repo, your next sync pulls
 in anything other writers have pushed to the same remote.
@@ -176,7 +174,7 @@ local clone at `.evolve/entities/subscribed/{name}/`.
 .evolve/
   entities/
     guideline/
-      private-guideline.md      # private local guideline (what publish reads)
+      private-guideline.md      # private local guideline (publishable, like any type)
     subscribed/
       memory/                   # write-scope clone — publishes land here
         guideline/
@@ -219,8 +217,8 @@ executable skill.
 
 ### `evolve-lite:publish`
 
-Move a selected private guideline into a configured write-scope repo's
-local clone at `.evolve/entities/subscribed/{repo}/guideline/`, stamp it
+Move a selected private entity into a configured write-scope repo's
+local clone at `.evolve/entities/subscribed/{repo}/{type}/`, stamp it
 as public, commit it, and push it.
 
 ### `evolve-lite:subscribe`
