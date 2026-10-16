@@ -325,6 +325,32 @@ def _recall_events(evolve_dir: Path, since: int = 0) -> list[dict]:
     return [event for event in _audit_events(evolve_dir)[since:] if event.get("event") == "recall"]
 
 
+def _recall_of_saved_entities(recall_events: list[dict], saved_ids: Iterable[str]) -> tuple[str, set[str]]:
+    """Session 2's recall of the session-1 entities: ``(session id, entity ids those rows recalled)``.
+
+    Session 2 may log more than one recall row, for example a later one for an
+    unrelated entity, so its last row is not necessarily the one that matters.
+    Only rows whose ``entities`` include a saved id count. They must agree on
+    one session id, since that is the id session 2's trajectory and session 3's
+    provenance have to match.
+    """
+    saved = set(saved_ids)
+    matching = [event for event in recall_events if saved & set(event.get("entities") or [])]
+    if not matching:
+        pytest.fail(f"session 2's recall rows {recall_events} include none of the saved ids {sorted(saved)}")
+    session_ids = {event.get("session_id") for event in matching}
+    if len(session_ids) != 1:
+        pytest.fail(
+            f"session 2 recalled the saved entities under several session ids {sorted(map(str, session_ids))}, "
+            f"so provenance cannot tie them to one trajectory: {matching}"
+        )
+    (session_id,) = session_ids
+    if not isinstance(session_id, str) or not session_id:
+        pytest.fail(f"session 2's recall of the saved entities carries no session id: {matching}")
+    recalled = {entity for event in matching for entity in event.get("entities") or []}
+    return session_id, recalled
+
+
 def _trajectory_session_ids(paths: Iterable[Path]) -> set[str]:
     """The ``session_id`` values the given saved trajectories carry.
 
@@ -474,10 +500,7 @@ def test_codex_save_then_recall_flow(codex_sandbox_ready, codex_workspace):
         f"(it never ran ~/.codex/evolve-lite/audit_recall.py). all events: {_audit_events(evolve_dir)}\n"
         f"stdout:\n{result2.stdout[-2000:]}"
     )
-    task_recall_event = recall_events[-1]
-    task_session_id = task_recall_event["session_id"]
-    task_recalled_ids = set(task_recall_event.get("entities", []))
-    assert task_recalled_ids & set(saved), f"task recall ids {task_recalled_ids} did not include saved ids {set(saved)}"
+    task_session_id, task_recalled_ids = _recall_of_saved_entities(recall_events, saved)
 
     # Session 3's provenance can only judge this recall if session 2's
     # trajectory carries the same session id. Check it here, so a missing id

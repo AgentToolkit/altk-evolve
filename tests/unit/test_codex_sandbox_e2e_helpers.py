@@ -95,6 +95,55 @@ class TestRecallScoping:
         assert e2e._recall_events(evolve_dir, since=rows_before_session2) == [session2]
 
 
+class TestRecallOfSavedEntities:
+    def test_picks_the_session_2_row_that_recalled_a_saved_entity(self, e2e, tmp_path):
+        # The audit.log from the #384 review: session 2's last recall row is for an
+        # unrelated entity, so picking the last row found no saved entity.
+        evolve_dir = tmp_path / ".evolve"
+        _write_audit_log(
+            evolve_dir,
+            [
+                {"event": "recall", "session_id": "s1", "entities": ["reference/exif"]},
+                {"event": "recall", "session_id": "s2", "entities": ["reference/exif"]},
+                {"event": "recall", "session_id": "s2", "entities": ["project/other"]},
+            ],
+        )
+        recall_events = e2e._recall_events(evolve_dir, since=1)
+
+        assert e2e._recall_of_saved_entities(recall_events, {"reference/exif"}) == ("s2", {"reference/exif"})
+
+    def test_session_id_comes_from_the_matching_row(self, e2e):
+        recall_events = [
+            {"event": "recall", "session_id": "minted-1", "entities": ["project/other"]},
+            {"event": "recall", "session_id": "s2", "entities": ["reference/exif", "user/prefs"]},
+        ]
+
+        assert e2e._recall_of_saved_entities(recall_events, ["reference/exif"]) == ("s2", {"reference/exif", "user/prefs"})
+
+    def test_rows_that_recalled_no_saved_entity_fail(self, e2e):
+        recall_events = [{"event": "recall", "session_id": "s2", "entities": ["project/other"]}]
+
+        with pytest.raises(pytest.fail.Exception, match="include none of the saved ids"):
+            e2e._recall_of_saved_entities(recall_events, {"reference/exif"})
+
+    def test_matching_rows_with_different_session_ids_fail(self, e2e):
+        # audit_recall.py mints a fresh id per call when it finds none in the
+        # environment, so no single id could pair the recall with a trajectory.
+        recall_events = [
+            {"event": "recall", "session_id": "minted-1", "entities": ["reference/exif"]},
+            {"event": "recall", "session_id": "minted-2", "entities": ["reference/exif"]},
+        ]
+
+        with pytest.raises(pytest.fail.Exception, match="several session ids"):
+            e2e._recall_of_saved_entities(recall_events, {"reference/exif"})
+
+    def test_matching_row_without_session_id_fails(self, e2e):
+        recall_events = [{"event": "recall", "entities": ["reference/exif"]}]
+
+        with pytest.raises(pytest.fail.Exception, match="carries no session id"):
+            e2e._recall_of_saved_entities(recall_events, {"reference/exif"})
+
+
 class TestTrajectorySessionIds:
     def test_reads_session_id_from_each_trajectory(self, e2e, tmp_path):
         with_id = tmp_path / "trajectory_2026-10-15T10-00-00_019a-thread.json"
