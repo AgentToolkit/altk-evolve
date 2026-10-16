@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from copy import deepcopy
+from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -54,15 +54,28 @@ class HookBackend:
 
     During preparation patches join the output commit. Outside preparation, a
     patch uses the backend's ordinary write path. Callbacks must finish before
-    returning; retaining this capability for detached work is unsupported.
+    returning; retaining this capability for detached work is unsupported. A
+    native plugin's view is revoked when its call ends or times out.
     """
 
     def __init__(self, backend: BaseEntityBackend):
         self.__backend = backend
         pending = _pending.get()
         self.__pending = pending if pending is not None and pending.backend is backend else None
+        self.__revoked = False
+
+    def _for_call(self) -> HookBackend:
+        """Return a view of this capability for one plugin call, revocable on its own."""
+        view = copy(self)
+        view.__revoked = False
+        return view
+
+    def _revoke(self) -> None:
+        self.__revoked = True
 
     def _check(self, namespace_id: str):
+        if self.__revoked:
+            raise EvolveException("The hook call that received this backend has finished")
         if self.__pending is not None:
             if self.__pending.closed:
                 raise EvolveException("Hook preparation has finished")

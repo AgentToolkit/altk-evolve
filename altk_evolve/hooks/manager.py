@@ -20,6 +20,11 @@ Design of the CPEX integration (mirrors Mellea's plugin wrapper layer):
 - CPEX's ``invoke_hook`` is async-only; our call sites are sync. The bridge
   uses ``asyncio.run`` when no loop is running and a dedicated thread when one
   is (the Mellea pattern).
+- A native plugin's sync method runs off the event loop on that plugin's own
+  daemon worker thread (:class:`_SyncHookWorker`), so cpex's ``plugin_timeout``
+  can fire. A timed-out call's late result is discarded and its backend
+  capability revoked; threads cannot be killed, so the call keeps running
+  until it returns, and new calls to that plugin fail fast meanwhile.
 - Fire-and-forget plugin tasks are awaited before the bridge returns:
   at a sync seam the event loop closes immediately after ``invoke_hook``, so
   detached tasks would be cancelled and their side effects silently lost.
@@ -54,7 +59,9 @@ import contextvars
 import copy
 import importlib
 import logging
+import threading
 import uuid
+from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from altk_evolve.config.hooks import discover_hooks_config_path
@@ -93,6 +100,11 @@ _in_post_read: contextvars.ContextVar[bool] = contextvars.ContextVar("altk_evolv
 # must not re-dispatch a write hook and recurse infinitely. Propagated into the
 # sync-bridge worker thread via the copy_context() path in _run_sync.
 _in_write: contextvars.ContextVar[bool] = contextvars.ContextVar("altk_evolve_in_write", default=False)
+
+# Set inside a native plugin's sync worker: a hook dispatched from there (e.g. a
+# metadata patch made through ``context.backend``) runs its native plugins inline
+# on that thread, as before, instead of queueing behind the caller's own worker.
+_in_sync_hook_worker: contextvars.ContextVar[bool] = contextvars.ContextVar("altk_evolve_in_sync_hook_worker", default=False)
 
 _CPEX_INSTALL_HINT = "Hooks require the CPEX plugin framework. Install it with: pip install 'altk-evolve[hooks]'"
 
@@ -397,6 +409,7 @@ def _native_adapter_cls() -> Any:
     from cpex.framework import Plugin
     from cpex.framework.models import PluginResult, PluginViolation
 
+    from altk_evolve.hooks.backend import HookBackend
     from altk_evolve.hooks.plugin import HookContext, HookPolicyViolation
     from altk_evolve.hooks.types import HOOK_PAYLOADS, active_payload_cls
 
@@ -423,6 +436,7 @@ def _native_adapter_cls() -> Any:
         def __init__(self, native: Any, cpex_config: Any) -> None:
             super().__init__(cpex_config)
             self._native = native
+            self._worker = _SyncHookWorker(cpex_config.name)
 
         def startup_validate(self) -> None:
             # Forwarded so _validate_plugin_dependencies trips a native plugin's
@@ -446,13 +460,21 @@ def _native_adapter_cls() -> Any:
             plain = plain_cls.model_validate({f: _to_plain(getattr(cpex_payload, f)) for f in plain_cls.model_fields})
             gc = getattr(context, "global_context", None)
             state = dict(getattr(gc, "state", None) or {})
+            backend = state.get("backend")
+            if isinstance(backend, HookBackend):
+                # A per-call view, revoked once this call is over, so a timed-out
+                # call that is still running cannot patch the store late.
+                backend = state["backend"] = backend._for_call()
             hook_ctx = HookContext(
-                backend=state.get("backend"),
+                backend=backend,
                 state=state,
                 request_id=getattr(gc, "request_id", "") if gc else "",
             )
             try:
-                out = method(plain, hook_ctx)
+                if _in_sync_hook_worker.get():
+                    out = method(plain, hook_ctx)
+                else:
+                    out = await self._worker.run(method, plain, hook_ctx)
             except HookPolicyViolation as violation:
                 return PluginResult(
                     continue_processing=False,
@@ -463,6 +485,9 @@ def _native_adapter_cls() -> Any:
                         details=violation.details,
                     ),
                 )
+            finally:
+                if isinstance(backend, HookBackend):
+                    backend._revoke()
             if out is None:
                 return PluginResult(continue_processing=True)
             engine_cls: Any = active_payload_cls(hook_type)
@@ -509,6 +534,101 @@ def _to_plain(value: Any) -> Any:
     if isinstance(value, list):
         return [_to_plain(v) for v in value]
     return value
+
+
+# ── native sync worker ───────────────────────────────────────────────
+
+
+class _SyncHookWorker:
+    """Runs one native plugin's sync methods off the event loop, one at a time.
+
+    Native methods are sync and often CPU-bound (regex, spaCy, secrets scans).
+    Called inline they block the loop, so cpex's ``asyncio.wait_for`` timeout
+    cannot fire until they return. Here each call is queued to this plugin's
+    worker and awaited, so the timeout cancels the await on time.
+
+    - **Not owned by any event loop.** The sync bridge closes its loop after
+      every dispatch; ``asyncio.to_thread`` would join the loop's default
+      executor at that point and wait for a timed-out call. The worker is a
+      daemon thread, so neither loop close nor interpreter exit waits for it.
+      It exits after ``_IDLE_SECONDS`` without work and restarts on demand.
+    - **One call at a time per plugin.** Detectors may share model objects
+      that are not thread-safe, so calls to the same plugin never overlap,
+      even with a timed-out call still running. Different plugins run on
+      different workers.
+    - **Late results are discarded.** A call whose caller timed out is
+      cancelled if it has not started; if it is running, its result is
+      dropped when it returns.
+    - **Bounded.** While a timed-out call is still running, a new call to the
+      plugin raises at once (fail-closed under ``on_error="fail"``) instead of
+      queueing behind it, so at most one abandoned call per plugin holds a
+      thread.
+    - **contextvars** (tracing, re-entrancy guards) are copied into each call.
+    """
+
+    _IDLE_SECONDS = 30.0
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._cond = threading.Condition()
+        self._jobs: deque[tuple[concurrent.futures.Future, contextvars.Context, Any, tuple[Any, ...]]] = deque()
+        self._thread: threading.Thread | None = None
+        self._abandoned: concurrent.futures.Future | None = None
+
+    async def run(self, fn: Any, *args: Any) -> Any:
+        future = self._submit(fn, args)
+        try:
+            return await asyncio.wrap_future(future)
+        except asyncio.CancelledError:
+            self._abandon(future)
+            raise
+
+    def _submit(self, fn: Any, args: tuple[Any, ...]) -> concurrent.futures.Future:
+        future: concurrent.futures.Future = concurrent.futures.Future()
+        with self._cond:
+            if self._abandoned is not None:
+                raise RuntimeError(f"Plugin {self._name} is still running a call that timed out; refusing new calls until it returns")
+            self._jobs.append((future, contextvars.copy_context(), fn, args))
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._work, name=f"evolve-hook-{self._name}", daemon=True)
+                self._thread.start()
+            self._cond.notify()
+        return future
+
+    def _abandon(self, future: concurrent.futures.Future) -> None:
+        if future.cancel():  # not started yet: it will never run
+            return
+        with self._cond:
+            self._abandoned = future
+        future.add_done_callback(self._release)
+
+    def _release(self, future: concurrent.futures.Future) -> None:
+        with self._cond:
+            if self._abandoned is future:
+                self._abandoned = None
+
+    def _work(self) -> None:
+        while True:
+            with self._cond:
+                if not self._jobs:
+                    self._cond.wait(self._IDLE_SECONDS)
+                if not self._jobs:
+                    self._thread = None
+                    return
+                future, ctx, fn, args = self._jobs.popleft()
+            if not future.set_running_or_notify_cancel():
+                continue
+            try:
+                result = ctx.run(_call_in_worker, fn, *args)
+            except BaseException as exc:  # noqa: BLE001 - handed to the awaiting caller
+                future.set_exception(exc)
+            else:
+                future.set_result(result)
+
+
+def _call_in_worker(fn: Any, *args: Any) -> Any:
+    _in_sync_hook_worker.set(True)
+    return fn(*args)
 
 
 # ── sync bridge ──────────────────────────────────────────────────────
