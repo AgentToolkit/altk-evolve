@@ -240,7 +240,8 @@ class TestSplitOversized:
             ]
         )
 
-        assert _split_oversized([0, 1, 2, 3], similarity, 2, 0.5) == [[0, 2], [1, 3]]
+        # At threshold 0.0 every neighbour qualifies, so only nearest-first ordering picks 2 for 0.
+        assert _split_oversized([0, 1, 2, 3], similarity, 2, 0.0) == [[0, 2], [1, 3]]
 
     def test_chunks_only_join_entities_similar_enough_to_cluster(self):
         # A star: five leaves at 0.75 to the hub (index 5) and 0.5 to each other.

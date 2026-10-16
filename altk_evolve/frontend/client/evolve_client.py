@@ -35,18 +35,32 @@ def _filter_by_evidence(entities: list[RecordedEntity], evidence_filter: str) ->
     return [e for e in entities if (e.metadata or {}).get("evidence") in allowed]
 
 
-def _merged_task_description(members: list[RecordedEntity], key: "ClusteringKey") -> str:
-    """The task description a merged guideline keeps, from its own source members.
+def _member_tasks(members: list[RecordedEntity]) -> list[str]:
+    """The distinct source tasks of a cluster's members, in member order.
+
+    A member that is itself a cross-task merge from an earlier round contributes its
+    ``source_tasks``; any other member contributes its ``task_description``.
+    """
+    tasks: list[str] = []
+    for member in members:
+        md = member.metadata or {}
+        tasks.extend(str(task) for task in md.get("source_tasks") or [md.get("task_description")] if task)
+    return list(dict.fromkeys(tasks))
+
+
+def _merged_task_metadata(members: list[RecordedEntity], key: "ClusteringKey") -> dict[str, Any]:
+    """The task metadata a merged guideline keeps, from its own source members.
 
     Clustered by task, the members' tasks are similar and the first is kept. Clustered by
     guideline text, they may be unrelated, and keeping one would tie retrieval by source
-    task to that task alone; so the description is kept only when the members share it,
-    and is otherwise left empty (retrieval then ranks the guideline by its content).
+    task to that task alone; so the description is kept only when the members share it.
+    Otherwise it is left empty and every member task is kept in ``source_tasks``, which
+    retrieval by source task scores by the best match.
     """
-    tasks = list(dict.fromkeys(td for m in members if (td := (m.metadata or {}).get("task_description"))))
+    tasks = _member_tasks(members)
     if key == "guideline_text" and len(tasks) > 1:
-        return ""
-    return tasks[0] if tasks else ""
+        return {"task_description": "", "source_tasks": tasks}
+    return {"task_description": tasks[0] if tasks else ""}
 
 
 class EvolveClient:
@@ -546,7 +560,7 @@ class EvolveClient:
                     metadata=attach_sources(
                         {
                             **scope,
-                            "task_description": _merged_task_description(members, key),
+                            **_merged_task_metadata(members, key),
                             "rationale": guideline.rationale,
                             "category": guideline.category,
                             "trigger": guideline.trigger,

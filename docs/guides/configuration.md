@@ -150,10 +150,11 @@ the clusters) rather than reusing the task-key value. The embedding model reads 
 start of a long input (the default `all-MiniLM-L6-v2` truncates at 256 tokens), so two long
 guidelines that share a preamble and differ only at the end can look identical.
 
-A guideline merged from members learned on different tasks keeps no task description,
-because keeping one would tie it to that task alone. With the default
-`EVOLVE_RETRIEVAL_SIMILARITY_KEY=source_task`, retrieval ranks such a guideline by its
-content; set `EVOLVE_RETRIEVAL_SIMILARITY_KEY=guideline_text` to rank every guideline that way.
+A guideline merged from members learned on different tasks keeps no single task
+description, because keeping one would tie it to that task alone. It records every member
+task in `source_tasks` instead (carried through later merges), and with the default
+`EVOLVE_RETRIEVAL_SIMILARITY_KEY=source_task` retrieval scores it by the source task that
+best matches the current one, so it stays retrievable for each task it was learned on.
 
 **Large clusters.** Clustering is transitive: if A is similar to B and B to C, all three
 join, even when A and C are not similar. On a large namespace, and especially with
@@ -163,7 +164,8 @@ neighbours, each within the threshold of its first member. Duplicates that land 
 chunks are left apart unless you allow more than one round: `EVOLVE_CONSOLIDATION_MAX_ROUNDS`
 re-clusters the namespace after each round, stops after a round that merges nothing, and
 does not send the same merge's outputs back to the model together. An original whose delete
-failed or was vetoed (for example by a legal hold) stays stored but is not merged again.
+failed or was vetoed (for example by a legal hold) stays stored and is not merged again in
+later rounds of the same run; a later `consolidate` run can merge it again.
 Each round re-embeds the whole namespace, which on CPU takes minutes for thousands of long
 guidelines.
 

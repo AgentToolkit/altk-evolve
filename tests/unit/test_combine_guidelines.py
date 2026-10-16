@@ -439,19 +439,27 @@ class TestConsolidateGuidelines:
         # first; one whose members span different tasks keeps none.
         new_entities = client.backend.update_entities.call_args[0][1]
         assert [e.metadata["task_description"] for e in new_entities] == ["task a", ""]
+        assert [e.metadata.get("source_tasks") for e in new_entities] == [None, ["task b", "task c"]]
 
-    def test_merged_task_description_depends_on_the_clustering_key(self):
-        from altk_evolve.frontend.client.evolve_client import _merged_task_description
+    def test_merged_task_metadata_depends_on_the_clustering_key(self):
+        from altk_evolve.frontend.client.evolve_client import _merged_task_metadata
 
         a, b, a_again = _make_entity("1", "x", "task a"), _make_entity("2", "y", "task b"), _make_entity("3", "z", "task a")
         untasked = _make_entity("4", "w", "")
+        earlier_merge = _make_entity("5", "v", "")
+        earlier_merge.metadata["source_tasks"] = ["task c", "task a"]
 
         # Clustered by task, the members' tasks are similar: the first is kept.
-        assert _merged_task_description([a, b], "task_description") == "task a"
+        assert _merged_task_metadata([a, b], "task_description") == {"task_description": "task a"}
         # Clustered by text, unrelated tasks would tie retrieval by source task to one of them.
-        assert _merged_task_description([a, b], "guideline_text") == ""
-        assert _merged_task_description([untasked, a, a_again], "guideline_text") == "task a"
-        assert _merged_task_description([untasked], "guideline_text") == ""
+        assert _merged_task_metadata([a, b], "guideline_text") == {"task_description": "", "source_tasks": ["task a", "task b"]}
+        assert _merged_task_metadata([untasked, a, a_again], "guideline_text") == {"task_description": "task a"}
+        assert _merged_task_metadata([untasked], "guideline_text") == {"task_description": ""}
+        # An earlier cross-task merge contributes its source tasks, not its empty description.
+        assert _merged_task_metadata([earlier_merge, a], "guideline_text") == {
+            "task_description": "",
+            "source_tasks": ["task c", "task a"],
+        }
 
     def test_consolidate_guidelines_rejects_zero_rounds(self):
         with pytest.raises(ValueError, match="max_rounds"):
@@ -494,24 +502,27 @@ def _store_guidelines(store, **tasks: str) -> None:
 
 
 def _fake_cluster(entities, threshold, key="task_description", max_cluster_size=None, **_):
-    """Cluster by task description, then cut each cluster into chunks of max_cluster_size."""
+    """Cluster by task description (or by the content's first letter for the text key), then
+    cut each cluster into chunks of max_cluster_size."""
     groups: dict[str, list[RecordedEntity]] = {}
     for entity in sorted(entities, key=lambda e: str(e.content)):
-        groups.setdefault(entity.metadata["task_description"], []).append(entity)
+        group = str(entity.content)[0] if key == "guideline_text" else entity.metadata["task_description"]
+        groups.setdefault(group, []).append(entity)
     size = max_cluster_size or len(entities)
     chunks = [group[i : i + size] for group in groups.values() for i in range(0, len(group), size)]
     return [chunk for chunk in chunks if len(chunk) > 1]
 
 
 def _fake_combine(merge_tasks: set[str]):
-    """Merge a cluster into one guideline if its task is in merge_tasks; otherwise keep every member."""
+    """Merge a cluster into one guideline if it was clustered by text or its task is in
+    merge_tasks; otherwise keep every member."""
 
     def combine(cluster, mode="lossless", clustering_key="task_description"):
         def out(content, members):
             support = sum(int(m.metadata.get("support", 1)) for m in members)
             return Guideline(content=content, rationale="", category="strategy", trigger="", support=support), members
 
-        if cluster[0].metadata["task_description"] not in merge_tasks:
+        if clustering_key != "guideline_text" and cluster[0].metadata["task_description"] not in merge_tasks:
             return [out(str(m.content), [m]) for m in cluster]
         return [out("+".join(sorted(str(m.content) for m in cluster)), list(cluster))]
 
@@ -587,3 +598,16 @@ class TestConsolidationRounds:
         assert stored == {"A": None, "A+B": 2}
         assert merge_calls == 1
         assert (result.rounds, result.guidelines_before, result.support_before, result.support_after) == (2, 2, 2, 2)
+
+    def test_a_later_merge_keeps_the_source_tasks_of_an_earlier_cross_task_merge(self, store):
+        _store_guidelines(store, A1="pay a friend", A2="make a playlist", A3="make a playlist")
+
+        result, stored, _ = _consolidate(store, set(), key="guideline_text", max_cluster_size=2, max_rounds=3)
+
+        # Round 1 merges A1 and A2 across tasks; round 2 merges that output with A3. Reading
+        # only A3's task in round 2 would tie the result to the playlist task again.
+        assert stored == {"A1+A2+A3": 3}
+        (merged,) = store.scan_entities("n", filters={"type": "guideline"})
+        assert merged.metadata["task_description"] == ""
+        assert merged.metadata["source_tasks"] == ["pay a friend", "make a playlist"]
+        assert result.rounds == 3

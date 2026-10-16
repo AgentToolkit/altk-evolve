@@ -79,6 +79,17 @@ class TestSelectGuidelines:
         assert sel.core == []
         assert [e.id for e in sel.retrieved] == ["venmo"]
 
+    def test_a_guideline_merged_across_tasks_scores_by_its_best_source_task(self, mock_st):
+        self._model(mock_st)
+        # Listed first, so it wins a tie: ranked by content alone, the merged guideline ties it.
+        generic = _make_entity("generic", "Generic rule", task_description="a generic task", support=1)
+        merged = _make_entity("merged", "Check the API docs first", support=2)
+        merged.metadata["source_tasks"] = ["a spotify task", "a venmo task"]
+
+        for query in ("make a spotify playlist", "pay someone on venmo"):
+            sel = select_guidelines([generic, merged], query, top_k=1, core_support=3, embedding_model="test")
+            assert [e.id for e in sel.retrieved] == ["merged"], query
+
     def test_min_support_filters_candidate_pool(self, mock_st):
         self._model(mock_st)
         cands = [
