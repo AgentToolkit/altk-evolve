@@ -433,6 +433,28 @@ class TestPublishAnyEntityType:
         assert _typed_dest(typed_project, "feedback", "note.md").is_file()
         assert not source.exists()
 
+    @pytest.mark.parametrize("type_args", [[], ["--type", "feedback"]], ids=["no-type", "with-type"])
+    @pytest.mark.parametrize(("platform_name", "publish_script"), PUBLISH_SCRIPT_VARIANTS)
+    def test_symlinked_entity_file_pointing_outside_its_type_dir_is_refused(self, typed_project, publish_script, platform_name, type_args):
+        """An entity *file* symlinked out of its type dir must not be published: publish
+        unlinks the resolved source, so this would delete data outside `.evolve`."""
+        outside = typed_project / "outside" / "native.md"
+        outside.parent.mkdir()
+        original = "---\ntype: feedback\n---\n\nNot an entity of this project.\n"
+        outside.write_text(original)
+        type_dir = typed_project / ".evolve" / "entities" / "feedback"
+        type_dir.mkdir(parents=True)
+        (type_dir / "note.md").symlink_to(Path("..") / ".." / ".." / "outside" / "native.md")
+        clone = typed_project / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO
+
+        result = run_publish_script(publish_script, typed_project, ["--entity", "note.md", *type_args], expect_success=False)
+
+        assert result.returncode != 0
+        assert "not found" in result.stderr
+        assert outside.read_text() == original
+        assert (type_dir / "note.md").is_symlink()
+        assert sorted(p.name for p in clone.iterdir()) == [".git"]
+
     @pytest.mark.parametrize("bad_type", ["..", ".", "../..", "", "/"])
     def test_type_flag_cannot_escape_the_entities_dir(self, typed_project, bad_type):
         """--type is a directory name under entities/, never a path: `--type ..` must not
