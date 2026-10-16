@@ -19,7 +19,7 @@ from typing import Any
 
 from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
-from experiments.guideline_pipeline.adapters.base import AdapterRecord
+from experiments.guideline_pipeline.adapters.base import AdapterRecord, option_names
 from experiments.guideline_pipeline.adapters.cuga import agent_steps, elide_middle, load_task_manifest, verdict
 
 logger = logging.getLogger(__name__)
@@ -67,11 +67,11 @@ class AppWorldAdapter:
         task_ids = set(self.task_ids)
         for key, value in options.items():
             if key == "task_ids":
-                task_ids.update(_names(key, value))
+                task_ids.update(option_names(SOURCE, key, value))
             elif key == "task_manifest":
                 task_ids.update(load_task_manifest(Path(value)))
             elif key == "splits":
-                changes[key] = frozenset(_names(key, value))
+                changes[key] = frozenset(option_names(SOURCE, key, value))
             elif key == "model":
                 changes[key] = value or None
             elif key == "appworld_root":
@@ -336,14 +336,6 @@ def _message_text(content: Any) -> str:
 
 def _text(value: Any) -> str | None:
     return (value.strip() or None) if isinstance(value, str) else None
-
-
-def _names(key: str, value: str) -> set[str]:
-    """A comma-separated filter option. One that names nothing would mean "no filter", so it is an error."""
-    names = {item.strip() for item in value.split(",") if item.strip()}
-    if not names:
-        raise ValueError(f"appworld option {key} names nothing: {value!r}")
-    return names
 
 
 def _read_json(path: Path) -> dict:
