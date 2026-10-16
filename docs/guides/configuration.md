@@ -100,21 +100,35 @@ within the step budget are unaffected, as is the `fast` method.
 ### Trajectory segmentation
 
 `EVOLVE_SEGMENTATION_ENABLED` is **disabled by default**. With it enabled, a trajectory is
-split into subtasks and each subtask gets its own guideline-generation call. A trajectory
-with fewer than five steps is still generated in one pass on every path, and its
-`task_description` is the first user message verbatim, as with segmentation off. Under
-[head+tail elision](#trajectory-limits) that count is of real steps in the rendered window:
-the omitted-steps marker is not a step. This changed after v1.7.1 for the consistency-fast
-path, which used to count the marker: an elided run under `EVOLVE_TRAJECTORY_MAX_STEPS=4` with
-`EVOLVE_TRAJECTORY_TAIL_STEPS` of 1 or more renders four real steps plus the marker, and was
-segmented before but is now generated in one pass. Any other window gives the same result as
-before. On the standard and consistency-fast paths, subtasks
-that cover the same steps share one call, a subtask covering only the marker is dropped, and
-a trajectory whose subtasks reduce to fewer than two distinct step ranges is generated in
-one pass. If exactly one distinct range remains, however many subtasks repeated it, that
-pass keeps the subtask's generalized description; if none remains, it uses the first user
-message verbatim. The consistency-accurate path uses the first user message verbatim
-whenever it generates in one pass.
+split into subtasks and each subtask gets its own guideline-generation call.
+
+A trajectory with fewer than five steps is still generated in one pass, but the paths count
+steps differently:
+
+- **Standard and consistency-fast** count the steps they render: each non-empty text turn and
+  each function or tool call is one step. Under [head+tail elision](#trajectory-limits) only
+  real steps in the rendered window count; the omitted-steps marker is not a step. This
+  changed after v1.7.1 for the consistency-fast path, which used to count the marker: an
+  elided run under `EVOLVE_TRAJECTORY_MAX_STEPS=4` with `EVOLVE_TRAJECTORY_TAIL_STEPS` of 1
+  or more renders four real steps plus the marker, and was segmented before but is now
+  generated in one pass. Any other window gives the same result as before.
+- **Consistency-accurate** counts the steps it can score, which are the steps of its
+  trajectory IR. Turns it cannot resample are not steps there. Agents-SDK `function_call`
+  turns are one example. So 2 text turns plus 3 `function_call` turns are 5 steps on the
+  standard and fast paths, which segment them, but 2 on the accurate path, which generates
+  them in one pass.
+
+On the standard and consistency-fast paths, subtasks that cover the same real steps share
+one call, a subtask covering only the marker is dropped, and a trajectory whose subtasks
+reduce to fewer than two distinct step ranges is generated in one pass. If exactly one
+distinct range remains, however many subtasks repeated it, that pass keeps the subtask's
+generalized description. Otherwise a one-pass `task_description` is the first user message,
+as with segmentation off; this includes a trajectory below five steps. The
+consistency-accurate path always uses the first user message for its one pass.
+
+"The first user message" is the first user message in `context_messages`, if there is one,
+or else the first in the trajectory. The standard and consistency-fast paths cut a message
+taken from `context_messages` to 2000 characters; every other case keeps it verbatim.
 
 **Why it defaults to off.** A subtask boundary can fall between a failed attempt and the
 correction that followed it. The failing segment is then summarised on its own terms — its
