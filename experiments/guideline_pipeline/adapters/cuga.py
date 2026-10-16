@@ -20,7 +20,12 @@ from typing import Any
 
 from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
-from experiments.guideline_pipeline.adapters.base import AdapterRecord
+from experiments.guideline_pipeline.adapters.base import AdapterRecord, option_boolean, option_names
+
+# Re-exported: the helper moved to adapters/elision.py, and callers import these from here.
+from experiments.guideline_pipeline.adapters.elision import ELISION_HEAD as ELISION_HEAD
+from experiments.guideline_pipeline.adapters.elision import PARSER_STEP_LIMIT as PARSER_STEP_LIMIT
+from experiments.guideline_pipeline.adapters.elision import elide_middle as elide_middle
 
 logger = logging.getLogger(__name__)
 
@@ -31,27 +36,6 @@ FAIL_TRACE_CHARS = 600
 _ACTION_STEPS = ("Raw_Assistant_Response", "Assistant_response")
 _OBSERVATION_STEPS = ("User_output", "Observation", "Tool_output")
 _NOT_TASKS = ("results", "metadata")
-
-# TEMPORARY: parse_openai_agents_trajectory keeps only the first 50 agent steps, so a
-# long CUGA run would lose its ending (where it succeeds or fails). Until those
-# limits are configurable in the library, the adapter keeps the head and the tail
-# and replaces the middle with one marker step. Remove with that change.
-PARSER_STEP_LIMIT = 50
-ELISION_HEAD = 6
-
-
-def elide_middle(steps: list[dict[str, Any]], *, limit: int = PARSER_STEP_LIMIT, head: int = ELISION_HEAD) -> list[dict[str, Any]]:
-    """Keep the first head and the last steps, so at most limit steps reach the parser.
-
-    The marker is a plain assistant reasoning message: one step, valid JSON, and
-    never mistaken for a tool call.
-    """
-    if len(steps) <= limit:
-        return steps
-    tail = limit - head - 1
-    elided = len(steps) - head - tail
-    marker = {"role": "assistant", "content": f"[{elided} steps elided: the trajectory continues below]"}
-    return [*steps[:head], marker, *steps[-tail:]]
 
 
 @dataclass
@@ -77,13 +61,13 @@ class CugaAdapter:
         task_ids = set(self.task_ids)
         for key, value in options.items():
             if key in ("include_system_prompt", "include_summaries"):
-                changes[key] = _boolean(key, value)
+                changes[key] = option_boolean(SOURCE, key, value)
             elif key == "task_ids":
-                task_ids.update(_names(key, value))
+                task_ids.update(option_names(SOURCE, key, value))
             elif key == "task_manifest":
                 task_ids.update(load_task_manifest(Path(value)))
             elif key == "partitions":
-                changes[key] = frozenset(_names(key, value))
+                changes[key] = frozenset(option_names(SOURCE, key, value))
             elif key == "model":
                 changes[key] = value or None
             else:
@@ -407,20 +391,3 @@ def _loads(value: Any) -> dict:
 def _plain(content: dict) -> dict:
     outcome = content["outcome"]
     return {**content, "outcome": None if outcome is None else outcome.model_dump(mode="json")}
-
-
-def _names(key: str, value: str) -> set[str]:
-    """A comma-separated filter option. One that names nothing would mean "no filter", so it is an error."""
-    names = {item.strip() for item in value.split(",") if item.strip()}
-    if not names:
-        raise ValueError(f"cuga option {key} names nothing: {value!r}")
-    return names
-
-
-def _boolean(key: str, value: str) -> bool:
-    lowered = value.strip().lower()
-    if lowered in ("1", "true", "yes", "on"):
-        return True
-    if lowered in ("0", "false", "no", "off", ""):
-        return False
-    raise ValueError(f"cuga option {key} must be true or false, not {value!r}")

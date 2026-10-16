@@ -215,6 +215,121 @@ def test_secrets_plugin_redacts_llm_egress(tmp_path: Path):
     assert messages == [{"role": "user", "content": "deploy with [REDACTED] and [REDACTED]"}]
 
 
+# Assembled at runtime: GitHub push protection rejects a Slack-token-shaped literal
+# even when it is fake, and it has no inline allowlist pragma.
+_FAKE_SLACK_BOT_TOKEN = "-".join(["xoxb", "123456789012", "1234567890123", "AbCdEfGhIjKlMnOpQrStUvWx"])
+_FAKE_AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"  # pragma: allowlist secret
+
+
+@pytest.mark.unit
+def test_secrets_plugin_redacts_a_whole_slack_token(tmp_path: Path):
+    """Every segment of the token is replaced, not just its prefix."""
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+
+    messages = dispatch_llm_pre_call([{"role": "user", "content": f"notify {_FAKE_SLACK_BOT_TOKEN} when done"}], purpose="test")
+    assert messages == [{"role": "user", "content": "notify [REDACTED] when done"}]
+
+
+@pytest.mark.unit
+def test_secrets_plugin_redacts_only_the_value_of_an_aws_secret_assignment(tmp_path: Path):
+    """The key name stays readable; only the secret value is replaced."""
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+
+    messages = dispatch_llm_pre_call([{"role": "user", "content": f"aws_secret_access_key = {_FAKE_AWS_SECRET}"}], purpose="test")
+    assert messages == [{"role": "user", "content": "aws_secret_access_key = [REDACTED]"}]
+
+
+@pytest.mark.unit
+def test_secrets_default_enabled_matches_the_installed_package_detectors():
+    """DEFAULT_ENABLED must configure exactly the installed package's detectors.
+    The scanner ignores unknown detector names, so a renamed detector would
+    otherwise be switched off by our defaults, and a new one left unconfigured."""
+    pytest.importorskip("cpex_secrets_detection")
+    from importlib.resources import files
+
+    import yaml as _yaml
+
+    from altk_evolve.hooks.plugins.secrets import DEFAULT_ENABLED
+
+    manifest = _yaml.safe_load((files("cpex_secrets_detection") / "plugin-manifest.yaml").read_text())
+    assert set(manifest["default_configs"]["enabled"]) == set(DEFAULT_ENABLED)
+
+
+def _scaffold_secrets_entry() -> dict:
+    """The commented-out secrets entry from the `evolve hooks init` template, uncommented."""
+    import yaml as _yaml
+
+    template = Path(__file__).resolve().parents[2] / "altk_evolve" / "cli" / "templates" / "hooks.yaml"
+    lines = template.read_text().splitlines()
+    start = lines.index("  # - name: secrets_filter_memory")
+    block = []
+    for line in lines[start:]:
+        if not line.startswith("  # "):
+            break
+        block.append(line[len("  # ") :])
+    entry: dict = _yaml.safe_load("\n".join(block))[0]
+    return entry
+
+
+@pytest.mark.unit
+def test_secrets_plugin_accepts_every_documented_config_key():
+    """The scaffold's config (every documented key) and the remaining documented
+    key, min_findings_to_block, are all accepted and reach the scanner config."""
+    from altk_evolve.hooks.plugins.secrets import DEFAULT_ENABLED, SecretsFilterMemoryPlugin, build_scan_config
+
+    scaffold_config = _scaffold_secrets_entry()["config"]
+    assert set(scaffold_config) == {"redact", "redaction_text", "block_on_detection", "enabled"}
+    SecretsFilterMemoryPlugin(scaffold_config)
+
+    config = {
+        "redact": False,
+        "redaction_text": "***",
+        "block_on_detection": True,
+        "min_findings_to_block": 2,
+        "enabled": {key: True for key in DEFAULT_ENABLED},
+    }
+    assert build_scan_config(config) == config
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("key", ["field_allowlist", "field_denylist", "redaction_txt"])
+def test_secrets_plugin_rejects_unknown_config_keys(key: str):
+    """Fail closed: a top-level key the plugin does not know is an error naming
+    the key, never forwarded to the scanner. field_allowlist / field_denylist are
+    real scanner keys that narrow which fields are scanned."""
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    with pytest.raises(ValueError, match=rf"Unsupported secrets plugin config key\(s\): '{key}'"):
+        SecretsFilterMemoryPlugin({key: ["content"]})
+
+
+@pytest.mark.unit
+def test_secrets_plugin_rejects_unknown_detector_names():
+    """The scanner silently ignores a detector name it does not know, so a typo
+    under `enabled` would leave the intended detector at its default."""
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    with pytest.raises(ValueError, match=r"Unknown secrets detector\(s\) under 'enabled': 'jwt_lik'"):
+        SecretsFilterMemoryPlugin({"enabled": {"jwt_lik": True}})
+
+
+@pytest.mark.unit
+def test_secrets_plugin_field_denylist_fails_engine_init_instead_of_skipping_content(tmp_path: Path):
+    """A field_denylist that would stop `content` from being scanned fails engine
+    init; it does not let a token reach the LLM unredacted."""
+    pytest.importorskip("cpex_secrets_detection")
+    spec = SECRETS_SPEC.model_copy(update={"config": {"field_denylist": ["content"]}})
+    with pytest.raises(ValueError, match=r"'field_denylist'"):
+        make_client(tmp_path, spec)
+
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    with pytest.raises(ValueError, match=r"'field_denylist'"):
+        SecretsFilterMemoryPlugin({"field_denylist": ["content"]})._redact_items([{"role": "user", "content": f"token {_FAKE_GH_TOKEN}"}])
+
+
 @pytest.mark.unit
 def test_secrets_plugin_leaves_non_secret_untouched(tmp_path: Path):
     pytest.importorskip("cpex_secrets_detection")

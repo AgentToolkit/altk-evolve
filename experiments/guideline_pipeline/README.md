@@ -266,10 +266,12 @@ Options (`--adapter-option KEY=VALUE`):
 | `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
 | `appworld_root=<dir>` | An AppWorld root whose `data/tasks/<task_id>/specs.json` is the last instruction source. The run tree does not contain it. It must be an existing directory; an empty value is an error. Pass it to `export retrieval-index` and `lineage` as well, or tasks whose instruction came from it are not found in `--input`. |
 
-Without `splits=`, every task under `tasks/` is mined whatever its split, and any
-run whose selected tasks include a `test*` split gets a `read test-split tasks ...`
-warning: guidelines mined from a test split leak into any later evaluation on it.
-Pass `splits=` to mine only the splits you mean to.
+Without `splits=`, every task under `tasks/` is mined except those evaluated in a
+`test*` split, because guidelines mined from a test split leak into any later
+evaluation on it. A run with skipped test-split tasks gets a `skipped test-split
+tasks ...` warning, and a `task_ids=` entry that is a test-split task is an error.
+To mine a test split anyway, name it: `splits=test_normal`. A task with no
+evaluation has no known split, so it is still read.
 
 [profiles/appworld.json](profiles/appworld.json) is the same sample profile as
 CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, model and
@@ -283,6 +285,199 @@ uv run python -m experiments.guideline_pipeline mine --adapter appworld --input 
     --namespace appworld --processing-profile appworld-guidelines \
     --adapter-option model=gpt-4.1 --dry-run
 ```
+
+## VAKRA
+
+The `vakra` adapter reads VAKRA benchmark output. `--input` is one run directory:
+
+```text
+<input>/
+  <domain>.json               # a list of records: {"uuid", "domain", "status", "model_input": {"tools", ...},
+                              #   "trajectory": [{"type": "HumanMessage" | "AIMessage" | "ToolMessage", ...}],
+                              #   "output": [{"turn_id", "query", "answer", "sequence": {"tool_call": [{"name", "arguments"}]}}]}
+  <domain>_tools.json         # ignored
+  results.json                # optional evaluator output: {"domains": {"<domain>": {"dialogues": [{"uuid", "score", "details"}]}}}
+```
+
+VAKRA's current runner (`benchmark/runner_helpers.py::save_results_ground_truth`
+at IBM/vakra `00dc68f`) writes neither `model_input` nor `trajectory`: the
+trajectory goes only to `run.log`. A record whose trajectory holds no
+`AIMessage` or `ToolMessage` is therefore rebuilt from its `output` turns: each
+turn's `sequence.tool_call` calls, then its answer. Those records carry no
+reasoning or observations, and each domain file logs how many of them it has,
+plus the uuids of any record left with no agent step at all (it would be mined
+as its task and score alone).
+
+A parent of run directories is an error that names the runs beneath it, and a
+run nested inside the input run is not read (with a warning). Domain files are
+read one at a time, in name order. A file that is not JSON, is not a list of
+objects, or has a record without a string `uuid` ends the run with an error
+naming it, and so does a `results.json` without that `domains` / `dialogues`
+shape (read as empty, every record would silently lose its outcome). Each record
+becomes one record:
+
+- **messages**: the first `HumanMessage` with text (else the first turn's
+  `query`) as the user message; a record with neither is skipped with a warning.
+  Then, as assistant steps: a `TOOL SPACE` summary (the tools the agent called,
+  then the names of all tools it was offered), each `AIMessage`'s `reasoning`,
+  each of its `tool_calls` as a function call with the real tool name and
+  arguments, its `content` as the answer, each `ToolMessage` result as an
+  `OBSERVATION:` (a structured result as JSON), and any later `HumanMessage` as a
+  `USER MESSAGE:` (without a trajectory, the output turns' calls and answers, and
+  each later turn's query as a `USER MESSAGE:`). Message content is a string or a list of content blocks, whose
+  text parts are joined; any other type is left out rather than rendered as a
+  Python repr. Text longer than a step is split into `(part i/n)` steps rather
+  than truncated, and tool-call arguments are kept whole (still valid JSON). Runs longer than the extractor's 50 steps are elided as for
+  CUGA (the helper is shared, in `adapters/elision.py`).
+- **outcome**: from the record's `results.json` dialogue, matched by the domain
+  file's name and the uuid (the evaluator names each results domain after its
+  file and pairs uuids only within a domain, so a uuid repeated in another domain
+  keeps its own evaluation). `success` is
+  `score >= 1` for a finite numeric score. Any other score (NaN, a string, a
+  bool) is ignored with a warning, so it gives no outcome rather than a failure.
+  The record's `status` is execution status only and is not used. A failed
+  dialogue's `failed_checks` are the sub-checks (policy, exact match, answer,
+  groundedness) that failed one of its turns, with the judge's explanation. As in
+  VAKRA's scorer, a turn that scored 1 contributes none, and an exact match of 0
+  counts only when the answer judge failed the turn too (otherwise it merely sent
+  the turn to that judge). The `detail`
+  is the per-turn scores and explanations, cut to 2000 characters. A dialogue
+  with only a score gets just `success`; a record with no results entry has no
+  outcome.
+- **trace_id** and **batch**: the record's `uuid` is the trace, conversation and
+  batch ID (source `vakra`); the revision digests the record's content, as for CUGA.
+- **metadata**: `domain` (the record's `domain`, else its file's name), `split`
+  (`train` or `heldout`) and `score`.
+
+### Train / held-out split
+
+A record is held out when the first 8 bytes of `sha256(uuid)`, read as a fraction
+of 2^64, fall below `dev_frac` (default 0.3, so about 30% of records). Only one side
+is yielded. By default that is the train side, so `mine` never sees a held-out query.
+
+The hash looks only at the record's own uuid, so its side never changes when a
+dataset revision inserts, removes or reorders records, or when another run of the
+same dialogues is mined into the namespace. A record mined once can therefore
+never later turn up held out, as long as `dev_frac` stays the same: keep one
+`dev_frac` per namespace, because raising it moves train records (perhaps already
+mined) into held-out. The cost is that each domain's split is only
+approximately `dev_frac`, and a small domain can end up with nothing held out or
+nothing to mine. Reading logs each file's counts to stderr
+(`authors.json: 5 train, 4 held out (dev_frac=0.3)`), so check them in a dry run.
+
+The held-out side is recorded in a manifest, `{domain: [{uuid, query, answer, score}, ...]}`,
+for a later retrieval evaluation. Set `heldout_out=<file>` and the adapter writes it
+when reading starts, from the same options as the split it yields, so the
+manifest is exactly the complement of the mined records. Domain files whose
+records share a `domain` share one list. A held-out record whose query (ignoring
+case and whitespace) is also a train record's query is not really unseen, so
+building the manifest logs those uuids. The file is deterministic: the same input
+and options always produce the same bytes. A dry run writes it too, without an
+LLM call. From Python, `VakraAdapter(...).heldout_manifest(path)` returns the same dict.
+
+Options (`--adapter-option KEY=VALUE`):
+
+| Key | Effect |
+| --- | --- |
+| `dev_frac=F` | Hold out records whose uuid hash is below F, `0 <= F < 1` (default 0.3). |
+| `split=heldout` | Yield the held-out records instead of the train records (default `train`). |
+| `domains=authors,hockey` | Only these domain files (by name without `.json`). A missing domain ends the run with an error, and so does a value that names none. |
+| `include_tools=false` | Leave out the `TOOL SPACE` step. |
+| `results=<file>` | Read the evaluation from this file instead of `<input>/results.json`. Inside the run directory, it is not read as a domain file. |
+| `heldout_out=<file>` | Write the held-out manifest to this file. Inside the run directory, it is not read as a domain file. |
+
+```bash
+# Check the split and write the held-out manifest, without touching storage.
+uv run python -m experiments.guideline_pipeline mine --adapter vakra --input path/to/vakra_run \
+    --namespace vakra --processing-profile vakra-guidelines \
+    --adapter-option heldout_out=vakra_heldout.json --dry-run
+
+# Mine the train split with the same options.
+uv run python -m experiments.guideline_pipeline mine --adapter vakra --input path/to/vakra_run \
+    --namespace vakra --processing-profile vakra-guidelines
+```
+
+The CUGA sample profile works here too (publish it under another ID). Evaluating
+retrieval on the held-out queries is not part of this stage; a later eval stage
+will read the manifest.
+
+## tau-retail
+
+Reads τ-bench retail runs exported as one text file per task. `--input` is a
+directory of `task_*.txt` files (read in task-number order, not recursively) or
+a single `task_*.txt` file. Each file has `=====`-ruled sections: a
+`TASK <n>  reward=<r>  breakdown={...}` header, `USER SCENARIO`,
+`GROUND-TRUTH EVALUATION CRITERIA`, `AGENT DOMAIN POLICY`, `CONVERSATION`
+(`[ASSISTANT]` / `[USER]` turns, `-> CALL name(...)` with `args: {...}`, and
+`<- RESULT ...`), `FINAL ANSWER`, and `JUDGE / REWARD DETAILS`. See
+`tests/fixtures/tau/` for the exact layout. A rule starts a section only when a
+section title follows it, so a `=====` line inside a turn stays in that turn.
+A title is recognised by how its line starts, so when a `=====` line inside a
+turn is followed by a line like `FINAL ANSWER: ...`, that section appears twice
+and the task is skipped with a warning rather than read with turns missing.
+
+Each task becomes one record:
+
+- **messages:** the conversation's first `[USER]` turn as the task (what the
+  agent was actually asked, so guidelines are keyed like the queries that will
+  retrieve them), then the other turns in order. Each call is an assistant
+  function call with its tool name and arguments; results and both speakers'
+  other turns are labelled assistant messages. The `USER SCENARIO` is the user
+  simulator's hidden brief (`reason_for_call`, `known_info`,
+  `task_instructions`), which the agent never saw, so it is left out unless
+  `include_scenario=true`.
+- **Long runs:** long turns are split into parts under the extractor's
+  2000-character step cap. The extractor's default window is the first 50 steps
+  (`EVOLVE_TRAJECTORY_*`), so, as the CUGA adapter does, a longer conversation
+  keeps its first 25 and last 24 steps with one `[N steps elided ...]` marker
+  between them. The adapter caps at 50 whatever the extractor's settings.
+- **outcome:** `success` when the reward is 1.0; judge lines with
+  `action_match=False` or `met=False` (or the JSON / dict forms
+  `"action_match": false`, `'met': False`) become `failed_checks`, and the start
+  of the judge section becomes `detail`. When pretty-printed JSON puts the flag
+  on its own line, the check is named from its object: the action's `name` and
+  `arguments`, or the `nl_assertion` text.
+- **trace_id / batch:** the file name (`task_12`), prefixed with the split when
+  the header records one (`train/task_12`), because splits can reuse task
+  numbers. The conversation is the same; the batch is the file name. The revision digests
+  the record's content, so editing a task, or changing an option that changes
+  what is processed, reprocesses that task; re-running unchanged input skips it.
+- **metadata:** the header's reward, breakdown, termination reason, `split` and
+  the other fields it carries; `model=` in the header sets the record's model.
+
+A file without the header (and its reward), a conversation or a user turn in it
+is skipped with a warning on stderr, and the run continues. A run that reads no
+task logs a warning too.
+
+Options (`--adapter-option KEY=VALUE`):
+
+| Key | Effect |
+| --- | --- |
+| `include_policy=true` | Add the agent domain policy as `system` context messages. It is the same in every task, so it is off by default. |
+| `include_scenario=true` | Add the user simulator's scenario as a `system` context message. It holds facts the agent never had, so guidelines mined with it can encode them. |
+| `splits=train` | Only tasks in these splits. Without `split_file`, a task's split is the `split=` its header records: a task without one is skipped with a warning, and a listed split that no task records ends the run with an error. A value that lists no split is an error. |
+| `split_file=<split_tasks.json>` | Take each task's split from tau2's `split_tasks.json` (a JSON object mapping each split to its task IDs) instead of the headers. A task is matched on the number in its file name (`task_12.txt` is task `12`). Needs `splits=`; a listed split that the file lacks is an error. |
+
+Context is supporting history: the extractor sees it, but it is not counted as
+new material.
+
+**Splits and leakage.** Mining test tasks and then evaluating on them leaks the
+test set into the namespace, and nothing is filtered by default. tau2's retail
+`train` and `test` splits are lists of task IDs over the `base` set, so a normal
+run over `base` holds both in one directory and its headers can record at most
+`split=base`. Pass tau2's split file to mine only the training tasks:
+
+```bash
+uv run python -m experiments.guideline_pipeline mine --adapter tau-retail \
+    --input runs/tau-retail-base/trajectories --namespace tau_retail \
+    --processing-profile guidelines-consistency \
+    --adapter-option include_policy=true \
+    --adapter-option split_file=tau2-bench/data/tau2/domains/retail/split_tasks.json \
+    --adapter-option splits=train --dry-run
+```
+
+When the runs record their split in each header (`split=train`), `splits=train`
+alone selects on it.
 
 ## Writing an adapter
 
@@ -338,9 +533,14 @@ ADAPTERS = {adapter.name: adapter for adapter in (MyDatasetAdapter(),)}
 To take `--adapter-option` settings, also implement `configure(options)`, which
 validates the `KEY=VALUE` strings and returns a configured copy (see
 `ConfigurableAdapter` in `adapters/base.py` and `adapters/cuga.py`).
+`option_boolean` and `option_names` in `adapters/base.py` parse boolean and
+comma-separated options strictly: a typo or an empty filter is an error.
+
+If long runs can exceed the extractor's 50-step cap, keep their ending with
+`adapters/elision.py`'s `elide_middle`.
 
 Each adapter needs unit tests under `tests/` that use a tiny synthetic fixture,
-never a copy of the real dataset. See `tests/fakes.py` and `tests/fixtures/cuga/`.
+never a copy of the real dataset. See `tests/fakes.py` and `tests/fixtures/`.
 
 ## Tests
 
