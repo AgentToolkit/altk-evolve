@@ -968,7 +968,11 @@ class TestSegmentationFloorAndFastPathScope:
     )
     def test_fast_path_one_pass_description_depends_on_distinct_ranges(self, ranges, expected, monkeypatch):
         """A range the segmenter repeated is keyed like one it returned once: by its
-        generalized description, not the raw user message."""
+        generalized description, not the raw user message.
+
+        The one call must also see the whole trajectory, not the partial range: with the
+        fast path's ">= 2 slices" threshold lowered to 1, a lone [1,3] on 6 steps was
+        generated from steps 1-3 only and the call count and description still matched."""
         from unittest.mock import MagicMock, patch
 
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
@@ -992,6 +996,8 @@ class TestSegmentationFloorAndFastPathScope:
 
         assert mock_completion.call_count == 1
         assert [r.task_description for r in results] == [expected]
+        prompt = mock_completion.call_args.kwargs["messages"][-1]["content"]
+        assert "reasoning step 0" in prompt and "reasoning step 5" in prompt
 
     @pytest.mark.parametrize("n_scorable,should_segment", [(4, False), (5, True)])
     def test_accurate_path_floor_boundary(self, n_scorable, should_segment, monkeypatch):
