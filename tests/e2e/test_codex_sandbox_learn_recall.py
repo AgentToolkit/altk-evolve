@@ -60,6 +60,8 @@ FORWARDED_ENV_VARS = (
 )
 CODEX_PROVIDER_ENV_KEY_VAR = "CODEX_MODEL_PROVIDER_ENV_KEY"
 CONTAINER_NAME_PREFIX = "evolve-codex-e2e"
+# TMPDIR inside the container, relative to the /workspace mount.
+CONTAINER_TMPDIR = ".evolve/tmp"
 
 # The marker install.sh puts on the AGENTS.md pointer line (MANAGED_MARKER).
 EVOLVE_POINTER_MARKER = "<!-- evolve-lite:managed -->"
@@ -138,12 +140,22 @@ def codex_workspace(tmp_path, codex_sandbox_image):
     """Copy demo/workspace and install the Codex plugin into it."""
     del codex_sandbox_image  # plugin registration runs inside the image
 
-    src = REPO_ROOT / "demo" / "workspace"
-    workspace = tmp_path / "workspace"
-    shutil.copytree(src, workspace, ignore=shutil.ignore_patterns(".evolve", "backup", "sandbox-backup"))
-
+    workspace = _copy_demo_workspace(tmp_path)
     _install_codex_plugin(workspace)
     _register_codex_plugin_for_container(workspace)
+    return workspace
+
+
+def _copy_demo_workspace(tmp_path: Path) -> Path:
+    """Copy demo/workspace without its saved state, and create the container's TMPDIR.
+
+    The container runs with ``TMPDIR`` under ``/workspace``, which the copy
+    leaves out with the rest of ``.evolve``. Without the directory, ``mktemp``
+    fails in session 1 and Python's ``tempfile`` silently falls back to /tmp.
+    """
+    workspace = tmp_path / "workspace"
+    shutil.copytree(REPO_ROOT / "demo" / "workspace", workspace, ignore=shutil.ignore_patterns(".evolve", "backup", "sandbox-backup"))
+    (workspace / CONTAINER_TMPDIR).mkdir(parents=True, exist_ok=True)
     return workspace
 
 
@@ -263,7 +275,7 @@ def _docker_run_prefix(workspace: Path, name: str) -> list[str]:
         "-e",
         "EVOLVE_DEBUG=1",
         "-e",
-        "TMPDIR=/workspace/.evolve/tmp",
+        f"TMPDIR=/workspace/{CONTAINER_TMPDIR}",
         "-v",
         f"{workspace}:/workspace",
         "-v",

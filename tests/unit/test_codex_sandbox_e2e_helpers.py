@@ -155,6 +155,18 @@ class TestTrajectorySessionIds:
         assert e2e._trajectory_session_ids([without_id]) == set()
 
 
+class TestWorkspaceTmpdir:
+    def test_container_tmpdir_exists_in_the_copied_workspace(self, e2e, tmp_path):
+        # mktemp in the container fails when TMPDIR points at a missing directory.
+        workspace = e2e._copy_demo_workspace(tmp_path)
+        cmd = e2e._docker_run_prefix(workspace, "evolve-codex-e2e-test")
+        tmpdir = next(cmd[i + 1] for i, arg in enumerate(cmd) if arg == "-e" and cmd[i + 1].startswith("TMPDIR="))
+        container_path = tmpdir.removeprefix("TMPDIR=")
+
+        assert container_path.startswith("/workspace/")
+        assert (workspace / container_path.removeprefix("/workspace/")).is_dir()
+
+
 class TestContainerTimeout:
     def test_timed_out_container_is_removed(self, e2e, tmp_path, monkeypatch):
         calls: list[list[str]] = []
