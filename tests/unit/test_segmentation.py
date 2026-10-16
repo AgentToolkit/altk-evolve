@@ -110,3 +110,71 @@ def test_subtask_segment_accepts_valid_range():
     )
     assert seg.start_step == 3
     assert seg.end_step == 7
+
+
+def _seg(start: int, end: int, description: str = "d") -> SubtaskSegment:
+    return SubtaskSegment(generalized_description=description, start_step=start, end_step=end, purpose="p")
+
+
+def _parsed(steps: list[str], marker_index: int | None = None) -> dict:
+    """The parts of parse_openai_agents_trajectory's output that subtask_slices reads."""
+    return {"steps_list": steps, "marker_index": marker_index}
+
+
+def test_subtask_slices_keeps_ranges_that_share_a_start():
+    """Dedupe compares the whole clamped range: [1,2] and [1,4] are different slices."""
+    from altk_evolve.llm.guidelines.segmentation import subtask_slices
+
+    steps = [f"s{i}" for i in range(1, 7)]
+    slices = subtask_slices([_seg(1, 2), _seg(1, 4), _seg(5, 6)], _parsed(steps))
+    assert [s for _, s, _ in slices] == [["s1", "s2"], ["s1", "s2", "s3", "s4"], ["s5", "s6"]]
+
+
+def test_subtask_slices_drops_ranges_that_share_an_end_only_when_equal():
+    from altk_evolve.llm.guidelines.segmentation import subtask_slices
+
+    steps = [f"s{i}" for i in range(1, 7)]
+    slices = subtask_slices([_seg(1, 6), _seg(3, 6), _seg(1, 9)], _parsed(steps))
+    assert [s for _, s, _ in slices] == [steps, ["s3", "s4", "s5", "s6"]]
+
+
+@pytest.mark.parametrize(
+    "ranges,expected",
+    [
+        pytest.param([], "verbatim request", id="no-subtasks"),
+        pytest.param([(1, 3)], "Gen 0", id="one-range"),
+        pytest.param([(1, 3), (1, 3)], "Gen 0", id="one-range-repeated"),
+        pytest.param([(9, 9)], "verbatim request", id="out-of-range-only"),
+    ],
+)
+def test_one_pass_task_description(ranges, expected):
+    from altk_evolve.llm.guidelines.segmentation import one_pass_task_description, subtask_slices
+
+    steps = [f"s{i}" for i in range(1, 7)]
+    subtasks = [_seg(a, b, f"Gen {i}") for i, (a, b) in enumerate(ranges)]
+    assert one_pass_task_description(subtask_slices(subtasks, _parsed(steps)), "verbatim request") == expected
+
+
+def test_subtask_slices_under_elision_counts_real_steps_and_dedupes():
+    """Marker at position 5 of 7: a spanning slice keeps it but does not count it, a repeated
+    range is dropped, and so is a marker-only range however often it is repeated."""
+    from altk_evolve.llm.guidelines.segmentation import subtask_slices
+
+    steps = ["s1", "s2", "s3", "s4", "MARKER", "s11", "s12"]
+    slices = subtask_slices([_seg(1, 6), _seg(5, 5), _seg(1, 6), _seg(5, 5), _seg(7, 7)], _parsed(steps, marker_index=4))
+    assert [(s, n) for _, s, n in slices] == [(steps[:6], 5), (["s12"], 1)]
+
+
+@pytest.mark.parametrize(
+    "ranges,expected",
+    [
+        pytest.param([(5, 5), (1, 7)], "Gen 1", id="one-range-left-after-the-marker-filter"),
+        pytest.param([(5, 5), (5, 5)], "verbatim request", id="marker-only"),
+    ],
+)
+def test_one_pass_task_description_after_the_marker_filter(ranges, expected):
+    from altk_evolve.llm.guidelines.segmentation import one_pass_task_description, subtask_slices
+
+    steps = ["s1", "s2", "s3", "s4", "MARKER", "s11", "s12"]
+    subtasks = [_seg(a, b, f"Gen {i}") for i, (a, b) in enumerate(ranges)]
+    assert one_pass_task_description(subtask_slices(subtasks, _parsed(steps, marker_index=4)), "verbatim request") == expected
