@@ -38,21 +38,35 @@ docker run --rm --env-file sandbox/myenv claude-sandbox claude -p "who are you"
 
 ## Automated E2E Test
 
-`tests/e2e/test_claude_sandbox_learn_recall.py` exercises the full evolve-lite
-learn + recall loop end-to-end inside this sandbox. It runs two Claude
+`tests/e2e/test_claude_sandbox_learn_recall.py` exercises the evolve-lite
+save + recall loop end to end inside this sandbox. The Claude plugin installs
+no hooks and has no `learn` or `recall` skill: recall and save are Claude's
+own native memory. The installer adds `.evolve/EVOLVE.md`, imported from the
+workspace's `CLAUDE.md`, which asks Claude to mirror each memory it saves with
+`/evolve-lite:adapt-memory` and to log the memories it consults with
+`~/.claude/evolve-lite/audit_recall.py`.
+
+The test runs `install.sh` inside the image, from a per-test copy of the
+repo's `.claude-plugin/` and `platform-integrations/` mounted read-only at
+`/repo`. Your checkout is not mounted, so its `.env`, `.git` and `.venv` stay out
+of the sessions. The container's `~/.claude` is a per-test directory, so your own
+`~/.claude` is never touched, and the plugin, native memories and transcripts
+persist across the separate `docker run` sessions. It then runs three
 sessions:
 
-1. **Session 1** asks Claude to extract EXIF metadata from a sample photo.
-   The sandbox lacks `exiftool` and `PIL`, so Claude hits dead ends and
-   recovers using stdlib. The Stop hook runs `learn`, which reads the
-   saved transcript and extracts a guideline.
-2. **Session 2** asks a similar metadata question. Recall injects the
-   guideline from session 1, so Claude should skip the failing tools and
-   go straight to stdlib.
+1. **Session 1** asks where `sample.jpg` was taken and asks Claude to remember
+   how to read EXIF metadata here. The sandbox lacks `exiftool` and `PIL`, so
+   Claude hits dead ends and recovers. The test asserts that a native memory
+   was saved and mirrored to `.evolve/entities/<type>/<name>.md`.
+2. **Session 2** asks a similar metadata question. The test asserts that the
+   `recall` event in `.evolve/audit.log` for that session names the session-1
+   entity. Whether Claude still tries `exiftool` is logged, not asserted.
+3. **Session 3** runs `/evolve-lite:provenance`, and the test asserts that an
+   influence verdict was recorded for the recalled entity.
 
-The test asserts a guideline file was produced in session 1 and that
-session 2's bash commands do not invoke `exiftool` / `PIL` / `piexif` /
-`exifread`.
+`test_claude_sandbox_installs_evolve_lite` is a quick preflight that needs the
+image but no credentials. It checks that the plugin loads (`claude plugin
+list`) and that the scripts `EVOLVE.md` names exist inside the container.
 
 ### Prerequisites
 
