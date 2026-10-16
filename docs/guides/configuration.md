@@ -101,7 +101,17 @@ within the step budget are unaffected, as is the `fast` method.
 ### Trajectory segmentation
 
 `EVOLVE_SEGMENTATION_ENABLED` is **disabled by default**. With it enabled, a trajectory is
-split into subtasks and each subtask gets its own guideline-generation call.
+split into subtasks and each subtask gets its own guideline-generation call. A trajectory
+with fewer than five steps is still generated in one pass on every path, and its
+`task_description` is the first user message verbatim, as with segmentation off. Under
+[head+tail elision](#trajectory-limits) that count is of real steps in the rendered window:
+the omitted-steps marker is not a step. On the standard and consistency-fast paths, subtasks
+that cover the same steps share one call, a subtask covering only the marker is dropped, and
+a trajectory whose subtasks reduce to fewer than two distinct step ranges is generated in
+one pass. If exactly one distinct range remains, however many subtasks repeated it, that
+pass keeps the subtask's generalized description; if none remains, it uses the first user
+message verbatim. The consistency-accurate path uses the first user message verbatim
+whenever it generates in one pass.
 
 **Why it defaults to off.** A subtask boundary can fall between a failed attempt and the
 correction that followed it. The failing segment is then summarised on its own terms — its
@@ -122,9 +132,9 @@ trajectory routinely spans unrelated subtasks, weigh enabling it.
 
 **Turning it on later (mixed corpora).** Entities written while segmentation was off carry
 verbatim request text as `task_description`; entities written with it on carry generalized
-subtask descriptions. Both are embedded in the same space, so a namespace written across a
-change of this setting holds two kinds of key. Nothing breaks and no migration is required
-— clustering and retrieval keep working — but similarity between the two kinds is lower
+subtask descriptions, except for the verbatim one-pass cases above. Both are embedded in the same
+space, so a namespace written across a change of this setting holds two kinds of key.
+Nothing breaks and no migration is required — clustering and retrieval keep working — but similarity between the two kinds is lower
 than within either, so recurrence spanning the change may go undetected. To avoid the mix,
 use a fresh namespace when you change this setting.
 
