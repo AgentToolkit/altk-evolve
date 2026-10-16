@@ -1,11 +1,14 @@
 import asyncio
+import http.client
 import logging
 import socket
 import threading
 import time
 import tomllib
-from contextlib import asynccontextmanager, contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, asynccontextmanager, contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -181,6 +184,61 @@ def test_dashboard_logs_the_address_it_bound(caplog) -> None:
     assert server.started
     assert f"listening on http://127.0.0.1:{port}/ without authentication" in caplog.text
     assert "--no-dashboard" in caplog.text
+
+
+@contextmanager
+def _serving(target: Callable[[], object], get_server: Callable[[], Any], timeout: float = 10.0) -> Iterator[Any]:
+    """Run a dashboard server in a thread, yield it once it is serving, and always stop it.
+
+    A startup that fails or hangs is reported as such, and the server thread is told to exit either way.
+    """
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + timeout
+        while thread.is_alive() and not getattr(get_server(), "started", False) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        server = get_server()
+        assert getattr(server, "started", False), f"dashboard server did not start within {timeout:g} s"
+        yield server
+    finally:
+        if (server := get_server()) is not None:
+            server.should_exit = True
+        thread.join(timeout)
+    assert not thread.is_alive(), f"dashboard server did not stop within {timeout:g} s"
+
+
+def _real_api_server(monkeypatch) -> AbstractContextManager[Any]:
+    """The real `run_api_server`, with its default host, on a port the OS picks."""
+    servers: list[launcher._DashboardServer] = []
+
+    class RecordingServer(launcher._DashboardServer):
+        def __init__(self, config) -> None:
+            super().__init__(config)
+            servers.append(self)
+
+    monkeypatch.setattr(launcher, "_DashboardServer", RecordingServer)
+    return _serving(lambda: launcher.run_api_server(port=0), lambda: servers[0] if servers else None)
+
+
+def _bound(server) -> list[tuple[str, int]]:
+    return [sock.getsockname()[:2] for listener in server.servers for sock in listener.sockets]
+
+
+def test_dashboard_keeps_uvicorn_logs_off_stdout(monkeypatch, capfd) -> None:
+    """Over stdio, stdout is the MCP JSON-RPC channel. uvicorn writes its access log to stdout at INFO,
+    so a request to the dashboard must leave stdout untouched (fd 1 as well as sys.stdout)."""
+    capfd.readouterr()
+    with _real_api_server(monkeypatch) as server:
+        (_, port), *_ = _bound(server)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("GET", "/api/no-such-route")
+            status = conn.getresponse().status
+        finally:
+            conn.close()
+    assert status == 404
+    assert capfd.readouterr().out == ""
 
 
 def test_dashboard_bind_failure_is_reported_and_does_not_raise(caplog) -> None:
