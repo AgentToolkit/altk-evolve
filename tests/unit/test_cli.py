@@ -696,6 +696,35 @@ class TestEntitiesConsolidate:
         with pytest.raises(Exit):
             consolidate_entities("test-ns", dry_run=False)
 
+    def test_consolidate_entities_rejects_an_unknown_cluster_key(self, mock_client):
+        result = runner.invoke(app, ["entities", "consolidate", "test-ns", "--cluster-key", "content"])
+
+        assert result.exit_code == 1
+        assert "Invalid --cluster-key 'content'" in result.stdout
+        mock_client.cluster_guidelines.assert_not_called()
+
+    def test_consolidate_entities_passes_the_clustering_options_through(self, mock_client):
+        entity = MagicMock(id="entity-1", metadata={"task_description": "test task"}, content="test content")
+        mock_client.cluster_guidelines.return_value = [[entity, entity]]
+        args = ["--cluster-key", "guideline_text", "--max-cluster-size", "8", "--max-rounds", "3", "--no-dry-run"]
+
+        result = runner.invoke(app, ["entities", "consolidate", "test-ns", "-t", "0.9", *args])
+
+        assert result.exit_code == 0, result.stdout
+        assert mock_client.cluster_guidelines.call_args.kwargs == {"threshold": 0.9, "key": "guideline_text", "max_cluster_size": 8}
+        assert mock_client.consolidate_guidelines.call_args.kwargs == {
+            "threshold": 0.9,
+            "key": "guideline_text",
+            "max_cluster_size": 8,
+            "max_rounds": 3,
+        }
+
+    def test_consolidate_entities_rejects_a_cluster_size_below_two(self, mock_client):
+        result = runner.invoke(app, ["entities", "consolidate", "test-ns", "--max-cluster-size", "1"])
+
+        assert result.exit_code != 0
+        mock_client.cluster_guidelines.assert_not_called()
+
 
 @pytest.mark.unit
 class TestSyncPhoenixMore:

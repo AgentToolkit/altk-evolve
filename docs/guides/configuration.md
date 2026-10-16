@@ -52,6 +52,11 @@ All configuration variables are prefixed with `EVOLVE_`.
 | `EVOLVE_TRAJECTORY_MAX_STEPS` | Most trajectory steps rendered into a generation prompt (`standard` and `fast` consistency; not `accurate`) — see [Trajectory limits](#trajectory-limits) | `50` |
 | `EVOLVE_TRAJECTORY_MAX_STEP_CHARS` | Characters kept per step before truncation | `2000` |
 | `EVOLVE_TRAJECTORY_TAIL_STEPS` | How much of the step budget is reserved for the **end** of a long run. `0` truncates head-only, as before — see [Trajectory limits](#trajectory-limits) | `0` |
+| `EVOLVE_CONSOLIDATION_MODE` | How consolidation merges a cluster: `none` (skip), `lossless` (merge only equivalent advice) or `lossy` (merge more aggressively) — see [Guideline consolidation](#guideline-consolidation) | `lossless` |
+| `EVOLVE_CLUSTERING_KEY` | What consolidation clusters on: `task_description` or `guideline_text` | `task_description` |
+| `EVOLVE_CLUSTERING_THRESHOLD` | Cosine similarity at which two guidelines join a cluster | `0.80` |
+| `EVOLVE_CONSOLIDATION_MAX_CLUSTER_SIZE` | Split larger clusters into chunks of at most this many guidelines (at least `2`). Unset means unbounded | unset |
+| `EVOLVE_CONSOLIDATION_MAX_ROUNDS` | Re-cluster and merge up to this many times; stops early once a round merges nothing | `1` |
 | `EVOLVE_GUIDELINES_MODEL` | Model for guideline generation only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_CONFLICT_RESOLUTION_MODEL` | Model for conflict resolution only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
 | `EVOLVE_FACT_EXTRACTION_MODEL` | Model for fact extraction only | `EVOLVE_MODEL_NAME` -> `gpt-4o` |
@@ -113,8 +118,8 @@ rules and cost roughly half of the achievable improvement on the affected cases;
 it removed the contradiction at source.
 
 **What you give up by leaving it off.** `task_description` becomes the raw first user
-message, verbatim, shared by every guideline from that trajectory. It is the clustering key
-and the retrieval ranking key, so within a single trajectory it no longer separates
+message, verbatim, shared by every guideline from that trajectory. It is the default
+clustering key and the retrieval ranking key, so within a single trajectory it no longer separates
 subtasks, and it carries whatever user-specific values the original request contained into
 stored entity metadata. If your trajectories are single-purpose, this costs little; if one
 trajectory routinely spans unrelated subtasks, weigh enabling it.
@@ -126,6 +131,38 @@ change of this setting holds two kinds of key. Nothing breaks and no migration i
 — clustering and retrieval keep working — but similarity between the two kinds is lower
 than within either, so recurrence spanning the change may go undetected. To avoid the mix,
 use a fresh namespace when you change this setting.
+
+### Guideline consolidation
+
+`evolve entities consolidate <namespace> --no-dry-run` (or `EvolveClient.consolidate_guidelines`)
+embeds each guideline, joins pairs whose cosine similarity is at least
+`EVOLVE_CLUSTERING_THRESHOLD`, and asks the LLM to merge each cluster. Support is conserved:
+a merged guideline's `support` is the sum of its sources'. Clusters never mix memory scopes.
+Without `--no-dry-run` the command only lists the clusters it would merge.
+
+**What to cluster on.** By default (`EVOLVE_CLUSTERING_KEY=task_description`) guidelines are
+grouped by the task they were learned on. That merges advice from similar tasks, but the
+same advice learned on dissimilar tasks never meets, and guidelines without a task
+description are left out. `guideline_text` groups by the guideline's own text instead.
+Guidelines share a lot of phrasing ("When ..., check ..."), so two unrelated guidelines can
+score higher than their tasks would; calibrate the threshold on your corpus (a dry run shows
+the clusters) rather than reusing the task-key value.
+
+**Large clusters.** Clustering is transitive: if A is similar to B and B to C, all three
+join, even when A and C are not similar. On a large namespace, and especially with
+`guideline_text`, this can chain hundreds of guidelines into one merge call.
+`EVOLVE_CONSOLIDATION_MAX_CLUSTER_SIZE` splits such a cluster into chunks of nearest
+neighbours. Duplicates that land in different chunks are left apart unless you allow more
+than one round: `EVOLVE_CONSOLIDATION_MAX_ROUNDS` re-clusters the namespace after each
+round, stops after a round that merges nothing, and does not send the same merge's outputs
+back to the model together.
+
+```bash
+evolve entities consolidate my-ns --cluster-key guideline_text --threshold 0.85 \
+    --max-cluster-size 20 --max-rounds 3            # dry run: lists round-1 clusters
+evolve entities consolidate my-ns --cluster-key guideline_text --threshold 0.85 \
+    --max-cluster-size 20 --max-rounds 3 --no-dry-run
+```
 
 ### Milvus Backend Settings
 

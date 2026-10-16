@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from altk_evolve.frontend.client.evolve_client import EvolveClient
+from altk_evolve.llm.guidelines.clustering import CLUSTERING_KEYS
 from altk_evolve.schema.exceptions import NamespaceNotFoundException
 
 from experiments.guideline_pipeline.adapters import get_adapter
@@ -31,6 +32,13 @@ def _support_threshold(value: str) -> int:
     number = int(value)
     if number < 1:
         raise argparse.ArgumentTypeError("must be >= 1")
+    return number
+
+
+def _cluster_size(value: str) -> int:
+    number = int(value)
+    if number < 2:
+        raise argparse.ArgumentTypeError("must be >= 2")
     return number
 
 
@@ -91,7 +99,15 @@ def _guarded(run: Callable[[argparse.Namespace, EvolveClient], str], make_client
 
 
 def _run_consolidate(args: argparse.Namespace, client: EvolveClient) -> str:
-    return consolidate(client, args.namespace, threshold=args.threshold, mode=args.mode).summary()
+    return consolidate(
+        client,
+        args.namespace,
+        threshold=args.threshold,
+        mode=args.mode,
+        key=args.cluster_key,
+        max_cluster_size=args.max_cluster_size,
+        max_rounds=args.max_rounds,
+    ).summary()
 
 
 def _run_playbook(args: argparse.Namespace, client: EvolveClient) -> str:
@@ -150,6 +166,19 @@ def add_output_stages(stages: Any, *, make_client: ClientFactory) -> None:
     parser.add_argument("--threshold", type=float, help="clustering cosine threshold (default: EVOLVE_CLUSTERING_THRESHOLD)")
     parser.add_argument(
         "--mode", choices=("none", "lossless", "lossy"), help="consolidation mode (default: EVOLVE_CONSOLIDATION_MODE, lossless)"
+    )
+    parser.add_argument(
+        "--cluster-key",
+        choices=CLUSTERING_KEYS,
+        help="cluster on each guideline's task or its own text (default: EVOLVE_CLUSTERING_KEY, task_description)",
+    )
+    parser.add_argument(
+        "--max-cluster-size",
+        type=_cluster_size,
+        help="split larger clusters into chunks of at most N (default: EVOLVE_CONSOLIDATION_MAX_CLUSTER_SIZE, unbounded)",
+    )
+    parser.add_argument(
+        "--max-rounds", type=_support_threshold, help="re-cluster and merge up to N times (default: EVOLVE_CONSOLIDATION_MAX_ROUNDS, 1)"
     )
     parser.set_defaults(run=_guarded(_run_consolidate, make_client))
 

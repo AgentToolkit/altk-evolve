@@ -492,7 +492,7 @@ def test_pii_keeps_source_identities_on_consolidated_guidelines(tmp_path):
     body = {"guidelines": [{"content": "merged", "rationale": "", "category": "strategy", "trigger": "", "source_indices": [0, 1]}]}
     reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(body)))])
     with (
-        patch("altk_evolve.llm.guidelines.clustering.cluster_entities", side_effect=lambda entities, threshold: [entities]),
+        patch("altk_evolve.llm.guidelines.clustering.cluster_entities", side_effect=lambda entities, threshold, **_: [entities]),
         patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[]),
         patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False),
         patch("altk_evolve.llm.guidelines.clustering.completion", return_value=reply),

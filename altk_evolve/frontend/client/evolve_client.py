@@ -12,12 +12,13 @@ from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.schema.conflict_resolution import EntityUpdate
 from altk_evolve.schema.core import Entity, Namespace, RecordedEntity
 from altk_evolve.schema.exceptions import NamespaceAlreadyExistsException, NamespaceNotFoundException
-from altk_evolve.schema.guidelines import ConsolidationResult
+from altk_evolve.schema.guidelines import ConsolidationResult, Guideline
 
 if TYPE_CHECKING:
     from altk_evolve.config.llm import LLMSettings
     from altk_evolve.processing import ProcessingPlan, ProcessingResult, ProcessingManager, ProfileReference, Trajectory
     from altk_evolve.retention.service import RetentionService
+    from altk_evolve.llm.guidelines.clustering import ClusteringKey
     from altk_evolve.llm.guidelines.retrieval import GuidelineSelection, SimilarityKey
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,11 @@ def _filter_by_evidence(entities: list[RecordedEntity], evidence_filter: str) ->
     else:  # "all"
         return entities
     return [e for e in entities if (e.metadata or {}).get("evidence") in allowed]
+
+
+def _first_task_description(members: list[RecordedEntity]) -> str:
+    """The first task description among a merged guideline's own source members."""
+    return next((td for m in members if (td := (m.metadata or {}).get("task_description"))), "")
 
 
 class EvolveClient:
@@ -299,13 +305,24 @@ class EvolveClient:
             all_results.extend(self.search_entities(ns.id, query=query, filters=filters, limit=remaining))
         return all_results
 
-    def cluster_guidelines(self, namespace_id: str, threshold: float | None = None, limit: int = 10000) -> list[list[RecordedEntity]]:
-        """Cluster guideline entities by task description similarity.
+    def cluster_guidelines(
+        self,
+        namespace_id: str,
+        threshold: float | None = None,
+        limit: int = 10000,
+        *,
+        key: ClusteringKey | None = None,
+        max_cluster_size: int | None = None,
+    ) -> list[list[RecordedEntity]]:
+        """Cluster guideline entities by task description or guideline text similarity.
 
         Args:
             namespace_id: Namespace to fetch entities from.
             threshold: Cosine similarity threshold (0-1). Defaults to config value.
             limit: Maximum number of guideline entities to fetch for clustering.
+            key: ``"task_description"`` or ``"guideline_text"``. Defaults to ``config.clustering_key``.
+            max_cluster_size: Split larger clusters into chunks of at most this size.
+                Defaults to ``config.consolidation_max_cluster_size`` (unbounded when unset).
 
         Returns:
             List of clusters, each containing related RecordedEntity objects.
@@ -317,10 +334,16 @@ class EvolveClient:
                 len(entities),
                 limit,
             )
-        return self._cluster_guideline_entities(entities, threshold=threshold)
+        return self._cluster_guideline_entities(entities, threshold=threshold, key=key, max_cluster_size=max_cluster_size)
 
-    def _cluster_guideline_entities(self, entities: list[RecordedEntity], threshold: float | None = None) -> list[list[RecordedEntity]]:
-        """Cluster a pre-fetched list of guideline entities by task similarity.
+    def _cluster_guideline_entities(
+        self,
+        entities: list[RecordedEntity],
+        threshold: float | None = None,
+        key: ClusteringKey | None = None,
+        max_cluster_size: int | None = None,
+    ) -> list[list[RecordedEntity]]:
+        """Cluster a pre-fetched list of guideline entities by task or guideline text similarity.
 
         Clustering runs separately inside each memory scope (user, owner, agent,
         visibility), the same exact-identity rule reconciliation uses, so a cluster
@@ -332,147 +355,223 @@ class EvolveClient:
 
         if threshold is None:
             threshold = self.config.clustering_threshold
+        key = key or self._clustering_key()
+        if max_cluster_size is None:
+            max_cluster_size = getattr(self.config, "consolidation_max_cluster_size", None)
         by_scope: dict[tuple, list[RecordedEntity]] = {}
         for entity in entities:
-            key = scope_key(entity)
-            if key is None:
+            scope = scope_key(entity)
+            if scope is None:
                 logger.warning("Guideline %s has a non-scalar scope value; leaving it out of clustering.", entity.id)
                 continue
-            by_scope.setdefault(key, []).append(entity)
-        return [cluster for scoped in by_scope.values() for cluster in cluster_entities(scoped, threshold=threshold)]
+            by_scope.setdefault(scope, []).append(entity)
+        return [
+            cluster
+            for scoped in by_scope.values()
+            for cluster in cluster_entities(scoped, threshold=threshold, key=key, max_cluster_size=max_cluster_size)
+        ]
 
-    def consolidate_guidelines(self, namespace_id: str, threshold: float | None = None, mode: str | None = None) -> ConsolidationResult:
+    def _clustering_key(self) -> ClusteringKey:
+        return getattr(self.config, "clustering_key", "task_description")
+
+    def consolidate_guidelines(
+        self,
+        namespace_id: str,
+        threshold: float | None = None,
+        mode: str | None = None,
+        *,
+        key: ClusteringKey | None = None,
+        max_cluster_size: int | None = None,
+        max_rounds: int | None = None,
+    ) -> ConsolidationResult:
         """Cluster similar guidelines and combine each cluster into consolidated guidelines.
 
         Consolidation is support-conserving: each consolidated guideline records how many
         source guidelines it merges (``support``) and their merged ``evidence`` polarity,
         and the total support is preserved (no advice is dropped).
 
+        With ``max_rounds`` above 1, consolidation re-clusters the namespace after each
+        round, so guidelines that were split across chunks by ``max_cluster_size``, or that
+        only became similar once merged, can merge further. It stops early after a round
+        that leaves the guideline count unchanged.
+
         Args:
             namespace_id: Namespace to consolidate entities in.
             threshold: Cosine similarity threshold (0-1). Defaults to config value.
             mode: Consolidation mode — ``"none"`` (skip), ``"lossless"`` (default) or
                 ``"lossy"`` (merge more aggressively). Defaults to ``config.consolidation_mode``.
+            key: What to cluster on — ``"task_description"`` or ``"guideline_text"``.
+                Defaults to ``config.clustering_key``.
+            max_cluster_size: Split larger clusters into chunks of at most this size.
+                Defaults to ``config.consolidation_max_cluster_size`` (unbounded when unset).
+            max_rounds: Maximum number of cluster-and-merge rounds. Defaults to
+                ``config.consolidation_max_rounds``.
 
         Returns:
-            ConsolidationResult with cluster/guideline counts and total support before/after.
+            ConsolidationResult with cluster/guideline counts and total support before/after,
+            summed over all rounds. ``guidelines_before`` counts only stored guidelines that
+            existed before the run, not the outputs of an earlier round merged again.
         """
-        from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members
-        from altk_evolve.schema.provenance import attach_sources, scope_key, with_association_times
-
         if mode is None:
             mode = getattr(self.config, "consolidation_mode", "lossless")
         if mode == "none":
             logger.info("consolidation_mode='none'; skipping consolidation for namespace %s.", namespace_id)
-            return ConsolidationResult(clusters_found=0, guidelines_before=0, guidelines_after=0)
+            return ConsolidationResult(clusters_found=0, guidelines_before=0, guidelines_after=0, rounds=0)
+        if max_rounds is None:
+            max_rounds = getattr(self.config, "consolidation_max_rounds", 1)
+        if max_rounds < 1:
+            raise ValueError(f"max_rounds must be at least 1, not {max_rounds}")
 
         combine_mode = "lossy" if mode == "lossy" else "lossless"
+        key = key or self._clustering_key()
 
-        # Read guidelines through the INTERNAL seam (_search_entities_impl), NOT
-        # the public search_entities. Consolidation writes the fetched content
-        # back and deletes the originals, so a redacting memory_post_read plugin
-        # on the public read would make consolidation PERMANENTLY persist the
-        # redacted view (the original stored content is lost when the originals
-        # are deleted). The internal read round-trips the original stored
-        # content. LLM egress during combine_cluster stays covered by
-        # llm_pre_call; the write-back still fires memory_pre_write and the
-        # deletes still fire memory_pre_delete.
-        limit = 10000
-        entities = self.backend.scan_entities(namespace_id, filters={"type": "guideline"}, limit=limit)
-        if len(entities) >= limit:
-            logger.warning(
-                "Fetched %d entities (hit limit=%d); consolidation may be incomplete. Consider increasing the limit.",
-                len(entities),
-                limit,
-            )
-        clusters = self._cluster_guideline_entities(entities, threshold=threshold)
         clusters_found = 0
         guidelines_before = 0
-        guidelines_after = 0
         support_before = 0
-        support_after = 0
+        # Net reduction summed over rounds; the "after" totals are derived from it so a
+        # guideline merged in several rounds is not counted more than once.
+        guidelines_removed = 0
+        support_removed = 0
+        # ID of each guideline written by an earlier round -> the merge that wrote it.
+        produced_by: dict[str, int] = {}
+        merges = 0
+        rounds = 0
 
-        for cluster in clusters:
-            # Never merge (or show the merge model) memories from different scopes.
-            # Clustering already partitions by scope; this guards the write boundary.
-            scopes = {scope_key(entity) for entity in cluster}
-            shared = scopes.pop() if len(scopes) == 1 else None
-            if shared is None:
-                logger.warning("Cluster mixes memory scopes or has a non-scalar scope (IDs: %s); skipping.", [e.id for e in cluster])
-                continue
-            scope = {key: value for key, value in zip(("user_id", "owner_id", "agent_id", "visibility"), shared) if value is not None}
-
-            # Phase 1: combine + insert (skip cluster on failure)
-            try:
-                attributed = combine_cluster_with_members(cluster, mode=combine_mode)
-                consolidated_guidelines = [guideline for guideline, _ in attributed]
-
-                task_description = (cluster[0].metadata or {}).get("task_description", "")
-                # Each member is attributed to exactly one output, so each output carries
-                # the union of its own members' source associations (original times kept)
-                # and the scope every member shares.
-                new_entities = [
-                    Entity(
-                        content=guideline.content,
-                        type="guideline",
-                        metadata=attach_sources(
-                            {
-                                **scope,
-                                "task_description": task_description,
-                                "rationale": guideline.rationale,
-                                "category": guideline.category,
-                                "trigger": guideline.trigger,
-                                "implementation_steps": guideline.implementation_steps,
-                                "support": guideline.support,
-                                "evidence": guideline.evidence,
-                            },
-                            None,
-                            with_association_times(members),
-                            carry_association_times=True,
-                        ),
-                    )
-                    for guideline, members in attributed
-                ]
-                if not new_entities:
-                    logger.warning(
-                        "LLM returned no consolidated guidelines for cluster (IDs: %s); skipping deletion.",
-                        [e.id for e in cluster],
-                    )
-                    continue
-                self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False, carry_association_times=True)
-            except Exception:
+        for rounds in range(1, max_rounds + 1):
+            # Read guidelines through the INTERNAL seam (_search_entities_impl), NOT
+            # the public search_entities. Consolidation writes the fetched content
+            # back and deletes the originals, so a redacting memory_post_read plugin
+            # on the public read would make consolidation PERMANENTLY persist the
+            # redacted view (the original stored content is lost when the originals
+            # are deleted). The internal read round-trips the original stored
+            # content. LLM egress during combine_cluster stays covered by
+            # llm_pre_call; the write-back still fires memory_pre_write and the
+            # deletes still fire memory_pre_delete.
+            limit = 10000
+            entities = self.backend.scan_entities(namespace_id, filters={"type": "guideline"}, limit=limit)
+            if len(entities) >= limit:
                 logger.warning(
-                    "Failed to consolidate cluster of %d entities (IDs: %s); skipping.",
-                    len(cluster),
-                    [e.id for e in cluster],
-                    exc_info=True,
+                    "Fetched %d entities (hit limit=%d); consolidation may be incomplete. Consider increasing the limit.",
+                    len(entities),
+                    limit,
                 )
-                continue
+            clusters = self._cluster_guideline_entities(entities, threshold=threshold, key=key, max_cluster_size=max_cluster_size)
+            round_removed = 0
+            round_produced: dict[str, int] = {}
 
-            clusters_found += 1
-            guidelines_before += len(cluster)
-            guidelines_after += len(consolidated_guidelines)
-            support_before += sum(int((e.metadata or {}).get("support", 1) or 1) for e in cluster)
-            support_after += sum(g.support for g in consolidated_guidelines)
+            for cluster in clusters:
+                # The outputs of one earlier merge, clustered together again: the model has
+                # already decided how to merge these, so asking again only costs a call.
+                origins = {produced_by.get(str(entity.id)) for entity in cluster}
+                if len(origins) == 1 and None not in origins:
+                    continue
+                merged = self._merge_guideline_cluster(namespace_id, cluster, combine_mode, key)
+                if merged is None:
+                    continue
+                consolidated_guidelines, written_ids = merged
+                merges += 1
+                round_produced.update(dict.fromkeys(written_ids, merges))
 
-            # Phase 2: delete originals (log errors but don't roll back insert)
-            for entity in cluster:
-                try:
-                    self.delete_entity_by_id(namespace_id, entity.id)
-                except Exception:
-                    logger.warning(
-                        "Failed to delete original entity %s after successful insert; skipping.",
-                        entity.id,
-                        exc_info=True,
-                    )
+                clusters_found += 1
+                cluster_support = sum(int((e.metadata or {}).get("support", 1) or 1) for e in cluster)
+                fresh = [e for e in cluster if str(e.id) not in produced_by]
+                guidelines_before += len(fresh)
+                support_before += sum(int((e.metadata or {}).get("support", 1) or 1) for e in fresh)
+                round_removed += len(cluster) - len(consolidated_guidelines)
+                support_removed += cluster_support - sum(g.support for g in consolidated_guidelines)
+
+            guidelines_removed += round_removed
+            produced_by.update(round_produced)
+            if round_removed == 0:
+                break
 
         return ConsolidationResult(
             clusters_found=clusters_found,
             guidelines_before=guidelines_before,
-            guidelines_after=guidelines_after,
+            guidelines_after=guidelines_before - guidelines_removed,
             support_before=support_before,
-            support_after=support_after,
+            support_after=support_before - support_removed,
+            rounds=rounds,
         )
+
+    def _merge_guideline_cluster(
+        self, namespace_id: str, cluster: list[RecordedEntity], combine_mode: str, key: ClusteringKey
+    ) -> tuple[list[Guideline], list[str]] | None:
+        """Combine one cluster, write the result, and delete the originals.
+
+        Returns the consolidated guidelines and the IDs they were written under, or
+        ``None`` if the cluster was skipped and nothing was written.
+        """
+        from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members
+        from altk_evolve.schema.provenance import attach_sources, scope_key, with_association_times
+
+        # Never merge (or show the merge model) memories from different scopes.
+        # Clustering already partitions by scope; this guards the write boundary.
+        scopes = {scope_key(entity) for entity in cluster}
+        shared = scopes.pop() if len(scopes) == 1 else None
+        if shared is None:
+            logger.warning("Cluster mixes memory scopes or has a non-scalar scope (IDs: %s); skipping.", [e.id for e in cluster])
+            return None
+        scope = {field: value for field, value in zip(("user_id", "owner_id", "agent_id", "visibility"), shared) if value is not None}
+
+        # Phase 1: combine + insert (skip cluster on failure)
+        try:
+            attributed = combine_cluster_with_members(cluster, mode=combine_mode, clustering_key=key)
+            consolidated_guidelines = [guideline for guideline, _ in attributed]
+
+            # Each member is attributed to exactly one output, so each output carries
+            # the union of its own members' source associations (original times kept),
+            # the first task description among its own members, and the scope every
+            # member shares.
+            new_entities = [
+                Entity(
+                    content=guideline.content,
+                    type="guideline",
+                    metadata=attach_sources(
+                        {
+                            **scope,
+                            "task_description": _first_task_description(members),
+                            "rationale": guideline.rationale,
+                            "category": guideline.category,
+                            "trigger": guideline.trigger,
+                            "implementation_steps": guideline.implementation_steps,
+                            "support": guideline.support,
+                            "evidence": guideline.evidence,
+                        },
+                        None,
+                        with_association_times(members),
+                        carry_association_times=True,
+                    ),
+                )
+                for guideline, members in attributed
+            ]
+            if not new_entities:
+                logger.warning(
+                    "LLM returned no consolidated guidelines for cluster (IDs: %s); skipping deletion.",
+                    [e.id for e in cluster],
+                )
+                return None
+            written = self.update_entities(namespace_id, new_entities, enable_conflict_resolution=False, carry_association_times=True)
+        except Exception:
+            logger.warning(
+                "Failed to consolidate cluster of %d entities (IDs: %s); skipping.",
+                len(cluster),
+                [e.id for e in cluster],
+                exc_info=True,
+            )
+            return None
+
+        # Phase 2: delete originals (log errors but don't roll back insert)
+        for entity in cluster:
+            try:
+                self.delete_entity_by_id(namespace_id, entity.id)
+            except Exception:
+                logger.warning(
+                    "Failed to delete original entity %s after successful insert; skipping.",
+                    entity.id,
+                    exc_info=True,
+                )
+        return consolidated_guidelines, [str(update.id) for update in written or []]
 
     @traced("evolve.guidelines.select")
     def select_guidelines(
