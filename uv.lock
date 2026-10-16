@@ -432,7 +432,7 @@ requires-dist = [
     { name = "arize-phoenix-otel", marker = "extra == 'tracing'", specifier = ">=0.15,<1" },
     { name = "cpex", marker = "extra == 'hooks'", specifier = ">=0.1.0,<0.2" },
     { name = "cpex-pii-filter", marker = "extra == 'pii-regex'", specifier = ">=0.3,<0.4" },
-    { name = "cpex-secrets-detection", marker = "extra == 'secrets'", specifier = ">=0.3.11,<0.4" },
+    { name = "cpex-secrets-detection", marker = "extra == 'secrets'", specifier = ">=0.3.11,<0.3.12" },
     { name = "croniter", specifier = ">=6.2.4,<7" },
     { name = "curated-tokenizers", marker = "extra == 'pii-semantic'", specifier = ">=0.0.10" },
     { name = "datasets", marker = "extra == 'bench'", specifier = ">=2.14" },
