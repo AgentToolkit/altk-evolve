@@ -565,6 +565,27 @@ class TestPublishAnyEntityType:
         assert theirs.exists()
         assert not _typed_dest(typed_project, "feedback", "note.md").exists()
 
+    def test_symlink_with_differently_cased_target_cannot_reach_into_subscribed(self, typed_project):
+        """On a case-insensitive filesystem `SUBSCRIBED/read/feedback` is the subscribed clone, but
+        `resolve()` keeps the spelling, so a string-prefix check would miss it. Identity must catch it."""
+        probe = typed_project / ".case-probe"
+        probe.write_text("")
+        if not (typed_project / ".CASE-PROBE").exists():
+            pytest.skip("filesystem is case-sensitive")
+        read_clone = typed_project / ".evolve" / "entities" / "subscribed" / "read" / "feedback"
+        read_clone.mkdir(parents=True)
+        theirs = read_clone / "note.md"
+        theirs.write_text("---\ntype: feedback\n---\n\nSomeone else's.\n")
+        (typed_project / ".evolve" / "entities" / "feedback").symlink_to(Path("SUBSCRIBED") / "read" / "feedback", target_is_directory=True)
+
+        for run in (run_publish, run_publish_default_env):
+            for args in (["--entity", "note.md"], ["--entity", "note.md", "--type", "feedback"]):
+                result = run(typed_project, args, expect_success=False)
+                assert result.returncode != 0
+                assert "not found" in result.stderr
+        assert theirs.exists()
+        assert not _typed_dest(typed_project, "feedback", "note.md").exists()
+
     def test_type_flag_selects_a_dir_whose_name_is_not_sanitized(self, typed_project):
         """`--type` matches existing dirs by their sanitized name, so hand-made dirs stay selectable."""
         mine = _write_private(typed_project, "my_notes", "dup.md", body="my notes")
