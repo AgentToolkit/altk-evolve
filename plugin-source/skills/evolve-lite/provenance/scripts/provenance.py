@@ -10,8 +10,8 @@ made deterministic and tested end to end:
   * assemble candidate dicts the agent can judge.
 
 The *semantic* half — deciding whether a recalled guideline was ``followed``,
-``contradicted`` or ``not_applicable`` — is an LLM judgment and is NOT done
-here. There is deliberately no heuristic verdict: this module never invents a
+``contradicted`` or ``not_applicable``, or that the trajectory is
+``insufficient_evidence`` to tell — is an LLM judgment and is NOT done here. There is deliberately no heuristic verdict: this module never invents a
 verdict. The agent reads each candidate, judges it, and pipes the verdict back
 through ``record`` (which delegates to ``log_influence.py``'s writer so the
 audit-log format is identical).
@@ -367,7 +367,7 @@ def record_verdict(payload, evolve_dir=None):
     """Append a single ``influence`` row from an agent verdict.
 
     ``payload`` is ``{session_id, entity, verdict, evidence}``. The verdict must
-    be one of ``followed|contradicted|not_applicable`` (the *semantic* judgment
+    be one of ``log_influence._ALLOWED_VERDICTS`` (the *semantic* judgment
     stays agent-driven — this only persists what the agent decided). Writing is
     delegated to ``log_influence.py`` so the audit-log row format and the
     duplicate-suppression rule are not duplicated here.
@@ -387,7 +387,7 @@ def record_verdict(payload, evolve_dir=None):
         raise ValueError("verdict payload must include a non-empty string session_id")
     if not isinstance(entity, str) or not entity:
         raise ValueError("verdict payload must include a non-empty string entity")
-    if verdict not in _ALLOWED_VERDICTS:
+    if not isinstance(verdict, str) or verdict not in _ALLOWED_VERDICTS:
         raise ValueError(f"verdict must be one of {sorted(_ALLOWED_VERDICTS)}, got {verdict!r}")
 
     if evolve_dir is None:
