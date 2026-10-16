@@ -265,10 +265,12 @@ Options (`--adapter-option KEY=VALUE`):
 | `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
 | `appworld_root=<dir>` | An AppWorld root whose `data/tasks/<task_id>/specs.json` is the last instruction source. The run tree does not contain it. It must be an existing directory; an empty value is an error. Pass it to `export retrieval-index` and `lineage` as well, or tasks whose instruction came from it are not found in `--input`. |
 
-Without `splits=`, every task under `tasks/` is mined whatever its split, and any
-run whose selected tasks include a `test*` split gets a `read test-split tasks ...`
-warning: guidelines mined from a test split leak into any later evaluation on it.
-Pass `splits=` to mine only the splits you mean to.
+Without `splits=`, every task under `tasks/` is mined except those evaluated in a
+`test*` split, because guidelines mined from a test split leak into any later
+evaluation on it. A run with skipped test-split tasks gets a `skipped test-split
+tasks ...` warning, and a `task_ids=` entry that is a test-split task is an error.
+To mine a test split anyway, name it: `splits=test_normal`. A task with no
+evaluation has no known split, so it is still read.
 
 [profiles/appworld.json](profiles/appworld.json) is the same sample profile as
 CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, model and

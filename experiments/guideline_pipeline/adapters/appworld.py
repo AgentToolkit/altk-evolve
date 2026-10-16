@@ -49,7 +49,8 @@ class AppWorldAdapter:
 
     Options: task_ids (comma-separated), task_manifest (a JSON file with
     ``task_ids`` or ``tasks[].task_id``, or one ID per line), splits
-    (comma-separated; only tasks evaluated in a listed ``evaluations/<split>.json``),
+    (comma-separated; only tasks evaluated in a listed ``evaluations/<split>.json``;
+    without it, every task but those in a ``test*`` split),
     model (the agent's model, recorded on the trajectory) and appworld_root (an
     AppWorld checkout or data root whose ``data/tasks/<task_id>/specs.json`` is the
     last instruction source).
@@ -91,26 +92,25 @@ class AppWorldAdapter:
             found_splits = {split for _, evaluations in runs for split, _ in evaluations.values()}
             if missing := sorted(self.splits - found_splits):
                 raise ValueError(f"Splits not found beneath {path}: {missing} (found {sorted(found_splits)})")
-        # A task with no evaluation has no known split, so a split filter leaves it out.
         tasks = [
-            (run_dir.name, task_dir, evaluations.get(task_dir.name))
-            for run_dir, evaluations in runs
-            for task_dir in _task_dirs(run_dir)
-            if not self.splits or (task_dir.name in evaluations and evaluations[task_dir.name][0] in self.splits)
+            (run_dir.name, task_dir, evaluations.get(task_dir.name)) for run_dir, evaluations in runs for task_dir in _task_dirs(run_dir)
         ]
-        if self.task_ids:
-            if missing := sorted(self.task_ids - {task_dir.name for _, task_dir, _ in tasks}):
-                in_splits = f" in splits {sorted(self.splits)}" if self.splits else ""
-                raise ValueError(f"Task IDs not found beneath {path}{in_splits}: {missing}")
-            tasks = [task for task in tasks if task[1].name in self.task_ids]
         if not self.splits:
-            # Guidelines mined from a test split are leaked into any later evaluation on it.
+            # Guidelines mined from a test split leak into any later evaluation on it, so a
+            # test split is mined only when splits= names it.
             test_splits: dict[str, set[str]] = {}
-            for run, _, evaluation in tasks:
-                if evaluation is not None and evaluation[0].startswith("test"):
+            for run, task_dir, evaluation in tasks:
+                if evaluation is not None and evaluation[0].startswith("test") and (not self.task_ids or task_dir.name in self.task_ids):
                     test_splits.setdefault(run, set()).add(evaluation[0])
             for run, splits in test_splits.items():
-                logger.warning("read test-split tasks from %s (%s); pass splits= to choose splits", run, ", ".join(sorted(splits)))
+                logger.warning("skipped test-split tasks in %s (%s); name the split in splits= to mine it", run, ", ".join(sorted(splits)))
+        # A task with no evaluation has no known split, so a split filter leaves it out.
+        tasks = [task for task in tasks if self._in_splits(task[2])]
+        if self.task_ids:
+            if missing := sorted(self.task_ids - {task_dir.name for _, task_dir, _ in tasks}):
+                in_splits = f" in splits {sorted(self.splits)}" if self.splits else " outside test splits"
+                raise ValueError(f"Task IDs not found beneath {path}{in_splits}: {missing}")
+            tasks = [task for task in tasks if task[1].name in self.task_ids]
         read = 0
         for run, task_dir, evaluation in tasks:
             if (record := self.task_record(run, task_dir, evaluation)) is not None:
@@ -118,6 +118,12 @@ class AppWorldAdapter:
                 yield record
         if not read:
             logger.warning("read no AppWorld task beneath %s", path)
+
+    def _in_splits(self, evaluation: tuple[str, dict] | None) -> bool:
+        """Whether a task with this (split, entry) is selected: in a listed split, else in any but a test split."""
+        if self.splits:
+            return evaluation is not None and evaluation[0] in self.splits
+        return evaluation is None or not evaluation[0].startswith("test")
 
     def task_record(self, run: str, task_dir: Path, evaluation: tuple[str, dict] | None) -> AdapterRecord | None:
         """Read one task directory; None (with a warning) for a task that cannot be mined."""
@@ -243,7 +249,12 @@ def _first_prompt_task(path: Path) -> str | None:
     call = json.loads(line)
     request = call.get("input") if isinstance(call, dict) else None
     messages = request.get("messages") if isinstance(request, dict) else None
-    users = [message for message in messages or [] if isinstance(message, dict) and message.get("role") == "user"]
+    # Anything but a list has no user message, so the next instruction source is tried.
+    users = [
+        message
+        for message in (messages if isinstance(messages, list) else [])
+        if isinstance(message, dict) and message.get("role") == "user"
+    ]
     return task_from_prompt(_message_text(users[-1].get("content"))) if users else None
 
 
