@@ -20,11 +20,11 @@ Design of the CPEX integration (mirrors Mellea's plugin wrapper layer):
 - CPEX's ``invoke_hook`` is async-only; our call sites are sync. The bridge
   uses ``asyncio.run`` when no loop is running and a dedicated thread when one
   is (the Mellea pattern).
-- A native plugin's sync method runs off the event loop on that plugin's own
-  daemon worker thread (:class:`_SyncHookWorker`), so cpex's ``plugin_timeout``
-  can fire. A timed-out call's late result is discarded and its backend
-  capability revoked; threads cannot be killed, so the call keeps running
-  until it returns, and new calls to that plugin fail fast meanwhile.
+- A native plugin's sync method runs off the event loop on a short-lived
+  daemon thread (:class:`_SyncHookRunner`), so cpex's ``plugin_timeout`` can
+  fire. A timed-out call's late result is discarded and its backend capability
+  revoked; threads cannot be killed, so the call keeps running until it
+  returns, and new calls to that plugin fail fast meanwhile.
 - Fire-and-forget plugin tasks are awaited before the bridge returns:
   at a sync seam the event loop closes immediately after ``invoke_hook``, so
   detached tasks would be cancelled and their side effects silently lost.
@@ -61,7 +61,6 @@ import importlib
 import logging
 import threading
 import uuid
-from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from altk_evolve.config.hooks import discover_hooks_config_path
@@ -100,11 +99,6 @@ _in_post_read: contextvars.ContextVar[bool] = contextvars.ContextVar("altk_evolv
 # must not re-dispatch a write hook and recurse infinitely. Propagated into the
 # sync-bridge worker thread via the copy_context() path in _run_sync.
 _in_write: contextvars.ContextVar[bool] = contextvars.ContextVar("altk_evolve_in_write", default=False)
-
-# Set inside a native plugin's sync worker: a hook dispatched from there (e.g. a
-# metadata patch made through ``context.backend``) runs its native plugins inline
-# on that thread, as before, instead of queueing behind the caller's own worker.
-_in_sync_hook_worker: contextvars.ContextVar[bool] = contextvars.ContextVar("altk_evolve_in_sync_hook_worker", default=False)
 
 _CPEX_INSTALL_HINT = "Hooks require the CPEX plugin framework. Install it with: pip install 'altk-evolve[hooks]'"
 
@@ -436,7 +430,7 @@ def _native_adapter_cls() -> Any:
         def __init__(self, native: Any, cpex_config: Any) -> None:
             super().__init__(cpex_config)
             self._native = native
-            self._worker = _SyncHookWorker(cpex_config.name)
+            self._runner = _SyncHookRunner(cpex_config.name)
 
         def startup_validate(self) -> None:
             # Forwarded so _validate_plugin_dependencies trips a native plugin's
@@ -471,10 +465,7 @@ def _native_adapter_cls() -> Any:
                 request_id=getattr(gc, "request_id", "") if gc else "",
             )
             try:
-                if _in_sync_hook_worker.get():
-                    out = method(plain, hook_ctx)
-                else:
-                    out = await self._worker.run(method, plain, hook_ctx)
+                out = await self._runner.run(method, plain, hook_ctx)
             except HookPolicyViolation as violation:
                 return PluginResult(
                     continue_processing=False,
@@ -536,99 +527,83 @@ def _to_plain(value: Any) -> Any:
     return value
 
 
-# ── native sync worker ───────────────────────────────────────────────
+# ── native sync runner ───────────────────────────────────────────────
 
 
-class _SyncHookWorker:
-    """Runs one native plugin's sync methods off the event loop, one at a time.
+class _SyncHookRunner:
+    """Runs one native plugin's sync methods off the event loop.
 
     Native methods are sync and often CPU-bound (regex, spaCy, secrets scans).
     Called inline they block the loop, so cpex's ``asyncio.wait_for`` timeout
-    cannot fire until they return. Here each call is queued to this plugin's
-    worker and awaited, so the timeout cancels the await on time.
+    cannot fire until they return. Here each call runs on its own daemon thread
+    and is awaited, so the timeout cancels the await on time.
 
     - **Not owned by any event loop.** The sync bridge closes its loop after
       every dispatch; ``asyncio.to_thread`` would join the loop's default
-      executor at that point and wait for a timed-out call. The worker is a
-      daemon thread, so neither loop close nor interpreter exit waits for it.
-      It exits after ``_IDLE_SECONDS`` without work and restarts on demand.
-    - **One call at a time per plugin.** Detectors may share model objects
-      that are not thread-safe, so calls to the same plugin never overlap,
-      even with a timed-out call still running. Different plugins run on
-      different workers.
+      executor at that point and wait for a timed-out call. A daemon thread
+      holds up neither loop close nor interpreter exit, and it exits (dropping
+      the plugin, payload and context) as soon as its call returns.
+    - **Concurrency is unchanged.** Calls from different caller threads run
+      concurrently, as they did inline, so a native plugin must be thread-safe
+      (or lock internally, as READI does). There is no queue: a call never
+      waits behind another, so queue time never counts against the timeout.
     - **Late results are discarded.** A call whose caller timed out is
-      cancelled if it has not started; if it is running, its result is
-      dropped when it returns.
-    - **Bounded.** While a timed-out call is still running, a new call to the
-      plugin raises at once (fail-closed under ``on_error="fail"``) instead of
-      queueing behind it, so at most one abandoned call per plugin holds a
-      thread.
+      skipped if it has not started; if it is running, its result is dropped
+      when it returns.
+    - **Bounded.** Threads cannot be stopped, so a timed-out call keeps its
+      thread until it returns. While ``_MAX_ABANDONED`` such calls are still
+      running, a new call to the plugin raises at once (fail-closed under
+      ``on_error="fail"``) instead of starting another thread.
     - **contextvars** (tracing, re-entrancy guards) are copied into each call.
     """
 
-    _IDLE_SECONDS = 30.0
+    _MAX_ABANDONED = 1
 
     def __init__(self, name: str) -> None:
         self._name = name
-        self._cond = threading.Condition()
-        self._jobs: deque[tuple[concurrent.futures.Future, contextvars.Context, Any, tuple[Any, ...]]] = deque()
-        self._thread: threading.Thread | None = None
-        self._abandoned: concurrent.futures.Future | None = None
+        self._lock = threading.Lock()
+        self._abandoned: set[concurrent.futures.Future] = set()
 
     async def run(self, fn: Any, *args: Any) -> Any:
-        future = self._submit(fn, args)
+        with self._lock:
+            if len(self._abandoned) >= self._MAX_ABANDONED:
+                raise RuntimeError(f"Plugin {self._name} is still running a call that timed out; refusing new calls until it returns")
+        future: concurrent.futures.Future = concurrent.futures.Future()
+        thread = threading.Thread(
+            target=_run_call,
+            args=(future, contextvars.copy_context(), fn, args),
+            name=f"evolve-hook-{self._name}",
+            daemon=True,
+        )
+        thread.start()
         try:
             return await asyncio.wrap_future(future)
         except asyncio.CancelledError:
             self._abandon(future)
             raise
 
-    def _submit(self, fn: Any, args: tuple[Any, ...]) -> concurrent.futures.Future:
-        future: concurrent.futures.Future = concurrent.futures.Future()
-        with self._cond:
-            if self._abandoned is not None:
-                raise RuntimeError(f"Plugin {self._name} is still running a call that timed out; refusing new calls until it returns")
-            self._jobs.append((future, contextvars.copy_context(), fn, args))
-            if self._thread is None:
-                self._thread = threading.Thread(target=self._work, name=f"evolve-hook-{self._name}", daemon=True)
-                self._thread.start()
-            self._cond.notify()
-        return future
-
     def _abandon(self, future: concurrent.futures.Future) -> None:
         if future.cancel():  # not started yet: it will never run
             return
-        with self._cond:
-            self._abandoned = future
+        with self._lock:
+            self._abandoned.add(future)
         future.add_done_callback(self._release)
 
     def _release(self, future: concurrent.futures.Future) -> None:
-        with self._cond:
-            if self._abandoned is future:
-                self._abandoned = None
-
-    def _work(self) -> None:
-        while True:
-            with self._cond:
-                if not self._jobs:
-                    self._cond.wait(self._IDLE_SECONDS)
-                if not self._jobs:
-                    self._thread = None
-                    return
-                future, ctx, fn, args = self._jobs.popleft()
-            if not future.set_running_or_notify_cancel():
-                continue
-            try:
-                result = ctx.run(_call_in_worker, fn, *args)
-            except BaseException as exc:  # noqa: BLE001 - handed to the awaiting caller
-                future.set_exception(exc)
-            else:
-                future.set_result(result)
+        with self._lock:
+            self._abandoned.discard(future)
 
 
-def _call_in_worker(fn: Any, *args: Any) -> Any:
-    _in_sync_hook_worker.set(True)
-    return fn(*args)
+def _run_call(future: concurrent.futures.Future, ctx: contextvars.Context, fn: Any, args: tuple[Any, ...]) -> None:
+    """Thread body: run ``fn`` in ``ctx`` unless its caller already gave up."""
+    if not future.set_running_or_notify_cancel():
+        return
+    try:
+        result = ctx.run(fn, *args)
+    except BaseException as exc:  # noqa: BLE001 - handed to the awaiting caller
+        future.set_exception(exc)
+    else:
+        future.set_result(result)
 
 
 # ── sync bridge ──────────────────────────────────────────────────────
