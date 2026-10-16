@@ -83,8 +83,9 @@ def _find_private_entity(entities_dir, filename, requested_type):
         entity_type = sanitize_type(requested_type)
         if not entity_type or entity_type in _NON_PRIVATE_DIRS:
             return None, None, f"invalid entity type: {requested_type!r}"
-        # Match on the sanitized name so a hand-made dir like `my_notes` is selectable.
-        types = [d for d in private if sanitize_type(d) == entity_type] or [entity_type]
+        # An exact dir name wins, so `my_notes` and `my-notes` can be told apart;
+        # otherwise match on the sanitized name so `--type My_Notes` still finds `my_notes`.
+        types = [d for d in private if d == requested_type] or [d for d in private if sanitize_type(d) == entity_type] or [entity_type]
     else:
         types = private
 
@@ -106,6 +107,32 @@ def _find_private_entity(entities_dir, filename, requested_type):
         return None, None, f"entity name {filename!r} is ambiguous ({found}); pass --type to pick one"
     entity_type, path = matches[0]
     return entity_type, path, None
+
+
+def _portable_trajectory(value, project_root):
+    """The `trajectory` link to publish, or None to drop it.
+
+    The manual learn flow stores save_trajectory's absolute path, which names the
+    publisher's home directory and project path. Publish it relative to the project
+    instead, the form the stop-hook flow already writes
+    (``.evolve/trajectories/<file>``); drop it if it points outside the project,
+    where no relative form is meaningful. Relative values pass through unchanged.
+    """
+    if not isinstance(value, str) or not value or not Path(value).is_absolute():
+        return value
+    try:
+        return Path(os.path.realpath(value)).relative_to(project_root).as_posix()
+    except ValueError:
+        return None
+
+
+def _published_owner(path):
+    """The `owner` frontmatter of an already-published file, or None if absent or unreadable."""
+    try:
+        owner = markdown_to_entity(path).get("owner")
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    return owner.strip() if isinstance(owner, str) and owner.strip() else None
 
 
 def _select_target_repo(cfg, requested_name):
@@ -162,6 +189,11 @@ def main():
     # Where the publisher's native memory lives on their machine; meaningless to
     # subscribers and it exposes the publisher's home directory and project path.
     entity.pop("native_path", None)
+    trajectory = _portable_trajectory(entity.get("trajectory"), project_root)
+    if trajectory is None:
+        entity.pop("trajectory", None)
+    else:
+        entity["trajectory"] = trajectory
     entity["visibility"] = "public"
     if effective_user:
         entity["owner"] = effective_user
@@ -179,15 +211,47 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+    # Publishing moves the entity: the private copy is removed once the shared one is
+    # written. Check that is possible first, so a read-only type dir fails cleanly
+    # instead of leaving two copies behind.
+    if not os.access(src_path.parent, os.W_OK | os.X_OK):
+        print(
+            f"Error: cannot publish {args.entity}: {src_path.parent} is not writable, so the private copy "
+            f"could not be removed afterwards. Fix its permissions and publish again. Nothing was published.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     dest_dir = clone_root / entity_type
+    # The clone is a shared repo: anyone with push access can commit `<type> -> elsewhere`.
+    # Following it would write outside the clone (or to a path `git add` then refuses), so
+    # the type dir must be a real directory that stays inside the clone.
+    if dest_dir.is_symlink():
+        print(f"Error: refusing to publish into {dest_dir}: it is a symlink in the target repo clone.", file=sys.stderr)
+        sys.exit(1)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_base = dest_dir.resolve()
+    if not dest_base.is_relative_to(clone_root.resolve()):
+        print(f"Error: refusing to publish into {dest_dir}: it resolves outside the target repo clone.", file=sys.stderr)
+        sys.exit(1)
     dest_path = (dest_dir / args.entity).resolve()
     if not dest_path.is_relative_to(dest_base):
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
     if dest_path.exists():
-        print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
+        existing_owner = _published_owner(dest_path)
+        if existing_owner and existing_owner != effective_user:
+            # Same name, someone else's entity (adapt-memory names entities after the
+            # native memory, so teammates' `user-role` memories collide). Theirs is not
+            # ours to unpublish or delete.
+            print(
+                f"Error: name collision: {entity_type}/{args.entity} is already published by {existing_owner!r} "
+                f"in repo {target['name']!r} ({dest_path}).\n"
+                f"Rename your memory or entity, then publish it again.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
         sys.exit(1)
 
     temp_path = None
@@ -206,11 +270,20 @@ def main():
             temp_path = Path(temp_file.name)
 
         temp_path.replace(dest_path)
-        src_path.unlink()
     finally:
         if temp_path is not None and temp_path.exists():
             temp_path.unlink()
 
+    # The shared copy is in place, so the publish has happened; a failure to remove the
+    # private copy (checked above, but permissions can still change or lie) is reported
+    # rather than raised, and the publish is still audited.
+    unlink_error = None
+    try:
+        src_path.unlink()
+    except OSError as exc:
+        unlink_error = exc
+
+    audit_fields = {"source_removed": False} if unlink_error is not None else {}
     try:
         audit_append(
             project_root=project_root,
@@ -219,11 +292,18 @@ def main():
             entity=args.entity,
             type=entity_type,
             repo=target["name"],
+            **audit_fields,
         )
     except Exception as exc:
         print(f"Warning: failed to append audit entry for publish: {exc}", file=sys.stderr)
 
     print(f"Published: {args.entity} -> {dest_path} (repo: {target['name']})")
+    if unlink_error is not None:
+        print(
+            f"Warning: published, but could not remove the private copy {src_path}: {unlink_error}\n"
+            f"Delete it yourself; the shared copy at {dest_path} is now the one to keep.",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":

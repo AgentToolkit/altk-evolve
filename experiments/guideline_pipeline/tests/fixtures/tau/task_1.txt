@@ -1,0 +1,49 @@
+================================================================================
+TASK 1  reward=1.0  breakdown={'DB': 1.0, 'COMMUNICATE': 1.0}  termination_reason=user_stop  messages=9  duration=12.5s  trial=0
+================================================================================
+USER SCENARIO
+-------------
+domain: retail
+reason_for_call: You want to know the status of your most recent order.
+known_info: You are Ada Example, zip code 00000.
+task_instructions: Ask for the order status and end the call once you have it.
+================================================================================
+GROUND-TRUTH EVALUATION CRITERIA
+--------------------------------
+find_user_id_by_name_zip({"first_name": "Ada", "last_name": "Example", "zip": "00000"})
+get_order_details({"order_id": "#W0000001"})
+================================================================================
+AGENT DOMAIN POLICY
+-------------------
+# Retail agent policy (synthetic)
+Authenticate the user by email, or by name and zip code, before acting.
+Only act on orders that belong to the authenticated user.
+================================================================================
+CONVERSATION
+------------
+[USER]
+Hi, where is my latest order?
+[ASSISTANT]
+I can help with that. Could you give me your name and zip code?
+[USER]
+Ada Example, zip 00000.
+  -> CALL find_user_id_by_name_zip(...)
+     args: {"first_name": "Ada", "last_name": "Example", "zip": "00000"}
+  <- RESULT (ok)
+     ada_example_0000
+  -> CALL get_order_details(...)
+     args: {"order_id": "#W0000001"}
+  <- RESULT (ok) {"order_id": "#W0000001", "status": "shipped"}
+[ASSISTANT]
+Your order #W0000001 has shipped.
+================================================================================
+FINAL ANSWER
+------------
+Your order #W0000001 has shipped.
+================================================================================
+JUDGE / REWARD DETAILS
+----------------------
+reward=1.0
+db_check: db_match=True db_reward=1.0
+communicate_checks:
+  info='shipped' met=True

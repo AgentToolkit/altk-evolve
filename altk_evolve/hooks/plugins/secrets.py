@@ -82,11 +82,35 @@ DEFAULT_SCAN_CONFIG: dict[str, Any] = {
 Scanner = Callable[[list, dict], "tuple[int, Any, list]"]
 
 
+#: The top-level config keys this plugin accepts. The scanner honours more keys
+#: than these (cpex-secrets-detection 0.3 added ``field_allowlist`` /
+#: ``field_denylist``, which narrow which fields are scanned), so anything not
+#: listed here is rejected rather than forwarded: a key that only narrows the
+#: scan must never take effect by accident.
+SUPPORTED_CONFIG_KEYS = frozenset({"enabled", *DEFAULT_SCAN_CONFIG})
+
+
 def build_scan_config(config: dict[str, Any]) -> dict[str, Any]:
     """Merge a user ``config`` over the defaults so an empty config still gets
     the structured detectors ON. Top-level keys override; ``enabled`` merges
     per-detector, so a user can flip individual detectors without having to
-    respecify the whole map."""
+    respecify the whole map.
+
+    Fails closed on keys it does not know: an unknown top-level key, or an
+    unknown detector name under ``enabled``, raises ``ValueError`` naming the
+    key, instead of being forwarded to (or silently ignored by) the scanner."""
+    unknown = sorted(set(config) - SUPPORTED_CONFIG_KEYS)
+    if unknown:
+        raise ValueError(
+            f"Unsupported secrets plugin config key(s): {', '.join(map(repr, unknown))}. "
+            f"Supported keys: {', '.join(sorted(SUPPORTED_CONFIG_KEYS))}."
+        )
+    unknown_detectors = sorted(set(config.get("enabled") or {}) - set(DEFAULT_ENABLED))
+    if unknown_detectors:
+        raise ValueError(
+            f"Unknown secrets detector(s) under 'enabled': {', '.join(map(repr, unknown_detectors))}. "
+            f"Known detectors: {', '.join(sorted(DEFAULT_ENABLED))}."
+        )
     merged = {**DEFAULT_SCAN_CONFIG, **{k: v for k, v in config.items() if k != "enabled"}}
     merged["enabled"] = {**DEFAULT_ENABLED, **(config.get("enabled") or {})}
     return merged
@@ -128,6 +152,9 @@ class SecretsFilterMemoryPlugin(HookPluginBase):
       - ``redaction_text``: mask string (default ``[REDACTED]``)
       - ``block_on_detection`` / ``min_findings_to_block``: with ``redact:
         false``, a finding halts the operation (see below)
+
+    Any other key (including the scanner's ``field_allowlist`` /
+    ``field_denylist``) is rejected at construction; see :func:`build_scan_config`.
 
     Registered ``mode: sequential`` + ``on_error: fail`` (see the scaffold YAML /
     docs): sequential so it can BLOCK, not just redact, and fail-closed so a
@@ -181,6 +208,7 @@ class SecretsFilterMemoryPlugin(HookPluginBase):
 
 __all__ = [
     "DEFAULT_ENABLED",
+    "SUPPORTED_CONFIG_KEYS",
     "SecretsFilterMemoryPlugin",
     "build_scan_config",
     "build_secrets_scanner",
