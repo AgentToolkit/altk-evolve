@@ -35,9 +35,18 @@ def _filter_by_evidence(entities: list[RecordedEntity], evidence_filter: str) ->
     return [e for e in entities if (e.metadata or {}).get("evidence") in allowed]
 
 
-def _first_task_description(members: list[RecordedEntity]) -> str:
-    """The first task description among a merged guideline's own source members."""
-    return next((td for m in members if (td := (m.metadata or {}).get("task_description"))), "")
+def _merged_task_description(members: list[RecordedEntity], key: "ClusteringKey") -> str:
+    """The task description a merged guideline keeps, from its own source members.
+
+    Clustered by task, the members' tasks are similar and the first is kept. Clustered by
+    guideline text, they may be unrelated, and keeping one would tie retrieval by source
+    task to that task alone; so the description is kept only when the members share it,
+    and is otherwise left empty (retrieval then ranks the guideline by its content).
+    """
+    tasks = list(dict.fromkeys(td for m in members if (td := (m.metadata or {}).get("task_description"))))
+    if key == "guideline_text" and len(tasks) > 1:
+        return ""
+    return tasks[0] if tasks else ""
 
 
 class EvolveClient:
@@ -422,6 +431,8 @@ class EvolveClient:
         if max_rounds < 1:
             raise ValueError(f"max_rounds must be at least 1, not {max_rounds}")
 
+        from altk_evolve.llm.guidelines.clustering import stored_support
+
         combine_mode = "lossy" if mode == "lossy" else "lossless"
         key = key or self._clustering_key()
 
@@ -434,6 +445,9 @@ class EvolveClient:
         support_removed = 0
         # ID of each guideline written by an earlier round -> the merge that wrote it.
         produced_by: dict[str, int] = {}
+        # Originals merged but not deleted (a vetoed or failed delete). Their support is
+        # already counted in the merge's output, so later rounds leave them out.
+        undeleted: set[str] = set()
         merges = 0
         rounds = 0
 
@@ -455,6 +469,7 @@ class EvolveClient:
                     len(entities),
                     limit,
                 )
+            entities = [entity for entity in entities if str(entity.id) not in undeleted]
             clusters = self._cluster_guideline_entities(entities, threshold=threshold, key=key, max_cluster_size=max_cluster_size)
             round_removed = 0
             round_produced: dict[str, int] = {}
@@ -468,15 +483,16 @@ class EvolveClient:
                 merged = self._merge_guideline_cluster(namespace_id, cluster, combine_mode, key)
                 if merged is None:
                     continue
-                consolidated_guidelines, written_ids = merged
+                consolidated_guidelines, written_ids, failed_deletes = merged
                 merges += 1
                 round_produced.update(dict.fromkeys(written_ids, merges))
+                undeleted.update(failed_deletes)
 
                 clusters_found += 1
-                cluster_support = sum(int((e.metadata or {}).get("support", 1) or 1) for e in cluster)
+                cluster_support = sum(stored_support(e) for e in cluster)
                 fresh = [e for e in cluster if str(e.id) not in produced_by]
                 guidelines_before += len(fresh)
-                support_before += sum(int((e.metadata or {}).get("support", 1) or 1) for e in fresh)
+                support_before += sum(stored_support(e) for e in fresh)
                 round_removed += len(cluster) - len(consolidated_guidelines)
                 support_removed += cluster_support - sum(g.support for g in consolidated_guidelines)
 
@@ -496,11 +512,12 @@ class EvolveClient:
 
     def _merge_guideline_cluster(
         self, namespace_id: str, cluster: list[RecordedEntity], combine_mode: str, key: ClusteringKey
-    ) -> tuple[list[Guideline], list[str]] | None:
+    ) -> tuple[list[Guideline], list[str], list[str]] | None:
         """Combine one cluster, write the result, and delete the originals.
 
-        Returns the consolidated guidelines and the IDs they were written under, or
-        ``None`` if the cluster was skipped and nothing was written.
+        Returns the consolidated guidelines, the IDs they were written under, and the IDs
+        of originals that could not be deleted; or ``None`` if the cluster was skipped and
+        nothing was written.
         """
         from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members
         from altk_evolve.schema.provenance import attach_sources, scope_key, with_association_times
@@ -521,8 +538,7 @@ class EvolveClient:
 
             # Each member is attributed to exactly one output, so each output carries
             # the union of its own members' source associations (original times kept),
-            # the first task description among its own members, and the scope every
-            # member shares.
+            # a task description from its own members, and the scope every member shares.
             new_entities = [
                 Entity(
                     content=guideline.content,
@@ -530,7 +546,7 @@ class EvolveClient:
                     metadata=attach_sources(
                         {
                             **scope,
-                            "task_description": _first_task_description(members),
+                            "task_description": _merged_task_description(members, key),
                             "rationale": guideline.rationale,
                             "category": guideline.category,
                             "trigger": guideline.trigger,
@@ -562,16 +578,18 @@ class EvolveClient:
             return None
 
         # Phase 2: delete originals (log errors but don't roll back insert)
+        failed_deletes: list[str] = []
         for entity in cluster:
             try:
                 self.delete_entity_by_id(namespace_id, entity.id)
             except Exception:
+                failed_deletes.append(str(entity.id))
                 logger.warning(
                     "Failed to delete original entity %s after successful insert; skipping.",
                     entity.id,
                     exc_info=True,
                 )
-        return consolidated_guidelines, [str(update.id) for update in written or []]
+        return consolidated_guidelines, [str(update.id) for update in written or []], failed_deletes
 
     @traced("evolve.guidelines.select")
     def select_guidelines(

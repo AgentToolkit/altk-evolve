@@ -1,12 +1,12 @@
 You are consolidating multiple AI agent guidelines that {% if clustering_key == "guideline_text" %}give similar advice, possibly learned on different tasks.{% else %}were generated from similar tasks.{% endif %}
 
-# Task Descriptions
+{% if task_descriptions %}# Task Descriptions
 These guidelines came from tasks like:
 {% for desc in task_descriptions %}
 - {{ desc }}
 {% endfor %}
 
-# Existing Guidelines
+{% endif %}# Existing Guidelines
 Each guideline is labelled with a 0-based index; refer to those indices in `source_indices`.
 {% for guideline in guidelines %}
 ## Guideline {{ loop.index0 }}

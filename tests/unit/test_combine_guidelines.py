@@ -231,6 +231,19 @@ class TestCombineCluster:
     @patch("altk_evolve.llm.guidelines.clustering.completion")
     @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
     @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
+    def test_combine_cluster_prompt_omits_the_task_section_without_tasks(self, _mock_params, _mock_schema, mock_completion):
+        mock_completion.return_value = _mock_completion_response([_cg("Merged", "strategy", [0, 1])])
+
+        combine_cluster([_make_entity("1", "A", ""), _make_entity("2", "B", "")], clustering_key="guideline_text")
+        prompt = mock_completion.call_args.kwargs["messages"][0]["content"]
+
+        assert "# Task Descriptions" not in prompt
+        assert "came from tasks like" not in prompt
+        assert "## Guideline 0" in prompt
+
+    @patch("altk_evolve.llm.guidelines.clustering.completion")
+    @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
+    @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
     def test_combine_cluster_retries_on_failure(self, _mock_params, _mock_schema, mock_completion):
         mock_completion.side_effect = [
             ValueError("bad json"),
@@ -422,9 +435,23 @@ class TestConsolidateGuidelines:
 
         assert cluster.call_args.kwargs == {"threshold": None, "key": "guideline_text", "max_cluster_size": 4}
         assert mock_combine.call_args.kwargs == {"mode": "lossless", "clustering_key": "guideline_text"}
-        # Each output takes its task description from its own members, not from the cluster's first.
+        # Each output takes its task description from its own members, not from the cluster's
+        # first; one whose members span different tasks keeps none.
         new_entities = client.backend.update_entities.call_args[0][1]
-        assert [e.metadata["task_description"] for e in new_entities] == ["task a", "task b"]
+        assert [e.metadata["task_description"] for e in new_entities] == ["task a", ""]
+
+    def test_merged_task_description_depends_on_the_clustering_key(self):
+        from altk_evolve.frontend.client.evolve_client import _merged_task_description
+
+        a, b, a_again = _make_entity("1", "x", "task a"), _make_entity("2", "y", "task b"), _make_entity("3", "z", "task a")
+        untasked = _make_entity("4", "w", "")
+
+        # Clustered by task, the members' tasks are similar: the first is kept.
+        assert _merged_task_description([a, b], "task_description") == "task a"
+        # Clustered by text, unrelated tasks would tie retrieval by source task to one of them.
+        assert _merged_task_description([a, b], "guideline_text") == ""
+        assert _merged_task_description([untasked, a, a_again], "guideline_text") == "task a"
+        assert _merged_task_description([untasked], "guideline_text") == ""
 
     def test_consolidate_guidelines_rejects_zero_rounds(self):
         with pytest.raises(ValueError, match="max_rounds"):
@@ -491,15 +518,24 @@ def _fake_combine(merge_tasks: set[str]):
     return combine
 
 
-def _consolidate(store, merge_tasks, **kwargs):
+def _consolidate(store, merge_tasks, undeletable=(), **kwargs):
     from altk_evolve.frontend.client.evolve_client import EvolveClient
 
     client = EvolveClient.__new__(EvolveClient)
     client.backend = store
     client.config = SimpleNamespace(clustering_threshold=0.8, consolidation_mode="lossless")
+
+    def delete(namespace_id, entity_id):
+        # Stands in for a vetoed (legal hold) or failed delete of the named guidelines.
+        stored = {str(e.id): str(e.content) for e in store.scan_entities(namespace_id, filters={"type": "guideline"})}
+        if stored[str(entity_id)] in undeletable:
+            raise RuntimeError("delete blocked")
+        store.delete_entity_by_id(namespace_id, entity_id)
+
     with (
         patch.object(clustering_module, "cluster_entities", side_effect=_fake_cluster),
         patch.object(clustering_module, "combine_cluster_with_members", side_effect=_fake_combine(merge_tasks)) as combine,
+        patch.object(client, "delete_entity_by_id", side_effect=delete),
     ):
         result = client.consolidate_guidelines("n", **kwargs)
     stored = {str(e.content): e.metadata.get("support") for e in store.scan_entities("n", filters={"type": "guideline"})}
@@ -540,3 +576,14 @@ class TestConsolidationRounds:
         # the model is not asked again, and with nothing else to merge the run stops.
         assert merge_calls == 2
         assert (result.rounds, result.guidelines_before, result.guidelines_after) == (2, 4, 3)
+
+    def test_an_original_that_could_not_be_deleted_is_not_merged_again(self, store):
+        _store_guidelines(store, A="x", B="x")
+
+        result, stored, merge_calls = _consolidate(store, {"x"}, undeletable={"A"}, max_rounds=4)
+
+        # A survives next to the merge that already counts its support. Re-merging it in
+        # later rounds would add its support again each round (A+B would reach 5).
+        assert stored == {"A": None, "A+B": 2}
+        assert merge_calls == 1
+        assert (result.rounds, result.guidelines_before, result.support_before, result.support_after) == (2, 2, 2, 2)

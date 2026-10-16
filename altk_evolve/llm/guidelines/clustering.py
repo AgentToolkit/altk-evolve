@@ -147,7 +147,7 @@ def cluster_entities(
 
     groups = _union_find(n, pairs)
     if max_cluster_size is not None:
-        groups = [chunk for group in groups for chunk in _split_oversized(group, similarity_matrix, max_cluster_size)]
+        groups = [chunk for group in groups for chunk in _split_oversized(group, similarity_matrix, max_cluster_size, threshold)]
 
     # Convert index groups back to entity clusters, excluding singletons
     clusters: list[list[RecordedEntity]] = []
@@ -166,27 +166,43 @@ def _clustering_text(entity: RecordedEntity, key: ClusteringKey) -> str:
     return (entity.metadata or {}).get("task_description") or ""
 
 
-def _split_oversized(group: list[int], similarity: np.ndarray, max_size: int) -> list[list[int]]:
+def _split_oversized(group: list[int], similarity: np.ndarray, max_size: int, threshold: float) -> list[list[int]]:
     """Split a connected group into chunks of at most ``max_size`` indices.
 
     Union-find is transitive, so a chain of pairwise matches (A~B, B~C, ...) can join
     entities that are not similar to each other into one group too large for a single
-    merge call. Each chunk is the group's first remaining index plus its nearest
-    remaining neighbours, so similar entities stay together. A group within the limit
-    is returned as is. Duplicates that land in different chunks can still meet in a
-    later consolidation round.
+    merge call. Each chunk is the group's first remaining index plus up to
+    ``max_size - 1`` of its nearest remaining neighbours at or above ``threshold``, so
+    every member of a chunk is similar to its seed; a seed with no such neighbour left
+    is a chunk of its own. Once the remainder fits, it is split into its connected
+    components, since taking chunks out can disconnect it. A group within the limit is
+    returned as is. Duplicates that land in different chunks can still meet in a later
+    consolidation round.
     """
+    if len(group) <= max_size:
+        return [list(group)]
     remaining = list(group)
     chunks: list[list[int]] = []
     while len(remaining) > max_size:
-        seed, others = remaining[0], remaining[1:]
-        # sorted() is stable, so ties keep the group's (input) order and the split is deterministic.
-        chunk = [seed, *sorted(others, key=lambda i: -similarity[seed, i])[: max_size - 1]]
-        chunks.append(sorted(chunk))
+        seed, others = remaining[0], np.asarray(remaining[1:])
+        sims = similarity[seed, others]
+        close = np.flatnonzero(sims >= threshold)
+        # A stable sort keeps ties in the group's (input) order, so the split is deterministic.
+        nearest = others[close[np.argsort(-sims[close], kind="stable")][: max_size - 1]].tolist()
+        chunk = sorted([seed, *nearest])
+        chunks.append(chunk)
         taken = set(chunk)
         remaining = [i for i in remaining if i not in taken]
-    chunks.append(remaining)
+    pairs = [
+        (a, b) for a in range(len(remaining)) for b in range(a + 1, len(remaining)) if similarity[remaining[a], remaining[b]] >= threshold
+    ]
+    chunks.extend([remaining[i] for i in component] for component in _union_find(len(remaining), pairs))
     return chunks
+
+
+def stored_support(entity: RecordedEntity) -> int:
+    """A stored guideline's support count: ``metadata.support``, at least 1."""
+    return max(1, int((entity.metadata or {}).get("support", 1) or 1))
 
 
 def _normalize_steps(raw: object) -> list[str]:
@@ -340,7 +356,7 @@ def combine_cluster_with_members(
     )
 
     # Per-member support/evidence carried in metadata (defaults: support 1, evidence unknown).
-    member_support = [max(1, int((e.metadata or {}).get("support", 1) or 1)) for e in entities]
+    member_support = [stored_support(e) for e in entities]
     member_evidence: list[Evidence | None] = [(e.metadata or {}).get("evidence") for e in entities]
 
     guidelines = [

@@ -146,16 +146,26 @@ same advice learned on dissimilar tasks never meets, and guidelines without a ta
 description are left out. `guideline_text` groups by the guideline's own text instead.
 Guidelines share a lot of phrasing ("When ..., check ..."), so two unrelated guidelines can
 score higher than their tasks would; calibrate the threshold on your corpus (a dry run shows
-the clusters) rather than reusing the task-key value.
+the clusters) rather than reusing the task-key value. The embedding model reads only the
+start of a long input (the default `all-MiniLM-L6-v2` truncates at 256 tokens), so two long
+guidelines that share a preamble and differ only at the end can look identical.
+
+A guideline merged from members learned on different tasks keeps no task description,
+because keeping one would tie it to that task alone. With the default
+`EVOLVE_RETRIEVAL_SIMILARITY_KEY=source_task`, retrieval ranks such a guideline by its
+content; set `EVOLVE_RETRIEVAL_SIMILARITY_KEY=guideline_text` to rank every guideline that way.
 
 **Large clusters.** Clustering is transitive: if A is similar to B and B to C, all three
 join, even when A and C are not similar. On a large namespace, and especially with
 `guideline_text`, this can chain hundreds of guidelines into one merge call.
 `EVOLVE_CONSOLIDATION_MAX_CLUSTER_SIZE` splits such a cluster into chunks of nearest
-neighbours. Duplicates that land in different chunks are left apart unless you allow more
-than one round: `EVOLVE_CONSOLIDATION_MAX_ROUNDS` re-clusters the namespace after each
-round, stops after a round that merges nothing, and does not send the same merge's outputs
-back to the model together.
+neighbours, each within the threshold of its first member. Duplicates that land in different
+chunks are left apart unless you allow more than one round: `EVOLVE_CONSOLIDATION_MAX_ROUNDS`
+re-clusters the namespace after each round, stops after a round that merges nothing, and
+does not send the same merge's outputs back to the model together. An original whose delete
+failed or was vetoed (for example by a legal hold) stays stored but is not merged again.
+Each round re-embeds the whole namespace, which on CPU takes minutes for thousands of long
+guidelines.
 
 ```bash
 evolve entities consolidate my-ns --cluster-key guideline_text --threshold 0.85 \

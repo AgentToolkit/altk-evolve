@@ -182,6 +182,22 @@ class TestClusterEntities:
         # The task key pairs the two logging guidelines, which give unrelated advice.
         assert [[e.id for e in c] for c in by_task] == [["1", "4"]]
 
+    def test_guideline_text_key_leaves_out_whitespace_only_content(self, mock_st_cls):
+        mock_model = MagicMock()
+        mock_model.encode = MagicMock(side_effect=_mock_encode)
+        mock_st_cls.return_value = mock_model
+
+        entities = [
+            _make_entity("1", content="Add error handling"),
+            _make_entity("2", content="  \n\t"),
+            _make_entity("3", content="More error handling"),
+        ]
+
+        clusters = cluster_entities(entities, threshold=0.9, embedding_model="test-model", key="guideline_text")
+
+        assert [[e.id for e in c] for c in clusters] == [["1", "3"]]
+        assert mock_model.encode.call_args.args[0] == ["Add error handling", "More error handling"]
+
     def test_max_cluster_size_splits_a_large_cluster(self, mock_st_cls):
         mock_model = MagicMock()
         mock_model.encode = _mock_encode
@@ -211,7 +227,7 @@ class TestClusterEntities:
 @pytest.mark.unit
 class TestSplitOversized:
     def test_a_group_within_the_limit_is_unchanged(self):
-        assert _split_oversized([0, 1, 2], np.eye(3), 3) == [[0, 1, 2]]
+        assert _split_oversized([0, 1, 2], np.eye(3), 3, 0.5) == [[0, 1, 2]]
 
     def test_each_chunk_takes_the_seeds_nearest_neighbours(self):
         # A chain 0~1~2~3: 0 is closest to 2, and 1 is closest to 3.
@@ -224,14 +240,25 @@ class TestSplitOversized:
             ]
         )
 
-        assert _split_oversized([0, 1, 2, 3], similarity, 2) == [[0, 2], [1, 3]]
+        assert _split_oversized([0, 1, 2, 3], similarity, 2, 0.5) == [[0, 2], [1, 3]]
+
+    def test_chunks_only_join_entities_similar_enough_to_cluster(self):
+        # A star: five leaves at 0.75 to the hub (index 5) and 0.5 to each other.
+        similarity = np.full((6, 6), 0.5)
+        similarity[5, :] = similarity[:, 5] = 0.75
+        np.fill_diagonal(similarity, 1.0)
+
+        chunks = _split_oversized(list(range(6)), similarity, 2, 0.7)
+
+        # Leaf 0 takes the hub; the other leaves are not similar to each other, so none pair up.
+        assert chunks == [[0, 5], [1], [2], [3], [4]]
 
     def test_chunks_cover_the_group_and_respect_the_limit(self):
         rng = np.random.default_rng(0)
         vectors = rng.normal(size=(11, 4))
         similarity = vectors @ vectors.T
 
-        chunks = _split_oversized(list(range(11)), similarity, 3)
+        chunks = _split_oversized(list(range(11)), similarity, 3, float("-inf"))
 
         assert sorted(i for chunk in chunks for i in chunk) == list(range(11))
         assert all(len(chunk) <= 3 for chunk in chunks)
