@@ -421,6 +421,30 @@ class TestPublishAnyEntityType:
         assert other.exists()
         assert "my notes" in _typed_dest(typed_project, "my_notes", "dup.md").read_text()
 
+    @pytest.mark.parametrize(("picked", "other"), [("my_notes", "my-notes"), ("my-notes", "my_notes")])
+    def test_type_flag_prefers_the_exact_dir_name_over_sanitized_matches(self, typed_project, picked, other):
+        """`my_notes` and `my-notes` both sanitize to `my-notes`; `--type` must still pick the one named."""
+        chosen = _write_private(typed_project, picked, "x.md", body=f"from {picked}")
+        left = _write_private(typed_project, other, "x.md", body=f"from {other}")
+
+        run_publish(typed_project, ["--entity", "x.md", "--type", picked])
+
+        assert not chosen.exists()
+        assert left.exists(), "the other dir's entity must be left alone"
+        assert f"from {picked}" in _typed_dest(typed_project, picked, "x.md").read_text()
+        assert not _typed_dest(typed_project, other, "x.md").exists()
+
+    def test_dirs_that_sanitize_alike_are_still_ambiguous_without_type(self, typed_project):
+        underscore = _write_private(typed_project, "my_notes", "x.md")
+        hyphen = _write_private(typed_project, "my-notes", "x.md")
+
+        for args in (["--entity", "x.md"], ["--entity", "x.md", "--type", "My_Notes"]):
+            result = run_publish(typed_project, args, expect_success=False)
+            assert result.returncode != 0
+            assert "ambiguous" in result.stderr
+            assert "my-notes/x.md" in result.stderr and "my_notes/x.md" in result.stderr
+        assert underscore.exists() and hyphen.exists()
+
     def test_symlinked_type_dir_outside_subscribed_still_publishes(self, typed_project, tmp_path):
         """Symlinking a type directory elsewhere (e.g. a shared drive) is a legitimate layout."""
         elsewhere = tmp_path / "elsewhere" / "feedback"

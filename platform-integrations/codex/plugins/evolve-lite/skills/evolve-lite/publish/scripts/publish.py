@@ -83,8 +83,9 @@ def _find_private_entity(entities_dir, filename, requested_type):
         entity_type = sanitize_type(requested_type)
         if not entity_type or entity_type in _NON_PRIVATE_DIRS:
             return None, None, f"invalid entity type: {requested_type!r}"
-        # Match on the sanitized name so a hand-made dir like `my_notes` is selectable.
-        types = [d for d in private if sanitize_type(d) == entity_type] or [entity_type]
+        # An exact dir name wins, so `my_notes` and `my-notes` can be told apart;
+        # otherwise match on the sanitized name so `--type My_Notes` still finds `my_notes`.
+        types = [d for d in private if d == requested_type] or [d for d in private if sanitize_type(d) == entity_type] or [entity_type]
     else:
         types = private
 
