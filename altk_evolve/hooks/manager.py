@@ -61,6 +61,7 @@ import importlib
 import logging
 import os
 import threading
+import time
 import uuid
 import weakref
 from typing import TYPE_CHECKING, Any
@@ -442,6 +443,7 @@ def _native_adapter_cls() -> Any:
                 validate()
 
         async def _run(self, hook_type: HookType, cpex_payload: Any, context: Any) -> Any:
+            started = time.monotonic()  # cpex's timeout clock started just before this call
             method = getattr(self._native, hook_type.value, None)
             if method is None:
                 return PluginResult(continue_processing=True)
@@ -469,7 +471,7 @@ def _native_adapter_cls() -> Any:
                 request_id=getattr(gc, "request_id", "") if gc else "",
             )
             try:
-                out = await self._runner.run(_call_native, view, method, plain, hook_ctx)
+                out = await self._runner.run(started, _call_native, view, method, plain, hook_ctx)
             except HookPolicyViolation as violation:
                 return PluginResult(
                     continue_processing=False,
@@ -572,7 +574,7 @@ class _SyncHookRunner:
         self._abandoned: set[concurrent.futures.Future] = set()
         _RUNNERS.add(self)
 
-    async def run(self, fn: Any, *args: Any) -> Any:
+    async def run(self, started: float, fn: Any, *args: Any) -> Any:
         with self._lock:
             if len(self._abandoned) >= self._MAX_ABANDONED:
                 raise RuntimeError(f"Plugin {self._name} is still running a call that timed out; refusing new calls until it returns")
@@ -587,11 +589,16 @@ class _SyncHookRunner:
         try:
             return await asyncio.wrap_future(future)
         except asyncio.CancelledError:
-            self._abandon(future)
+            self._abandon(future, timed_out=_used_up_timeout(started))
             raise
 
-    def _abandon(self, future: concurrent.futures.Future) -> None:
+    def _abandon(self, future: concurrent.futures.Future, *, timed_out: bool) -> None:
         if future.cancel():  # not started yet: it will never run
+            return
+        if not timed_out:
+            # Cancelled early, e.g. by a halting sibling in cpex ``concurrent``
+            # mode: the plugin is not stuck, so it does not refuse new calls.
+            # Its result is still discarded and its backend view revoked.
             return
         with self._lock:
             self._abandoned.add(future)
@@ -600,6 +607,19 @@ class _SyncHookRunner:
     def _release(self, future: concurrent.futures.Future) -> None:
         with self._lock:
             self._abandoned.discard(future)
+
+
+def _used_up_timeout(started: float) -> bool:
+    """Whether a call cancelled now had used up the engine's ``plugin_timeout``.
+
+    cpex cancels a call both on timeout and when a sibling halts the pipeline
+    in ``concurrent`` mode, and the two look the same from inside the call.
+    The clock starts slightly after cpex's, so allow 5% slack.
+    """
+    timeout = getattr(getattr(_plugin_manager, "executor", None), "timeout", None)
+    if not isinstance(timeout, (int, float)):
+        return True
+    return time.monotonic() - started >= timeout * 0.95
 
 
 def _call_native(view: Any, method: Any, plain: Any, hook_ctx: Any) -> Any:

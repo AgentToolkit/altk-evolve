@@ -37,6 +37,7 @@ from altk_evolve.backend.filesystem import FilesystemEntityBackend
 from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.config.filesystem import FilesystemSettings
 from altk_evolve.frontend.client.evolve_client import EvolveClient
+from altk_evolve.hooks.plugin import HookPolicyViolation
 from altk_evolve.hooks.manager import (
     MemoryPolicyViolation,
     _build_native_adapter,
@@ -456,6 +457,39 @@ def test_new_calls_fail_fast_while_a_timed_out_call_is_still_running(release):
 
     _wait_until_idle(plugin)
     assert dispatch_llm_pre_call(MESSAGES, purpose="t") == [{"role": "user", "content": "LATE"}]
+
+
+class HaltOnce:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def llm_pre_call(self, payload: Any, context: Any) -> Any:
+        self.calls += 1
+        if self.calls == 1:
+            time.sleep(0.05)
+            raise HookPolicyViolation("blocked once", code="ONCE")
+        return None
+
+
+class SlowButOnTime:
+    def llm_pre_call(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.3)
+        return None
+
+
+@pytest.mark.unit
+def test_a_call_cancelled_by_a_halting_sibling_does_not_refuse_new_calls():
+    """In concurrent mode cpex cancels the other plugins when one halts; that is not a timeout."""
+    pm = _initialize_manager("", [], 30)
+    pm.executor.timeout = 2
+    for name, plugin in (("halt", HaltOnce()), ("slow", SlowButOnTime())):
+        config = PluginConfig(name=name, kind=f"tests.{name}", hooks=["llm_pre_call"], mode=PluginMode.CONCURRENT, on_error=OnError.FAIL)
+        pm._registry.register(_build_native_adapter(plugin, config))
+
+    with pytest.raises(MemoryPolicyViolation, match="blocked once"):
+        dispatch_llm_pre_call(MESSAGES, purpose="t")
+    # The slow plugin's cancelled call is still running, but it never timed out.
+    assert dispatch_llm_pre_call(MESSAGES, purpose="t") == MESSAGES
 
 
 class SlowDetector:
