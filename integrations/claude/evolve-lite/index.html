@@ -1892,7 +1892,7 @@
 <p>Claude Code already recalls and saves memories on its own judgment: it decides what to look up at the start of a task and what to write down at the end. Evolve Lite does not intercept either. It adds the two things native memory lacks:</p>
 <ol>
 <li>
-<p><strong>Sharing</strong> — When Claude saves a native memory, it invokes <code>/evolve-lite:adapt-memory</code>, which mirrors the same fact into <code>.evolve/entities/{type}/{name}.md</code> as a normal Evolve entity, where <code>{type}</code> is the native memory's type (<code>user</code>, <code>feedback</code>, <code>project</code> or <code>reference</code>). Publishing mirrored memories to a shared repo is not supported yet: <code>/evolve-lite:publish</code> only reads <code>.evolve/entities/guideline/</code> (tracked in <a href="https://github.com/AgentToolkit/altk-evolve/issues/373">#373</a>).</p>
+<p><strong>Sharing</strong> — When Claude saves a native memory, it invokes <code>/evolve-lite:adapt-memory</code>, which mirrors the same fact into <code>.evolve/entities/{type}/{name}.md</code> as a normal Evolve entity, where <code>{type}</code> is the native memory's type (<code>user</code>, <code>feedback</code>, <code>project</code> or <code>reference</code>). Mirrored memories can be shared with <code>/evolve-lite:publish</code>, which keeps the <code>{type}/</code> directory in the shared repo.</p>
 </li>
 <li>
 <p><strong>Provenance</strong> — When Claude consults native memories, it runs <code>python3 ~/.claude/evolve-lite/audit_recall.py &lt;type&gt;/&lt;name&gt;</code>, recording what was actually opened so the store's value can be measured over time.</p>
@@ -1927,7 +1927,7 @@
 <a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>        Mirrored native memory into evolve store: /path/to/project/.evolve/entities/feedback/canada-km-only.md
 <a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>        Entity id: feedback/canada-km-only
 </code></pre></div>
-<p>Claude decided to save that on its own — you did not invoke a skill. The <code>adapt-memory</code> step mirrors the saved fact into the project's evolve store as <code>.evolve/entities/feedback/canada-km-only.md</code>, where it is auditable like any other entity. (It cannot be published yet; see How It Works above.)</p>
+<p>Claude decided to save that on its own — you did not invoke a skill. The <code>adapt-memory</code> step mirrors the saved fact into the project's evolve store as <code>.evolve/entities/feedback/canada-km-only.md</code>, where it is auditable like any other entity. It can be shared with <code>/evolve-lite:publish</code>, which keeps it under <code>feedback/</code> in the shared repo.</p>
 <h3 id="session-2-preference-is-applied-automatically">Session 2 — Preference is applied automatically<a class="headerlink" href="#session-2-preference-is-applied-automatically" title="Permanent link">&para;</a></h3>
 <p>Start a new Claude Code session in the same project:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>You: Tell me the distances between the 3 most populous cities in Canada.
@@ -2031,7 +2031,7 @@
 </tr>
 <tr>
 <td><code>/evolve-lite:publish</code></td>
-<td>Publish a local guideline to a write-scope repo</td>
+<td>Publish a local entity (guideline or mirrored memory) to a write-scope repo</td>
 </tr>
 <tr>
 <td><code>/evolve-lite:sync</code></td>
