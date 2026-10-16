@@ -165,27 +165,6 @@ def test_dashboard_setting_is_read_from_dotenv(monkeypatch, runtime, tmp_path, e
     assert (_run_stdio(monkeypatch, []) == [launcher.run_api_server]) is expected_started
 
 
-def test_dashboard_logs_the_address_it_bound(caplog) -> None:
-    """The listener is announced, with its real address, only once the socket is bound."""
-
-    async def asgi(scope, receive, send):  # minimal app; lifespan is disabled below
-        raise RuntimeError("no requests expected")
-
-    server = launcher._DashboardServer(launcher.uvicorn.Config(asgi, host="127.0.0.1", port=0, log_level="warning", lifespan="off"))
-    thread = threading.Thread(target=lambda: asyncio.run(server.serve()), daemon=True)
-    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
-        thread.start()
-        deadline = time.monotonic() + 10
-        while not server.started and time.monotonic() < deadline:
-            time.sleep(0.05)
-        port = server.servers[0].sockets[0].getsockname()[1]
-        server.should_exit = True
-        thread.join(10)
-    assert server.started
-    assert f"listening on http://127.0.0.1:{port}/ without authentication" in caplog.text
-    assert "--no-dashboard" in caplog.text
-
-
 @contextmanager
 def _serving(target: Callable[[], object], get_server: Callable[[], Any], timeout: float = 10.0) -> Iterator[Any]:
     """Run a dashboard server in a thread, yield it once it is serving, and always stop it.
@@ -223,6 +202,20 @@ def _real_api_server(monkeypatch) -> AbstractContextManager[Any]:
 
 def _bound(server) -> list[tuple[str, int]]:
     return [sock.getsockname()[:2] for listener in server.servers for sock in listener.sockets]
+
+
+def test_dashboard_logs_the_address_it_bound(caplog) -> None:
+    """The listener is announced, with its real address, only once the socket is bound."""
+
+    async def asgi(scope, receive, send):  # minimal app; lifespan is disabled below
+        raise RuntimeError("no requests expected")
+
+    server = launcher._DashboardServer(launcher.uvicorn.Config(asgi, host="127.0.0.1", port=0, log_level="warning", lifespan="off"))
+    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
+        with _serving(lambda: asyncio.run(server.serve()), lambda: server):
+            (_, port), *_ = _bound(server)
+    assert f"listening on http://127.0.0.1:{port}/ without authentication" in caplog.text
+    assert "--no-dashboard" in caplog.text
 
 
 def test_dashboard_keeps_uvicorn_logs_off_stdout(monkeypatch, capfd) -> None:
