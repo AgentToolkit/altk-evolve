@@ -457,17 +457,19 @@ def _native_adapter_cls() -> Any:
             gc = getattr(context, "global_context", None)
             state = dict(getattr(gc, "state", None) or {})
             backend = state.get("backend")
+            view = None
             if isinstance(backend, HookBackend):
-                # A per-call view, revoked once this call is over, so a timed-out
-                # call that is still running cannot patch the store late.
-                backend = state["backend"] = backend._for_call()
+                # A per-call view, revoked once this call is over (with every view
+                # its nested hooks create), so a timed-out call that is still
+                # running cannot patch the store late.
+                backend = view = state["backend"] = backend._for_call()
             hook_ctx = HookContext(
                 backend=backend,
                 state=state,
                 request_id=getattr(gc, "request_id", "") if gc else "",
             )
             try:
-                out = await self._runner.run(method, plain, hook_ctx)
+                out = await self._runner.run(_call_native, view, method, plain, hook_ctx)
             except HookPolicyViolation as violation:
                 return PluginResult(
                     continue_processing=False,
@@ -479,8 +481,8 @@ def _native_adapter_cls() -> Any:
                     ),
                 )
             finally:
-                if isinstance(backend, HookBackend):
-                    backend._revoke()
+                if view is not None:
+                    view._revoke()
             if out is None:
                 return PluginResult(continue_processing=True)
             engine_cls: Any = active_payload_cls(hook_type)
@@ -598,6 +600,15 @@ class _SyncHookRunner:
     def _release(self, future: concurrent.futures.Future) -> None:
         with self._lock:
             self._abandoned.discard(future)
+
+
+def _call_native(view: Any, method: Any, plain: Any, hook_ctx: Any) -> Any:
+    """Call a native method with ``view`` as the parent of any backend view its nested hooks create."""
+    if view is not None:
+        from altk_evolve.hooks.backend import _calling_view
+
+        _calling_view.set(view)
+    return method(plain, hook_ctx)
 
 
 _RUNNERS: weakref.WeakSet[_SyncHookRunner] = weakref.WeakSet()

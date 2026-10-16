@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import copy, deepcopy
@@ -25,6 +27,22 @@ class _PendingPatches:
 
 
 _pending: ContextVar[_PendingPatches | None] = ContextVar("hook_metadata_patches", default=None)
+
+# The view handed to the native plugin call running in this context. A view
+# created under it (by a hook that call dispatches) is revoked along with it.
+_calling_view: ContextVar[HookBackend | None] = ContextVar("hook_calling_view", default=None)
+
+# Makes revoking a view and accepting a patch through it mutually exclusive.
+_revoke_lock = threading.Lock()
+
+
+def _reset_revoke_lock_after_fork() -> None:
+    global _revoke_lock
+    _revoke_lock = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_revoke_lock_after_fork)
 
 
 @contextmanager
@@ -55,7 +73,8 @@ class HookBackend:
     During preparation patches join the output commit. Outside preparation, a
     patch uses the backend's ordinary write path. Callbacks must finish before
     returning; retaining this capability for detached work is unsupported. A
-    native plugin's view is revoked when its call ends or times out.
+    native plugin's view is revoked when its call ends or times out, and so is
+    every view created by hooks that call dispatched.
     """
 
     def __init__(self, backend: BaseEntityBackend):
@@ -63,6 +82,7 @@ class HookBackend:
         pending = _pending.get()
         self.__pending = pending if pending is not None and pending.backend is backend else None
         self.__revoked = False
+        self.__parent = _calling_view.get()
 
     def _for_call(self) -> HookBackend:
         """Return a view of this capability for one plugin call, revocable on its own."""
@@ -71,11 +91,15 @@ class HookBackend:
         return view
 
     def _revoke(self) -> None:
-        self.__revoked = True
+        with _revoke_lock:
+            self.__revoked = True
 
     def _check(self, namespace_id: str):
-        if self.__revoked:
-            raise EvolveException("The hook call that received this backend has finished")
+        view: HookBackend | None = self
+        while view is not None:
+            if view.__revoked:
+                raise EvolveException("The hook call that received this backend has finished")
+            view = view.__parent
         if self.__pending is not None:
             if self.__pending.closed:
                 raise EvolveException("Hook preparation has finished")
@@ -99,6 +123,7 @@ class HookBackend:
         from altk_evolve.hooks.manager import dispatch_memory_post_read
 
         entities = self._read(namespace_id, query, filters, limit)
+        self._check(namespace_id)
         return dispatch_memory_post_read(self.__backend, namespace_id, entities, query=query, filters=filters)
 
     def get_namespace_details(self, namespace_id: str) -> Namespace:
@@ -110,12 +135,20 @@ class HookBackend:
 
         self._check(namespace_id)
         if self.__pending is None:
-            return self.__backend.update_entity_metadata(namespace_id, entity_id, metadata_patch)
+            # The backend's update_entity_metadata template, with a revocation
+            # check after the patch hooks, right before the write starts.
+            patch = dispatch_memory_pre_metadata_patch(self.__backend, namespace_id, entity_id, metadata_patch)
+            self._check(namespace_id)
+            entity = self.__backend._update_entity_metadata_impl(namespace_id, entity_id, patch)
+            transformed = dispatch_memory_post_read(self.__backend, namespace_id, [entity])
+            return transformed[0] if transformed else entity
         patch = dispatch_memory_pre_metadata_patch(self.__backend, namespace_id, entity_id, metadata_patch)
         found = self._read(namespace_id, filters={"id": entity_id}, limit=1)
         if not found:
             raise EvolveException(f"Entity {entity_id!r} not found")
-        self.__pending.patches.append(MetadataPatch(namespace_id, entity_id, deepcopy(patch)))
+        with _revoke_lock:
+            self._check(namespace_id)
+            self.__pending.patches.append(MetadataPatch(namespace_id, entity_id, deepcopy(patch)))
         entity = found[0].model_copy(deep=True)
         entity.metadata = {**entity.metadata, **patch}
         transformed = dispatch_memory_post_read(self.__backend, namespace_id, [entity])

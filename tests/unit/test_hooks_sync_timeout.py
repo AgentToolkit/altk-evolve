@@ -33,6 +33,7 @@ pytest.importorskip("cpex")
 from cpex.framework import Plugin
 from cpex.framework.models import OnError, PluginConfig, PluginMode, PluginResult
 
+from altk_evolve.backend.filesystem import FilesystemEntityBackend
 from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.config.filesystem import FilesystemSettings
 from altk_evolve.frontend.client.evolve_client import EvolveClient
@@ -246,6 +247,155 @@ def test_timed_out_call_cannot_patch_the_store_late(tmp_path: Path, release):
     assert isinstance(plugin.error, EvolveException) and "hook call" in str(plugin.error)
     stored = client.get_entity_by_id("ns", target.id)
     assert stored is not None and "late" not in stored.metadata
+
+
+def _client_with_one_entity(tmp_path: Path) -> tuple[EvolveClient, str]:
+    client = EvolveClient(config=EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
+    client.create_namespace("ns")
+    client.update_entities("ns", [Entity(content="first", type="note")], enable_conflict_resolution=False)
+    return client, client.search_entities("ns", limit=1)[0].id
+
+
+class SlowPreWrite:
+    """Keeps write preparation open past a timed-out plugin, so a late patch could still be committed."""
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.45)
+        return None
+
+
+def _enable_chain(*plugins: tuple[Any, str, list[str], str]) -> None:
+    pm = _initialize_manager("", [], 30)
+    pm.executor.timeout = 0.5
+    for priority, (plugin, name, hooks, on_error) in enumerate(plugins):
+        config = PluginConfig(
+            name=name, kind=f"tests.{name}", hooks=hooks, mode=PluginMode.SEQUENTIAL, on_error=OnError(on_error), priority=priority
+        )
+        pm._registry.register(_build_native_adapter(plugin, config))
+
+
+class PatchAfterSlowRead:
+    """Passes the revocation check, then blocks in the backend read inside update_entity_metadata."""
+
+    def __init__(self, target_id: str) -> None:
+        self.target_id = target_id
+        self.error: BaseException | None = None
+        self.finished = threading.Event()
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        _slow_reads.set()
+        try:
+            context.backend.update_entity_metadata(payload.namespace_id, self.target_id, {"late": True})
+        except BaseException as exc:  # noqa: BLE001 - inspected by the test
+            self.error = exc
+        finally:
+            self.finished.set()
+        return None
+
+
+_slow_reads = threading.Event()
+
+
+@pytest.fixture
+def slow_reads(monkeypatch):
+    original = FilesystemEntityBackend._search_entities_impl
+
+    def slow(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        if _slow_reads.is_set():
+            _slow_reads.clear()
+            time.sleep(0.7)
+        return result
+
+    monkeypatch.setattr(FilesystemEntityBackend, "_search_entities_impl", slow)
+    yield
+    _slow_reads.clear()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("on_error", ["ignore", "disable"])
+def test_patch_from_a_call_that_timed_out_mid_read_is_refused(tmp_path: Path, slow_reads, on_error: str):
+    client, target_id = _client_with_one_entity(tmp_path)
+    plugin = PatchAfterSlowRead(target_id)
+    _enable_chain((plugin, "x", ["memory_pre_write"], on_error), (SlowPreWrite(), "z", ["memory_pre_write"], "fail"))
+
+    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+    assert plugin.finished.wait(5)
+
+    assert isinstance(plugin.error, EvolveException) and "hook call" in str(plugin.error)
+    stored = client.get_entity_by_id("ns", target_id)
+    assert stored is not None and "late" not in stored.metadata
+
+
+class ReadThenWait:
+    """Reads through context.backend just before its timeout; the nested post_read outlives it."""
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.4)
+        context.backend.search_entities(payload.namespace_id, limit=5)
+        return None
+
+
+class StampAfterAPause:
+    def __init__(self) -> None:
+        self.errors: list[BaseException] = []
+        self.finished = threading.Event()
+
+    def memory_post_read(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.3)
+        try:
+            for entity in payload.entities:
+                context.backend.update_entity_metadata(payload.namespace_id, entity["id"], {"stamped_late": True})
+        except BaseException as exc:  # noqa: BLE001 - inspected by the test
+            self.errors.append(exc)
+        finally:
+            self.finished.set()
+        return None
+
+
+@pytest.mark.unit
+def test_revocation_reaches_views_created_by_nested_hooks(tmp_path: Path):
+    client, target_id = _client_with_one_entity(tmp_path)
+    stamper = StampAfterAPause()
+    _enable_chain(
+        (ReadThenWait(), "x", ["memory_pre_write"], "ignore"),
+        (stamper, "y", ["memory_post_read"], "ignore"),
+        (SlowPreWrite(), "z", ["memory_pre_write"], "fail"),
+    )
+
+    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+    assert stamper.finished.wait(5)
+
+    assert stamper.errors and "hook call" in str(stamper.errors[0])
+    stored = client.get_entity_by_id("ns", target_id)
+    assert stored is not None and "stamped_late" not in stored.metadata
+
+
+class TwoReaders:
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
+    def reader(self, name: str) -> Any:
+        outer = self
+
+        class Reader:
+            def memory_pre_write(self, payload: Any, context: Any) -> Any:
+                context.backend.search_entities(payload.namespace_id, limit=1)
+                outer.seen.append(name)
+                return None
+
+        return Reader()
+
+
+@pytest.mark.unit
+def test_each_plugin_in_a_chain_gets_its_own_backend_view(tmp_path: Path):
+    """Revoking the first plugin's view when its call ends must not revoke the second's."""
+    client, _ = _client_with_one_entity(tmp_path)
+    readers = TwoReaders()
+    _enable_chain((readers.reader("r1"), "r1", ["memory_pre_write"], "fail"), (readers.reader("r2"), "r2", ["memory_pre_write"], "fail"))
+
+    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+    assert readers.seen == ["r1", "r2"]
 
 
 # ── bounds and serialization ─────────────────────────────────────────
