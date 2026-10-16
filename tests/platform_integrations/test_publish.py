@@ -154,6 +154,40 @@ class TestPublish:
         assert dest.read_text() == "---\ntype: guideline\nvisibility: public\n---\n\nExisting public content.\n"
         assert (project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md").exists()
 
+    def test_name_collision_with_another_owner_names_them(self, project_dir):
+        """Two teammates' same-named entities: don't tell the second one to delete the first's."""
+        dest = _dest_path(project_dir, "my-guideline.md")
+        dest.parent.mkdir(parents=True)
+        theirs = "---\ntype: guideline\nowner: alice\nvisibility: public\n---\n\nAlice's guideline.\n"
+        dest.write_text(theirs)
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md"
+
+        result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "carol"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "name collision" in result.stderr
+        assert "alice" in result.stderr
+        assert "Rename your memory or entity" in result.stderr
+        assert "Unpublish it first" not in result.stderr
+        assert dest.read_text() == theirs
+        assert source.exists()
+
+    @pytest.mark.parametrize("existing_owner", ["carol", None], ids=["same-owner", "no-owner"])
+    def test_already_published_by_same_or_unknown_owner_keeps_unpublish_hint(self, project_dir, existing_owner):
+        dest = _dest_path(project_dir, "my-guideline.md")
+        dest.parent.mkdir(parents=True)
+        owner_line = f"owner: {existing_owner}\n" if existing_owner else ""
+        existing = f"---\ntype: guideline\n{owner_line}visibility: public\n---\n\nEarlier copy.\n"
+        dest.write_text(existing)
+
+        result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "carol"], expect_success=False)
+
+        assert result.returncode != 0
+        assert "already published" in result.stderr
+        assert "Unpublish it first or delete it manually." in result.stderr
+        assert "name collision" not in result.stderr
+        assert dest.read_text() == existing
+
     def test_rejects_path_traversal_in_entity_name(self, project_dir):
         result = run_publish(project_dir, ["--entity", "../../etc/passwd"], expect_success=False)
         assert result.returncode != 0

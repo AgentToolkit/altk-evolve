@@ -109,6 +109,15 @@ def _find_private_entity(entities_dir, filename, requested_type):
     return entity_type, path, None
 
 
+def _published_owner(path):
+    """The `owner` frontmatter of an already-published file, or None if absent or unreadable."""
+    try:
+        owner = markdown_to_entity(path).get("owner")
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    return owner.strip() if isinstance(owner, str) and owner.strip() else None
+
+
 def _select_target_repo(cfg, requested_name):
     write = write_repos(cfg)
 
@@ -188,7 +197,19 @@ def main():
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
     if dest_path.exists():
-        print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
+        existing_owner = _published_owner(dest_path)
+        if existing_owner and existing_owner != effective_user:
+            # Same name, someone else's entity (adapt-memory names entities after the
+            # native memory, so teammates' `user-role` memories collide). Theirs is not
+            # ours to unpublish or delete.
+            print(
+                f"Error: name collision: {entity_type}/{args.entity} is already published by {existing_owner!r} "
+                f"in repo {target['name']!r} ({dest_path}).\n"
+                f"Rename your memory or entity, then publish it again.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
         sys.exit(1)
 
     temp_path = None
