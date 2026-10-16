@@ -5,8 +5,11 @@ import socket
 import sys
 import threading
 import uvicorn
+from typing import Any
+
 from pydantic import ValidationError, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, DotEnvSettingsSource, EnvSettingsSource, PydanticBaseSettingsSource, SettingsConfigDict
 
 from altk_evolve.frontend.mcp.mcp_server import app, get_client, mcp
 from altk_evolve.frontend.mcp.http_transport import create_resilient_sse_app
@@ -64,15 +67,41 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _blank_is_unset(value: Any) -> Any:
+    # env_ignore_empty drops only an exactly empty value; treat whitespace-only the same way.
+    return None if isinstance(value, str) and not value.strip() else value
+
+
+class _EnvSource(EnvSettingsSource):
+    def prepare_field_value(self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool) -> Any:
+        return super().prepare_field_value(field_name, field, _blank_is_unset(value), value_is_complex)
+
+
+class _DotEnvSource(DotEnvSettingsSource):
+    def prepare_field_value(self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool) -> Any:
+        return super().prepare_field_value(field_name, field, _blank_is_unset(value), value_is_complex)
+
+
 class _DashboardSettings(BaseSettings):
     """EVOLVE_DASHBOARD, read like every other EVOLVE_ setting: the environment, then `.env`.
 
     It is a pydantic bool, like the other EVOLVE_ switches, so `f`, `n`, `no` and `off` mean off.
-    An empty value counts as unset, so it doesn't hide a value in `.env`.
+    An empty or whitespace-only value counts as unset, so it doesn't hide a value in `.env`.
     """
 
     model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore", env_ignore_empty=True)
     dashboard: bool | None = None
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return init_settings, _EnvSource(settings_cls), _DotEnvSource(settings_cls), file_secret_settings
 
     @field_validator("dashboard", mode="before")
     @classmethod

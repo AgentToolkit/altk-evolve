@@ -144,12 +144,26 @@ def test_dashboard_flag_overrides_an_unrecognised_value(monkeypatch, runtime, ca
     assert "is not a boolean" not in caplog.text
 
 
-@pytest.mark.parametrize(("dotenv", "expected_started"), [("EVOLVE_DASHBOARD=false\n", False), ("", True)])
-def test_empty_dashboard_value_counts_as_unset(monkeypatch, runtime, tmp_path, dotenv, expected_started) -> None:
-    """`EVOLVE_DASHBOARD=` in the environment doesn't hide `.env`, and on its own means the default (on)."""
+@pytest.mark.parametrize("env", ["", " ", "\t", " \n "])
+@pytest.mark.parametrize(
+    ("dotenv", "expected_started"), [("EVOLVE_DASHBOARD=false\n", False), ("EVOLVE_DASHBOARD=true\n", True), ("", True)]
+)
+def test_empty_dashboard_value_counts_as_unset(monkeypatch, runtime, tmp_path, caplog, env, dotenv, expected_started) -> None:
+    """An empty or whitespace-only `EVOLVE_DASHBOARD` in the environment doesn't hide `.env`,
+    and on its own means the default (on). It is not reported as a bad value."""
     (tmp_path / ".env").write_text(dotenv)
-    monkeypatch.setenv("EVOLVE_DASHBOARD", "")
-    assert (_run_stdio(monkeypatch, []) == [launcher.run_api_server]) is expected_started
+    monkeypatch.setenv("EVOLVE_DASHBOARD", env)
+    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
+        assert (_run_stdio(monkeypatch, []) == [launcher.run_api_server]) is expected_started
+    assert "is not a boolean" not in caplog.text
+
+
+def test_blank_dashboard_value_in_dotenv_counts_as_unset(monkeypatch, runtime, tmp_path, caplog) -> None:
+    (tmp_path / ".env").write_text('EVOLVE_DASHBOARD="  "\n')
+    monkeypatch.delenv("EVOLVE_DASHBOARD", raising=False)
+    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
+        assert _run_stdio(monkeypatch, []) == [launcher.run_api_server]
+    assert "is not a boolean" not in caplog.text
 
 
 @pytest.mark.parametrize(("env", "expected_started"), [(None, False), ("true", True)])
