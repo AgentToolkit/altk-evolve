@@ -58,6 +58,7 @@ All configuration variables are prefixed with `EVOLVE_`.
 | `EVOLVE_MODEL_NAME` | Global fallback model for all Evolve LLM calls | `gpt-4o` |
 | `EVOLVE_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for OpenAI-compatible endpoints). Defaults to `openai` whenever `OPENAI_API_KEY` or `OPENAI_BASE_URL` is set, even if you never set this variable yourself — see the [consistency guide](guidelines.md#choosing-a-consistency-method) for a case where that implicit default causes misrouting | `openai` if `OPENAI_API_KEY`/`OPENAI_BASE_URL` is set, else `None` |
 | `EVOLVE_EMBEDDING_MODEL` | Embedding model                                                               | `sentence-transformers/all-MiniLM-L6-v2` |
+| `EVOLVE_DASHBOARD` | `evolve-mcp` over stdio only: also serve the Web UI and REST API on `127.0.0.1:8000`, which has no authentication. Read as a boolean like the other `EVOLVE_` switches: `false`, `0`, `no`, `off`, `f` or `n` turns it off. An unrecognised value also turns it off and logs a warning; an empty value counts as unset. `--dashboard` / `--no-dashboard` on the command line take precedence | `true` |
 
 ### Trajectory limits
 
