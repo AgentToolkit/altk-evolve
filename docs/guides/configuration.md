@@ -104,7 +104,11 @@ split into subtasks and each subtask gets its own guideline-generation call. A t
 with fewer than five steps is still generated in one pass on every path, and its
 `task_description` is the first user message verbatim, as with segmentation off. Under
 [head+tail elision](#trajectory-limits) that count is of real steps in the rendered window:
-the omitted-steps marker is not a step. On the standard and consistency-fast paths, subtasks
+the omitted-steps marker is not a step. This changed after v1.7.1 for the consistency-fast
+path, which used to count the marker: an elided run under `EVOLVE_TRAJECTORY_MAX_STEPS=4` with
+`EVOLVE_TRAJECTORY_TAIL_STEPS` of 1 or more renders four real steps plus the marker, and was
+segmented before but is now generated in one pass. Any other window gives the same result as
+before. On the standard and consistency-fast paths, subtasks
 that cover the same steps share one call, a subtask covering only the marker is dropped, and
 a trajectory whose subtasks reduce to fewer than two distinct step ranges is generated in
 one pass. If exactly one distinct range remains, however many subtasks repeated it, that
