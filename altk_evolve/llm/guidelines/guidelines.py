@@ -15,13 +15,13 @@ from altk_evolve.config.llm import llm_settings  # noqa: F401
 from altk_evolve.config.evolve import evolve_config  # noqa: F401
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
+from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, one_pass_task_description, subtask_slices
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.guidelines import (
     DEFAULT_TASK_DESCRIPTION,
     Guideline,
     GuidelineGenerationResponse,
     GuidelineGenerationResult,
-    SubtaskSegment,
 )
 from altk_evolve.utils.utils import clean_llm_response
 
@@ -373,29 +373,6 @@ def parse_openai_agents_trajectory(
     }
 
 
-def slice_subtasks(subtasks: list[SubtaskSegment], trajectory_data: dict) -> list[tuple[SubtaskSegment, list[str], int]]:
-    """Slice ``trajectory_data["steps_list"]`` by each subtask's 1-based, inclusive positions.
-
-    Returns ``(subtask, slice, real_steps)`` per usable subtask. Positions are clamped to the
-    list. The elision marker holds a position but is not a step: a slice spanning the gap
-    keeps it, so the model knows steps are missing, without counting it in ``real_steps``;
-    a slice with no real step (out of range, or the marker alone) is dropped.
-    """
-    steps_list: list[str] = trajectory_data["steps_list"]
-    marker_index = trajectory_data["marker_index"]
-    n_steps = len(steps_list)
-    slices = []
-    for subtask in subtasks:
-        start = min(max(0, subtask.start_step - 1), n_steps)
-        end = min(max(0, subtask.end_step), n_steps)
-        real_steps = end - start - (marker_index is not None and start <= marker_index < end)
-        if real_steps <= 0:
-            logger.debug(f"Skipping subtask with no real steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
-            continue
-        slices.append((subtask, steps_list[start:end], real_steps))
-    return slices
-
-
 def _generate_guidelines_for_segment(
     task_description: str,
     trajectory_slice: str,
@@ -509,7 +486,9 @@ def generate_guidelines(
     the evidence and for when to turn it back on.
 
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
-    trajectory when segmentation is disabled or produces fewer than 2 subtasks).
+    trajectory when segmentation is disabled, the rendered trajectory has fewer than
+    SEGMENTATION_MIN_STEPS real steps, or segmentation yields fewer than 2 distinct usable
+    subtask slices).
     """
     options = options or GuidelineRuntime.from_settings()
     is_groq = options.custom_llm_provider == "groq" or options.guidelines_model.startswith("groq/")
@@ -526,9 +505,13 @@ def generate_guidelines(
 
     trajectory_data = parse_openai_agents_trajectory(messages, context_messages=context_messages, options=options)
     task_instruction = trajectory_data["task_instruction"]
+    # Real agent steps in the rendered window: the elision marker takes a list position but is
+    # not a step, so it is not counted (the consistency paths gate on real steps too).
+    n_steps = trajectory_data["num_steps"]
 
     subtasks = []
-    if options.segmentation_enabled:
+    # Same gate as both consistency paths: a trajectory this short is generated in one pass.
+    if options.segmentation_enabled and n_steps >= SEGMENTATION_MIN_STEPS:
         from altk_evolve.llm.guidelines.segmentation import segment_trajectory  # avoid circular import
 
         try:
@@ -537,27 +520,24 @@ def generate_guidelines(
             logger.warning(f"Trajectory segmentation failed, falling back to full trajectory: {e}")
             subtasks = []
 
-    if len(subtasks) >= 2:
-        valid_slices = slice_subtasks(subtasks, trajectory_data)
+    valid_slices = subtask_slices(subtasks, trajectory_data)
+    if len(valid_slices) >= 2:
+        return [
+            _generate_guidelines_for_segment(
+                task_description=subtask.generalized_description,
+                trajectory_slice="\n\n".join(slice_steps),
+                num_steps=real_steps,
+                constrained_decoding_supported=constrained_decoding_supported,
+                options=options,
+                supporting_context=render_supporting_context(context_messages),
+                outcome=outcome,
+                segmented=True,
+            )
+            for subtask, slice_steps, real_steps in valid_slices
+        ]
 
-        if len(valid_slices) >= 2:
-            return [
-                _generate_guidelines_for_segment(
-                    task_description=subtask.generalized_description,
-                    trajectory_slice="\n\n".join(slice_steps),
-                    num_steps=real_steps,
-                    constrained_decoding_supported=constrained_decoding_supported,
-                    options=options,
-                    supporting_context=render_supporting_context(context_messages),
-                    outcome=outcome,
-                    segmented=True,
-                )
-                for subtask, slice_steps, real_steps in valid_slices
-            ]
-        # Fewer than 2 valid subtask slices — fall through to full-trajectory fallback.
-
-    # Fallback: full trajectory (use segmented description if exactly 1 subtask was found)
-    desc = subtasks[0].generalized_description if len(subtasks) == 1 else task_instruction
+    # Fallback: full trajectory.
+    desc = one_pass_task_description(valid_slices, task_instruction)
     return [
         _generate_guidelines_for_segment(
             task_description=desc,
