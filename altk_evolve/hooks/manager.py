@@ -556,10 +556,13 @@ class _SyncHookRunner:
     - **Late results are discarded.** A call whose caller timed out is
       skipped if it has not started; if it is running, its result is dropped
       when it returns.
-    - **Bounded.** Threads cannot be stopped, so a timed-out call keeps its
-      thread until it returns. While ``_MAX_ABANDONED`` such calls are still
-      running, a new call to the plugin raises at once (fail-closed under
-      ``on_error="fail"``) instead of starting another thread.
+    - **Admission after timeout.** Threads cannot be stopped, so a timed-out
+      call keeps its thread until it returns. While at least
+      ``_MAX_ABANDONED`` timed-out calls remain running, new calls raise at
+      once (fail-closed under ``on_error="fail"``). Calls already admitted can
+      each time out, so ``_MAX_ABANDONED`` is not a hard cap on abandoned
+      threads. A call cancelled early (a halting sibling in ``concurrent``
+      mode) is not counted.
     - **contextvars** (tracing, re-entrancy guards) are copied into each call.
     - **Fork-safe.** A forked child has none of the parent's threads, so
       :func:`_reset_runners_after_fork` clears the inherited abandoned calls
