@@ -275,6 +275,40 @@ class TestPublish:
         assert entry["entity"] == "my-guideline.md"
         assert entry["source_removed"] is False
 
+    def _write_with_trajectory(self, project_dir, trajectory):
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md"
+        source.write_text(f"---\ntype: guideline\ntrajectory: {trajectory}\n---\n\nPrefer composition.\n")
+
+    def test_absolute_trajectory_inside_the_project_is_published_relative(self, project_dir):
+        """The manual learn flow stores save_trajectory's absolute path; it must not reach the shared repo."""
+        absolute = project_dir.resolve() / ".evolve" / "trajectories" / "trajectory_2026-10-16_abc.json"
+        self._write_with_trajectory(project_dir, absolute)
+
+        run_publish(project_dir, ["--entity", "my-guideline.md"])
+
+        content = _dest_path(project_dir, "my-guideline.md").read_text()
+        assert "trajectory: .evolve/trajectories/trajectory_2026-10-16_abc.json" in content
+        assert str(project_dir.resolve()) not in content
+
+    def test_absolute_trajectory_outside_the_project_is_dropped(self, project_dir, tmp_path):
+        absolute = tmp_path / "elsewhere" / "trajectories" / "trajectory_2026-10-16_abc.json"
+        self._write_with_trajectory(project_dir, absolute)
+
+        run_publish(project_dir, ["--entity", "my-guideline.md"])
+
+        content = _dest_path(project_dir, "my-guideline.md").read_text()
+        assert "trajectory" not in content
+        assert str(tmp_path) not in content
+
+    def test_relative_trajectory_is_published_unchanged(self, project_dir):
+        """The stop-hook flow already writes a project-relative path."""
+        self._write_with_trajectory(project_dir, ".evolve/trajectories/claude-transcript_abc.jsonl")
+
+        run_publish(project_dir, ["--entity", "my-guideline.md"])
+
+        content = _dest_path(project_dir, "my-guideline.md").read_text()
+        assert "trajectory: .evolve/trajectories/claude-transcript_abc.jsonl" in content
+
     def test_rejects_path_traversal_in_entity_name(self, project_dir):
         result = run_publish(project_dir, ["--entity", "../../etc/passwd"], expect_success=False)
         assert result.returncode != 0

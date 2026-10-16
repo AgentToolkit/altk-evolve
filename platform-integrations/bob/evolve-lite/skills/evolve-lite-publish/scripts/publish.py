@@ -109,6 +109,23 @@ def _find_private_entity(entities_dir, filename, requested_type):
     return entity_type, path, None
 
 
+def _portable_trajectory(value, project_root):
+    """The `trajectory` link to publish, or None to drop it.
+
+    The manual learn flow stores save_trajectory's absolute path, which names the
+    publisher's home directory and project path. Publish it relative to the project
+    instead, the form the stop-hook flow already writes
+    (``.evolve/trajectories/<file>``); drop it if it points outside the project,
+    where no relative form is meaningful. Relative values pass through unchanged.
+    """
+    if not isinstance(value, str) or not value or not Path(value).is_absolute():
+        return value
+    try:
+        return Path(os.path.realpath(value)).relative_to(project_root).as_posix()
+    except ValueError:
+        return None
+
+
 def _published_owner(path):
     """The `owner` frontmatter of an already-published file, or None if absent or unreadable."""
     try:
@@ -172,6 +189,11 @@ def main():
     # Where the publisher's native memory lives on their machine; meaningless to
     # subscribers and it exposes the publisher's home directory and project path.
     entity.pop("native_path", None)
+    trajectory = _portable_trajectory(entity.get("trajectory"), project_root)
+    if trajectory is None:
+        entity.pop("trajectory", None)
+    else:
+        entity["trajectory"] = trajectory
     entity["visibility"] = "public"
     if effective_user:
         entity["owner"] = effective_user
