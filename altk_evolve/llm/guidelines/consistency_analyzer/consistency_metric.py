@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 from functools import lru_cache
 
 from altk_evolve.config.guidelines import guidelines_settings
-from altk_evolve.embedding_assets import CODERANK_MODEL, MINILM_MODEL
+from altk_evolve.embeddings import MINILM_MODEL
 
 
 @lru_cache(maxsize=4)
@@ -43,10 +43,6 @@ def _configured_consistency_model(override: str | None, default: str):
 
 def get_sentence_transformer_small():
     return _configured_consistency_model(guidelines_settings.consistency_embedding_model_small, MINILM_MODEL)
-
-
-def get_sentence_transformer_large():
-    return _configured_consistency_model(guidelines_settings.consistency_embedding_model_large, CODERANK_MODEL)
 
 
 def get_metric_instance(metric: str):
@@ -71,9 +67,6 @@ def get_metric_instance(metric: str):
         return NumericFractionConsistencyMetric()
     elif metric == "sbert_small":
         model = get_sentence_transformer_small()
-        return EmbeddingConsistencyMetric(model)
-    elif metric == "sbert_large":
-        model = get_sentence_transformer_large()
         return EmbeddingConsistencyMetric(model)
     elif metric == "cat_entropy":
         return CategoricalEntropyConsistencyMetric()
@@ -114,12 +107,6 @@ def get_consistency_by_metric(
     elif metric == "sbert_small":
         str_samples = get_sample_strings(samples, " ")
         embedding_metric = get_metric_instance("sbert_small")
-        consistency, distance = embedding_metric.get_consistency_and_distance(str_samples)
-        return float(consistency), float(distance)
-
-    elif metric == "sbert_large":
-        str_samples = get_sample_strings(samples, " ")
-        embedding_metric = get_metric_instance("sbert_large")
         consistency, distance = embedding_metric.get_consistency_and_distance(str_samples)
         return float(consistency), float(distance)
 

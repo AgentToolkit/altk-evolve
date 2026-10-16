@@ -1159,7 +1159,7 @@ def test_agent_metric_required_before_profile_publication(response_type, metric)
     "agent",
     [
         {"name": "agent", "response_type": "text", "metric": "jaccard"},
-        {"name": "agent", "response_type": "code", "metric": "sbert_large"},
+        {"name": "agent", "response_type": "code", "metric": "sbert_small"},
         {"name": "agent", "response_type": "tool_calls", "fields": [{"name": "function_name", "metric": "jaccard"}]},
     ],
 )
