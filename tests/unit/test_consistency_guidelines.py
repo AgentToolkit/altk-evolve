@@ -22,7 +22,8 @@ from altk_evolve.llm.guidelines.consistency_guidelines import (
 
 from altk_evolve.schema.guidelines import GuidelineGenerationResult
 
-pytestmark = pytest.mark.unit
+# The window is pinned because subtask ranges are positions in the rendered steps.
+pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("default_trajectory_window")]
 
 # Sentinel for "omit the key entirely", distinct from any value the key could hold.
 _UNSET = object()

@@ -5,7 +5,8 @@ import pytest
 
 from altk_evolve.schema.guidelines import SubtaskSegment
 
-pytestmark = pytest.mark.unit
+# The window is pinned because subtask ranges are positions in the rendered steps.
+pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("default_trajectory_window")]
 
 MESSAGES = [{"role": "user", "content": "Do something"}, {"role": "assistant", "content": "Step 1 done"}]
 

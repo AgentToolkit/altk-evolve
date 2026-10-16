@@ -21,6 +21,9 @@ from altk_evolve.llm.guidelines.guidelines import (
 from altk_evolve.processing import TrajectoryOutcome
 from altk_evolve.schema.guidelines import Guideline, SubtaskSegment, resolve_guideline_category
 
+# The window is pinned because subtask ranges are positions in the rendered steps.
+pytestmark = pytest.mark.usefixtures("default_trajectory_window")
+
 
 def _mock_completion_response(payload: dict | list) -> MagicMock:
     response = MagicMock()
