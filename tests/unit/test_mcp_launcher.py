@@ -241,6 +241,13 @@ def test_dashboard_keeps_uvicorn_logs_off_stdout(monkeypatch, capfd) -> None:
     assert capfd.readouterr().out == ""
 
 
+def test_dashboard_binds_loopback_only(monkeypatch) -> None:
+    """The REST API has no authentication, so by default it must listen on 127.0.0.1 and nowhere else."""
+    with _real_api_server(monkeypatch) as server:
+        hosts = {host for host, _ in _bound(server)}
+    assert hosts == {"127.0.0.1"}
+
+
 def test_dashboard_bind_failure_is_reported_and_does_not_raise(caplog) -> None:
     """uvicorn exits when the port is taken; only the dashboard thread may stop, with a clear log line."""
     with socket.socket() as taken:
