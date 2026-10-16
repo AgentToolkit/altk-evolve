@@ -124,12 +124,13 @@ pii-semantic = [
 # hook engine needs it to execute (cpex-secrets-detection also pins cpex).
 secrets = [
     "altk-evolve-core[hooks]",
-    # Upper-bound the minor (mirrors cpex's <0.2 and [pii-regex]'s cpex-pii-filter
-    # pin): the plugin's DEFAULT_ENABLED map is written against this package's
-    # detector keys, so a defaults/schema change in a future minor could silently
-    # alter what gets redacted rather than surface as an error. Pin the minor and
-    # bump deliberately.
-    "cpex-secrets-detection>=0.1,<0.2",
+    # Pin to a single tested release (cpex's <0.2 and [pii-regex]'s cpex-pii-filter
+    # pin bound the minor; this one bounds the patch too): the plugin's
+    # DEFAULT_ENABLED map and its config pass-through are written against this
+    # package's detector and config keys, and a patch release can change those
+    # or what gets redacted without surfacing as an error. Bump deliberately,
+    # re-running the secrets tests against the new release.
+    "cpex-secrets-detection>=0.3.11,<0.3.12",
 ]
 
 # Benchmarking the redactors against external labeled corpora
