@@ -189,6 +189,17 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+    # Publishing moves the entity: the private copy is removed once the shared one is
+    # written. Check that is possible first, so a read-only type dir fails cleanly
+    # instead of leaving two copies behind.
+    if not os.access(src_path.parent, os.W_OK | os.X_OK):
+        print(
+            f"Error: cannot publish {args.entity}: {src_path.parent} is not writable, so the private copy "
+            f"could not be removed afterwards. Fix its permissions and publish again. Nothing was published.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     dest_dir = clone_root / entity_type
     # The clone is a shared repo: anyone with push access can commit `<type> -> elsewhere`.
     # Following it would write outside the clone (or to a path `git add` then refuses), so
@@ -237,11 +248,20 @@ def main():
             temp_path = Path(temp_file.name)
 
         temp_path.replace(dest_path)
-        src_path.unlink()
     finally:
         if temp_path is not None and temp_path.exists():
             temp_path.unlink()
 
+    # The shared copy is in place, so the publish has happened; a failure to remove the
+    # private copy (checked above, but permissions can still change or lie) is reported
+    # rather than raised, and the publish is still audited.
+    unlink_error = None
+    try:
+        src_path.unlink()
+    except OSError as exc:
+        unlink_error = exc
+
+    audit_fields = {"source_removed": False} if unlink_error is not None else {}
     try:
         audit_append(
             project_root=project_root,
@@ -250,11 +270,18 @@ def main():
             entity=args.entity,
             type=entity_type,
             repo=target["name"],
+            **audit_fields,
         )
     except Exception as exc:
         print(f"Warning: failed to append audit entry for publish: {exc}", file=sys.stderr)
 
     print(f"Published: {args.entity} -> {dest_path} (repo: {target['name']})")
+    if unlink_error is not None:
+        print(
+            f"Warning: published, but could not remove the private copy {src_path}: {unlink_error}\n"
+            f"Delete it yourself; the shared copy at {dest_path} is now the one to keep.",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":

@@ -222,6 +222,59 @@ class TestPublish:
 
         assert (real_clone / "guideline" / "my-guideline.md").is_file()
 
+    @pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores directory permissions")
+    def test_unremovable_source_is_refused_before_anything_is_written(self, project_dir):
+        """If the private copy can't be removed, publish must fail up front, not leave two copies."""
+        type_dir = project_dir / ".evolve" / "entities" / "guideline"
+        source = type_dir / "my-guideline.md"
+        type_dir.chmod(0o555)
+        try:
+            result = run_publish(project_dir, ["--entity", "my-guideline.md"], expect_success=False)
+        finally:
+            type_dir.chmod(0o755)
+
+        assert result.returncode != 0
+        assert "Traceback" not in result.stderr
+        assert "not writable" in result.stderr
+        assert source.exists()
+        assert not _dest_path(project_dir, "my-guideline.md").parent.exists()
+        assert not (project_dir / ".evolve" / "audit.log").exists()
+
+    def test_source_unlink_failure_after_publishing_is_reported_and_audited(self, project_dir):
+        """If removing the private copy still fails after the write, keep the published copy,
+        say which private copy is left over, and record the publish in the audit log."""
+        source = project_dir / ".evolve" / "entities" / "guideline" / "my-guideline.md"
+        wrapper = (
+            "import pathlib, runpy, sys\n"
+            "_unlink = pathlib.Path.unlink\n"
+            "def unlink(self, *a, **k):\n"
+            "    if self.name == 'my-guideline.md' and self.parent.name == 'guideline' and 'subscribed' not in self.parts:\n"
+            "        raise PermissionError(13, 'Permission denied', str(self))\n"
+            "    return _unlink(self, *a, **k)\n"
+            "pathlib.Path.unlink = unlink\n"
+            "sys.argv = sys.argv[1:]\n"
+            "runpy.run_path(sys.argv[0], run_name='__main__')\n"
+        )
+        env = {**os.environ, "EVOLVE_DIR": str(project_dir / ".evolve")}
+        result = subprocess.run(
+            [sys.executable, "-c", wrapper, str(PUBLISH_SCRIPT), "--entity", "my-guideline.md", "--user", "alice"],
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "Traceback" not in result.stderr
+        assert "could not remove the private copy" in result.stderr
+        assert str(source.resolve()) in result.stderr
+        assert _dest_path(project_dir, "my-guideline.md").is_file()
+        assert source.exists()
+        entry = json.loads((project_dir / ".evolve" / "audit.log").read_text().strip())
+        assert entry["action"] == "publish"
+        assert entry["entity"] == "my-guideline.md"
+        assert entry["source_removed"] is False
+
     def test_rejects_path_traversal_in_entity_name(self, project_dir):
         result = run_publish(project_dir, ["--entity", "../../etc/passwd"], expect_success=False)
         assert result.returncode != 0
