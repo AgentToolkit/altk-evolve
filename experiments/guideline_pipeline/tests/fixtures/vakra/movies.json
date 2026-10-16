@@ -1,0 +1,3 @@
+[
+  {"uuid": "mov-01", "domain": "movies", "status": "success", "trajectory": [{"type": "HumanMessage", "content": "Who directed the oldest film?"}, {"type": "AIMessage", "content": "A synthetic director."}], "output": [{"turn_id": 1, "query": "Who directed the oldest film?", "answer": "A synthetic director."}]}
+]
