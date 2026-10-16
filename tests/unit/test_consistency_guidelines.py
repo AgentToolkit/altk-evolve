@@ -932,6 +932,67 @@ class TestSegmentationFloorAndFastPathScope:
         mock_segment = self._run_fast(self._fast_trajectory(n), [self._subtask(1, 2), self._subtask(3, n)], monkeypatch)
         mock_segment.assert_called_once()
 
+    def test_fast_path_generates_a_repeated_subtask_range_once(self, monkeypatch):
+        """A segmenter that returns the same range twice must not turn one slice into two
+        generation calls (#293)."""
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        subtasks = [self._subtask(1, 3), self._subtask(1, 3), self._subtask(4, 6)]
+
+        with (
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            generate_consistency_guidelines_fast(self._fast_trajectory(6))
+
+        prompts = [c.kwargs["messages"][-1]["content"] for c in mock_completion.call_args_list]
+        assert len(prompts) == 2
+        assert "reasoning step 0" in prompts[0] and "reasoning step 3" not in prompts[0]
+        assert "reasoning step 3" in prompts[1] and "reasoning step 0" not in prompts[1]
+
+    @pytest.mark.parametrize(
+        "ranges,expected",
+        [
+            pytest.param([(1, 3)], "Kept 0", id="one-range-returned-once"),
+            pytest.param([(1, 3), (1, 3)], "Kept 0", id="one-range-returned-twice"),
+            pytest.param([(9, 9)], "do the thing", id="no-usable-range"),
+        ],
+    )
+    def test_fast_path_one_pass_description_depends_on_distinct_ranges(self, ranges, expected, monkeypatch):
+        """A range the segmenter repeated is keyed like one it returned once: by its
+        generalized description, not the raw user message."""
+        from unittest.mock import MagicMock, patch
+
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+        from altk_evolve.schema.guidelines import SubtaskSegment
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        subtasks = [
+            SubtaskSegment(generalized_description=f"Kept {i}", purpose="p", start_step=a, end_step=b) for i, (a, b) in enumerate(ranges)
+        ]
+
+        with (
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            results = generate_consistency_guidelines_fast(self._fast_trajectory(6))
+
+        assert mock_completion.call_count == 1
+        assert [r.task_description for r in results] == [expected]
+
     @pytest.mark.parametrize("n_scorable,should_segment", [(4, False), (5, True)])
     def test_accurate_path_floor_boundary(self, n_scorable, should_segment, monkeypatch):
         """Pins the 2 -> 5 floor: reverting it left the whole suite green.
@@ -1806,3 +1867,68 @@ def test_fast_path_skips_a_segment_holding_only_the_elision_marker(monkeypatch):
 
     assert [r.task_description for r in results] == ["Phase 1-4", "Phase 6-7"]
     assert mock_completion.call_count == 2
+
+
+class TestFastPathElisionWithDedupe:
+    """The fast path's share of the #350 x #382 interaction: repeated ranges, marker-only
+    ranges, the one-pass description and the length gate under elision. 12 steps under
+    max_steps=6, tail_steps=2 render real steps 1-4, the marker at position 5, then real
+    steps 11-12 at positions 6-7."""
+
+    MESSAGES = [{"role": "user", "content": "Do the thing"}] + [{"role": "assistant", "content": f"<s{i:02d}>"} for i in range(1, 13)]
+    OPTIONS = GuidelineRuntime(trajectory_max_steps=6, trajectory_tail_steps=2, segmentation_enabled=True)
+
+    def _run(self, segments, *, options=None):
+        """Run the fast pipeline; return (results, generation prompts, segmenter mock)."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+        from altk_evolve.schema.guidelines import SubtaskSegment
+
+        subtasks = [SubtaskSegment(generalized_description=f"Phase {a}-{b}", purpose="p", start_step=a, end_step=b) for a, b in segments]
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory", return_value=subtasks) as mock_segment,
+        ):
+            results = generate_consistency_guidelines_fast({"trace_id": "t", "messages": self.MESSAGES}, options=options or self.OPTIONS)
+        prompts = [c.kwargs["messages"][-1]["content"] for c in mock_completion.call_args_list]
+        return results, prompts, mock_segment
+
+    def test_a_repeated_range_spanning_the_gap_is_generated_once(self):
+        results, prompts, _ = self._run([(1, 6), (1, 6), (7, 7)])
+
+        assert [r.task_description for r in results] == ["Phase 1-6", "Phase 7-7"]
+        assert len(prompts) == 2
+        assert "intermediate step(s) omitted" in prompts[0]
+
+    def test_a_repeated_marker_only_range_is_dropped(self):
+        results, prompts, _ = self._run([(1, 4), (5, 5), (5, 5), (6, 7)])
+
+        assert [r.task_description for r in results] == ["Phase 1-4", "Phase 6-7"]
+        assert len(prompts) == 2
+
+    @pytest.mark.parametrize(
+        "segments,expected",
+        [
+            pytest.param([(5, 5), (1, 7)], "Phase 1-7", id="one-usable-range-after-the-marker-filter"),
+            pytest.param([(5, 5), (5, 5)], "Do the thing", id="marker-only"),
+        ],
+    )
+    def test_one_pass_description_counts_usable_ranges_after_the_marker_filter(self, segments, expected):
+        results, prompts, _ = self._run(segments)
+
+        assert len(prompts) == 1
+        assert [r.task_description for r in results] == [expected]
+
+    @pytest.mark.parametrize("max_steps,segmented", [(5, True), (4, False)], ids=["5-real-steps-plus-marker", "4-real-steps-plus-marker"])
+    def test_the_length_gate_counts_real_steps_not_the_marker(self, max_steps, segmented):
+        """tail_steps=1 renders max_steps real steps in max_steps + 1 positions; the gate
+        counts the real steps, as the accurate path's n_scorable_steps does."""
+        options = GuidelineRuntime(trajectory_max_steps=max_steps, trajectory_tail_steps=1, segmentation_enabled=True)
+        _, prompts, mock_segment = self._run([(1, 2), (3, max_steps + 1)], options=options)
+
+        assert mock_segment.call_count == int(segmented)
+        assert len(prompts) == (2 if segmented else 1)
