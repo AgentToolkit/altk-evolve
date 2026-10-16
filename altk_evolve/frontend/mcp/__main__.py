@@ -1,15 +1,22 @@
 import argparse
 import logging
 import os
+import socket
 import sys
 import threading
 import uvicorn
+from pydantic import ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from altk_evolve.frontend.mcp.mcp_server import app, get_client, mcp
 from altk_evolve.frontend.mcp.http_transport import create_resilient_sse_app
 from altk_evolve.retention.scheduler import retention_runtime
 
 logger = logging.getLogger("evolve-mcp")
+
+# Where the stdio launcher serves the web UI and REST API.
+DASHBOARD_HOST = "127.0.0.1"
+DASHBOARD_PORT = 8000
 
 
 def _is_truthy_env(name: str, default: bool) -> bool:
@@ -45,16 +52,87 @@ def _build_parser() -> argparse.ArgumentParser:
         default=8201,
         help="Port for SSE transport (default: 8201)",
     )
+    parser.add_argument(
+        "--dashboard",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            f"With stdio transport, also serve the web UI and REST API on http://{DASHBOARD_HOST}:{DASHBOARD_PORT} "
+            "(default: on; EVOLVE_DASHBOARD=false turns it off). The API has no authentication."
+        ),
+    )
     return parser
 
 
-def run_api_server():
-    """Run the FastAPI server for UI and API in a background thread."""
+class _DashboardSettings(BaseSettings):
+    """EVOLVE_DASHBOARD, read like every other EVOLVE_ setting: the environment, then `.env`.
+
+    It is a pydantic bool, like the other EVOLVE_ switches, so `f`, `n`, `no` and `off` mean off.
+    An empty value counts as unset, so it doesn't hide a value in `.env`.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore", env_ignore_empty=True)
+    dashboard: bool | None = None
+
+    @field_validator("dashboard", mode="before")
+    @classmethod
+    def _strip(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+def _dashboard_enabled(flag: bool | None) -> bool:
+    """The command-line flag wins; otherwise EVOLVE_DASHBOARD, which defaults to on.
+
+    An unrecognised value turns the dashboard off: a mistyped off switch must not leave an
+    unauthenticated listener running.
+    """
+    if flag is not None:
+        return flag
     try:
-        # We run with log_level="warning" to avoid cluttering stdio for MCP
-        uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+        setting = _DashboardSettings().dashboard
+    except ValidationError as exc:
+        value = exc.errors()[0].get("input")
+        logger.warning(
+            "EVOLVE_DASHBOARD=%r is not a boolean (use true or false); leaving the dashboard off. Pass --dashboard to turn it on.",
+            value,
+        )
+        return False
+    return True if setting is None else setting
+
+
+class _DashboardServer(uvicorn.Server):
+    """Announces the dashboard once its socket is bound, so the log never claims a port it lost."""
+
+    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
+        await super().startup(sockets=sockets)
+        if self.started:
+            bound = [sock.getsockname() for server in self.servers for sock in server.sockets or ()]
+            host, port = bound[0][:2] if bound else (self.config.host, self.config.port)
+            logger.warning(
+                "Evolve dashboard and REST API listening on http://%s:%d/ without authentication: any local process can "
+                "read and change memories. Disable with --no-dashboard or EVOLVE_DASHBOARD=false.",
+                host,
+                port,
+            )
+
+
+def run_api_server(host: str = DASHBOARD_HOST, port: int = DASHBOARD_PORT) -> None:
+    """Run the FastAPI server for UI and API in a background thread."""
+    # log_level="warning" keeps uvicorn's own logging (access logs go to stdout) off the
+    # MCP stdio channel.
+    server = _DashboardServer(uvicorn.Config(app, host=host, port=port, log_level="warning"))
+    try:
+        server.run()
+    except SystemExit:
+        # uvicorn logs the bind error (e.g. the port is in use) and exits; only this thread stops.
+        pass
     except Exception as e:
-        logging.error(f"Failed to start UI server: {e}")
+        logger.error(f"Failed to start UI server: {e}")
+        return
+    if not server.started:
+        # A bind failure lands here via SystemExit; a failed app lifespan startup returns
+        # from run() without one. uvicorn has already logged the cause in both cases.
+        logger.warning("Evolve dashboard did not start on http://%s:%d/. The MCP server keeps running over stdio.", host, port)
 
 
 def run_sse_server(host: str, port: int) -> None:
@@ -85,12 +163,17 @@ def main():
     try:
         with retention_runtime(get_client()):
             if args.transport == "stdio":
-                # Start the HTTP API/UI server in a daemon thread so it dies when the parent dies
-                api_thread = threading.Thread(target=run_api_server, daemon=True)
-                api_thread.start()
+                if _dashboard_enabled(args.dashboard):
+                    # Start the HTTP API/UI server in a daemon thread so it dies when the parent dies
+                    api_thread = threading.Thread(target=run_api_server, daemon=True)
+                    api_thread.start()
+                else:
+                    logger.info("Evolve dashboard disabled; serving MCP over stdio only.")
                 # Start FastMCP using stdio (which blocks)
                 mcp.run()
             else:
+                if args.dashboard:
+                    logger.warning("--dashboard applies to the stdio transport only; the SSE server does not serve the dashboard.")
                 run_sse_server(args.host, args.port)
     except KeyboardInterrupt:
         logger.info("MCP server stopped by user (KeyboardInterrupt)")
