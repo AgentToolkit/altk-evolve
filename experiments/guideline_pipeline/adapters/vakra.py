@@ -32,6 +32,7 @@ from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
 from experiments.guideline_pipeline.adapters.base import AdapterRecord
 from experiments.guideline_pipeline.adapters.elision import elide_middle
+from experiments.guideline_pipeline.output import write_json_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,8 @@ class VakraAdapter:
         files = self._files(path)
         results = self._results(path)
         if self.heldout_out is not None:
-            self.heldout_out.write_text(json.dumps(self.heldout_manifest(path), indent=2) + "\n")
+            # Atomic, like the export stages: an interrupted write leaves the previous manifest, not a truncated one.
+            write_json_atomic(self.heldout_out, self.heldout_manifest(path))
         read = 0
         for file in files:
             train, heldout = self.split_records(_read_records(file))

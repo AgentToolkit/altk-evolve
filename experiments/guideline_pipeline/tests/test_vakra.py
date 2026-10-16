@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from collections.abc import Iterator
@@ -468,6 +469,21 @@ def test_heldout_manifest_contents_and_determinism(tmp_path: Path):
     assert json.loads(first) == manifest
     list(adapter.records(FIXTURES))
     assert out.read_bytes() == first
+
+
+def test_an_interrupted_heldout_write_leaves_the_previous_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    out = tmp_path / "vakra_heldout.json"
+    out.write_text('{"previous": []}\n')
+    adapter = VakraAdapter().configure({"heldout_out": str(out)})
+
+    def interrupted(*args: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "replace", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        next(adapter.records(FIXTURES))
+    assert out.read_text() == '{"previous": []}\n'
+    assert [p.name for p in tmp_path.iterdir()] == ["vakra_heldout.json"]  # no temp file left behind
 
 
 def test_results_and_heldout_out_files_in_the_run_are_not_domain_files(data_copy: Path, monkeypatch: pytest.MonkeyPatch):
