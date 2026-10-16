@@ -371,6 +371,45 @@ def test_revocation_reaches_views_created_by_nested_hooks(tmp_path: Path):
     assert stored is not None and "stamped_late" not in stored.metadata
 
 
+class StampNearTheDeadline:
+    """post_read plugin whose stamp is still in the patch hooks when its call times out."""
+
+    def __init__(self) -> None:
+        self.errors: list[BaseException] = []
+        self.finished = threading.Event()
+
+    def memory_post_read(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.4)
+        try:
+            for entity in payload.entities:
+                context.backend.update_entity_metadata(payload.namespace_id, entity["id"], {"stamped_late": True})
+        except BaseException as exc:  # noqa: BLE001 - inspected by the test
+            self.errors.append(exc)
+        finally:
+            self.finished.set()
+        return None
+
+
+class SlowPatchPolicy:
+    def memory_pre_metadata_patch(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.3)
+        return None
+
+
+@pytest.mark.unit
+def test_direct_write_is_refused_if_the_call_timed_out_during_the_patch_hooks(tmp_path: Path):
+    client, target_id = _client_with_one_entity(tmp_path)
+    stamper = StampNearTheDeadline()
+    _enable_chain((stamper, "y", ["memory_post_read"], "ignore"), (SlowPatchPolicy(), "p", ["memory_pre_metadata_patch"], "fail"))
+
+    client.search_entities("ns", limit=5)
+    assert stamper.finished.wait(5)
+
+    assert stamper.errors and "hook call" in str(stamper.errors[0])
+    stored = client.get_entity_by_id("ns", target_id)
+    assert stored is not None and "stamped_late" not in stored.metadata
+
+
 class TwoReaders:
     def __init__(self) -> None:
         self.seen: list[str] = []
