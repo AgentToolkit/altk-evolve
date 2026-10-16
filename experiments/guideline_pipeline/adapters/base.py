@@ -47,3 +47,21 @@ class ConfigurableAdapter(Adapter, Protocol):
     """
 
     def configure(self, options: Mapping[str, str]) -> Adapter: ...
+
+
+def option_names(adapter: str, key: str, value: str) -> set[str]:
+    """A comma-separated filter option. One that names nothing would mean "no filter", so it is an error."""
+    names = {item.strip() for item in value.split(",") if item.strip()}
+    if not names:
+        raise ValueError(f"{adapter} option {key} names nothing: {value!r}")
+    return names
+
+
+def option_boolean(adapter: str, key: str, value: str) -> bool:
+    """A boolean option: 1/true/yes/on or 0/false/no/off (any case; empty is false). Anything else is an error."""
+    lowered = value.strip().lower()
+    if lowered in ("1", "true", "yes", "on"):
+        return True
+    if lowered in ("0", "false", "no", "off", ""):
+        return False
+    raise ValueError(f"{adapter} option {key} must be true or false, not {value!r}")

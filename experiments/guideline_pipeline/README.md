@@ -400,6 +400,84 @@ The CUGA sample profile works here too (publish it under another ID). Evaluating
 retrieval on the held-out queries is not part of this stage; a later eval stage
 will read the manifest.
 
+## tau-retail
+
+Reads τ-bench retail runs exported as one text file per task. `--input` is a
+directory of `task_*.txt` files (read in task-number order, not recursively) or
+a single `task_*.txt` file. Each file has `=====`-ruled sections: a
+`TASK <n>  reward=<r>  breakdown={...}` header, `USER SCENARIO`,
+`GROUND-TRUTH EVALUATION CRITERIA`, `AGENT DOMAIN POLICY`, `CONVERSATION`
+(`[ASSISTANT]` / `[USER]` turns, `-> CALL name(...)` with `args: {...}`, and
+`<- RESULT ...`), `FINAL ANSWER`, and `JUDGE / REWARD DETAILS`. See
+`tests/fixtures/tau/` for the exact layout. A rule starts a section only when a
+section title follows it, so a `=====` line inside a turn stays in that turn.
+A title is recognised by how its line starts, so when a `=====` line inside a
+turn is followed by a line like `FINAL ANSWER: ...`, that section appears twice
+and the task is skipped with a warning rather than read with turns missing.
+
+Each task becomes one record:
+
+- **messages:** the conversation's first `[USER]` turn as the task (what the
+  agent was actually asked, so guidelines are keyed like the queries that will
+  retrieve them), then the other turns in order. Each call is an assistant
+  function call with its tool name and arguments; results and both speakers'
+  other turns are labelled assistant messages. The `USER SCENARIO` is the user
+  simulator's hidden brief (`reason_for_call`, `known_info`,
+  `task_instructions`), which the agent never saw, so it is left out unless
+  `include_scenario=true`.
+- **Long runs:** long turns are split into parts under the extractor's
+  2000-character step cap. The extractor's default window is the first 50 steps
+  (`EVOLVE_TRAJECTORY_*`), so, as the CUGA adapter does, a longer conversation
+  keeps its first 25 and last 24 steps with one `[N steps elided ...]` marker
+  between them. The adapter caps at 50 whatever the extractor's settings.
+- **outcome:** `success` when the reward is 1.0; judge lines with
+  `action_match=False` or `met=False` (or the JSON / dict forms
+  `"action_match": false`, `'met': False`) become `failed_checks`, and the start
+  of the judge section becomes `detail`. When pretty-printed JSON puts the flag
+  on its own line, the check is named from its object: the action's `name` and
+  `arguments`, or the `nl_assertion` text.
+- **trace_id / batch:** the file name (`task_12`), prefixed with the split when
+  the header records one (`train/task_12`), because splits can reuse task
+  numbers. The conversation is the same; the batch is the file name. The revision digests
+  the record's content, so editing a task, or changing an option that changes
+  what is processed, reprocesses that task; re-running unchanged input skips it.
+- **metadata:** the header's reward, breakdown, termination reason, `split` and
+  the other fields it carries; `model=` in the header sets the record's model.
+
+A file without the header (and its reward), a conversation or a user turn in it
+is skipped with a warning on stderr, and the run continues. A run that reads no
+task logs a warning too.
+
+Options (`--adapter-option KEY=VALUE`):
+
+| Key | Effect |
+| --- | --- |
+| `include_policy=true` | Add the agent domain policy as `system` context messages. It is the same in every task, so it is off by default. |
+| `include_scenario=true` | Add the user simulator's scenario as a `system` context message. It holds facts the agent never had, so guidelines mined with it can encode them. |
+| `splits=train` | Only tasks in these splits. Without `split_file`, a task's split is the `split=` its header records: a task without one is skipped with a warning, and a listed split that no task records ends the run with an error. A value that lists no split is an error. |
+| `split_file=<split_tasks.json>` | Take each task's split from tau2's `split_tasks.json` (a JSON object mapping each split to its task IDs) instead of the headers. A task is matched on the number in its file name (`task_12.txt` is task `12`). Needs `splits=`; a listed split that the file lacks is an error. |
+
+Context is supporting history: the extractor sees it, but it is not counted as
+new material.
+
+**Splits and leakage.** Mining test tasks and then evaluating on them leaks the
+test set into the namespace, and nothing is filtered by default. tau2's retail
+`train` and `test` splits are lists of task IDs over the `base` set, so a normal
+run over `base` holds both in one directory and its headers can record at most
+`split=base`. Pass tau2's split file to mine only the training tasks:
+
+```bash
+uv run python -m experiments.guideline_pipeline mine --adapter tau-retail \
+    --input runs/tau-retail-base/trajectories --namespace tau_retail \
+    --processing-profile guidelines-consistency \
+    --adapter-option include_policy=true \
+    --adapter-option split_file=tau2-bench/data/tau2/domains/retail/split_tasks.json \
+    --adapter-option splits=train --dry-run
+```
+
+When the runs record their split in each header (`split=train`), `splits=train`
+alone selects on it.
+
 ## Writing an adapter
 
 An adapter is any object with a `name` and a `records(path)` method that yields
@@ -454,6 +532,8 @@ ADAPTERS = {adapter.name: adapter for adapter in (MyDatasetAdapter(),)}
 To take `--adapter-option` settings, also implement `configure(options)`, which
 validates the `KEY=VALUE` strings and returns a configured copy (see
 `ConfigurableAdapter` in `adapters/base.py` and `adapters/cuga.py`).
+`option_boolean` and `option_names` in `adapters/base.py` parse boolean and
+comma-separated options strictly: a typo or an empty filter is an error.
 
 If long runs can exceed the extractor's 50-step cap, keep their ending with
 `adapters/elision.py`'s `elide_middle`.
