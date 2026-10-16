@@ -142,6 +142,8 @@ uv run evolve-mcp
 ```
 The Web UI can be accessed from: `http://127.0.0.1:8000/ui/`
 
+Over stdio, `evolve-mcp` serves the Web UI and REST API on `127.0.0.1:8000` alongside MCP and logs the address at startup. The API has no authentication, so any local process can read and change memories through it. Pass `--no-dashboard` or set `EVOLVE_DASHBOARD=false` to run MCP alone.
+
 ### Starting the Web UI and MCP Server
 If you only want to access the Web UI and API (without the MCP server stdio blocking the terminal), you can run the FastAPI application directly using `uvicorn`:
 ```bash
@@ -152,7 +154,7 @@ Then navigate to `http://127.0.0.1:8000/ui/`.
 ### Starting only the MCP Server
 If you're attaching Evolve to an MCP client that requires a direct command (like Claude Desktop):
 ```bash
-uv run evolve-mcp
+uv run evolve-mcp --no-dashboard
 ```
 Or for SSE transport:
 ```bash
