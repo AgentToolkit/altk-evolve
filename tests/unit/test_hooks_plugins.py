@@ -241,6 +241,22 @@ def test_secrets_plugin_redacts_only_the_value_of_an_aws_secret_assignment(tmp_p
     assert messages == [{"role": "user", "content": "aws_secret_access_key = [REDACTED]"}]
 
 
+@pytest.mark.unit
+def test_secrets_default_enabled_matches_the_installed_package_detectors():
+    """DEFAULT_ENABLED must configure exactly the installed package's detectors.
+    The scanner ignores unknown detector names, so a renamed detector would
+    otherwise be switched off by our defaults, and a new one left unconfigured."""
+    pytest.importorskip("cpex_secrets_detection")
+    from importlib.resources import files
+
+    import yaml as _yaml
+
+    from altk_evolve.hooks.plugins.secrets import DEFAULT_ENABLED
+
+    manifest = _yaml.safe_load((files("cpex_secrets_detection") / "plugin-manifest.yaml").read_text())
+    assert set(manifest["default_configs"]["enabled"]) == set(DEFAULT_ENABLED)
+
+
 def _scaffold_secrets_entry() -> dict:
     """The commented-out secrets entry from the `evolve hooks init` template, uncommented."""
     import yaml as _yaml
