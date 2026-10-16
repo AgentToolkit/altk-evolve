@@ -17,7 +17,7 @@ def append(project_root=".", evolve_dir=None, **fields):
     """
     path = pathlib.Path(evolve_dir) / "audit.log" if evolve_dir is not None else pathlib.Path(project_root) / ".evolve" / "audit.log"
     path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {**fields, "ts": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")}
+    entry = {**fields, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")}
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
 
