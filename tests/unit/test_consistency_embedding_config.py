@@ -1,39 +1,29 @@
-"""Consistency defaults preserve the specialized models with either provider."""
+"""Consistency embedding defaults and overrides."""
 
 import pytest
-from altk_evolve.embedding_assets import CODERANK_REVISION
 
 from altk_evolve.config.guidelines import GuidelinesSettings
 from altk_evolve.llm.guidelines.consistency_analyzer import consistency_metric as metrics
 
 
 @pytest.mark.unit
-def test_default_metrics_use_minilm_and_pinned_coderank(monkeypatch, mock_sentence_transformer):
+def test_default_metric_uses_minilm(monkeypatch, mock_sentence_transformer):
     for name in (
         "EVOLVE_CONSISTENCY_EMBEDDING_MODEL_SMALL",
-        "EVOLVE_CONSISTENCY_EMBEDDING_MODEL_LARGE",
         "EVOLVE_CONSISTENCY_EMBEDDING_TRUST_REMOTE_CODE",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(metrics, "guidelines_settings", GuidelinesSettings(_env_file=None))
-    from altk_evolve.embedding_assets import CODERANK_MODEL, CODERANK_REVISION, MINILM_MODEL
-    from unittest.mock import call
+    from altk_evolve.embeddings import MINILM_MODEL
 
     metrics.get_metric_instance("sbert_small")
-    metrics.get_metric_instance("sbert_large")
-    assert mock_sentence_transformer.call_args_list == [
-        call(MINILM_MODEL, trust_remote_code=False),
-        call(CODERANK_MODEL, revision=CODERANK_REVISION, trust_remote_code=True),
-    ]
+    mock_sentence_transformer.assert_called_once_with(MINILM_MODEL, trust_remote_code=False)
 
 
 @pytest.mark.unit
-def test_explicit_large_model_preserves_specialized_option(monkeypatch, mock_sentence_transformer):
-    monkeypatch.setenv("EVOLVE_CONSISTENCY_EMBEDDING_MODEL_LARGE", "nomic-ai/CodeRankEmbed")
-    monkeypatch.setenv("EVOLVE_CONSISTENCY_EMBEDDING_TRUST_REMOTE_CODE", "true")
-    monkeypatch.setattr(metrics, "guidelines_settings", GuidelinesSettings(_env_file=None))
-    metrics.get_metric_instance("sbert_large")
-    mock_sentence_transformer.assert_called_once_with("nomic-ai/CodeRankEmbed", revision=CODERANK_REVISION, trust_remote_code=True)
+def test_sbert_large_is_not_supported():
+    with pytest.raises(ValueError, match="sbert_large"):
+        metrics.get_metric_instance("sbert_large")
 
 
 @pytest.mark.unit

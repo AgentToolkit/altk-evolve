@@ -27,9 +27,8 @@ class GuidelinesSettings(BaseSettings):
 
     guidelines_mode: str = "standard"
     consistency_method: str = "fast"
-    # Unset metrics use MiniLM (small) and CodeRankEmbed (large) with the selected provider.
+    # Unset, the sbert_small metric uses MiniLM with the selected provider.
     consistency_embedding_model_small: str | None = Field(default=None, min_length=1)
-    consistency_embedding_model_large: str | None = Field(default=None, min_length=1)
     consistency_embedding_trust_remote_code: bool = False
     debug_dir: Optional[Path] = Field(default=None)
     # Concurrency cap for the accurate method's resampling fallback: when a provider

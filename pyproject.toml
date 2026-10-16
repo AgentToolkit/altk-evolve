@@ -31,7 +31,6 @@ server = [
 cli = ["typer>=0.9.0"]
 fastembed = ["fastembed>=0.7,<1"]
 sentence-transformers = ["sentence-transformers"]
-fastembed-export = ["altk-evolve-core[fastembed,sentence-transformers]", "onnx>=1.17,<2"]
 # Full local Phoenix server; remote tracing needs only the tracing extra.
 phoenix = ["arize-phoenix>=12.30.0"]
 build = ["uv"]
@@ -314,8 +313,6 @@ module = [
     "thinc.*",
     "pymilvus.*",
     "fastembed.*",
-    "onnx.*",
-    "onnxruntime.*",
     "smolagents.*",
     "milvus_lite.*",
     "openinference.*",
