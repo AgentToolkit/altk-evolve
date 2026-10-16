@@ -60,10 +60,16 @@ def extract_facts_from_messages(messages: list[dict], use_categorization: bool |
     if use_categorization is None:
         use_categorization = True
 
-    prompt = _build_prompt(messages, use_categorization=use_categorization)
-    llm_messages = dispatch_llm_pre_call(
-        [{"role": "user", "content": prompt}], purpose="fact_extraction", model=llm_settings.fact_extraction_model
-    )
+    # Apply hooks only to the user text. Render instructions and examples afterward
+    # so hooks cannot change the fact-extraction template.
+    user_messages = [
+        {"role": "user", "content": str(message.get("content", ""))}
+        for message in messages
+        if str(message.get("role", "")).lower() == "user"
+    ]
+    user_messages = dispatch_llm_pre_call(user_messages, purpose="fact_extraction", model=llm_settings.fact_extraction_model)
+    prompt = _build_prompt(user_messages, use_categorization=use_categorization)
+    llm_messages = [{"role": "user", "content": prompt}]
     last_error = None
     for _ in range(3):
         try:
