@@ -786,6 +786,11 @@ def dispatch_memory_pre_metadata_patch(backend: BaseEntityBackend, namespace_id:
         modified = _invoke(HookType.MEMORY_PRE_METADATA_PATCH, payload, backend=backend)
     finally:
         _in_write.reset(token)
+    # A patch proposed through a plugin's context.backend must not go on to the
+    # store if that plugin call timed out while these hooks ran.
+    from altk_evolve.hooks.backend import _check_calling_view
+
+    _check_calling_view()
     if modified is None:
         return metadata_patch
     return dict(modified.metadata_patch)

@@ -479,6 +479,36 @@ def test_direct_write_is_refused_if_the_call_timed_out_during_the_patch_hooks(tm
     assert stored is not None and "stamped_late" not in stored.metadata
 
 
+class RecordingBackend(FilesystemEntityBackend):
+    """A wrapper-style override of the public template, e.g. a retry wrapper."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.public_patches: list[dict] = []
+
+    def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> Any:
+        self.public_patches.append(metadata_patch)
+        return super().update_entity_metadata(namespace_id, entity_id, metadata_patch)
+
+
+class Stamper:
+    def memory_post_read(self, payload: Any, context: Any) -> Any:
+        for entity in payload.entities:
+            context.backend.update_entity_metadata(payload.namespace_id, entity["id"], {"stamped": True})
+        return None
+
+
+@pytest.mark.unit
+def test_hook_direct_writes_go_through_the_public_template(tmp_path: Path):
+    backend = RecordingBackend(FilesystemSettings(data_dir=str(tmp_path)))
+    backend.create_namespace("ns")
+    backend.update_entities("ns", [Entity(content="first", type="note")], enable_conflict_resolution=False)
+    _enable_chain((Stamper(), "stamper", ["memory_post_read"], "fail"), timeout=3)
+
+    backend.search_entities("ns", limit=5)
+    assert backend.public_patches == [{"stamped": True}]
+
+
 class TwoReaders:
     def __init__(self) -> None:
         self.seen: list[str] = []

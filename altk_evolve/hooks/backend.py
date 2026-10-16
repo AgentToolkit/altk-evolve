@@ -69,6 +69,13 @@ def proposed_metadata(backend: BaseEntityBackend, entity_id: str, metadata: dict
     return result
 
 
+def _check_calling_view() -> None:
+    """Raise if a HookBackend method is dispatching in this context and its view was revoked."""
+    view = _calling_view.get()
+    if view is not None:
+        view._check_revoked()
+
+
 class HookBackend:
     """Hooks may read memory and propose metadata patches, not control storage.
 
@@ -153,13 +160,9 @@ class HookBackend:
         from altk_evolve.hooks.manager import dispatch_memory_pre_metadata_patch, dispatch_memory_post_read
 
         if self.__pending is None:
-            # The backend's update_entity_metadata template, with a revocation
-            # check after the patch hooks, right before the write starts.
-            patch = dispatch_memory_pre_metadata_patch(self.__backend, namespace_id, entity_id, metadata_patch)
-            self._check(namespace_id)
-            entity = self.__backend._update_entity_metadata_impl(namespace_id, entity_id, patch)
-            transformed = dispatch_memory_post_read(self.__backend, namespace_id, [entity])
-            return transformed[0] if transformed else entity
+            # The public template, so backend overrides apply. It re-checks
+            # this view after the patch hooks (see dispatch_memory_pre_metadata_patch).
+            return self.__backend.update_entity_metadata(namespace_id, entity_id, metadata_patch)
         patch = dispatch_memory_pre_metadata_patch(self.__backend, namespace_id, entity_id, metadata_patch)
         found = self._read(namespace_id, filters={"id": entity_id}, limit=1)
         if not found:
