@@ -1,0 +1,933 @@
+"""``plugin_timeout`` for native (sync) hook plugins (#422).
+
+A native plugin's sync method used to run inline in the async dispatch, which
+blocked the event loop, so cpex's timeout could not fire until the call
+returned and its late result was then applied. These tests pin the bounded
+off-loop execution that replaced it: fail-closed timeouts, ``on_error``
+parity with async plugins, discarded late results, unchanged concurrency,
+fail-fast while a timed-out call is still running, contextvar propagation,
+and no hang at loop or interpreter shutdown.
+
+Requires the optional cpex package (``uv sync --extra hooks``).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import concurrent.futures
+import contextvars
+import gc
+import subprocess
+import sys
+import textwrap
+import threading
+import time
+import weakref
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+pytest.importorskip("cpex")
+
+from cpex.framework import Plugin
+from cpex.framework.models import OnError, PluginConfig, PluginMode, PluginResult
+
+from altk_evolve.backend.filesystem import FilesystemEntityBackend
+from altk_evolve.config.evolve import EvolveConfig
+from altk_evolve.config.filesystem import FilesystemSettings
+from altk_evolve.frontend.client.evolve_client import EvolveClient
+from altk_evolve.hooks.plugin import HookPolicyViolation
+from altk_evolve.hooks.manager import (
+    MemoryPolicyViolation,
+    _build_native_adapter,
+    _initialize_manager,
+    _run_call,
+    dispatch_llm_pre_call,
+    get_plugin_manager,
+    shutdown_hooks,
+)
+from altk_evolve.schema.core import Entity
+from altk_evolve.schema.exceptions import EvolveException
+
+TIMEOUT = 0.3  # seconds; cpex's executor takes a float even though HooksConfig uses whole seconds
+MESSAGES = [{"role": "user", "content": "hello"}]
+
+_caller_var: contextvars.ContextVar[str] = contextvars.ContextVar("caller_var", default="unset")
+
+
+@pytest.fixture(autouse=True)
+def clean_hook_state(monkeypatch):
+    monkeypatch.setattr("altk_evolve.hooks.manager.discover_hooks_config_path", lambda: None)
+    shutdown_hooks()
+    yield
+    shutdown_hooks()
+
+
+def _enable(plugin: Any, hooks: list[str], *, mode: str = "sequential", on_error: str = "fail", timeout: float = TIMEOUT) -> Any:
+    """Register ``plugin`` (native, or a raw cpex Plugin) with a short timeout."""
+    pm = _initialize_manager("", [], 30)
+    pm.executor.timeout = timeout
+    if isinstance(plugin, Plugin):
+        pm._registry.register(plugin)
+    else:
+        config = PluginConfig(name="slow", kind="tests.slow", hooks=hooks, mode=PluginMode(mode), on_error=OnError(on_error))
+        pm._registry.register(_build_native_adapter(plugin, config))
+    return pm
+
+
+class GatedSync:
+    """Native llm_pre_call plugin that blocks until ``gate`` is set, then rewrites the messages."""
+
+    def __init__(self) -> None:
+        self.gate = threading.Event()
+        self.calls = 0
+        self.finished = threading.Event()
+
+    def llm_pre_call(self, payload: Any, context: Any) -> Any:
+        self.calls += 1
+        try:
+            self.gate.wait(10)
+            return payload.replace(messages=[{"role": "user", "content": "LATE"}])
+        finally:
+            self.finished.set()
+
+
+class GatedAsync(Plugin):
+    """Raw cpex (async) control with the same behavior as :class:`GatedSync`."""
+
+    def __init__(self, mode: str, on_error: str) -> None:
+        super().__init__(
+            PluginConfig(name="slow", kind="tests.slow", hooks=["llm_pre_call"], mode=PluginMode(mode), on_error=OnError(on_error))
+        )
+        self.calls = 0
+
+    async def llm_pre_call(self, payload, context):
+        self.calls += 1
+        await asyncio.sleep(10)
+        return PluginResult(continue_processing=True)
+
+
+def _make(flavor: str, mode: str = "sequential", on_error: str = "fail") -> Any:
+    plugin = GatedSync() if flavor == "sync" else GatedAsync(mode, on_error)
+    _enable(plugin, ["llm_pre_call"], mode=mode, on_error=on_error)
+    return plugin
+
+
+def _timed(fn, *args, **kwargs) -> tuple[float, Any]:
+    start = time.monotonic()
+    try:
+        result = fn(*args, **kwargs)
+    except BaseException as exc:  # noqa: BLE001 - returned to the test for assertions
+        result = exc
+    return time.monotonic() - start, result
+
+
+@pytest.fixture
+def release():
+    """Release every gated sync plugin at teardown so no worker outlives its test for long."""
+    plugins: list[GatedSync] = []
+    yield plugins.append
+    for plugin in plugins:
+        plugin.gate.set()
+
+
+# ── the timeout fires ────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("in_loop", [False, True], ids=["no-loop", "inside-running-loop"])
+@pytest.mark.parametrize("flavor", ["sync", "async"])
+def test_hook_past_timeout_fails_closed_within_the_timeout(flavor: str, in_loop: bool, release):
+    plugin = _make(flavor)
+    if flavor == "sync":
+        release(plugin)
+
+    async def from_loop():
+        return _timed(dispatch_llm_pre_call, MESSAGES, purpose="t")
+
+    elapsed, result = asyncio.run(from_loop()) if in_loop else _timed(dispatch_llm_pre_call, MESSAGES, purpose="t")
+
+    assert isinstance(result, MemoryPolicyViolation), result
+    assert result.code == "PLUGIN_ERROR" and "timeout" in result.reason
+    assert elapsed < TIMEOUT + 0.5, f"returned after {elapsed:.2f}s; the {TIMEOUT}s timeout did not fire"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("on_error", ["ignore", "disable"])
+@pytest.mark.parametrize("flavor", ["sync", "async"])
+def test_on_error_ignore_and_disable_match_async_plugins(flavor: str, on_error: str, release):
+    plugin = _make(flavor, on_error=on_error)
+    if flavor == "sync":
+        release(plugin)
+
+    elapsed, result = _timed(dispatch_llm_pre_call, MESSAGES, purpose="t")
+    assert result == MESSAGES, result
+    assert elapsed < TIMEOUT + 0.5
+
+    # "disable" takes the plugin out of rotation: the next call skips it (it is
+    # not even refused as busy). "ignore" keeps calling it.
+    if flavor == "sync":
+        _wait_until_idle(plugin)
+    elapsed, result = _timed(dispatch_llm_pre_call, MESSAGES, purpose="t")
+    if on_error == "disable":
+        assert plugin.calls == 1
+        assert result == MESSAGES and elapsed < 0.2
+    else:
+        assert plugin.calls == 2
+
+
+def _wait_until_idle(plugin: GatedSync) -> None:
+    """Let a released, timed-out call finish so the plugin accepts calls again."""
+    plugin.gate.set()
+    assert plugin.finished.wait(5)
+    # The abandoned mark clears on the call's thread just after the method returns.
+    deadline = time.monotonic() + 5
+    while any(r._abandoned for r in _runners()) and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def _runners() -> list[Any]:
+    pm = get_plugin_manager()
+    assert pm is not None
+    return [ref.plugin._runner for ref in pm._registry.get_all_plugins() if hasattr(ref.plugin, "_runner")]
+
+
+# ── late results ─────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_late_result_is_never_applied(release):
+    plugin = _make("sync", mode="transform", on_error="ignore")
+    release(plugin)
+    original = [dict(m) for m in MESSAGES]
+
+    result = dispatch_llm_pre_call(original, purpose="t")
+    _wait_until_idle(plugin)
+
+    assert result == MESSAGES
+    assert original == MESSAGES  # the caller's list is untouched too
+    # The worker is free again, and an on-time result still applies.
+    assert dispatch_llm_pre_call(MESSAGES, purpose="t") == [{"role": "user", "content": "LATE"}]
+
+
+class LateBackendPatcher:
+    """memory_post_read plugin that, after its caller gave up, tries to stamp the store."""
+
+    def __init__(self) -> None:
+        self.gate = threading.Event()
+        self.finished = threading.Event()
+        self.error: BaseException | None = None
+
+    def memory_post_read(self, payload: Any, context: Any) -> Any:
+        try:
+            self.gate.wait(10)
+            for entity in payload.entities:
+                context.backend.update_entity_metadata(payload.namespace_id, entity["id"], {"late": True})
+        except BaseException as exc:  # noqa: BLE001 - inspected by the test
+            self.error = exc
+        finally:
+            self.finished.set()
+        return None
+
+
+@pytest.mark.unit
+def test_timed_out_call_cannot_patch_the_store_late(tmp_path: Path, release):
+    client = EvolveClient(config=EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
+    client.create_namespace("ns")
+    client.update_entities("ns", [Entity(content="first", type="note")], enable_conflict_resolution=False)
+
+    plugin = LateBackendPatcher()
+    release(plugin)
+    _enable(plugin, ["memory_post_read"], mode="fire_and_forget", on_error="ignore")
+
+    target = client.search_entities("ns", limit=1)[0]
+    plugin.gate.set()
+    assert plugin.finished.wait(5)
+
+    assert isinstance(plugin.error, EvolveException) and "hook call" in str(plugin.error)
+    stored = client.get_entity_by_id("ns", target.id)
+    assert stored is not None and "late" not in stored.metadata
+
+
+def _client_with_one_entity(tmp_path: Path) -> tuple[EvolveClient, str]:
+    client = EvolveClient(config=EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
+    client.create_namespace("ns")
+    client.update_entities("ns", [Entity(content="first", type="note")], enable_conflict_resolution=False)
+    return client, client.search_entities("ns", limit=1)[0].id
+
+
+class SlowPreWrite:
+    """Keeps write preparation open past a timed-out plugin, so a late patch could still be committed."""
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.45)
+        return None
+
+
+def _enable_chain(*plugins: tuple[Any, str, list[str], str], timeout: float = 0.5) -> None:
+    pm = _initialize_manager("", [], 30)
+    pm.executor.timeout = timeout
+    for priority, (plugin, name, hooks, on_error) in enumerate(plugins):
+        config = PluginConfig(
+            name=name, kind=f"tests.{name}", hooks=hooks, mode=PluginMode.SEQUENTIAL, on_error=OnError(on_error), priority=priority
+        )
+        pm._registry.register(_build_native_adapter(plugin, config))
+
+
+class PatchAfterSlowRead:
+    """Passes the revocation check, then blocks in the backend read inside update_entity_metadata."""
+
+    def __init__(self, target_id: str) -> None:
+        self.target_id = target_id
+        self.error: BaseException | None = None
+        self.finished = threading.Event()
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        _slow_reads.set()
+        try:
+            context.backend.update_entity_metadata(payload.namespace_id, self.target_id, {"late": True})
+        except BaseException as exc:  # noqa: BLE001 - inspected by the test
+            self.error = exc
+        finally:
+            self.finished.set()
+        return None
+
+
+_slow_reads = threading.Event()
+
+
+@pytest.fixture
+def slow_reads(monkeypatch):
+    original = FilesystemEntityBackend._search_entities_impl
+
+    def slow(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        if _slow_reads.is_set():
+            _slow_reads.clear()
+            time.sleep(0.7)
+        return result
+
+    monkeypatch.setattr(FilesystemEntityBackend, "_search_entities_impl", slow)
+    yield
+    _slow_reads.clear()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("on_error", ["ignore", "disable"])
+def test_patch_from_a_call_that_timed_out_mid_read_is_refused(tmp_path: Path, slow_reads, on_error: str):
+    client, target_id = _client_with_one_entity(tmp_path)
+    plugin = PatchAfterSlowRead(target_id)
+    _enable_chain((plugin, "x", ["memory_pre_write"], on_error), (SlowPreWrite(), "z", ["memory_pre_write"], "fail"))
+
+    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+    assert plugin.finished.wait(5)
+
+    assert isinstance(plugin.error, EvolveException) and "hook call" in str(plugin.error)
+    stored = client.get_entity_by_id("ns", target_id)
+    assert stored is not None and "late" not in stored.metadata
+
+
+class ReadThenWait:
+    """Reads through context.backend just before its timeout; the nested post_read outlives it."""
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.4)
+        context.backend.search_entities(payload.namespace_id, limit=5)
+        return None
+
+
+class StampAfterAPause:
+    def __init__(self) -> None:
+        self.errors: list[BaseException] = []
+        self.finished = threading.Event()
+
+    def memory_post_read(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.3)
+        try:
+            for entity in payload.entities:
+                context.backend.update_entity_metadata(payload.namespace_id, entity["id"], {"stamped_late": True})
+        except BaseException as exc:  # noqa: BLE001 - inspected by the test
+            self.errors.append(exc)
+        finally:
+            self.finished.set()
+        return None
+
+
+@pytest.mark.unit
+def test_revocation_reaches_views_created_by_nested_hooks(tmp_path: Path):
+    client, target_id = _client_with_one_entity(tmp_path)
+    stamper = StampAfterAPause()
+    _enable_chain(
+        (ReadThenWait(), "x", ["memory_pre_write"], "ignore"),
+        (stamper, "y", ["memory_post_read"], "ignore"),
+        (SlowPreWrite(), "z", ["memory_pre_write"], "fail"),
+    )
+
+    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+    assert stamper.finished.wait(5)
+
+    assert stamper.errors and "hook call" in str(stamper.errors[0])
+    stored = client.get_entity_by_id("ns", target_id)
+    assert stored is not None and "stamped_late" not in stored.metadata
+
+
+class ReadOnAHelperThreadThenWait:
+    """Like ReadThenWait, but the read runs on the plugin's own pool thread (no contextvars copied)."""
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.4)
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            pool.submit(context.backend.search_entities, payload.namespace_id, limit=5).result()
+        return None
+
+
+@pytest.mark.unit
+def test_revocation_reaches_views_created_from_a_plugin_helper_thread(tmp_path: Path):
+    client, target_id = _client_with_one_entity(tmp_path)
+    stamper = StampAfterAPause()
+    _enable_chain(
+        (ReadOnAHelperThreadThenWait(), "x", ["memory_pre_write"], "ignore"),
+        (stamper, "y", ["memory_post_read"], "ignore"),
+        (SlowPreWrite(), "z", ["memory_pre_write"], "fail"),
+    )
+
+    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+    assert stamper.finished.wait(5)
+
+    assert stamper.errors and "hook call" in str(stamper.errors[0])
+    stored = client.get_entity_by_id("ns", target_id)
+    assert stored is not None and "stamped_late" not in stored.metadata
+
+
+class ReadThroughBackend:
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        context.backend.search_entities(payload.namespace_id, limit=1)
+        return None
+
+
+@pytest.mark.unit
+def test_work_handed_off_by_a_finished_call_is_not_revoked(tmp_path: Path):
+    """Work a plugin starts with a copy of its context, and that later uses the public API, is not tied to the call."""
+    client, _ = _client_with_one_entity(tmp_path)
+    outcome: dict[str, Any] = {}
+    done = threading.Event()
+
+    class HandOff:
+        def memory_post_read(self, payload: Any, context: Any) -> Any:
+            if outcome:
+                return None
+            outcome["started"] = True
+
+            def later() -> None:
+                time.sleep(0.1)
+                try:
+                    client.update_entities("ns", [Entity(content="follow-up", type="note")], enable_conflict_resolution=False)
+                    outcome["later"] = "ok"
+                except BaseException as exc:  # noqa: BLE001 - inspected by the test
+                    outcome["later"] = exc
+                done.set()
+
+            threading.Thread(target=contextvars.copy_context().run, args=(later,)).start()
+            return None
+
+    _enable_chain(
+        (ReadThroughBackend(), "reader", ["memory_pre_write"], "fail"), (HandOff(), "handoff", ["memory_post_read"], "ignore"), timeout=3
+    )
+
+    client.search_entities("ns", limit=1)
+    assert done.wait(5)
+    assert outcome["later"] == "ok", outcome["later"]
+
+
+class StampNearTheDeadline:
+    """post_read plugin whose stamp is still in the patch hooks when its call times out."""
+
+    def __init__(self) -> None:
+        self.errors: list[BaseException] = []
+        self.finished = threading.Event()
+
+    def memory_post_read(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.4)
+        try:
+            for entity in payload.entities:
+                context.backend.update_entity_metadata(payload.namespace_id, entity["id"], {"stamped_late": True})
+        except BaseException as exc:  # noqa: BLE001 - inspected by the test
+            self.errors.append(exc)
+        finally:
+            self.finished.set()
+        return None
+
+
+class SlowPatchPolicy:
+    def memory_pre_metadata_patch(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.3)
+        return None
+
+
+@pytest.mark.unit
+def test_direct_write_is_refused_if_the_call_timed_out_during_the_patch_hooks(tmp_path: Path):
+    client, target_id = _client_with_one_entity(tmp_path)
+    stamper = StampNearTheDeadline()
+    _enable_chain((stamper, "y", ["memory_post_read"], "ignore"), (SlowPatchPolicy(), "p", ["memory_pre_metadata_patch"], "fail"))
+
+    client.search_entities("ns", limit=5)
+    assert stamper.finished.wait(5)
+
+    assert stamper.errors and "hook call" in str(stamper.errors[0])
+    stored = client.get_entity_by_id("ns", target_id)
+    assert stored is not None and "stamped_late" not in stored.metadata
+
+
+class RecordingBackend(FilesystemEntityBackend):
+    """A wrapper-style override of the public template, e.g. a retry wrapper."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.public_patches: list[dict] = []
+
+    def update_entity_metadata(self, namespace_id: str, entity_id: str, metadata_patch: dict) -> Any:
+        self.public_patches.append(metadata_patch)
+        return super().update_entity_metadata(namespace_id, entity_id, metadata_patch)
+
+
+class Stamper:
+    def memory_post_read(self, payload: Any, context: Any) -> Any:
+        for entity in payload.entities:
+            context.backend.update_entity_metadata(payload.namespace_id, entity["id"], {"stamped": True})
+        return None
+
+
+@pytest.mark.unit
+def test_hook_direct_writes_go_through_the_public_template(tmp_path: Path):
+    backend = RecordingBackend(FilesystemSettings(data_dir=str(tmp_path)))
+    backend.create_namespace("ns")
+    backend.update_entities("ns", [Entity(content="first", type="note")], enable_conflict_resolution=False)
+    _enable_chain((Stamper(), "stamper", ["memory_post_read"], "fail"), timeout=3)
+
+    backend.search_entities("ns", limit=5)
+    assert backend.public_patches == [{"stamped": True}]
+
+
+class TwoReaders:
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
+    def reader(self, name: str) -> Any:
+        outer = self
+
+        class Reader:
+            def memory_pre_write(self, payload: Any, context: Any) -> Any:
+                context.backend.search_entities(payload.namespace_id, limit=1)
+                outer.seen.append(name)
+                return None
+
+        return Reader()
+
+
+@pytest.mark.unit
+def test_each_plugin_in_a_chain_gets_its_own_backend_view(tmp_path: Path):
+    """Revoking the first plugin's view when its call ends must not revoke the second's."""
+    client, _ = _client_with_one_entity(tmp_path)
+    readers = TwoReaders()
+    _enable_chain((readers.reader("r1"), "r1", ["memory_pre_write"], "fail"), (readers.reader("r2"), "r2", ["memory_pre_write"], "fail"))
+
+    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+    assert readers.seen == ["r1", "r2"]
+
+
+# ── bounds and serialization ─────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_new_calls_fail_fast_while_a_timed_out_call_is_still_running(release):
+    plugin = _make("sync")
+    release(plugin)
+
+    with pytest.raises(MemoryPolicyViolation, match="timeout"):
+        dispatch_llm_pre_call(MESSAGES, purpose="t")
+
+    elapsed, result = _timed(dispatch_llm_pre_call, MESSAGES, purpose="t")
+    assert isinstance(result, MemoryPolicyViolation), result
+    assert "still running" in result.reason
+    assert elapsed < TIMEOUT / 2, "a call queued behind the stuck one instead of failing fast"
+    assert plugin.calls == 1
+
+    _wait_until_idle(plugin)
+    assert dispatch_llm_pre_call(MESSAGES, purpose="t") == [{"role": "user", "content": "LATE"}]
+
+
+class HaltOnce:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def llm_pre_call(self, payload: Any, context: Any) -> Any:
+        self.calls += 1
+        if self.calls == 1:
+            time.sleep(0.05)
+            raise HookPolicyViolation("blocked once", code="ONCE")
+        return None
+
+
+class SlowButOnTime:
+    def llm_pre_call(self, payload: Any, context: Any) -> Any:
+        time.sleep(0.3)
+        return None
+
+
+@pytest.mark.unit
+def test_a_call_cancelled_by_a_halting_sibling_does_not_refuse_new_calls():
+    """In concurrent mode cpex cancels the other plugins when one halts; that is not a timeout."""
+    pm = _initialize_manager("", [], 30)
+    pm.executor.timeout = 2
+    for name, plugin in (("halt", HaltOnce()), ("slow", SlowButOnTime())):
+        config = PluginConfig(name=name, kind=f"tests.{name}", hooks=["llm_pre_call"], mode=PluginMode.CONCURRENT, on_error=OnError.FAIL)
+        pm._registry.register(_build_native_adapter(plugin, config))
+
+    with pytest.raises(MemoryPolicyViolation, match="blocked once"):
+        dispatch_llm_pre_call(MESSAGES, purpose="t")
+    # The slow plugin's cancelled call is still running, but it never timed out.
+    assert dispatch_llm_pre_call(MESSAGES, purpose="t") == MESSAGES
+
+
+class SlowDetector:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def llm_pre_call(self, payload: Any, context: Any) -> Any:
+        with self.lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        time.sleep(0.2)
+        with self.lock:
+            self.active -= 1
+        return None
+
+
+@pytest.mark.unit
+def test_concurrent_callers_are_not_serialized():
+    """As when they ran inline: 8 callers of a 0.2s detector all finish well inside a 1s timeout."""
+    plugin = SlowDetector()
+    _enable(plugin, ["llm_pre_call"], timeout=1)
+    errors: list[BaseException] = []
+
+    def call() -> None:
+        try:
+            dispatch_llm_pre_call(MESSAGES, purpose="t")
+        except BaseException as exc:  # noqa: BLE001 - re-raised below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=call) for _ in range(8)]
+    start = time.monotonic()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    assert not errors, errors
+    assert time.monotonic() - start < 0.8
+    assert plugin.peak > 1
+
+
+@pytest.mark.unit
+def test_a_call_cancelled_before_it_starts_never_runs():
+    calls: list[int] = []
+    future: concurrent.futures.Future = concurrent.futures.Future()
+    assert future.cancel()
+    _run_call(future, contextvars.copy_context(), calls.append, (1,))
+    assert calls == []
+
+
+@pytest.mark.unit
+def test_nothing_from_a_call_outlives_it():
+    """No thread, plugin, payload or backend is kept alive after the call and shutdown_hooks()."""
+
+    class Redactor:
+        def llm_pre_call(self, payload: Any, context: Any) -> Any:
+            return payload.replace(messages=[{"role": "user", "content": "[REDACTED]"}])
+
+    for _ in range(5):
+        plugin = Redactor()
+        ref = weakref.ref(plugin)
+        _enable(plugin, ["llm_pre_call"], timeout=5)
+        assert dispatch_llm_pre_call([{"role": "user", "content": "ssn 123-45-6789"}], purpose="t")[0]["content"] == "[REDACTED]"
+        del plugin
+        shutdown_hooks()
+    gc.collect()
+    assert ref() is None
+    deadline = time.monotonic() + 2
+    while any(t.name.startswith("evolve-hook") for t in threading.enumerate()) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert not [t.name for t in threading.enumerate() if t.name.startswith("evolve-hook")]
+
+
+# ── context and re-entrancy ──────────────────────────────────────────
+
+
+class ContextProbe:
+    def __init__(self) -> None:
+        self.seen: tuple[str, int] | None = None
+
+    def llm_pre_call(self, payload: Any, context: Any) -> Any:
+        self.seen = (_caller_var.get(), threading.get_ident())
+        return None
+
+
+@pytest.mark.unit
+def test_contextvars_reach_the_worker():
+    plugin = ContextProbe()
+    _enable(plugin, ["llm_pre_call"], timeout=5)
+    token = _caller_var.set("from-caller")
+    try:
+        dispatch_llm_pre_call(MESSAGES, purpose="t")
+    finally:
+        _caller_var.reset(token)
+    assert plugin.seen is not None
+    value, ident = plugin.seen
+    assert value == "from-caller"
+    assert ident != threading.get_ident()  # it ran off the caller's thread
+
+
+class NestedPatcher:
+    """One native plugin on two hooks: its post_read stamps metadata, which dispatches its own pre_metadata_patch."""
+
+    def __init__(self) -> None:
+        self.patches = 0
+
+    def memory_post_read(self, payload: Any, context: Any) -> Any:
+        for entity in payload.entities:
+            context.backend.update_entity_metadata(payload.namespace_id, entity["id"], {"seen": True})
+        return None
+
+    def memory_pre_metadata_patch(self, payload: Any, context: Any) -> Any:
+        self.patches += 1
+        return None
+
+
+@pytest.mark.unit
+def test_hook_dispatched_from_a_worker_does_not_queue_behind_it(tmp_path: Path):
+    client = EvolveClient(config=EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
+    client.create_namespace("ns")
+    client.update_entities("ns", [Entity(content="first", type="note")], enable_conflict_resolution=False)
+
+    plugin = NestedPatcher()
+    _enable(plugin, ["memory_post_read", "memory_pre_metadata_patch"], timeout=2)
+
+    elapsed, result = _timed(client.search_entities, "ns", limit=5)
+    assert not isinstance(result, BaseException), result
+    assert elapsed < 1.5, "the nested dispatch waited on its own plugin's worker until the timeout"
+    assert plugin.patches == 1
+    stored = client.get_entity_by_id("ns", result[0].id)
+    assert stored is not None and stored.metadata.get("seen") is True
+
+
+class HelperThreadPatcher:
+    """Makes its ``context.backend`` callback from its own pool thread, where contextvars are not copied."""
+
+    def __init__(self, target_id: str) -> None:
+        self.target_id = target_id
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            pool.submit(context.backend.update_entity_metadata, payload.namespace_id, self.target_id, {"tag": 1}).result()
+        return None
+
+    def memory_pre_metadata_patch(self, payload: Any, context: Any) -> Any:
+        return None
+
+
+@pytest.mark.unit
+def test_callback_from_a_plugin_helper_thread_does_not_wait_on_the_plugin(tmp_path: Path):
+    client = EvolveClient(config=EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
+    client.create_namespace("ns")
+    client.update_entities("ns", [Entity(content="first", type="note")], enable_conflict_resolution=False)
+    target = client.search_entities("ns", limit=1)[0]
+    _enable(HelperThreadPatcher(target.id), ["memory_pre_write", "memory_pre_metadata_patch"], timeout=2)
+
+    elapsed, result = _timed(client.update_entities, "ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+    assert not isinstance(result, BaseException), result
+    assert elapsed < 1.5
+
+
+class NestedReader:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def memory_post_read(self, payload: Any, context: Any) -> Any:
+        self.calls += 1
+        context.backend.search_entities(payload.namespace_id, limit=5)
+        return None
+
+
+@pytest.mark.unit
+def test_post_read_reentrancy_guard_holds_on_the_worker(tmp_path: Path):
+    client = EvolveClient(config=EvolveConfig(backend="filesystem", settings=FilesystemSettings(data_dir=str(tmp_path))))
+    client.create_namespace("ns")
+    client.update_entities("ns", [Entity(content="first", type="note")], enable_conflict_resolution=False)
+    plugin = NestedReader()
+    _enable(plugin, ["memory_post_read"], timeout=5)
+
+    assert len(client.search_entities("ns", limit=5)) == 1
+    assert plugin.calls == 1
+
+
+# ── fast hooks and fire-and-forget ───────────────────────────────────
+
+
+class Tagger:
+    def llm_pre_call(self, payload: Any, context: Any) -> Any:
+        return payload.replace(messages=[{**m, "content": f"[tag] {m['content']}"} for m in payload.messages])
+
+
+@pytest.mark.unit
+def test_fast_sync_hook_still_transforms():
+    _enable(Tagger(), ["llm_pre_call"], mode="transform", timeout=5)
+    for _ in range(20):
+        assert dispatch_llm_pre_call(MESSAGES, purpose="t") == [{"role": "user", "content": "[tag] hello"}]
+
+
+@pytest.mark.unit
+def test_fire_and_forget_sync_hook_is_bounded_by_the_timeout(release):
+    plugin = GatedSync()
+    release(plugin)
+    _enable(plugin, ["llm_pre_call"], mode="fire_and_forget")
+
+    elapsed, result = _timed(dispatch_llm_pre_call, MESSAGES, purpose="t")
+    assert result == MESSAGES
+    assert elapsed < TIMEOUT + 0.5
+
+
+# ── shutdown ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_no_hang_at_loop_or_interpreter_shutdown():
+    """A plugin stuck for 60s must not hold up loop close or interpreter exit."""
+    code = textwrap.dedent(
+        """
+        import asyncio, time
+        from cpex.framework.models import OnError, PluginConfig, PluginMode
+        from altk_evolve.hooks import manager as m
+
+        class Stuck:
+            def llm_pre_call(self, payload, context):
+                time.sleep(60)
+
+        def enable():
+            m.shutdown_hooks()
+            pm = m._initialize_manager("", [], 1)
+            config = PluginConfig(name="stuck", kind="x.stuck", hooks=["llm_pre_call"], mode=PluginMode.SEQUENTIAL, on_error=OnError.FAIL)
+            pm._registry.register(m._build_native_adapter(Stuck(), config))
+
+        def call():
+            start = time.monotonic()
+            try:
+                m.dispatch_llm_pre_call([{"role": "user", "content": "x"}], purpose="t")
+            except m.MemoryPolicyViolation:
+                pass
+            return time.monotonic() - start
+
+        enable()
+        print("no-loop", round(call(), 2))
+        enable()
+
+        async def inside():
+            return call()
+
+        print("in-loop", round(asyncio.run(inside()), 2))
+        """
+    )
+    start = time.monotonic()
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
+    total = time.monotonic() - start
+    assert proc.returncode == 0, proc.stderr
+    timings = dict(line.split() for line in proc.stdout.splitlines())
+    assert float(timings["no-loop"]) < 1.5 and float(timings["in-loop"]) < 1.5, timings
+    assert total < 15, f"interpreter exit waited for the stuck plugin ({total:.1f}s)"
+
+
+@pytest.mark.unit
+def test_forked_child_is_not_blocked_by_the_parents_timed_out_call():
+    """The parent's abandoned call has no thread in a forked child, so it must not make the child fail fast."""
+    code = textwrap.dedent(
+        """
+        import multiprocessing, os, time, warnings
+        warnings.simplefilter("ignore", DeprecationWarning)  # fork with threads alive
+        from cpex.framework.models import OnError, PluginConfig, PluginMode
+        from altk_evolve.hooks import manager as m
+
+        class Tag:
+            calls = 0
+            def llm_pre_call(self, payload, context):
+                Tag.calls += 1
+                if Tag.calls == 1:
+                    time.sleep(10)  # the parent's first call times out and keeps running
+                return payload.replace(messages=[{"role": "user", "content": "TAGGED"}])
+
+        def call(_=None):
+            try:
+                return m.dispatch_llm_pre_call([{"role": "user", "content": "x"}], purpose="t")[0]["content"]
+            except m.MemoryPolicyViolation as exc:
+                return "busy" if "still running" in exc.reason else "timeout"
+
+        if __name__ == "__main__":
+            pm = m._initialize_manager("", [], 1)
+            pm.executor.timeout = 0.3
+            config = PluginConfig(name="tag", kind="x.tag", hooks=["llm_pre_call"], mode=PluginMode.SEQUENTIAL, on_error=OnError.FAIL)
+            pm._registry.register(m._build_native_adapter(Tag(), config))
+            print("parent", call(), call(), flush=True)
+            pid = os.fork()
+            if pid == 0:
+                print("child", call(), call(), flush=True)
+                os._exit(0)
+            os.waitpid(pid, 0)
+            with multiprocessing.get_context("fork").Pool(2) as pool:
+                print("pool", *pool.map(call, range(4)))
+        """
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.splitlines()
+    assert lines == ["parent timeout busy", "child TAGGED TAGGED", "pool TAGGED TAGGED TAGGED TAGGED"], proc.stdout
+
+
+@pytest.mark.unit
+def test_forked_child_can_revoke_while_a_parent_thread_held_the_revoke_lock():
+    """A lock held by another parent thread at fork time is never released in the child unless it is replaced."""
+    code = textwrap.dedent(
+        """
+        import os, threading, time, warnings
+        warnings.simplefilter("ignore", DeprecationWarning)  # fork with threads alive
+        from altk_evolve.hooks import backend as hb
+
+        held, release = threading.Event(), threading.Event()
+
+        def hold():
+            with hb._revoke_lock:
+                held.set()
+                release.wait(10)
+
+        threading.Thread(target=hold, daemon=True).start()
+        held.wait()
+        pid = os.fork()
+        if pid == 0:
+            hb.HookBackend(None)._revoke()  # every native call with a backend view ends with this
+            os._exit(0)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            done, status = os.waitpid(pid, os.WNOHANG)
+            if done:
+                print("child exited", os.waitstatus_to_exitcode(status))
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(pid, 9)
+            os.waitpid(pid, 0)
+            print("child hung")
+        release.set()
+        """
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "child exited 0"
