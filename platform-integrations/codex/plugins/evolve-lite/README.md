@@ -132,7 +132,7 @@ write-scope publish target. The repo is cloned directly into
 that the recall step in `EVOLVE.md` reads.
 Names must use only letters, numbers, `.`, `_`, and `-`.
 
-### Publishing Guidelines
+### Publishing Entities
 
 Use `evolve-lite:publish` to share local entities via a **write-scope**
 repo:
