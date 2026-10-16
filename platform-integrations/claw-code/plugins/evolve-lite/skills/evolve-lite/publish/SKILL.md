@@ -1,16 +1,20 @@
 ---
 name: publish
-description: Publish a private guideline to a configured write-scope repo.
+description: Publish a private entity (guideline, feedback, project, user or reference) to a configured write-scope repo.
 ---
 
-# Publish a Guideline
+# Publish an Entity
 
 ## Overview
 
-Publish one or more private guidelines from `.evolve/entities/guideline/`
-into a configured **write-scope** repo. The entity is stamped with
+Publish one or more private entities from `.evolve/entities/<type>/` into a
+configured **write-scope** repo. `<type>` is the directory the entity was saved
+in: `guideline` for learned guidelines, or a native memory type (`user`,
+`feedback`, `project`, `reference`) for entities saved by adapt-memory or the
+EVOLVE.md save flow. The entity is stamped with
 `visibility: public`, `owner`, `published_at`, and `source`, moved into
-the local clone of the write repo, and committed / pushed to the remote.
+the local clone of the write repo under the same `<type>/` directory, and
+committed / pushed to the remote.
 
 The same local clone is also what `/evolve-lite:sync` pulls from — so you
 and anyone else publishing to the same repo stay in sync.
@@ -47,25 +51,27 @@ Let `{repo}` be the chosen repo name and `{branch}` its configured branch (defau
 
 ### Step 4: List and select entities
 
-List files in `.evolve/entities/guideline/` and ask the user which to publish.
+List the `.md` files in every type directory under `.evolve/entities/`, skipping
+`.evolve/entities/subscribed/` (other people's entities, never yours to
+publish). Show each as `{type}/{filename}` and ask the user which to publish.
 
 ### Step 5: Run publish script
 
 For each selected file, run:
 
 ```bash
-sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:publish/scripts/publish.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:publish/scripts/publish.py"; python3 "$script" --entity "{filename}" --repo "{repo}" --user "{identity.user}"'
+sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:publish/scripts/publish.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:publish/scripts/publish.py"; python3 "$script" --entity "{filename}" --type "{type}" --repo "{repo}" --user "{identity.user}"'
 ```
 
 ### Step 6: Commit and push
 
 Build `{names}` as a comma-joined list of selected filenames, and
-`{guideline_paths}` as a space-joined list of the corresponding
-`guideline/{filename}` paths inside the clone (the files the publish
+`{entity_paths}` as a space-joined list of the corresponding
+`{type}/{filename}` paths inside the clone (the files the publish
 script just wrote).
 
 ```bash
-git -C ".evolve/entities/subscribed/{repo}" add -- {guideline_paths}
+git -C ".evolve/entities/subscribed/{repo}" add -- {entity_paths}
 git -C ".evolve/entities/subscribed/{repo}" commit -m "[evolve] publish: {names}"
 git -C ".evolve/entities/subscribed/{repo}" push origin "{branch}"
 ```
@@ -134,8 +140,8 @@ Tell the user what was published and to which repo.
 
 ## Notes
 
-- Published entities are **moved** from `.evolve/entities/guideline/` into
-  the write-scope clone at `.evolve/entities/subscribed/{repo}/guideline/`,
+- Published entities are **moved** from `.evolve/entities/{type}/` into
+  the write-scope clone at `.evolve/entities/subscribed/{repo}/{type}/`,
   with `visibility: public`, `owner: {user}`, `published_at`, and `source`
   stamped in frontmatter
 - The original private entity is deleted after successful publication
