@@ -860,3 +860,44 @@ def test_forked_child_is_not_blocked_by_the_parents_timed_out_call():
     assert proc.returncode == 0, proc.stderr
     lines = proc.stdout.splitlines()
     assert lines == ["parent timeout busy", "child TAGGED TAGGED", "pool TAGGED TAGGED TAGGED TAGGED"], proc.stdout
+
+
+@pytest.mark.unit
+def test_forked_child_can_revoke_while_a_parent_thread_held_the_revoke_lock():
+    """A lock held by another parent thread at fork time is never released in the child unless it is replaced."""
+    code = textwrap.dedent(
+        """
+        import os, threading, time, warnings
+        warnings.simplefilter("ignore", DeprecationWarning)  # fork with threads alive
+        from altk_evolve.hooks import backend as hb
+
+        held, release = threading.Event(), threading.Event()
+
+        def hold():
+            with hb._revoke_lock:
+                held.set()
+                release.wait(10)
+
+        threading.Thread(target=hold, daemon=True).start()
+        held.wait()
+        pid = os.fork()
+        if pid == 0:
+            hb.HookBackend(None)._revoke()  # every native call with a backend view ends with this
+            os._exit(0)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            done, status = os.waitpid(pid, os.WNOHANG)
+            if done:
+                print("child exited", os.waitstatus_to_exitcode(status))
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(pid, 9)
+            os.waitpid(pid, 0)
+            print("child hung")
+        release.set()
+        """
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "child exited 0"
