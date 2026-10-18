@@ -715,10 +715,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-1-create-a-new-project-using-uv" class="md-nav__link">
+  <a href="#step-1-create-a-project" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1: Create a new project using uv
+        Step 1: Create a project
       
     </span>
   </a>
@@ -737,10 +737,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-3-project-setup" class="md-nav__link">
+  <a href="#step-3-ask-bob" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Project Setup
+        Step 3: Ask Bob
       
     </span>
   </a>
@@ -748,10 +748,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-4-testing-evolve-with-bob" class="md-nav__link">
+  <a href="#step-4-ask-again-in-a-new-session" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 4: Testing Evolve with Bob
+        Step 4: Ask again in a new session
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-evolve-wrote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Evolve wrote
       
     </span>
   </a>
@@ -1591,10 +1602,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-1-create-a-new-project-using-uv" class="md-nav__link">
+  <a href="#step-1-create-a-project" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1: Create a new project using uv
+        Step 1: Create a project
       
     </span>
   </a>
@@ -1613,10 +1624,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-3-project-setup" class="md-nav__link">
+  <a href="#step-3-ask-bob" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Project Setup
+        Step 3: Ask Bob
       
     </span>
   </a>
@@ -1624,10 +1635,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-4-testing-evolve-with-bob" class="md-nav__link">
+  <a href="#step-4-ask-again-in-a-new-session" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 4: Testing Evolve with Bob
+        Step 4: Ask again in a new session
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-evolve-wrote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Evolve wrote
       
     </span>
   </a>
@@ -1714,62 +1736,100 @@
 
 
 <h1 id="hello-world-with-evolve-and-ibm-bob">"Hello World" with Evolve and IBM Bob<a class="headerlink" href="#hello-world-with-evolve-and-ibm-bob" title="Permanent link">&para;</a></h1>
-<p>In this tutorial, we will create a simple scaffolding project using <code>uv</code> and set up IBM Bob with Evolve.</p>
+<p>Agentic IDEs like IBM Bob often repeat the same mistakes, because every session starts fresh. Evolve gives Bob a memory of the project, so a lesson learned in one session is reused in the next.</p>
+<p>In this tutorial, Bob reads the EXIF metadata of a photo, hits a dead end on the way, and saves what it learned. In a new session, it recalls that lesson and goes straight to the approach that worked.</p>
 <h2 id="video-tutorial">Video Tutorial<a class="headerlink" href="#video-tutorial" title="Permanent link">&para;</a></h2>
 <div class="video-wrapper">
     <iframe width="1280" height="720" src="https://www.youtube.com/embed/YlTJoSJ4eDg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </div>
 
+<div class="admonition note">
+<p class="admonition-title">The video shows an earlier release</p>
+<p>The video was recorded in April 2026, when Evolve Lite for Bob used an <code>Evolve Lite</code> mode and explicit learn and recall skills. Current releases need neither: Bob reads Evolve's instructions in every session. The steps below follow what ships today.</p>
+</div>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="https://docs.astral.sh/uv/getting-started/installation/"><code>uv</code> installed</a></li>
 <li>IBM Bob IDE installed.</li>
+<li><code>python3</code> 3.9 or newer. The installer and the recall step in this tutorial run under it.</li>
 </ul>
-<h2 id="step-1-create-a-new-project-using-uv">Step 1: Create a new project using <code>uv</code><a class="headerlink" href="#step-1-create-a-new-project-using-uv" title="Permanent link">&para;</a></h2>
-<p>Create a new project directory and initialize it with <code>uv init</code>.
+<h2 id="step-1-create-a-project">Step 1: Create a project<a class="headerlink" href="#step-1-create-a-project" title="Permanent link">&para;</a></h2>
+<p>Create a project directory, and save <a href="../../../assets/sample.jpg">the sample photo</a> into it as <code>sample.jpg</code>.
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>mkdir<span class="w"> </span>hello-world
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>hello-world
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>uv<span class="w"> </span>init
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>-o<span class="w"> </span>sample.jpg<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/docs/assets/sample.jpg
 </code></pre></div></p>
 <h2 id="step-2-install-evolve">Step 2: Install Evolve<a class="headerlink" href="#step-2-install-evolve" title="Permanent link">&para;</a></h2>
-<p>Install Evolve by following the <a href="../../../installation/#bob-quick-start">installation instructions →</a>, or run:
+<p>From the project directory, install Evolve by following the <a href="../../../installation/#bob-quick-start">installation instructions →</a>, or run:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>install<span class="w"> </span>--platform<span class="w"> </span>bob<span class="w"> </span>--mode<span class="w"> </span>lite
 </code></pre></div></p>
-<h2 id="step-3-project-setup">Step 3: Project Setup<a class="headerlink" href="#step-3-project-setup" title="Permanent link">&para;</a></h2>
-<p>Open the project directory in IBM Bob IDE, and switch Bob's mode to <code>Evolve Lite</code></p>
+<p>The installer puts Evolve's skills, slash commands and shared library in <code>hello-world/.bob/</code>. It also makes three changes in <code>~/.bob/</code>, which apply to every project:</p>
+<ul>
+<li>It writes Evolve's instructions to <code>~/.bob/rules/00-evolve-lite.md</code>. Bob loads every file in <code>~/.bob/rules/</code> into every session, so there is no mode to switch to.</li>
+<li>It installs <code>~/.bob/evolve-lite/audit_recall.py</code>, the script Bob runs to record a recall.</li>
+<li>It adds that script's command to <code>tools.allowed</code> in your <code>~/.bob/settings.json</code>, so Bob can run it without asking. Your other settings are kept.</li>
+</ul>
+<p>The instructions tell Bob two things:</p>
+<ul>
+<li><strong>Recall:</strong> as its first step on a task, check <code>.evolve/entities/</code> for saved lessons that match, and record which ones it opened.</li>
+<li><strong>Save:</strong> near the end of a task, save anything durable it learned as an entity under <code>.evolve/entities/&lt;type&gt;/</code>.</li>
+</ul>
 <div class="admonition failure">
-<p class="admonition-title"><code>Evolve Lite</code> mode not found?</p>
-<p>If Bob is running while you install Evolve, the <code>Evolve Lite</code> mode will not have been loaded. Try restarting IBM Bob IDE.</p>
+<p class="admonition-title">Installed into the wrong directory?</p>
+<p>The installer targets the current directory, or the one you pass with <code>--dir</code>. If you ran it from somewhere else, such as your home directory or Desktop, fix it in this order:</p>
+<ol>
+<li>From the directory you installed into by mistake, uninstall:
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>uninstall<span class="w"> </span>--platform<span class="w"> </span>bob
+</code></pre></div></li>
+<li>Run the install command again from <code>hello-world</code>, or pass <code>--dir /path/to/hello-world</code>.</li>
+</ol>
+<p>The order matters. <code>uninstall</code> removes the stray copy, but it also undoes the three <code>~/.bob/</code> changes described above, which every project uses. Step 2 puts them back.</p>
 </div>
-<h2 id="step-4-testing-evolve-with-bob">Step 4: Testing Evolve with Bob<a class="headerlink" href="#step-4-testing-evolve-with-bob" title="Permanent link">&para;</a></h2>
-<p>If we test with the following example, at this point Bob doesn't know that this project is managed with <code>uv</code>, so Bob will probably get it wrong. It's entirely possible that Bob will still figure it out, so alternatively come up with something simple that Bob will get wrong.</p>
+<h2 id="step-3-ask-bob">Step 3: Ask Bob<a class="headerlink" href="#step-3-ask-bob" title="Permanent link">&para;</a></h2>
+<p>Open the <code>hello-world</code> directory in IBM Bob IDE and start a new chat.</p>
 <div class="admonition user-message">
 <p class="admonition-title">Let's Ask Bob</p>
-<p>Set up the python environment for this project</p>
+<p>Where was the photo sample.jpg taken? Use EXIF metadata.</p>
 </div>
 <div class="admonition agent-message">
 <p class="admonition-title">A Likely Bob Response</p>
-<p>Bob should run some Evolve Lite skills to attempt to retrieve relevant guidelines from memory, and find nothing because it's a new project.
-Bob will likely attempt to use <code>python</code> or <code>python3</code>'s <code>venv</code> to create a virtual environment.
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
-</code></pre></div></p>
+<p>Bob checks <code>.evolve/entities/</code> first and finds nothing, because the project is new. It then reaches for a tool such as <code>exiftool</code> or Pillow. If that isn't installed, Bob falls back to a short Python script that reads the EXIF data with the standard library, and reports where the photo was taken.</p>
 </div>
 <div class="admonition system-message">
-<p class="admonition-title">Course Correcting</p>
+<p class="admonition-title">Learning From the Past</p>
+<p>Following Evolve's instructions, Bob saves the lesson as an entity under <code>.evolve/entities/&lt;type&gt;/</code>. For example, it might note that EXIF data can be read with the Python standard library when no image tools are installed. Bob decides on its own whether a task taught it anything worth keeping. If it saved nothing, ask it to:</p>
 </div>
 <div class="admonition user-message">
 <p class="admonition-title">Let's Ask Bob</p>
-<p>This is incorrect. This project is supposed to be managed by <code>uv</code>.</p>
+<p>Save what you learned from this task to your Evolve memory.</p>
+</div>
+<h2 id="step-4-ask-again-in-a-new-session">Step 4: Ask again in a new session<a class="headerlink" href="#step-4-ask-again-in-a-new-session" title="Permanent link">&para;</a></h2>
+<p>Start a new chat, so that Bob has no memory of the first conversation.</p>
+<div class="admonition user-message">
+<p class="admonition-title">Let's Ask Bob</p>
+<p>What focal length was used to take the photo sample.jpg? Use EXIF metadata.</p>
 </div>
 <div class="admonition agent-message">
 <p class="admonition-title">A Likely Bob Response</p>
-<p>At this point, Bob will correct itself and eventually run <code>uv sync</code> and correctly run <code>uv run main.py</code>.
-Bob should then run some Evolve Lite skills to save the learned correction into memory.
-If it does not, the <code>/evolve:learn</code> command can be used to manually run the skill.</p>
+<p>This time Bob finds the saved lesson in <code>.evolve/entities/</code>, records that it consulted it, and goes straight to the approach that worked, skipping the dead ends.</p>
 </div>
-<p>In the future, Bob should remember via Evolve-Lite skills that <code>uv</code> is used for this project and not make the same mistake. This can be tested in this toy project by deleting the <code>.venv</code> directory and the <code>uv.lock</code> file and trying the same utterance again.</p>
+<h2 id="what-evolve-wrote">What Evolve wrote<a class="headerlink" href="#what-evolve-wrote" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>hello-world/
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  .bob/                          # Evolve&#39;s skills, slash commands and shared library
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  .evolve/
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    entities/
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>      project/
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        read-exif-with-stdlib.md # the saved lesson (Bob picks the type and name)
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    audit.log                    # a &quot;recall&quot; line for each session that consulted an entity
+</code></pre></div>
+<p>Each entity is a Markdown file with <code>type</code> and <code>trigger</code> frontmatter. The trigger describes when the lesson applies, and it's what Bob matches against during recall. You can read, edit or delete entities at any time.</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
-<p>The <code>install.sh</code> script adds a section for Evolve into a shared <code>custom_modes.yaml</code> used by IBM Bob IDE. It is much like a <code>.bashrc</code> file, and so may become malformed. Check the project-level or user-level <code>custom_modes.yaml</code> for any issues.</p>
+<ul>
+<li><strong>Bob doesn't seem to use Evolve.</strong> Check that <code>~/.bob/rules/00-evolve-lite.md</code> exists. If Bob was already running when you installed, start a new chat. If that doesn't help, restart IBM Bob IDE.</li>
+<li><strong>Check the install.</strong> From the project directory, run:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash<span class="w"> </span>-s<span class="w"> </span>--<span class="w"> </span>status
+</code></pre></div>
+  For a lite install, every Bob row should show ✓ except <code>custom_modes.yaml</code> and <code>mcp (full mode)</code>, which belong to full mode.</li>
+</ul>
 
 
 
