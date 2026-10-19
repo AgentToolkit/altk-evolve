@@ -63,6 +63,8 @@ class GuidelineConfig(GuidelineRuntime):
                 raise ValueError("skip_on_no_uncertainty must be a boolean")
             if not isinstance(data["agents"], list) or not data["agents"]:
                 raise ValueError("agents must be a nonempty list")
+            from altk_evolve.llm.guidelines.consistency_analyzer.consistency_metric import _REMOVED_METRIC_REPLACEMENTS
+
             for agent in data["agents"]:
                 if not isinstance(agent, dict) or not agent.get("name") or not agent.get("response_type"):
                     raise ValueError("Each agent requires name and response_type")
@@ -71,6 +73,11 @@ class GuidelineConfig(GuidelineRuntime):
                     metric = agent.get("metric")
                     if not isinstance(metric, str) or not metric.strip():
                         raise ValueError(f"Agent {agent['name']} with response_type {agent['response_type']} requires a metric")
+                    if metric in _REMOVED_METRIC_REPLACEMENTS:
+                        replacement = _REMOVED_METRIC_REPLACEMENTS[metric]
+                        raise ValueError(f"Agent {agent['name']} uses removed consistency metric '{metric}'; use '{replacement}' instead.")
+                # Nested field/alternate metrics are checked at get_consistency_by_metric()
+                # dispatch time; the same removed-metric guard raises there.
             object.__setattr__(self, "analysis_config", data)
         return self
 

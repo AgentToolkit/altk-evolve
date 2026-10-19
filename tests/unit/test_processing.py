@@ -1243,6 +1243,21 @@ def test_structured_agent_requires_scoring_config(response_type):
         GuidelineConfig(**kwargs, analysis_config={"agents": [{**agent, **scoring}]})
 
 
+def test_guideline_config_rejects_removed_sbert_large_metric():
+    # A profile that still names sbert_large must not validate — otherwise it
+    # publishes, the dispatcher used to return (-1, -1), the aggregator dropped
+    # the step, and the agent silently stopped producing consistency guidelines.
+    from altk_evolve.processing.builtin import GuidelineConfig
+
+    agent = {"name": "agent", "response_type": "text", "metric": "sbert_large"}
+    with pytest.raises(ValueError, match=r"sbert_large.*sbert_small"):
+        GuidelineConfig(
+            guidelines_mode="consistency",
+            consistency_method="accurate",
+            analysis_config={"agents": [agent]},
+        )
+
+
 def test_phoenix_checkpoints_are_independent_of_entity_read_hooks(client, monkeypatch):
     from altk_evolve.sync.phoenix_sync import PhoenixSync
 

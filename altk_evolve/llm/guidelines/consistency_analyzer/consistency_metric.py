@@ -45,6 +45,20 @@ def get_sentence_transformer_small():
     return _configured_consistency_model(guidelines_settings.consistency_embedding_model_small, MINILM_MODEL)
 
 
+# Metrics that used to exist and have been removed. Named here so callers get a
+# pointed error instead of the generic "not supported" path — stale configs that
+# still reference them would otherwise fall through to the unknown-metric branch
+# and score steps as consistency undefined with nothing visible in the logs.
+_REMOVED_METRIC_REPLACEMENTS = {
+    "sbert_large": "sbert_small",
+}
+
+
+def _removed_metric_message(metric: str) -> str:
+    replacement = _REMOVED_METRIC_REPLACEMENTS[metric]
+    return f"Consistency metric '{metric}' has been removed; use '{replacement}' instead."
+
+
 def get_metric_instance(metric: str):
     """
     Instantiate a consistency metric by name with proper dependencies.
@@ -61,6 +75,8 @@ def get_metric_instance(metric: str):
     Raises:
         ValueError: If metric name is unknown
     """
+    if metric in _REMOVED_METRIC_REPLACEMENTS:
+        raise ValueError(_removed_metric_message(metric))
     if metric == "jaccard":
         return JaccardConsistencyMetric()
     elif metric == "numeric":
@@ -89,7 +105,15 @@ def get_consistency_by_metric(
 
     Returns:
         Tuple of (consistency, distance)
+
+    Raises:
+        ValueError: If `metric` names a metric that has been removed. A fail-open
+            fallback here would silently drop every step for that agent from the
+            aggregate score (-1 is excluded by the aggregator), with nothing in
+            the logs at default level.
     """
+    if metric in _REMOVED_METRIC_REPLACEMENTS:
+        raise ValueError(_removed_metric_message(metric))
     if metric == "jaccard":
         str_samples = get_sample_strings(samples, " ")
         jaccard_metric = get_metric_instance("jaccard")

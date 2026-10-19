@@ -19,6 +19,11 @@ _REMOVED_UNCERTAINTY_ENV_VARS = (
     "EVOLVE_SKIP_ON_NO_UNCERTAINTY",
 )
 
+# Removed when the sbert_large metric and the CodeRankEmbed pipeline were dropped.
+# Same extra="ignore" trap: a deployment that still sets this gets no error, so
+# warn and point at the surviving small-model setting.
+_REMOVED_EMBEDDING_ENV_VARS = ("EVOLVE_CONSISTENCY_EMBEDDING_MODEL_LARGE",)
+
 
 class GuidelinesSettings(BaseSettings):
     """Guideline-generation settings, read from `EVOLVE_`-prefixed environment variables."""
@@ -78,6 +83,18 @@ class GuidelinesSettings(BaseSettings):
                 "the accurate consistency method's uncertainty tuning now lives in "
                 "agent_config.yaml (high_uncertainty_threshold / skip_on_no_uncertainty), "
                 "passed via generate_consistency_guidelines(config_path=...)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def warn_on_removed_embedding_env_vars(self) -> Self:
+        stale = [name for name in _REMOVED_EMBEDDING_ENV_VARS if os.getenv(name) is not None]
+        if stale:
+            logger.warning(
+                f"{', '.join(stale)} are no longer read (extra='ignore' silently drops them) — "
+                "the sbert_large consistency metric and its large-model embedding setting have "
+                "been removed. Switch to the 'sbert_small' metric and, if a non-default model is "
+                "needed, set EVOLVE_CONSISTENCY_EMBEDDING_MODEL_SMALL."
             )
         return self
 
