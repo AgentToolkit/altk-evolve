@@ -58,6 +58,7 @@ All configuration variables are prefixed with `EVOLVE_`.
 | `EVOLVE_MODEL_NAME` | Global fallback model for all Evolve LLM calls | `gpt-4o` |
 | `EVOLVE_CUSTOM_LLM_PROVIDER` | LiteLLM provider (use `openai` for OpenAI-compatible endpoints). Defaults to `openai` whenever `OPENAI_API_KEY` or `OPENAI_BASE_URL` is set, even if you never set this variable yourself — see the [consistency guide](guidelines.md#choosing-a-consistency-method) for a case where that implicit default causes misrouting | `openai` if `OPENAI_API_KEY`/`OPENAI_BASE_URL` is set, else `None` |
 | `EVOLVE_EMBEDDING_MODEL` | Embedding model                                                               | `sentence-transformers/all-MiniLM-L6-v2` |
+| `EVOLVE_DASHBOARD` | `evolve-mcp` over stdio only: also serve the Web UI and REST API on `127.0.0.1:8000`, which has no authentication. Read as a boolean like the other `EVOLVE_` switches: `false`, `0`, `no`, `off`, `f` or `n` turns it off. An unrecognised value also turns it off and logs a warning; an empty value counts as unset. `--dashboard` / `--no-dashboard` on the command line take precedence | `true` |
 
 ### Trajectory limits
 
@@ -100,7 +101,17 @@ within the step budget are unaffected, as is the `fast` method.
 ### Trajectory segmentation
 
 `EVOLVE_SEGMENTATION_ENABLED` is **disabled by default**. With it enabled, a trajectory is
-split into subtasks and each subtask gets its own guideline-generation call.
+split into subtasks and each subtask gets its own guideline-generation call. A trajectory
+with fewer than five steps is still generated in one pass on every path, and its
+`task_description` is the first user message verbatim, as with segmentation off. Under
+[head+tail elision](#trajectory-limits) that count is of real steps in the rendered window:
+the omitted-steps marker is not a step. On the standard and consistency-fast paths, subtasks
+that cover the same steps share one call, a subtask covering only the marker is dropped, and
+a trajectory whose subtasks reduce to fewer than two distinct step ranges is generated in
+one pass. If exactly one distinct range remains, however many subtasks repeated it, that
+pass keeps the subtask's generalized description; if none remains, it uses the first user
+message verbatim. The consistency-accurate path uses the first user message verbatim
+whenever it generates in one pass.
 
 **Why it defaults to off.** A subtask boundary can fall between a failed attempt and the
 correction that followed it. The failing segment is then summarised on its own terms — its
@@ -121,9 +132,9 @@ trajectory routinely spans unrelated subtasks, weigh enabling it.
 
 **Turning it on later (mixed corpora).** Entities written while segmentation was off carry
 verbatim request text as `task_description`; entities written with it on carry generalized
-subtask descriptions. Both are embedded in the same space, so a namespace written across a
-change of this setting holds two kinds of key. Nothing breaks and no migration is required
-— clustering and retrieval keep working — but similarity between the two kinds is lower
+subtask descriptions, except for the verbatim one-pass cases above. Both are embedded in the same
+space, so a namespace written across a change of this setting holds two kinds of key.
+Nothing breaks and no migration is required — clustering and retrieval keep working — but similarity between the two kinds is lower
 than within either, so recurrence spanning the change may go undetected. To avoid the mix,
 use a fresh namespace when you change this setting.
 

@@ -1,0 +1,45 @@
+================================================================================
+TASK 2  reward=0.0  breakdown={'DB': 0.0, 'NL_ASSERTION': 0.0}  termination_reason=user_stop  messages=7  model=example-model
+================================================================================
+USER SCENARIO
+-------------
+domain: retail
+reason_for_call: You want to exchange the shirt in order #W0000002 for a larger size.
+known_info: You are Bo Sample, email bo@example.com.
+================================================================================
+GROUND-TRUTH EVALUATION CRITERIA
+--------------------------------
+find_user_id_by_email({"email": "bo@example.com"})
+exchange_delivered_order_items({"order_id": "#W0000002", "item_ids": ["1"], "new_item_ids": ["2"]})
+================================================================================
+AGENT DOMAIN POLICY
+-------------------
+# Retail agent policy (synthetic)
+Confirm the exchange details with the user and get an explicit yes before exchanging.
+================================================================================
+CONVERSATION
+------------
+[USER] I'd like a bigger size of the shirt in order #W0000002. My email is bo@example.com.
+  -> CALL find_user_id_by_email(...)
+     args: {"email": "bo@example.com"}
+  <- RESULT (ok)
+     bo_sample_0000
+  -> CALL get_order_details(order #W0000002)
+  <- RESULT (error) Error: order not found
+[ASSISTANT]
+I could not find that order, so I cannot exchange it.
+================================================================================
+FINAL ANSWER
+------------
+I could not find that order, so I cannot exchange it.
+================================================================================
+JUDGE / REWARD DETAILS
+----------------------
+reward=0.0
+db_check: db_match=False db_reward=0.0
+action_checks:
+  find_user_id_by_email({"email": "bo@example.com"}) action_match=True
+  exchange_delivered_order_items({"order_id": "#W0000002"}) action_match=False
+nl_assertions:
+  The agent confirms the new size before exchanging. met=False
+  The agent stays polite. met=True

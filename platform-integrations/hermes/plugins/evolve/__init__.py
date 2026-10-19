@@ -664,7 +664,8 @@ class EvolveMemoryProvider(MemoryProvider):
         ``entities`` as ``<type>/<name>`` ids relative to ``entities/``) so that
         Evolve's existing ``provenance`` skill can read Hermes sessions and
         judge whether a recalled guideline was followed, contradicted, or not
-        applicable — without any Hermes-specific tooling.
+        applicable (or that the session shows too little to tell) — without any
+        Hermes-specific tooling.
         """
         try:
             audit_path = Path(self._hermes_home) / "evolve" / "audit.log"

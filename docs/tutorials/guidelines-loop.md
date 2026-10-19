@@ -2,7 +2,7 @@
 
 This tutorial takes you through the end-to-end evolving agent loop: an existing agent runs and is traced, guidelines are generated from that trace, and those guidelines are then fed back into a *new* run of the same agent, so it actually learns from what it did before.
 
-This tutorial covers **full Evolve (MCP server / CLI)**. It doesn't apply to [Evolve Lite](../integrations/claude/evolve-lite.md), where the equivalent loop (`/evolve-lite:learn`, then automatic injection on the next prompt) is handled entirely by the host agent — see the [Claude Code starter tutorial](../examples/hello_world/claude.md) for that version.
+This tutorial covers **full Evolve (MCP server / CLI)**. It doesn't apply to [Evolve Lite](../integrations/claude/evolve-lite.md), where the equivalent loop (the host agent's own memory, which Evolve Lite mirrors into `.evolve/entities/` and audits) is handled entirely by the host agent — see the [Claude Code starter tutorial](../examples/hello_world/claude.md) for that version.
 
 !!! note "Set expectations"
     The example agent here (`examples/low_code/smolagents_demo.py`) does simple arithmetic with two tools, so there's little room for it to behave meaningfully differently after "learning" — don't expect a dramatic before/after. The goal of this tutorial is to demonstrate the full wiring (trace → sync → generate → retrieve → inject) end to end on a small, fast example. Point the same steps at a real agent with real failure modes to see guidelines actually change behavior.

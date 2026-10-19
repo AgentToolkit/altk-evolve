@@ -9,7 +9,7 @@ import pytest
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 
 from experiments.guideline_pipeline import __main__ as cli
-from experiments.guideline_pipeline.adapters import ADAPTERS
+from experiments.guideline_pipeline import adapters
 from experiments.guideline_pipeline.tests.fakes import FakeAdapter, profile
 
 pytestmark = pytest.mark.unit
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def fake_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(ADAPTERS, "fake", FakeAdapter())
+    monkeypatch.setattr(adapters, "ADAPTERS", {"fake": FakeAdapter()})  # independent of the registered adapters
 
 
 def argv(dataset: Path, *extra: str) -> list[str]:
@@ -53,7 +53,7 @@ def test_usage_errors(client: EvolveClient, dataset: Path, monkeypatch: pytest.M
     monkeypatch.setattr(cli, "make_client", lambda: client)
 
     assert cli.main([*argv(dataset), "--adapter", "nope"]) == 2
-    assert "Unknown adapter 'nope' (available: appworld, cuga, fake, vakra)" in capsys.readouterr().err
+    assert "Unknown adapter 'nope' (available: fake)" in capsys.readouterr().err
     assert cli.main(argv(dataset, "--revision", "9")) == 2
     assert "error:" in capsys.readouterr().err
     with pytest.raises(SystemExit):
