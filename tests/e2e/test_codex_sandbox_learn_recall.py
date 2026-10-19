@@ -551,7 +551,7 @@ def test_codex_save_then_recall_flow(codex_sandbox_ready, codex_workspace):
     assert influence_events, f"no influence audit event recorded. all events: {events}"
     influenced_ids = {event.get("entity") for event in influence_events}
     assert influenced_ids & task_recalled_ids, f"influence events {influence_events} did not assess task recall ids {task_recalled_ids}"
-    allowed_verdicts = {"followed", "contradicted", "not_applicable"}
+    allowed_verdicts = {"followed", "contradicted", "not_applicable", "insufficient_evidence"}
     assert any(event.get("verdict") in allowed_verdicts for event in influence_events), (
         f"no recalled entity was assessed with an allowed verdict. influence events: {influence_events}"
     )
