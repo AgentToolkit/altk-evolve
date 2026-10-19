@@ -254,6 +254,15 @@ class TestSplitOversized:
         # Leaf 0 takes the hub; the other leaves are not similar to each other, so none pair up.
         assert chunks == [[0, 5], [1], [2], [3], [4]]
 
+    def test_a_similarity_exactly_at_the_threshold_still_joins_a_chunk(self):
+        # Union-find links pairs at >= threshold, so the split must too: 0~1 fills the first
+        # chunk, and 2~3 pair up when the remainder is split into components.
+        similarity = np.full((4, 4), 0.1)
+        similarity[0, 1] = similarity[1, 0] = similarity[2, 3] = similarity[3, 2] = 0.5
+        np.fill_diagonal(similarity, 1.0)
+
+        assert _split_oversized([0, 1, 2, 3], similarity, 2, 0.5) == [[0, 1], [2, 3]]
+
     def test_chunks_cover_the_group_and_respect_the_limit(self):
         rng = np.random.default_rng(0)
         vectors = rng.normal(size=(11, 4))

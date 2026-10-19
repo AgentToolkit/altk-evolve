@@ -39,13 +39,11 @@ def _member_tasks(members: list[RecordedEntity]) -> list[str]:
     """The distinct source tasks of a cluster's members, in member order.
 
     A member that is itself a cross-task merge from an earlier round contributes its
-    ``source_tasks``; any other member contributes its ``task_description``.
+    ``source_tasks``, and any member contributes its ``task_description``.
     """
-    tasks: list[str] = []
-    for member in members:
-        md = member.metadata or {}
-        tasks.extend(str(task) for task in md.get("source_tasks") or [md.get("task_description")] if task)
-    return list(dict.fromkeys(tasks))
+    from altk_evolve.llm.guidelines.clustering import stored_tasks
+
+    return list(dict.fromkeys(task for member in members for task in stored_tasks(member)))
 
 
 def _merged_task_metadata(members: list[RecordedEntity], key: "ClusteringKey") -> dict[str, Any]:

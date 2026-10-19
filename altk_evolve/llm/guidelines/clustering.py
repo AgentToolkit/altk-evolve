@@ -205,6 +205,23 @@ def stored_support(entity: RecordedEntity) -> int:
     return max(1, int((entity.metadata or {}).get("support", 1) or 1))
 
 
+def stored_tasks(entity: RecordedEntity) -> list[str]:
+    """A stored guideline's distinct source tasks: its ``source_tasks``, then its ``task_description``.
+
+    Both are kept because a cross-task merge can later be given a new ``task_description``
+    (a conflict-resolution update or a metadata patch) without losing its earlier tasks.
+    ``source_tasks`` is read only when it is a list, so a malformed value (an int, or a
+    string that would split into characters) is ignored rather than breaking retrieval
+    or consolidation.
+    """
+    md = entity.metadata or {}
+    raw = md.get("source_tasks")
+    tasks = [str(task) for task in raw if task] if isinstance(raw, (list, tuple)) else []
+    if description := md.get("task_description"):
+        tasks.append(str(description))
+    return list(dict.fromkeys(tasks))
+
+
 def _normalize_steps(raw: object) -> list[str]:
     if raw is None or raw == []:
         return []

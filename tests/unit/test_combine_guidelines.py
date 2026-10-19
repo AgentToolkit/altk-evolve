@@ -460,6 +460,23 @@ class TestConsolidateGuidelines:
             "task_description": "",
             "source_tasks": ["task c", "task a"],
         }
+        # A task description set on it later (an update or a patch) is kept alongside them.
+        earlier_merge.metadata["task_description"] = "task d"
+        assert _merged_task_metadata([earlier_merge, b], "guideline_text") == {
+            "task_description": "",
+            "source_tasks": ["task c", "task a", "task d", "task b"],
+        }
+
+    @pytest.mark.parametrize("malformed", [5, "abc", {"x": 1}, None])
+    def test_merged_task_metadata_ignores_a_source_tasks_value_that_is_not_a_list(self, malformed):
+        from altk_evolve.frontend.client.evolve_client import _merged_task_metadata
+
+        # An int would raise inside the merge and skip the cluster on every run; a string or a
+        # dict would be stored as its characters or keys.
+        first, second = _make_entity("1", "x", "t1"), _make_entity("2", "y", "t2")
+        first.metadata["source_tasks"] = malformed
+
+        assert _merged_task_metadata([first, second], "guideline_text") == {"task_description": "", "source_tasks": ["t1", "t2"]}
 
     def test_consolidate_guidelines_rejects_zero_rounds(self):
         with pytest.raises(ValueError, match="max_rounds"):

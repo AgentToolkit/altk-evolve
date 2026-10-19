@@ -40,10 +40,15 @@ def run(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, str, str]:
     return code, captured.out.strip(), captured.err.strip()
 
 
-def mock_consolidation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Cluster guidelines by evidence and merge each cluster into one, conserving support: no embeddings, no LLM."""
+def mock_consolidation(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+    """Cluster guidelines by evidence and merge each cluster into one, conserving support: no embeddings, no LLM.
 
-    def cluster(entities: list[RecordedEntity], threshold: float = 0.8, embedding_model: str | None = None, **_):
+    Returns the keyword options each clustering call received, so a test can check what reached the library.
+    """
+    cluster_options: list[dict] = []
+
+    def cluster(entities: list[RecordedEntity], threshold: float = 0.8, embedding_model: str | None = None, **options):
+        cluster_options.append(options)
         groups: dict[str, list[RecordedEntity]] = {}
         for entity in entities:
             groups.setdefault(str(entity.metadata.get("evidence")), []).append(entity)
@@ -65,6 +70,7 @@ def mock_consolidation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(clustering, "combine_cluster_with_members", combine)
     # If consolidation stops going through the mocked merge, refuse the LLM call so the test fails offline.
     monkeypatch.setattr(clustering, "completion", no_llm)
+    return cluster_options
 
 
 def test_export_playbook_command(mined: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
@@ -124,7 +130,7 @@ def test_lineage_command(mined: Path, tmp_path: Path, capsys: pytest.CaptureFixt
 
 
 def test_consolidate_command_clustering_options(mined: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
-    mock_consolidation(monkeypatch)
+    cluster_options = mock_consolidation(monkeypatch)
     options = ("--cluster-key", "guideline_text", "--max-cluster-size", "2", "--max-rounds", "3")
 
     code, stdout, _ = run(capsys, "consolidate", "--namespace", "memories", "--threshold", "0.5", *options)
@@ -135,13 +141,15 @@ def test_consolidate_command_clustering_options(mined: Path, monkeypatch: pytest
         "consolidate memories (lossless, by guideline_text, threshold 0.5, max cluster size 2): 1 clusters merged in 2 round(s), "
         "2 -> 1 guidelines, support 2 -> 2"
     )
+    # The summary prints the stage's own options, so check what the library was actually given.
+    assert cluster_options and all(o == {"key": "guideline_text", "max_cluster_size": 2} for o in cluster_options)
     for bad in (("--max-cluster-size", "1"), ("--max-rounds", "0"), ("--cluster-key", "content")):
         with pytest.raises(SystemExit):
             cli.main(["consolidate", "--namespace", "memories", *bad])
 
 
 def test_consolidate_command_then_export(mined: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
-    mock_consolidation(monkeypatch)
+    cluster_options = mock_consolidation(monkeypatch)
 
     code, stdout, _ = run(capsys, "consolidate", "--namespace", "memories", "--threshold", "0.5")
     assert code == 0
@@ -149,6 +157,7 @@ def test_consolidate_command_then_export(mined: Path, tmp_path: Path, monkeypatc
         "consolidate memories (lossless, by task_description, threshold 0.5): 1 clusters merged in 1 round(s), "
         "2 -> 1 guidelines, support 2 -> 2"
     )
+    assert cluster_options == [{"key": "task_description", "max_cluster_size": None}]
 
     playbook, lineage = tmp_path / "playbook.json", tmp_path / "lineage.json"
     assert run(capsys, "export", "playbook", "--namespace", "memories", "--out", str(playbook))[0] == 0

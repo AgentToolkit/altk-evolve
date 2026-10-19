@@ -22,7 +22,7 @@ from typing import Literal
 
 import numpy as np
 
-from altk_evolve.llm.guidelines.clustering import _get_sentence_transformer
+from altk_evolve.llm.guidelines.clustering import _get_sentence_transformer, stored_tasks
 from altk_evolve.schema.core import RecordedEntity
 
 logger = logging.getLogger(__name__)
@@ -52,12 +52,10 @@ def _support(entity: RecordedEntity) -> int:
 def _source_tasks(entity: RecordedEntity) -> list[str]:
     """The source tasks a candidate is ranked by under ``"source_task"``.
 
-    A guideline merged across tasks carries all of them in ``source_tasks``; any other
-    guideline has its ``task_description``, or failing that its own content.
+    A guideline merged across tasks carries all of them in ``source_tasks``, and any
+    guideline may have a ``task_description``; one with neither is ranked by its own content.
     """
-    md = entity.metadata or {}
-    tasks = [str(task) for task in md.get("source_tasks") or [] if task]
-    return tasks or [str(md.get("task_description", "") or entity.content)]
+    return stored_tasks(entity) or [str(entity.content)]
 
 
 def _embed(texts: list[str], embedding_model: str) -> np.ndarray:
