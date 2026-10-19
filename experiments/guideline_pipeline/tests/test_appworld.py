@@ -252,6 +252,15 @@ def test_unreadable_failures_keep_the_verdict(caplog: pytest.LogCaptureFixture):
     )
 
 
+def test_a_requirement_that_is_not_a_string_is_not_a_failed_check():
+    # Stringified, {"bad": 1} would enter failed_checks as "{'bad': 1}"; its message is still kept.
+    failures = [{"requirement": {"bad": 1}, "trace": "AssertionError: 1 == 2"}, {"requirement": 7}, {"requirement": "assert y"}]
+
+    assert _outcome({"success": False, "failures": failures}) == TrajectoryOutcome(
+        success=False, failed_checks=("assert y",), detail="FAILED checks:\n- AssertionError: 1 == 2\n- assert y"
+    )
+
+
 def test_a_successful_task_has_no_failed_checks():
     # A runner's stray failures on a passing task do not make it a failure.
     assert _outcome({"success": True, "failures": [{"requirement": "assert x", "trace": "AssertionError"}]}) == TrajectoryOutcome(

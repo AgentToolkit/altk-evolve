@@ -333,7 +333,8 @@ def _outcome(success: bool | None, entry: dict, task: str) -> TrajectoryOutcome 
     failed: list[str] = []
     lines: list[str] = []
     for check in _failures(entry, task):
-        requirement = " ".join(str(check.get("requirement") or "").split())
+        # A requirement that is not a string is treated as absent; its message is still kept.
+        requirement = " ".join(raw.split()) if isinstance(raw := check.get("requirement"), str) else ""
         message = _assertion(check.get("trace"))
         if requirement:
             failed.append(requirement)
