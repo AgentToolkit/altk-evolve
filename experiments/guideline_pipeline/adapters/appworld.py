@@ -2,12 +2,13 @@
 
 A run directory holds ``tasks/<task_id>/logs/environment_io.md`` (the agent's
 code and the environment's output, turn by turn) and ``evaluations/<split>.json``
-(``{"individual": {"<task_id>": {"success", "difficulty", ...}}}``). ``--input``
+(``{"individual": {"<task_id>": {"success", "difficulty", "failures", ...}}}``). ``--input``
 is either a run directory or a parent of run directories.
 """
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import logging
@@ -20,7 +21,14 @@ from typing import Any
 from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
 from experiments.guideline_pipeline.adapters.base import AdapterRecord, option_names
-from experiments.guideline_pipeline.adapters.cuga import agent_steps, elide_middle, load_task_manifest, verdict
+from experiments.guideline_pipeline.adapters.cuga import (
+    DETAIL_CHARS,
+    FAIL_TRACE_CHARS,
+    agent_steps,
+    elide_middle,
+    load_task_manifest,
+    verdict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +37,8 @@ SOURCE = "appworld"
 IDENTITY_WINDOW = 600
 # Without that line, the instruction starts this far before "Task:".
 TASK_CONTEXT = 200
+# An evaluator trace is the failing test's code, then this line, then the assertion message.
+_TRACE_SEPARATOR = "\n----------\n"
 
 # The log is split at its "### Environment Interaction N" headers, so a block missing a
 # fence cannot swallow the next interaction. Each block is an optional dashes line, a
@@ -172,17 +182,17 @@ class AppWorldAdapter:
             "model": self.model,  # also in metadata: the guideline processor stores metadata, not Trajectory.model
             "instruction_source": instruction_source,
         }
-        success = verdict(entry.get("success"))
+        outcome = _outcome(verdict(entry.get("success")), entry, f"{run}/{task_id}")
         content: dict[str, Any] = {
             "messages": [{"role": "user", "content": instruction}, *elide_middle(agent_steps(parse_environment_io(environment_io)))],
             "trace_id": task_id,
             "model": self.model,
             "metadata": {key: value for key, value in metadata.items() if value is not None},
-            "outcome": None if success is None else TrajectoryOutcome(success=success),
+            "outcome": outcome,
         }
         # The revision is a digest of exactly what processors see, so a corrected
         # log, evaluation entry or option change is reprocessed; nothing else is.
-        plain = {**content, "outcome": None if success is None else content["outcome"].model_dump(mode="json")}
+        plain = {**content, "outcome": None if outcome is None else outcome.model_dump(mode="json")}
         digest = hashlib.sha256(json.dumps(plain, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
         batch = TrajectoryBatch(source=SOURCE, conversation_id=f"{run}/{task_id}", batch_id=task_id, revision=digest)
         return AdapterRecord(**content, batch=batch)
@@ -312,6 +322,57 @@ def _task_dirs(run_dir: Path) -> list[Path]:
 
 def _is_run_dir(path: Path) -> bool:
     return (path / "tasks").is_dir()
+
+
+def _outcome(success: bool | None, entry: dict, task: str) -> TrajectoryOutcome | None:
+    """The verdict, and for a failed task each failed requirement with its assertion message."""
+    if success is None:
+        return None
+    if success:
+        return TrajectoryOutcome(success=True)
+    failed: list[str] = []
+    lines: list[str] = []
+    for check in _failures(entry, task):
+        requirement = " ".join(str(check.get("requirement") or "").split())
+        message = _assertion(check.get("trace"))
+        if requirement:
+            failed.append(requirement)
+            lines.append(f"- {requirement}")
+        if message:
+            lines.append(f"  {message}" if requirement else f"- {message}")
+    detail = "\n".join(["FAILED checks:", *lines])[:DETAIL_CHARS] if lines else None
+    return TrajectoryOutcome(success=False, failed_checks=tuple(dict.fromkeys(failed)), detail=detail)
+
+
+def _failures(entry: dict, task: str) -> list[dict]:
+    """The entry's failed checks: a list, or (as some runners write it) a JSON or Python-repr string of one.
+
+    Anything that does not read as a list is reported and gives no checks, so the task
+    keeps its verdict; entries that are not dicts are skipped.
+    """
+    checks = entry.get("failures")
+    if checks is None:
+        return []
+    if isinstance(checks, str):
+        try:
+            checks = json.loads(checks)
+        except ValueError:
+            try:
+                checks = ast.literal_eval(checks)
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                checks = None
+    if not isinstance(checks, list):
+        logger.warning("%s: cannot read the evaluation's failures; the outcome has no failed checks", task)
+        return []
+    return [check for check in checks if isinstance(check, dict)]
+
+
+def _assertion(trace: Any) -> str:
+    """The assertion message that ends a trace (after its last ``----------`` line), whitespace-collapsed and bounded."""
+    if not isinstance(trace, str):
+        return ""
+    message = trace.rsplit(_TRACE_SEPARATOR, 1)[-1]
+    return " ".join(message.split())[:FAIL_TRACE_CHARS]
 
 
 def _integer(value: Any) -> int | None:

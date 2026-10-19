@@ -238,8 +238,13 @@ Each task becomes one record:
 - **outcome**: `success` from the task's entry in `evaluations/<split>.json`. As for
   CUGA, a verdict counts only as a bool, the integer `0`/`1` or the string
   `"true"`/`"false"` in any case. Any other value, or a task missing from the
-  evaluations, gives no outcome. Failed requirements are not yet mapped to
-  `failed_checks` or `detail`.
+  evaluations, gives no outcome. A failed task's `failed_checks` are the
+  `requirement`s of its `failures` (a list, or a JSON or Python-repr string of
+  one), whitespace-collapsed and de-duplicated. Its `detail` lists each failed
+  requirement with its trace's assertion message (the text after the last
+  `----------` line, first 600 characters), and is capped at 2000 characters.
+  `failures` that cannot be read are reported and leave the verdict alone. A
+  successful task has no failed checks.
 - **metadata**: `run`, `split` (the evaluations file name, when the task is
   evaluated), `difficulty`, `model` and `instruction_source`.
 - **batch**: source `appworld`, conversation `<run>/<task_id>`, batch `<task_id>`,
