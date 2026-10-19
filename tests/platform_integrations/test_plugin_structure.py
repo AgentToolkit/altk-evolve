@@ -1,6 +1,7 @@
 """Tests for plugin manifest integrity and hook script references."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,20 @@ class TestSkillScripts:
         skill = _CODEX_PLUGIN_ROOT / "skills/evolve-lite/save-trajectory/SKILL.md"
         content = skill.read_text()
         assert "plugins/evolve-lite/skills/evolve-lite/save-trajectory/scripts/save_trajectory.py" in content
+
+    def test_codex_skills_avoid_forced_rm(self):
+        # Codex's built-in exec policy rejects any `rm` with a force flag (`-f`, `-rf`,
+        # `--force`, also inside `trap '...'`), even under
+        # --dangerously-bypass-approvals-and-sandbox, so a SKILL command that uses one
+        # never runs (#405).
+        forced_rm = re.compile(r"\brm(?:\s+-[A-Za-z]+)*\s+(?:-[A-Za-z]*f[A-Za-z]*|--force)\b")
+        offenders = [
+            f"{path.relative_to(_CODEX_PLUGIN_ROOT)}: {line.strip()}"
+            for path in sorted(_CODEX_PLUGIN_ROOT.rglob("*.md"))
+            for line in path.read_text().splitlines()
+            if forced_rm.search(line)
+        ]
+        assert not offenders, "Codex rejects rm -f style commands:\n" + "\n".join(offenders)
 
 
 class TestRecallLearnExcludedFromClaudeCodexBob:

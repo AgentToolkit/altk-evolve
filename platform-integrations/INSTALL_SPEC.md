@@ -255,7 +255,7 @@ All operations are safe to run multiple times:
 
 | Dependency | Required for | Notes |
 |------------|-------------|-------|
-| `python3 >= 3.8` | Everything | Checked at startup; clear error if missing |
+| `python3 >= 3.9` | Everything (the installer and the installed plugin scripts) | Checked at startup; clear error if missing |
 | `curl` | Remote mode only | Required to download source tarball |
 | `tar` | Remote mode only | Required to extract tarball |
 | `claude` CLI | Claude install | Falls back to manual instructions if absent |
@@ -266,7 +266,7 @@ No pip packages are required. The script uses only Python stdlib.
 
 ## Error Handling
 
-- Python < 3.8: print error with install instructions, exit 1
+- Python < 3.9: print error with install instructions, exit 1
 - `curl` or `tar` not found in remote mode: print error, exit 1
 - JSON parse errors on existing config files: back up the file as `<file>.evolve.bak`, start fresh
 - File permission errors: print specific error and path, exit 1
