@@ -2,7 +2,8 @@
 
 Turns benchmark trajectories into guidelines with this checkout of Evolve. A
 dataset **adapter** reads one dataset format and yields records; a **stage**
-consumes them. `mine` writes guidelines into a namespace; `consolidate`,
+consumes them. `mine` writes guidelines into a namespace (`import-lessons`
+writes already-distilled lessons, without an LLM); `consolidate`,
 `export` and `lineage` read that namespace back and turn it into the static
 files a benchmark harness loads.
 
@@ -44,6 +45,81 @@ uv run python -m experiments.guideline_pipeline mine --adapter <name> --input <p
   as is passing options to an adapter that takes none.
 - On macOS, `make_client()` first calls `runtime.stabilize_runtime()` to keep
   the embedding model off MPS. This is a temporary workaround.
+
+## Importing lessons
+
+`import-lessons` writes lessons that were already distilled elsewhere into a
+namespace, one guideline per lesson, **without any LLM call**. It exists so the
+consolidation-parity check can start from a known raw set: import a model's
+lessons, run `consolidate`, and check the total support is unchanged (for the
+DeepSeek v3.2 AppWorld lessons, 290 in and 290 out).
+
+```bash
+# Validate the files and print the counts, without touching storage.
+uv run python -m experiments.guideline_pipeline import-lessons \
+    --input <dir>/guidelines_per_task_deepseek_v32 --namespace <ns> --dry-run
+
+# Import, then check the total support survives consolidation.
+uv run python -m experiments.guideline_pipeline import-lessons \
+    --input <dir>/guidelines_per_task_deepseek_v32 --namespace <ns> [--source LABEL]
+uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/raw.json   # support sum=290
+uv run python -m experiments.guideline_pipeline consolidate --namespace <ns>
+uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/merged.json  # support sum must still be 290
+```
+
+`--input` is a directory of per-task `*.json` files (subdirectories are not read):
+
+```json
+{"task_id": "0d8a4ee_1", "partition": "dev", "success": false, "difficulty": 2,
+ "instruction_preview": "My name is: ... Task: Send the following phone message ...",
+ "lessons": [{"theme": "...", "polarity": "failure_fix", "evidence": "<free text>", "lesson": "Before acting on ..."}]}
+```
+
+It reads them the way `consolidate_lossless.py::_load_lessons` does: files in
+sorted name order, a lesson whose text is blank after stripping is skipped,
+each other lesson has support 1, and **evidence comes from the file's
+`success`** (`success` or `failure`), not from the lesson's own `polarity` or
+`evidence` text. Each guideline then carries the metadata a mined one has, so
+`consolidate`, `export` and `lineage` treat both alike:
+
+| Lesson file | Guideline metadata |
+|---|---|
+| `lesson` (stripped) | content |
+| `task_id` | `source_task_id`, and `sources[].task_id` (`provenance_incomplete` false) |
+| `instruction_preview` | `task_description`: from the last `Task:`, keeping a `My name is:` line just before it, as the AppWorld adapter reads a task; a preview without `Task:` is used whole |
+| `success` | `evidence` |
+| `partition`, `difficulty` | `partition`, `difficulty` |
+| lesson `theme`, `polarity`, `evidence` | `lesson_theme`, `lesson_polarity`, `lesson_evidence` |
+| file name, index in `lessons` | `source_file`, `lesson_index` (counting blank lessons) |
+| `--source` (default: the `--input` directory's name) | `lesson_source` |
+| — | `support` 1, `category` `strategy` (the library's default), `generation_method` `imported`, empty `rationale`, `trigger`, `implementation_steps` |
+
+The previews are the first 200 characters of the instruction, so a long task
+description is truncated, as it is in the source files.
+
+**Validation.** Every file is checked before anything is written: it must hold
+an object with a non-empty string `task_id`, `partition` and
+`instruction_preview`, a boolean `success`, an integer or absent `difficulty`,
+and a `lessons` list of objects whose `lesson` is a string (blank allowed) and
+whose `theme`, `polarity` and `evidence` are strings when present. A task id in
+two files is also an error. Every problem is listed and the run exits 2 without
+writing. A file whose write fails (a memory hook rejecting it, say) is reported
+on stderr, the rest are imported, and the run exits 1; re-running retries it.
+
+**Re-running is idempotent.** Writes go through the backend's prepare/commit
+seam with conflict resolution off, so memory hooks run and nothing is compared
+with what is stored. Each file's guidelines are committed atomically together
+with a namespace checkpoint keyed on (`--source`, file name), the same
+mechanism `mine` uses, so a re-run counts the file as `already imported` and
+writes nothing for it, even after `consolidate` has merged its guidelines into
+others. A new file in the directory is imported on its own. A file whose content
+changed since it was imported is an error (exit 2) rather than a second copy of
+its lessons; import it into a new namespace or under another `--source`. Like
+`mine`, this needs a backend with atomic writes (filesystem or postgres).
+
+The summary line reports files read, lessons imported, lessons skipped as
+empty, lessons already imported, files failed, and the support total written
+by this run (with `--dry-run`, the support total that would be written).
 
 ## Consolidating, exporting and lineage
 

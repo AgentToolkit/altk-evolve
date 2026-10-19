@@ -1,6 +1,6 @@
-"""CLI wiring for the stages that read a namespace: consolidate, export and lineage.
+"""CLI wiring for import-lessons and for the stages that read a namespace: consolidate, export and lineage.
 
-Kept out of ``__main__`` so that file only gains one call; each subcommand sets
+Kept out of ``__main__`` so that file only gains a call per group; each subcommand sets
 ``run``, which returns the exit code: 0 on success, 1 when writing the output
 fails or --input can't be read, 2 for a usage error (unknown namespace or adapter, invalid thresholds,
 unrecognized evidence).
@@ -22,6 +22,7 @@ from experiments.guideline_pipeline.guidelines import fetch_guidelines, guidelin
 from experiments.guideline_pipeline.output import write_json_atomic
 from experiments.guideline_pipeline.stages.consolidate import consolidate
 from experiments.guideline_pipeline.stages.export import build_playbook, build_retrieval_index
+from experiments.guideline_pipeline.stages.import_lessons import import_lessons, load_lesson_dir
 from experiments.guideline_pipeline.stages.lineage import build_lineage, load_instructions
 
 ClientFactory = Callable[[], EvolveClient]
@@ -124,6 +125,40 @@ def _run_lineage(args: argparse.Namespace, client: EvolveClient) -> str:
     document, report = build_lineage(rows, args.namespace, instructions=instructions, empty=empty)
     write_json_atomic(args.out, document)
     return f"{report.summary()}; wrote {args.out}"
+
+
+def _run_import_lessons(make_client: ClientFactory) -> Callable[[argparse.Namespace], int]:
+    """Exit 0, 1 when a file failed to write or --input can't be read, 2 for invalid input; a dry run builds no client."""
+
+    def command(args: argparse.Namespace) -> int:
+        try:
+            files = load_lesson_dir(args.input)
+            source = args.source or args.input.resolve().name
+            report = import_lessons(files, None if args.dry_run else make_client(), namespace_id=args.namespace, source=source)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        except OSError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        for name, error in report.failures:
+            print(f"failed {name}: {error}", file=sys.stderr)
+        print(report.summary())
+        return 1 if report.failures else 0
+
+    return command
+
+
+def add_import_stage(stages: Any, *, make_client: ClientFactory) -> None:
+    """Register import-lessons on the stage subparsers."""
+    parser = stages.add_parser("import-lessons", help="import per-task lesson files as guidelines (support 1 each), without an LLM")
+    parser.add_argument("--input", required=True, type=Path, help="directory of per-task lesson *.json files")
+    parser.add_argument("--namespace", required=True, help="namespace to write guidelines into (created if missing)")
+    parser.add_argument(
+        "--source", help="label recorded on each guideline and keying re-run detection (default: the --input directory's name)"
+    )
+    parser.add_argument("--dry-run", action="store_true", help="read and validate the files without touching storage")
+    parser.set_defaults(run=_run_import_lessons(make_client))
 
 
 def _common(parser: argparse.ArgumentParser) -> None:
