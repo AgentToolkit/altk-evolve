@@ -87,7 +87,11 @@ COPY --from=node:20-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/nod
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
-RUN npm install --global @openai/codex@0.122.0 \
+# Pinned so the e2e test runs against a known CLI. Older CLIs reject current
+# models (0.122.0 could run none with a ChatGPT login). Override with
+# `docker build --target codex --build-arg CODEX_VERSION=<version> ...`.
+ARG CODEX_VERSION=0.160.1
+RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
     && npm cache clean --force
 
 RUN mkdir -p /codex-home \

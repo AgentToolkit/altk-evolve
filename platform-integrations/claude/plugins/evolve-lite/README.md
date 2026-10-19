@@ -14,7 +14,7 @@ for managing the resulting store.
 - **Sharing**: `/evolve-lite:adapt-memory` mirrors a just-saved native memory
   into the in-repo store at `.evolve/entities/` as a normal Evolve entity,
   which `/evolve-lite:publish` can share like any other (see
-  [Publishing Guidelines](#publishing-guidelines))
+  [Publishing Entities](#publishing-entities))
 - **Provenance**: `audit_recall.py` records which memories a session actually
   consulted, so their value can be measured over time
 - **Git-backed distribution**: `/evolve-lite:subscribe`, `/evolve-lite:publish`,
@@ -88,7 +88,7 @@ or `reference`), and the entity records `source: native-memory` plus the
 
 Mirrored memories are publishable like any other entity: `/evolve-lite:publish`
 moves them into the shared repo under the same `{type}/` directory (see
-[Publishing Guidelines](#publishing-guidelines)).
+[Publishing Entities](#publishing-entities)).
 
 ### After consulting memories — log it (provenance)
 
@@ -119,7 +119,7 @@ and publish skills will help you create one if it is missing. Structure:
 
 ```yaml
 identity:
-  user: yourname          # used to stamp ownership on published guidelines
+  user: yourname          # used to stamp ownership on published entities
 repos:
   - name: memory
     scope: write
@@ -162,7 +162,7 @@ use only letters, numbers, `.`, `_`, and `-`.
 > are on disk for you to browse, but Claude does not recall them
 > automatically.
 
-### Publishing Guidelines
+### Publishing Entities
 
 Use `/evolve-lite:publish` to share one or more of your local entities
 (guidelines, or memories mirrored by adapt-memory) via a **write-scope** repo:

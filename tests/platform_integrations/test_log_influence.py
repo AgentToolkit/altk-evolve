@@ -8,22 +8,32 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
+pytestmark = pytest.mark.platform_integrations
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
 LOG_INFLUENCE_SCRIPT = (
     _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite/skills/evolve-lite/provenance/scripts/log_influence.py"
 )
+# Every rendered copy of the writer. Each resolves its own lib/evolve-lite/, so a
+# platform-specific render or lib problem shows up here rather than in a session.
+RENDERED_LOG_INFLUENCE_SCRIPTS = {
+    "claude": LOG_INFLUENCE_SCRIPT,
+    "codex": _REPO_ROOT / "platform-integrations/codex/plugins/evolve-lite/skills/evolve-lite/provenance/scripts/log_influence.py",
+    "claw-code": _REPO_ROOT / "platform-integrations/claw-code/plugins/evolve-lite/skills/evolve-lite/provenance/scripts/log_influence.py",
+    "bob": _REPO_ROOT / "platform-integrations/bob/evolve-lite/skills/evolve-lite-provenance/scripts/log_influence.py",
+}
+
+ALL_VERDICTS = ("followed", "contradicted", "not_applicable", "insufficient_evidence")
 
 
-def run_log_influence(project_dir, payload, *, raw_input=None, evolve_dir=None):
+def run_log_influence(project_dir, payload, *, raw_input=None, evolve_dir=None, script=LOG_INFLUENCE_SCRIPT):
     """Invoke log_influence.py with the given payload dict or raw input string."""
     env = {**os.environ}
     if evolve_dir:
         env["EVOLVE_DIR"] = str(evolve_dir)
     stdin = raw_input if raw_input is not None else json.dumps(payload)
     return subprocess.run(
-        [sys.executable, str(LOG_INFLUENCE_SCRIPT)],
+        [sys.executable, str(script)],
         input=stdin,
         capture_output=True,
         text=True,
@@ -114,7 +124,7 @@ class TestLogInfluence:
             "session_id": "sess-1",
             "assessments": [
                 {"entity": "guideline/slug-a", "verdict": "followed", "evidence": "e1"},
-                {"entity": "guideline/slug-a", "verdict": "contradicted", "evidence": "e2"},
+                {"entity": "guideline/slug-a", "verdict": "followed", "evidence": "e2"},
             ],
         }
 
@@ -127,8 +137,129 @@ class TestLogInfluence:
         assert len(events) == 1
         assert events[0]["entity"] == "guideline/slug-a"
         assert events[0]["verdict"] == "followed"
+        # A duplicate is expected on a rerun, so it is not an error, but the
+        # summary says it happened instead of looking like a clean write.
+        assert "Recorded 0 influence assessment(s)." in second.stdout
+        assert "Skipped 2 already recorded." in second.stdout
 
-    def test_skips_assessments_with_invalid_verdict(self, temp_project_dir):
+    @pytest.mark.parametrize("platform", sorted(RENDERED_LOG_INFLUENCE_SCRIPTS))
+    def test_records_insufficient_evidence(self, temp_project_dir, platform):
+        """An abstention is a verdict to record, not an invalid one to drop (#340)."""
+        evolve_dir = temp_project_dir / ".evolve"
+        result = run_log_influence(
+            temp_project_dir,
+            {
+                "session_id": "s1",
+                "assessments": [
+                    {"entity": "guideline/a", "verdict": "followed", "evidence": "e"},
+                    {"entity": "guideline/b", "verdict": "insufficient_evidence", "evidence": "not enough"},
+                ],
+            },
+            evolve_dir=evolve_dir,
+            script=RENDERED_LOG_INFLUENCE_SCRIPTS[platform],
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Recorded 2 influence assessment(s)." in result.stdout
+        verdicts = {event["entity"]: event["verdict"] for event in read_audit(evolve_dir)}
+        assert verdicts == {"guideline/a": "followed", "guideline/b": "insufficient_evidence"}
+
+    @pytest.mark.parametrize("platform", sorted(RENDERED_LOG_INFLUENCE_SCRIPTS))
+    def test_every_copy_rejects_invalid_items_loudly(self, temp_project_dir, platform):
+        """Each rendered copy exits 1, names every reject on stderr and still writes the valid item."""
+        evolve_dir = temp_project_dir / ".evolve"
+        result = run_log_influence(
+            temp_project_dir,
+            {
+                "session_id": "s1",
+                "assessments": [
+                    {"entity": "guideline/d", "verdict": "followed", "evidence": "e"},
+                    {"entity": "guideline/a", "verdict": "Followed", "evidence": "e"},
+                    {"entity": "guideline/b", "verdict": ["followed"], "evidence": "e"},
+                    {"entity": "guideline/c", "verdict": "followed", "evidence": "e"},
+                    {"entity": "guideline/d", "verdict": "contradicted", "evidence": "e"},
+                ],
+            },
+            evolve_dir=evolve_dir,
+            script=RENDERED_LOG_INFLUENCE_SCRIPTS[platform],
+        )
+        assert result.returncode == 1
+        assert "Traceback" not in result.stderr
+        assert "rejected 4 assessment(s)" in result.stderr
+        # Rejects are listed in batch order, whichever check caught them.
+        reported = [line.strip() for line in result.stderr.splitlines() if line.strip().startswith("- assessments[")]
+        assert [line.split(":")[0] for line in reported] == [
+            "- assessments[0] (guideline/d)",
+            "- assessments[1] (guideline/a)",
+            "- assessments[2] (guideline/b)",
+            "- assessments[4] (guideline/d)",
+        ]
+        assert "Recorded 1 influence assessment(s)." in result.stdout
+        assert [event["entity"] for event in read_audit(evolve_dir)] == ["guideline/c"]
+
+    def test_rejects_conflicting_verdicts_for_one_entity_in_a_batch(self, temp_project_dir):
+        """Two verdicts for one new pair are a disagreement, not a duplicate; recording either would make it final."""
+        evolve_dir = temp_project_dir / ".evolve"
+        batch = [
+            {"entity": "guideline/slug-a", "verdict": "insufficient_evidence", "evidence": "e1"},
+            {"entity": "guideline/slug-b", "verdict": "followed", "evidence": "e2"},
+            {"entity": "guideline/slug-a", "verdict": "followed", "evidence": "e3"},
+        ]
+        first = run_log_influence(temp_project_dir, {"session_id": "sess-1", "assessments": batch}, evolve_dir=evolve_dir)
+        assert first.returncode == 1
+        assert "already recorded" not in first.stdout
+        assert "Recorded 1 influence assessment(s)." in first.stdout
+        assert "rejected 2 assessment(s)" in first.stderr
+        assert "assessments[0] (guideline/slug-a): verdict 'insufficient_evidence' conflicts with 'followed'" in first.stderr
+        assert "assessments[2] (guideline/slug-a): verdict 'followed' conflicts with 'insufficient_evidence'" in first.stderr
+        assert [event["entity"] for event in read_audit(evolve_dir)] == ["guideline/slug-b"]
+
+        # The recovery: keep the verdict that was meant and resend the batch.
+        del batch[0]
+        second = run_log_influence(temp_project_dir, {"session_id": "sess-1", "assessments": batch}, evolve_dir=evolve_dir)
+        assert second.returncode == 0, second.stderr
+        assert "Recorded 1 influence assessment(s). Skipped 1 already recorded." in second.stdout
+        verdicts = {event["entity"]: event["verdict"] for event in read_audit(evolve_dir)}
+        assert verdicts == {"guideline/slug-a": "followed", "guideline/slug-b": "followed"}
+
+    def test_conflicting_verdicts_for_an_already_recorded_pair_are_duplicates(self, temp_project_dir):
+        """Once a pair is recorded its verdict is final, so a conflicting resend is skipped, not rejected."""
+        evolve_dir = temp_project_dir / ".evolve"
+        seed = run_log_influence(
+            temp_project_dir,
+            {"session_id": "sess-1", "assessments": [{"entity": "guideline/slug-a", "verdict": "contradicted"}]},
+            evolve_dir=evolve_dir,
+        )
+        assert seed.returncode == 0, seed.stderr
+        result = run_log_influence(
+            temp_project_dir,
+            {
+                "session_id": "sess-1",
+                "assessments": [
+                    {"entity": "guideline/slug-a", "verdict": "followed"},
+                    {"entity": "guideline/slug-a", "verdict": "not_applicable"},
+                ],
+            },
+            evolve_dir=evolve_dir,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Recorded 0 influence assessment(s). Skipped 2 already recorded." in result.stdout
+        assert [event["verdict"] for event in read_audit(evolve_dir)] == ["contradicted"]
+
+    def test_accepts_every_documented_verdict(self, temp_project_dir):
+        evolve_dir = temp_project_dir / ".evolve"
+        result = run_log_influence(
+            temp_project_dir,
+            {
+                "session_id": "s1",
+                "assessments": [{"entity": f"guideline/{v}", "verdict": v, "evidence": "e"} for v in ALL_VERDICTS],
+            },
+            evolve_dir=evolve_dir,
+        )
+        assert result.returncode == 0, result.stderr
+        assert [event["verdict"] for event in read_audit(evolve_dir)] == list(ALL_VERDICTS)
+
+    def test_rejects_invalid_verdict_loudly_and_keeps_valid_ones(self, temp_project_dir):
+        """An unknown verdict exits 1 and is named, so the judgment is never lost behind exit 0."""
         evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
             temp_project_dir,
@@ -141,12 +272,52 @@ class TestLogInfluence:
             },
             evolve_dir=evolve_dir,
         )
-        assert result.returncode == 0, result.stderr
+        assert result.returncode == 1
+        assert "Recorded 1 influence assessment(s)." in result.stdout
+        assert "rejected 1 assessment(s)" in result.stderr
+        assert "assessments[0] (guideline/slug-a)" in result.stderr
+        assert "'bogus'" in result.stderr
         events = read_audit(evolve_dir)
         assert len(events) == 1
         assert events[0]["entity"] == "guideline/slug-b"
 
-    def test_skips_assessments_missing_entity(self, temp_project_dir):
+    @pytest.mark.parametrize("verdict", [["followed"], {"v": "followed"}, None, 1])
+    def test_rejects_a_non_string_verdict_without_crashing(self, temp_project_dir, verdict):
+        """An unhashable verdict used to raise TypeError mid-batch and drop the items after it."""
+        evolve_dir = temp_project_dir / ".evolve"
+        result = run_log_influence(
+            temp_project_dir,
+            {
+                "session_id": "sess-1",
+                "assessments": [
+                    {"entity": "guideline/slug-a", "verdict": verdict, "evidence": "no"},
+                    {"entity": "guideline/slug-b", "verdict": "followed", "evidence": "yes"},
+                ],
+            },
+            evolve_dir=evolve_dir,
+        )
+        assert result.returncode == 1
+        assert "Traceback" not in result.stderr
+        assert "assessments[0] (guideline/slug-a)" in result.stderr
+        assert [event["entity"] for event in read_audit(evolve_dir)] == ["guideline/slug-b"]
+
+    def test_resending_a_fixed_batch_records_only_the_fix(self, temp_project_dir):
+        """The recovery the error message asks for: fix the verdict, resend everything."""
+        evolve_dir = temp_project_dir / ".evolve"
+        batch = [
+            {"entity": "guideline/slug-a", "verdict": "Followed", "evidence": "e1"},
+            {"entity": "guideline/slug-b", "verdict": "followed", "evidence": "e2"},
+        ]
+        first = run_log_influence(temp_project_dir, {"session_id": "sess-1", "assessments": batch}, evolve_dir=evolve_dir)
+        assert first.returncode == 1
+
+        batch[0]["verdict"] = "followed"
+        second = run_log_influence(temp_project_dir, {"session_id": "sess-1", "assessments": batch}, evolve_dir=evolve_dir)
+        assert second.returncode == 0, second.stderr
+        assert "Recorded 1 influence assessment(s). Skipped 1 already recorded." in second.stdout
+        assert sorted(event["entity"] for event in read_audit(evolve_dir)) == ["guideline/slug-a", "guideline/slug-b"]
+
+    def test_rejects_assessments_missing_entity(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
             temp_project_dir,
@@ -159,12 +330,13 @@ class TestLogInfluence:
             },
             evolve_dir=evolve_dir,
         )
-        assert result.returncode == 0, result.stderr
+        assert result.returncode == 1
+        assert "assessments[0]: must include a non-empty string `entity`" in result.stderr
         events = read_audit(evolve_dir)
         assert len(events) == 1
         assert events[0]["entity"] == "guideline/slug-b"
 
-    def test_skips_non_dict_assessment_items(self, temp_project_dir):
+    def test_rejects_non_dict_assessment_items(self, temp_project_dir):
         evolve_dir = temp_project_dir / ".evolve"
         result = run_log_influence(
             temp_project_dir,
@@ -179,7 +351,8 @@ class TestLogInfluence:
             },
             evolve_dir=evolve_dir,
         )
-        assert result.returncode == 0, result.stderr
+        assert result.returncode == 1
+        assert "rejected 3 assessment(s)" in result.stderr
         events = read_audit(evolve_dir)
         assert len(events) == 1
         assert events[0]["entity"] == "guideline/slug-ok"
