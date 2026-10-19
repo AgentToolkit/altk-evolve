@@ -20,7 +20,7 @@ from typing import Any
 from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
 from experiments.guideline_pipeline.adapters.base import AdapterRecord, option_names
-from experiments.guideline_pipeline.adapters.cuga import agent_steps, elide_middle, load_task_manifest, verdict
+from experiments.guideline_pipeline.adapters.cuga import agent_steps, load_task_manifest, verdict
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +174,7 @@ class AppWorldAdapter:
         }
         success = verdict(entry.get("success"))
         content: dict[str, Any] = {
-            "messages": [{"role": "user", "content": instruction}, *elide_middle(agent_steps(parse_environment_io(environment_io)))],
+            "messages": [{"role": "user", "content": instruction}, *agent_steps(parse_environment_io(environment_io))],
             "trace_id": task_id,
             "model": self.model,
             "metadata": {key: value for key, value in metadata.items() if value is not None},

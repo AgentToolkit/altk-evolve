@@ -155,9 +155,9 @@ file other than `results`, `metadata` and `appworld_sdk_*` is one. A task whose
   `results.json` entry, or changing an option that changes the content, reprocesses
   that task; re-running unchanged input skips it. Renaming a run directory changes
   its identity.
-- **Long runs**: the extractor keeps only the first 50 steps, so the adapter keeps
-  the first 6 and the last 43 steps with one `[N steps elided ...]` marker between
-  them. This is temporary, until the extractor's limits are configurable.
+- **Long runs**: every step is passed on. The extractor's window decides what it
+  renders: by default the first 50 steps, so a longer run loses its ending unless
+  `trajectory_tail_steps` is set (the sample profile below keeps the last 43).
 
 Options (`--adapter-option KEY=VALUE`):
 
@@ -179,9 +179,12 @@ not counted as steps and are rendered within a character budget that keeps the
 most recent ones.
 
 A sample profile, [profiles/cuga.json](profiles/cuga.json), runs the built-in
-`evolve.guidelines` processor in `standard` mode with segmentation off. Its model
-and provider are omitted, so they are captured from the `EVOLVE_*` / LLM settings
-when the profile is published.
+`evolve.guidelines` processor in `standard` mode with segmentation off. Its
+trajectory window is 50 steps with the last 43 kept for the ending
+(`trajectory_max_steps`, `trajectory_tail_steps`; see
+[the trajectory limits](../../docs/guides/configuration.md#trajectory-limits)). Its
+model and provider are omitted, so they are captured from the `EVOLVE_*` / LLM
+settings when the profile is published.
 
 ```bash
 uv run evolve processing-profiles apply cuga-guidelines \
@@ -233,8 +236,7 @@ Each task becomes one record:
 - **messages**: after the instruction, each `### Environment Interaction N` block in
   `environment_io.md` gives its code as an `execute_ipython` function call and its
   output as an `OBSERVATION:` assistant message, rendered and cut to 2000 characters
-  exactly as the CUGA adapter does. Long runs keep the first 6 and last 43 steps,
-  as there.
+  exactly as the CUGA adapter does. Long runs are passed on whole, as there.
 - **outcome**: `success` from the task's entry in `evaluations/<split>.json`. As for
   CUGA, a verdict counts only as a bool, the integer `0`/`1` or the string
   `"true"`/`"false"` in any case. Any other value, or a task missing from the
@@ -273,8 +275,8 @@ To mine a test split anyway, name it: `splits=test_normal`. A task with no
 evaluation has no known split, so it is still read.
 
 [profiles/appworld.json](profiles/appworld.json) is the same sample profile as
-CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, model and
-provider captured when published.
+CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, the same
+50-step window with a 43-step tail, model and provider captured when published.
 
 ```bash
 uv run evolve processing-profiles apply appworld-guidelines \
@@ -326,8 +328,8 @@ becomes one record:
   each later turn's query as a `USER MESSAGE:`). Message content is a string or a list of content blocks, whose
   text parts are joined; any other type is left out rather than rendered as a
   Python repr. Text longer than a step is split into `(part i/n)` steps rather
-  than truncated, and tool-call arguments are kept whole (still valid JSON). Runs longer than the extractor's 50 steps are elided as for
-  CUGA (the helper is shared, in `adapters/elision.py`).
+  than truncated, and tool-call arguments are kept whole (still valid JSON). Long runs are passed on whole, as for
+  CUGA; publish the CUGA sample profile to keep their ending.
 - **outcome**: from the record's `results.json` dialogue, matched by the domain
   file's name and the uuid (the evaluator names each results domain after its
   file and pairs uuids only within a domain, so a uuid repeated in another domain
@@ -426,10 +428,10 @@ Each task becomes one record:
   `task_instructions`), which the agent never saw, so it is left out unless
   `include_scenario=true`.
 - **Long runs:** long turns are split into parts under the extractor's
-  2000-character step cap. The extractor's default window is the first 50 steps
-  (`EVOLVE_TRAJECTORY_*`), so, as the CUGA adapter does, a longer conversation
-  keeps its first 25 and last 24 steps with one `[N steps elided ...]` marker
-  between them. The adapter caps at 50 whatever the extractor's settings.
+  2000-character step cap, and every step is passed on. The extractor's default
+  window is the first 50 steps (`EVOLVE_TRAJECTORY_*`), so set
+  `trajectory_tail_steps` in the profile (or `EVOLVE_TRAJECTORY_TAIL_STEPS`) to
+  keep a longer conversation's ending.
 - **outcome:** `success` when the reward is 1.0; judge lines with
   `action_match=False` or `met=False` (or the JSON / dict forms
   `"action_match": false`, `'met': False`) become `failed_checks`, and the start
@@ -535,8 +537,10 @@ validates the `KEY=VALUE` strings and returns a configured copy (see
 `option_boolean` and `option_names` in `adapters/base.py` parse boolean and
 comma-separated options strictly: a typo or an empty filter is an error.
 
-If long runs can exceed the extractor's 50-step cap, keep their ending with
-`adapters/elision.py`'s `elide_middle`.
+Pass every step on. Bounding long runs is the extractor's job: its window
+(`trajectory_max_steps`, `trajectory_tail_steps`) is set in the processing
+profile, and a profile for a dataset with long runs should set a tail so their
+ending is kept.
 
 Each adapter needs unit tests under `tests/` that use a tiny synthetic fixture,
 never a copy of the real dataset. See `tests/fakes.py` and `tests/fixtures/`.

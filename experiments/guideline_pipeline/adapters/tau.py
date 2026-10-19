@@ -45,7 +45,6 @@ from typing import Any, Literal
 from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
 from experiments.guideline_pipeline.adapters.base import AdapterRecord, option_boolean, option_names
-from experiments.guideline_pipeline.adapters.cuga import elide_middle
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +55,9 @@ DETAIL_CHARS = 2000
 # leave room for the JSON envelope and escaped newlines.
 CONTEXT_CHUNK_CHARS = 1500
 
-# parse_openai_agents_trajectory's default window (EVOLVE_TRAJECTORY_*): the first 50
-# agent steps, each truncated to 2000 chars. Long turns are split under the per-step
-# cap, and a long conversation keeps its first ELISION_HEAD steps and its ending
-# around one marker (the CUGA adapter's elide_middle), so the ending reaches the
-# default head-only window.
+# parse_openai_agents_trajectory's default per-step cap (EVOLVE_TRAJECTORY_MAX_STEP_CHARS):
+# long turns are split under it rather than truncated.
 PARSER_STEP_CHARS = 2000
-ELISION_HEAD = 25
 
 _SECTIONS = (
     ("TASK ", "HEADER"),
@@ -243,12 +238,11 @@ def task_messages(turns: list[Turn]) -> list[dict[str, Any]]:
     first = next((i for i, turn in enumerate(turns) if turn.kind == "user"), None)
     if first is None:
         raise MalformedTrajectory("conversation has no user turn")
-    leading = conversation_steps(turns[:first])
-    steps = leading + conversation_steps(turns[first + 1 :])
-    kept = elide_middle(steps, head=ELISION_HEAD)
-    # Elision keeps the head, so the task stays right after the leading steps it kept.
-    position = len(leading) if kept is steps else min(len(leading), ELISION_HEAD)
-    return [*kept[:position], {"role": "user", "content": turns[first].text}, *kept[position:]]
+    return [
+        *conversation_steps(turns[:first]),
+        {"role": "user", "content": turns[first].text},
+        *conversation_steps(turns[first + 1 :]),
+    ]
 
 
 def _enclosing_object(text: str, start: int, end: int) -> dict[str, Any] | None:

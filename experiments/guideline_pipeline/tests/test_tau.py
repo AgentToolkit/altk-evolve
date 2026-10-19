@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
+from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.llm.guidelines.guidelines import parse_openai_agents_trajectory
 
 from experiments.guideline_pipeline import __main__ as cli
 from experiments.guideline_pipeline.adapters import ADAPTERS, get_adapter
-from experiments.guideline_pipeline.adapters.cuga import PARSER_STEP_LIMIT
 from experiments.guideline_pipeline.adapters.tau import (
     TauRetailAdapter,
     Turn,
@@ -295,18 +295,20 @@ def test_batch_identity_is_stable_and_revision_tracks_content(tau_dir: Path):
     assert records(tau_dir)["task_1"].batch.revision == records(FIXTURES)["task_1"].batch.revision
 
 
-def test_long_conversations_keep_their_head_and_tail(tau_dir: Path):
+def test_long_conversations_pass_through_whole(tau_dir: Path):
     turns = [line for i in range(40) for line in ("[USER]", f"question {i}", "[ASSISTANT]", f"answer {i}")]
     messages = TauRetailAdapter().record(task_file(tau_dir, "task_9.txt", turns)).messages
 
-    # The shared elision (the CUGA adapter's), with the head at 25 steps.
-    assert len(messages) == 1 + PARSER_STEP_LIMIT
+    # The task, then the other 79 turns; the adapter no longer elides.
+    assert len(messages) == 1 + 79
     assert messages[0] == {"role": "user", "content": "question 0"}
     assert messages[1]["content"] == "AGENT MESSAGE:\nanswer 0"
-    assert messages[26]["content"] == "[30 steps elided: the trajectory continues below]"
     assert messages[-1]["content"] == "AGENT MESSAGE:\nanswer 39"
-    # The ending survives the parser's default step window.
-    assert parse_openai_agents_trajectory(messages)["steps_list"][-1].endswith("answer 39")
+    # A window with a tail keeps the ending; the default head-only one does not.
+    assert parse_openai_agents_trajectory(messages, options=GuidelineRuntime(trajectory_tail_steps=24))["steps_list"][-1].endswith(
+        "answer 39"
+    )
+    assert not parse_openai_agents_trajectory(messages)["steps_list"][-1].endswith("answer 39")
 
 
 def test_long_turns_are_split_so_per_step_truncation_drops_nothing(tau_dir: Path):
