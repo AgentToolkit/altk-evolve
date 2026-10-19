@@ -15,7 +15,8 @@ The mechanical work — reading recall rows, skipping already-assessed pairs,
 resolving entity files, and locating trajectories — is done deterministically by
 `provenance.py candidates`. Your job is the judgment: read each candidate and
 decide whether the recalled guideline was `followed`, `contradicted`, or
-`not_applicable`, then persist that verdict.
+`not_applicable` — or that the trajectory is `insufficient_evidence` to tell —
+then persist that verdict.
 
 Use this skill when you want to compute usage provenance without coupling the
 work to the live learn step.
@@ -59,7 +60,10 @@ Notes:
 - If an entity file or trajectory cannot be found, the candidate is still
   emitted with a `missing: [...]` field so the gap is visible. When the
   trajectory is missing you usually cannot judge the pair — skip it (do not
-  guess), unless the entity content alone makes `not_applicable` certain.
+  guess), unless the entity content alone makes `not_applicable` certain. Do
+  not record `insufficient_evidence` for a missing trajectory: a recorded
+  verdict is final for its pair, while a skipped candidate is offered again on
+  the next run, once the trajectory may have been found.
 
 ### Step 2: Judge each candidate
 
@@ -73,6 +77,10 @@ verdict:
   repeated the avoidable dead end.
 - `not_applicable` — the guideline was recalled but did not apply to this
   session.
+- `insufficient_evidence` — you have the trajectory, but it does not show
+  whether the guideline was followed or contradicted (for example, the relevant
+  step is not in the transcript). Abstain with this rather than forcing one of
+  the other three.
 
 Keep `evidence` to one short sentence citing a concrete action, tool call, or
 absence in the trajectory. This judgment is yours — there is no heuristic
@@ -100,13 +108,21 @@ echo '{
   "session_id": "<session-id>",
   "assessments": [
     {"entity": "feedback/foo", "verdict": "followed", "evidence": "Agent followed it."},
-    {"entity": "guideline/bar", "verdict": "not_applicable", "evidence": "Did not apply."}
+    {"entity": "guideline/bar", "verdict": "not_applicable", "evidence": "Did not apply."},
+    {"entity": "guideline/baz", "verdict": "insufficient_evidence", "evidence": "The transcript does not show the deploy step."}
   ]
 }' | sh -lc 'real_home="$(python3 -c "import os,pwd; print(pwd.getpwuid(os.getuid()).pw_dir)")"; config_home="${CLAW_CONFIG_HOME:-$real_home/.claw}"; script=".claw/skills/evolve-lite:provenance/scripts/log_influence.py"; [ -f "$script" ] || script="$config_home/skills/evolve-lite:provenance/scripts/log_influence.py"; python3 "$script"'
 ```
 
-Both paths write the identical `influence` audit row and skip duplicates. The
-`entity` value must match the candidate's `entity_id` exactly, including any
+Both paths write the identical `influence` audit row and skip duplicates. If
+either exits non-zero, read its error: it names each assessment it rejected (for
+example, a misspelled verdict, an item with no `entity`, or two different
+verdicts for the same entity in one batch, in which case neither is recorded).
+Fix those and send them again; anything already recorded is skipped as a
+duplicate, so resending the whole batch is safe. A resend cannot change a
+verdict that was already recorded: the pair keeps its first verdict and the
+new one is skipped as a duplicate, so decide on the verdict before you send it.
+The `entity` value must match the candidate's `entity_id` exactly, including any
 `subscribed/<source>/` prefix.
 
 It is valid to record nothing when recall events exist but no recalled guideline

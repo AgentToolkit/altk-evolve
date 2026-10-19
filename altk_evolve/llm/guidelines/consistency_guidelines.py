@@ -561,8 +561,9 @@ def generate_consistency_guidelines(
     steps. When the trajectory format allows 1:1 step index mapping (non-empty string content
     or single-function_call list content per assistant message), the trajectory is first
     segmented into subtasks and guidelines are generated per subtask — matching the shape
-    returned by `generate_guidelines` for downstream clustering. Falls back to full-trajectory
-    generation when segmentation is not applicable or produces fewer than 2 valid subtasks.
+    returned by `generate_guidelines` for downstream clustering. A step range the segmenter
+    returned more than once is generated once. Falls back to full-trajectory generation when
+    segmentation is not applicable or produces fewer than 2 distinct valid subtask ranges.
 
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
     trajectory), matching the shape returned by `generate_guidelines`.
@@ -761,14 +762,22 @@ def generate_consistency_guidelines(
             logger.warning(f"Segmentation failed, falling back to full trajectory: {e}")
             subtasks = []
 
+    # A range the segmenter repeated is generated once, as on the other two paths
+    # (subtask_slices). This path does not clamp, and segments only when no step is elided,
+    # so a range's positions are exactly the steps it covers.
     valid_subtasks = []
+    seen_ranges: set[tuple[int, int]] = set()
     for subtask in subtasks:
-        if 1 <= subtask.start_step <= subtask.end_step <= n_positional_steps:
-            valid_subtasks.append(subtask)
-        else:
+        step_range = (subtask.start_step, subtask.end_step)
+        if not 1 <= subtask.start_step <= subtask.end_step <= n_positional_steps:
             logger.debug(
                 f"Skipping subtask with out-of-range steps [{subtask.start_step}, {subtask.end_step}] (n_positional_steps={n_positional_steps})"
             )
+        elif step_range in seen_ranges:
+            logger.debug(f"Skipping subtask with repeated steps [{subtask.start_step}, {subtask.end_step}]")
+        else:
+            seen_ranges.add(step_range)
+            valid_subtasks.append(subtask)
 
     if len(valid_subtasks) >= 2:
         logger.info(f"Segmented trajectory into {len(valid_subtasks)} subtasks")

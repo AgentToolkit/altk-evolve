@@ -8,8 +8,13 @@ environment with Python and common Linux tools.
 From the repository root:
 
 ```bash
-docker build -t claude-sandbox sandbox/
+docker build --target claude -t claude-sandbox sandbox/
 ```
+
+`sandbox/Dockerfile` has one stage per agent (`claude`, `codex`, `bob`). Without
+`--target`, Docker builds the last stage, which is the Bob image.
+`just sandbox-build <claude|codex|bob>` builds a single target with the image
+name the recipes and tests expect.
 
 ## Run
 
@@ -107,9 +112,34 @@ credentials are missing.
 
 ## Codex Automated E2E Test
 
-`tests/e2e/test_codex_sandbox_learn_recall.py` runs the same learn + recall
-flow against the Dockerized Codex sandbox. Build the image, then load the
-Codex sandbox env file with `dotenv`:
+`tests/e2e/test_codex_sandbox_learn_recall.py` exercises the Codex save +
+recall loop end to end inside the Dockerized Codex sandbox. Codex ships no
+`learn` or `recall` skill and no hooks. The installer copies `EVOLVE.md` to
+`~/.codex/evolve-lite/` and points `~/.codex/AGENTS.md` at it, and the agent
+recalls and saves by following it. The test installs into the container's
+Codex home (the workspace's `.codex-home/`, mounted at `/codex-home`), so it
+never touches your own `~/.codex`. It then runs three sessions:
+
+1. **Session 1** asks where `sample.jpg` was taken. The sandbox has neither
+   `exiftool` nor Pillow. The prompt asks the agent to save what it learned,
+   since `EVOLVE.md` alone leaves saving to its judgment. Following the "Save"
+   section, it writes `.evolve/entities/<type>/<name>.md`, where `<type>` is
+   `user`, `feedback`, `project` or `reference`.
+2. **Session 2** asks a related EXIF question. Following the "Recall" section,
+   the agent's first action is to check `.evolve/entities/` and record what it
+   opened with `python3 ~/.codex/evolve-lite/audit_recall.py`. The test asserts
+   that session 2 appended a `recall` event to `.evolve/audit.log` naming a
+   session-1 entity, and that session 2's saved trajectory carries the same
+   session id. Provenance needs that id to find the trajectory.
+3. **Session 3** runs the `provenance` skill, and the test asserts that an
+   influence verdict was recorded for that recall.
+
+`test_codex_sandbox_delivers_evolve_md` is a quick preflight that needs the
+image but no credentials and no model call. It checks, through the image's
+real entrypoint, that the `EVOLVE.md` pointer and the `save-trajectory` and
+`provenance` skills are in the prompt input Codex would send.
+
+Build the image, then load the Codex sandbox env file with `dotenv`:
 
 ```bash
 just sandbox-build codex
@@ -118,6 +148,10 @@ dotenv -e ~/data/creds/codex-sandbox.env -- \
   uv run pytest tests/e2e/test_codex_sandbox_learn_recall.py \
     --run-e2e -m e2e -v --log-cli-level=INFO
 ```
+
+The image pins the Codex CLI (`CODEX_VERSION` in `sandbox/Dockerfile`). To try
+another release, build with
+`docker build --target codex --build-arg CODEX_VERSION=<version> -t evolve-codex-sandbox sandbox/`.
 
 The env file should export the provider credential and Codex provider settings
 as environment variables, for example `CODEX_MODEL_PROVIDER`,
