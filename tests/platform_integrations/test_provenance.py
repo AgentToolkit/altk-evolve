@@ -503,6 +503,30 @@ class TestCandidatesDedup:
         # feedback/foo already assessed -> only feedback/bar remains.
         assert ids == {"feedback/bar"}
 
+    def test_an_abstention_resolves_its_pair(self, tmp_path):
+        """An ``insufficient_evidence`` row is a recorded judgment: the pair is not offered again."""
+        evolve_dir = tmp_path / "proj" / ".evolve"
+        evolve_dir.mkdir(parents=True)
+        write_audit(
+            evolve_dir,
+            [
+                {"event": "recall", "session_id": "sid-1", "entities": ["feedback/foo", "feedback/bar"]},
+                {
+                    "event": "influence",
+                    "session_id": "sid-1",
+                    "entity": "feedback/foo",
+                    "verdict": "insufficient_evidence",
+                    "evidence": "x",
+                },
+            ],
+        )
+        write_entity(evolve_dir, "feedback/foo")
+        write_entity(evolve_dir, "feedback/bar")
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=tmp_path / "home")
+        assert result.returncode == 0, result.stderr
+        assert {c["entity_id"] for c in parse_jsonl(result.stdout)} == {"feedback/bar"}
+
 
 class TestRecord:
     def test_writes_valid_influence_row(self, tmp_path):
@@ -534,6 +558,28 @@ class TestRecord:
         assert result.returncode == 1
         assert "verdict" in result.stderr.lower()
         assert read_audit(evolve_dir) == []
+
+    @pytest.mark.parametrize("verdict", [["followed"], {"v": "followed"}])
+    def test_rejects_an_unhashable_verdict_cleanly(self, tmp_path, verdict):
+        evolve_dir = tmp_path / "proj" / ".evolve"
+        evolve_dir.mkdir(parents=True)
+        payload = {"session_id": "sid-1", "entity": "feedback/foo", "verdict": verdict, "evidence": "no"}
+        result = run_provenance("record", evolve_dir=evolve_dir, stdin=json.dumps(payload))
+        assert result.returncode == 1
+        assert "Traceback" not in result.stderr
+        assert "verdict must be one of" in result.stderr
+        assert read_audit(evolve_dir) == []
+
+    def test_records_insufficient_evidence(self, tmp_path):
+        """``record`` shares log_influence's verdict set, so an abstention is accepted (#340)."""
+        evolve_dir = tmp_path / "proj" / ".evolve"
+        evolve_dir.mkdir(parents=True)
+        payload = {"session_id": "sid-1", "entity": "feedback/foo", "verdict": "insufficient_evidence", "evidence": "No deploy step."}
+        result = run_provenance("record", evolve_dir=evolve_dir, stdin=json.dumps(payload))
+        assert result.returncode == 0, result.stderr
+        events = read_audit(evolve_dir)
+        assert len(events) == 1
+        assert events[0]["verdict"] == "insufficient_evidence"
 
     def test_record_dedups_existing_pair(self, tmp_path):
         evolve_dir = tmp_path / "proj" / ".evolve"
