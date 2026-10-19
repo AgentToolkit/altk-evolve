@@ -625,3 +625,83 @@ def test_pii_keeps_source_identities_on_consolidated_guidelines(tmp_path):
     (source,) = fact.metadata["sources"]
     assert {key: source[key] for key in note} == note
     assert source["note"] == "Contact [REDACTED]"
+
+
+# ── LegalHoldMemoryPlugin and consolidation ──────────────────────────
+
+LEGAL_HOLD_SPEC = HookPluginSpec(
+    name="legal_hold",
+    kind="altk_evolve.hooks.plugins.legal_hold.LegalHoldMemoryPlugin",
+    hooks=["memory_pre_delete"],
+    mode="sequential",
+    priority=5,
+    on_error="fail",
+)
+
+
+def _consolidate_everything(client: EvolveClient) -> None:
+    """One consolidate run that clusters all guidelines together and merges the cluster into one."""
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    # Every cluster here has two members.
+    body = {"guidelines": [{"content": "merged", "rationale": "", "category": "strategy", "trigger": "", "source_indices": [0, 1]}]}
+    reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(body)))])
+
+    with (
+        patch(
+            "altk_evolve.llm.guidelines.clustering.cluster_entities",
+            side_effect=lambda entities, threshold, **_: [entities] if len(entities) > 1 else [],
+        ),
+        patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[]),
+        patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False),
+        patch("altk_evolve.llm.guidelines.clustering.completion", return_value=reply),
+    ):
+        client.consolidate_guidelines("ns")
+
+
+@pytest.mark.unit
+def test_a_held_original_is_not_merged_again_by_later_consolidate_runs(tmp_path):
+    client = make_client(tmp_path, LEGAL_HOLD_SPEC)
+    client.ensure_namespace("ns")
+    client.update_entities(
+        "ns",
+        [
+            Entity(type="guideline", content=content, metadata={"task_description": "t", "category": "strategy", **extra})
+            for content, extra in [("Check the balance first", {"legal_hold": True}), ("Check the balance before paying", {})]
+        ],
+        enable_conflict_resolution=False,
+    )
+
+    supports = []
+    for _ in range(3):
+        _consolidate_everything(client)
+        merged = [e for e in client.scan_entities("ns", filters={"type": "guideline"}) if e.content == "merged"]
+        supports.append([e.metadata["support"] for e in merged])
+
+    # The held original survives every run; each run used to merge it again (2, 3, 4).
+    assert supports == [[2], [2], [2]]
+    held = next(e for e in client.scan_entities("ns", filters={"type": "guideline"}) if e.content != "merged")
+    assert held.metadata["legal_hold"] is True
+
+    # Once the hold is lifted, the next run finishes the delete without merging anything.
+    client.patch_entity_metadata("ns", held.id, {"legal_hold": False})
+    _consolidate_everything(client)
+    (merged,) = client.scan_entities("ns", filters={"type": "guideline"})
+    assert (merged.content, merged.metadata["support"]) == ("merged", 2)
+
+
+@pytest.mark.unit
+def test_pii_redaction_leaves_merged_from_intact(tmp_path):
+    # Entity IDs are numbers, and a ten-digit one reads as a phone number to a redactor.
+    pytest.importorskip("cpex_pii_filter")
+    client = make_client(tmp_path, PII_SPEC)
+    client.ensure_namespace("ns")
+    merged_from = [{"id": "5551234567", "content_sha256": "0" * 64}]
+    client.update_entities(
+        "ns", [Entity(type="guideline", content="g", metadata={"merged_from": merged_from})], enable_conflict_resolution=False
+    )
+
+    (stored,) = client.scan_entities("ns")
+    assert stored.metadata["merged_from"] == merged_from

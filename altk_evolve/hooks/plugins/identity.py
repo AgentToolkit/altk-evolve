@@ -18,6 +18,10 @@ IDENTITY_METADATA_KEYS = frozenset(
         "trace_id",
         "task_id",
         "source_task_id",
+        # Entity IDs and content digests of the originals a consolidated guideline
+        # absorbed; consolidation matches stored IDs against them, and a numeric ID can
+        # look like a phone number to a redactor.
+        "merged_from",
     }
 )
 

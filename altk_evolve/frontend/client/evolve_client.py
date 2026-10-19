@@ -61,6 +61,29 @@ def _merged_task_metadata(members: list[RecordedEntity], key: "ClusteringKey") -
     return {"task_description": tasks[0] if tasks else ""}
 
 
+def _split_absorbed(entities: list[RecordedEntity]) -> tuple[list[RecordedEntity], list[tuple[RecordedEntity, bool]]]:
+    """Separate the originals a stored merge output already absorbed from the rest.
+
+    An original survives its merge when its delete was vetoed (e.g. a legal hold) or
+    failed. Its support is already counted in the output's ``metadata.merged_from``, so it
+    must not be clustered again. Returns the remaining entities, and each absorbed original
+    with whether its content is still what the merge read (``False`` once it was edited).
+    """
+    from altk_evolve.llm.guidelines.clustering import absorbed_originals, content_digest
+    from altk_evolve.schema.provenance import scope_key
+
+    absorbed = absorbed_originals(entities)
+    remaining: list[RecordedEntity] = []
+    originals: list[tuple[RecordedEntity, bool]] = []
+    for entity in entities:
+        digests = absorbed.get((scope_key(entity), str(entity.id)))
+        if digests is None:
+            remaining.append(entity)
+        else:
+            originals.append((entity, content_digest(entity) in digests))
+    return remaining, originals
+
+
 class EvolveClient:
     """Wrapper client around evolve entity backends."""
 
@@ -355,6 +378,7 @@ class EvolveClient:
                 len(entities),
                 limit,
             )
+        entities, _ = _split_absorbed(entities)
         return self._cluster_guideline_entities(entities, threshold=threshold, key=key, max_cluster_size=max_cluster_size)
 
     def _cluster_guideline_entities(
@@ -416,6 +440,11 @@ class EvolveClient:
         only became similar once merged, can merge further. It stops early after a round
         that leaves the guideline count unchanged.
 
+        Each consolidated guideline records the originals it absorbed in
+        ``metadata.merged_from``. An original whose delete was vetoed or failed stays
+        stored, but no later round or run merges it again; each run retries its delete
+        once, unless it was edited after the merge.
+
         Args:
             namespace_id: Namespace to consolidate entities in.
             threshold: Cosine similarity threshold (0-1). Defaults to config value.
@@ -457,8 +486,9 @@ class EvolveClient:
         support_removed = 0
         # ID of each guideline written by an earlier round -> the merge that wrote it.
         produced_by: dict[str, int] = {}
-        # Originals merged but not deleted (a vetoed or failed delete). Their support is
-        # already counted in the merge's output, so later rounds leave them out.
+        # Originals merged but not deleted (a vetoed or failed delete), in this run or an
+        # earlier one, whose delete this run has already tried. Their support is counted in
+        # the output that records them in metadata.merged_from, so no round merges them again.
         undeleted: set[str] = set()
         merges = 0
         rounds = 0
@@ -481,6 +511,13 @@ class EvolveClient:
                     len(entities),
                     limit,
                 )
+            stored_ids = {str(entity.id) for entity in entities}
+            entities, absorbed = _split_absorbed(entities)
+            for original, unchanged in absorbed:
+                if str(original.id) not in undeleted:
+                    undeleted.add(str(original.id))
+                    if unchanged and self._finish_absorbed_delete(namespace_id, original):
+                        stored_ids.discard(str(original.id))
             entities = [entity for entity in entities if str(entity.id) not in undeleted]
             clusters = self._cluster_guideline_entities(entities, threshold=threshold, key=key, max_cluster_size=max_cluster_size)
             round_removed = 0
@@ -492,12 +529,14 @@ class EvolveClient:
                 origins = {produced_by.get(str(entity.id)) for entity in cluster}
                 if len(origins) == 1 and None not in origins:
                     continue
-                merged = self._merge_guideline_cluster(namespace_id, cluster, combine_mode, key)
+                merged = self._merge_guideline_cluster(namespace_id, cluster, combine_mode, key, stored_ids)
                 if merged is None:
                     continue
                 consolidated_guidelines, written_ids, failed_deletes = merged
                 merges += 1
                 round_produced.update(dict.fromkeys(written_ids, merges))
+                # Their outputs record them, so later rounds see them as absorbed; this
+                # only keeps the next round from retrying a delete that just failed.
                 undeleted.update(failed_deletes)
 
                 clusters_found += 1
@@ -522,16 +561,44 @@ class EvolveClient:
             rounds=rounds,
         )
 
+    def _finish_absorbed_delete(self, namespace_id: str, original: RecordedEntity) -> bool:
+        """Retry deleting an original that a stored merge output already absorbed; True if it went.
+
+        Its delete was vetoed or failed when it was merged; if the veto has been lifted
+        (e.g. the legal hold was released) it goes now, through the guarded public delete.
+        Its support is already counted in that output, so this changes no totals.
+        """
+        from altk_evolve.hooks.manager import MemoryPolicyViolation
+
+        try:
+            self.delete_entity_by_id(namespace_id, original.id)
+        except MemoryPolicyViolation as violation:
+            logger.info("Original %s, already merged by an earlier consolidation, still cannot be deleted: %s", original.id, violation)
+            return False
+        except Exception:
+            logger.warning("Failed to delete original %s, already merged by an earlier consolidation.", original.id, exc_info=True)
+            return False
+        logger.info("Deleted original %s, already merged by an earlier consolidation.", original.id)
+        return True
+
     def _merge_guideline_cluster(
-        self, namespace_id: str, cluster: list[RecordedEntity], combine_mode: str, key: ClusteringKey
+        self,
+        namespace_id: str,
+        cluster: list[RecordedEntity],
+        combine_mode: str,
+        key: ClusteringKey,
+        stored_ids: set[str] | None = None,
     ) -> tuple[list[Guideline], list[str], list[str]] | None:
         """Combine one cluster, write the result, and delete the originals.
+
+        Each output records the members it absorbed in ``metadata.merged_from``, plus the
+        absorbed originals its members recorded that are still stored (in ``stored_ids``).
 
         Returns the consolidated guidelines, the IDs they were written under, and the IDs
         of originals that could not be deleted; or ``None`` if the cluster was skipped and
         nothing was written.
         """
-        from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members
+        from altk_evolve.llm.guidelines.clustering import combine_cluster_with_members, merged_from_record
         from altk_evolve.schema.provenance import attach_sources, scope_key, with_association_times
 
         # Never merge (or show the merge model) memories from different scopes.
@@ -565,6 +632,7 @@ class EvolveClient:
                             "implementation_steps": guideline.implementation_steps,
                             "support": guideline.support,
                             "evidence": guideline.evidence,
+                            "merged_from": merged_from_record(members, stored_ids or set()),
                         },
                         None,
                         with_association_times(members),

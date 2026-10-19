@@ -174,9 +174,7 @@ join, even when A and C are not similar. On a large namespace, and especially wi
 neighbours, each within the threshold of its first member. Duplicates that land in different
 chunks are left apart unless you allow more than one round: `EVOLVE_CONSOLIDATION_MAX_ROUNDS`
 re-clusters the namespace after each round, stops after a round that merges nothing, and
-does not send the same merge's outputs back to the model together. An original whose delete
-failed or was vetoed (for example by a legal hold) stays stored and is not merged again in
-later rounds of the same run; a later `consolidate` run can merge it again.
+does not send the same merge's outputs back to the model together.
 Each round re-embeds the whole namespace, which on CPU takes minutes for thousands of long
 guidelines.
 
@@ -186,6 +184,21 @@ evolve entities consolidate my-ns --cluster-key guideline_text --threshold 0.85 
 evolve entities consolidate my-ns --cluster-key guideline_text --threshold 0.85 \
     --max-cluster-size 20 --max-rounds 3 --no-dry-run
 ```
+
+**Originals that cannot be deleted.** After writing a merged guideline, consolidation deletes
+its originals. If a delete is vetoed (for example by the `legal_hold` plugin) or fails, the
+original stays stored next to the merged guideline that already counts its support. Each
+merged guideline therefore records the originals it absorbed in `metadata.merged_from`: one
+`{"id", "content_sha256"}` entry per original, with the digest of the content the merge read.
+When a guideline is merged again, the new guideline keeps the entries of absorbed originals
+that are still stored. Later rounds and later `consolidate` runs leave a recorded original out
+of clustering, so its support is never counted twice, and the dry-run listing leaves it out
+too. Each run retries the delete once: if the hold has since been lifted, the original is
+deleted then, with no change to any support count. An original edited after it was merged is
+not deleted, because the merged guideline does not hold the edit; it stays out of clustering
+too, since its support is still counted. Delete it, or delete the merged guideline, which
+makes the original eligible to merge again. A record only applies within the memory scope of
+the guideline that carries it.
 
 ### Milvus Backend Settings
 
