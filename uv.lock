@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'win32'",
@@ -444,7 +444,7 @@ tracing = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "altk-evolve-core", extra = ["cli", "sentence-transformers", "server", "tracing"] },
+    { name = "altk-evolve-core", extra = ["cli", "fastembed", "sentence-transformers", "server", "tracing"] },
     { name = "anyio" },
     { name = "detect-secrets" },
     { name = "hypothesis" },
@@ -530,7 +530,7 @@ provides-extras = ["telemetry", "server", "cli", "fastembed", "sentence-transfor
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "altk-evolve-core", extras = ["server", "cli", "sentence-transformers", "tracing"], editable = "." },
+    { name = "altk-evolve-core", extras = ["server", "cli", "fastembed", "sentence-transformers", "tracing"], editable = "." },
     { name = "anyio" },
     { name = "detect-secrets", git = "https://github.com/ibm/detect-secrets?branch=master" },
     { name = "hypothesis", specifier = ">=6" },
