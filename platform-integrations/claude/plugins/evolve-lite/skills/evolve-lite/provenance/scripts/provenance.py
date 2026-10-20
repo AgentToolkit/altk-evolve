@@ -27,6 +27,7 @@ Two modes:
 import glob
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -138,13 +139,12 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
          capture output, one JSON record appended per capture. The digest is over
          the unsanitized id, so the name belongs to one ``str`` session id; see
          ``_hermes_trajectory_name``.
-       * ``trajectory_<ts>_<sid>.json`` — save-trajectory skill output; the sid
-         is the filename slice after the timestamp.
-       * ``trajectory_<ts>.json`` — open and match the inner ``session_id``.
+       * ``trajectory_*.json`` — save-trajectory skill output; open and match
+         the original inner ``session_id``, including collision-suffixed files.
     2. NEW native Claude transcript: ``~/.claude/projects/<slug>/<sid>.jsonl``
        where ``<slug>`` is the project root path slugified the way Claude does
        (every non-alphanumeric char -> ``-``; see ``_claude_transcript_slug``).
-    3. NEW native Codex transcript: ``~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<sid>.jsonl``.
+    3. NEW native Codex transcript: ``$CODEX_HOME/sessions/<Y>/<M>/<D>/rollout-<ts>-<sid>.jsonl``.
        Codex names each rollout file with the thread id as the trailing segment,
        so a recursive glob for ``*<sid>*.jsonl`` under ``~/.codex/sessions/``
        finds it regardless of date directory.
@@ -178,18 +178,9 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
             if hermes.is_file():
                 return hermes
 
-        # trajectory_<ts>_<sid>.json — match on the filename sid slice.
-        for path in sorted(traj_dir.glob("trajectory_*_*.json")):
-            stem = path.stem  # trajectory_<ts>_<sid>
-            parts = stem.split("_", 2)
-            if len(parts) == 3 and parts[2] == session_id:
-                return path
-
-        # trajectory_<ts>.json — open and match the inner session_id field.
+        # Filenames sanitize/truncate session IDs and may carry collision suffixes.
+        # Only the original ID stored by the writer establishes ownership.
         for path in sorted(traj_dir.glob("trajectory_*.json")):
-            # Skip the <ts>_<sid> shape already handled above.
-            if path.stem.count("_") >= 2:
-                continue
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
@@ -213,7 +204,7 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
     # don't have to reconstruct the date path. Guard the sid to a sane shape so
     # the glob can't be widened by an empty/odd session_id.
     if session_id and "/" not in session_id and "*" not in session_id:
-        codex_sessions = base / ".codex" / "sessions"
+        codex_sessions = Path(os.environ.get("CODEX_HOME") or base / ".codex").expanduser() / "sessions"
         if codex_sessions.is_dir():
             matches = sorted(codex_sessions.rglob(f"*{glob.escape(session_id)}*.jsonl"))
             if matches:
