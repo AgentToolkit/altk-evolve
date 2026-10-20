@@ -677,6 +677,32 @@ class TestSavedTrajectoryIdentity:
         path.write_text(json.dumps({"session_id": "sid"}))
         assert _provenance_module().locate_trajectory("sid", evolve_dir, home=tmp_path) == path
 
+    @pytest.mark.parametrize("target_kind", ["saved", "native"])
+    def test_candidates_skip_undecodable_unrelated_trajectory(self, tmp_path, target_kind):
+        evolve_dir = tmp_path / "proj" / ".evolve"
+        home = tmp_path / "home"
+        write_audit(evolve_dir, [{"event": "recall", "session_id": "target", "entities": ["feedback/foo"]}])
+        write_entity(evolve_dir, "feedback/foo")
+        trajectories = evolve_dir / "trajectories"
+        trajectories.mkdir(parents=True)
+        (trajectories / "trajectory_2026-10-19T00-00-00_other_1.json").write_bytes(b"\xff")
+        if target_kind == "saved":
+            target = trajectories / "trajectory_2026-10-20T00-00-00_target_1.json"
+            target.write_text(json.dumps({"session_id": "target", "messages": [{"role": "user", "content": "target work"}]}))
+        else:
+            slug = _claude_slug(evolve_dir.resolve().parent)
+            target = home / ".claude/projects" / slug / "target.jsonl"
+            target.parent.mkdir(parents=True)
+            target.write_text('{"type":"user","content":"target work"}\n')
+
+        result = run_provenance("candidates", evolve_dir=evolve_dir, home=home)
+
+        assert result.returncode == 0, result.stderr
+        candidates = parse_jsonl(result.stdout)
+        assert len(candidates) == 1
+        assert candidates[0]["trajectory_path"] == str(target)
+        assert "target work" in candidates[0]["trajectory_excerpt"]
+
     def test_codex_home_override(self, tmp_path, monkeypatch):
         codex_home = tmp_path / "custom-codex"
         monkeypatch.setenv("CODEX_HOME", str(codex_home))

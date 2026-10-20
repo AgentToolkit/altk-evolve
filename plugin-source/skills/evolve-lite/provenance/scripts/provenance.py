@@ -183,7 +183,7 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
         for path in sorted(traj_dir.glob("trajectory_*.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 continue
             if isinstance(data, dict) and data.get("session_id") == session_id:
                 return path
