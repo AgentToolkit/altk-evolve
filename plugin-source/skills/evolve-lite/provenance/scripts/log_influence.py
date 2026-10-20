@@ -113,7 +113,9 @@ def main():
                 (index, f"assessments[{index}] ({entity}): verdict must be one of {sorted(_ALLOWED_VERDICTS)}, got {verdict!r}")
             )
             continue
-        if not isinstance(evidence, str):
+        if evidence is None:
+            evidence = ""
+        elif not isinstance(evidence, str):
             evidence = str(evidence)
         valid.append((index, entity, verdict, evidence))
 
