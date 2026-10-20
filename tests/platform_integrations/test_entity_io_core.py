@@ -246,6 +246,20 @@ class TestAdaptMemory:
         for name in names:
             assert f"Advice for {name}." in (directory / f"{name}.md").read_text()
 
+    def test_native_name_near_filename_limit_keeps_full_id(self, temp_project_dir, monkeypatch, capsys):
+        adapt = _load_adapt_memory()
+        name = "a" * 250  # The final .md filename fits a 255-byte component limit.
+        native = self._write_native(temp_project_dir, name, "reference", "Keep the complete native name.")
+        native = native.rename(temp_project_dir / f"{name}.md")
+
+        self._run(adapt, native, "reference", "when recalling this memory", monkeypatch, temp_project_dir)
+
+        assert f"Entity id: reference/{name}" in capsys.readouterr().out
+        directory = temp_project_dir / ".evolve/entities/reference"
+        entity_file = directory / f"{name}.md"
+        assert list(directory.iterdir()) == [entity_file]
+        assert entity_io.markdown_to_entity(entity_file)["content"] == "Keep the complete native name."
+
     def test_deterministic_overwrite_on_same_name_and_type(self, tmp_path, monkeypatch, capsys):
         adapt = _load_adapt_memory()
         native = self._write_native(tmp_path, "my-fact", "feedback", "First version.")

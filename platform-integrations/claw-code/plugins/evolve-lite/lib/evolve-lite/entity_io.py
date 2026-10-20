@@ -412,8 +412,9 @@ def write_entity_file(directory, entity, filename=None, overwrite=False):
     slug = slugify(filename, max_length=len(filename)) if filename else slugify(entity.get("content", "entity"))
     content = entity_to_markdown(entity)
 
-    # Write to a unique temp file first (avoids predictable .tmp collisions)
-    fd, tmp_path = tempfile.mkstemp(dir=type_dir, suffix=".tmp", prefix=slug)
+    # Keep the temporary name short: a valid full slug may already approach
+    # the filesystem's filename limit before mkstemp adds its random suffix.
+    fd, tmp_path = tempfile.mkstemp(dir=type_dir, suffix=".tmp", prefix=".entity-")
     target = None
     try:
         os.write(fd, content.encode("utf-8"))
