@@ -164,8 +164,8 @@ def configure_service_telemetry():
             def on_end(self, span):
                 if span.instrumentation_scope and span.instrumentation_scope.name == "altk_evolve":
                     self.batch.on_end(span)
-                elif span.instrumentation_scope and span.instrumentation_scope.name == "fastmcp":
-                    # Keep the transport parent so downstream trace trees remain
+                elif span.instrumentation_scope and span.instrumentation_scope.name in {"fastmcp", "mcp-python-sdk"}:
+                    # Keep FastMCP and MCP SDK transport parents so trace trees remain
                     # connected. Never forward its arbitrary name, attributes,
                     # exception events, links or status description.
                     self.batch.on_end(

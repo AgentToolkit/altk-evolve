@@ -355,6 +355,17 @@ async def invoke():
             with patch.object(mcp_server, 'get_client', return_value=SimpleNamespace(namespace_exists=lambda ns: False)):
                 await client.call_tool('retrieve_user_facts', {'namespace_id': 'test-service', 'user_id': 'user'})
 asyncio.run(invoke())
+# Both transport libraries can attach payloads to names, exceptions, links,
+# status descriptions and attributes. Retain only their trace topology.
+from opentelemetry import trace
+from opentelemetry.trace import Link, Status, StatusCode
+for scope in ('fastmcp', 'mcp-python-sdk'):
+    with trace.get_tracer(scope).start_as_current_span('SECRET-PAYLOAD', attributes={'payload': 'SECRET-PAYLOAD'}) as parent:
+        parent.record_exception(ValueError('SECRET-PAYLOAD'))
+        parent.set_status(Status(StatusCode.ERROR, 'SECRET-PAYLOAD'))
+        with trace.get_tracer(scope).start_as_current_span('SECRET-PAYLOAD', links=[Link(parent.get_span_context(), {'payload': 'SECRET-PAYLOAD'})]):
+            with operation('evolve.nested'):
+                pass
 provider.force_flush()
 spans = exporter.get_finished_spans()
 assert spans
@@ -365,7 +376,7 @@ assert all(s.name == 'evolve.mcp.transport' and not s.attributes and not s.event
 ids = {s.context.span_id for s in spans}
 assert all(s.parent is None or s.parent.span_id in ids for s in spans), 'exported tree has missing parents'
 assert any(s.name == 'evolve.mcp.retrieve_user_facts' for s in spans)
-assert 'SECRET-PAYLOAD' not in str([(dict(s.attributes), s.events, s.status.description) for s in spans])
+assert 'SECRET-PAYLOAD' not in str([(s.name, dict(s.attributes), s.events, s.links, s.status.description) for s in spans])
 provider.shutdown()
 """
     env = {k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "EVOLVE_OTEL_"))}

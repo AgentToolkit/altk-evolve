@@ -5,7 +5,8 @@ description = "Composable agent memory and self-improvement"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "anyio>=4.1,<5",
+    # 4.14 fixes worker cancellation escaping its request scope and closing MCP sessions.
+    "anyio>=4.14,<5",
     "opentelemetry-api>=1.30,<2",
     "croniter>=6.2.4,<7",
     "jinja2",
@@ -24,7 +25,7 @@ telemetry = [
 ]
 server = [
     "fastapi>=0.135.2",
-    "fastmcp>=3.1,<4",
+    "fastmcp>=4.1.2,<5",
     "uvicorn",
     "altk-evolve-core[telemetry]",
 ]
@@ -59,7 +60,7 @@ pgvector = [
 # pulls heavy transitive dependencies (fastapi, mcp, prometheus). Without this
 # extra installed, the hook seam is a fast no-op.
 hooks = [
-    "cpex>=0.1.0,<0.2",
+    "cpex>=0.1.4,<0.2",
 ]
 
 # PII redaction is offered as two *methods*, each its own extra: regex (this
@@ -79,7 +80,7 @@ pii-regex = [
     # always truthy), so a defaults change in a 0.4 release would silently alter
     # what gets redacted rather than surface as an error. Pin the minor and bump
     # deliberately.
-    "cpex-pii-filter>=0.3,<0.4",
+    "cpex-pii-filter>=0.3.9,<0.4",
 ]
 
 # Backward-compatible alias. `[pii]` historically meant the regex method, so it
@@ -123,13 +124,14 @@ pii-semantic = [
 # hook engine needs it to execute (cpex-secrets-detection also pins cpex).
 secrets = [
     "altk-evolve-core[hooks]",
+    # 0.3.14 supports MCP 2; earlier releases require MCP 1.
     # Pin to a single tested release (cpex's <0.2 and [pii-regex]'s cpex-pii-filter
     # pin bound the minor; this one bounds the patch too): the plugin's
     # DEFAULT_ENABLED map and its config pass-through are written against this
     # package's detector and config keys, and a patch release can change those
     # or what gets redacted without surfacing as an error. Bump deliberately,
     # re-running the secrets tests against the new release.
-    "cpex-secrets-detection>=0.3.11,<0.3.12",
+    "cpex-secrets-detection>=0.3.14,<0.3.15",
 ]
 
 # Benchmarking the redactors against external labeled corpora
