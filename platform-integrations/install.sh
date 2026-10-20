@@ -44,13 +44,17 @@ error()   { echo -e "${RED}✗${RESET} $*" >&2; }
 die()     { error "$*"; exit 1; }
 
 # ─── Python check ─────────────────────────────────────────────────────────────
+# The minimum is what the installed plugin scripts need, not just this
+# installer: publish/subscribe/sync/unsubscribe call Path.is_relative_to (3.9+).
+# tests/platform_integrations/test_python_minimum.py keeps the two in step.
+MIN_PYTHON_MINOR=9
 if ! command -v python3 &>/dev/null; then
-  die "python3 is required but not found. Install Python 3.8+ and try again."
+  die "python3 is required but not found. Install Python 3.${MIN_PYTHON_MINOR}+ and try again."
 fi
 
-PYTHON_OK=$(python3 -c "import sys; print(1 if sys.version_info >= (3,8) else 0)" 2>/dev/null || echo 0)
+PYTHON_OK=$(python3 -c "import sys; print(1 if sys.version_info >= (3,${MIN_PYTHON_MINOR}) else 0)" 2>/dev/null || echo 0)
 if [ "$PYTHON_OK" != "1" ]; then
-  die "python3 >= 3.8 is required. Found: $(python3 --version 2>&1)"
+  die "python3 >= 3.${MIN_PYTHON_MINOR} is required. Found: $(python3 --version 2>&1)"
 fi
 
 # ─── Source resolution ────────────────────────────────────────────────────────

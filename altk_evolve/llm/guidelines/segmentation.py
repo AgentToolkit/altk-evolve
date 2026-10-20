@@ -34,9 +34,11 @@ def subtask_slices(subtasks: list[SubtaskSegment], trajectory_data: dict) -> lis
     The elision marker (``marker_index``) holds a position but is not a step: a slice
     spanning the gap keeps it, so the model knows steps are missing, without counting it in
     ``real_steps``. A subtask is skipped when its slice has no real step (out of range, or
-    the marker alone), or when its clamped range is the same as an earlier subtask's, so a
+    the marker alone), or when it covers the same real steps as an earlier subtask's, so a
     segmenter that repeats a range cannot fan one slice out into several near-identical
-    generation calls.
+    generation calls. "The same real steps" ignores the marker at either end of the range:
+    ``[4,5]`` and ``[4,4]`` with the marker at position 5 both cover step 4 alone, and the
+    first one returned is kept.
     """
     steps_list: list[str] = trajectory_data["steps_list"]
     marker_index: int | None = trajectory_data["marker_index"]
@@ -47,10 +49,13 @@ def subtask_slices(subtasks: list[SubtaskSegment], trajectory_data: dict) -> lis
         start = min(max(0, subtask.start_step - 1), n_steps)
         end = min(max(0, subtask.end_step), n_steps)
         real_steps = end - start - (marker_index is not None and start <= marker_index < end)
-        if real_steps <= 0 or (start, end) in seen:
+        # Dedupe key: the range with a marker at either end trimmed off, i.e. the real steps
+        # it covers. A marker strictly inside the range leaves its ends, and so the key, alone.
+        covered = (start + (start == marker_index), end - (end - 1 == marker_index))
+        if real_steps <= 0 or covered in seen:
             logger.debug(f"Skipping subtask with no real or repeated steps [{subtask.start_step}, {subtask.end_step}] (n_steps={n_steps})")
             continue
-        seen.add((start, end))
+        seen.add(covered)
         slices.append((subtask, steps_list[start:end], real_steps))
     return slices
 
