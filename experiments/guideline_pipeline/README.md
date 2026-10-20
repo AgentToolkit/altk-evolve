@@ -125,7 +125,7 @@ than a second copy of its lessons; any change to the JSON counts, even a field
 that isn't imported, though whitespace doesn't. Import it into a new namespace,
 or pass `--source`: an explicit `--source` also scopes the checkpoint, so the
 same tasks under another `--source` are a separate import. Like
-`mine`, this needs a backend with atomic writes (filesystem or postgres).
+`mine`, this needs a backend with atomic writes (filesystem or PostgreSQL).
 
 The summary line reports files read, lessons imported, lessons skipped as
 empty, lessons already imported, lessons dropped by memory hooks (a

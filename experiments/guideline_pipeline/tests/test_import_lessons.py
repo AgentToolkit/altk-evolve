@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -378,13 +379,14 @@ def test_cli_errors(
     assert code == 2 and stderr.startswith("error: 1 invalid lesson file(s)") and "zz_bad.json: must hold a JSON object" in stderr
     assert client.all_namespaces() == []  # nothing was written, not even the namespace
     assert run(capsys, "import-lessons", "--input", str(tmp_path / "missing"), "--namespace", "memories")[0] == 2
-    unreadable = tmp_path / "unreadable"
-    unreadable.mkdir(mode=0)
-    try:
-        code, _, stderr = run(capsys, "import-lessons", "--input", str(unreadable), "--namespace", "memories")
-    finally:
-        unreadable.chmod(0o755)
-    assert code == 1 and "Permission denied" in stderr
+    if os.geteuid() != 0:  # root ignores directory permissions
+        unreadable = tmp_path / "unreadable"
+        unreadable.mkdir(mode=0)
+        try:
+            code, _, stderr = run(capsys, "import-lessons", "--input", str(unreadable), "--namespace", "memories")
+        finally:
+            unreadable.chmod(0o755)
+        assert code == 1 and "Permission denied" in stderr
     with pytest.raises(SystemExit):
         cli.main(["import-lessons", "--namespace", "memories"])  # --input is required
     capsys.readouterr()
