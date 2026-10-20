@@ -26,19 +26,19 @@ separate dependency audit for each wheel or installation profile.
 
 The submission action is pinned to v0.2.0's commit. It downloads the latest
 Microsoft Component Detection release at runtime; the scanner binary is not
-pinned by that action. GitHub's native dependency graph remains available too.
+pinned by that action. The scanner inherits the submission action’s write token; this upstream supply-chain risk remains until the action supports a verified, pinned scanner. GitHub's native dependency graph remains available too.
 
 ## Permissions and fork PRs
 
 Dependency submission requires `contents: write`. The privileged job uses
-`pull_request_target` and checks out only the exact trusted base revision. A
+`pull_request_target` restricted to `main` (the trusted default branch) and checks out only its exact PR base revision. Other target branches do not receive this privileged check; changing the trusted branch requires a reviewed workflow change. A
 base-branch helper fetches PR lockfile blobs as data; it rejects symlinks, unsafe
-paths, truncated inventories and API failures. It never checks out PR code or
+paths, truncated inventories and API failures. Both base and head inventories are validated before any blob request, with at most 25 lockfiles and 20 MiB per inventory. Downloaded blobs must match their declared sizes. Superseded runs for the same PR are cancelled. It never checks out PR code or
 copies PR scripts, policy, `.env`, or executable configuration. The scanner uses
 only the two lockfile detectors, with no dependency installation or build steps.
 An empty scan fails. Fork PRs follow the same path and are not silently skipped.
 
-The helper's tests run separately on `pull_request` with a read-only token. Policy
+The helper's tests run in a separate workflow on `pull_request` (which defines no `license-check` job) with a read-only token. Policy
 and workflow changes take effect only after reaching the trusted base branch.
 Consequently the new submission job's first end-to-end Actions validation requires
 this workflow and helper to be merged; subsequent PRs exercise it automatically.

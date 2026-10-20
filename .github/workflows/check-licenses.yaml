@@ -3,38 +3,28 @@ name: Check Dependency Licenses
 # The write token is needed for snapshots, including PRs from forks. Only the
 # trusted base revision is checked out; PR lockfiles are read as data via the API.
 on:
-  pull_request:
   pull_request_target:
+    branches: [main]
+
+concurrency:
+  group: license-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions: {}
 
 jobs:
-  inventory-tests:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - run: node --test .github/scripts/prepare-license-inventory.test.cjs
   license-check:
-    if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
       - name: Prepare base lockfiles
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             await require('./.github/scripts/prepare-license-inventory.cjs')({github, context, core}, 'base');
@@ -49,7 +39,7 @@ jobs:
           snapshot-sha: ${{ github.event.pull_request.base.sha }}
           snapshot-ref: refs/heads/${{ github.event.pull_request.base.ref }}
       - name: Prepare head lockfiles
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             await require('./.github/scripts/prepare-license-inventory.cjs')({github, context, core}, 'head');

@@ -1,0 +1,20 @@
+name: Test License Inventory
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  inventory-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test .github/scripts/prepare-license-inventory.test.cjs
