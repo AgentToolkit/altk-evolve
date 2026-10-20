@@ -418,6 +418,9 @@ class TauRetailAdapter:
     # The task keys split_file lists under splits; None selects by the header's split= instead.
     split_task_keys: frozenset[str] | None = None
 
+    default_test_keys: frozenset[str] = field(default_factory=frozenset)
+    known_split_keys: frozenset[str] = field(default_factory=frozenset)
+
     def configure(self, options: Mapping[str, str]) -> TauRetailAdapter:
         changes: dict[str, Any] = {}
         for key, value in options.items():
@@ -431,12 +434,12 @@ class TauRetailAdapter:
                 raise ValueError(f"Unknown {SOURCE} option {key!r} (expected include_policy, include_scenario, splits, split_file)")
         if "split_file" in changes:
             splits: frozenset[str] = changes.get("splits", self.splits)
-            if not splits:
-                raise ValueError(f"{SOURCE} option split_file needs splits= to say which of its splits to mine (say, splits=train)")
             table = load_split_file(changes["split_file"])
             if missing := sorted(splits - table.keys()):
                 raise ValueError(f"Splits not found in {SOURCE} split file {changes['split_file']}: {missing} (found {sorted(table)})")
-            changes["split_task_keys"] = frozenset().union(*(table[split] for split in splits))
+            changes["split_task_keys"] = frozenset().union(*(table[split] for split in splits)) if splits else None
+            changes["default_test_keys"] = frozenset().union(*(keys for name, keys in table.items() if name.startswith("test")))
+            changes["known_split_keys"] = frozenset().union(*table.values())
         return replace(self, **changes)
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
@@ -452,6 +455,31 @@ class TauRetailAdapter:
             files = [file for file in files if _file_task_key(file) in self.split_task_keys]
         elif self.splits:
             files = self._by_header_split(path, files)
+        else:
+            kept = []
+            skipped = unknown = 0
+            for file in files:
+                try:
+                    header_split = _header_split(file)
+                except MalformedTrajectory as exc:
+                    logger.warning("skipping %s: %s", file, exc)
+                    continue
+                key = _file_task_key(file)
+                is_test = key in self.default_test_keys if self.split_file else bool(header_split and header_split.startswith("test"))
+                known = key in self.known_split_keys if self.split_file else header_split is not None
+                if is_test:
+                    skipped += 1
+                else:
+                    kept.append(file)
+                    unknown += not known
+            files = kept
+            if skipped or unknown:
+                logger.warning(
+                    "skipped test-split tasks in %s: %s; kept %s tasks with unknown split; use splits= to opt in to test splits",
+                    path,
+                    skipped,
+                    unknown,
+                )
         read = 0
         for file in files:
             try:
