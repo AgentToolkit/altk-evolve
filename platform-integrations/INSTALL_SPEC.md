@@ -170,11 +170,10 @@ Hermes is lite-only. There is no full/server mode — `EVOLVE_MODE=server` raise
 ## Uninstall Actions
 
 ### Bob
-1. Remove `.bob/skills/evolve-lite:learn/`
-2. Remove `.bob/skills/evolve-lite:recall/`
-3. Remove `.bob/commands/evolve-lite:learn.md` and `evolve-lite:recall.md`
-4. Remove sentinel block for `evolve-lite` from `.bob/custom_modes.yaml`
-5. (Full mode) Remove `mcpServers.evolve` key from `.bob/mcp.json`
+1. Remove Evolve-managed skills, commands, and shared library from the target project's `.bob/`.
+2. Remove Evolve custom modes and MCP entries from the target scope.
+3. Preserve shared `~/.bob/rules/00-evolve-lite.md`, recall-audit script, and `tools.allowed` entry by default so other projects keep working.
+4. `uninstall --platform bob --global` also removes those shared assets and the exact Evolve allow-rule, preserving unrelated settings. This disables the shared integration for all projects.
 
 ### Claude
 1. Remove the delivered `EVOLVE.md` copy, import line, allow-rules, and the scripts and `lib/` under `~/.claude/evolve-lite/`
@@ -183,9 +182,12 @@ Hermes is lite-only. There is no full/server mode — `EVOLVE_MODE=server` raise
 4. Remove the marketplace copy at `~/.claude/evolve-lite/marketplace/` (if a downloaded install made one), then `~/.claude/evolve-lite/` if it is empty
 
 ### Codex
-1. Remove `plugins/evolve-lite/`
-2. Remove the `evolve-lite` entry from `.agents/plugins/marketplace.json`
-3. Remove the Evolve `UserPromptSubmit` hook from `.codex/hooks.json`
+1. Remove `plugins/evolve-lite/` from the target project.
+2. Remove the `evolve-lite` entry from `.agents/plugins/marketplace.json`.
+3. Preserve the global AGENTS.md pointer, EVOLVE.md, and recall-audit script by default.
+4. `uninstall --platform codex --global` also removes those shared assets and legacy global plugin registration/cache artifacts. This affects all projects.
+
+`--global` requires an explicit Bob or Codex platform; other platforms retain their existing uninstall behavior. It removes shared assets in addition to the selected project's installation, not the local files in every project. Uninstalling a Bob/Codex installation whose target is the home directory requires `--global`.
 
 ### Hermes
 1. Remove `$HERMES_HOME/plugins/evolve/` — only that directory; sibling user plugins are untouched

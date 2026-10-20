@@ -135,7 +135,7 @@ class TestCodexInstall:
         file_assertions.assert_file_exists(codex_audit_script)
         assert len(_marker_lines(codex_agents_file.read_text())) == 1
 
-        install_runner.run("uninstall", platform="codex")
+        install_runner.run("uninstall", platform="codex", global_cleanup=True)
 
         assert _marker_lines(codex_agents_file.read_text()) == []
         file_assertions.assert_file_not_exists(codex_evolve_md)
