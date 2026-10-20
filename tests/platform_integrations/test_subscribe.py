@@ -22,7 +22,7 @@ def _load_claude_config_module():
 
 cfg_module = _load_claude_config_module()
 
-pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
+pytestmark = [pytest.mark.platform_integrations]
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
 CLAUDE_PLUGIN_ROOT = _REPO_ROOT / "platform-integrations/claude/plugins/evolve-lite"
