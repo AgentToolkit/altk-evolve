@@ -1243,13 +1243,27 @@ def test_structured_agent_requires_scoring_config(response_type):
         GuidelineConfig(**kwargs, analysis_config={"agents": [{**agent, **scoring}]})
 
 
-def test_guideline_config_rejects_removed_sbert_large_metric():
+@pytest.mark.parametrize(
+    "scoring",
+    [
+        {"metric": "sbert_large"},
+        {"fields": [{"name": "x", "metric": "sbert_large"}]},
+        {"alternates": [{"fields": [{"name": "x", "metric": "sbert_large"}]}]},
+        # A mix where only the alternate carries the removed metric still fails.
+        {"alternates": [{"fields": [{"name": "x", "metric": "jaccard"}]}, {"fields": [{"name": "y", "metric": "sbert_large"}]}]},
+    ],
+    ids=["agent-metric", "nested-field", "alternate-field", "alternate-mixed"],
+)
+def test_guideline_config_rejects_removed_sbert_large_metric(scoring):
     # A profile that still names sbert_large must not validate — otherwise it
     # publishes, the dispatcher used to return (-1, -1), the aggregator dropped
     # the step, and the agent silently stopped producing consistency guidelines.
+    # Rejection must cover direct, fields and alternates placements, so a nested
+    # removed-metric can't ship either.
     from altk_evolve.processing.builtin import GuidelineConfig
 
-    agent = {"name": "agent", "response_type": "text", "metric": "sbert_large"}
+    response_type = "text" if "metric" in scoring else "tool_calls"
+    agent = {"name": "agent", "response_type": response_type, **scoring}
     with pytest.raises(ValueError, match=r"sbert_large.*sbert_small"):
         GuidelineConfig(
             guidelines_mode="consistency",

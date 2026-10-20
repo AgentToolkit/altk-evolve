@@ -50,6 +50,19 @@ def test_removed_embedding_env_var_warns(monkeypatch, caplog):
 
 
 @pytest.mark.unit
+def test_removed_embedding_env_var_in_dotenv_only_still_warns(tmp_path, monkeypatch, caplog):
+    """A retired name kept only in .env is also loaded by pydantic-settings and dropped
+    by extra='ignore', so the migration warning has to see dotenv values, not just os.environ."""
+    monkeypatch.delenv("EVOLVE_CONSISTENCY_EMBEDDING_MODEL_LARGE", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("EVOLVE_CONSISTENCY_EMBEDDING_MODEL_LARGE=nomic-ai/CodeRankEmbed\n")
+    with caplog.at_level(logging.WARNING, logger="altk_evolve.config.guidelines"):
+        GuidelinesSettings(_env_file=str(env_file))
+    assert any("EVOLVE_CONSISTENCY_EMBEDDING_MODEL_LARGE" in record.message for record in caplog.records)
+    assert any("sbert_small" in record.message for record in caplog.records)
+
+
+@pytest.mark.unit
 def test_model_change_does_not_reuse_stale_cached_model(monkeypatch, mock_sentence_transformer):
     settings = GuidelinesSettings(_env_file=None, consistency_embedding_model_small="first-model")
     monkeypatch.setattr(metrics, "guidelines_settings", settings)

@@ -76,8 +76,24 @@ class GuidelineConfig(GuidelineRuntime):
                     if metric in _REMOVED_METRIC_REPLACEMENTS:
                         replacement = _REMOVED_METRIC_REPLACEMENTS[metric]
                         raise ValueError(f"Agent {agent['name']} uses removed consistency metric '{metric}'; use '{replacement}' instead.")
-                # Nested field/alternate metrics are checked at get_consistency_by_metric()
-                # dispatch time; the same removed-metric guard raises there.
+                # Nested field/alternate metrics would otherwise fail at
+                # get_consistency_by_metric() dispatch time, with the same message but
+                # only on the step that reaches a non-empty sample set. Reject at profile
+                # publication so a bad config can't ship, by walking agent["fields"] and
+                # the "fields" lists under every entry of agent["alternates"].
+                nested_fields: list[Any] = list(agent.get("fields") or [])
+                for alternate in agent.get("alternates") or []:
+                    if isinstance(alternate, dict):
+                        nested_fields.extend(alternate.get("fields") or [])
+                for field in nested_fields:
+                    if not isinstance(field, dict):
+                        continue
+                    nested_metric = field.get("metric")
+                    if nested_metric in _REMOVED_METRIC_REPLACEMENTS:
+                        replacement = _REMOVED_METRIC_REPLACEMENTS[nested_metric]
+                        raise ValueError(
+                            f"Agent {agent['name']} uses removed consistency metric '{nested_metric}'; use '{replacement}' instead."
+                        )
             object.__setattr__(self, "analysis_config", data)
         return self
 
