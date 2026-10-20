@@ -17,7 +17,7 @@ from altk_evolve.processing import ProcessingManager, TrajectoryOutcome
 
 from experiments.guideline_pipeline import __main__ as cli
 from experiments.guideline_pipeline.adapters import ADAPTERS, AdapterRecord, get_adapter
-from experiments.guideline_pipeline.adapters.cuga import CugaAdapter
+from experiments.guideline_pipeline.adapters.cuga import _AGENT_VIEW_STEP_LIMIT, CugaAdapter
 from experiments.guideline_pipeline.stages.mine import mine
 from experiments.guideline_pipeline.tests.fakes import profile_window
 
@@ -452,3 +452,177 @@ def test_mine_checkpoints_each_task_and_stamps_evidence(client: EvolveClient, ru
     (run_copy / "results.json").write_text(json.dumps(results))
     regraded = run()
     assert (regraded.processed, regraded.skipped) == (1, 1)
+
+
+# ---------------------------------------------------------------------------
+# agent_view conversion mode and the evaluation-bundle layout.
+# These share a synthetic bundle fixture that mimics CUGA's rendered-string
+# prompt shape so the vendored agent_view helpers can split it back out.
+
+BUNDLE = FIXTURES.parent / "cuga_bundle_demo"
+
+
+def test_agent_view_shape_and_identity():
+    recs = by_id(CugaAdapter().configure({"conversion": "agent_view"}), BUNDLE)
+
+    r1 = recs["demo_01_1"]
+    assert [m["role"] for m in r1.messages] == ["system", "user", "assistant", "user", "assistant"]
+    # Bundle layout: run name is the bundle, partition is run.eval_key, model from env_vars.
+    assert r1.batch.conversation_id == "cuga_bundle_demo/demo_01_1"
+    assert r1.metadata["run"] == "cuga_bundle_demo"
+    assert r1.metadata["partition"] == "test_normal_all_demo"
+    assert r1.metadata["model"] == "Azure/gpt-4.1"
+    # context_messages is always empty in agent_view regardless of other defaults.
+    assert r1.context_messages == []
+
+
+def test_agent_view_strips_user_context_from_the_task_message():
+    r1 = by_id(CugaAdapter().configure({"conversion": "agent_view"}), BUNDLE)["demo_01_1"]
+
+    assert r1.messages[1] == {"role": "user", "content": "List my open todos."}
+    assert "## User Context" not in "".join(m.get("content", "") for m in r1.messages if isinstance(m.get("content"), str))
+
+
+def test_agent_view_strips_available_variables_from_the_newest_user_message():
+    r2 = by_id(CugaAdapter().configure({"conversion": "agent_view"}), BUNDLE)["demo_02_1"]
+
+    all_content = "".join(m["content"] for m in r2.messages if m["role"] == "user")
+    assert "## Available Variables" not in all_content
+
+
+def test_agent_view_drops_the_fewshot_example_dialogue():
+    r2 = by_id(CugaAdapter().configure({"conversion": "agent_view"}), BUNDLE)["demo_02_1"]
+
+    # The fixture's example dialogue mentions candidates.txt; the agent-view messages must not.
+    all_content = "".join(m.get("content") or "" for m in r2.messages if isinstance(m.get("content"), str))
+    assert "candidates.txt" not in all_content
+
+
+def test_agent_view_output_from_adjacent_step_not_classifier_prompts():
+    # demo_02_1 turn 3's Raw_Assistant_Response has prompts[0] holding the final-answer
+    # classifier's `{"auto_continue": true}` (CUGA merges prompts across calls). The
+    # adapter must take the turn's output from the step's own data, not prompts[-1].
+    r2 = by_id(CugaAdapter().configure({"conversion": "agent_view"}), BUNDLE)["demo_02_1"]
+
+    assistants = [m for m in r2.messages if m["role"] == "assistant"]
+    assert len(assistants) == 4
+    assert "auto_continue" not in assistants[2]["content"]
+    assert assistants[2]["content"].startswith("Checking which todo is 'buy milk'")
+
+
+def test_agent_view_outcome_is_inherited_from_the_steps_path():
+    steps = by_id(CugaAdapter().configure({"conversion": "steps"}), BUNDLE)
+    av = by_id(CugaAdapter().configure({"conversion": "agent_view"}), BUNDLE)
+
+    for task_id in ("demo_01_1", "demo_02_1"):
+        assert steps[task_id].outcome == av[task_id].outcome
+
+
+def test_agent_view_revision_differs_from_steps_mode():
+    steps = by_id(CugaAdapter().configure({"conversion": "steps"}), BUNDLE)
+    av = by_id(CugaAdapter().configure({"conversion": "agent_view"}), BUNDLE)
+
+    for task_id in ("demo_01_1", "demo_02_1"):
+        assert steps[task_id].batch.revision != av[task_id].batch.revision
+
+
+def test_agent_view_rejects_context_options():
+    with pytest.raises(ValueError, match="cannot be combined with include_system_prompt"):
+        CugaAdapter().configure({"conversion": "agent_view", "include_system_prompt": "true"})
+    with pytest.raises(ValueError, match="cannot be combined with include_system_prompt"):
+        CugaAdapter().configure({"conversion": "agent_view", "include_summaries": "true"})
+    with pytest.raises(ValueError, match="conversion must be one of"):
+        CugaAdapter().configure({"conversion": "whatever"})
+
+
+def test_agent_view_skips_long_runs_with_a_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    # Inflate demo_01_1 by stuffing the last agent call's recovered input with
+    # _AGENT_VIEW_STEP_LIMIT+1 assistant turns. Combined with the final appended
+    # assistant output, that is _AGENT_VIEW_STEP_LIMIT+2 assistant messages, past the cap.
+    task_file = bundle / "trajectories" / "demo_01_1.json"
+    task = json.loads(task_file.read_text())
+    last_call = [s for s in task["steps"] if s["name"] == "Raw_Assistant_Response" and s.get("prompts")][-1]
+    rendered_prompt = next(p for p in last_call["prompts"] if p["role"] == "system" and p["value"].startswith("System:"))
+    extra_turns = "".join(f"\n\nAI: filler reply {i}\n\nHuman: filler query {i}" for i in range(_AGENT_VIEW_STEP_LIMIT + 1))
+    rendered_prompt["value"] = rendered_prompt["value"] + extra_turns
+    task_file.write_text(json.dumps(task))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        recs = by_id(CugaAdapter().configure({"conversion": "agent_view"}), bundle)
+    assert list(recs) == ["demo_02_1"]
+    assert "exceed the parser cap" in caplog.text
+
+
+def test_agent_view_skips_tasks_with_no_main_agent_call(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    task_file = bundle / "trajectories" / "demo_02_1.json"
+    task = json.loads(task_file.read_text())
+    for step in task["steps"]:
+        if step["name"] == "Raw_Assistant_Response":
+            step["prompts"] = []
+    task_file.write_text(json.dumps(task))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        recs = by_id(CugaAdapter().configure({"conversion": "agent_view"}), bundle)
+    assert list(recs) == ["demo_01_1"]
+    assert "skipped evaluation_bundle/demo_02_1" in caplog.text
+
+
+def test_bundle_uses_sdk_report_when_task_eval_is_missing(tmp_path: Path):
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    # Remove the EvaluationResult step and the score so only the SDK report carries a verdict.
+    task_file = bundle / "trajectories" / "demo_01_1.json"
+    task = json.loads(task_file.read_text())
+    task["steps"] = [s for s in task["steps"] if s["name"] != "EvaluationResult"]
+    task["score"] = None
+    task_file.write_text(json.dumps(task))
+
+    rec = by_id(CugaAdapter().configure({"conversion": "agent_view"}), bundle)["demo_01_1"]
+    assert rec.outcome is not None and rec.outcome.success is True
+
+
+def test_bundle_model_default_from_env_vars(tmp_path: Path):
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+
+    without_option = by_id(CugaAdapter(), bundle)["demo_01_1"]
+    with_option = by_id(CugaAdapter(model="override").configure({}), bundle)["demo_01_1"]
+
+    assert without_option.metadata["model"] == "Azure/gpt-4.1"
+    assert with_option.metadata["model"] == "override"
+
+
+def test_bundle_warns_when_context_summarization_enabled(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    metadata = json.loads((bundle / "metadata.json").read_text())
+    metadata["runtime_config"]["env_vars"]["DYNACONF_CONTEXT_SUMMARIZATION__ENABLED"] = "true"
+    (bundle / "metadata.json").write_text(json.dumps(metadata))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        list(CugaAdapter().records(bundle))
+    assert "context summarization" in caplog.text
+
+
+def test_bundle_companion_files_in_trajectories_are_ignored(tmp_path: Path):
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    (bundle / "trajectories" / "demo_01_1.calls.json").write_text("[]")
+    (bundle / "trajectories" / "demo_01_1.agent_messages.json").write_text("[]")
+
+    assert list(by_id(CugaAdapter(), bundle)) == ["demo_01_1", "demo_02_1"]
+
+
+def test_legacy_run_layout_still_works():
+    # Regression guard: the existing fixtures (which pre-date the bundle layout) must
+    # keep producing records with partition parsed from the directory name.
+    recs = by_id(CugaAdapter(), DEV)
+
+    assert list(recs) == ["aaa0001_1", "aaa0001_2"]
+    assert recs["aaa0001_1"].metadata["partition"] == "test_normal_dev"
+    assert recs["aaa0001_1"].batch.conversation_id == "test_normal_dev/aaa0001_1"
+
+
+def test_bundle_sample_profile_validates():
+    profile_path = Path(__file__).parents[1] / "profiles" / "cuga_agent_view.json"
+    plan = ProcessingManager().validate(json.loads(profile_path.read_text()))
+    (processor,) = plan.manifest()["processors"]
+    assert processor["plugin"] == "evolve.guidelines"

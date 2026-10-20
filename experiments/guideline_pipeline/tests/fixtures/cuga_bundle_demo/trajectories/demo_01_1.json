@@ -1,0 +1,89 @@
+{
+  "task_id": "demo_01_1",
+  "intent": "List my open todos.",
+  "dataset_name": "appworld",
+  "score": 1.0,
+  "eval": null,
+  "steps": [
+    {
+      "name": "Raw_Assistant_Response",
+      "data": "I'll fetch your open todos.\n```python\ntodos = todo_list(status='open')\nprint(todos)\n```",
+      "prompts": [
+        {
+          "role": "system",
+          "value": "# ROLE\nYou are a synthetic test agent. Use the provided tools."
+        },
+        {
+          "role": "human",
+          "value": "Human: List my open todos.\n\n## User Context\nSupervisor (JSON): {\"first_name\": \"Test\"}\nCurrent datetime: 2026-10-20T00:00:00"
+        },
+        {
+          "role": "system",
+          "value": "System: # ROLE\nYou are a synthetic test agent. Use the provided tools.\n\nHuman: Filter candidates from candidates.txt.\n\nAI: candidates = read_file('candidates.txt')\n\nHuman: Execution output:\nFound 3 candidates.\n\nAI: ok, filtering complete.\n\nHuman: List my open todos.\n\n## User Context\nSupervisor (JSON): {\"first_name\": \"Test\"}\nCurrent datetime: 2026-10-20T00:00:00\n\n## Available Variables\n\n# Variables Summary\n\n## todos\n- Type: list"
+        },
+        {
+          "role": "assistant",
+          "value": "I'll fetch your open todos.\n```python\ntodos = todo_list(status='open')\nprint(todos)\n```"
+        },
+        {
+          "role": "assistant",
+          "value": "I'll fetch your open todos.\n```python\ntodos = todo_list(status='open')\nprint(todos)\n```"
+        }
+      ]
+    },
+    {
+      "name": "Assistant_code",
+      "data": "todos = todo_list(status='open')\nprint(todos)"
+    },
+    {
+      "name": "User_output",
+      "data": "[\"buy milk\", \"call mom\"]\n\n## New Variables Created:\n## todos"
+    },
+    {
+      "name": "User_output_variables",
+      "data": "{\"todos\": [\"buy milk\", \"call mom\"]}"
+    },
+    {
+      "name": "User_return",
+      "data": "Execution output:\n[\"buy milk\", \"call mom\"]\n\n---\n\nSummary:\nSTATUS: Fetched 2 open todos successfully.\nNEXT: Report to user."
+    },
+    {
+      "name": "Raw_Assistant_Response",
+      "data": "You have 2 open todos: buy milk, call mom.",
+      "prompts": [
+        {
+          "role": "system",
+          "value": "# ROLE\nYou are a synthetic test agent. Use the provided tools."
+        },
+        {
+          "role": "human",
+          "value": "Human: Execution output:\n[\"buy milk\", \"call mom\"]\n\n---\n\nSummary:\nSTATUS: Fetched 2 open todos successfully.\nNEXT: Report to user.\n\n## Available Variables\n\n# Variables Summary\n\n## todos\n- Type: list"
+        },
+        {
+          "role": "system",
+          "value": "System: # ROLE\nYou are a synthetic test agent. Use the provided tools.\n\nHuman: Filter candidates from candidates.txt.\n\nAI: candidates = read_file('candidates.txt')\n\nHuman: Execution output:\nFound 3 candidates.\n\nAI: ok, filtering complete.\n\nHuman: List my open todos.\n\n## User Context\nSupervisor (JSON): {\"first_name\": \"Test\"}\nCurrent datetime: 2026-10-20T00:00:00\n\nAI: I'll fetch your open todos.\n```python\ntodos = todo_list(status='open')\nprint(todos)\n```\n\nHuman: Execution output:\n[\"buy milk\", \"call mom\"]\n\n---\n\nSummary:\nSTATUS: Fetched 2 open todos successfully.\nNEXT: Report to user.\n\n## Available Variables\n\n# Variables Summary\n\n## todos\n- Type: list"
+        },
+        {
+          "role": "assistant",
+          "value": "You have 2 open todos: buy milk, call mom."
+        },
+        {
+          "role": "assistant",
+          "value": "You have 2 open todos: buy milk, call mom."
+        }
+      ]
+    },
+    {
+      "name": "Assistant_nl",
+      "data": "You have 2 open todos: buy milk, call mom."
+    },
+    {
+      "name": "FinalAnswerAgent",
+      "data": "{\"final_answer\": \"You have 2 open todos: buy milk, call mom.\", \"auto_continue\": false}"
+    },
+    {
+      "name": "EvaluationResult",
+      "data": "{\"task_id\": \"demo_01_1\", \"success\": true, \"pass_percentage\": 100.0, \"evaluation\": {\"num_tests\": 1, \"pass_count\": 1, \"pass_percentage\": 100.0, \"passes\": [{\"requirement\": \"assert todos listed.\", \"label\": \"pass\"}], \"failures\": []}}"
+    }
+  ]
+}
