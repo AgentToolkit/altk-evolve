@@ -190,7 +190,7 @@ CLAUDE_LEGACY_ALLOW_RULES = [
 ]
 
 # Claude registers a local marketplace by path and reads the plugin from that
-# path on every session start (it does not cache a copy). A curl | bash install
+# path on every session start (its cache does not replace that source). A curl | bash install
 # downloads the source into a temp dir that is deleted when the installer exits,
 # so registering that dir leaves the plugin unloadable (#387). For downloaded
 # installs we therefore copy the marketplace into this installer-owned dir
@@ -222,7 +222,9 @@ def _claude_marketplace_subset(source_root):
             raise RuntimeError(f"marketplace.json plugin source not found: {source_root / rel}")
         if rel not in rel_paths:
             rel_paths.append(rel)
-    return rel_paths
+    # Copy parents once, regardless of the manifest's source order.
+    return [rel for rel in rel_paths
+            if not any(rel != parent and Path(parent) in Path(rel).parents for parent in rel_paths)]
 
 # Bob (a Gemini-CLI fork) prefix-matches its shell allowlist and splits chained
 # commands, so allowlisting the exact recall-audit command can't widen (a
@@ -423,7 +425,10 @@ class FileOps:
         dst.parent.mkdir(parents=True, exist_ok=True)
         # Leftovers from an interrupted earlier run.
         self.remove_owned_dir(staging)
-        self.remove_owned_dir(old)
+        if not os.path.lexists(dst) and os.path.lexists(old):
+            os.replace(old, dst)
+        else:
+            self.remove_owned_dir(old)
         try:
             staging.mkdir()
             for rel in rel_paths:
@@ -1464,7 +1469,7 @@ class ClaudeInstaller:
 
         # Remove the marketplace copy a downloaded install registered (#387),
         # plus any staging leftovers from an interrupted install. Done after the
-        # CLI has unregistered the marketplace, and only ever these
+        # CLI unregister attempt (which can fail or be unavailable), and only these
         # installer-owned paths under ~/.claude/evolve-lite/.
         copy_dir = self._marketplace_copy_dir()
         for path in (copy_dir, copy_dir.with_name(copy_dir.name + ".staging"), copy_dir.with_name(copy_dir.name + ".old")):
@@ -1505,8 +1510,29 @@ class ClaudeInstaller:
         print(f"    claude CLI          : ✓")
         try:
             result = subprocess.run([claude, "plugin", "list"], capture_output=True, text=True)
-            installed = CLAUDE_PLUGIN in result.stdout
-            print(f"    evolve-lite plugin  : {'✓' if installed else '✗ (not installed)'}")
+            if result.returncode != 0:
+                print(f"    evolve-lite plugin  : ? (could not query)")
+                return
+            output = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+            # Isolate this plugin's block so another plugin's enabled status
+            # cannot make a failed or disabled evolve-lite install look healthy.
+            blocks = re.split(r"(?m)^\s*[❯›>\-*]?\s*(?=[\w.-]+@[\w.-]+\s*$)", output)
+            block = next((part for part in blocks if part.splitlines() and
+                          part.splitlines()[0].strip() == "evolve-lite@evolve-marketplace"), None)
+            health = "✗ (not installed)"
+            if block is not None:
+                status = re.search(r"(?mi)^\s*Status:\s*(.*)$", block)
+                value = status.group(1).lower() if status else ""
+                if "failed to load" in value:
+                    detail = re.search(r"(?mi)^\s*Error:\s*(.*)$", block)
+                    health = "✗ failed to load" + (": " + detail.group(1).strip() if detail else "")
+                elif "disabled" in value:
+                    health = "✗ disabled"
+                elif "enabled" in value:
+                    health = "✓ enabled"
+                else:
+                    health = "? (status unavailable)"
+            print(f"    evolve-lite plugin  : {health}")
         except Exception:
             print(f"    evolve-lite plugin  : ? (could not query)")
 
