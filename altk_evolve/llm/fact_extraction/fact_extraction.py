@@ -62,12 +62,18 @@ def extract_facts_from_messages(messages: list[dict], use_categorization: bool |
 
     # Apply hooks only to the user text. Render instructions and examples afterward
     # so hooks cannot change the fact-extraction template.
-    user_messages = [
-        {"role": "user", "content": str(message.get("content", ""))}
-        for message in messages
-        if str(message.get("role", "")).lower() == "user"
-    ]
-    user_messages = dispatch_llm_pre_call(user_messages, purpose="fact_extraction", model=llm_settings.fact_extraction_model)
+    user_text = "\n".join(str(message.get("content", "")) for message in messages if str(message.get("role", "")).lower() == "user")
+    user_messages = dispatch_llm_pre_call(
+        [{"role": "user", "content": user_text}], purpose="fact_extraction", model=llm_settings.fact_extraction_model
+    )
+    if (
+        not isinstance(user_messages, list)
+        or len(user_messages) != 1
+        or not isinstance(user_messages[0], dict)
+        or user_messages[0].get("role") != "user"
+        or not isinstance(user_messages[0].get("content"), str)
+    ):
+        raise ValueError("Fact extraction hook must return exactly one user message with string content")
     prompt = _build_prompt(user_messages, use_categorization=use_categorization)
     llm_messages = [{"role": "user", "content": prompt}]
     last_error = None
