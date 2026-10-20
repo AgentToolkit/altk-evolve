@@ -91,17 +91,23 @@ lets the user pick one, multiple, or all.
 Source: `platform-integrations/bob/evolve-lite/`
 Target: `.bob/` in project directory
 
-1. Copy `skills/evolve-lite:learn/` → `.bob/skills/evolve-lite:learn/`  (merge, idempotent)
-2. Copy `skills/evolve-lite:recall/` → `.bob/skills/evolve-lite:recall/`  (merge, idempotent)
-3. Copy `commands/` → `.bob/commands/`  (merge, idempotent)
-4. Merge `custom_modes.yaml` → `.bob/custom_modes.yaml`  (sentinel block, see YAML Strategy)
+1. Remove stale Evolve-prefixed skills, commands, and shared libraries from the target.
+2. Copy `lib/evolve-lite/`, the shipped `skills/evolve-lite-*/` directories, and `commands/` into `.bob/`.
+3. Write the rendered `EVOLVE.md` instructions to the global `~/.bob/rules/00-evolve-lite.md`.
+4. Install the recall-audit helper at `~/.bob/evolve-lite/audit_recall.py`.
+5. Merge `run_shell_command(python3 ~/.bob/evolve-lite/audit_recall.py)` into `tools.allowed` in `~/.bob/settings.json`, preserving other settings.
+
+The rules, helper, and allowlist are global even for a project-scoped install. Lite mode has no custom mode and ships no explicit learn or recall skills; the always-on rules drive those steps.
 
 ### Bob — Full Mode
 
-All of lite mode, plus:
+Source: `platform-integrations/bob/evolve-full/`. Full mode is a separate MCP-based installation; it does not install the lite skills or rules.
 
-5. Read `platform-integrations/bob/evolve-full/mcp.json`
-6. Upsert key `mcpServers.evolve` into `.bob/mcp.json`  (JSON key upsert, see JSON Strategy)
+1. Remove stale Evolve-prefixed skills, commands, and shared libraries from the target.
+2. Upsert `mcpServers.evolve` from `mcp.json` into the target `.bob/mcp.json` (JSON key upsert, see JSON Strategy).
+3. Merge the `Evolve` mode from `custom_modes.yaml` into the target `.bob/custom_modes.yaml` (sentinel block, see YAML Strategy).
+
+For a global Bob target, MCP settings and custom modes live in `~/.bob/settings/` instead.
 
 ### Claude — Lite Mode
 
