@@ -5,6 +5,7 @@ Reads a trajectory JSON from a file path argument (or stdin as fallback)
 and writes it to the .evolve/trajectories/ directory.
 """
 
+import argparse
 import datetime
 import getpass
 import json
@@ -83,8 +84,8 @@ def open_trajectory_file(trajectories_dir, session_id=None):
     Returns a ``(Path, fd)`` tuple. Uses ``O_CREAT | O_EXCL`` so two saves
     racing within the same second pick distinct filenames instead of one
     overwriting the other. When ``session_id`` is provided, it is embedded
-    in the filename so offline provenance can match this trajectory to
-    ``recall`` audit events for the same session without content inspection.
+    in the filename for readability. Provenance matches the original ID
+    stored inside the JSON because sanitized filenames are not unique IDs.
     """
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     sid = _sanitize_session_id(session_id)
@@ -104,7 +105,11 @@ def open_trajectory_file(trajectories_dir, session_id=None):
 
 def main():
     # Read trajectory JSON from file argument or stdin
-    input_path = sys.argv[1] if len(sys.argv) > 1 else None
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input_path", nargs="?")
+    parser.add_argument("--delete-input", action="store_true", help="Remove the input file only after a successful save")
+    args = parser.parse_args()
+    input_path = args.input_path
     try:
         if input_path:
             log(f"Reading trajectory from file: {input_path}")
@@ -136,6 +141,12 @@ def main():
 
     log(f"Trajectory has {len(messages)} messages")
 
+    if not trajectory.get("session_id"):
+        for variable in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"):
+            if os.environ.get(variable):
+                trajectory["session_id"] = os.environ[variable]
+                break
+
     # Atomically claim a unique output path (handles same-second races).
     # Embed session_id in the filename when present so offline provenance
     # can match recall events to trajectories deterministically.
@@ -152,6 +163,9 @@ def main():
         log(f"Failed to write trajectory: {e}")
         print(f"Error: Failed to write file - {e}", file=sys.stderr)
         sys.exit(1)
+
+    if args.delete_input and input_path:
+        Path(input_path).unlink()
 
     print(f"Trajectory saved: {output_path}")
     print(f"Messages: {len(messages)}")

@@ -653,3 +653,62 @@ class TestSlugAgreement:
         for raw in samples:
             resolved = Path(raw).resolve()
             assert provenance._claude_transcript_slug(resolved) == entity_io.claude_project_slug(raw), raw
+
+
+class TestSavedTrajectoryIdentity:
+    @pytest.mark.parametrize("sid", ["a/b", "a-b", "x" * 64 + "-A", "x" * 64 + "-B", "under_score"])
+    def test_real_writer_matches_full_session_id(self, tmp_path, sid):
+        writer = load_module("_saved_trajectory_writer", _PLUGIN_ROOT / "skills/evolve-lite/save-trajectory/scripts/save_trajectory.py")
+        evolve_dir = tmp_path / ".evolve"
+        trajectories = evolve_dir / "trajectories"
+        trajectories.mkdir(parents=True)
+        path, fd = writer.open_trajectory_file(trajectories, sid)
+        with os.fdopen(fd, "w") as stream:
+            json.dump({"session_id": sid, "messages": [{"role": "user", "content": "hello"}]}, stream)
+        assert _provenance_module().locate_trajectory(sid, evolve_dir, home=tmp_path) == path
+        if sid == "a/b":
+            assert _provenance_module().locate_trajectory("a-b", evolve_dir, home=tmp_path) is None
+
+    def test_collision_suffix_is_resolved_by_content(self, tmp_path):
+        evolve_dir = tmp_path / ".evolve"
+        trajectories = evolve_dir / "trajectories"
+        trajectories.mkdir(parents=True)
+        path = trajectories / "trajectory_2026-10-20T00-00-00_sid_1.json"
+        path.write_text(json.dumps({"session_id": "sid"}))
+        assert _provenance_module().locate_trajectory("sid", evolve_dir, home=tmp_path) == path
+
+    def test_codex_home_override(self, tmp_path, monkeypatch):
+        codex_home = tmp_path / "custom-codex"
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+        rollout = codex_home / "sessions/2026/10/20/rollout-time-thread-123.jsonl"
+        rollout.parent.mkdir(parents=True)
+        rollout.write_text("{}\n")
+        assert _provenance_module().locate_trajectory("thread-123", tmp_path / ".evolve", home=tmp_path) == rollout
+
+    @pytest.mark.parametrize("variable", ["CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"])
+    def test_writer_uses_runtime_session_and_preserves_input(self, tmp_path, monkeypatch, variable):
+        for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(variable, "runtime-session")
+        monkeypatch.setenv("EVOLVE_DIR", str(tmp_path / ".evolve"))
+        source = tmp_path / "input.json"
+        source.write_text(json.dumps({"messages": [{"role": "user", "content": "hello"}]}))
+        script = _PLUGIN_ROOT / "skills/evolve-lite/save-trajectory/scripts/save_trajectory.py"
+        result = subprocess.run([sys.executable, str(script), str(source)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        saved = next((tmp_path / ".evolve/trajectories").glob("*.json"))
+        assert json.loads(saved.read_text())["session_id"] == "runtime-session"
+        assert source.exists()
+
+    @pytest.mark.parametrize("valid", [True, False])
+    def test_delete_input_only_after_successful_save(self, tmp_path, monkeypatch, valid):
+        monkeypatch.setenv("EVOLVE_DIR", str(tmp_path / ".evolve"))
+        source = tmp_path / "input.json"
+        source.write_text(json.dumps({"session_id": "explicit", "messages": [{"role": "user", "content": "hi"}]} if valid else {}))
+        script = _PLUGIN_ROOT / "skills/evolve-lite/save-trajectory/scripts/save_trajectory.py"
+        result = subprocess.run([sys.executable, str(script), str(source), "--delete-input"], capture_output=True, text=True)
+        assert (result.returncode == 0) == valid
+        assert source.exists() != valid
+        if valid:
+            saved = next((tmp_path / ".evolve/trajectories").glob("*.json"))
+            assert json.loads(saved.read_text())["session_id"] == "explicit"
