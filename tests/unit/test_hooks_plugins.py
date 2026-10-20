@@ -767,3 +767,72 @@ def test_pii_redaction_still_reaches_free_text_under_merged_from(tmp_path):
     merged_from = stored.metadata["merged_from"]
     assert merged_from[0] == _MERGED_FROM[0]
     assert "jane.doe@example.com" not in str(merged_from[1:]) and "555-123-4567" not in str(merged_from[1:])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "RSA PRIVATE KEY",
+        "DSA PRIVATE KEY",
+        "EC PRIVATE KEY",
+        "OPENSSH PRIVATE KEY",
+        "PRIVATE KEY",
+        "ENCRYPTED PRIVATE KEY",
+        "PGP PRIVATE KEY BLOCK",
+    ],
+)
+def test_secrets_private_key_bodies_are_fully_redacted(tmp_path, kind):
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    block = f"-----BEGIN {kind}-----\nZmFrZS1rZXktYm9keQ==\n-----END {kind}-----"
+    original = [{"role": "user", "content": f"before {block} after"}]
+    assert dispatch_llm_pre_call(original, purpose="test") == [{"role": "user", "content": "before [REDACTED] after"}]
+    assert block in original[0]["content"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "credential",
+    [
+        "ASIA" + "A" * 16,
+        "-".join(["xoxs", "123456789", "FakeToken"]),
+        "-".join(["xapp", "1", "A123456", "123456", "fake"]),
+        "https://hooks.slack.com/" + "services/T123/B456/FakeValue",
+    ],
+)
+def test_secrets_missing_token_shapes(tmp_path, credential):
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    assert dispatch_llm_pre_call([{"role": "user", "content": f"before {credential} after"}], purpose="test") == [
+        {"role": "user", "content": "before [REDACTED] after"}
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("key", [_FAKE_AWS_KEY, "ASIA" + "A" * 16])
+def test_secrets_aws_secret_after_access_key(tmp_path, key):
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    text = f"aws {key} secret={_FAKE_AWS_SECRET}"
+    assert dispatch_llm_pre_call([{"role": "user", "content": text}], purpose="test") == [
+        {"role": "user", "content": "aws [REDACTED] secret=[REDACTED]"}
+    ]
+
+
+@pytest.mark.unit
+def test_supplementary_detectors_honor_switches_and_block_threshold():
+    pytest.importorskip("cpex_secrets_detection")
+    from altk_evolve.hooks.plugins.secrets import DEFAULT_ENABLED, SecretsFilterMemoryPlugin
+
+    text = "-----BEGIN PRIVATE KEY-----\nfake body\n-----END PRIVATE KEY-----"  # pragma: allowlist secret
+    items = [{"content": text}]
+    disabled = SecretsFilterMemoryPlugin({"enabled": {key: False for key in DEFAULT_ENABLED}})
+    assert disabled._redact_items(items) is None
+    plugin = SecretsFilterMemoryPlugin({"redaction_text": "MASK"})
+    assert plugin._redact_items(items) == [{"content": "MASK"}]
+    block = SecretsFilterMemoryPlugin({"redact": False, "block_on_detection": True, "min_findings_to_block": 2})
+    assert block._redact_items(items) is None
+    with pytest.raises(RuntimeError, match="2 secret"):
+        block._redact_items(items * 2)
+    assert items == [{"content": text}]
