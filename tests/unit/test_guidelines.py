@@ -21,6 +21,9 @@ from altk_evolve.llm.guidelines.guidelines import (
 from altk_evolve.processing import TrajectoryOutcome
 from altk_evolve.schema.guidelines import Guideline, SubtaskSegment, resolve_guideline_category
 
+# The window is pinned because subtask ranges are positions in the rendered steps.
+pytestmark = pytest.mark.usefixtures("default_trajectory_window")
+
 
 def _mock_completion_response(payload: dict | list) -> MagicMock:
     response = MagicMock()
@@ -1124,6 +1127,13 @@ class TestSegmentationUnderElisionWithDedupe:
         assert [r.task_description for r in results] == ["Phase 1-6", "Phase 7-7"]
         assert len(prompts) == 2
         assert "**Steps Taken:** 5" in prompts[0] and "intermediate step(s) omitted" in prompts[0]
+
+    def test_ranges_differing_only_by_the_marker_are_generated_once(self, monkeypatch):
+        """[1,4] and [1,5] both cover real steps 1-4; [1,5] only adds the marker at its end."""
+        results, prompts, _ = self._run(monkeypatch, [(1, 4), (1, 5), (6, 7)])
+
+        assert [r.task_description for r in results] == ["Phase 1-4", "Phase 6-7"]
+        assert len(prompts) == 2
 
     def test_a_repeated_marker_only_range_is_dropped(self, monkeypatch):
         """Dedupe keeps one copy of [5,5]; the marker filter must still drop that copy."""

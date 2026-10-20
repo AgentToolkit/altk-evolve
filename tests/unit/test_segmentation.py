@@ -5,7 +5,8 @@ import pytest
 
 from altk_evolve.schema.guidelines import SubtaskSegment
 
-pytestmark = pytest.mark.unit
+# The window is pinned because subtask ranges are positions in the rendered steps.
+pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("default_trajectory_window")]
 
 MESSAGES = [{"role": "user", "content": "Do something"}, {"role": "assistant", "content": "Step 1 done"}]
 
@@ -163,6 +164,30 @@ def test_subtask_slices_under_elision_counts_real_steps_and_dedupes():
     steps = ["s1", "s2", "s3", "s4", "MARKER", "s11", "s12"]
     slices = subtask_slices([_seg(1, 6), _seg(5, 5), _seg(1, 6), _seg(5, 5), _seg(7, 7)], _parsed(steps, marker_index=4))
     assert [(s, n) for _, s, n in slices] == [(steps[:6], 5), (["s12"], 1)]
+
+
+@pytest.mark.parametrize(
+    "ranges,expected",
+    [
+        pytest.param([(4, 5), (4, 4)], [["s4", "MARKER"]], id="marker-at-the-end"),
+        pytest.param([(5, 6), (6, 6)], [["MARKER", "s11"]], id="marker-at-the-start"),
+        pytest.param([(1, 5), (1, 4), (5, 7)], [["s1", "s2", "s3", "s4", "MARKER"], ["MARKER", "s11", "s12"]], id="marker-at-either-end"),
+        pytest.param(
+            [(1, 6), (1, 7)],
+            [["s1", "s2", "s3", "s4", "MARKER", "s11"], ["s1", "s2", "s3", "s4", "MARKER", "s11", "s12"]],
+            id="marker-inside",
+        ),
+        pytest.param([(4, 6), (4, 4)], [["s4", "MARKER", "s11"], ["s4"]], id="different-real-steps"),
+    ],
+)
+def test_subtask_slices_dedupes_on_the_real_steps_covered(ranges, expected):
+    """Two ranges that differ only by the marker at an end cover the same real steps and
+    are generated once; ranges that cover different real steps are both kept."""
+    from altk_evolve.llm.guidelines.segmentation import subtask_slices
+
+    steps = ["s1", "s2", "s3", "s4", "MARKER", "s11", "s12"]
+    slices = subtask_slices([_seg(a, b) for a, b in ranges], _parsed(steps, marker_index=4))
+    assert [s for _, s, _ in slices] == expected
 
 
 @pytest.mark.parametrize(

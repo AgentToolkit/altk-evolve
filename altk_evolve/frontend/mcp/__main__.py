@@ -5,8 +5,11 @@ import socket
 import sys
 import threading
 import uvicorn
+from typing import Any
+
 from pydantic import ValidationError, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, DotEnvSettingsSource, EnvSettingsSource, PydanticBaseSettingsSource, SettingsConfigDict
 
 from altk_evolve.frontend.mcp.mcp_server import app, get_client, mcp
 from altk_evolve.frontend.mcp.http_transport import create_resilient_sse_app
@@ -64,15 +67,41 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _blank_is_unset(value: Any) -> Any:
+    # env_ignore_empty drops only an exactly empty value; treat whitespace-only the same way.
+    return None if isinstance(value, str) and not value.strip() else value
+
+
+class _EnvSource(EnvSettingsSource):
+    def prepare_field_value(self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool) -> Any:
+        return super().prepare_field_value(field_name, field, _blank_is_unset(value), value_is_complex)
+
+
+class _DotEnvSource(DotEnvSettingsSource):
+    def prepare_field_value(self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool) -> Any:
+        return super().prepare_field_value(field_name, field, _blank_is_unset(value), value_is_complex)
+
+
 class _DashboardSettings(BaseSettings):
     """EVOLVE_DASHBOARD, read like every other EVOLVE_ setting: the environment, then `.env`.
 
     It is a pydantic bool, like the other EVOLVE_ switches, so `f`, `n`, `no` and `off` mean off.
-    An empty value counts as unset, so it doesn't hide a value in `.env`.
+    An empty or whitespace-only value counts as unset, so it doesn't hide a value in `.env`.
     """
 
     model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore", env_ignore_empty=True)
     dashboard: bool | None = None
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return init_settings, _EnvSource(settings_cls), _DotEnvSource(settings_cls), file_secret_settings
 
     @field_validator("dashboard", mode="before")
     @classmethod
@@ -100,6 +129,11 @@ def _dashboard_enabled(flag: bool | None) -> bool:
     return True if setting is None else setting
 
 
+def _http_url(host: str, port: int) -> str:
+    """The dashboard's URL, with an IPv6 host in brackets (RFC 3986), e.g. http://[::1]:8000/."""
+    return f"http://[{host}]:{port}/" if ":" in host else f"http://{host}:{port}/"
+
+
 class _DashboardServer(uvicorn.Server):
     """Announces the dashboard once its socket is bound, so the log never claims a port it lost."""
 
@@ -109,10 +143,9 @@ class _DashboardServer(uvicorn.Server):
             bound = [sock.getsockname() for server in self.servers for sock in server.sockets or ()]
             host, port = bound[0][:2] if bound else (self.config.host, self.config.port)
             logger.warning(
-                "Evolve dashboard and REST API listening on http://%s:%d/ without authentication: any local process can "
+                "Evolve dashboard and REST API listening on %s without authentication: any local process can "
                 "read and change memories. Disable with --no-dashboard or EVOLVE_DASHBOARD=false.",
-                host,
-                port,
+                _http_url(host, port),
             )
 
 
@@ -132,7 +165,7 @@ def run_api_server(host: str = DASHBOARD_HOST, port: int = DASHBOARD_PORT) -> No
     if not server.started:
         # A bind failure lands here via SystemExit; a failed app lifespan startup returns
         # from run() without one. uvicorn has already logged the cause in both cases.
-        logger.warning("Evolve dashboard did not start on http://%s:%d/. The MCP server keeps running over stdio.", host, port)
+        logger.warning("Evolve dashboard did not start on %s. The MCP server keeps running over stdio.", _http_url(host, port))
 
 
 def run_sse_server(host: str, port: int) -> None:
