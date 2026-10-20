@@ -199,7 +199,8 @@ not deleted, because the merged guideline does not hold the edit; it stays out o
 too, since its support is still counted. Delete it, or delete the merged guideline, which
 makes the original eligible to merge again. A record matches the original by ID, so it still
 holds after the merged guideline is published or unpublished. `merged_from` is managed by
-consolidation: the MCP `create_entity` tool drops it and `patch_entity_metadata` rejects it.
+consolidation: the MCP `create_entity` tool and the REST create route drop it, and
+`patch_entity_metadata` rejects it.
 Redactors leave well-formed entries alone and treat any other value under the key as free
 text. Consolidation reads at most 10,000 guidelines and logs a warning when it hits that
 limit. Past it, a merged guideline can fall outside the read while its held original does

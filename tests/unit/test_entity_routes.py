@@ -8,14 +8,14 @@ from fastapi import HTTPException
 from altk_evolve.frontend.api.routes import EntityCreateRequest, create_namespace_entity
 
 
-def _create_guideline(category: str):
+def _create_guideline(category: str, **extra):
     """Post a structured guideline and return the entity the route handed to the store."""
     client = MagicMock()
     client.update_entities.return_value = [MagicMock(id="1")]
     req = EntityCreateRequest(
         type="guideline",
         content="Validate files before parsing",
-        metadata={"rationale": "Malformed input fails late", "category": category, "trigger": "Before parsing"},
+        metadata={"rationale": "Malformed input fails late", "category": category, "trigger": "Before parsing", **extra},
     )
     with patch("altk_evolve.frontend.mcp.mcp_server.get_client", return_value=client):
         create_namespace_entity("ns", req)
@@ -39,3 +39,11 @@ def test_rejects_an_invented_category():
     with pytest.raises(HTTPException) as exc:
         _create_guideline("made-up")
     assert exc.value.status_code == 422
+
+
+@pytest.mark.unit
+def test_drops_merged_from():
+    # Consolidation's record of absorbed originals; a forged one could hide or delete a guideline.
+    entity = _create_guideline("strategy", merged_from=[{"id": "1", "content_sha256": "0" * 64}])
+    assert "merged_from" not in entity.metadata
+    assert entity.metadata["rationale"] == "Malformed input fails late"
