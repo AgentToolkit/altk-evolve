@@ -45,6 +45,9 @@ if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
 
+from config import load_config, write_repos  # noqa: E402
+from entity_io import markdown_to_entity  # noqa: E402
+
 # Provenance reuses log_influence.py's writer + dedup so the audit-log format and
 # the duplicate-suppression rule live in exactly one place. log_influence.py sits
 # next to this file in the same skill scripts/ directory.
@@ -276,7 +279,7 @@ def read_recall_rows(evolve_dir):
     return rows
 
 
-def _read_entity(evolve_dir, entity_id):
+def _read_entity(evolve_dir, entity_id, project_root=None):
     """Return ``(path, excerpt)`` for an entity file, or ``(path, None)`` if
     the file is missing. ``entity_id`` is a ``<type>/<name>`` id relative to
     ``entities/`` (without ``.md``).
@@ -288,7 +291,25 @@ def _read_entity(evolve_dir, entity_id):
     if entities_root not in entity_path.resolve().parents:
         return entity_path, None
     if not entity_path.is_file():
-        return entity_path, None
+        # Native recall IDs keep their original type/name after publication.
+        # Resolve only an unambiguous publication owned by this publisher.
+        config = load_config(project_root or Path(evolve_dir).resolve().parent)
+        identity = config.get("identity", {})
+        owner = identity.get("user") if isinstance(identity, dict) else None
+        matches = []
+        if owner and len(Path(entity_id).parts) == 2:
+            for repo in write_repos(config):
+                clone = entities_root / "subscribed" / repo["name"]
+                candidate = clone / f"{entity_id}.md"
+                if candidate.is_file() and candidate.resolve().is_relative_to(clone.resolve()):
+                    try:
+                        if markdown_to_entity(candidate).get("owner") == owner:
+                            matches.append(candidate)
+                    except (OSError, ValueError, UnicodeError):
+                        continue
+        if len(matches) != 1:
+            return entity_path, None
+        entity_path = matches[0]
     try:
         text = entity_path.read_text(encoding="utf-8")
     except OSError:
@@ -336,7 +357,7 @@ def build_candidates(evolve_dir, *, project_root=None, home=None):
         for entity_id in entities:
             if (session_id, entity_id) in existing:
                 continue
-            entity_path, entity_excerpt = _read_entity(evolve_dir, entity_id)
+            entity_path, entity_excerpt = _read_entity(evolve_dir, entity_id, project_root=project_root)
             trajectory_excerpt = _read_trajectory_excerpt(trajectory_path)
 
             missing = []

@@ -185,7 +185,7 @@ class TestPublish:
 
         assert result.returncode != 0
         assert "already published" in result.stderr
-        assert "Unpublish it first or delete it manually." in result.stderr
+        assert "Unpublish it first or use --update with the same owner." in result.stderr
         assert "name collision" not in result.stderr
         assert dest.read_text() == existing
 
@@ -462,7 +462,7 @@ class TestPublishAnyEntityType:
         assert str(native.parent) not in content
         assert not (typed_project / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO / "guideline").exists()
 
-    @pytest.mark.parametrize("entity_type", ["user", "feedback", "project", "reference", "guideline"])
+    @pytest.mark.parametrize("entity_type", ["feedback", "project", "reference", "guideline"])
     @pytest.mark.parametrize(("platform_name", "publish_script"), PUBLISH_SCRIPT_VARIANTS)
     def test_keeps_type_directory_in_shared_repo(self, typed_project, entity_type, publish_script, platform_name):
         source = _write_private(typed_project, entity_type, "note.md")
@@ -708,3 +708,79 @@ def test_publish_preserves_long_entity_names(project_dir, length, platform, scri
     assert "owner: alice" in destination.read_text()
     assert not source.exists()
     assert sorted(p.name for p in destination.parent.iterdir()) == [source.name]
+
+
+@pytest.mark.parametrize(
+    "platform,script",
+    PUBLISH_SCRIPT_VARIANTS
+    + [
+        ("bob", _REPO_ROOT / "platform-integrations/bob/evolve-lite/skills/evolve-lite-publish/scripts/publish.py"),
+        ("claw-code", _REPO_ROOT / "platform-integrations/claw-code/plugins/evolve-lite/skills/evolve-lite/publish/scripts/publish.py"),
+    ],
+)
+def test_publish_update_unpublish_lifecycle(project_dir, platform, script):
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish_script(script, project_dir, args)
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    private.write_text("---\ntype: guideline\n---\n\nUpdated native memory.\n")
+    run_publish_script(script, project_dir, args + ["--update"])
+    assert "Updated native memory." in _dest_path(project_dir, "my-guideline.md").read_text()
+    assert not private.exists()
+    unpublish = script.parents[2] / ("evolve-lite-unpublish" if platform == "bob" else "unpublish") / "scripts/unpublish.py"
+    run_publish_script(unpublish, project_dir, args)
+    assert "Updated native memory." in private.read_text()
+    assert "visibility: private" in private.read_text()
+    assert not _dest_path(project_dir, "my-guideline.md").exists()
+    assert json.loads((project_dir / ".evolve/audit.log").read_text().splitlines()[-1])["action"] == "unpublish"
+
+
+@pytest.mark.parametrize("owner", ["bob", None])
+@pytest.mark.parametrize("action", ["--update", "--unpublish"])
+def test_lifecycle_requires_matching_known_owner(project_dir, owner, action):
+    dest = _dest_path(project_dir, "my-guideline.md")
+    dest.parent.mkdir(parents=True)
+    content = f"---\ntype: guideline\nowner: {owner or ''}\n---\nExisting\n"
+    dest.write_text(content)
+    result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
+    assert result.returncode != 0
+    assert dest.read_text() == content
+
+
+def test_unpublish_preserves_newer_private_mirror(project_dir):
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    run_publish(project_dir, args)
+    private.write_text("Newer mirror")
+    result = run_publish(project_dir, args + ["--unpublish"], expect_success=False)
+    assert result.returncode != 0
+    assert private.read_text() == "Newer mirror"
+    assert _dest_path(project_dir, "my-guideline.md").exists()
+
+
+def test_user_memory_cannot_be_published(project_dir):
+    private = _write_private(project_dir, "user", "personal.md")
+    result = run_publish(project_dir, ["--entity", "personal.md"], expect_success=False)
+    assert result.returncode != 0
+    assert "user memories are private" in result.stderr
+    assert private.exists()
+
+
+def test_update_requires_existing_publication(project_dir):
+    result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", "--update"], expect_success=False)
+    assert result.returncode != 0
+    assert not _dest_path(project_dir, "my-guideline.md").exists()
+    assert (project_dir / ".evolve/entities/guideline/my-guideline.md").exists()
+
+
+@pytest.mark.parametrize("action", ["--update", "--unpublish"])
+def test_lifecycle_refuses_symlinked_publication(project_dir, action):
+    dest = _dest_path(project_dir, "my-guideline.md")
+    dest.parent.mkdir(parents=True)
+    other = dest.parent / "other.md"
+    content = "---\ntype: guideline\nowner: alice\n---\nDo not replace me\n"
+    other.write_text(content)
+    dest.symlink_to(other)
+    result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
+    assert result.returncode != 0
+    assert other.read_text() == content
+    assert dest.is_symlink()

@@ -1,6 +1,6 @@
 ---
 name: publish
-description: Publish a private entity (guideline, feedback, project, user or reference) to a configured write-scope repo.
+description: Publish a private entity (guideline, feedback, project or reference) to a configured write-scope repo.
 ---
 
 # Publish an Entity
@@ -9,8 +9,7 @@ description: Publish a private entity (guideline, feedback, project, user or ref
 
 Publish one or more private entities from `.evolve/entities/<type>/` into a
 configured **write-scope** repo. `<type>` is the directory the entity was saved
-in: `guideline` for learned guidelines, or a native memory type (`user`,
-`feedback`, `project`, `reference`) for entities saved by adapt-memory or the
+in: `guideline` for learned guidelines, or a native memory type (`feedback`, `project`, `reference`) for entities saved by adapt-memory or the
 EVOLVE.md save flow. The entity is stamped with
 `visibility: public`, `owner`, `published_at`, and `source`, moved into
 the local clone of the write repo under the same `<type>/` directory, and
@@ -53,7 +52,7 @@ Let `{repo}` be the chosen repo name and `{branch}` its configured branch (defau
 
 List the `.md` files in every type directory under `.evolve/entities/`, skipping
 `.evolve/entities/subscribed/` (other people's entities, never yours to
-publish). Show each as `{type}/{filename}` and ask the user which to publish.
+publish) and `user/` (personal facts must remain private). Show each as `{type}/{filename}` and ask the user which to publish.
 
 ### Step 5: Run publish script
 
@@ -62,6 +61,17 @@ For each selected file, run:
 ```bash
 python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/publish/scripts/publish.py" --entity "{filename}" --type "{type}" --repo "{repo}" --user "{identity.user}"
 ```
+
+For a previously published memory that has been re-mirrored after an edit,
+compare it with the shared copy. If the user requested an update and its owner
+matches `identity.user`, add `--update` to the command above. Updates require
+an existing publication with a known matching owner; ordinary publish still
+refuses collisions. Use `evolve-lite:unpublish` to restore a publication
+to private storage and remove it from the shared repository.
+
+`user/` memories are refused: rewrite a shareable fact as an explicitly
+attributed `project/` or `reference/` entity so subscribers cannot mistake it
+for a fact about themselves.
 
 ### Step 6: Commit and push
 
