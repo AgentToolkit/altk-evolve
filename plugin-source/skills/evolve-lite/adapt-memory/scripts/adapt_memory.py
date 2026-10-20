@@ -185,7 +185,7 @@ def main():
     # entity id is ``<type>/<name>`` on both sides — provenance can map an
     # audited native memory straight onto its mirror. Fall back to a
     # content-derived slug only when the native frontmatter has no name.
-    slug = slugify(name) if name else slugify(content)
+    slug = slugify(name, max_length=len(name)) if name else slugify(content)
 
     # Explicit --type wins (back-compat); otherwise infer from the native
     # frontmatter metadata.type, defaulting to "project" when neither is set.

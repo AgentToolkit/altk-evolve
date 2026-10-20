@@ -391,7 +391,8 @@ def write_entity_file(directory, entity, filename=None, overwrite=False):
         entity: The entity dict to serialize.
         filename: Optional explicit slug for the target file (without the
             ``.md`` suffix). When omitted, the slug is derived from the
-            entity content (the historical default).
+            entity content (the historical default). Explicit names are sanitized
+            but not truncated, preserving caller-provided entity identifiers.
         overwrite: When True, the entity is written to a deterministic
             ``{type}/{filename}.md`` path, overwriting any existing file in
             place (stable id, idempotent re-mirroring). When False (the
@@ -408,7 +409,7 @@ def write_entity_file(directory, entity, filename=None, overwrite=False):
     type_dir = Path(directory) / entity_type
     type_dir.mkdir(parents=True, exist_ok=True)
 
-    slug = slugify(filename) if filename else slugify(entity.get("content", "entity"))
+    slug = slugify(filename, max_length=len(filename)) if filename else slugify(entity.get("content", "entity"))
     content = entity_to_markdown(entity)
 
     # Write to a unique temp file first (avoids predictable .tmp collisions)

@@ -231,6 +231,21 @@ class TestAdaptMemory:
         assert parsed["source"] == "native-memory"
         assert parsed["type"] == "feedback"
 
+    def test_long_native_names_keep_distinct_full_ids(self, tmp_path, monkeypatch, capsys):
+        adapt = _load_adapt_memory()
+        names = [
+            "reading-exif-metadata-in-sandbox-exiftool-and-pillow-unavailable-use-piexif",
+            "reading-exif-metadata-in-sandbox-exiftool-and-pillow-unavailable-use-other",
+        ]
+        for name in names:
+            native = self._write_native(tmp_path, name, "reference", f"Advice for {name}.")
+            self._run(adapt, native, "reference", "when reading metadata", monkeypatch, tmp_path)
+            assert f"Entity id: reference/{name}" in capsys.readouterr().out
+        directory = tmp_path / ".evolve/entities/reference"
+        assert sorted(path.stem for path in directory.glob("*.md")) == sorted(names)
+        for name in names:
+            assert f"Advice for {name}." in (directory / f"{name}.md").read_text()
+
     def test_deterministic_overwrite_on_same_name_and_type(self, tmp_path, monkeypatch, capsys):
         adapt = _load_adapt_memory()
         native = self._write_native(tmp_path, "my-fact", "feedback", "First version.")
