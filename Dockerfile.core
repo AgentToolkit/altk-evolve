@@ -19,10 +19,14 @@ WORKDIR /app
 # Copy project files
 COPY pyproject.toml uv.lock ./
 COPY altk_evolve ./altk_evolve
+COPY packages/altk-evolve ./packages/altk-evolve
 COPY README.md LICENSE MANIFEST.in ./
 
-# Install dependencies using uv (no extras needed for milvus as it's in base dependencies)
-RUN uv sync --frozen --no-dev
+# Install the MCP server and the default embedding runtime.
+RUN uv sync --frozen --no-dev --extra server --extra fastembed
+
+# Gate publication on the actual entrypoint imports and optional runtime.
+RUN .venv/bin/python -c "import altk_evolve.frontend.mcp.__main__; import fastembed"
 
 # Set environment variables for filesystem backend
 ENV EVOLVE_BACKEND=filesystem
