@@ -1,66 +1,106 @@
-# Dependency license review
+# License checks with Trivy
 
-[GitHub's dependency-review action](https://github.com/actions/dependency-review-action)
-checks dependency changes on pull requests as `license-check`. Newly introduced
-or updated dependencies with incompatible licenses fail the check. Results appear
-in the job logs and summary.
+This workflow replaces dependency-submission/dependency-review with installed
+package and container scans, adapted from [CUGA PR #978](https://github.com/cuga-project/cuga-agent/pull/978).
+Trivy **0.76.0** is downloaded from its official release with committed Linux
+amd64/arm64 SHA-256 checksums verified against the release asset digests. There
+is no privileged `pull_request_target` workflow, write token, or dependency
+snapshot submission.
 
-## Explicit inventories
+## What runs
 
-Before review, the workflow submits **both the exact PR base and head revisions**
-using GitHub's
-[Component Detection submission action](https://github.com/advanced-security/component-detection-dependency-submission-action).
-Only its `UvLock` and `NpmLockfile3` detectors are enabled. All tracked `uv.lock`
-and `package-lock.json` files are discovered recursively through the Git tree API,
-including future plugin lockfiles. Base lockfiles deleted by the PR are removed
-before scanning the head. Both snapshots use the same correlator, and review
-runs afterward with explicit base/head SHAs and snapshot-warning retries.
+Every pull request, main push, and manual dispatch runs policy/planning tests,
+three frozen Python installation profiles, the frontend scan, and an aggregate
+`license-check` job. Python profiles are minimal core, the convenience package,
+and all workspace packages with all optional extras (including hooks, PII,
+secrets, and optional backends). No development dependency group is installed.
+New uv workspace packages and extras join the optional profile automatically;
+standalone projects outside that workspace need an explicit scan profile before
+being distributed. Frontend `npm ci --ignore-scripts` includes build dependencies.
 
-Core, convenience, optional extras and plugin dependencies recorded in those
-lockfiles are submitted without installing packages. Platform-specific versions
-are retained by the uv detector. A plugin must be included in the shared uv
-workspace lockfile or have its own committed lockfile; a standalone pyproject
-without a lockfile is not added by this submission step. Plugins in other
-repositories need their own workflow. This is a repository-wide policy, not a
-separate dependency audit for each wheel or installation profile.
+The independent inventory reads installed Python wheel metadata and npm packages,
+including scoped/nested dependencies. It records shipped license-file hashes.
+Trivy runs with `--list-all-pkgs`; any installed package missing from its output,
+an empty inventory, invalid report, failed installation, or scanner failure
+fails the job even in report mode. Packages with missing/unknown license metadata
+and absent license files remain explicit findings, rather than disappearing
+because Trivy emitted no severity finding. SPDX `AND`, `OR`, and `WITH` are
+evaluated against the explicit approved expressions; Trivy severity is not the
+policy decision. The invalid `BSD-0-Clause` spelling from the CUGA example is
+omitted, and no CUGA package exceptions are copied.
 
-The submission action is pinned to v0.2.0's commit. It downloads the latest
-Microsoft Component Detection release at runtime; the scanner binary is not
-pinned by that action. The scanner inherits the submission action’s write token; this upstream supply-chain risk remains until the action supports a verified, pinned scanner. GitHub's native dependency graph remains available too.
+## Conditional image checks
 
-## Permissions and fork PRs
+Native Linux amd64 and arm64 core images are built and scanned only for changes
+to dependency manifests/lockfiles, Dockerfiles/ignore files, shared build scripts
+and configuration, workflow/actions, or license tooling/policy. Ordinary Python
+code, tests, and documentation edits do not trigger PR/main image builds. These
+jobs include OS/package metadata and bundled license text (`--license-full`),
+plus independent Python inventory from the exact built image. Source/model-weight
+provenance and redistribution obligations still require human review; a license
+text alone does not establish the licensing of an entire component.
 
-Dependency submission requires `contents: write`. The privileged job uses
-`pull_request_target` restricted to `main` (the trusted default branch) and checks out only its exact PR base revision. Other target branches do not receive this privileged check; changing the trusted branch requires a reviewed workflow change. A
-base-branch helper fetches PR lockfile blobs as data; it rejects symlinks, unsafe
-paths, truncated inventories and API failures. Both base and head inventories are validated before any blob request, with at most 25 lockfiles and 20 MiB per inventory. Downloaded blobs must match their declared sizes. Superseded runs for the same PR are cancelled. It never checks out PR code or
-copies PR scripts, policy, `.env`, or executable configuration. The scanner uses
-only the two lockfile detectors, with no dependency installation or build steps.
-An empty scan fails. Fork PRs follow the same path and are not silently skipped.
+The planner uses a complete local `git diff --no-renames` with full commit IDs,
+NUL-delimited paths, and no API 300-file limit. PRs compare event base/head SHAs;
+main pushes compare `before..after`. Deleted and renamed manifests are included.
+A missing, zero, or unavailable main-push baseline conservatively runs images.
+A PR diff failure fails planning. Manual dispatch always runs images. There are
+no workflow-level path filters: the aggregate always exists and rejects failed
+planning, invalid plan output, cancelled jobs, and unexpected skipped scans.
+Only an image skip explicitly selected by a successful plan is accepted.
 
-The helper's tests run in a separate workflow on `pull_request` (which defines no `license-check` job) with a read-only token. Policy
-and workflow changes take effect only after reaching the trusted base branch.
-Consequently the new submission job's first end-to-end Actions validation requires
-this workflow and helper to be merged; subsequent PRs exercise it automatically.
-Keep the dependency graph enabled in repository settings. To require a passing
-review before merging, add `license-check` to branch protection after validation.
+**Merge prerequisite:** [PR #445](https://github.com/AgentToolkit/altk-evolve/pull/445)
+repairs `Dockerfile.core`'s package-workspace copy and MCP/FastEmbed runtime.
+Merge that prerequisite first. This PR deliberately does not duplicate its
+Dockerfile changes. Image jobs on a base without that fix may fail correctly.
 
-## Policy and limitations
+## Policy rollout and required checks
 
-The approved list in `dependency-review.yml` is adapted from
-[CUGA PR #978](https://github.com/cuga-project/cuga-agent/pull/978), commit
-`b7e9f7eb73fe9bf8967ee56cebabf51dea1abc3a`. Its invalid `BSD-0-Clause` entry is
-omitted; the correct SPDX identifier `0BSD` is already included. No CUGA-specific
-package exceptions are copied. Vulnerability checking remains in the existing
-vulnerability workflow. This job enforces the list directly and does not use a
-`LICENSE_ENFORCEMENT` variable or post PR comments.
+The initial mode is `report` (`LICENSE_ENFORCEMENT` Actions variable unset).
+Policy findings appear in job summaries and uploaded JSON artifacts but do not
+block on licensing classification yet. This is **not license clearance**.
+Technical failures and inventory coverage gaps always block.
 
-Explicit submission controls the inventory, not license metadata quality. In the
-pinned dependency-review v5.0.0 action, unresolved SPDX expressions and incompatible
-licenses fail; missing/unknown licenses are reported without blocking. Review
-those findings manually. This checks PR changes rather than all existing
-licenses, container images, bundled code, license files, our own distributions'
-license declarations, or redistribution obligations.
+On PRs the policy/baseline comes from the exact base commit; a PR cannot approve
+its own findings through its proposed policy. The first introduction has no base
+policy, so only report mode may use the proposed policy, explicitly identified
+as bootstrap output. A partial base policy or an attempt to bootstrap enforcement
+fails. On main/release the current committed policy is used.
 
-Public repositories can use dependency review without a paid security subscription;
-private repositories require the applicable GitHub security plan.
+Review the first Linux findings for each profile and architecture. To accept a
+finding, add its unchanged fingerprint to `baseline.json` with `reason` and
+`reviewer` (and optionally ISO-date `expires`); fingerprints include version,
+scope, license expression, and license-file evidence. Exceptions must include
+name, exact version, scope, issue, reason, reviewer and expiry. Set `reviewed` to
+true only after review, then set `LICENSE_ENFORCEMENT=enforce`. Missing/expired
+acceptances fail enforcement. Use maintainer review for policy, baseline,
+scanner, evaluator and workflows; repository rules must enforce that review.
+
+Require the single `license-check` context after validating the first GitHub
+Actions runs. The cheap policy tests and aggregate run on every event. Hosted
+ARM runners and enough disk for the optional ML dependency profile must be
+available. Local unit tests do not substitute for a complete Linux CI run.
+
+## Release images
+
+The release workflow builds each architecture once into a Docker archive,
+scans it with the same pinned Trivy/policy, and collects evidence from that image.
+Only after both architectures pass does publication load and push those same
+archives, verifying archive/config identities and creating release tags from
+the pushed digests. There is no rebuild after scanning. Build/scan jobs receive
+no registry credentials; credentials are confined to publication. Report-mode
+release scans still expose pending findings without claiming license approval.
+
+## Local validation
+
+```sh
+uv run --no-project --with pytest==8.4.2 python -m pytest --noconftest -c /dev/null -p no:cacheprovider -v tests/test_license_ci.py tests/test_image_promotion.py
+uv run --no-project python scripts/licenses/check.py prepare-python core /tmp/evolve-license-core
+uv run --no-project python scripts/licenses/check.py inventory python /tmp/evolve-license-core /tmp/inventory.json
+# On Linux, install the pinned scanner using scripts/licenses/install-trivy.sh.
+trivy rootfs --scanners license --list-all-pkgs --format json --output /tmp/trivy.json /tmp/evolve-license-core
+uv run --no-project python scripts/licenses/check.py evaluate --report /tmp/trivy.json --inventory /tmp/inventory.json --scope python-core --mode report --output /tmp/policy-result.json
+```
+
+Vulnerability scanning remains separate. This workflow does not replace legal
+review, nor does it automatically approve existing copyleft or unknown licenses.
