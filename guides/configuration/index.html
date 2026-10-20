@@ -2095,7 +2095,7 @@
 </tr>
 <tr>
 <td><code>EVOLVE_DASHBOARD</code></td>
-<td><code>evolve-mcp</code> over stdio only: also serve the Web UI and REST API on <code>127.0.0.1:8000</code>, which has no authentication. Read as a boolean like the other <code>EVOLVE_</code> switches: <code>false</code>, <code>0</code>, <code>no</code>, <code>off</code>, <code>f</code> or <code>n</code> turns it off. An unrecognised value also turns it off and logs a warning; an empty value counts as unset. <code>--dashboard</code> / <code>--no-dashboard</code> on the command line take precedence</td>
+<td><code>evolve-mcp</code> over stdio only: also serve the Web UI and REST API on <code>127.0.0.1:8000</code>, which has no authentication. Read as a boolean like the other <code>EVOLVE_</code> switches: <code>false</code>, <code>0</code>, <code>no</code>, <code>off</code>, <code>f</code> or <code>n</code> turns it off. An unrecognised value also turns it off and logs a warning; an empty or whitespace-only value counts as unset, so it does not override <code>.env</code>. <code>--dashboard</code> / <code>--no-dashboard</code> on the command line take precedence</td>
 <td><code>true</code></td>
 </tr>
 </tbody>
