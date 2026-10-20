@@ -40,6 +40,8 @@ passed straight through — no pydantic ``model_dump``/``model_validate`` dance.
 
 from __future__ import annotations
 
+import re
+
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -136,6 +138,60 @@ def build_secrets_scanner() -> Scanner:
     return cast(Scanner, py_scan_container)
 
 
+# Supplement the pinned scanner's narrow structured patterns. Keep these under
+# its existing detector switches; no entropy heuristics or new defaults.
+_SUPPLEMENTARY_PATTERNS = {
+    "private_key_block": re.compile(
+        r"-----BEGIN (?P<kind>(?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----"
+        r"[\s\S]*?(?:-----END (?P=kind)-----|\Z)"
+    ),
+    "aws_secret_access_key": re.compile(
+        r"(?i)(\baws[ \t]+(?:AKIA|ASIA)[A-Z0-9]{16}[ \t]+secret[ \t]*=[ \t]*)([A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])"
+    ),
+    "aws_access_key_id": re.compile(r"\bASIA[A-Z0-9]{16}\b"),
+    "slack_token": re.compile(
+        r"\b(?:xoxs|xapp)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*"
+        r"|https://hooks\.slack\.com/services/T[A-Za-z0-9]+/B[A-Za-z0-9]+/[A-Za-z0-9]+"
+    ),
+}
+
+
+def _supplementary_scan(items: list[dict], config: dict) -> tuple[int, list[dict]]:
+    """Scan string leaves before Rust can mask just a credential's prefix.
+
+    Complete PEM/PGP bodies (or a truncated block through end of text) are one
+    finding. The Rust private-key detector is disabled by the caller to avoid
+    counting the same header twice in detection-only mode.
+    """
+    count = 0
+
+    def visit(value: Any) -> Any:
+        nonlocal count
+        if isinstance(value, dict):
+            return {key: visit(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [visit(item) for item in value]
+        if not isinstance(value, str):
+            return value
+        for name, pattern in _SUPPLEMENTARY_PATTERNS.items():
+            if not config["enabled"][name]:
+                continue
+
+            def replace(match: re.Match[str]) -> str:
+                nonlocal count
+                count += 1
+                if not config["redact"]:
+                    return match.group(0)
+                prefix = match.group(1) if name == "aws_secret_access_key" else ""
+                return prefix + cast(str, config["redaction_text"])
+
+            value = pattern.sub(replace, value)
+        return value
+
+    result = visit(items)
+    return count, result
+
+
 class SecretsFilterMemoryPlugin(HookPluginBase):
     """Native plugin: structured-secrets redaction on writes and LLM egress.
 
@@ -186,7 +242,10 @@ class SecretsFilterMemoryPlugin(HookPluginBase):
         raising (the seam converts it to a fail-closed ``MemoryPolicyViolation``
         under ``on_error: fail``), never by returning a payload.
         """
-        count, redacted, _findings = self._get_scanner()(list(items), self._scan_config)
+        supplementary_count, prepared = _supplementary_scan(items, self._scan_config)
+        scan_config = {**self._scan_config, "enabled": {**self._scan_config["enabled"], "private_key_block": False}}
+        count, redacted, _findings = self._get_scanner()(prepared, scan_config)
+        count += supplementary_count
         if count == 0:
             return None
         if not self._scan_config.get("redact", False):
