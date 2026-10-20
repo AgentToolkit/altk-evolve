@@ -685,7 +685,7 @@ class EvolveClient:
         """Select the always-on core plus the top-k task-relevant guidelines for a task.
 
         This is the dosage-aware alternative to injecting the whole playbook: the core
-        (guidelines with support >= ``core_support``) is always returned, plus up to
+        (guidelines backed by >= ``core_support`` distinct source tasks) is always returned, plus up to
         ``top_k`` further guidelines whose source task is most similar to ``task_query``.
         Unset arguments fall back to the corresponding ``config`` values.
 

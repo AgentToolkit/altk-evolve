@@ -49,7 +49,7 @@ class EvolveConfig(BaseSettings):
     consolidation_max_rounds: int = Field(default=1, ge=1)
     # Dosage-aware retrieval knobs (see docs: capability-dependent dosage).
     #   static    - inject the whole playbook (best for strong models; current default behavior)
-    #   retrieval - inject core (support >= core_support) + top-k task-relevant guidelines
+    #   retrieval - inject core (>= core_support distinct source tasks) + top-k task-relevant guidelines
     # Default is "static" so existing get_guidelines callers are unaffected; set "retrieval"
     # to opt get_guidelines into the dosage-aware path.
     injection_mode: Literal["static", "retrieval"] = "static"

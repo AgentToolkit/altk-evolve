@@ -4,8 +4,8 @@ Instead of injecting the whole playbook every task (best only for strong models)
 selects a small, task-relevant dose (best for weaker models — the capability-dependent
 dosage finding):
 
-    core      = guidelines whose ``support`` >= ``core_support`` (they recurred across many
-                tasks, so they generalise) — always included.
+    core      = guidelines backed by >= ``core_support`` distinct source tasks (they recurred
+                across many tasks, so they generalise) — always included.
     retrieved = up to ``top_k`` further guidelines whose SOURCE task (``task_description``)
                 is most similar to the current task ("a lesson from a task like this one"),
                 after dropping ones already covered by the core or duplicating each other.
@@ -24,6 +24,7 @@ import numpy as np
 
 from altk_evolve.llm.guidelines.clustering import _get_sentence_transformer, stored_tasks
 from altk_evolve.schema.core import RecordedEntity
+from altk_evolve.schema.provenance import sources
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,15 @@ class GuidelineSelection:
 
 
 def _support(entity: RecordedEntity) -> int:
+    """How many distinct source tasks back a guideline.
+
+    Counted from its supporting ``sources`` associations, so rewordings merged from one
+    task count once. A guideline whose sources carry no task id (provenance predates it)
+    falls back to its stored ``support``.
+    """
+    tasks = {source.get("task_id") for source in sources(entity) if source.get("status") == "supporting" and source.get("task_id")}
+    if tasks:
+        return len(tasks)
     try:
         return max(1, int((entity.metadata or {}).get("support", 1) or 1))
     except (TypeError, ValueError):
@@ -82,7 +92,7 @@ def select_guidelines(
             ``similarity_key="source_task"``, ``task_description`` in metadata).
         task_query: The current task instruction to retrieve for.
         top_k: Maximum number of retrieved (non-core) guidelines.
-        core_support: Guidelines with support >= this are always included.
+        core_support: Guidelines backed by >= this many distinct source tasks are always included.
         min_support: Non-destructive sup2/sup3 floor applied to the whole pool *before* the
             core/candidate split. Callers should keep ``min_support <= core_support`` (enforced
             by ``EvolveConfig``) so the floor never drops a guideline that qualifies for the core.

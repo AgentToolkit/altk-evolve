@@ -135,8 +135,9 @@ def test_core_singleton_split_at_the_boundary(client: EvolveClient):
     }
     assert (report.core, report.singletons, report.below_min_support) == (2, 2, 0)
 
+    # "below core" stores support 2 but has one source task, so it counts 1 like "floor".
     floored, report = build_retrieval_index(rows, core_support=3, min_support=2)
-    assert [s["rule"] for s in floored["singletons"]] == ["below core"] and report.below_min_support == 1
+    assert floored["singletons"] == [] and report.below_min_support == 2
     assert build_retrieval_index(rows, core_support=4)[0]["core"] == ["above core"]
     with pytest.raises(ValueError, match="min-support"):
         build_retrieval_index(rows, core_support=2, min_support=3)

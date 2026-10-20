@@ -4,9 +4,11 @@ playbook         {"entries": [{"r": rule, "n": support, "e": "s" | "f" | "b"}, .
 retrieval index  {"core": [rule, ...],
                   "singletons": [{"rule", "source_task", "source_instruction"}, ...]}
 
-Support and the core use the library's definitions (``support`` in metadata, 1
-when absent; core is support >= core_support; min_support is a floor applied
-before the split), so an exported index splits a namespace exactly as
+Support and the core use the library's definitions (the number of distinct
+supporting source tasks, or ``support`` in metadata, 1 when absent, for a
+guideline with no recorded source task; core is support >= core_support;
+min_support is a floor applied before the split), so an exported index splits a
+namespace exactly as
 ``EvolveClient.select_guidelines`` does. The index carries no embeddings: the
 retrieval harness embeds each ``source_instruction`` itself at load time.
 """
