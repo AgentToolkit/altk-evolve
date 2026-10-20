@@ -15,10 +15,11 @@ files in sorted name order, blank lessons skipped, evidence from the file's
 
 Writes go through the client's backend with conflict resolution off, so memory
 hooks run and no model is called. Each file is committed atomically together
-with a checkpoint keyed on (source label, file name), the mechanism ``mine``
-uses: a re-run skips files already imported, even after ``consolidate`` has
-merged their guidelines away, and a file whose content changed since its import
-is an error rather than a second copy of its lessons.
+with a checkpoint keyed on its ``task_id`` (and on ``scope``, when one is given),
+the mechanism ``mine`` uses: a re-run skips tasks already imported, even after
+``consolidate`` has merged their guidelines away or the file or its directory
+was renamed, and a file whose content changed since its import is an error
+rather than a second copy of its lessons.
 """
 
 from __future__ import annotations
@@ -120,8 +121,10 @@ def _lesson(index: int, item: Any) -> Lesson | None:
 def task_description(preview: str) -> str:
     """The instruction as the AppWorld adapter reads one (task_from_prompt), else the preview itself.
 
-    task_from_prompt keeps a "My name is:" line just before "Task:", which is how these
-    previews start, so for them it changes nothing; a preview without "Task:" is used whole.
+    task_from_prompt starts at the "My name is:" line before the last "Task:", else up
+    to TASK_CONTEXT (200) characters before it. A preview is the instruction's first
+    200 characters, so it is kept whole, preamble included; only a longer text is cut.
+    A preview without "Task:" is used whole.
     """
     return task_from_prompt(preview) or preview.strip()
 
@@ -159,12 +162,14 @@ def load_lesson_file(path: Path) -> LessonFile:
 def load_lesson_dir(path: Path) -> list[LessonFile]:
     """Every ``*.json`` file directly in path, in sorted name order, all validated before any is used.
 
-    Raises ValueError listing every invalid file (and any task_id found in more than
-    one file), so a bad input writes nothing.
+    Raises ValueError listing every invalid or unreadable file (and any task_id found
+    in more than one file), so a bad input writes nothing; OSError if path itself
+    can't be listed. Subdirectories are skipped, even one named ``*.json``.
     """
     if not path.is_dir():
         raise ValueError(f"--input must be a directory of lesson files: {path}")
-    paths = sorted(path.glob("*.json"))
+    # iterdir rather than glob: glob reports an unreadable directory as an empty one.
+    paths = sorted(child for child in path.iterdir() if child.name.endswith(".json") and not child.is_dir())
     if not paths:
         raise ValueError(f"no *.json lesson files in {path}")
     files: list[LessonFile] = []
@@ -172,7 +177,7 @@ def load_lesson_dir(path: Path) -> list[LessonFile]:
     for file_path in paths:
         try:
             files.append(load_lesson_file(file_path))
-        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError are ValueErrors
+        except (ValueError, OSError) as exc:  # JSONDecodeError and UnicodeDecodeError are ValueErrors; OSError: a broken link, say
             problems.append(f"{file_path.name}: {exc}")
     seen: dict[str, str] = {}
     for file in files:
@@ -184,14 +189,21 @@ def load_lesson_dir(path: Path) -> list[LessonFile]:
     return files
 
 
-def checkpoint_key(source: str, file_name: str) -> str:
-    """The namespace checkpoint marking a file imported; distinct from mine's batch keys (a 6-item list)."""
-    return hashlib.sha256(json.dumps(["import-lessons", source, file_name], ensure_ascii=False).encode()).hexdigest()
+def checkpoint_key(scope: str | None, task_id: str) -> str:
+    """The namespace checkpoint marking a task's lessons imported; distinct from mine's batch keys (a 6-item list).
+
+    Keyed on the task, not the file or directory name, so a renamed copy is not imported
+    again; scope (None by default) separates deliberate imports of the same tasks.
+    """
+    return hashlib.sha256(json.dumps(["import-lessons", scope, task_id], ensure_ascii=False).encode()).hexdigest()
 
 
 @dataclass
 class ImportReport:
-    """Counts for one run. Lessons and empty cover every file read; imported only what this run wrote."""
+    """Counts for one run. Lessons and empty cover every file read; imported only what this run wrote.
+
+    dropped counts lessons a memory hook removed from a file that was otherwise committed.
+    """
 
     dry_run: bool
     namespace_id: str
@@ -202,40 +214,47 @@ class ImportReport:
     imported: int = 0
     already_imported: int = 0
     already_imported_files: int = 0
+    dropped: int = 0
     support: int = 0
     failures: list[tuple[str, str]] = field(default_factory=list)
 
     def summary(self) -> str:
         if self.dry_run:
             return (
-                f"dry run ({self.source}): {self.files} files read, {self.lessons} lessons to import, "
-                f"{self.empty} skipped as empty; support total {self.support}"
+                f"dry run ({self.source}): {self.files} files read, {self.lessons} lessons found, "
+                f"{self.empty} skipped as empty; support total {self.support} (checkpoints not checked)"
             )
         return (
             f"import-lessons {self.namespace_id} ({self.source}): {self.files} files read, {self.imported} lessons imported, "
             f"{self.empty} skipped as empty, {self.already_imported} already imported ({self.already_imported_files} files), "
-            f"{len(self.failures)} files failed; support total {self.support}"
+            f"{self.dropped} dropped by memory hooks, {len(self.failures)} files failed; support total {self.support}"
         )
 
 
-def _changed_since_import(client: EvolveClient, namespace_id: str, source: str, files: Sequence[LessonFile]) -> list[str]:
+def _changed_since_import(client: EvolveClient, namespace_id: str, scope: str | None, files: Sequence[LessonFile]) -> list[str]:
     try:
         client.get_namespace_details(namespace_id)
     except NamespaceNotFoundException:
         return []
     changed = []
     for file in files:
-        recorded = client.backend.get_processing_checkpoint(namespace_id, checkpoint_key(source, file.name))
+        recorded = client.backend.get_processing_checkpoint(namespace_id, checkpoint_key(scope, file.task_id))
         if recorded is not None and recorded.get("digest") != file.digest:
             changed.append(file.name)
     return changed
 
 
-def import_lessons(files: Sequence[LessonFile], client: EvolveClient | None, *, namespace_id: str, source: str) -> ImportReport:
+def import_lessons(
+    files: Sequence[LessonFile], client: EvolveClient | None, *, namespace_id: str, source: str, scope: str | None = None
+) -> ImportReport:
     """Write every file's non-empty lessons into namespace_id (created if missing); client=None is a dry run.
 
+    source is the label recorded on each guideline. scope keys re-run detection: by
+    default each task_id is imported once per namespace; another scope imports it again.
+    A dry run reads no checkpoints, so it counts every lesson it read.
+
     Raises ValueError, before writing anything, for a backend without atomic writes
-    or for a file whose content changed since it was imported under this source. A
+    or for a file whose content changed since its task was imported in this scope. A
     file that fails to write (a hook rejecting it, say) is reported and the run continues.
     """
     report = ImportReport(dry_run=client is None, namespace_id=namespace_id, source=source)
@@ -247,15 +266,16 @@ def import_lessons(files: Sequence[LessonFile], client: EvolveClient | None, *, 
         return report
     if not client.backend.supports_atomic_writes:
         raise ValueError(f"import-lessons needs a backend with atomic writes (filesystem or postgres), not {client.config.backend}")
-    if changed := _changed_since_import(client, namespace_id, source, files):
+    if changed := _changed_since_import(client, namespace_id, scope, files):
+        where = "" if scope is None else f" as {scope!r}"
         raise ValueError(
-            f"{len(changed)} lesson file(s) changed since they were imported into {namespace_id!r} as {source!r} "
+            f"{len(changed)} lesson file(s) changed since their task was imported into {namespace_id!r}{where} "
             f"(use a new namespace or --source): {', '.join(changed)}"
         )
     client.ensure_namespace(namespace_id)
     for file in files:
         try:
-            written = _import_file(client, namespace_id, source, file)
+            written = _import_file(client, namespace_id, source, scope, file)
         except Exception as exc:
             report.failures.append((file.name, f"{type(exc).__name__}: {exc}"))
             continue
@@ -265,16 +285,25 @@ def import_lessons(files: Sequence[LessonFile], client: EvolveClient | None, *, 
         else:
             report.imported += written
             report.support += written
+            report.dropped += max(0, len(file.lessons) - written)
     return report
 
 
-def _import_file(client: EvolveClient, namespace_id: str, source: str, file: LessonFile) -> int | None:
-    """Commit one file's guidelines and its checkpoint together; None if it was already imported."""
+def _import_file(client: EvolveClient, namespace_id: str, source: str, scope: str | None, file: LessonFile) -> int | None:
+    """Commit one file's guidelines and its checkpoint together; None if its task was already imported."""
     backend = client.backend
-    key = checkpoint_key(source, file.name)
+    key = checkpoint_key(scope, file.task_id)
+    # Checked here, before the hooks run, so a re-run never sends imported lessons through them again.
     if backend.get_processing_checkpoint(namespace_id, key) is not None:
         return None
-    marker = {"source": source, "file": file.name, "task_id": file.task_id, "digest": file.digest, "lessons": len(file.lessons)}
+    marker = {
+        "source": source,
+        "scope": scope,
+        "file": file.name,
+        "task_id": file.task_id,
+        "digest": file.digest,
+        "lessons": len(file.lessons),
+    }
     entities = file.entities(source)
     # prepare_updates runs the memory hooks; with conflict resolution off nothing reads the store or calls a model.
     prepared = [backend.prepare_updates(namespace_id, entities, enable_conflict_resolution=False)] if entities else []

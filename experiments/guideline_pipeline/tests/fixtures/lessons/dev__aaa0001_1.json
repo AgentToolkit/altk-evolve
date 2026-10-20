@@ -5,12 +5,12 @@
   "difficulty": 2,
   "instruction_preview": "My name is: Ada Example. My personal email is ada@example.com.\nTask: Send a message to my siblings who have no wallet account",
   "lessons": [
+    {"theme": "Blank", "polarity": "failure_fix", "evidence": "nothing usable", "lesson": "   "},
     {
       "theme": "Filter contacts",
       "polarity": "failure_fix",
       "evidence": "The agent messaged every sibling, including those with a wallet account.",
       "lesson": "Filter retrieved contacts by every task constraint before acting on them."
-    },
-    {"theme": "Blank", "polarity": "failure_fix", "evidence": "nothing usable", "lesson": "   "}
+    }
   ]
 }

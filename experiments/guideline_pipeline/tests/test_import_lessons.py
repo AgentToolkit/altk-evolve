@@ -23,7 +23,7 @@ from experiments.guideline_pipeline.tests.test_commands import mock_consolidatio
 pytestmark = pytest.mark.unit
 
 FIXTURES = Path(__file__).parent / "fixtures" / "lessons"
-# The fixtures: aaa0001_1 failed (one lesson, one blank), bbb0002_1 succeeded (two lessons), ccc0003_2 has none.
+# The fixtures: aaa0001_1 failed (a blank lesson, then one lesson), bbb0002_1 succeeded (two lessons), ccc0003_2 has none.
 LESSONS = 3
 
 
@@ -54,8 +54,8 @@ def llm_calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
     return calls
 
 
-def run_import(client: EvolveClient | None, path: Path, source: str = "fake"):
-    return import_lessons(load_lesson_dir(path), client, namespace_id="memories", source=source)
+def run_import(client: EvolveClient | None, path: Path, source: str = "fake", scope: str | None = None):
+    return import_lessons(load_lesson_dir(path), client, namespace_id="memories", source=source, scope=scope)
 
 
 def stored(client: EvolveClient) -> list[Entity]:
@@ -75,7 +75,7 @@ def test_counts_and_support(client: EvolveClient, lessons: Path):
     assert report.failures == []
     assert report.summary() == (
         "import-lessons memories (fake): 3 files read, 3 lessons imported, 1 skipped as empty, "
-        "0 already imported (0 files), 0 files failed; support total 3"
+        "0 already imported (0 files), 0 dropped by memory hooks, 0 files failed; support total 3"
     )
     rows, empty = guideline_rows(fetch_guidelines(client, "memories"))
     assert (len(rows), empty, sum(row.support for row in rows)) == (LESSONS, 0, LESSONS)
@@ -121,13 +121,13 @@ def test_metadata_matches_a_mined_guideline(client: EvolveClient, lessons: Path)
         "difficulty": 2,
         "lesson_source": "fake",
         "source_file": "dev__aaa0001_1.json",
-        "lesson_index": 0,
+        "lesson_index": 1,
         "lesson_theme": "Filter contacts",
         "lesson_polarity": "failure_fix",
         "lesson_evidence": "The agent messaged every sibling, including those with a wallet account.",
     }
-    # The index counts blank lessons, so it points back at the lesson's place in its file.
-    assert [e.metadata["lesson_index"] for e in stored(client)] == [0, 0, 1]
+    # The index counts blank lessons (aaa0001_1's is first), so it points back at the lesson's place in its file.
+    assert [e.metadata["lesson_index"] for e in stored(client)] == [1, 0, 1]
 
 
 def test_import_makes_no_llm_call(client: EvolveClient, lessons: Path, llm_calls: list[tuple]):
@@ -141,6 +141,10 @@ def test_import_makes_no_llm_call(client: EvolveClient, lessons: Path, llm_calls
 def test_task_description_is_the_instruction_from_task_onwards():
     # As the AppWorld adapter reads it: the "My name is:" line just before "Task:" is kept.
     assert task_description("My name is: Ada.\nTask: Do it.") == "My name is: Ada.\nTask: Do it."
+    # A 200-character preview is always kept whole, preamble included; only a longer text is cut.
+    assert task_description("Using the APIs below, help the user.\nTask: Send $5 to Bo.") == (
+        "Using the APIs below, help the user.\nTask: Send $5 to Bo."
+    )
     assert task_description(("x" * 300) + " Task: Do it.") == ("x" * 199) + " Task: Do it."
     assert task_description("  Request $13 from Stacy.  ") == "Request $13 from Stacy."  # no "Task:", used whole
 
@@ -159,12 +163,26 @@ def test_rerun_imports_nothing_twice_even_after_consolidation(client: EvolveClie
     assert run_import(client, lessons).imported == 0
     assert sum(guideline.support for guideline in guideline_rows(fetch_guidelines(client, "memories"))[0]) == LESSONS
 
-    # A new file is imported on its own; another source label is a separate import.
+    # A new task is imported on its own; another scope (an explicit --source) is a separate import,
+    # but a new source label alone is not.
     extra = json.loads((lessons / "train__bbb0002_1.json").read_text()) | {"task_id": "ddd0004_1"}
     (lessons / "train__ddd0004_1.json").write_text(json.dumps(extra))
     report = run_import(client, lessons)
     assert (report.imported, report.already_imported_files) == (2, 3)
-    assert run_import(client, lessons, source="other").imported == LESSONS + 2
+    assert run_import(client, lessons, source="other").imported == 0
+    assert run_import(client, lessons, source="other", scope="other").imported == LESSONS + 2
+
+
+def test_renaming_a_file_or_its_directory_imports_nothing_twice(client: EvolveClient, lessons: Path):
+    run_import(client, lessons, source=lessons.name)
+
+    (lessons / "dev__aaa0001_1.json").rename(lessons / "dev__aaa0001_1.copy.json")
+    renamed = run_import(client, lessons, source=lessons.name)
+    assert (renamed.imported, renamed.already_imported_files) == (0, 3)
+    moved = Path(shutil.move(lessons, lessons.with_name("lessons_v2")))
+    report = run_import(client, moved, source=moved.name)  # the CLI's default label follows the directory
+    assert (report.imported, report.already_imported_files) == (0, 3)
+    assert sum(row.support for row in guideline_rows(fetch_guidelines(client, "memories"))[0]) == LESSONS
 
 
 def test_a_file_changed_since_its_import_is_an_error(client: EvolveClient, lessons: Path):
@@ -172,9 +190,19 @@ def test_a_file_changed_since_its_import_is_an_error(client: EvolveClient, lesso
     path = lessons / "train__bbb0002_1.json"
     path.write_text(json.dumps(json.loads(path.read_text()) | {"success": False}))
 
-    with pytest.raises(ValueError, match=r"1 lesson file\(s\) changed since they were imported into 'memories' as 'fake'"):
+    with pytest.raises(ValueError, match=r"1 lesson file\(s\) changed since their task was imported into 'memories' \("):
         run_import(client, lessons)
     assert len(stored(client)) == LESSONS
+    # Renamed, it is still the same task, so still an error rather than a second copy.
+    path.rename(lessons / "renamed.json")
+    with pytest.raises(ValueError, match="renamed.json"):
+        run_import(client, lessons)
+    # Another scope is a separate import, so it takes the changed file, and is itself checked from then on.
+    assert run_import(client, lessons, scope="mine").imported == LESSONS
+    path = lessons / "renamed.json"
+    path.write_text(json.dumps(json.loads(path.read_text()) | {"success": True}))
+    with pytest.raises(ValueError, match="imported into 'memories' as 'mine'"):
+        run_import(client, lessons, scope="mine")
 
 
 def test_a_failed_file_is_reported_and_retried_on_rerun(client: EvolveClient, lessons: Path, monkeypatch: pytest.MonkeyPatch):
@@ -194,6 +222,37 @@ def test_a_failed_file_is_reported_and_retried_on_rerun(client: EvolveClient, le
     retried = run_import(client, lessons)
     assert (retried.imported, retried.already_imported_files, retried.failures) == (1, 2, [])
     assert len(stored(client)) == LESSONS
+
+
+def test_a_rerun_skips_imported_files_before_their_hooks_run(client: EvolveClient, lessons: Path, monkeypatch: pytest.MonkeyPatch):
+    run_import(client, lessons)
+
+    def reject(backend, namespace_id, entities):
+        raise RuntimeError("hooks ran again on an imported file")
+
+    monkeypatch.setattr(backend_base, "dispatch_memory_pre_write", reject)
+    again = run_import(client, lessons)
+    assert (again.failures, again.already_imported_files) == ([], 3)
+
+
+def test_lessons_a_hook_drops_are_counted(client: EvolveClient, lessons: Path, monkeypatch: pytest.MonkeyPatch):
+    original = backend_base.dispatch_memory_pre_write
+
+    def drop_bbb(backend, namespace_id, entities):
+        return original(backend, namespace_id, [e for e in entities if e.metadata.get("source_task_id") != "bbb0002_1"])
+
+    monkeypatch.setattr(backend_base, "dispatch_memory_pre_write", drop_bbb)
+    report = run_import(client, lessons)
+    assert (report.imported, report.dropped, report.failures, report.support) == (1, 2, [], 1)
+    assert "1 lessons imported" in report.summary() and "2 dropped by memory hooks" in report.summary()
+
+
+def test_a_backend_without_atomic_writes_is_refused_before_any_write(client: EvolveClient, lessons: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(type(client.backend), "supports_atomic_writes", False)
+
+    with pytest.raises(ValueError, match="needs a backend with atomic writes"):
+        run_import(client, lessons)
+    assert client.all_namespaces() == []
 
 
 def test_writes_pass_through_the_memory_hooks(client: EvolveClient, lessons: Path, monkeypatch: pytest.MonkeyPatch):
@@ -244,11 +303,23 @@ def test_directory_problems(tmp_path: Path, lessons: Path):
     shutil.copy(lessons / "dev__aaa0001_1.json", lessons / "copy.json")
     with pytest.raises(ValueError, match="dev__aaa0001_1.json: task_id 'aaa0001_1' is also in copy.json"):
         load_lesson_dir(lessons)
+    (lessons / "copy.json").unlink()
+
+    # A subdirectory is skipped, even one named *.json; an unreadable file is listed with the rest.
+    (lessons / "archive.json").mkdir()
+    assert [file.task_id for file in load_lesson_dir(lessons)] == ["aaa0001_1", "bbb0002_1", "ccc0003_2"]
+    (lessons / "broken.json").symlink_to(lessons / "missing.json")
+    (lessons / "zz_bad.json").write_text("[]")
+    with pytest.raises(ValueError, match="2 invalid lesson file") as error:
+        load_lesson_dir(lessons)
+    assert "broken.json: [Errno 2]" in str(error.value) and "zz_bad.json: must hold a JSON object" in str(error.value)
 
 
 def test_dry_run_counts_without_storage(lessons: Path):
     report = run_import(None, lessons)
-    assert report.summary() == "dry run (fake): 3 files read, 3 lessons to import, 1 skipped as empty; support total 3"
+    assert report.summary() == (
+        "dry run (fake): 3 files read, 3 lessons found, 1 skipped as empty; support total 3 (checkpoints not checked)"
+    )
 
 
 def test_cli_imports_and_round_trips_through_export(
@@ -291,7 +362,10 @@ def test_cli_dry_run_never_builds_a_client(lessons: Path, monkeypatch: pytest.Mo
 
     monkeypatch.setattr(cli, "make_client", no_client)
     code, stdout, _ = run(capsys, "import-lessons", "--input", str(lessons), "--namespace", "memories", "--source", "ds", "--dry-run")
-    assert (code, stdout) == (0, "dry run (ds): 3 files read, 3 lessons to import, 1 skipped as empty; support total 3")
+    assert (code, stdout) == (
+        0,
+        "dry run (ds): 3 files read, 3 lessons found, 1 skipped as empty; support total 3 (checkpoints not checked)",
+    )
 
 
 def test_cli_errors(
@@ -304,6 +378,13 @@ def test_cli_errors(
     assert code == 2 and stderr.startswith("error: 1 invalid lesson file(s)") and "zz_bad.json: must hold a JSON object" in stderr
     assert client.all_namespaces() == []  # nothing was written, not even the namespace
     assert run(capsys, "import-lessons", "--input", str(tmp_path / "missing"), "--namespace", "memories")[0] == 2
+    unreadable = tmp_path / "unreadable"
+    unreadable.mkdir(mode=0)
+    try:
+        code, _, stderr = run(capsys, "import-lessons", "--input", str(unreadable), "--namespace", "memories")
+    finally:
+        unreadable.chmod(0o755)
+    assert code == 1 and "Permission denied" in stderr
     with pytest.raises(SystemExit):
         cli.main(["import-lessons", "--namespace", "memories"])  # --input is required
     capsys.readouterr()

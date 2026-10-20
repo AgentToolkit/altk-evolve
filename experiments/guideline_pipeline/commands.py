@@ -134,7 +134,8 @@ def _run_import_lessons(make_client: ClientFactory) -> Callable[[argparse.Namesp
         try:
             files = load_lesson_dir(args.input)
             source = args.source or args.input.resolve().name
-            report = import_lessons(files, None if args.dry_run else make_client(), namespace_id=args.namespace, source=source)
+            client = None if args.dry_run else make_client()
+            report = import_lessons(files, client, namespace_id=args.namespace, source=source, scope=args.source)
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
@@ -155,7 +156,9 @@ def add_import_stage(stages: Any, *, make_client: ClientFactory) -> None:
     parser.add_argument("--input", required=True, type=Path, help="directory of per-task lesson *.json files")
     parser.add_argument("--namespace", required=True, help="namespace to write guidelines into (created if missing)")
     parser.add_argument(
-        "--source", help="label recorded on each guideline and keying re-run detection (default: the --input directory's name)"
+        "--source",
+        help="label recorded on each guideline (default: the --input directory's name); when given, it also scopes "
+        "re-run detection, so the same task_ids under another --source are imported again",
     )
     parser.add_argument("--dry-run", action="store_true", help="read and validate the files without touching storage")
     parser.set_defaults(run=_run_import_lessons(make_client))

@@ -67,7 +67,8 @@ uv run python -m experiments.guideline_pipeline consolidate --namespace <ns>
 uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/merged.json  # support sum must still be 290
 ```
 
-`--input` is a directory of per-task `*.json` files (subdirectories are not read):
+`--input` is a directory of per-task `*.json` files (subdirectories are not read,
+and the suffix is matched case-sensitively, so `*.JSON` files are not read either):
 
 ```json
 {"task_id": "0d8a4ee_1", "partition": "dev", "success": false, "difficulty": 2,
@@ -86,7 +87,7 @@ each other lesson has support 1, and **evidence comes from the file's
 |---|---|
 | `lesson` (stripped) | content |
 | `task_id` | `source_task_id`, and `sources[].task_id` (`provenance_incomplete` false) |
-| `instruction_preview` | `task_description`: from the last `Task:`, keeping a `My name is:` line just before it, as the AppWorld adapter reads a task; a preview without `Task:` is used whole |
+| `instruction_preview` | `task_description`, read as the AppWorld adapter reads a task (see below) |
 | `success` | `evidence` |
 | `partition`, `difficulty` | `partition`, `difficulty` |
 | lesson `theme`, `polarity`, `evidence` | `lesson_theme`, `lesson_polarity`, `lesson_evidence` |
@@ -95,31 +96,43 @@ each other lesson has support 1, and **evidence comes from the file's
 | — | `support` 1, `category` `strategy` (the library's default), `generation_method` `imported`, empty `rationale`, `trigger`, `implementation_steps` |
 
 The previews are the first 200 characters of the instruction, so a long task
-description is truncated, as it is in the source files.
+description is truncated, as it is in the source files. The AppWorld adapter's
+reading starts at a `My name is:` line within 600 characters before the last
+`Task:`, else 200 characters before it. A 200-character preview is therefore
+always kept whole, preamble included (every DeepSeek v3.2 preview starts with
+`My name is:`); a preview without `Task:` is used whole too.
 
 **Validation.** Every file is checked before anything is written: it must hold
 an object with a non-empty string `task_id`, `partition` and
 `instruction_preview`, a boolean `success`, an integer or absent `difficulty`,
 and a `lessons` list of objects whose `lesson` is a string (blank allowed) and
 whose `theme`, `polarity` and `evidence` are strings when present. A task id in
-two files is also an error. Every problem is listed and the run exits 2 without
-writing. A file whose write fails (a memory hook rejecting it, say) is reported
+two files is also an error, and so is a file that can't be read (a broken
+symlink, say). Every problem is listed and the run exits 2 without writing; an
+`--input` directory that can't be listed exits 1. A file whose write fails (a memory hook rejecting it, say) is reported
 on stderr, the rest are imported, and the run exits 1; re-running retries it.
 
 **Re-running is idempotent.** Writes go through the backend's prepare/commit
 seam with conflict resolution off, so memory hooks run and nothing is compared
 with what is stored. Each file's guidelines are committed atomically together
-with a namespace checkpoint keyed on (`--source`, file name), the same
-mechanism `mine` uses, so a re-run counts the file as `already imported` and
-writes nothing for it, even after `consolidate` has merged its guidelines into
-others. A new file in the directory is imported on its own. A file whose content
-changed since it was imported is an error (exit 2) rather than a second copy of
-its lessons; import it into a new namespace or under another `--source`. Like
+with a namespace checkpoint keyed on the file's `task_id`, the same mechanism
+`mine` uses, so a re-run counts the file as `already imported` and writes
+nothing for it, even after `consolidate` has merged its guidelines into others.
+Renaming a file or its directory doesn't change its key, so a renamed copy is
+not imported twice. A file with a new `task_id` is imported on its own. A file
+whose content changed since its task was imported is an error (exit 2) rather
+than a second copy of its lessons; any change to the JSON counts, even a field
+that isn't imported, though whitespace doesn't. Import it into a new namespace,
+or pass `--source`: an explicit `--source` also scopes the checkpoint, so the
+same tasks under another `--source` are a separate import. Like
 `mine`, this needs a backend with atomic writes (filesystem or postgres).
 
 The summary line reports files read, lessons imported, lessons skipped as
-empty, lessons already imported, files failed, and the support total written
-by this run (with `--dry-run`, the support total that would be written).
+empty, lessons already imported, lessons dropped by memory hooks (a
+`MEMORY_PRE_WRITE` plugin that removes entities; the file is still marked
+imported), files failed, and the support total written by this run. A dry run
+reads no checkpoints, so it reports the lessons and support it read, not what a
+real run would write into a namespace that already holds some of them.
 
 ## Consolidating, exporting and lineage
 
