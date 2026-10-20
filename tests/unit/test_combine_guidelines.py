@@ -546,7 +546,7 @@ def _fake_combine(merge_tasks: set[str]):
     return combine
 
 
-def _consolidate(store, merge_tasks, undeletable=(), **kwargs):
+def _consolidate(store, merge_tasks, undeletable=(), attempts=None, **kwargs):
     from altk_evolve.frontend.client.evolve_client import EvolveClient
 
     client = EvolveClient.__new__(EvolveClient)
@@ -556,6 +556,8 @@ def _consolidate(store, merge_tasks, undeletable=(), **kwargs):
     def delete(namespace_id, entity_id):
         # Stands in for a vetoed (legal hold) or failed delete of the named guidelines.
         stored = {str(e.id): str(e.content) for e in store.scan_entities(namespace_id, filters={"type": "guideline"})}
+        if attempts is not None:
+            attempts.append(stored[str(entity_id)])
         if stored[str(entity_id)] in undeletable:
             raise RuntimeError("delete blocked")
         store.delete_entity_by_id(namespace_id, entity_id)
@@ -707,24 +709,56 @@ class TestAbsorbedOriginalsAcrossRuns:
 
         assert stored == {"A": None, "A+C": 2}
 
-    def test_a_record_in_another_scope_is_ignored(self, store):
+    @pytest.mark.parametrize("published", ["A+B", "A"])
+    def test_a_record_still_applies_after_a_scope_change(self, store, published):
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+        # What publish_entity does: the guideline moves to the public scope.
+        public = {"visibility": "public", "owner_id": "u"}
+        store.update_entity_metadata("n", _stored(store)[published].id, public)
+        # C shares A's scope, so A and C could merge, and A+B is in the other scope.
+        c_scope = public if published == "A" else {}
+        store.update_entities(
+            "n", [Entity(type="guideline", content="C", metadata={"task_description": "x", "user_id": "u", **c_scope})], False
+        )
+
+        _, stored, _ = _consolidate(store, {"x"}, undeletable={"A"})
+
+        # A's support is in A+B; merging it with C would count it in A+C too.
+        assert stored == {"A": None, "A+B": 2, "C": None}
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            {"id": "ID"},
+            {"id": "ID", "content_sha256": "[REDACTED]"},
+            {"id": "ID", "content_sha256": "0" * 64, "note": "extra"},
+            "ID",
+        ],
+    )
+    def test_a_malformed_record_is_ignored(self, store, entry):
         _store_guidelines(store, A="x", B="x")
         target = _stored(store)["A"]
+        entry = entry.replace("ID", target.id) if isinstance(entry, str) else {**entry, "id": target.id}
         store.update_entities(
-            "n",
-            [
-                Entity(
-                    type="guideline",
-                    content="other",
-                    metadata={"task_description": "z", "user_id": "someone else", "merged_from": [{"id": target.id}]},
-                )
-            ],
-            False,
+            "n", [Entity(type="guideline", content="other", metadata={"task_description": "z", "merged_from": [entry]})], False
         )
 
         _, stored, _ = _consolidate(store, {"x"})
 
         assert stored == {"A+B": 2, "other": None}
+
+    def test_each_run_retries_a_held_delete_once(self, store):
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+        _store_guidelines(store, C="x")
+
+        attempts: list[str] = []
+        result, stored, _ = _consolidate(store, {"x"}, undeletable={"A"}, attempts=attempts, max_rounds=3)
+
+        # The second round finds A absorbed again, but does not retry its delete.
+        assert (stored, result.rounds) == ({"A": None, "A+B+C": 3}, 2)
+        assert attempts.count("A") == 1
 
     def test_the_dry_run_listing_leaves_absorbed_originals_out(self, store):
         from altk_evolve.frontend.client.evolve_client import EvolveClient

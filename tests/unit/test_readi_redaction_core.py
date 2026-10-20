@@ -461,3 +461,25 @@ def test_semantic_redaction_preserves_source_associations_but_redacts_their_free
     # Only the provenance list is structural; the same shape elsewhere is free text.
     assert result["metadata"]["notes"] == [{"user_id": "[REDACTED]"}]
     assert entity["metadata"]["sources"][0]["note"] == subject
+
+
+def test_semantic_redaction_preserves_well_formed_merged_from_entries_only():
+    from altk_evolve.hooks.plugins.readi import redact_entities
+
+    subject = "5551234567"
+
+    def detect(text):
+        start = text.find(subject)
+        return [(start, start + len(subject))] if start >= 0 else []
+
+    entry = {"id": subject, "content_sha256": "0" * 64}
+    free_text = [{"id": subject}, {**entry, "note": subject}, f"call {subject}"]
+    entity = {"content": "x", "metadata": {"merged_from": [free_text[0], entry, *free_text[1:]]}}
+    result = redact_entities([entity], detect)[0]
+    assert result["metadata"]["merged_from"] == [
+        {"id": "[REDACTED]"},
+        entry,
+        {**entry, "id": "[REDACTED]", "note": "[REDACTED]"},
+        "call [REDACTED]",
+    ]
+    assert entity["metadata"]["merged_from"][0] == {"id": subject}

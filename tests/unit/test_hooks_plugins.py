@@ -705,3 +705,65 @@ def test_pii_redaction_leaves_merged_from_intact(tmp_path):
 
     (stored,) = client.scan_entities("ns")
     assert stored.metadata["merged_from"] == merged_from
+
+
+@pytest.mark.unit
+def test_a_still_held_original_stays_recorded_when_its_output_merges_again(tmp_path):
+    client = make_client(tmp_path, LEGAL_HOLD_SPEC)
+    client.ensure_namespace("ns")
+
+    def add(content, **extra):
+        metadata = {"task_description": "t", "category": "strategy", **extra}
+        client.update_entities("ns", [Entity(type="guideline", content=content, metadata=metadata)], enable_conflict_resolution=False)
+
+    add("Check the balance first", legal_hold=True)
+    add("Check the balance before paying")
+    _consolidate_everything(client)
+    add("Check the balance twice")
+
+    supports = []
+    for _ in range(2):
+        _consolidate_everything(client)
+        supports.append([e.metadata["support"] for e in client.scan_entities("ns", filters={"type": "guideline"}) if e.content == "merged"])
+
+    # The vetoed retry keeps the held original on the new output's record; losing it
+    # would let the third run merge the original in again (support 4).
+    assert supports == [[3], [3]]
+
+
+_MERGED_FROM = [{"id": "5551234567", "content_sha256": "0123456789abcdef" * 4}]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("redact", [True, False])
+def test_the_secrets_hex_detector_leaves_merged_from_intact(tmp_path, redact):
+    pytest.importorskip("cpex_secrets_detection")
+    spec = SECRETS_SPEC.model_copy(update={"config": {"enabled": {"hex_secret_32": True}}, "on_error": "fail"})
+    if not redact:
+        spec.config.update(redact=False, block_on_detection=True)
+    client = make_client(tmp_path, spec)
+    client.ensure_namespace("ns")
+    client.update_entities(
+        "ns", [Entity(type="guideline", content="g", metadata={"merged_from": _MERGED_FROM})], enable_conflict_resolution=False
+    )
+
+    (stored,) = client.scan_entities("ns")
+    assert stored.metadata["merged_from"] == _MERGED_FROM
+
+
+@pytest.mark.unit
+def test_pii_redaction_still_reaches_free_text_under_merged_from(tmp_path):
+    pytest.importorskip("cpex_pii_filter")
+    client = make_client(tmp_path, PII_SPEC)
+    client.ensure_namespace("ns")
+    forged = [{**_MERGED_FROM[0], "contact": "jane.doe@example.com"}, "call 555-123-4567"]
+    client.update_entities(
+        "ns",
+        [Entity(type="guideline", content="g", metadata={"merged_from": [*_MERGED_FROM, *forged]})],
+        enable_conflict_resolution=False,
+    )
+
+    (stored,) = client.scan_entities("ns")
+    merged_from = stored.metadata["merged_from"]
+    assert merged_from[0] == _MERGED_FROM[0]
+    assert "jane.doe@example.com" not in str(merged_from[1:]) and "555-123-4567" not in str(merged_from[1:])
