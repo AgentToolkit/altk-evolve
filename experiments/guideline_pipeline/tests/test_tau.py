@@ -308,7 +308,7 @@ def test_long_conversations_pass_through_whole(tau_dir: Path):
     assert parse_openai_agents_trajectory(messages, options=GuidelineRuntime(trajectory_tail_steps=24))["steps_list"][-1].endswith(
         "answer 39"
     )
-    assert not parse_openai_agents_trajectory(messages)["steps_list"][-1].endswith("answer 39")
+    assert not parse_openai_agents_trajectory(messages, options=GuidelineRuntime())["steps_list"][-1].endswith("answer 39")
 
 
 def test_long_turns_are_split_so_per_step_truncation_drops_nothing(tau_dir: Path):

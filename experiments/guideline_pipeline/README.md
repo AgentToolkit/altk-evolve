@@ -388,6 +388,10 @@ Options (`--adapter-option KEY=VALUE`):
 | `heldout_out=<file>` | Write the held-out manifest to this file. Inside the run directory, it is not read as a domain file. |
 
 ```bash
+# Publish the CUGA sample profile under VAKRA's own ID, once.
+uv run evolve processing-profiles apply vakra-guidelines \
+    --file experiments/guideline_pipeline/profiles/cuga.json --expected-revision 0
+
 # Check the split and write the held-out manifest, without touching storage.
 uv run python -m experiments.guideline_pipeline mine --adapter vakra --input path/to/vakra_run \
     --namespace vakra --processing-profile vakra-guidelines \
@@ -398,7 +402,7 @@ uv run python -m experiments.guideline_pipeline mine --adapter vakra --input pat
     --namespace vakra --processing-profile vakra-guidelines
 ```
 
-The CUGA sample profile works here too (publish it under another ID). Evaluating
+The CUGA sample profile is used here as is. Evaluating
 retrieval on the held-out queries is not part of this stage; a later eval stage
 will read the manifest.
 
@@ -429,9 +433,10 @@ Each task becomes one record:
   `include_scenario=true`.
 - **Long runs:** long turns are split into parts under the extractor's
   2000-character step cap, and every step is passed on. The extractor's default
-  window is the first 50 steps (`EVOLVE_TRAJECTORY_*`), so set
-  `trajectory_tail_steps` in the profile (or `EVOLVE_TRAJECTORY_TAIL_STEPS`) to
-  keep a longer conversation's ending.
+  window is the first 50 steps, so set `trajectory_tail_steps` in the profile to
+  keep a longer conversation's ending. `EVOLVE_TRAJECTORY_TAIL_STEPS` only counts
+  when the profile is published, where it is captured as that profile's default;
+  setting it when mining against an already-published profile changes nothing.
 - **outcome:** `success` when the reward is 1.0; judge lines with
   `action_match=False` or `met=False` (or the JSON / dict forms
   `"action_match": false`, `'met': False`) become `failed_checks`, and the start
@@ -540,7 +545,11 @@ comma-separated options strictly: a typo or an empty filter is an error.
 Pass every step on. Bounding long runs is the extractor's job: its window
 (`trajectory_max_steps`, `trajectory_tail_steps`) is set in the processing
 profile, and a profile for a dataset with long runs should set a tail so their
-ending is kept.
+ending is kept. One path does not apply the window yet: the accurate consistency
+method (`guidelines_mode` `consistency` or `all` with `consistency_method:
+accurate`) renders only the first 50 steps, whatever the profile sets, so it
+still loses a long run's ending. With `EVOLVE_DEBUG_DIR` set, its debug dump also
+grows with the square of the run's length.
 
 Each adapter needs unit tests under `tests/` that use a tiny synthetic fixture,
 never a copy of the real dataset. See `tests/fakes.py` and `tests/fixtures/`.
