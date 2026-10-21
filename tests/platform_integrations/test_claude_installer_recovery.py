@@ -84,3 +84,54 @@ def test_failed_cli_query_cannot_report_healthy(installer, tmp_path, monkeypatch
     )
     installer["ClaudeInstaller"](installer["FileOps"]()).status(tmp_path)
     assert "evolve-lite plugin  : ? (could not query)" in capsys.readouterr().out
+
+
+def test_failed_swap_restores_active_marketplace_and_retry(installer, tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    (source / "plugin").mkdir(parents=True)
+    (source / "plugin/new").write_text("new version")
+    destination = tmp_path / "marketplace"
+    destination.mkdir()
+    (destination / "last-good").write_text("old version")
+    staging = destination.with_name("marketplace.staging")
+    replace = installer["os"].replace
+
+    def fail_activation(src, dst):
+        if Path(src) == staging:
+            raise OSError("simulated activation failure")
+        return replace(src, dst)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(installer["os"], "replace", fail_activation)
+        with pytest.raises(OSError, match="activation failure"):
+            installer["FileOps"]().replace_tree_subset(source, ["plugin"], destination)
+    assert (destination / "last-good").read_text() == "old version"
+    installer["FileOps"]().replace_tree_subset(source, ["plugin"], destination)
+    assert (destination / "plugin/new").read_text() == "new version"
+    assert not (destination / "last-good").exists()
+    assert not destination.with_name("marketplace.old").exists()
+
+
+def test_failed_rollback_keeps_backup_and_original_error(installer, tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    (source / "plugin").mkdir(parents=True)
+    (source / "plugin/new").write_text("new version")
+    destination = tmp_path / "marketplace"
+    destination.mkdir()
+    (destination / "last-good").write_text("old version")
+    old = destination.with_name("marketplace.old")
+    replace = installer["os"].replace
+
+    def fail_activation_and_rollback(src, dst):
+        if Path(dst) == destination:
+            raise OSError("rollback failed" if Path(src) == old else "activation failed")
+        return replace(src, dst)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(installer["os"], "replace", fail_activation_and_rollback)
+        with pytest.raises(OSError, match="activation failed"):
+            installer["FileOps"]().replace_tree_subset(source, ["plugin"], destination)
+    assert (old / "last-good").read_text() == "old version"
+    installer["FileOps"]().replace_tree_subset(source, ["plugin"], destination)
+    assert (destination / "plugin/new").read_text() == "new version"
+    assert not old.exists()

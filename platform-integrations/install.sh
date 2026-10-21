@@ -438,7 +438,18 @@ class FileOps:
             raise
         if os.path.lexists(dst):
             os.replace(dst, old)
-        os.replace(staging, dst)
+        try:
+            os.replace(staging, dst)
+        except BaseException:
+            # Keep the registered marketplace usable after a failed activation,
+            # not just after the next installer run. Retain the backup if the
+            # rollback itself fails, so the existing startup recovery can retry.
+            if not os.path.lexists(dst) and os.path.lexists(old):
+                try:
+                    os.replace(old, dst)
+                except OSError as rollback_error:
+                    warn(f"Could not restore marketplace; backup remains at {old}: {rollback_error}")
+            raise
         self.remove_owned_dir(old)
         debug(f"Replaced {dst} with {', '.join(str(r) for r in rel_paths)} from {src_root}")
 
