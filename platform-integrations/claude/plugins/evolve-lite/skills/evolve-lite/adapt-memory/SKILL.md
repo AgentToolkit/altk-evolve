@@ -82,3 +82,15 @@ and persists it via the shared entity writer. It is safe to run repeatedly.
   (verifying, fixing the underlying issue, adding files) is out of scope — suggest
   it to the user instead of doing it.
 
+### Upgrading older mirrors
+
+Older adapters shortened native names to 60 characters. Re-mirroring now keeps
+complete normalized names that fit a 255-byte filename; oversized names use a
+readable prefix and a hash of the complete normalized name. Use the entity ID
+printed by the adapter for these names.
+
+Old shortened mirrors are retained: their paths can also belong to unrelated
+memories, so the adapter cannot safely delete them automatically. If duplicates
+appear after upgrading, compare their `native_path` and contents with the current
+native memory before manually removing a confirmed stale mirror.
+

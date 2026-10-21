@@ -260,7 +260,8 @@ def main():
             "w",
             encoding="utf-8",
             dir=dest_dir,
-            prefix=f".{args.entity}.",
+            # The destination may already use the full filename byte budget.
+            prefix=".publish-",
             suffix=".tmp",
             delete=False,
         ) as temp_file:
