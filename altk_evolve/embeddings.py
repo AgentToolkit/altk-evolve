@@ -37,7 +37,16 @@ class FastEmbedModel:
                 raise
             raise ImportError("Install 'altk-evolve-core[fastembed]' or the 'altk-evolve' convenience package.") from exc
 
-        self._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir)
+        try:
+            self._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir)
+        except ValueError as exc:
+            if any(item["model"].lower() == model_name.lower() for item in TextEmbedding.list_supported_models()):
+                raise
+            raise ValueError(
+                f"FastEmbed does not support model {model_name!r}. For Sentence Transformers models, "
+                "install 'altk-evolve-core[sentence-transformers]' and set "
+                "EVOLVE_EMBEDDING_PROVIDER=sentence_transformers."
+            ) from exc
         self._dimension = int(
             next(item["dim"] for item in TextEmbedding.list_supported_models() if item["model"].lower() == model_name.lower())
         )

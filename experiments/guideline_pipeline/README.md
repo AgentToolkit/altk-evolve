@@ -455,16 +455,16 @@ Options (`--adapter-option KEY=VALUE`):
 | `include_policy=true` | Add the agent domain policy as `system` context messages. It is the same in every task, so it is off by default. |
 | `include_scenario=true` | Add the user simulator's scenario as a `system` context message. It holds facts the agent never had, so guidelines mined with it can encode them. |
 | `splits=train` | Only tasks in these splits. Without `split_file`, a task's split is the `split=` its header records: a task without one is skipped with a warning, and a listed split that no task records ends the run with an error. A value that lists no split is an error. |
-| `split_file=<split_tasks.json>` | Take each task's split from tau2's `split_tasks.json` (a JSON object mapping each split to its task IDs) instead of the headers. A task is matched on the number in its file name (`task_12.txt` is task `12`). Needs `splits=`; a listed split that the file lacks is an error. |
+| `split_file=<split_tasks.json>` | Select task IDs using tau2's `split_tasks.json` (a JSON object mapping each split to its task IDs) for explicit `splits=` selection. A task is matched on the number in its file name (`task_12.txt` is task `12`). Without `splits=`, tasks marked `test*` by either the file or header are skipped (case-insensitive). A listed split that the file lacks is an error. |
 
 Context is supporting history: the extractor sees it, but it is not counted as
 new material.
 
 **Splits and leakage.** Mining test tasks and then evaluating on them leaks the
-test set into the namespace, and nothing is filtered by default. tau2's retail
+test set into the namespace, and known `test*` tasks are skipped by default. Tasks with unknown splits are retained; one summary warning per completed run reports skipped test tasks and successfully read unknown tasks. Only `train` and `test*` labels establish train/test membership; labels such as `base` remain unknown. Use `splits=test` to opt in explicitly. tau2's retail
 `train` and `test` splits are lists of task IDs over the `base` set, so a normal
 run over `base` holds both in one directory and its headers can record at most
-`split=base`. Pass tau2's split file to mine only the training tasks:
+`split=base`. These headers alone cannot protect test tasks: the default retains them with an unknown-split warning. Pass tau2's split file to mine only the training tasks:
 
 ```bash
 uv run python -m experiments.guideline_pipeline mine --adapter tau-retail \

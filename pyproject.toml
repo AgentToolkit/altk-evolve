@@ -155,7 +155,7 @@ evolve-mcp = "altk_evolve.frontend.mcp.__main__:main"
 
 [dependency-groups]
 dev = [
-    "altk-evolve-core[server,cli,sentence-transformers,tracing]",
+    "altk-evolve-core[server,cli,fastembed,sentence-transformers,tracing]",
     "anyio",
     "detect-secrets",
     "mypy",

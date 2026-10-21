@@ -132,3 +132,24 @@ def test_missing_provider_has_install_hint(provider, module, extra, monkeypatch)
     monkeypatch.setitem(sys.modules, module, None)
     with pytest.raises(ImportError, match=rf"altk-evolve-core\[{extra}\]"):
         get_embedding_model("custom-model")
+
+
+@pytest.mark.unit
+def test_unsupported_fastembed_model_names_sentence_transformers_migration(fastembed, monkeypatch):
+    def reject(self, **kwargs):
+        raise ValueError("Unsupported model")
+
+    monkeypatch.setattr(fastembed, "__init__", reject)
+    with pytest.raises(ValueError, match="EVOLVE_EMBEDDING_PROVIDER=sentence_transformers") as error:
+        get_embedding_model("sentence-transformers/all-mpnet-base-v2")
+    assert "altk-evolve-core[sentence-transformers]" in str(error.value)
+
+
+@pytest.mark.unit
+def test_supported_fastembed_model_preserves_original_value_error(fastembed, monkeypatch):
+    def reject(self, **kwargs):
+        raise ValueError("Invalid model cache")
+
+    monkeypatch.setattr(fastembed, "__init__", reject)
+    with pytest.raises(ValueError, match="^Invalid model cache$"):
+        get_embedding_model("BAAI/bge-small-en-v1.5")

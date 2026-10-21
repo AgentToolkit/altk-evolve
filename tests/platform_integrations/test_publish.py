@@ -2,6 +2,7 @@
 
 import json
 import os
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -688,3 +689,22 @@ class TestPublishAnyEntityType:
         entry = json.loads((typed_project / ".evolve" / "audit.log").read_text().strip())
         assert entry["entity"] == "note.md"
         assert entry["type"] == "feedback"
+
+
+@pytest.mark.parametrize("length", [75, 240, 250, 260])
+@pytest.mark.parametrize("platform,script", PUBLISH_SCRIPT_VARIANTS)
+def test_publish_preserves_long_entity_names(project_dir, length, platform, script):
+    writer = runpy.run_path(str(_REPO_ROOT / "plugin-source/lib/entity_io.py"))["write_entity_file"]
+    source = writer(
+        project_dir / ".evolve/entities",
+        {"type": "guideline", "content": "Preserve this long-name memory."},
+        filename="a" * length,
+        overwrite=True,
+    )
+    run_publish_script(script, project_dir, ["--entity", source.name, "--user", "alice"])
+    destination = _dest_path(project_dir, source.name)
+    assert destination.is_file()
+    assert "Preserve this long-name memory." in destination.read_text()
+    assert "owner: alice" in destination.read_text()
+    assert not source.exists()
+    assert sorted(p.name for p in destination.parent.iterdir()) == [source.name]
