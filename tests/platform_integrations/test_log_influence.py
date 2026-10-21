@@ -414,3 +414,16 @@ class TestLogInfluence:
         assert result.returncode == 1
         assert "json" in result.stderr.lower()
         assert read_audit(evolve_dir) == []
+
+
+@pytest.mark.parametrize("script", RENDERED_LOG_INFLUENCE_SCRIPTS.values(), ids=RENDERED_LOG_INFLUENCE_SCRIPTS)
+def test_null_evidence_is_absent(script, temp_project_dir):
+    evolve_dir = temp_project_dir / ".evolve"
+    result = run_log_influence(
+        temp_project_dir,
+        {"session_id": "null-evidence", "assessments": [{"entity": "project/example", "verdict": "followed", "evidence": None}]},
+        evolve_dir=evolve_dir,
+        script=script,
+    )
+    assert result.returncode == 0, result.stderr
+    assert read_audit(evolve_dir)[0]["evidence"] == ""
