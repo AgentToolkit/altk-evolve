@@ -407,7 +407,9 @@ class TauRetailAdapter:
     context_messages), splits (comma-separated; only tasks in these splits) and
     split_file (tau2's ``split_tasks.json``). With split_file, a task is in a split
     when the file lists its number (``task_12.txt`` is task ``12``); without it,
-    when its header records that ``split=``.
+    when its header records that ``split=``. Without explicit splits, either
+    source marking a task ``test*`` excludes it (case-insensitive); tasks without
+    train/test membership are retained with a summary warning.
     """
 
     name: str = SOURCE
@@ -415,7 +417,7 @@ class TauRetailAdapter:
     include_scenario: bool = False
     splits: frozenset[str] = field(default_factory=frozenset)
     split_file: Path | None = None
-    # The task keys split_file lists under splits; None selects by the header's split= instead.
+    # Explicit split_file selection; None uses header selection or the default test exclusion.
     split_task_keys: frozenset[str] | None = None
 
     default_test_keys: frozenset[str] = field(default_factory=frozenset)
@@ -438,12 +440,17 @@ class TauRetailAdapter:
             if missing := sorted(splits - table.keys()):
                 raise ValueError(f"Splits not found in {SOURCE} split file {changes['split_file']}: {missing} (found {sorted(table)})")
             changes["split_task_keys"] = frozenset().union(*(table[split] for split in splits)) if splits else None
-            changes["default_test_keys"] = frozenset().union(*(keys for name, keys in table.items() if name.startswith("test")))
-            changes["known_split_keys"] = frozenset().union(*table.values())
+            changes["default_test_keys"] = frozenset().union(*(keys for name, keys in table.items() if name.lower().startswith("test")))
+            changes["known_split_keys"] = frozenset().union(
+                *(keys for name, keys in table.items() if name.lower() == "train" or name.lower().startswith("test"))
+            )
         return replace(self, **changes)
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
-        """Yield one record per task file, reading each file only when its record is requested.
+        """Yield one record per task file after selecting files by split.
+
+        Default and explicit header selection read headers before yielding records.
+        The default summary counts unknown tasks only after successful parsing.
 
         A malformed file is logged and skipped, so one bad task doesn't end the run
         (an exception here would stop mine's iteration); a missing or empty input
@@ -451,13 +458,14 @@ class TauRetailAdapter:
         filter naming a split no task records. Reading no task at all logs a warning.
         """
         files = _task_files(path)
+        skipped = unknown = 0
+        unknown_files: set[Path] = set()
         if self.split_task_keys is not None:
             files = [file for file in files if _file_task_key(file) in self.split_task_keys]
         elif self.splits:
             files = self._by_header_split(path, files)
         else:
             kept = []
-            skipped = unknown = 0
             for file in files:
                 try:
                     header_split = _header_split(file)
@@ -465,21 +473,15 @@ class TauRetailAdapter:
                     logger.warning("skipping %s: %s", file, exc)
                     continue
                 key = _file_task_key(file)
-                is_test = key in self.default_test_keys if self.split_file else bool(header_split and header_split.startswith("test"))
-                known = key in self.known_split_keys if self.split_file else header_split is not None
+                is_test = key in self.default_test_keys or bool(header_split and header_split.lower().startswith("test"))
+                known = key in self.known_split_keys or bool(header_split and header_split.lower() == "train")
                 if is_test:
                     skipped += 1
                 else:
                     kept.append(file)
-                    unknown += not known
+                    if not known:
+                        unknown_files.add(file)
             files = kept
-            if skipped or unknown:
-                logger.warning(
-                    "skipped test-split tasks in %s: %s; kept %s tasks with unknown split; use splits= to opt in to test splits",
-                    path,
-                    skipped,
-                    unknown,
-                )
         read = 0
         for file in files:
             try:
@@ -488,7 +490,22 @@ class TauRetailAdapter:
                 logger.warning("skipping %s: %s", file, exc)
                 continue
             read += 1
+            unknown += file in unknown_files
             yield record
+        if skipped:
+            logger.warning(
+                "skipped test-split tasks in %s: %s; kept %s tasks with unknown split; "
+                "use splits= to opt in to test splits; use split_file= to classify base or unknown tasks",
+                path,
+                skipped,
+                unknown,
+            )
+        elif unknown:
+            logger.warning(
+                "kept %s tasks with unknown split in %s; use split_file= to classify base or unknown tasks",
+                unknown,
+                path,
+            )
         if not read:
             logger.warning("read no %s task in %s", SOURCE, path)
 

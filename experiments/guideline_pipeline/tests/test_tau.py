@@ -472,3 +472,56 @@ def test_default_split_warning_is_once_per_run(tau_dir, caplog):
     assert len(warnings) == 1
     assert "2; kept 2 tasks with unknown split" in warnings[0]
     assert list(records(tau_dir, splits=frozenset({"test_normal"}))) == ["test_normal/task_3"]
+
+
+@pytest.mark.parametrize("label", [None, "base", "dev"])
+def test_default_warns_for_unknown_labels_only_after_valid_records(tau_dir, caplog, label):
+    for number in (1, 2):
+        split_file(tau_dir, f"task_{number}.txt", label)
+    (tau_dir / "task_3.txt").write_text("not a trajectory")
+    (tau_dir / "task_4.txt").write_text("TASK 4 trial=0 reward=1\n")
+    assert len(records(tau_dir)) == 2
+    summaries = [r.getMessage() for r in caplog.records if "unknown split" in r.getMessage()]
+    assert summaries == [f"kept 2 tasks with unknown split in {tau_dir}; use split_file= to classify base or unknown tasks"]
+    assert "skipped test-split tasks" not in caplog.text
+
+
+@pytest.mark.parametrize("with_table", [False, True])
+def test_all_train_run_has_no_warning(tau_dir, tmp_path, caplog, with_table):
+    for number in (1, 2):
+        split_file(tau_dir, f"task_{number}.txt", "train")
+    options = {}
+    if with_table:
+        table = tmp_path / "splits.json"
+        table.write_text(json.dumps({"train": [1, 2]}))
+        options["split_file"] = str(table)
+    assert len(list(get_adapter("tau-retail", options).records(tau_dir))) == 2
+    assert not caplog.records
+
+
+@pytest.mark.parametrize("header", ["test", "test_normal", "Test", "TEST_NORMAL"])
+@pytest.mark.parametrize("listed", [True, False])
+def test_either_source_excludes_test_tasks(tau_dir, tmp_path, caplog, header, listed):
+    split_file(tau_dir, "task_1.txt", header)
+    split_file(tau_dir, "task_2.txt", "train")
+    split_file(tau_dir, "task_3.txt", "train")
+    split_file(tau_dir, "task_4.txt", "base")
+    split_file(tau_dir, "task_5.txt", None)
+    table = tmp_path / "splits.json"
+    table.write_text(json.dumps({"train": [1, 2] if listed else [2], "Test_Normal": ["003"], "base": [4]}))
+    adapter = get_adapter("tau-retail", {"split_file": str(table)})
+    assert [r.batch.batch_id for r in adapter.records(tau_dir)] == ["task_2", "task_4", "task_5"]
+    assert [r.getMessage() for r in caplog.records] == [
+        f"skipped test-split tasks in {tau_dir}: 2; kept 2 tasks with unknown split; "
+        "use splits= to opt in to test splits; use split_file= to classify base or unknown tasks"
+    ]
+    # Explicit filters still use the requested source, including conflicting metadata.
+    opted_in = get_adapter("tau-retail", {"split_file": str(table), "splits": "Test_Normal"})
+    assert [r.batch.batch_id for r in opted_in.records(tau_dir)] == ["task_3"]
+    assert list(records(tau_dir, splits=frozenset({header}))) == [f"{header}/task_1"]
+
+
+@pytest.mark.parametrize("header", ["Test", "TEST_NORMAL"])
+def test_default_excludes_case_insensitive_header_without_table(tau_dir, header):
+    split_file(tau_dir, "task_1.txt", header)
+    assert list(records(tau_dir)) == ["task_2"]
