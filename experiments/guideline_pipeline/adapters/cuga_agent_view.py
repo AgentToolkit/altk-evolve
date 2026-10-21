@@ -4,8 +4,17 @@ CUGA records a multi-agent run (a main code-writing agent plus helper agents for
 tool discovery, reflection, pre-execute verification and final-answer classification).
 The tracker stores each LLM call's input only as one flattened LangChain string
 (``prompts[2]``: ``System: …\\nHuman: …\\nAI: …``), so the original message list is
-recovered by splitting on those role markers. The split is a heuristic: a message
-whose own text contains a line starting with ``Human: `` would be split wrongly.
+recovered by splitting on those role markers.
+
+Known heuristic limit: a line inside a message's own text that starts with
+``System: ``, ``Human: ``, ``AI: `` or ``Tool: `` is treated as a role boundary
+and produces an extra split-out message. This can happen when tool output or
+execution results include that text (e.g. ``print("AI: ok")`` or logs containing
+the markers). The agent-view mode exists to keep helper-agent output in user
+turns rather than attribute it to the main agent, and this edge case is a
+narrow exception where tool text can look like an assistant turn. If CUGA ever
+records the message list directly (e.g. via an ``on_chat_model_start`` callback),
+the split would become unnecessary.
 
 Vendored from ``cuga-eval/benchmarks/helpers/cuga_trajectory.py`` with two
 deliberate differences, both inside this file (nothing is monkey-patched elsewhere):
@@ -63,11 +72,20 @@ def call_input_output(step: dict) -> tuple[list[dict], str]:
 
 
 def task_message_index(messages: list[dict], intent: str) -> int:
-    """Index of the user message carrying the real task. Everything between the system
-    prompt and it is CUGA's built-in example conversation."""
+    """Index of the user message carrying the real task.
+
+    Everything between the system prompt and this message is CUGA's built-in
+    example conversation. Matches the LAST user message whose first line equals
+    the intent exactly, so a few-shot example whose body starts with the same
+    phrase (``"Book a flight"`` vs. ``"Book a flight for the example user"``)
+    cannot select ahead of the real task.
+    """
     intent = intent.strip()
-    for i, m in enumerate(messages):
-        if m["role"] == "user" and intent and m["content"].strip().startswith(intent):
+    if not intent:
+        raise ValueError("task message not found (intent missing or not matched)")
+    for i in range(len(messages) - 1, -1, -1):
+        m = messages[i]
+        if m["role"] == "user" and m["content"].strip().split("\n", 1)[0] == intent:
             return i
     raise ValueError("task message not found (intent missing or not matched)")
 
@@ -78,8 +96,21 @@ def strip_available_variables(content: str) -> str:
 
 
 def strip_user_context(content: str) -> str:
-    cut = content.find(USER_CONTEXT_MARKER)
-    return content[:cut] if cut >= 0 else content
+    """Remove the ``## User Context`` block only, keeping any sections after it.
+
+    CUGA formats the task message as ``<intent>\\n\\n## User Context\\n…`` and may
+    append further ``## <section>`` headings. Cutting at the first ``\\n\\n## ``
+    after the User Context marker preserves those later sections.
+    """
+    start = content.find(USER_CONTEXT_MARKER)
+    if start < 0:
+        return content
+    # Look for the next heading of the same level after the block body starts.
+    body_start = start + len(USER_CONTEXT_MARKER)
+    next_heading = content.find("\n\n## ", body_start)
+    if next_heading < 0:
+        return content[:start]
+    return content[:start] + content[next_heading:]
 
 
 def _turn_output(step: dict) -> str:
@@ -104,9 +135,17 @@ def agent_turns(trajectory: dict) -> list[dict]:
     or ``None`` for a plain-text reply), ``execution_output`` (``User_output.data``),
     ``reflection`` (the reflection LLM's STATUS/NEXT output) and ``next_user_message``
     (``User_return.data``). ``EvaluationResult`` is never read.
+
+    Raises ``ValueError`` when the last ``Raw_Assistant_Response`` step has no
+    ``prompts``: ``agent_messages`` depends on that step's recovered input to
+    carry the whole conversation, and silently ending one turn short would hide
+    agent work from the generator while the outcome still described the full run.
     """
     steps = trajectory.get("steps", [])
-    agent_idx = [i for i, s in enumerate(steps) if s.get("name") == AGENT_STEP and s.get("prompts")]
+    all_agent_steps = [i for i, s in enumerate(steps) if s.get("name") == AGENT_STEP]
+    agent_idx = [i for i in all_agent_steps if steps[i].get("prompts")]
+    if all_agent_steps and (not agent_idx or agent_idx[-1] != all_agent_steps[-1]):
+        raise ValueError(f"last {AGENT_STEP} step has no prompts; cannot recover the full agent conversation")
     turns = []
     for n, i in enumerate(agent_idx):
         end = agent_idx[n + 1] if n + 1 < len(agent_idx) else len(steps)

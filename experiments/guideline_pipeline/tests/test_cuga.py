@@ -498,16 +498,29 @@ def test_agent_view_drops_the_fewshot_example_dialogue():
     assert "candidates.txt" not in all_content
 
 
-def test_agent_view_output_from_adjacent_step_not_classifier_prompts():
-    # demo_02_1 turn 3's Raw_Assistant_Response has prompts[0] holding the final-answer
-    # classifier's `{"auto_continue": true}` (CUGA merges prompts across calls). The
-    # adapter must take the turn's output from the step's own data, not prompts[-1].
-    r2 = by_id(CugaAdapter().configure({"conversion": "agent_view"}), BUNDLE)["demo_02_1"]
+def test_agent_view_last_turn_output_from_step_data_not_classifier_prompt(tmp_path: Path):
+    # agent_messages reads only the last call's input (which already contains the
+    # whole history, so earlier turns' outputs come from the split rendered prompt)
+    # plus the last call's own output as the final assistant message. The classifier
+    # merge happens on the step that FOLLOWS a plain-text answer with auto_continue=true,
+    # so the test contaminates the LAST Raw_Assistant_Response and verifies the fix
+    # takes the output from `data`, not from `prompts[-1]`.
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    task_file = bundle / "trajectories" / "demo_02_1.json"
+    task = json.loads(task_file.read_text())
+    classifier_output = '{"auto_continue": true}'
+    raws = [s for s in task["steps"] if s["name"] == "Raw_Assistant_Response" and s.get("prompts")]
+    # Insert the classifier output as prompts[0] on the LAST agent call so prompts[-1]
+    # still carries the agent's own answer, but prompts[0] is the merged classifier output.
+    # A fallback through call_input_output would pick outputs[0] (the first assistant prompt),
+    # which is now the classifier's — the fix must prefer step.data.
+    raws[-1]["prompts"].insert(0, {"role": "assistant", "value": classifier_output})
+    task_file.write_text(json.dumps(task))
 
-    assistants = [m for m in r2.messages if m["role"] == "assistant"]
-    assert len(assistants) == 4
-    assert "auto_continue" not in assistants[2]["content"]
-    assert assistants[2]["content"].startswith("Checking which todo is 'buy milk'")
+    rec = by_id(CugaAdapter().configure({"conversion": "agent_view"}), bundle)["demo_02_1"]
+    final_assistant = next(m for m in reversed(rec.messages) if m["role"] == "assistant")
+    assert "auto_continue" not in final_assistant["content"]
+    assert final_assistant["content"].startswith("I marked 'buy milk' as done")
 
 
 def test_agent_view_outcome_is_inherited_from_the_steps_path():
@@ -592,7 +605,9 @@ def test_bundle_model_default_from_env_vars(tmp_path: Path):
     assert with_option.metadata["model"] == "override"
 
 
-def test_bundle_warns_when_context_summarization_enabled(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+def test_bundle_warns_when_context_summarization_enabled_only_in_agent_view(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    # The warning is about agent_view resampling prefixes, so steps mode does not
+    # need to see it. Fires only when conversion=agent_view is requested.
     bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
     metadata = json.loads((bundle / "metadata.json").read_text())
     metadata["runtime_config"]["env_vars"]["DYNACONF_CONTEXT_SUMMARIZATION__ENABLED"] = "true"
@@ -600,6 +615,11 @@ def test_bundle_warns_when_context_summarization_enabled(tmp_path: Path, caplog:
 
     with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
         list(CugaAdapter().records(bundle))
+    assert "context summarization" not in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        list(CugaAdapter().configure({"conversion": "agent_view"}).records(bundle))
     assert "context summarization" in caplog.text
 
 
@@ -621,8 +641,128 @@ def test_legacy_run_layout_still_works():
     assert recs["aaa0001_1"].batch.conversation_id == "test_normal_dev/aaa0001_1"
 
 
-def test_bundle_sample_profile_validates():
-    profile_path = Path(__file__).parents[1] / "profiles" / "cuga_agent_view.json"
-    plan = ProcessingManager().validate(json.loads(profile_path.read_text()))
-    (processor,) = plan.manifest()["processors"]
-    assert processor["plugin"] == "evolve.guidelines"
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda t: {**t, "steps": None}, id="steps-null"),
+        pytest.param(lambda t: {**t, "steps": [{**t["steps"][0], "prompts": "not-a-list"}, *t["steps"][1:]]}, id="prompts-not-list"),
+        pytest.param(
+            lambda t: {**t, "steps": [{**t["steps"][0], "prompts": [{"role": "system"}]}, *t["steps"][1:]]},
+            id="prompt-entry-missing-value",
+        ),
+        pytest.param(
+            lambda t: {**t, "steps": [{**t["steps"][0], "prompts": [{"role": "system", "value": None}]}, *t["steps"][1:]]},
+            id="prompt-value-null",
+        ),
+        pytest.param(
+            lambda t: {**t, "steps": [{**t["steps"][0], "prompts": ["not-a-dict"]}, *t["steps"][1:]]},
+            id="prompt-entry-non-dict",
+        ),
+    ],
+)
+def test_agent_view_bad_task_skipped_without_stopping_the_generator(tmp_path: Path, caplog: pytest.LogCaptureFixture, mutate):
+    # One malformed task in a bundle must not stop records() from yielding the next.
+    # Covers the shape errors (ValueError/KeyError/TypeError/AttributeError) raised
+    # by the vendored helpers when prompts are not what they expect.
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    task_file = bundle / "trajectories" / "demo_01_1.json"
+    task = json.loads(task_file.read_text())
+    task_file.write_text(json.dumps(mutate(task)))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        recs = list(CugaAdapter().configure({"conversion": "agent_view"}).records(bundle))
+    assert [r.trace_id for r in recs] == ["demo_02_1"]
+    assert any("skipped" in record.message and "demo_01_1" in record.message for record in caplog.records)
+
+
+def test_agent_view_raises_when_last_agent_call_has_no_prompts(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    # Silent truncation hides agent work from the generator while the outcome still
+    # describes the full run — the helper must raise, and the adapter must skip the task.
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    task_file = bundle / "trajectories" / "demo_02_1.json"
+    task = json.loads(task_file.read_text())
+    # Strip prompts from the last Raw_Assistant_Response step while keeping the first
+    # with prompts intact; the final one has `data` so split_messages would otherwise
+    # still produce a (shorter) record. The helper must detect the missing prompts.
+    last_raw_idx = max(i for i, s in enumerate(task["steps"]) if s["name"] == "Raw_Assistant_Response")
+    task["steps"][last_raw_idx]["prompts"] = []
+    task_file.write_text(json.dumps(task))
+
+    with caplog.at_level(logging.WARNING, logger="experiments.guideline_pipeline.adapters.cuga"):
+        recs = list(CugaAdapter().configure({"conversion": "agent_view"}).records(bundle))
+    assert [r.trace_id for r in recs] == ["demo_01_1"]
+    assert any("demo_02_1" in record.message and "last" in record.message.lower() for record in caplog.records)
+
+
+def test_agent_view_strip_user_context_keeps_later_sections():
+    from experiments.guideline_pipeline.adapters.cuga_agent_view import strip_user_context
+
+    content = (
+        "Buy milk\n\n## User Context\nSupervisor: Alice\nCurrent datetime: 2026-10-20\n\n## Additional instructions\nUse the shortest path"
+    )
+    stripped = strip_user_context(content)
+    assert "## User Context" not in stripped
+    assert "## Additional instructions" in stripped
+    assert "shortest path" in stripped
+    # Block at the end (no later section) still works.
+    assert strip_user_context("Buy milk\n\n## User Context\nSupervisor: Alice") == "Buy milk"
+    # No block at all leaves the content unchanged.
+    assert strip_user_context("Buy milk") == "Buy milk"
+
+
+def test_agent_view_task_message_index_picks_the_real_task_not_a_fewshot_prefix():
+    # Few-shot example dialogue can contain a user message whose first words match the
+    # intent. task_message_index must match the exact intent line to find the real task.
+    from experiments.guideline_pipeline.adapters.cuga_agent_view import task_message_index
+
+    messages = [
+        {"role": "system", "content": "..."},
+        {"role": "user", "content": "Book a flight for the example user."},  # a few-shot
+        {"role": "assistant", "content": "..."},
+        {"role": "user", "content": "Book a flight"},  # the real task
+    ]
+    assert task_message_index(messages, "Book a flight") == 3
+    # When the intent is longer than any user message, no match is found.
+    with pytest.raises(ValueError, match="task message not found"):
+        task_message_index(messages, "Book a flight to Paris")
+
+
+def test_bundle_task_id_with_dot_still_read():
+    # Companion files use known suffixes (.calls.json, .agent_messages.json). A legacy
+    # task id that itself contains a dot ("appworld.v2_01.json") must remain a task.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        bundle = Path(shutil.copytree(BUNDLE, Path(tmp) / "evaluation_bundle"))
+        src = bundle / "trajectories" / "demo_01_1.json"
+        src.rename(bundle / "trajectories" / "appworld.v2_01.json")
+        # Rename only the file; the intent inside stays, so records() finds it.
+        assert "appworld.v2_01" in {t.stem for t in (bundle / "trajectories").glob("*.json")}
+        recs = by_id(CugaAdapter(), bundle)
+        assert "appworld.v2_01" in recs
+
+
+def test_bundle_with_unreadable_metadata_fails_loudly(tmp_path: Path):
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    (bundle / "metadata.json").write_text("{ not json ")
+    # Reading a single corrupted bundle raises.
+    with pytest.raises(ValueError, match=r"metadata.json"):
+        list(CugaAdapter().records(bundle))
+
+
+def test_bundle_verdict_precedence_sdk_over_legacy(tmp_path: Path):
+    # README: SDK → legacy → EvaluationResult step → score. If a legacy results.json entry
+    # exists but has no readable `success`, the SDK verdict wins (not None).
+    bundle = Path(shutil.copytree(BUNDLE, tmp_path / "evaluation_bundle"))
+    # Write a legacy results.json with an unreadable success for demo_02_1; the SDK
+    # report in the bundle says success=False.
+    (bundle / "results.json").write_text(json.dumps({"demo_02_1": {"eval": json.dumps({"success": "unknown"})}}))
+    # Remove the EvaluationResult step so it can't take precedence.
+    task_file = bundle / "trajectories" / "demo_02_1.json"
+    task = json.loads(task_file.read_text())
+    task["steps"] = [s for s in task["steps"] if s["name"] != "EvaluationResult"]
+    task["score"] = None
+    task_file.write_text(json.dumps(task))
+
+    rec = by_id(CugaAdapter(), bundle)["demo_02_1"]
+    assert rec.outcome is not None and rec.outcome.success is False

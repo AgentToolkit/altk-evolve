@@ -53,6 +53,9 @@ _NOT_TASKS = ("results", "metadata")
 _BUNDLE_TRAJECTORIES = "trajectories"
 _BUNDLE_RESULTS = "results"
 _CONVERSIONS = ("steps", "agent_view")
+# Companion files written next to a bundle task file. Matched by exact suffix so a legacy
+# task id that itself contains a dot ("appworld.v2_1.json") stays readable as a task.
+_COMPANION_SUFFIXES = (".calls.json", ".agent_messages.json")
 
 
 @dataclass
@@ -129,7 +132,7 @@ class CugaAdapter:
                 raise ValueError(f"Task IDs not found beneath {path}: {missing}")
         read = 0
         for run_dir in run_dirs:
-            if _context_summarization_enabled(run_dir):
+            if self.conversion == "agent_view" and _context_summarization_enabled(run_dir):
                 logger.warning(
                     "%s has context summarization enabled; agent_view messages may not reflect the full conversation",
                     run_dir.name,
@@ -193,7 +196,7 @@ class CugaAdapter:
             "pass_percentage": evaluation.get("pass_percentage"),
         }
         if self.conversion == "agent_view":
-            built = self._agent_view_messages(run, task_id, task)
+            built = self._agent_view_messages(run, task_id, task, steps)
             if built is None:
                 return None
             messages, context_messages = built
@@ -214,11 +217,21 @@ class CugaAdapter:
         batch = TrajectoryBatch(source=SOURCE, conversation_id=f"{run}/{task_id}", batch_id=task_id, revision=digest)
         return AdapterRecord(**content, batch=batch)
 
-    def _agent_view_messages(self, run: str, task_id: str, task: dict) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
-        """The agent-view messages and (empty) context_messages for one task, or None."""
+    def _agent_view_messages(
+        self, run: str, task_id: str, task: dict, steps: list[dict]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
+        """The agent-view messages and (empty) context_messages for one task, or None.
+
+        Passes the filtered ``steps`` into ``agent_messages`` rather than the raw task,
+        so a malformed ``steps`` field (``null``, non-dict entries, non-list) is caught
+        in ``record()`` and does not reach the helpers. Shape errors from the heuristic
+        splitters (``agent_turns`` iterating prompts, ``call_input_output`` indexing
+        role/value) are caught alongside the usual ``ValueError`` and reported as a
+        per-task skip, so one bad task does not stop the generator.
+        """
         try:
-            messages = agent_messages(task, drop_examples=True, strip_last_available_variables=True)
-        except ValueError as exc:
+            messages = agent_messages({**task, "steps": steps}, drop_examples=True, strip_last_available_variables=True)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("skipped %s/%s: %s", run, task_id, exc)
             return None
         assistant_count = sum(1 for m in messages if m.get("role") == "assistant")
@@ -273,8 +286,18 @@ def agent_steps(steps: list[dict]) -> list[dict[str, Any]]:
 
 
 def _evaluation(steps: list[dict], result: dict | None) -> dict:
-    """The task's evaluation: the EvaluationResult step, overridden by the authoritative results.json eval."""
-    return {**_step_evaluation(steps), **_loads((result or {}).get("eval"))}
+    """The task's evaluation report, with the richest fields winning.
+
+    The AppWorld-SDK ``results`` entry is the base: ``success`` and ``match_rate`` but no
+    ``evaluation`` sub-report. A legacy ``results.json`` entry (and the ``EvaluationResult``
+    step) carries the full report, so its fields overwrite the SDK's. ``_success`` reads
+    the two in a different, documented order, so verdict precedence is not decided here.
+    """
+    return {
+        **_loads((result or {}).get("sdk_eval")),
+        **_step_evaluation(steps),
+        **_loads((result or {}).get("eval")),
+    }
 
 
 def _step_evaluation(steps: list[dict]) -> dict:
@@ -282,8 +305,21 @@ def _step_evaluation(steps: list[dict]) -> dict:
 
 
 def _success(task: dict, steps: list[dict], result: dict | None) -> bool | None:
-    """The verdict from the first source with a readable one: results.json, the EvaluationResult step, then score >= 1."""
-    for evaluation in (_loads((result or {}).get("eval")), _step_evaluation(steps)):
+    """The verdict from the first readable source: an SDK-bundle entry, a legacy
+    ``results.json`` entry, the ``EvaluationResult`` step, then ``score >= 1``.
+
+    ``result`` carries both an ``eval`` payload (the legacy entry) and an
+    ``sdk_eval`` payload (the AppWorld-SDK ``results[*]`` entry) when both are
+    present. Each is consulted in the order the README documents, so a legacy
+    entry with no readable ``success`` field falls through to the SDK verdict
+    rather than hiding it.
+    """
+    sources = (
+        _loads((result or {}).get("sdk_eval")),
+        _loads((result or {}).get("eval")),
+        _step_evaluation(steps),
+    )
+    for evaluation in sources:
         if (found := verdict(evaluation.get("success"))) is not None:
             return found
     return task["score"] >= 1.0 if isinstance(task.get("score"), (int, float)) else None
@@ -359,11 +395,13 @@ def _summary(data: str) -> str | None:
 def _load_results(run_dir: Path) -> dict[str, dict]:
     """Per-task evaluation entries from ``results.json`` and ``results/appworld_sdk_*_final_report.json``.
 
-    An AppWorld-SDK final report (bundle layout) has ``results: [{task_name, success, ...}, ...]``
-    and is converted to the same ``{task_id: {"eval": {...}}}`` shape as legacy
-    ``results.json`` so :func:`_evaluation` and :func:`_success` can read either source
-    uniformly. When both exist, the legacy ``results.json`` wins per task — it is the
-    source today's deployments rely on.
+    Entries carry up to two keys, each a dict:
+    - ``sdk_eval``: the AppWorld-SDK ``results[*]`` payload (bundle layout).
+    - ``eval``: the legacy ``results.json`` entry's ``eval`` payload.
+
+    They are kept separate so :func:`_success` can consult them in the order the README
+    documents (SDK → legacy → step → score). A legacy entry with no readable ``success``
+    then falls through to the SDK verdict rather than hiding it.
     """
     results: dict[str, dict] = {}
     sdk_dir = run_dir / _BUNDLE_RESULTS
@@ -382,15 +420,14 @@ def _load_results(run_dir: Path) -> dict[str, dict]:
                     continue
                 name = entry.get("task_name")
                 if isinstance(name, str) and name:
-                    # Keep every entry field under "eval" so _loads/_success/_evaluation see
-                    # success exactly as they do for a results.json entry.
-                    results[name] = {"eval": {k: v for k, v in entry.items() if k != "task_name"}}
+                    results.setdefault(name, {})["sdk_eval"] = {k: v for k, v in entry.items() if k != "task_name"}
     path = run_dir / "results.json"
     if path.exists():
         legacy = _read_json(path)
         for task_id, entry in legacy.items():
             if isinstance(entry, dict):
-                results[task_id] = entry
+                merged = results.setdefault(task_id, {})
+                merged.update(entry)
     return results
 
 
@@ -408,17 +445,31 @@ def _metadata(run_dir: Path) -> dict:
     return metadata
 
 
-def _is_bundle(run_dir: Path) -> bool:
-    """A directory with ``metadata.json`` carrying ``bundle_version`` and a ``trajectories/`` child."""
+def _is_bundle(run_dir: Path, *, detecting: bool = False) -> bool:
+    """A directory with ``metadata.json`` carrying ``bundle_version`` and a ``trajectories/`` child.
+
+    An unreadable ``metadata.json`` is an error when reading a run (matching :func:`_metadata`
+    and :func:`_task_files`), so a corrupted bundle is reported rather than silently read as
+    a legacy run with the ``trajectories/`` subdirectory. The ``trajectories/`` child alone
+    is enough to classify the directory as a bundle for this purpose: without the readable
+    metadata we cannot tell its ``run.eval_key`` or whether this is an unrelated layout, and
+    the right behaviour is a clear error.
+    """
     try:
-        return bool(_metadata(run_dir).get("bundle_version")) and (run_dir / _BUNDLE_TRAJECTORIES).is_dir()
+        metadata = _metadata(run_dir)
     except ValueError:
-        return False
+        if not detecting:
+            raise
+        # On detection, still flag the directory as a bundle so a parent sweep notices
+        # the corrupted bundle via _is_run_dir rather than silently reading its
+        # ``trajectories/`` subdirectory as a legacy run.
+        return (run_dir / "metadata.json").exists() and (run_dir / _BUNDLE_TRAJECTORIES).is_dir()
+    return bool(metadata.get("bundle_version")) and (run_dir / _BUNDLE_TRAJECTORIES).is_dir()
 
 
-def _task_dir(run_dir: Path) -> Path:
+def _task_dir(run_dir: Path, *, detecting: bool = False) -> Path:
     """The directory holding task JSON files for ``run_dir``: ``<bundle>/trajectories`` for a bundle, the run itself otherwise."""
-    return run_dir / _BUNDLE_TRAJECTORIES if _is_bundle(run_dir) else run_dir
+    return run_dir / _BUNDLE_TRAJECTORIES if _is_bundle(run_dir, detecting=detecting) else run_dir
 
 
 def _eval_key(run_dir: Path) -> str:
@@ -478,7 +529,7 @@ def _task_files(run_dir: Path, *, detecting: bool = False) -> list[Path]:
         if not detecting:
             raise
         manifest = None
-    tasks_dir = _task_dir(run_dir)
+    tasks_dir = _task_dir(run_dir, detecting=detecting)
     if manifest:
         files = []
         for task_id in manifest:
@@ -488,10 +539,15 @@ def _task_files(run_dir: Path, *, detecting: bool = False) -> list[Path]:
             elif not detecting:
                 logger.warning("manifest task %s has no trajectory file in %s", task_id, run_dir.name)
         return sorted(files)
-    # Companion files beside a task use a dotted stem (``<task>.agent_messages.json``,
-    # ``<task>.calls.json``); task files themselves have no extra suffix.
+    # Companion files beside a task use a known inner suffix (``<task>.agent_messages.json``,
+    # ``<task>.calls.json``). Matching exact suffixes keeps task IDs that themselves contain
+    # a dot ("appworld.v2_01.json") readable.
     return sorted(
-        f for f in tasks_dir.glob("*.json") if f.stem not in _NOT_TASKS and not f.stem.startswith("appworld_sdk_") and len(f.suffixes) == 1
+        f
+        for f in tasks_dir.glob("*.json")
+        if f.stem not in _NOT_TASKS
+        and not f.stem.startswith("appworld_sdk_")
+        and not any(f.name.endswith(suffix) for suffix in _COMPANION_SUFFIXES)
     )
 
 
@@ -525,7 +581,7 @@ def _run_dirs(path: Path) -> list[Path]:
     and child directories with JSON but no readable task.
     """
     if _is_run_dir(path):
-        bundle_task_dir = _task_dir(path) if _is_bundle(path) else None
+        bundle_task_dir = _task_dir(path, detecting=True) if _is_bundle(path, detecting=True) else None
         if nested := sorted(child.name for child in path.iterdir() if child != bundle_task_dir and _is_run_dir(child)):
             logger.warning("read %s as one run; not read: %s, which also hold tasks", path, ", ".join(nested))
         return [path]
