@@ -315,3 +315,19 @@ curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platf
 ./platform-integrations/install.sh install --platform hermes    # global: ignores --dir
 ./platform-integrations/install.sh uninstall --platform bob
 ```
+
+## CI test selection
+
+Local installer and plugin tests use `platform_integrations`, not `e2e` (which
+is reserved for infrastructure-dependent tests). PR CI runs this group when
+platform/plugin sources, platform tests, shared `conftest.py` fixtures,
+dependency/build configuration, scripts, packages, or GitHub configuration change.
+The rules live in `scripts/ci/platform_tests.py`. Extend them when introducing
+new shared inputs to these tests.
+
+Native stacked PRs compare against the stack's trunk so inherited plugin changes
+remain covered. Missing or invalid change information selects the tests. Main
+pushes, release runs, and manual **Run workflow** invocations run the full local
+group. The regular suite excludes this group to avoid duplicate execution.
+Existing `run-tests (3.12)` and `run-tests (3.13)` required checks gate both groups;
+only a platform skip explicitly selected by the planner is accepted.
