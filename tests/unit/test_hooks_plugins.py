@@ -956,3 +956,119 @@ def test_aws_pair_respects_independent_detector_switches(access_enabled, secret_
         expected_secret = "[REDACTED]" if secret_enabled else _FAKE_AWS_SECRET
         assert result == [{"content": f"aws {expected_key} secret={expected_secret}"}]
     assert items == [{"content": text}]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("container", [dict, list])
+@pytest.mark.parametrize("complete", [False, True])
+def test_real_secrets_conflict_preserves_structured_neighbors(tmp_path, monkeypatch, container, complete):
+    import json
+    from datetime import datetime
+    from types import SimpleNamespace
+    from altk_evolve.llm.conflict_resolution import conflict_resolution as cr
+    from altk_evolve.schema.core import RecordedEntity
+
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    block = "-----BEGIN RSA PRIVATE KEY-----\nZmFrZQ=="  # pragma: allowlist secret
+    if complete:
+        block += "\n-----END RSA PRIVATE KEY-----"
+    content = {"key": block, "note": "Keep this instruction.", "count": 7} if container is dict else [block, "Keep this instruction.", 7]
+    entity = RecordedEntity(id="7", type="fact", content=content, created_at=datetime.now())
+    calls = []
+
+    def complete_model(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        calls.append(prompt)
+        incoming = json.loads(prompt.split("Below is a list of entities which I have collected up until now:", 1)[1].split("```", 2)[1])
+        value = incoming[0]["content"]
+        expected = (
+            {"key": "[REDACTED]", "note": "Keep this instruction.", "count": 7}
+            if container is dict
+            else ["[REDACTED]", "Keep this instruction.", 7]
+        )
+        assert value == expected
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content=json.dumps({"entities": [{**incoming[0], "event": "ADD"}]})), finish_reason="stop"
+                )
+            ]
+        )
+
+    monkeypatch.setattr(cr, "completion", complete_model)
+    assert cr.resolve_conflicts([], [entity])[0].id == "7"
+    assert len(calls) == 1
+    assert entity.content == content
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("as_json", [False, True])
+def test_private_key_markers_do_not_consume_quoted_intervening_evidence(as_json):
+    import json
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    pytest.importorskip("cpex_secrets_detection")
+    content = {
+        "start": "-----BEGIN RSA PRIVATE KEY-----",  # pragma: allowlist secret
+        "instruction": "Keep all evidence",
+        "end": "-----END RSA PRIVATE KEY-----",
+    }
+    text = json.dumps(content) if as_json else str(content)
+    result = SecretsFilterMemoryPlugin()._redact_items([{"content": text}])[0]["content"]
+    assert "Keep all evidence" in result
+    assert "BEGIN RSA" not in result
+    if as_json:
+        assert json.loads(result) == {**content, "start": "[REDACTED]"}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_real_secrets_fact_hook_redacts_structured_key_without_losing_following_turn(tmp_path, monkeypatch, newline):
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from altk_evolve.llm.fact_extraction import fact_extraction as facts
+
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    block = "-----BEGIN RSA PRIVATE KEY-----" + newline + "ZmFrZQ=="  # pragma: allowlist secret
+    messages = [
+        {"role": "user", "content": {"key": block, "instruction": "Keep this instruction."}},
+        {"role": "user", "content": "Keep this later turn."},
+    ]
+    original = deepcopy(messages)
+    prompts = []
+
+    def complete(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        prompts.append(prompt)
+        assert "ZmFrZQ==" not in prompt and "BEGIN RSA" not in prompt
+        assert "Keep this instruction." in prompt and "Keep this later turn." in prompt
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"facts": []}'))])
+
+    monkeypatch.setattr(facts, "completion", complete)
+    assert facts.extract_facts_from_messages(messages, False) == []
+    assert len(prompts) == 1
+    assert messages == original
+
+
+@pytest.mark.unit
+def test_real_secrets_conflict_custom_json_keeps_duplicate_instruction_values(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from altk_evolve.llm.conflict_resolution import conflict_resolution as cr
+
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    instructions = r'{"key": "-----BEGIN RSA PRIVATE KEY-----\nZmFrZQ==", "note": "first", "note": "second"}'  # pragma: allowlist secret
+    prompts = []
+
+    def complete(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        prompts.append(prompt)
+        assert '{"key": "[REDACTED]", "note": "first", "note": "second"}' in prompt
+        assert "ZmFrZQ==" not in prompt
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"entities": []}'), finish_reason="stop")])
+
+    monkeypatch.setattr(cr, "completion", complete)
+    assert cr.resolve_conflicts([], [], custom_update_entities_prompt=instructions) == []
+    assert len(prompts) == 1

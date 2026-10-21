@@ -144,7 +144,10 @@ def build_secrets_scanner() -> Scanner:
 _PRIVATE_KEY_MARKERS = re.compile(
     r"-----(?P<edge>BEGIN|END) (?P<kind>(?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----"
 )
-_KEY_BODY_LINES = re.compile(r"(?:\r?\n[A-Za-z0-9+/=]+(?=\r?\n|\Z))*")
+# Conflict content and structured fact messages may arrive as serialized JSON
+# or Python repr: their line separators are escaped, and the final key-body
+# line ends at a closing quote. Treat those boundaries like physical newlines.
+_KEY_BODY_LINES = re.compile(r"(?:(?:\r?\n|\\(?:r\\)?n)[A-Za-z0-9+/=]+(?=\r?\n|\\(?:r\\)?n|[\"']|\Z))*")
 _SUPPLEMENTARY_PATTERNS = {
     "aws_secret_access_key": re.compile(
         r"(?i)(\baws[ \t]+)((?:AKIA|ASIA)[A-Z0-9]{16})"
@@ -172,7 +175,17 @@ def _mask_private_keys(text: str, replacement: str) -> tuple[int, str]:
         if marker.group("edge") != "BEGIN":
             continue
         following = markers[index + 1] if index + 1 < len(markers) else None
-        if following is not None and following.group("edge") == "END" and following.group("kind") == marker.group("kind"):
+        # Quotes cannot occur in an armored key body. In serialized content
+        # they can instead separate two distinct values: never pair a header
+        # in one value with a footer in another and erase intervening fields.
+        paired = (
+            following is not None
+            and following.group("edge") == "END"
+            and following.group("kind") == marker.group("kind")
+            and not re.search(r"[\"']", text[marker.end() : following.start()])
+        )
+        if paired:
+            assert following is not None
             end = following.end()
         else:
             body = _KEY_BODY_LINES.match(text, marker.end())
