@@ -18,7 +18,7 @@ from altk_evolve.processing import ProcessingManager, TrajectoryOutcome
 from experiments.guideline_pipeline import __main__ as cli
 from experiments.guideline_pipeline.adapters import ADAPTERS, AdapterRecord, get_adapter
 from experiments.guideline_pipeline.adapters.appworld import AppWorldAdapter, parse_environment_io, task_from_prompt
-from experiments.guideline_pipeline.adapters.cuga import DETAIL_CHARS, FAIL_TRACE_CHARS, PARSER_STEP_LIMIT
+from experiments.guideline_pipeline.adapters.cuga import PARSER_STEP_LIMIT
 from experiments.guideline_pipeline.stages.mine import mine
 from experiments.guideline_pipeline.tests.fakes import store_guidelines
 
@@ -219,23 +219,63 @@ def test_failed_requirements_become_failed_checks_with_their_assertion_messages(
     )
 
 
+def test_a_trace_without_an_assertion_message_does_not_show_the_test_code():
+    # AppWorld fills the part after the dashes only for "AssertionError: ..."; a bare assert, a
+    # KeyError or a ValueError leaves it empty, and its line-rstrip drops the final newline.
+    code = "```python\nwith test(\n    'assert 1 record has been added'\n):\n    assert len(added) == 1\n```"
+    failures = [
+        {"requirement": "assert 1 record has been added", "trace": code + "\n----------"},
+        {"requirement": "assert answers match.", "trace": code + "\n----------\n"},
+        {"requirement": "assert the note was shared", "trace": code + "\n----------\nAssertionError: 0 == 1"},
+    ]
+
+    assert _outcome({"success": False, "failures": failures}) == TrajectoryOutcome(
+        success=False,
+        failed_checks=("assert 1 record has been added", "assert answers match.", "assert the note was shared"),
+        detail="\n".join(
+            [
+                "FAILED checks:",
+                "- assert 1 record has been added",
+                "- assert answers match.",
+                "- assert the note was shared",
+                "  AssertionError: 0 == 1",
+            ]
+        ),
+    )
+
+
 def test_assertion_messages_and_the_detail_are_bounded():
     huge = "AssertionError: " + "{'id': 1} " * 500
     outcome = _outcome({"success": False, "failures": [{"requirement": f"assert set {i} matches", "trace": huge} for i in range(10)]})
 
     assert outcome is not None and outcome.detail is not None
-    assert len(outcome.detail) == DETAIL_CHARS
-    first_message = outcome.detail.splitlines()[2]
-    assert first_message == "  " + " ".join(huge.split())[:FAIL_TRACE_CHARS]
+    assert len(outcome.detail) <= 2000
+    message = "  " + " ".join(huge.split())[:600]
+    # Cut between checks, never inside one, and the cut is stated.
+    kept = [line for i in range(3) for line in (f"- assert set {i} matches", message)]
+    assert outcome.detail.splitlines() == ["FAILED checks:", *kept, "- ... and 7 more"]
     # Every requirement is a failed check even when its message falls past the cap.
     assert outcome.failed_checks == tuple(f"assert set {i} matches" for i in range(10))
+
+    # A detail that fits is not cut and has no marker.
+    fits = _outcome({"success": False, "failures": [{"requirement": f"assert set {i} matches", "trace": huge} for i in range(3)]})
+    assert fits is not None and fits.detail == "\n".join(["FAILED checks:", *kept])
 
 
 def test_unreadable_failures_keep_the_verdict(caplog: pytest.LogCaptureFixture):
     with caplog.at_level(logging.WARNING):
-        for failures in ("[{'requirement': ", "not a list", {"requirement": "x"}, 3):
+        # The last is nested deeper than json can parse: RecursionError, not ValueError.
+        for failures in ("[{'requirement': ", "not a list", {"requirement": "x"}, 3, "[" * 10000 + "]" * 10000):
             assert _outcome({"success": False, "failures": failures}) == TrajectoryOutcome(success=False)
-    assert caplog.messages.count("run/t_1: cannot read the evaluation's failures; the outcome has no failed checks") == 4
+    assert caplog.messages.count("run/t_1: cannot read the evaluation's failures; the outcome has no failed checks") == 5
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        # Entries that are not checks are skipped, and said to be, unlike "no failures".
+        assert _outcome({"success": False, "failures": ["assert x", "assert y", {"requirement": "assert z"}]}) == TrajectoryOutcome(
+            success=False, failed_checks=("assert z",), detail="FAILED checks:\n- assert z"
+        )
+    assert caplog.messages == ["run/t_1: skipped 2 of the evaluation's failures that are not objects"]
 
     caplog.clear()
     with caplog.at_level(logging.WARNING):

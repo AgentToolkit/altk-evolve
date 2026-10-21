@@ -204,7 +204,7 @@ it is. `--input` is one run directory or a directory of them:
 ```text
 <input>/
   <run>/                          # becomes metadata.run; any directory with a tasks/ child is a run
-    evaluations/<split>.json      # optional: {"individual": {"<task_id>": {"success", "difficulty", ...}}}
+    evaluations/<split>.json      # optional: {"individual": {"<task_id>": {"success", "difficulty", "failures", ...}}}
     tasks/<task_id>/
       tips_subtask.json           # optional: {"task_instruction", ...}
       logs/environment_io.md      # required: the agent's code and the environment's output
@@ -242,9 +242,13 @@ Each task becomes one record:
   `requirement`s of its `failures` (a list, or a JSON or Python-repr string of
   one), whitespace-collapsed and de-duplicated. Its `detail` lists each failed
   requirement with its trace's assertion message (the text after the last
-  `----------` line, first 600 characters), and is capped at 2000 characters.
-  `failures` that cannot be read are reported and leave the verdict alone. A
-  successful task has no failed checks.
+  `----------` line, first 600 characters; a trace with nothing after that line,
+  as for a non-assertion error, gives no message rather than the test's code). The
+  detail is capped at 2000 characters, cut between checks with a closing
+  `- ... and N more`. `failures` that cannot be read are reported and leave the
+  verdict alone, and entries that are not objects are skipped with a warning. A
+  successful task has no failed checks and no `detail`: AppWorld's `passes` carry
+  no trace, so there is nothing beyond the requirement text to report.
 - **metadata**: `run`, `split` (the evaluations file name, when the task is
   evaluated), `difficulty`, `model` and `instruction_source`.
 - **batch**: source `appworld`, conversation `<run>/<task_id>`, batch `<task_id>`,

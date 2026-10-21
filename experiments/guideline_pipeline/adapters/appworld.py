@@ -38,7 +38,11 @@ IDENTITY_WINDOW = 600
 # Without that line, the instruction starts this far before "Task:".
 TASK_CONTEXT = 200
 # An evaluator trace is the failing test's code, then this line, then the assertion message.
+# Only an AssertionError with a message fills that last part; otherwise nothing follows the
+# line, and the trace must not fall back to the test's code.
 _TRACE_SEPARATOR = "\n----------\n"
+# Room kept at the end of a cut detail for its "- ... and N more" line.
+_OMITTED_ROOM = 32
 
 # The log is split at its "### Environment Interaction N" headers, so a block missing a
 # fence cannot swallow the next interaction. Each block is an optional dashes line, a
@@ -331,18 +335,34 @@ def _outcome(success: bool | None, entry: dict, task: str) -> TrajectoryOutcome 
     if success:
         return TrajectoryOutcome(success=True)
     failed: list[str] = []
-    lines: list[str] = []
+    blocks: list[str] = []
     for check in _failures(entry, task):
         # A requirement that is not a string is treated as absent; its message is still kept.
         requirement = " ".join(raw.split()) if isinstance(raw := check.get("requirement"), str) else ""
         message = _assertion(check.get("trace"))
         if requirement:
             failed.append(requirement)
-            lines.append(f"- {requirement}")
+        lines = [f"- {requirement}"] if requirement else []
         if message:
             lines.append(f"  {message}" if requirement else f"- {message}")
-    detail = "\n".join(["FAILED checks:", *lines])[:DETAIL_CHARS] if lines else None
-    return TrajectoryOutcome(success=False, failed_checks=tuple(dict.fromkeys(failed)), detail=detail)
+        if lines:
+            blocks.append("\n".join(lines))
+    return TrajectoryOutcome(success=False, failed_checks=tuple(dict.fromkeys(failed)), detail=_detail(blocks))
+
+
+def _detail(blocks: list[str]) -> str | None:
+    """The FAILED checks list within DETAIL_CHARS, cut between checks and ending with how many were left out."""
+    if not blocks:
+        return None
+    detail = "\n".join(["FAILED checks:", *blocks])
+    if len(detail) <= DETAIL_CHARS:
+        return detail
+    kept = ["FAILED checks:"]
+    for block in blocks:
+        if len("\n".join([*kept, block])) > DETAIL_CHARS - _OMITTED_ROOM:
+            break
+        kept.append(block)
+    return "\n".join([*kept, f"- ... and {len(blocks) - len(kept) + 1} more"])
 
 
 def _failures(entry: dict, task: str) -> list[dict]:
@@ -357,7 +377,7 @@ def _failures(entry: dict, task: str) -> list[dict]:
     if isinstance(checks, str):
         try:
             checks = json.loads(checks)
-        except ValueError:
+        except (ValueError, RecursionError):
             try:
                 checks = ast.literal_eval(checks)
             except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
@@ -365,15 +385,23 @@ def _failures(entry: dict, task: str) -> list[dict]:
     if not isinstance(checks, list):
         logger.warning("%s: cannot read the evaluation's failures; the outcome has no failed checks", task)
         return []
-    return [check for check in checks if isinstance(check, dict)]
+    readable = [check for check in checks if isinstance(check, dict)]
+    if len(readable) < len(checks):
+        logger.warning("%s: skipped %d of the evaluation's failures that are not objects", task, len(checks) - len(readable))
+    return readable
 
 
 def _assertion(trace: Any) -> str:
-    """The assertion message that ends a trace (after its last ``----------`` line), whitespace-collapsed and bounded."""
+    """The assertion message that ends a trace, whitespace-collapsed and bounded.
+
+    A trace with the test's code gives only what follows its last ``----------`` line,
+    which may be nothing; one without that line (a bare message) is kept whole.
+    """
     if not isinstance(trace, str):
         return ""
-    message = trace.rsplit(_TRACE_SEPARATOR, 1)[-1]
-    return " ".join(message.split())[:FAIL_TRACE_CHARS]
+    # AppWorld strips each line's trailing whitespace, so a trace with no message ends at the dashes.
+    _, separator, message = (trace + "\n").rpartition(_TRACE_SEPARATOR)
+    return " ".join((message if separator else trace).split())[:FAIL_TRACE_CHARS]
 
 
 def _integer(value: Any) -> int | None:
