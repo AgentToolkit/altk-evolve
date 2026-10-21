@@ -62,3 +62,8 @@ def test_missing_temporal_values_do_not_form_categories(kind):
     samples = [kind("NaT"), kind(1, "D"), kind(2, "D")]
     distance = 1 / math.log2(3)
     assert CategoricalEntropyConsistencyMetric().get_consistency_and_distance(samples) == pytest.approx((1 - distance, distance))
+
+
+def test_all_distinct_entropy_is_clamped_to_unit_interval():
+    # Ten equiprobable categories round slightly above one without the clamp.
+    assert get_consistency_by_metric([str(i) for i in range(10)], "cat_entropy") == (0.0, 1.0)
