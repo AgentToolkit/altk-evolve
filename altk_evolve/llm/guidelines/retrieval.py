@@ -22,7 +22,7 @@ from typing import Literal
 
 import numpy as np
 
-from altk_evolve.llm.guidelines.clustering import _get_sentence_transformer, stored_tasks
+from altk_evolve.llm.guidelines.clustering import _get_sentence_transformer, stored_support, stored_tasks
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.provenance import sources
 
@@ -47,16 +47,18 @@ def _support(entity: RecordedEntity) -> int:
     """How many distinct source tasks back a guideline.
 
     Counted from its supporting ``sources`` associations, so rewordings merged from one
-    task count once. A guideline whose sources carry no task id (provenance predates it)
-    falls back to its stored ``support``.
+    task count once. That count is used only when every supporting source names a task and
+    provenance is complete. Otherwise (provenance predates it, a merge took in a guideline
+    with no known source, or a source records only a conversation) some support is not in
+    the task count, so the stored ``support`` applies, but never less than the known tasks.
+    A ``task_id`` that is not a string or an integer is ignored.
     """
-    tasks = {source.get("task_id") for source in sources(entity) if source.get("status") == "supporting" and source.get("task_id")}
-    if tasks:
+    task_ids = [source.get("task_id") for source in sources(entity) if source.get("status") == "supporting"]
+    tasks = {task for task in task_ids if isinstance(task, (str, int)) and task}
+    complete = all(isinstance(task, (str, int)) and task for task in task_ids) and not (entity.metadata or {}).get("provenance_incomplete")
+    if tasks and complete:
         return len(tasks)
-    try:
-        return max(1, int((entity.metadata or {}).get("support", 1) or 1))
-    except (TypeError, ValueError):
-        return 1
+    return max(len(tasks), stored_support(entity))
 
 
 def _source_tasks(entity: RecordedEntity) -> list[str]:

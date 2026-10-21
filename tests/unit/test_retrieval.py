@@ -104,6 +104,51 @@ class TestSelectGuidelines:
         sel = select_guidelines([legacy], "spotify", top_k=5, core_support=3, embedding_model="test")
         assert [e.id for e in sel.core] == ["c"]
 
+    @pytest.mark.parametrize(
+        "partial",
+        [
+            pytest.param(lambda md: md.update(provenance_incomplete=True), id="provenance_incomplete"),
+            pytest.param(
+                lambda md: md["sources"].append({"conversation_id": "c9", "task_id": None, "status": "supporting"}), id="conversation-only"
+            ),
+        ],
+    )
+    def test_partial_provenance_keeps_the_stored_support(self, mock_st, partial):
+        # A merge that took in a guideline with no known source sums its support, but only
+        # some of it shows up as task ids; counting just those would drop it from the core.
+        self._model(mock_st)
+        merged = _make_entity("m", "Email rule", task_description="email task", support=3, source_tasks=["t1"])
+        partial(merged.metadata)
+        sel = select_guidelines([merged], "spotify", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == ["m"]
+
+    def test_partial_provenance_never_counts_below_the_known_tasks(self, mock_st):
+        self._model(mock_st)
+        merged = _make_entity("m", "Email rule", task_description="email task", support=1, source_tasks=["t1", "t2", "t3"])
+        merged.metadata["provenance_incomplete"] = True
+        sel = select_guidelines([merged], "spotify", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == ["m"]
+
+    @pytest.mark.parametrize("task_id", [["t1"], {"id": "t1"}])
+    def test_an_unhashable_task_id_is_ignored(self, mock_st, task_id):
+        # Metadata can be written through a patch, REST or MCP; one bad record must not fail
+        # selection for the whole namespace.
+        self._model(mock_st)
+        odd = _make_entity("o", "Email rule", task_description="email task", support=1, source_tasks=["t1"])
+        odd.metadata["sources"][0]["task_id"] = task_id
+        ok = _make_entity("k", "Venmo rule", task_description="a venmo task", support=3, source_tasks=["t1", "t2", "t3"])
+        sel = select_guidelines([odd, ok], "spotify", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == ["k"]
+        assert [e.id for e in sel.retrieved] == ["o"]
+
+    @pytest.mark.parametrize("support", ["high", [3], {"n": 3}])
+    def test_an_unusable_stored_support_counts_as_one(self, mock_st, support):
+        self._model(mock_st)
+        legacy = _make_entity("c", "Email rule", task_description="email task")
+        legacy.metadata["support"] = support
+        sel = select_guidelines([legacy], "spotify", top_k=5, core_support=1, min_support=1, embedding_model="test")
+        assert [e.id for e in sel.core] == ["c"]
+
     def test_topk_ranked_by_source_task_similarity(self, mock_st):
         self._model(mock_st)
         cands = [

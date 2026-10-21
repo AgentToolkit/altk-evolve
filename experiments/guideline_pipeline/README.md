@@ -74,9 +74,10 @@ uv run python -m experiments.guideline_pipeline lineage --namespace <ns> --out <
 
 **Support and thresholds.** `n` is the guideline's support with Evolve's own
 reading: the number of distinct source tasks among its supporting `sources`, so
-rewordings merged from one task count once. A guideline whose sources record no
-task falls back to its stored `support`, where missing or unusable values count
-as 1. `--min-support` and
+rewordings merged from one task count once. A guideline whose provenance is
+partial (sources that record no task, or `provenance_incomplete`) falls back to
+its stored `support`, but never below its known task count; missing or unusable
+values count as 1. `--min-support` and
 `--core-support` mean what `EVOLVE_MIN_SUPPORT` and `EVOLVE_CORE_SUPPORT` mean
 for retrieval (a guideline is kept at `support >= min`, and is core at
 `support >= core`), and default to those settings (1 and 3). `min-support` must
