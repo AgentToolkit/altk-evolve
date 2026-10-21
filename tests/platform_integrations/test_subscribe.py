@@ -9,8 +9,6 @@ from pathlib import Path
 
 import pytest
 
-_IS_WINDOWS = sys.platform == "win32"
-
 
 def _load_claude_config_module():
     path = Path(__file__).parent.parent.parent / "platform-integrations/claude/plugins/evolve-lite/lib/evolve-lite/config.py"
@@ -35,12 +33,33 @@ SUBSCRIBE_SCRIPT_VARIANTS = [
 ]
 
 
-def run_script(script, project_dir, args, evolve_dir=None, expect_success=True):
+def run_script(script, project_dir, args, evolve_dir=None, expect_success=True, fail_write=None):
     env = {**os.environ}
     if evolve_dir:
         env["EVOLVE_DIR"] = str(evolve_dir)
+    command = [sys.executable, str(script)] + args
+    if fail_write is not None:
+        # Inject at the write boundary in the child process: chmod is ineffective
+        # for root runners. Keep the actual clone and rollback paths intact.
+        bootstrap = """
+import runpy
+import sys
+from pathlib import Path
+
+script, failure = sys.argv[1:3]
+sys.argv = [script] + sys.argv[3:]
+main = runpy.run_path(script)["main"]
+def fail(*args, **kwargs):
+    import os
+    dest = Path(os.environ["EVOLVE_DIR"]) / "entities/subscribed/alice"
+    assert (dest / ".git").is_dir(), "write failure must occur after clone"
+    raise PermissionError("injected " + failure + " failure")
+main.__globals__[failure] = fail
+main()
+"""
+        command = [sys.executable, "-c", bootstrap, str(script), fail_write] + args
     return subprocess.run(
-        [sys.executable, str(script)] + args,
+        command,
         capture_output=True,
         text=True,
         cwd=str(project_dir),
@@ -193,55 +212,42 @@ class TestSubscribe:
         assert cloned.exists()
         assert "Always write tests." in cloned.read_text()
 
-    @pytest.mark.skipif(_IS_WINDOWS, reason="chmod not supported on Windows")
     def test_rolls_back_clone_if_config_write_fails(self, temp_project_dir, local_repo):
-        """If save_config raises after a successful clone, the clone directory is removed."""
+        """A write failure after a real clone removes the clone, even as root."""
         evolve_dir = temp_project_dir / ".evolve"
-        # Make the config file read-only so save_config raises PermissionError
         cfg_path = temp_project_dir / "evolve.config.yaml"
         cfg_path.write_text("subscriptions: []\n")
-        cfg_path.chmod(0o444)
-        try:
-            result = run_script(
-                SUBSCRIBE_SCRIPT,
-                temp_project_dir,
-                ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
-                evolve_dir=evolve_dir,
-                expect_success=False,
-            )
-        finally:
-            cfg_path.chmod(0o644)
+        result = run_script(
+            SUBSCRIBE_SCRIPT,
+            temp_project_dir,
+            ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            evolve_dir=evolve_dir,
+            expect_success=False,
+            fail_write="save_config",
+        )
         assert result.returncode != 0
-        assert result.stderr.strip(), "expected an error message on stderr"
+        assert "PermissionError: injected save_config failure" in result.stderr
+        assert cfg_path.read_text() == "subscriptions: []\n"
         dest = evolve_dir / "entities" / "subscribed" / "alice"
         assert not dest.exists(), "Clone should be rolled back when config write fails"
 
-    @pytest.mark.skipif(_IS_WINDOWS, reason="chmod not supported on Windows")
     def test_rolls_back_when_audit_write_fails(self, temp_project_dir, local_repo):
-        """If audit_append raises after a successful clone, subscribe rolls back the clone and config."""
+        """An audit failure rolls back the real clone and persisted config."""
         evolve_dir = temp_project_dir / ".evolve"
-        evolve_dir.mkdir(parents=True)
-        # Pre-create a read-only audit.log so audit_append raises PermissionError
-        audit_log = evolve_dir / "audit.log"
-        audit_log.write_text("")
-        audit_log.chmod(0o444)
-        try:
-            result = run_script(
-                SUBSCRIBE_SCRIPT,
-                temp_project_dir,
-                ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
-                evolve_dir=evolve_dir,
-                expect_success=False,
-            )
-        finally:
-            audit_log.chmod(0o644)
+        result = run_script(
+            SUBSCRIBE_SCRIPT,
+            temp_project_dir,
+            ["--name", "alice", "--remote", str(local_repo["bare"]), "--branch", "main"],
+            evolve_dir=evolve_dir,
+            expect_success=False,
+            fail_write="audit_append",
+        )
         assert result.returncode != 0
-        assert "failed to record subscription in audit log" in result.stderr
+        assert "failed to record subscription in audit log: injected audit_append failure" in result.stderr
         dest = evolve_dir / "entities" / "subscribed" / "alice"
         assert not dest.exists(), "Clone should be removed when audit write fails"
-        cfg_path = temp_project_dir / "evolve.config.yaml"
-        cfg_text = cfg_path.read_text() if cfg_path.exists() else ""
-        assert "name: alice" not in cfg_text, "Config should not list the subscription after rollback"
+        cfg = cfg_module.load_config(str(temp_project_dir))
+        assert cfg_module.normalize_repos(cfg) == [], "Config should not list the subscription after rollback"
 
 
 class TestUnsubscribe:
