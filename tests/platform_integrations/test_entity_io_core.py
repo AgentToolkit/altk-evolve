@@ -81,6 +81,22 @@ class TestUniqueFilename:
         path = entity_io.unique_filename(temp_project_dir, "my-guideline")
         assert path == temp_project_dir / "my-guideline-3.md"
 
+    @pytest.mark.parametrize("length", [250, 251, 252, 260])
+    def test_repeated_writes_bound_collision_names(self, temp_project_dir, length):
+        paths = []
+        for index in range(12):
+            path = entity_io.write_entity_file(
+                temp_project_dir, {"type": "reference", "content": f"Version {index}"}, filename="a" * length
+            )
+            paths.append(path)
+            assert len(path.name.encode("utf-8")) <= 255
+        assert len(set(paths)) == 12
+        for index, path in enumerate(paths):
+            assert entity_io.markdown_to_entity(path)["content"] == f"Version {index}"
+        assert set((temp_project_dir / "reference").iterdir()) == set(paths)
+        if length <= 252:
+            assert paths[0].stem == "a" * length
+
 
 class TestEntityMarkdownRoundtrip:
     def test_basic_roundtrip(self, tmp_path):
@@ -259,6 +275,35 @@ class TestAdaptMemory:
         entity_file = directory / f"{name}.md"
         assert list(directory.iterdir()) == [entity_file]
         assert entity_io.markdown_to_entity(entity_file)["content"] == "Keep the complete native name."
+
+    @pytest.mark.parametrize(
+        "names",
+        [
+            ("İstanbul-notes", "İstanbul-tips"),
+            ("a" * 260 + "-notes", "a" * 260 + "-tips"),
+            ("İ" * 130 + "-notes", "İ" * 130 + "-tips"),
+        ],
+    )
+    def test_normalized_names_remain_distinct_and_idempotent(self, temp_project_dir, monkeypatch, capsys, names):
+        adapt = _load_adapt_memory()
+        ids = {}
+        for version in range(2):
+            for name in names:
+                native = self._write_native(temp_project_dir, name, "reference", f"{name} version {version}")
+                self._run(adapt, native, "reference", "when recalling", monkeypatch, temp_project_dir)
+                output = capsys.readouterr().out
+                entity_id = output.split("Entity id: ", 1)[1].strip()
+                if version:
+                    assert entity_id == ids[name]
+                ids[name] = entity_id
+                path = temp_project_dir / ".evolve/entities" / f"{entity_id}.md"
+                assert len(path.name.encode("utf-8")) <= 255
+                assert entity_io.markdown_to_entity(path)["content"] == f"{name} version {version}"
+        assert len(set(ids.values())) == 2
+        directory = temp_project_dir / ".evolve/entities/reference"
+        assert len(list(directory.iterdir())) == 2
+        if names[0] == "İstanbul-notes":
+            assert set(ids.values()) == {"reference/i-stanbul-notes", "reference/i-stanbul-tips"}
 
     def test_deterministic_overwrite_on_same_name_and_type(self, tmp_path, monkeypatch, capsys):
         adapt = _load_adapt_memory()

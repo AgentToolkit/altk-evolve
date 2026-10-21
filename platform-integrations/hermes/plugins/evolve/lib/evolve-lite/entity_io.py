@@ -6,6 +6,7 @@ frontmatter, organized in type-nested directories.
 
 import datetime
 import getpass
+import hashlib
 import os
 import re
 import tempfile
@@ -106,6 +107,8 @@ def get_default_entities_dir():
 def slugify(text, max_length=60):
     """Convert *text* to a filesystem-safe slug.
 
+    Set ``max_length=None`` to normalize without shortening.
+
     >>> slugify("Use temp files for JSON transfer!")
     'use-temp-files-for-json-transfer'
     """
@@ -113,7 +116,7 @@ def slugify(text, max_length=60):
     text = re.sub(r"[^a-z0-9]+", "-", text)
     text = text.strip("-")
     # Truncate at max_length, but don't break in the middle of a word
-    if len(text) > max_length:
+    if max_length is not None and len(text) > max_length:
         text = text[:max_length].rsplit("-", 1)[0]
     return text or "entity"
 
@@ -159,18 +162,32 @@ def sanitize_type(text):
     return text.strip("-")
 
 
+def _bounded_slug(slug, suffix=""):
+    """Fit an ASCII slug and optional collision suffix in a 255-byte .md name.
+
+    Preserve every character when it fits. Otherwise retain a readable prefix
+    and a digest of the complete normalized ID, including late differences.
+    """
+    limit = 255 - len(".md") - len(suffix)
+    if len(slug) > limit:
+        digest = hashlib.sha256(slug.encode("utf-8")).hexdigest()[:32]
+        slug = f"{slug[: limit - len(digest) - 1].rstrip('-')}-{digest}"
+    return slug + suffix
+
+
 def unique_filename(directory, slug):
     """Return a Path that doesn't collide with existing files in *directory*.
 
     Tries ``slug.md``, then ``slug-2.md``, ``slug-3.md``, etc.
+    Hash-bound the slug only when needed to fit the extension and suffix.
     """
     directory = Path(directory)
-    candidate = directory / f"{slug}.md"
+    candidate = directory / f"{_bounded_slug(slug)}.md"
     if not candidate.exists():
         return candidate
     n = 2
     while True:
-        candidate = directory / f"{slug}-{n}.md"
+        candidate = directory / f"{_bounded_slug(slug, f'-{n}')}.md"
         if not candidate.exists():
             return candidate
         n += 1
@@ -392,7 +409,8 @@ def write_entity_file(directory, entity, filename=None, overwrite=False):
         filename: Optional explicit slug for the target file (without the
             ``.md`` suffix). When omitted, the slug is derived from the
             entity content (the historical default). Explicit names are sanitized
-            but not truncated, preserving caller-provided entity identifiers.
+            without truncation when they fit the filename limit. Oversized names
+            use a bounded prefix and a hash of the complete normalized name.
         overwrite: When True, the entity is written to a deterministic
             ``{type}/{filename}.md`` path, overwriting any existing file in
             place (stable id, idempotent re-mirroring). When False (the
@@ -409,7 +427,7 @@ def write_entity_file(directory, entity, filename=None, overwrite=False):
     type_dir = Path(directory) / entity_type
     type_dir.mkdir(parents=True, exist_ok=True)
 
-    slug = slugify(filename, max_length=len(filename)) if filename else slugify(entity.get("content", "entity"))
+    slug = slugify(filename, max_length=None) if filename else slugify(entity.get("content", "entity"))
     content = entity_to_markdown(entity)
 
     # Keep the temporary name short: a valid full slug may already approach
@@ -424,7 +442,7 @@ def write_entity_file(directory, entity, filename=None, overwrite=False):
         if overwrite:
             # Deterministic target: overwrite any existing file in place so
             # the entity id is stable across re-mirroring.
-            target = type_dir / f"{slug}.md"
+            target = type_dir / f"{_bounded_slug(slug)}.md"
             os.replace(tmp_path, target)
             return target
 
