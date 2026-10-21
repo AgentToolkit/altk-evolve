@@ -811,3 +811,74 @@ def test_lifecycle_refuses_symlinked_publication(project_dir, action):
     assert "symlink" in result.stderr
     assert other.read_text() == content
     assert dest.is_symlink()
+
+
+@pytest.mark.parametrize("platform,script", PUBLISH_SCRIPT_VARIANTS)
+def test_unpublish_failed_write_keeps_publication_and_allows_retry(project_dir, monkeypatch, platform, script):
+    import io
+
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish_script(script, project_dir, args)
+    published = _dest_path(project_dir, "my-guideline.md")
+    original = published.read_bytes()
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    module = runpy.run_path(str(script))
+    real_open = io.open
+
+    class InterruptedWrite:
+        def __init__(self, output):
+            self.output = output
+
+        def __getattr__(self, name):
+            return getattr(self.output, name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.output.__exit__(*args)
+
+        def write(self, content):
+            self.output.write(content[:10])
+            raise OSError("simulated disk full")
+
+    def interrupted_open(file, mode="r", *args, **kwargs):
+        output = real_open(file, mode, *args, **kwargs)
+        return InterruptedWrite(output) if mode in {"x", "w"} else output
+
+    with monkeypatch.context() as patch:
+        patch.setenv("EVOLVE_DIR", str(project_dir / ".evolve"))
+        patch.setattr(sys, "argv", [str(script), *args, "--unpublish"])
+        patch.setattr(io, "open", interrupted_open)
+        with pytest.raises(OSError, match="disk full"):
+            module["main"]()
+    assert published.read_bytes() == original
+    assert not private.exists()
+    assert list(private.parent.iterdir()) == []
+    run_publish_script(script, project_dir, args + ["--unpublish"])
+    assert "Prefer composition over inheritance." in private.read_text()
+    assert not published.exists()
+
+
+@pytest.mark.parametrize("platform,script", PUBLISH_SCRIPT_VARIANTS)
+def test_unpublish_does_not_replace_concurrent_private_mirror(project_dir, monkeypatch, platform, script):
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish_script(script, project_dir, args)
+    published = _dest_path(project_dir, "my-guideline.md")
+    original = published.read_bytes()
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    module = runpy.run_path(str(script))
+    real_link = os.link
+
+    def concurrent_link(source, destination, *args, **kwargs):
+        private.write_text("Newer native mirror")
+        return real_link(source, destination, *args, **kwargs)
+
+    monkeypatch.setenv("EVOLVE_DIR", str(project_dir / ".evolve"))
+    monkeypatch.setattr(sys, "argv", [str(script), *args, "--unpublish"])
+    monkeypatch.setattr(os, "link", concurrent_link)
+    with pytest.raises(FileExistsError):
+        module["main"]()
+    assert private.read_text() == "Newer native mirror"
+    assert published.read_bytes() == original
+    assert list(private.parent.iterdir()) == [private]

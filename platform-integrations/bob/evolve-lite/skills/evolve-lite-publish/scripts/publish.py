@@ -181,9 +181,21 @@ def _unpublish(evolve_dir, project_root, target, effective_user, args):
     for key in ("published_at", "source"):
         entity.pop(key, None)
     private.parent.mkdir(parents=True, exist_ok=True)
-    # Exclusive creation protects a newer mirror even if it appears during the operation.
-    with private.open("x", encoding="utf-8") as output:
-        output.write(entity_to_markdown(entity))
+    # Prepare a complete file before exposing it to readers. A hard link installs
+    # it exclusively: unlike replace(), it cannot overwrite a concurrent mirror.
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=private.parent, prefix=".unpublish-", suffix=".tmp", delete=False
+        ) as output:
+            temp_path = Path(output.name)
+            output.write(entity_to_markdown(entity))
+            output.flush()
+            os.fsync(output.fileno())
+        os.link(temp_path, private)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
     published.unlink()
     try:
         audit_append(
