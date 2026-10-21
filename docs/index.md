@@ -84,6 +84,9 @@ Research, releases, and practical findings from the Evolve team.
 
 === "IBM Bob"
 
+    !!! note "The video shows an earlier release"
+        This April 2026 video uses an Evolve Lite mode and explicit learn/recall skills. Current Bob releases use always-on rules. Follow the [current tutorial](examples/hello_world/bob.md) for installation and usage.
+
     <div class="video-wrapper">
         <iframe width="1280" height="720" src="https://www.youtube.com/embed/YlTJoSJ4eDg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
     </div>

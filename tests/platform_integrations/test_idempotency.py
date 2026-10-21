@@ -164,7 +164,7 @@ class TestBobLegacyMigration:
         original = "# My personal rules\n\nAlways prefer tabs.\n"
         user_rule.write_text(original)
 
-        install_runner.run("uninstall", platform="bob")
+        install_runner.run("uninstall", platform="bob", global_cleanup=True)
 
         file_assertions.assert_file_not_exists(bob_rules_file)
         file_assertions.assert_file_not_exists(bob_audit_script)
@@ -373,7 +373,7 @@ class TestUninstallInstallCycle:
         # The user's hooks were left completely untouched.
         file_assertions.assert_file_unchanged(hooks_file, original_hooks_content)
 
-        install_runner.run("uninstall", platform="codex")
+        install_runner.run("uninstall", platform="codex", global_cleanup=True)
 
         file_assertions.assert_dir_not_exists(evolve_plugin_dir)
         current_marketplace = json.loads(marketplace_file.read_text())
