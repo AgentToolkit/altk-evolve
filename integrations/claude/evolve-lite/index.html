@@ -1414,6 +1414,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Tradeoffs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#updating-or-withdrawing-shared-memories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updating or withdrawing shared memories
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -1799,6 +1816,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Tradeoffs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#updating-or-withdrawing-shared-memories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updating or withdrawing shared memories
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2150,6 +2184,15 @@
 </tr>
 </tbody>
 </table>
+<h3 id="updating-or-withdrawing-shared-memories">Updating or withdrawing shared memories<a class="headerlink" href="#updating-or-withdrawing-shared-memories" title="Permanent link">&para;</a></h3>
+<p>Use <code>evolve-lite:publish --update</code> to update an owned publication and
+<code>evolve-lite:unpublish</code> to restore it to private storage. Supply <code>--entity</code> and,
+when needed, <code>--type</code> and <code>--repo</code>. Update and unpublish require a matching
+owner; when <code>identity.user</code> is configured, <code>--user</code> must agree with it.
+Unpublish refuses to overwrite an existing private copy. If removing the shared
+copy fails, it rolls back its unchanged private restoration so the operation
+can be retried. Commit and push the deletion in the shared clone to withdraw
+the remote copy; existing subscribers may retain copies until they sync.</p>
 
 
 
