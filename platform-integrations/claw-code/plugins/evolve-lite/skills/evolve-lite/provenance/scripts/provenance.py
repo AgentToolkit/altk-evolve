@@ -128,7 +128,21 @@ def _hermes_trajectory_name(session_id):
     return f"{safe[:_HERMES_STEM_CHARS]}-{digest}.jsonl"
 
 
-def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
+def _saved_trajectory_index(evolve_dir):
+    """Index original session IDs once per candidate batch; preserve first-match order."""
+    index = {}
+    for path in sorted((Path(evolve_dir) / "trajectories").glob("trajectory_*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        sid = data.get("session_id") if isinstance(data, dict) else None
+        if isinstance(sid, str) and sid:
+            index.setdefault(sid, path)
+    return index
+
+
+def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None, saved_index=None):
     """Locate the saved trajectory transcript for ``session_id``.
 
     Resolution order (best-effort, returns the first hit or ``None``):
@@ -180,13 +194,9 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
 
         # Filenames sanitize/truncate session IDs and may carry collision suffixes.
         # Only the original ID stored by the writer establishes ownership.
-        for path in sorted(traj_dir.glob("trajectory_*.json")):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                continue
-            if isinstance(data, dict) and data.get("session_id") == session_id:
-                return path
+        index = saved_index if saved_index is not None else _saved_trajectory_index(evolve_dir)
+        if session_id in index:
+            return index[session_id]
 
     # --- 2. Native Claude transcript ----------------------------------------
     # The project root is the parent of the .evolve dir; the home dir holds
@@ -284,7 +294,12 @@ def _read_entity(evolve_dir, entity_id, project_root=None):
     if not entity_path.is_file():
         # Native recall IDs keep their original type/name after publication.
         # Resolve only an unambiguous publication owned by this publisher.
-        config = load_config(project_root or Path(evolve_dir).resolve().parent)
+        root = Path(evolve_dir).resolve()
+        root = root.parent if Path(evolve_dir).name == ".evolve" else root
+        try:
+            config = load_config(project_root or root)
+        except (OSError, UnicodeError, ValueError):
+            return entity_path, None
         identity = config.get("identity", {})
         owner = identity.get("user") if isinstance(identity, dict) else None
         matches = []
@@ -342,9 +357,10 @@ def build_candidates(evolve_dir, *, project_root=None, home=None):
     evolve_dir = Path(evolve_dir)
     existing = log_influence.existing_influence_keys(evolve_dir)
 
+    saved_index = _saved_trajectory_index(evolve_dir)
     candidates = []
     for session_id, entities in read_recall_rows(evolve_dir):
-        trajectory_path = locate_trajectory(session_id, evolve_dir, project_root=project_root, home=home)
+        trajectory_path = locate_trajectory(session_id, evolve_dir, project_root=project_root, home=home, saved_index=saved_index)
         for entity_id in entities:
             if (session_id, entity_id) in existing:
                 continue
@@ -411,7 +427,9 @@ def record_verdict(payload, evolve_dir=None):
         log(f"Skipping duplicate influence verdict: session_id={session_id} entity={entity}")
         return 0
 
-    if not isinstance(evidence, str):
+    if evidence is None:
+        evidence = ""
+    elif not isinstance(evidence, str):
         evidence = str(evidence)
 
     log_influence.audit.append(

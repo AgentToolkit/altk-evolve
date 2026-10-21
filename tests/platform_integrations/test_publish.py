@@ -781,8 +781,9 @@ def test_unpublish_preserves_newer_private_mirror(project_dir):
     assert _dest_path(project_dir, "my-guideline.md").exists()
 
 
-def test_user_memory_cannot_be_published(project_dir):
-    private = _write_private(project_dir, "user", "personal.md")
+@pytest.mark.parametrize("entity_type", ["user", "User"])
+def test_user_memory_cannot_be_published(project_dir, entity_type):
+    private = _write_private(project_dir, entity_type, "personal.md")
     result = run_publish(project_dir, ["--entity", "personal.md"], expect_success=False)
     assert result.returncode != 0
     assert "user memories are private" in result.stderr
@@ -882,3 +883,69 @@ def test_unpublish_does_not_replace_concurrent_private_mirror(project_dir, monke
     assert private.read_text() == "Newer native mirror"
     assert published.read_bytes() == original
     assert list(private.parent.iterdir()) == [private]
+
+
+@pytest.mark.parametrize("platform,script", PUBLISH_SCRIPT_VARIANTS)
+@pytest.mark.parametrize("concurrent_mirror", [None, "replace", "modify"])
+def test_unpublish_failed_delete_rolls_back_and_can_retry(project_dir, monkeypatch, platform, script, concurrent_mirror):
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish_script(script, project_dir, args)
+    published = _dest_path(project_dir, "my-guideline.md")
+    original = published.read_bytes()
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    module = runpy.run_path(str(script))
+    unlink = Path.unlink
+
+    def fail_delete(path, *args, **kwargs):
+        if path == published:
+            if concurrent_mirror == "replace":
+                unlink(private)
+            if concurrent_mirror:
+                private.write_text("Newer mirror")
+            raise PermissionError("injected publication delete failure")
+        return unlink(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setenv("EVOLVE_DIR", str(project_dir / ".evolve"))
+        patch.setattr(sys, "argv", [str(script), *args, "--unpublish"])
+        patch.setattr(Path, "unlink", fail_delete)
+        with pytest.raises(PermissionError, match="publication delete failure"):
+            module["main"]()
+    assert published.read_bytes() == original
+    if concurrent_mirror:
+        assert private.read_text() == "Newer mirror"
+        return
+    assert not private.exists()
+    run_publish_script(script, project_dir, args + ["--unpublish"])
+    assert private.exists()
+    assert not published.exists()
+
+
+@pytest.mark.parametrize("action", ["--update", "--unpublish"])
+def test_lifecycle_cannot_override_configured_identity(project_dir, action):
+    run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice"])
+    config = project_dir / "evolve.config.yaml"
+    config.write_text(config.read_text() + "identity:\n  user: bob\n")
+    result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
+    assert result.returncode != 0
+    # Update needs a local source before checking identity.
+    if action == "--update":
+        (project_dir / ".evolve/entities/guideline/my-guideline.md").write_text("Changed")
+        result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
+    assert "must match configured identity.user" in result.stderr
+    assert _dest_path(project_dir, "my-guideline.md").exists()
+
+
+@pytest.mark.parametrize("subscribed", [False, True])
+def test_unpublish_private_directory_symlink_boundary(project_dir, subscribed):
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish(project_dir, args)
+    private_dir = project_dir / ".evolve/entities/guideline"
+    private_dir.rmdir()
+    target = project_dir / (".evolve/entities/subscribed/other" if subscribed else "private-storage")
+    target.mkdir(parents=True)
+    private_dir.symlink_to(target, target_is_directory=True)
+    result = run_publish(project_dir, args + ["--unpublish"], expect_success=False)
+    assert (result.returncode != 0) == subscribed
+    assert _dest_path(project_dir, "my-guideline.md").exists() == subscribed
+    assert (target / "my-guideline.md").exists() != subscribed

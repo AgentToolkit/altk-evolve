@@ -174,8 +174,8 @@ def _unpublish(evolve_dir, project_root, target, effective_user, args):
     private = evolve_dir / "entities" / entity_type / args.entity
     if private.exists() or private.is_symlink():
         raise SystemExit(f"Error: private copy already exists at {private}; reconcile it before unpublishing")
-    if private.parent.is_symlink():
-        raise SystemExit("Error: refusing symlinked private type directory")
+    if _inside_any(private.parent.resolve(), _subscribed_dirs(evolve_dir / "entities")):
+        raise SystemExit("Error: refusing private type directory inside a subscribed clone")
     entity = markdown_to_entity(published)
     entity["visibility"] = "private"
     for key in ("published_at", "source"):
@@ -184,19 +184,32 @@ def _unpublish(evolve_dir, project_root, target, effective_user, args):
     # Prepare a complete file before exposing it to readers. A hard link installs
     # it exclusively: unlike replace(), it cannot overwrite a concurrent mirror.
     temp_path = None
+    restored_content = entity_to_markdown(entity)
     try:
         with tempfile.NamedTemporaryFile(
             "w", encoding="utf-8", dir=private.parent, prefix=".unpublish-", suffix=".tmp", delete=False
         ) as output:
             temp_path = Path(output.name)
-            output.write(entity_to_markdown(entity))
+            output.write(restored_content)
             output.flush()
             os.fsync(output.fileno())
         os.link(temp_path, private)
+        try:
+            published.unlink()
+        except OSError:
+            # Undo only our unchanged restoration, never a newer private mirror.
+            try:
+                if private.samefile(temp_path) and private.read_text(encoding="utf-8") == restored_content:
+                    private.unlink()
+            except OSError as rollback_error:
+                print(f"Warning: failed to roll back private restoration: {rollback_error}", file=sys.stderr)
+            raise
     finally:
         if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
-    published.unlink()
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                print(f"Warning: failed to remove temporary restoration: {cleanup_error}", file=sys.stderr)
     try:
         audit_append(
             project_root=project_root, action="unpublish", actor=effective_user, entity=args.entity, type=entity_type, repo=target["name"]
@@ -238,13 +251,16 @@ def main():
         sys.exit(1)
 
     identity = config.get("identity", {})
-    effective_user = args.user or (identity.get("user") if isinstance(identity, dict) else None)
+    configured_user = identity.get("user") if isinstance(identity, dict) else None
+    if (args.update or args.unpublish) and configured_user and args.user and args.user != configured_user:
+        raise SystemExit("Error: --user must match configured identity.user for update or unpublish")
+    effective_user = args.user or configured_user
 
     if args.unpublish:
         _unpublish(evolve_dir, project_root, target, effective_user, args)
         return
 
-    if entity_type == "user":
+    if entity_type.casefold() == "user":
         print(
             "Error: user memories are private; rewrite the content as an explicitly attributed project or reference entity before publishing.",
             file=sys.stderr,

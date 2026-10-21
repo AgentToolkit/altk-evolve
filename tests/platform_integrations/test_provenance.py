@@ -712,13 +712,14 @@ class TestSavedTrajectoryIdentity:
         assert _provenance_module().locate_trajectory("thread-123", tmp_path / ".evolve", home=tmp_path) == rollout
 
     @pytest.mark.parametrize("variable", ["CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"])
-    def test_writer_uses_runtime_session_and_preserves_input(self, tmp_path, monkeypatch, variable):
+    @pytest.mark.parametrize("session_id", [None, "", "   "])
+    def test_writer_uses_runtime_session_and_preserves_input(self, tmp_path, monkeypatch, variable, session_id):
         for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"):
             monkeypatch.delenv(name, raising=False)
         monkeypatch.setenv(variable, "runtime-session")
         monkeypatch.setenv("EVOLVE_DIR", str(tmp_path / ".evolve"))
         source = tmp_path / "input.json"
-        source.write_text(json.dumps({"messages": [{"role": "user", "content": "hello"}]}))
+        source.write_text(json.dumps({"session_id": session_id, "messages": [{"role": "user", "content": "hello"}]}))
         script = _PLUGIN_ROOT / "skills/evolve-lite/save-trajectory/scripts/save_trajectory.py"
         result = subprocess.run([sys.executable, str(script), str(source)], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
@@ -771,3 +772,34 @@ class TestSavedTrajectoryIdentity:
         assert "Messages: 1" in output.out
         assert "Warning: Trajectory saved, but failed to remove input" in output.err
         assert source.exists()
+
+
+def test_candidates_index_saved_trajectories_once(tmp_path, monkeypatch):
+    module = _provenance_module()
+    evolve = tmp_path / ".evolve"
+    trajectories = evolve / "trajectories"
+    trajectories.mkdir(parents=True)
+    for index in range(8):
+        (trajectories / f"trajectory_{index}.json").write_text(json.dumps({"session_id": f"s{index}"}))
+    monkeypatch.setattr(module, "read_recall_rows", lambda _: [(f"s{i}", ["guideline/missing"]) for i in range(8)])
+    monkeypatch.setattr(module, "_read_trajectory_excerpt", lambda _: "excerpt")
+    original = Path.read_text
+    reads = []
+
+    def read(path, *args, **kwargs):
+        if path.parent == trajectories:
+            reads.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read)
+    candidates = module.build_candidates(evolve, home=tmp_path)
+    assert len(candidates) == 8
+    assert all(c["trajectory_path"].endswith(f"trajectory_{i}.json") for i, c in enumerate(candidates))
+    assert len(reads) == 8
+
+
+def test_record_null_evidence_is_empty(tmp_path):
+    module = _provenance_module()
+    module.record_verdict({"session_id": "s", "entity": "guideline/a", "verdict": "followed", "evidence": None}, tmp_path)
+    row = json.loads((tmp_path / "audit.log").read_text().strip())
+    assert row["evidence"] == ""

@@ -141,9 +141,9 @@ def main():
 
     log(f"Trajectory has {len(messages)} messages")
 
-    if not trajectory.get("session_id"):
+    if not str(trajectory.get("session_id") or "").strip():
         for variable in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"):
-            if os.environ.get(variable):
+            if os.environ.get(variable, "").strip():
                 trajectory["session_id"] = os.environ[variable]
                 break
 

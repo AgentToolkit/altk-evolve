@@ -37,3 +37,21 @@ def test_published_native_id_ambiguity_is_not_guessed(tmp_path):
         config += f"  - name: {repo}\n    scope: write\n    remote: git@example.com:team/{repo}.git\n"
     (tmp_path / "evolve.config.yaml").write_text(config)
     assert _provenance_module()._read_entity(evolve, "feedback/style", project_root=tmp_path)[1] is None
+
+
+def test_custom_evolve_dir_uses_its_own_config(tmp_path):
+    evolve = tmp_path / "memory"
+    published = evolve / "entities/subscribed/team/feedback/style.md"
+    published.parent.mkdir(parents=True)
+    published.write_text("---\ntype: feedback\nowner: alice\n---\nAdvice\n")
+    (evolve / "evolve.config.yaml").write_text(
+        "identity:\n  user: alice\nrepos:\n  - name: team\n    scope: write\n    remote: git@example.com:team/memory.git\n"
+    )
+    assert _provenance_module()._read_entity(evolve, "feedback/style")[1] is not None
+
+
+def test_unreadable_config_leaves_entity_unresolved(tmp_path):
+    evolve = tmp_path / ".evolve"
+    evolve.mkdir()
+    (tmp_path / "evolve.config.yaml").write_bytes(b"\xff\xfe")
+    assert _provenance_module()._read_entity(evolve, "feedback/style")[1] is None
