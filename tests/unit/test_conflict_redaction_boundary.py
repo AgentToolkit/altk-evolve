@@ -162,3 +162,15 @@ def test_valid_redacted_json_preserves_structure(monkeypatch):
     )
     assert cr._apply_llm_pre_call({"email": "alice@example.com"}, "test") == {"email": "[REDACTED]"}
     assert cr._apply_llm_pre_call("123", "test") == "123"
+
+
+def test_duplicate_redacted_keys_preserve_both_values_as_text(monkeypatch):
+    def redact(messages, **kwargs):
+        return [{"role": "user", "content": re.sub(r"\w+@example\.com", "[REDACTED]", messages[0]["content"])}]
+
+    monkeypatch.setattr(cr, "dispatch_llm_pre_call", redact)
+    content = {"alice@example.com": "first", "bob@example.com": "second"}
+    result = cr._apply_llm_pre_call(content, "test")
+    assert isinstance(result, str)
+    assert '"first"' in result and '"second"' in result
+    assert result.count('"[REDACTED]"') == 2

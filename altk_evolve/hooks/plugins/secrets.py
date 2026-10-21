@@ -141,28 +141,56 @@ def build_secrets_scanner() -> Scanner:
 
 # Supplement the pinned scanner's narrow structured patterns. Keep these under
 # its existing detector switches; no entropy heuristics or new defaults.
+_PRIVATE_KEY_MARKERS = re.compile(
+    r"-----(?P<edge>BEGIN|END) (?P<kind>(?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----"
+)
+_KEY_BODY_LINES = re.compile(r"(?:\r?\n[A-Za-z0-9+/=]+(?=\r?\n|\Z))*")
 _SUPPLEMENTARY_PATTERNS = {
-    "private_key_block": re.compile(
-        r"-----BEGIN (?P<kind>(?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----"
-        r"[\s\S]*?(?:-----END (?P=kind)-----|\Z)"
-    ),
     "aws_secret_access_key": re.compile(
-        r"(?i)(\baws[ \t]+(?:AKIA|ASIA)[A-Z0-9]{16}[ \t]+secret[ \t]*=[ \t]*)([A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])"
+        r"(?i)(\baws[ \t]+)((?:AKIA|ASIA)[A-Z0-9]{16})"
+        r"([ \t]+secret(?:_access_key)?[ \t]*[=:][ \t]*)(?P<quote>['\"]?)"
+        r"(?P<secret>[A-Za-z0-9/+=]{40})(?P=quote)(?![A-Za-z0-9/+=])"
     ),
     "aws_access_key_id": re.compile(r"\bASIA[A-Z0-9]{16}\b"),
     "slack_token": re.compile(
-        r"\b(?:xoxs|xapp)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*"
+        r"\b(?:xoxs|xapp)-[A-Za-z0-9-]{10,80}(?![A-Za-z0-9-])"
         r"|https://hooks\.slack\.com/services/T[A-Za-z0-9]+/B[A-Za-z0-9]+/[A-Za-z0-9]+"
     ),
 }
 
 
+def _mask_private_keys(text: str, replacement: str) -> tuple[int, str]:
+    """Mask matching armor pairs, or only the header and adjacent base64 lines.
+
+    Delimiter pairing stops at the next marker, so an unmatched header cannot
+    consume prose or another key. Each intervening region is visited once.
+    """
+    markers = list(_PRIVATE_KEY_MARKERS.finditer(text))
+    pieces: list[str] = []
+    previous = count = 0
+    for index, marker in enumerate(markers):
+        if marker.group("edge") != "BEGIN":
+            continue
+        following = markers[index + 1] if index + 1 < len(markers) else None
+        if following is not None and following.group("edge") == "END" and following.group("kind") == marker.group("kind"):
+            end = following.end()
+        else:
+            body = _KEY_BODY_LINES.match(text, marker.end())
+            assert body is not None
+            end = body.end()
+        pieces.extend((text[previous : marker.start()], replacement))
+        previous = end
+        count += 1
+    pieces.append(text[previous:])
+    return count, "".join(pieces)
+
+
 def _supplementary_scan(items: list[dict], config: dict) -> tuple[int, list[dict]]:
     """Scan string leaves before Rust can mask just a credential's prefix.
 
-    Complete PEM/PGP bodies (or a truncated block through end of text) are one
-    finding. The Rust private-key detector is disabled by the caller to avoid
-    counting the same header twice in detection-only mode.
+    Each private-key block or AWS credential pair is one finding. This always
+    masks matched spans in a copy, even for detection-only calls, so the Rust
+    pass cannot count them a second time. The copy is discarded in that mode.
     """
     count = 0
 
@@ -172,8 +200,14 @@ def _supplementary_scan(items: list[dict], config: dict) -> tuple[int, list[dict
             return {key: visit(item) for key, item in value.items()}
         if isinstance(value, list):
             return [visit(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(visit(item) for item in value)
         if not isinstance(value, str):
             return value
+        replacement = cast(str, config["redaction_text"]) if config["redact"] else DEFAULT_REDACTION_TEXT
+        if config["enabled"]["private_key_block"]:
+            private_count, value = _mask_private_keys(value, replacement)
+            count += private_count
         for name, pattern in _SUPPLEMENTARY_PATTERNS.items():
             if not config["enabled"][name]:
                 continue
@@ -181,10 +215,11 @@ def _supplementary_scan(items: list[dict], config: dict) -> tuple[int, list[dict
             def replace(match: re.Match[str]) -> str:
                 nonlocal count
                 count += 1
-                if not config["redact"]:
-                    return match.group(0)
-                prefix = match.group(1) if name == "aws_secret_access_key" else ""
-                return prefix + cast(str, config["redaction_text"])
+                if name == "aws_secret_access_key":
+                    key = replacement if config["enabled"]["aws_access_key_id"] else match.group(2)
+                    quote = match.group("quote")
+                    return match.group(1) + key + match.group(3) + quote + replacement + quote
+                return replacement
 
             value = pattern.sub(replace, value)
         return value
@@ -244,8 +279,7 @@ class SecretsFilterMemoryPlugin(HookPluginBase):
         under ``on_error: fail``), never by returning a payload.
         """
         supplementary_count, prepared = _supplementary_scan(items, self._scan_config)
-        scan_config = {**self._scan_config, "enabled": {**self._scan_config["enabled"], "private_key_block": False}}
-        count, redacted, _findings = self._get_scanner()(prepared, scan_config)
+        count, redacted, _findings = self._get_scanner()(prepared, self._scan_config)
         count += supplementary_count
         if count == 0:
             return None

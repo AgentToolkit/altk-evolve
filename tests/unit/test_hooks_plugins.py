@@ -836,3 +836,123 @@ def test_supplementary_detectors_honor_switches_and_block_threshold():
     with pytest.raises(RuntimeError, match="2 secret"):
         block._redact_items(items * 2)
     assert items == [{"content": text}]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        ". Keep the output instructions.",
+        "\nZmFrZQ==\nKeep this instruction.",
+        "\nZmFrZQ==\n-----END EC PRIVATE KEY-----\nKeep this instruction.",
+    ],
+)
+def test_incomplete_private_key_does_not_erase_unrelated_text(tmp_path, suffix):
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    text = "Never commit -----BEGIN RSA PRIVATE KEY-----" + suffix  # pragma: allowlist secret
+    result = dispatch_llm_pre_call([{"role": "user", "content": text}], purpose="test")[0]["content"]
+    assert "PRIVATE KEY-----" not in result.split("\n")[0]
+    assert "ZmFrZQ==" not in result
+    assert suffix.split("\n")[-1] in result
+
+
+@pytest.mark.unit
+def test_slack_like_words_do_not_change_content_or_agent_identity(tmp_path):
+    pytest.importorskip("cpex_secrets_detection")
+    client = make_client(tmp_path, SECRETS_SPEC)
+    client.create_namespace("ns")
+    client.update_entities(
+        "ns",
+        [Entity(content="Use the xapp-config loader and xoxs-prefix", type="note", metadata={"agent_id": "xapp-planner"})],
+        enable_conflict_resolution=False,
+    )
+    entity = client.search_entities("ns", limit=1)[0]
+    assert entity.content == "Use the xapp-config loader and xoxs-prefix"
+    assert entity.metadata["agent_id"] == "xapp-planner"
+
+
+@pytest.mark.unit
+def test_secrets_private_keys_inside_tuples_are_redacted():
+    pytest.importorskip("cpex_secrets_detection")
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    block = "-----BEGIN RSA PRIVATE KEY-----\nZmFrZQ==\n-----END RSA PRIVATE KEY-----"  # pragma: allowlist secret
+    items = [{"metadata": {"files": (block,)}}]
+    result = SecretsFilterMemoryPlugin()._redact_items(items)
+    assert result[0]["metadata"]["files"][0] == "[REDACTED]"
+    assert items[0]["metadata"]["files"] == (block,)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("assignment", ["secret={}", "secret: {}", 'secret="{}"', "secret_access_key={}"])
+@pytest.mark.parametrize("key", [_FAKE_AWS_KEY, "ASIA" + "A" * 16])
+def test_aws_pair_is_one_finding_and_masks_both_values(assignment, key):
+    pytest.importorskip("cpex_secrets_detection")
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    text = f"aws {key} " + assignment.format(_FAKE_AWS_SECRET)
+    items = [{"content": text}]
+    redacted = SecretsFilterMemoryPlugin()._redact_items(items)[0]["content"]
+    assert key not in redacted and _FAKE_AWS_SECRET not in redacted
+    plugin = SecretsFilterMemoryPlugin({"redact": False, "block_on_detection": True, "min_findings_to_block": 2})
+    assert plugin._redact_items(items) is None
+    with pytest.raises(RuntimeError, match="2 secret"):
+        plugin._redact_items(items * 2)
+    assert items == [{"content": text}]
+
+
+@pytest.mark.unit
+def test_real_pii_conflict_hook_preserves_colliding_values_and_json_instructions(tmp_path, monkeypatch):
+    import json
+    from datetime import datetime
+    from types import SimpleNamespace
+    from altk_evolve.llm.conflict_resolution import conflict_resolution as cr
+    from altk_evolve.schema.core import RecordedEntity
+
+    pytest.importorskip("cpex_pii_filter")
+    make_client(tmp_path, PII_SPEC)
+    content = {"alice@example.com": "first", "bob@example.com": "second"}
+    entity = RecordedEntity(id="7", type="fact", content=content, created_at=datetime.now())
+    instructions = '{"contact": "admin@example.com"}'
+    calls = []
+
+    def complete(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        calls.append(prompt)
+        assert '{"contact": "[REDACTED]"}' in prompt
+        assert "@example.com" not in prompt
+        incoming = json.loads(prompt.split("Below is a list of entities which I have collected up until now:", 1)[1].split("```", 2)[1])
+        value = incoming[0]["content"]
+        assert isinstance(value, str) and '"first"' in value and '"second"' in value
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content=json.dumps({"entities": [{**incoming[0], "event": "ADD"}]})), finish_reason="stop"
+                )
+            ]
+        )
+
+    monkeypatch.setattr(cr, "completion", complete)
+    assert cr.resolve_conflicts([], [entity], custom_update_entities_prompt=instructions)[0].id == "7"
+    assert len(calls) == 1
+    assert entity.content == content
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("access_enabled,secret_enabled", [(False, False), (True, False), (False, True), (True, True)])
+def test_aws_pair_respects_independent_detector_switches(access_enabled, secret_enabled):
+    pytest.importorskip("cpex_secrets_detection")
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    text = f"aws {_FAKE_AWS_KEY} secret={_FAKE_AWS_SECRET}"
+    items = [{"content": text}]
+    plugin = SecretsFilterMemoryPlugin({"enabled": {"aws_access_key_id": access_enabled, "aws_secret_access_key": secret_enabled}})
+    result = plugin._redact_items(items)
+    if not access_enabled and not secret_enabled:
+        assert result is None
+    else:
+        expected_key = "[REDACTED]" if access_enabled else _FAKE_AWS_KEY
+        expected_secret = "[REDACTED]" if secret_enabled else _FAKE_AWS_SECRET
+        assert result == [{"content": f"aws {expected_key} secret={expected_secret}"}]
+    assert items == [{"content": text}]

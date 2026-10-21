@@ -81,6 +81,16 @@ def _conflict_resolution_completion_options(settings: LLMSettings | None = None)
     return options
 
 
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
+    """Reject redaction collisions instead of silently dropping earlier values."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Redacted JSON contains duplicate object keys")
+        result[key] = value
+    return result
+
+
 def _apply_llm_pre_call(content: str | list | dict, model: str) -> str | list | dict:
     """Pass memory content as text to the hook and use only its returned text.
 
@@ -97,8 +107,8 @@ def _apply_llm_pre_call(content: str | list | dict, model: str) -> str | list | 
         raise ValueError("llm_pre_call must return one user message containing text")
     if isinstance(content, (dict, list)):
         try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
+            parsed = json.loads(text, object_pairs_hook=_unique_json_object)
+        except ValueError:
             pass
         else:
             if isinstance(parsed, (dict, list)):
