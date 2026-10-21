@@ -738,3 +738,36 @@ class TestSavedTrajectoryIdentity:
         if valid:
             saved = next((tmp_path / ".evolve/trajectories").glob("*.json"))
             assert json.loads(saved.read_text())["session_id"] == "explicit"
+
+    @pytest.mark.parametrize("platform", ["claude", "codex", "claw-code", "bob"])
+    def test_cleanup_failure_still_confirms_saved_trajectory(self, tmp_path, monkeypatch, capsys, platform):
+        root = _REPO_ROOT / "platform-integrations" / platform
+        relative = (
+            "evolve-lite/skills/evolve-lite-save-trajectory"
+            if platform == "bob"
+            else "plugins/evolve-lite/skills/evolve-lite/save-trajectory"
+        )
+        writer = load_module(f"_cleanup_writer_{platform}", root / relative / "scripts/save_trajectory.py")
+        monkeypatch.setenv("EVOLVE_DIR", str(tmp_path / ".evolve"))
+        source = tmp_path / "input.json"
+        payload = {"session_id": "explicit", "messages": [{"role": "user", "content": "hi"}]}
+        source.write_text(json.dumps(payload))
+        monkeypatch.setattr(sys, "argv", ["save_trajectory.py", str(source), "--delete-input"])
+        original_unlink = Path.unlink
+
+        def deny_input_cleanup(path, *args, **kwargs):
+            if path == source:
+                raise PermissionError("input directory is read-only")
+            return original_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", deny_input_cleanup)
+        writer.main()
+
+        output = capsys.readouterr()
+        saved = list((tmp_path / ".evolve/trajectories").glob("*.json"))
+        assert len(saved) == 1
+        assert json.loads(saved[0].read_text()) == payload
+        assert f"Trajectory saved: {saved[0]}" in output.out
+        assert "Messages: 1" in output.out
+        assert "Warning: Trajectory saved, but failed to remove input" in output.err
+        assert source.exists()

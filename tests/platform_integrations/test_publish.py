@@ -3,6 +3,7 @@
 import json
 import os
 import runpy
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -718,7 +719,19 @@ def test_publish_preserves_long_entity_names(project_dir, length, platform, scri
         ("claw-code", _REPO_ROOT / "platform-integrations/claw-code/plugins/evolve-lite/skills/evolve-lite/publish/scripts/publish.py"),
     ],
 )
-def test_publish_update_unpublish_lifecycle(project_dir, platform, script):
+@pytest.mark.parametrize("installed", [False, True])
+def test_publish_update_unpublish_lifecycle(project_dir, platform, script, installed):
+    unpublish_name = "evolve-lite-unpublish" if platform == "bob" else "unpublish"
+    unpublish = script.parents[2] / unpublish_name / "scripts/unpublish.py"
+    if installed:
+        host = project_dir / (".claw" if platform == "claw-code" else f".{platform}")
+        prefix = "evolve-lite:" if platform == "claw-code" else "evolve-lite-" if platform == "bob" else ""
+        source_root = next(parent for parent in script.parents if (parent / "lib/evolve-lite").is_dir())
+        shutil.copytree(source_root / "lib", host / "lib")
+        for name, source in (("publish", script), ("unpublish", unpublish)):
+            shutil.copytree(source.parent.parent, host / "skills" / f"{prefix}{name}")
+        script = host / "skills" / f"{prefix}publish/scripts/publish.py"
+        unpublish = host / "skills" / f"{prefix}unpublish/scripts/unpublish.py"
     args = ["--entity", "my-guideline.md", "--user", "alice"]
     run_publish_script(script, project_dir, args)
     private = project_dir / ".evolve/entities/guideline/my-guideline.md"
@@ -726,7 +739,6 @@ def test_publish_update_unpublish_lifecycle(project_dir, platform, script):
     run_publish_script(script, project_dir, args + ["--update"])
     assert "Updated native memory." in _dest_path(project_dir, "my-guideline.md").read_text()
     assert not private.exists()
-    unpublish = script.parents[2] / ("evolve-lite-unpublish" if platform == "bob" else "unpublish") / "scripts/unpublish.py"
     run_publish_script(unpublish, project_dir, args)
     assert "Updated native memory." in private.read_text()
     assert "visibility: private" in private.read_text()
@@ -741,8 +753,20 @@ def test_lifecycle_requires_matching_known_owner(project_dir, owner, action):
     dest.parent.mkdir(parents=True)
     content = f"---\ntype: guideline\nowner: {owner or ''}\n---\nExisting\n"
     dest.write_text(content)
+    if action == "--unpublish":
+        (project_dir / ".evolve/entities/guideline/my-guideline.md").unlink()
     result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
     assert result.returncode != 0
+    if action == "--update" and owner:
+        assert "Error: name collision:" in result.stderr
+        assert "already published by 'bob'" in result.stderr
+    else:
+        expected_error = (
+            "Error: --update requires a known matching owner."
+            if action == "--update"
+            else "Error: unpublish requires a known matching owner"
+        )
+        assert result.stderr.strip() == expected_error
     assert dest.read_text() == content
 
 
@@ -780,7 +804,10 @@ def test_lifecycle_refuses_symlinked_publication(project_dir, action):
     content = "---\ntype: guideline\nowner: alice\n---\nDo not replace me\n"
     other.write_text(content)
     dest.symlink_to(other)
+    if action == "--unpublish":
+        (project_dir / ".evolve/entities/guideline/my-guideline.md").unlink()
     result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
     assert result.returncode != 0
+    assert "symlink" in result.stderr
     assert other.read_text() == content
     assert dest.is_symlink()

@@ -165,7 +165,11 @@ def main():
         sys.exit(1)
 
     if args.delete_input and input_path:
-        Path(input_path).unlink()
+        try:
+            Path(input_path).unlink()
+        except OSError as e:
+            log(f"Saved trajectory but failed to remove input: {e}")
+            print(f"Warning: Trajectory saved, but failed to remove input {input_path}: {e}", file=sys.stderr)
 
     print(f"Trajectory saved: {output_path}")
     print(f"Messages: {len(messages)}")

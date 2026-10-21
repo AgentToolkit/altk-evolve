@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 skills = Path(__file__).resolve().parents[2]
-for name in ("publish", "evolve-lite-publish"):
+for name in ("publish", "evolve-lite-publish", "evolve-lite:publish"):
     script = skills / name / "scripts" / "publish.py"
     if script.is_file():
         sys.argv.append("--unpublish")
