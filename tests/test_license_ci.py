@@ -323,3 +323,22 @@ def test_empty_independent_inventory_is_rejected_by_cli(tmp_path, monkeypatch):
     )
     with pytest.raises(ValueError, match="Empty independent"):
         check.main()
+
+
+def test_python_record_license_outside_site_packages_stays_inside_environment(tmp_path):
+    root = tmp_path / "venv"
+    dist = root / "lib/python3.12/site-packages/demo-1.dist-info"
+    dist.mkdir(parents=True)
+    (dist / "METADATA").write_text("Name: demo\nVersion: 1\n")
+    (dist / "LICENSE").write_text("bundled license")
+    shared = root / "share/licenses/demo/LICENSE"
+    shared.parent.mkdir(parents=True)
+    shared.write_text("shared license")
+    (tmp_path / "LICENSE").write_text("outside environment")
+    (dist / "RECORD").write_text("\ndemo-1.dist-info/LICENSE,,\n../../../share/licenses/demo/LICENSE,,\n../../../../LICENSE,,\n")
+    files = check.inventory("python", root)[0]["files"]
+    assert [item["path"] for item in files] == [
+        "lib/python3.12/site-packages/demo-1.dist-info/LICENSE",
+        "share/licenses/demo/LICENSE",
+    ]
+    assert all(len(item["sha256"]) == 64 for item in files)

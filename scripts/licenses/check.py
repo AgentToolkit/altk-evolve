@@ -97,17 +97,22 @@ def inventory(kind, root):
     if kind == "python":
         for dist in sorted(root.glob("lib/python*/site-packages/*.dist-info")):
             metadata = email.message_from_string((dist / "METADATA").read_text())
-            proof = {item["path"]: item for item in evidence_files(dist)}
+            proof = {}
+            for item in evidence_files(dist):
+                key = str((dist / item["path"]).relative_to(root))
+                proof[key] = {**item, "path": key}
             record = dist / "RECORD"
             if record.exists():
                 for row in csv.reader(record.read_text().splitlines()):
+                    if not row:
+                        continue
                     candidate = (dist.parent / row[0]).resolve()
                     if (
                         candidate.name.upper().startswith(("LICENSE", "LICENCE", "COPYING", "NOTICE"))
                         and candidate.is_file()
                         and candidate.is_relative_to(root.resolve())
                     ):
-                        key = str(candidate.relative_to(dist.parent.resolve()))
+                        key = str(candidate.relative_to(root.resolve()))
                         proof[key] = {
                             "path": key,
                             "sha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),

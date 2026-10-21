@@ -21,18 +21,20 @@ jobs:
         architecture: [amd64, arm64]
     steps:
       - name: Checkout release code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
+          version: '0.9.5'
           python-version: '3.12'
+          enable-cache: false
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Extract release labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: altk-evolve
           flavor: |
@@ -45,7 +47,7 @@ jobs:
       - name: Prepare archive directory
         run: mkdir -p release/${{ matrix.architecture }}
       - name: Build one architecture without registry credentials
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
           file: Dockerfile.core
@@ -84,13 +86,13 @@ jobs:
             "$directory" "$ARCHITECTURE" --mode "$LICENSE_MODE"
       - name: Retain license evidence even when the gate fails
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-license-evidence-${{ matrix.architecture }}
           path: release/${{ matrix.architecture }}/*.json
           if-no-files-found: ignore
       - name: Retain the exact successfully scanned archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: scanned-core-${{ matrix.architecture }}
           path: |
@@ -107,26 +109,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout trusted release promotion code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
+          version: '0.9.5'
           python-version: '3.12'
+          enable-cache: false
       - name: Set up Docker Buildx for manifest creation
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Download scanned amd64 archive
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: scanned-core-amd64
           path: scanned/amd64
       - name: Download scanned arm64 archive
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: scanned-core-arm64
           path: scanned/arm64
       - name: Extract Docker Hub release tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/altk-evolve
           flavor: |
@@ -137,7 +141,7 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest
       - name: Log in to Docker Hub only after both scans pass
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -153,7 +157,7 @@ jobs:
             --repository "$IMAGE_REPOSITORY" --metadata "$RUNNER_TEMP/image-metadata.json" \
             --run-id "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --mode "$LICENSE_MODE"
       - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@432a30c9e07499fd01da9f8a49f0faf9e0ca5b77 # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}

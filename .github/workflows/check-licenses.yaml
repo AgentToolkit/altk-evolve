@@ -10,8 +10,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: licenses-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Keep every push: sharing a group can also replace a queued main run.
+  group: licenses-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   plan:
