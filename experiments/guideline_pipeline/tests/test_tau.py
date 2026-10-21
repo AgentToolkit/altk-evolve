@@ -525,3 +525,19 @@ def test_either_source_excludes_test_tasks(tau_dir, tmp_path, caplog, header, li
 def test_default_excludes_case_insensitive_header_without_table(tau_dir, header):
     split_file(tau_dir, "task_1.txt", header)
     assert list(records(tau_dir)) == ["task_2"]
+
+
+def test_direct_split_table_construction_and_reconfiguration(tau_dir: Path, tmp_path: Path):
+    table = tmp_path / "split_tasks.json"
+    table.write_text(json.dumps({"train": ["2"], "test_normal": ["1"]}))
+    adapter = TauRetailAdapter(split_file=table)
+    assert [r.batch.batch_id for r in adapter.records(tau_dir)] == ["task_2"]
+    selected = TauRetailAdapter(split_file=table, splits=frozenset({"test_normal"}))
+    assert [r.batch.batch_id for r in selected.records(tau_dir)] == ["task_1"]
+    changed = adapter.configure({"splits": "test_normal"})
+    assert [r.batch.batch_id for r in changed.records(tau_dir)] == ["task_1"]
+    assert [r.batch.batch_id for r in adapter.records(tau_dir)] == ["task_2"]
+    with pytest.raises(ValueError, match="Splits not found"):
+        adapter.configure({"splits": "missing"})
+    with pytest.raises(ValueError, match="Cannot read"):
+        TauRetailAdapter(split_file=tmp_path / "missing.json")

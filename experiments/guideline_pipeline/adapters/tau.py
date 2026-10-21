@@ -418,10 +418,10 @@ class TauRetailAdapter:
     splits: frozenset[str] = field(default_factory=frozenset)
     split_file: Path | None = None
     # Explicit split_file selection; None uses header selection or the default test exclusion.
-    split_task_keys: frozenset[str] | None = None
+    split_task_keys: frozenset[str] | None = field(default=None, init=False)
 
-    default_test_keys: frozenset[str] = field(default_factory=frozenset)
-    known_split_keys: frozenset[str] = field(default_factory=frozenset)
+    default_test_keys: frozenset[str] = field(default_factory=frozenset, init=False)
+    known_split_keys: frozenset[str] = field(default_factory=frozenset, init=False)
 
     def configure(self, options: Mapping[str, str]) -> TauRetailAdapter:
         changes: dict[str, Any] = {}
@@ -434,17 +434,19 @@ class TauRetailAdapter:
                 changes[key] = Path(value)
             else:
                 raise ValueError(f"Unknown {SOURCE} option {key!r} (expected include_policy, include_scenario, splits, split_file)")
-        if "split_file" in changes:
-            splits: frozenset[str] = changes.get("splits", self.splits)
-            table = load_split_file(changes["split_file"])
-            if missing := sorted(splits - table.keys()):
-                raise ValueError(f"Splits not found in {SOURCE} split file {changes['split_file']}: {missing} (found {sorted(table)})")
-            changes["split_task_keys"] = frozenset().union(*(table[split] for split in splits)) if splits else None
-            changes["default_test_keys"] = frozenset().union(*(keys for name, keys in table.items() if name.lower().startswith("test")))
-            changes["known_split_keys"] = frozenset().union(
-                *(keys for name, keys in table.items() if name.lower() == "train" or name.lower().startswith("test"))
-            )
         return replace(self, **changes)
+
+    def __post_init__(self) -> None:
+        if self.split_file is None:
+            return
+        table = load_split_file(self.split_file)
+        if missing := sorted(self.splits - table.keys()):
+            raise ValueError(f"Splits not found in {SOURCE} split file {self.split_file}: {missing} (found {sorted(table)})")
+        self.split_task_keys = frozenset().union(*(table[split] for split in self.splits)) if self.splits else None
+        self.default_test_keys = frozenset().union(*(keys for name, keys in table.items() if name.lower().startswith("test")))
+        self.known_split_keys = frozenset().union(
+            *(keys for name, keys in table.items() if name.lower() == "train" or name.lower().startswith("test"))
+        )
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
         """Yield one record per task file after selecting files by split.
