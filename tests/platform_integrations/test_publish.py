@@ -2,6 +2,8 @@
 
 import json
 import os
+import runpy
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -184,7 +186,7 @@ class TestPublish:
 
         assert result.returncode != 0
         assert "already published" in result.stderr
-        assert "Unpublish it first or delete it manually." in result.stderr
+        assert "Unpublish it first or use --update with the same owner." in result.stderr
         assert "name collision" not in result.stderr
         assert dest.read_text() == existing
 
@@ -461,7 +463,7 @@ class TestPublishAnyEntityType:
         assert str(native.parent) not in content
         assert not (typed_project / ".evolve" / "entities" / "subscribed" / _DEFAULT_WRITE_REPO / "guideline").exists()
 
-    @pytest.mark.parametrize("entity_type", ["user", "feedback", "project", "reference", "guideline"])
+    @pytest.mark.parametrize("entity_type", ["feedback", "project", "reference", "guideline"])
     @pytest.mark.parametrize(("platform_name", "publish_script"), PUBLISH_SCRIPT_VARIANTS)
     def test_keeps_type_directory_in_shared_repo(self, typed_project, entity_type, publish_script, platform_name):
         source = _write_private(typed_project, entity_type, "note.md")
@@ -688,3 +690,262 @@ class TestPublishAnyEntityType:
         entry = json.loads((typed_project / ".evolve" / "audit.log").read_text().strip())
         assert entry["entity"] == "note.md"
         assert entry["type"] == "feedback"
+
+
+@pytest.mark.parametrize("length", [75, 240, 250, 260])
+@pytest.mark.parametrize("platform,script", PUBLISH_SCRIPT_VARIANTS)
+def test_publish_preserves_long_entity_names(project_dir, length, platform, script):
+    writer = runpy.run_path(str(_REPO_ROOT / "plugin-source/lib/entity_io.py"))["write_entity_file"]
+    source = writer(
+        project_dir / ".evolve/entities",
+        {"type": "guideline", "content": "Preserve this long-name memory."},
+        filename="a" * length,
+        overwrite=True,
+    )
+    run_publish_script(script, project_dir, ["--entity", source.name, "--user", "alice"])
+    destination = _dest_path(project_dir, source.name)
+    assert destination.is_file()
+    assert "Preserve this long-name memory." in destination.read_text()
+    assert "owner: alice" in destination.read_text()
+    assert not source.exists()
+    assert sorted(p.name for p in destination.parent.iterdir()) == [source.name]
+
+
+@pytest.mark.parametrize(
+    "platform,script",
+    PUBLISH_SCRIPT_VARIANTS
+    + [
+        ("bob", _REPO_ROOT / "platform-integrations/bob/evolve-lite/skills/evolve-lite-publish/scripts/publish.py"),
+        ("claw-code", _REPO_ROOT / "platform-integrations/claw-code/plugins/evolve-lite/skills/evolve-lite/publish/scripts/publish.py"),
+    ],
+)
+@pytest.mark.parametrize("installed", [False, True])
+def test_publish_update_unpublish_lifecycle(project_dir, platform, script, installed):
+    unpublish_name = "evolve-lite-unpublish" if platform == "bob" else "unpublish"
+    unpublish = script.parents[2] / unpublish_name / "scripts/unpublish.py"
+    if installed:
+        host = project_dir / (".claw" if platform == "claw-code" else f".{platform}")
+        prefix = "evolve-lite:" if platform == "claw-code" else "evolve-lite-" if platform == "bob" else ""
+        source_root = next(parent for parent in script.parents if (parent / "lib/evolve-lite").is_dir())
+        shutil.copytree(source_root / "lib", host / "lib")
+        for name, source in (("publish", script), ("unpublish", unpublish)):
+            shutil.copytree(source.parent.parent, host / "skills" / f"{prefix}{name}")
+        script = host / "skills" / f"{prefix}publish/scripts/publish.py"
+        unpublish = host / "skills" / f"{prefix}unpublish/scripts/unpublish.py"
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish_script(script, project_dir, args)
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    private.write_text("---\ntype: guideline\n---\n\nUpdated native memory.\n")
+    run_publish_script(script, project_dir, args + ["--update"])
+    assert "Updated native memory." in _dest_path(project_dir, "my-guideline.md").read_text()
+    assert not private.exists()
+    run_publish_script(unpublish, project_dir, args)
+    assert "Updated native memory." in private.read_text()
+    assert "visibility: private" in private.read_text()
+    assert not _dest_path(project_dir, "my-guideline.md").exists()
+    assert json.loads((project_dir / ".evolve/audit.log").read_text().splitlines()[-1])["action"] == "unpublish"
+
+
+@pytest.mark.parametrize("owner", ["bob", None])
+@pytest.mark.parametrize("action", ["--update", "--unpublish"])
+def test_lifecycle_requires_matching_known_owner(project_dir, owner, action):
+    dest = _dest_path(project_dir, "my-guideline.md")
+    dest.parent.mkdir(parents=True)
+    content = f"---\ntype: guideline\nowner: {owner or ''}\n---\nExisting\n"
+    dest.write_text(content)
+    if action == "--unpublish":
+        (project_dir / ".evolve/entities/guideline/my-guideline.md").unlink()
+    result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
+    assert result.returncode != 0
+    if action == "--update" and owner:
+        assert "Error: name collision:" in result.stderr
+        assert "already published by 'bob'" in result.stderr
+    else:
+        expected_error = (
+            "Error: --update requires a known matching owner."
+            if action == "--update"
+            else "Error: unpublish requires a known matching owner"
+        )
+        assert result.stderr.strip() == expected_error
+    assert dest.read_text() == content
+
+
+def test_unpublish_preserves_newer_private_mirror(project_dir):
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    run_publish(project_dir, args)
+    private.write_text("Newer mirror")
+    result = run_publish(project_dir, args + ["--unpublish"], expect_success=False)
+    assert result.returncode != 0
+    assert private.read_text() == "Newer mirror"
+    assert _dest_path(project_dir, "my-guideline.md").exists()
+
+
+@pytest.mark.parametrize("entity_type", ["user", "User"])
+def test_user_memory_cannot_be_published(project_dir, entity_type):
+    private = _write_private(project_dir, entity_type, "personal.md")
+    result = run_publish(project_dir, ["--entity", "personal.md"], expect_success=False)
+    assert result.returncode != 0
+    assert "user memories are private" in result.stderr
+    assert private.exists()
+
+
+def test_update_requires_existing_publication(project_dir):
+    result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", "--update"], expect_success=False)
+    assert result.returncode != 0
+    assert not _dest_path(project_dir, "my-guideline.md").exists()
+    assert (project_dir / ".evolve/entities/guideline/my-guideline.md").exists()
+
+
+@pytest.mark.parametrize("action", ["--update", "--unpublish"])
+def test_lifecycle_refuses_symlinked_publication(project_dir, action):
+    dest = _dest_path(project_dir, "my-guideline.md")
+    dest.parent.mkdir(parents=True)
+    other = dest.parent / "other.md"
+    content = "---\ntype: guideline\nowner: alice\n---\nDo not replace me\n"
+    other.write_text(content)
+    dest.symlink_to(other)
+    if action == "--unpublish":
+        (project_dir / ".evolve/entities/guideline/my-guideline.md").unlink()
+    result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
+    assert result.returncode != 0
+    assert "symlink" in result.stderr
+    assert other.read_text() == content
+    assert dest.is_symlink()
+
+
+@pytest.mark.parametrize("platform,script", PUBLISH_SCRIPT_VARIANTS)
+def test_unpublish_failed_write_keeps_publication_and_allows_retry(project_dir, monkeypatch, platform, script):
+    import io
+
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish_script(script, project_dir, args)
+    published = _dest_path(project_dir, "my-guideline.md")
+    original = published.read_bytes()
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    module = runpy.run_path(str(script))
+    real_open = io.open
+
+    class InterruptedWrite:
+        def __init__(self, output):
+            self.output = output
+
+        def __getattr__(self, name):
+            return getattr(self.output, name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.output.__exit__(*args)
+
+        def write(self, content):
+            self.output.write(content[:10])
+            raise OSError("simulated disk full")
+
+    def interrupted_open(file, mode="r", *args, **kwargs):
+        output = real_open(file, mode, *args, **kwargs)
+        return InterruptedWrite(output) if mode in {"x", "w"} else output
+
+    with monkeypatch.context() as patch:
+        patch.setenv("EVOLVE_DIR", str(project_dir / ".evolve"))
+        patch.setattr(sys, "argv", [str(script), *args, "--unpublish"])
+        patch.setattr(io, "open", interrupted_open)
+        with pytest.raises(OSError, match="disk full"):
+            module["main"]()
+    assert published.read_bytes() == original
+    assert not private.exists()
+    assert list(private.parent.iterdir()) == []
+    run_publish_script(script, project_dir, args + ["--unpublish"])
+    assert "Prefer composition over inheritance." in private.read_text()
+    assert not published.exists()
+
+
+@pytest.mark.parametrize("platform,script", PUBLISH_SCRIPT_VARIANTS)
+def test_unpublish_does_not_replace_concurrent_private_mirror(project_dir, monkeypatch, platform, script):
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish_script(script, project_dir, args)
+    published = _dest_path(project_dir, "my-guideline.md")
+    original = published.read_bytes()
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    module = runpy.run_path(str(script))
+    real_link = os.link
+
+    def concurrent_link(source, destination, *args, **kwargs):
+        private.write_text("Newer native mirror")
+        return real_link(source, destination, *args, **kwargs)
+
+    monkeypatch.setenv("EVOLVE_DIR", str(project_dir / ".evolve"))
+    monkeypatch.setattr(sys, "argv", [str(script), *args, "--unpublish"])
+    monkeypatch.setattr(os, "link", concurrent_link)
+    with pytest.raises(FileExistsError):
+        module["main"]()
+    assert private.read_text() == "Newer native mirror"
+    assert published.read_bytes() == original
+    assert list(private.parent.iterdir()) == [private]
+
+
+@pytest.mark.parametrize("platform,script", PUBLISH_SCRIPT_VARIANTS)
+@pytest.mark.parametrize("concurrent_mirror", [None, "replace", "modify"])
+def test_unpublish_failed_delete_rolls_back_and_can_retry(project_dir, monkeypatch, platform, script, concurrent_mirror):
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish_script(script, project_dir, args)
+    published = _dest_path(project_dir, "my-guideline.md")
+    original = published.read_bytes()
+    private = project_dir / ".evolve/entities/guideline/my-guideline.md"
+    module = runpy.run_path(str(script))
+    unlink = Path.unlink
+
+    def fail_delete(path, *args, **kwargs):
+        if path == published:
+            if concurrent_mirror == "replace":
+                unlink(private)
+            if concurrent_mirror:
+                private.write_text("Newer mirror")
+            raise PermissionError("injected publication delete failure")
+        return unlink(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setenv("EVOLVE_DIR", str(project_dir / ".evolve"))
+        patch.setattr(sys, "argv", [str(script), *args, "--unpublish"])
+        patch.setattr(Path, "unlink", fail_delete)
+        with pytest.raises(PermissionError, match="publication delete failure"):
+            module["main"]()
+    assert published.read_bytes() == original
+    if concurrent_mirror:
+        assert private.read_text() == "Newer mirror"
+        return
+    assert not private.exists()
+    run_publish_script(script, project_dir, args + ["--unpublish"])
+    assert private.exists()
+    assert not published.exists()
+
+
+@pytest.mark.parametrize("action", ["--update", "--unpublish"])
+def test_lifecycle_cannot_override_configured_identity(project_dir, action):
+    run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice"])
+    config = project_dir / "evolve.config.yaml"
+    config.write_text(config.read_text() + "identity:\n  user: bob\n")
+    result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
+    assert result.returncode != 0
+    # Update needs a local source before checking identity.
+    if action == "--update":
+        (project_dir / ".evolve/entities/guideline/my-guideline.md").write_text("Changed")
+        result = run_publish(project_dir, ["--entity", "my-guideline.md", "--user", "alice", action], expect_success=False)
+    assert "must match configured identity.user" in result.stderr
+    assert _dest_path(project_dir, "my-guideline.md").exists()
+
+
+@pytest.mark.parametrize("subscribed", [False, True])
+def test_unpublish_private_directory_symlink_boundary(project_dir, subscribed):
+    args = ["--entity", "my-guideline.md", "--user", "alice"]
+    run_publish(project_dir, args)
+    private_dir = project_dir / ".evolve/entities/guideline"
+    private_dir.rmdir()
+    target = project_dir / (".evolve/entities/subscribed/other" if subscribed else "private-storage")
+    target.mkdir(parents=True)
+    private_dir.symlink_to(target, target_is_directory=True)
+    result = run_publish(project_dir, args + ["--unpublish"], expect_success=False)
+    assert (result.returncode != 0) == subscribed
+    assert _dest_path(project_dir, "my-guideline.md").exists() == subscribed
+    assert (target / "my-guideline.md").exists() != subscribed

@@ -220,6 +220,7 @@ class InstallRunner:
         platform: Optional[str] = None,
         mode: Optional[str] = None,
         dry_run: bool = False,
+        global_cleanup: bool = False,
         expect_success: bool = True,
         env: Optional[Dict[str, str]] = None,
     ) -> subprocess.CompletedProcess:
@@ -246,6 +247,7 @@ class InstallRunner:
             + (["--platform", platform] if platform else [])
             + (["--mode", mode] if mode else [])
             + (["--dry-run"] if dry_run else [])
+            + (["--global"] if global_cleanup else [])
         )
 
         # Merge environment variables

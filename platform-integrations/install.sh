@@ -44,13 +44,17 @@ error()   { echo -e "${RED}✗${RESET} $*" >&2; }
 die()     { error "$*"; exit 1; }
 
 # ─── Python check ─────────────────────────────────────────────────────────────
+# The minimum is what the installed plugin scripts need, not just this
+# installer: publish/subscribe/sync/unsubscribe call Path.is_relative_to (3.9+).
+# tests/platform_integrations/test_python_minimum.py keeps the two in step.
+MIN_PYTHON_MINOR=9
 if ! command -v python3 &>/dev/null; then
-  die "python3 is required but not found. Install Python 3.8+ and try again."
+  die "python3 is required but not found. Install Python 3.${MIN_PYTHON_MINOR}+ and try again."
 fi
 
-PYTHON_OK=$(python3 -c "import sys; print(1 if sys.version_info >= (3,8) else 0)" 2>/dev/null || echo 0)
+PYTHON_OK=$(python3 -c "import sys; print(1 if sys.version_info >= (3,${MIN_PYTHON_MINOR}) else 0)" 2>/dev/null || echo 0)
 if [ "$PYTHON_OK" != "1" ]; then
-  die "python3 >= 3.8 is required. Found: $(python3 --version 2>&1)"
+  die "python3 >= 3.${MIN_PYTHON_MINOR} is required. Found: $(python3 --version 2>&1)"
 fi
 
 # ─── Source resolution ────────────────────────────────────────────────────────
@@ -186,7 +190,7 @@ CLAUDE_LEGACY_ALLOW_RULES = [
 ]
 
 # Claude registers a local marketplace by path and reads the plugin from that
-# path on every session start (it does not cache a copy). A curl | bash install
+# path on every session start (its cache does not replace that source). A curl | bash install
 # downloads the source into a temp dir that is deleted when the installer exits,
 # so registering that dir leaves the plugin unloadable (#387). For downloaded
 # installs we therefore copy the marketplace into this installer-owned dir
@@ -218,7 +222,9 @@ def _claude_marketplace_subset(source_root):
             raise RuntimeError(f"marketplace.json plugin source not found: {source_root / rel}")
         if rel not in rel_paths:
             rel_paths.append(rel)
-    return rel_paths
+    # Copy parents once, regardless of the manifest's source order.
+    return [rel for rel in rel_paths
+            if not any(rel != parent and Path(parent) in Path(rel).parents for parent in rel_paths)]
 
 # Bob (a Gemini-CLI fork) prefix-matches its shell allowlist and splits chained
 # commands, so allowlisting the exact recall-audit command can't widen (a
@@ -419,7 +425,10 @@ class FileOps:
         dst.parent.mkdir(parents=True, exist_ok=True)
         # Leftovers from an interrupted earlier run.
         self.remove_owned_dir(staging)
-        self.remove_owned_dir(old)
+        if not os.path.lexists(dst) and os.path.lexists(old):
+            os.replace(old, dst)
+        else:
+            self.remove_owned_dir(old)
         try:
             staging.mkdir()
             for rel in rel_paths:
@@ -429,7 +438,18 @@ class FileOps:
             raise
         if os.path.lexists(dst):
             os.replace(dst, old)
-        os.replace(staging, dst)
+        try:
+            os.replace(staging, dst)
+        except BaseException:
+            # Keep the registered marketplace usable after a failed activation,
+            # not just after the next installer run. Retain the backup if the
+            # rollback itself fails, so the existing startup recovery can retry.
+            if not os.path.lexists(dst) and os.path.lexists(old):
+                try:
+                    os.replace(old, dst)
+                except OSError as rollback_error:
+                    warn(f"Could not restore marketplace; backup remains at {old}: {rollback_error}")
+            raise
         self.remove_owned_dir(old)
         debug(f"Replaced {dst} with {', '.join(str(r) for r in rel_paths)} from {src_root}")
 
@@ -1190,21 +1210,22 @@ class BobInstaller:
 
         success("Bob installation complete")
 
-    def uninstall(self, target_dir):
+    def uninstall(self, target_dir, global_cleanup=False):
         bob_target = Path(target_dir) / ".bob"
         info(f"Uninstalling Bob from {bob_target}")
 
         self._purge_evolve_artifacts(bob_target)
-        # Lite: drop the global always-on instructions rules file and the
-        # recall-audit script (and its dir if nothing else lives there).
-        self.ops.remove_file(self._rules_file())
-        audit_file = self._audit_script_file()
-        self.ops.remove_file(audit_file)
-        self.ops.remove_dir_if_empty(audit_file.parent)
-        # Drop exactly our recall-audit allow-rule from the user's global
-        # settings.json; leaves their other settings intact and never deletes
-        # the file.
-        self.ops.remove_bob_allowed_tools(self._settings_file(), BOB_ALLOWED_TOOLS)
+        if global_cleanup:
+            # Lite: drop the global always-on instructions rules file and the
+            # recall-audit script (and its dir if nothing else lives there).
+            self.ops.remove_file(self._rules_file())
+            audit_file = self._audit_script_file()
+            self.ops.remove_file(audit_file)
+            self.ops.remove_dir_if_empty(audit_file.parent)
+            # Drop exactly our recall-audit allow-rule from the user's global
+            # settings.json; leaves their other settings intact and never deletes
+            # the file.
+            self.ops.remove_bob_allowed_tools(self._settings_file(), BOB_ALLOWED_TOOLS)
         # Full: remove the 'Evolve' custom mode (scope-correct *and* legacy
         # top-level file) and the MCP server entry. A stale BOB_SLUG custom mode
         # from a pre-redesign lite install is also swept up here.
@@ -1460,7 +1481,7 @@ class ClaudeInstaller:
 
         # Remove the marketplace copy a downloaded install registered (#387),
         # plus any staging leftovers from an interrupted install. Done after the
-        # CLI has unregistered the marketplace, and only ever these
+        # CLI unregister attempt (which can fail or be unavailable), and only these
         # installer-owned paths under ~/.claude/evolve-lite/.
         copy_dir = self._marketplace_copy_dir()
         for path in (copy_dir, copy_dir.with_name(copy_dir.name + ".staging"), copy_dir.with_name(copy_dir.name + ".old")):
@@ -1501,8 +1522,29 @@ class ClaudeInstaller:
         print(f"    claude CLI          : ✓")
         try:
             result = subprocess.run([claude, "plugin", "list"], capture_output=True, text=True)
-            installed = CLAUDE_PLUGIN in result.stdout
-            print(f"    evolve-lite plugin  : {'✓' if installed else '✗ (not installed)'}")
+            if result.returncode != 0:
+                print(f"    evolve-lite plugin  : ? (could not query)")
+                return
+            output = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+            # Isolate this plugin's block so another plugin's enabled status
+            # cannot make a failed or disabled evolve-lite install look healthy.
+            blocks = re.split(r"(?m)^\s*[❯›>\-*]?\s*(?=[\w.-]+@[\w.-]+\s*$)", output)
+            block = next((part for part in blocks if part.splitlines() and
+                          part.splitlines()[0].strip() == "evolve-lite@evolve-marketplace"), None)
+            health = "✗ (not installed)"
+            if block is not None:
+                status = re.search(r"(?mi)^\s*Status:\s*(.*)$", block)
+                value = status.group(1).lower() if status else ""
+                if "failed to load" in value:
+                    detail = re.search(r"(?mi)^\s*Error:\s*(.*)$", block)
+                    health = "✗ failed to load" + (": " + detail.group(1).strip() if detail else "")
+                elif "disabled" in value:
+                    health = "✗ disabled"
+                elif "enabled" in value:
+                    health = "✓ enabled"
+                else:
+                    health = "? (status unavailable)"
+            print(f"    evolve-lite plugin  : {health}")
         except Exception:
             print(f"    evolve-lite plugin  : ? (could not query)")
 
@@ -1698,7 +1740,7 @@ class CodexInstaller:
 
         success("Codex installation complete")
 
-    def uninstall(self, target_dir):
+    def uninstall(self, target_dir, global_cleanup=False):
         info(f"Uninstalling Codex from {target_dir}")
 
         self.ops.remove_dir(Path(target_dir) / "plugins" / CODEX_PLUGIN)
@@ -1706,18 +1748,19 @@ class CodexInstaller:
             Path(target_dir) / ".agents" / "plugins" / "marketplace.json",
             "plugins", "name", CODEX_PLUGIN,
         )
-        # Drop the single managed pointer line from the always-on instructions.
-        self.ops.remove_marker_line(Path.home() / ".codex" / "AGENTS.md", MANAGED_MARKER)
-        # Remove the on-disk EVOLVE.md copy and the recall-audit script, then the
-        # per-plugin dir if nothing else lives there.
-        evolve_dir = Path.home() / ".codex" / "evolve-lite"
-        self.ops.remove_file(evolve_dir / "EVOLVE.md")
-        self.ops.remove_file(evolve_dir / AUDIT_SCRIPT)
-        self.ops.remove_dir_if_empty(evolve_dir)
+        if global_cleanup:
+            # Drop the single managed pointer line from the always-on instructions.
+            self.ops.remove_marker_line(Path.home() / ".codex" / "AGENTS.md", MANAGED_MARKER)
+            # Remove the on-disk EVOLVE.md copy and the recall-audit script, then the
+            # per-plugin dir if nothing else lives there.
+            evolve_dir = Path.home() / ".codex" / "evolve-lite"
+            self.ops.remove_file(evolve_dir / "EVOLVE.md")
+            self.ops.remove_file(evolve_dir / AUDIT_SCRIPT)
+            self.ops.remove_dir_if_empty(evolve_dir)
 
-        # Reverse pre-redesign GLOBAL artifacts (config.toml plugin tables +
-        # plugin caches). GLOBAL migration, independent of --dir.
-        self._purge_legacy_global()
+            # Reverse pre-redesign GLOBAL artifacts (config.toml plugin tables +
+            # plugin caches). GLOBAL migration, independent of --dir.
+            self._purge_legacy_global()
 
         success("Codex uninstall complete")
 
@@ -1871,6 +1914,10 @@ def cmd_uninstall(args):
     target_dir = os.path.abspath(args.dir)
     ops = DryRunFileOps() if DRY_RUN else FileOps()
 
+    if args.global_cleanup and args.platform not in ("bob", "codex"):
+        error("--global requires --platform bob or --platform codex")
+        sys.exit(1)
+
     if DRY_RUN:
         print()
         info(_c("35", "DRY RUN — no files will be written or deleted"))
@@ -1883,13 +1930,23 @@ def cmd_uninstall(args):
         detected = detect_platforms(target_dir)
         platforms = interactive_select(detected)
 
+    if not args.global_cleanup and Path(target_dir).resolve() == Path.home().resolve() and any(p in ("bob", "codex") for p in platforms):
+        error("Uninstalling a home-directory installation requires --global")
+        sys.exit(1)
+
     print()
     errors = []
     for i, platform in enumerate(platforms):
         if i > 0:
             print()
         try:
-            PLATFORM_CLASSES[platform](ops).uninstall(target_dir)
+            installer = PLATFORM_CLASSES[platform](ops)
+            if platform in ("bob", "codex"):
+                installer.uninstall(target_dir, global_cleanup=args.global_cleanup)
+                if not args.global_cleanup:
+                    info("Shared global assets preserved; use --global to remove them for all projects.")
+            else:
+                installer.uninstall(target_dir)
         except Exception as e:
             error(f"Failed to uninstall {platform}: {e}")
             errors.append(platform)
@@ -1947,6 +2004,8 @@ def main():
         "--platform", choices=["bob", "claude", "claw-code", "codex", "hermes", "all"], default=None,
         help="Platform to uninstall (default: prompt)",
     )
+    p_uninstall.add_argument("--global", dest="global_cleanup", action="store_true",
+                             help="Also remove shared global assets for ALL projects (requires --platform bob or codex)")
     p_uninstall.add_argument("--dir", default=os.getcwd(), help="Target project directory (default: cwd)")
     p_uninstall.add_argument("--dry-run", action="store_true", default=False,
                              help="Show what would be done without making any changes")

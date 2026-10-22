@@ -10,8 +10,8 @@ made deterministic and tested end to end:
   * assemble candidate dicts the agent can judge.
 
 The *semantic* half — deciding whether a recalled guideline was ``followed``,
-``contradicted`` or ``not_applicable`` — is an LLM judgment and is NOT done
-here. There is deliberately no heuristic verdict: this module never invents a
+``contradicted`` or ``not_applicable``, or that the trajectory is
+``insufficient_evidence`` to tell — is an LLM judgment and is NOT done here. There is deliberately no heuristic verdict: this module never invents a
 verdict. The agent reads each candidate, judges it, and pipes the verdict back
 through ``record`` (which delegates to ``log_influence.py``'s writer so the
 audit-log format is identical).
@@ -27,6 +27,7 @@ Two modes:
 import glob
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -44,6 +45,9 @@ for _ancestor in _script.parents:
 if _lib is None:
     raise ImportError(f"Cannot find plugin lib directory above {_script}")
 sys.path.insert(0, str(_lib))
+
+from config import load_config, write_repos  # noqa: E402
+from entity_io import markdown_to_entity  # noqa: E402
 
 # Provenance reuses log_influence.py's writer + dedup so the audit-log format and
 # the duplicate-suppression rule live in exactly one place. log_influence.py sits
@@ -124,7 +128,21 @@ def _hermes_trajectory_name(session_id):
     return f"{safe[:_HERMES_STEM_CHARS]}-{digest}.jsonl"
 
 
-def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
+def _saved_trajectory_index(evolve_dir):
+    """Index original session IDs once per candidate batch; preserve first-match order."""
+    index = {}
+    for path in sorted((Path(evolve_dir) / "trajectories").glob("trajectory_*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        sid = data.get("session_id") if isinstance(data, dict) else None
+        if isinstance(sid, str) and sid:
+            index.setdefault(sid, path)
+    return index
+
+
+def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None, saved_index=None):
     """Locate the saved trajectory transcript for ``session_id``.
 
     Resolution order (best-effort, returns the first hit or ``None``):
@@ -135,13 +153,12 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
          capture output, one JSON record appended per capture. The digest is over
          the unsanitized id, so the name belongs to one ``str`` session id; see
          ``_hermes_trajectory_name``.
-       * ``trajectory_<ts>_<sid>.json`` — save-trajectory skill output; the sid
-         is the filename slice after the timestamp.
-       * ``trajectory_<ts>.json`` — open and match the inner ``session_id``.
+       * ``trajectory_*.json`` — save-trajectory skill output; open and match
+         the original inner ``session_id``, including collision-suffixed files.
     2. NEW native Claude transcript: ``~/.claude/projects/<slug>/<sid>.jsonl``
        where ``<slug>`` is the project root path slugified the way Claude does
        (every non-alphanumeric char -> ``-``; see ``_claude_transcript_slug``).
-    3. NEW native Codex transcript: ``~/.codex/sessions/<Y>/<M>/<D>/rollout-<ts>-<sid>.jsonl``.
+    3. NEW native Codex transcript: ``$CODEX_HOME/sessions/<Y>/<M>/<D>/rollout-<ts>-<sid>.jsonl``.
        Codex names each rollout file with the thread id as the trailing segment,
        so a recursive glob for ``*<sid>*.jsonl`` under ``~/.codex/sessions/``
        finds it regardless of date directory.
@@ -175,24 +192,11 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
             if hermes.is_file():
                 return hermes
 
-        # trajectory_<ts>_<sid>.json — match on the filename sid slice.
-        for path in sorted(traj_dir.glob("trajectory_*_*.json")):
-            stem = path.stem  # trajectory_<ts>_<sid>
-            parts = stem.split("_", 2)
-            if len(parts) == 3 and parts[2] == session_id:
-                return path
-
-        # trajectory_<ts>.json — open and match the inner session_id field.
-        for path in sorted(traj_dir.glob("trajectory_*.json")):
-            # Skip the <ts>_<sid> shape already handled above.
-            if path.stem.count("_") >= 2:
-                continue
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if isinstance(data, dict) and data.get("session_id") == session_id:
-                return path
+        # Filenames sanitize/truncate session IDs and may carry collision suffixes.
+        # Only the original ID stored by the writer establishes ownership.
+        index = saved_index if saved_index is not None else _saved_trajectory_index(evolve_dir)
+        if session_id in index:
+            return index[session_id]
 
     # --- 2. Native Claude transcript ----------------------------------------
     # The project root is the parent of the .evolve dir; the home dir holds
@@ -210,7 +214,7 @@ def locate_trajectory(session_id, evolve_dir, *, project_root=None, home=None):
     # don't have to reconstruct the date path. Guard the sid to a sane shape so
     # the glob can't be widened by an empty/odd session_id.
     if session_id and "/" not in session_id and "*" not in session_id:
-        codex_sessions = base / ".codex" / "sessions"
+        codex_sessions = Path(os.environ.get("CODEX_HOME") or base / ".codex").expanduser() / "sessions"
         if codex_sessions.is_dir():
             matches = sorted(codex_sessions.rglob(f"*{glob.escape(session_id)}*.jsonl"))
             if matches:
@@ -276,7 +280,7 @@ def read_recall_rows(evolve_dir):
     return rows
 
 
-def _read_entity(evolve_dir, entity_id):
+def _read_entity(evolve_dir, entity_id, project_root=None):
     """Return ``(path, excerpt)`` for an entity file, or ``(path, None)`` if
     the file is missing. ``entity_id`` is a ``<type>/<name>`` id relative to
     ``entities/`` (without ``.md``).
@@ -288,7 +292,30 @@ def _read_entity(evolve_dir, entity_id):
     if entities_root not in entity_path.resolve().parents:
         return entity_path, None
     if not entity_path.is_file():
-        return entity_path, None
+        # Native recall IDs keep their original type/name after publication.
+        # Resolve only an unambiguous publication owned by this publisher.
+        root = Path(evolve_dir).resolve()
+        root = root.parent if Path(evolve_dir).name == ".evolve" else root
+        try:
+            config = load_config(project_root or root)
+        except (OSError, UnicodeError, ValueError):
+            return entity_path, None
+        identity = config.get("identity", {})
+        owner = identity.get("user") if isinstance(identity, dict) else None
+        matches = []
+        if owner and len(Path(entity_id).parts) == 2:
+            for repo in write_repos(config):
+                clone = entities_root / "subscribed" / repo["name"]
+                candidate = clone / f"{entity_id}.md"
+                if candidate.is_file() and candidate.resolve().is_relative_to(clone.resolve()):
+                    try:
+                        if markdown_to_entity(candidate).get("owner") == owner:
+                            matches.append(candidate)
+                    except (OSError, ValueError, UnicodeError):
+                        continue
+        if len(matches) != 1:
+            return entity_path, None
+        entity_path = matches[0]
     try:
         text = entity_path.read_text(encoding="utf-8")
     except OSError:
@@ -330,13 +357,14 @@ def build_candidates(evolve_dir, *, project_root=None, home=None):
     evolve_dir = Path(evolve_dir)
     existing = log_influence.existing_influence_keys(evolve_dir)
 
+    saved_index = _saved_trajectory_index(evolve_dir)
     candidates = []
     for session_id, entities in read_recall_rows(evolve_dir):
-        trajectory_path = locate_trajectory(session_id, evolve_dir, project_root=project_root, home=home)
+        trajectory_path = locate_trajectory(session_id, evolve_dir, project_root=project_root, home=home, saved_index=saved_index)
         for entity_id in entities:
             if (session_id, entity_id) in existing:
                 continue
-            entity_path, entity_excerpt = _read_entity(evolve_dir, entity_id)
+            entity_path, entity_excerpt = _read_entity(evolve_dir, entity_id, project_root=project_root)
             trajectory_excerpt = _read_trajectory_excerpt(trajectory_path)
 
             missing = []
@@ -367,7 +395,7 @@ def record_verdict(payload, evolve_dir=None):
     """Append a single ``influence`` row from an agent verdict.
 
     ``payload`` is ``{session_id, entity, verdict, evidence}``. The verdict must
-    be one of ``followed|contradicted|not_applicable`` (the *semantic* judgment
+    be one of ``log_influence._ALLOWED_VERDICTS`` (the *semantic* judgment
     stays agent-driven — this only persists what the agent decided). Writing is
     delegated to ``log_influence.py`` so the audit-log row format and the
     duplicate-suppression rule are not duplicated here.
@@ -387,7 +415,7 @@ def record_verdict(payload, evolve_dir=None):
         raise ValueError("verdict payload must include a non-empty string session_id")
     if not isinstance(entity, str) or not entity:
         raise ValueError("verdict payload must include a non-empty string entity")
-    if verdict not in _ALLOWED_VERDICTS:
+    if not isinstance(verdict, str) or verdict not in _ALLOWED_VERDICTS:
         raise ValueError(f"verdict must be one of {sorted(_ALLOWED_VERDICTS)}, got {verdict!r}")
 
     if evolve_dir is None:
@@ -399,7 +427,9 @@ def record_verdict(payload, evolve_dir=None):
         log(f"Skipping duplicate influence verdict: session_id={session_id} entity={entity}")
         return 0
 
-    if not isinstance(evidence, str):
+    if evidence is None:
+        evidence = ""
+    elif not isinstance(evidence, str):
         evidence = str(evidence)
 
     log_influence.audit.append(

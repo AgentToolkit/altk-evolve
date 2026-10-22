@@ -18,9 +18,8 @@ from altk_evolve.processing import ProcessingManager, TrajectoryOutcome
 from experiments.guideline_pipeline import __main__ as cli
 from experiments.guideline_pipeline.adapters import ADAPTERS, AdapterRecord, get_adapter
 from experiments.guideline_pipeline.adapters.appworld import AppWorldAdapter, parse_environment_io, task_from_prompt
-from experiments.guideline_pipeline.adapters.cuga import PARSER_STEP_LIMIT
 from experiments.guideline_pipeline.stages.mine import mine
-from experiments.guideline_pipeline.tests.fakes import store_guidelines
+from experiments.guideline_pipeline.tests.fakes import profile_window, store_guidelines
 
 pytestmark = pytest.mark.unit
 
@@ -372,15 +371,16 @@ def test_batch_is_stable_and_the_revision_follows_content(run_copy: Path):
     assert by_id(AppWorldAdapter(model="m"), run_copy)["aaa0001_2"].batch.revision != edited["aaa0001_2"].batch.revision
 
 
-def test_long_runs_keep_head_and_tail():
+def test_long_runs_pass_through_whole_and_the_profile_keeps_their_ending():
     environment_io = "\n".join(f"### Environment Interaction {i}\n```python\nprint({i})\n```\n\n```\n{i}\n```\n" for i in range(40))
     record = AppWorldAdapter().record("run", "long_1", instruction="long task", instruction_source="s", environment_io=environment_io)
 
     assert record.messages[0] == {"role": "user", "content": "long task"}
-    parsed = parse_openai_agents_trajectory(record.messages)
-    assert parsed["num_steps"] == PARSER_STEP_LIMIT
-    assert parsed["steps_list"][6] == "**Step 7 - Reasoning:**\n[31 steps elided: the trajectory continues below]"
-    assert parsed["steps_list"][-1] == "**Step 50 - Reasoning:**\nOBSERVATION:\n39"
+    assert len(record.messages) == 1 + 80  # an action and an observation per interaction, none elided
+    parsed = parse_openai_agents_trajectory(record.messages, options=profile_window(PROFILE))
+    assert parsed["num_steps"] == 50  # 7 head + 43 tail; the marker is not a step
+    assert parsed["steps_list"][parsed["marker_index"]].startswith("**[... 30 intermediate step(s) omitted; 80 steps")
+    assert parsed["steps_list"][-1] == "**Step 51 - Reasoning:**\nOBSERVATION:\n39"  # labels number positions, marker included
 
 
 def test_options_and_task_selection(tmp_path: Path, root: Path):
@@ -418,6 +418,7 @@ def test_sample_profile_validates_with_the_builtin_processor():
     (processor,) = plan.manifest()["processors"]
     assert processor["plugin"] == "evolve.guidelines"
     assert (processor["config"]["guidelines_mode"], processor["config"]["segmentation_enabled"]) == ("standard", False)
+    assert (processor["config"]["trajectory_max_steps"], processor["config"]["trajectory_tail_steps"]) == (50, 43)
 
 
 def test_mine_dry_run_from_the_cli(root: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):

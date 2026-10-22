@@ -6,7 +6,9 @@
       "plugin": "evolve.guidelines",
       "config": {
         "guidelines_mode": "standard",
-        "segmentation_enabled": false
+        "segmentation_enabled": false,
+        "trajectory_max_steps": 50,
+        "trajectory_tail_steps": 43
       }
     }
   ]

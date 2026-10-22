@@ -78,7 +78,6 @@ class TestClaudeInstall:
 
 
 @pytest.mark.platform_integrations
-@pytest.mark.e2e
 class TestClaudeFileDelivery:
     """Test the per-repo EVOLVE.md import-pointer delivery (independent of the CLI)."""
 
@@ -178,7 +177,6 @@ class TestClaudeRenderedAdaptSkill:
 
 
 @pytest.mark.platform_integrations
-@pytest.mark.e2e
 class TestClaudeAdaptScriptDelivery:
     """The adapt-memory adapter + its lib land at the stable global path."""
 
@@ -277,7 +275,6 @@ def _allow(settings_path):
 
 
 @pytest.mark.platform_integrations
-@pytest.mark.e2e
 class TestClaudePermissionAllowlist:
     """Install pre-authorizes the evolve scripts + .evolve writes in project settings."""
 

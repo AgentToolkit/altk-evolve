@@ -6,57 +6,158 @@ on:
 
 permissions:
   contents: read
-  packages: write
+
+env:
+  # Report mode still gates scanner/inventory integrity. License findings block
+  # publication only in enforce mode, after the policy baseline is reviewed.
+  LICENSE_MODE: ${{ vars.LICENSE_ENFORCEMENT || 'report' }}
 
 jobs:
-  docker-publish:
+  build-and-scan:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - dockerfile: Dockerfile.core
-            image-suffix: core
-    
+        architecture: [amd64, arm64]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
+      - name: Checkout release code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.9.5'
+          python-version: '3.12'
+          enable-cache: false
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      
-      - name: Extract metadata (tags, labels) for Docker
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Extract release labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/altk-evolve
+          images: altk-evolve
           flavor: |
-            suffix=-${{ matrix.image-suffix }},onlatest=true
+            suffix=-core,onlatest=true
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest
-      
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Prepare archive directory
+        run: mkdir -p release/${{ matrix.architecture }}
+      - name: Build one architecture without registry credentials
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          file: Dockerfile.core
+          push: false
+          tags: altk-evolve:scan-core-${{ matrix.architecture }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      
+          platforms: linux/${{ matrix.architecture }}
+          outputs: type=docker,dest=release/${{ matrix.architecture }}/image.tar
+          cache-from: type=gha,scope=release-core-${{ matrix.architecture }}
+          cache-to: type=gha,mode=max,scope=release-core-${{ matrix.architecture }}
+      - name: Install checksum-verified Trivy
+        run: bash scripts/licenses/install-trivy.sh
+      - name: Scan the archive and independently inventory its runtime
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          directory="$PWD/release/$ARCHITECTURE"
+          image="altk-evolve:scan-core-$ARCHITECTURE"
+          docker load --input "$directory/image.tar"
+          docker run --rm --network none --read-only --user 0 --entrypoint /app/.venv/bin/python \
+            --mount "type=bind,source=$PWD/scripts/licenses/check.py,target=/tmp/check-licenses.py,readonly" \
+            "$image" -S /tmp/check-licenses.py inventory python /app/.venv - > "$directory/inventory.json"
+          trivy image --input "$directory/image.tar" --scanners license --license-full \
+            --list-all-pkgs --format json --timeout 60m --output "$directory/trivy.json"
+          docker run --rm --network none --read-only --user 0 --entrypoint /app/.venv/bin/python \
+            --mount "type=bind,source=$PWD/scripts/licenses/check.py,target=/tmp/check-licenses.py,readonly" \
+            --mount "type=bind,source=$directory/trivy.json,target=/tmp/trivy-license-report.json,readonly" \
+            "$image" -S /tmp/check-licenses.py file-evidence /tmp/trivy-license-report.json / - > "$directory/file-evidence.json"
+          uv run --no-project python scripts/licenses/check.py evaluate \
+            --report "$directory/trivy.json" --inventory "$directory/inventory.json" \
+            --file-evidence "$directory/file-evidence.json" --scope "release-image-core-linux-$ARCHITECTURE" \
+            --policy-dir .github/licenses --mode "$LICENSE_MODE" --output "$directory/policy-result.json"
+          uv run --no-project python scripts/promote_scanned_images.py attest \
+            "$directory" "$ARCHITECTURE" --mode "$LICENSE_MODE"
+      - name: Retain license evidence even when the gate fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-license-evidence-${{ matrix.architecture }}
+          path: release/${{ matrix.architecture }}/*.json
+          if-no-files-found: ignore
+      - name: Retain the exact successfully scanned archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scanned-core-${{ matrix.architecture }}
+          path: |
+            release/${{ matrix.architecture }}/image.tar
+            release/${{ matrix.architecture }}/receipt.json
+            release/${{ matrix.architecture }}/policy-result.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  docker-publish:
+    # A failed or cancelled scan on EITHER platform prevents all publication.
+    needs: build-and-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted release promotion code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.9.5'
+          python-version: '3.12'
+          enable-cache: false
+      - name: Set up Docker Buildx for manifest creation
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Download scanned amd64 archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: scanned-core-amd64
+          path: scanned/amd64
+      - name: Download scanned arm64 archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: scanned-core-arm64
+          path: scanned/arm64
+      - name: Extract Docker Hub release tags
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/altk-evolve
+          flavor: |
+            suffix=-core,onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+      - name: Log in to Docker Hub only after both scans pass
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish scanned content and create the multi-platform manifest
+        env:
+          IMAGE_REPOSITORY: ${{ secrets.DOCKERHUB_USERNAME }}/altk-evolve
+          IMAGE_METADATA: ${{ steps.meta.outputs.json }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$IMAGE_METADATA" > "$RUNNER_TEMP/image-metadata.json"
+          uv run --no-project python scripts/promote_scanned_images.py publish scanned \
+            --repository "$IMAGE_REPOSITORY" --metadata "$RUNNER_TEMP/image-metadata.json" \
+            --run-id "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --mode "$LICENSE_MODE"
       - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@432a30c9e07499fd01da9f8a49f0faf9e0ca5b77 # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
