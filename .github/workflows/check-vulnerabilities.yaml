@@ -101,34 +101,40 @@ jobs:
                 high.forEach(v => lines.push(`- **${v.id}** in \`${v.name}==${v.version}\` — fix: ${v.fix_versions.join(', ') || 'none available'}`));
               }
 
-              const existing = await github.rest.issues.listForRepo({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                labels: 'security,automated',
-                state: 'open'
-              });
-
-              const title = `[Security] ${critical.length} critical, ${high.length} high vulnerabilities detected`;
-              const existingIssue = existing.data.find(i => i.labels.some(l => l.name === 'automated'));
-
-              if (existingIssue) {
-                await github.rest.issues.update({
+              // A pull request from a fork gets a read-only token, so it cannot update the
+              // tracking issue; report the findings in the log instead of failing the job.
+              try {
+                const existing = await github.rest.issues.listForRepo({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  issue_number: existingIssue.number,
-                  title,
-                  body: lines.join('\n')
+                  labels: 'security,automated',
+                  state: 'open'
                 });
-                console.log(`Updated issue #${existingIssue.number}`);
-              } else {
-                await github.rest.issues.create({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  title,
-                  body: lines.join('\n'),
-                  labels: ['security', 'automated']
-                });
-                console.log('Created new security issue');
+
+                const title = `[Security] ${critical.length} critical, ${high.length} high vulnerabilities detected`;
+                const existingIssue = existing.data.find(i => i.labels.some(l => l.name === 'automated'));
+
+                if (existingIssue) {
+                  await github.rest.issues.update({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: existingIssue.number,
+                    title,
+                    body: lines.join('\n')
+                  });
+                  console.log(`Updated issue #${existingIssue.number}`);
+                } else {
+                  await github.rest.issues.create({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    title,
+                    body: lines.join('\n'),
+                    labels: ['security', 'automated']
+                  });
+                  console.log('Created new security issue');
+                }
+              } catch (err) {
+                core.warning(`Could not update the security issue (${err.status || err.message}); findings:\n${lines.join('\n')}`);
               }
             }
 
