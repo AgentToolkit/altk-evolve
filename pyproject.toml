@@ -211,7 +211,8 @@ altk_evolve = ["**/*.jinja2", "**/*.yaml"]
 package = true
 
 [tool.pytest.ini_options]
-addopts = "--ignore=explorations -m 'not llm and not e2e'"
+# altk_forge is a uv project of its own, with its own tests: `cd altk_forge && uv run pytest`.
+addopts = "--ignore=explorations --ignore=altk_forge -m 'not llm and not e2e'"
 markers = [
     "e2e",
     "unit",
@@ -300,6 +301,8 @@ exclude = [
     "plugin-source/",
     "examples/",
     "explorations/agent-wiki/wikis/",
+    # A uv project of its own, type-checked with its own config: `cd altk_forge && uv run mypy .`.
+    "altk_forge/",
 ]
 
 [[tool.mypy.overrides]]

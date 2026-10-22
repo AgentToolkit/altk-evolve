@@ -1,0 +1,51 @@
+[project]
+name = "altk-forge"
+version = "0.1.0"
+description = "See how your agent's memory is made, and what it does to the next run."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jsonschema>=4.23",
+    "openai>=3.35.1",
+    "referencing>=0.35",
+]
+
+[project.scripts]
+altk-forge = "altk_forge.web.server:main"
+altk-forge-worker = "altk_forge.cli.worker:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["altk_forge*"]
+
+[tool.setuptools.package-data]
+# The schemas, the console and the viewer ship with the package.
+"altk_forge.trajectory" = ["schema/*.json"]
+"altk_forge.web" = ["*.html", "*.js"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pytest>=8",
+    "types-jsonschema>=4.26.0.20261006",
+]
+
+[tool.pytest.ini_options]
+# tests/ on the path for forge_helpers; the package itself is installed into the environment.
+pythonpath = ["tests"]
+testpaths = ["tests"]
+
+[tool.mypy]
+mypy_path = "tests"
+exclude = ["^\\.venv/", "^build/"]
+
+[tool.ruff]
+# The repository's settings (../pyproject.toml); a [tool.ruff] table here replaces them rather than adding to them.
+extend = "../pyproject.toml"
+
+[tool.ruff.lint.isort]
+# tests/ imports Forge and its own helpers module; both are first-party.
+known-first-party = ["altk_forge", "forge_helpers"]
