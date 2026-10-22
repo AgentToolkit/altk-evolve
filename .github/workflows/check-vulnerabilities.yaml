@@ -90,6 +90,7 @@ jobs:
             console.log(`Found ${critical.length} critical, ${high.length} high vulnerabilities`);
 
             // Create/update GH issue for high+critical
+            let tracked = false;
             if (critical.length > 0 || high.length > 0) {
               const lines = ['## Automated CVE Scan Results\n', `_Last scanned: ${new Date().toISOString().split('T')[0]}_\n`];
               if (critical.length) {
@@ -123,6 +124,7 @@ jobs:
                     body: lines.join('\n')
                   });
                   console.log(`Updated issue #${existingIssue.number}`);
+                  tracked = true;
                 } else {
                   await github.rest.issues.create({
                     owner: context.repo.owner,
@@ -132,6 +134,7 @@ jobs:
                     labels: ['security', 'automated']
                   });
                   console.log('Created new security issue');
+                  tracked = true;
                 }
               } catch (err) {
                 core.warning(`Could not update the security issue (${err.status || err.message}); findings:\n${lines.join('\n')}`);
@@ -139,8 +142,11 @@ jobs:
             }
 
             // Report but never block the build
+            const where = tracked ? 'tracked in GitHub issue' : 'not tracked: the issue could not be updated';
             if (critical.length > 0) {
-              core.warning(`${critical.length} critical CVEs found: ${critical.map(v => v.id).join(', ')} — tracked in GitHub issue`);
+              core.warning(`${critical.length} critical CVEs found: ${critical.map(v => v.id).join(', ')} — ${where}`);
+            } else if (high.length > 0) {
+              console.log(`No critical vulnerabilities. High-severity issues ${where}.`);
             } else {
-              console.log('No critical vulnerabilities. High-severity issues tracked in GitHub issue.');
+              console.log('No critical or high vulnerabilities.');
             }
