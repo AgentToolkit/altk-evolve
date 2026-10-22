@@ -49,16 +49,22 @@ def _member_tasks(members: list[RecordedEntity]) -> list[str]:
 def _merged_task_metadata(members: list[RecordedEntity], key: "ClusteringKey") -> dict[str, Any]:
     """The task metadata a merged guideline keeps, from its own source members.
 
-    Clustered by task, the members' tasks are similar and the first is kept. Clustered by
-    guideline text, they may be unrelated, and keeping one would tie retrieval by source
-    task to that task alone; so the description is kept only when the members share it.
-    Otherwise it is left empty and every member task is kept in ``source_tasks``, which
-    retrieval by source task scores by the best match.
+    Clustered by task, the members were matched on their task descriptions, which are
+    similar, and the first is kept. Clustered by guideline text, they may be unrelated, and
+    keeping one would tie retrieval by source task to that task alone; so the description
+    is kept only when the members share it. Otherwise it is left empty and every member task
+    is kept in ``source_tasks``, which retrieval by source task scores by the best match.
+    A member that is an earlier cross-task merge keeps its tasks in ``source_tasks`` under
+    either key, so retrieval still ranks the output for each of them.
     """
     tasks = _member_tasks(members)
     if key == "guideline_text" and len(tasks) > 1:
         return {"task_description": "", "source_tasks": tasks}
-    return {"task_description": tasks[0] if tasks else ""}
+    descriptions = [str(d) for member in members if (d := (member.metadata or {}).get("task_description"))]
+    result: dict[str, Any] = {"task_description": descriptions[0] if descriptions else (tasks[0] if tasks else "")}
+    if len(tasks) > 1 and any(isinstance((member.metadata or {}).get("source_tasks"), (list, tuple)) for member in members):
+        result["source_tasks"] = tasks
+    return result
 
 
 class EvolveClient:

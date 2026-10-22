@@ -467,6 +467,21 @@ class TestConsolidateGuidelines:
             "source_tasks": ["task c", "task a", "task d", "task b"],
         }
 
+    def test_a_task_key_merge_keeps_an_earlier_merges_source_tasks(self):
+        from altk_evolve.frontend.client.evolve_client import _merged_task_metadata
+
+        # A cross-task merge that was later given a task description clusters on that
+        # description; the output keeps it, and keeps the earlier source tasks so retrieval
+        # by source task still ranks it for them.
+        earlier_merge = _make_entity("5", "v", "send an invoice")
+        earlier_merge.metadata["source_tasks"] = ["pay a friend", "make a playlist"]
+        similar = _make_entity("6", "w", "send a bill")
+
+        assert _merged_task_metadata([earlier_merge, similar], "task_description") == {
+            "task_description": "send an invoice",
+            "source_tasks": ["pay a friend", "make a playlist", "send an invoice", "send a bill"],
+        }
+
     @pytest.mark.parametrize("malformed", [5, "abc", {"x": 1}, None])
     def test_merged_task_metadata_ignores_a_source_tasks_value_that_is_not_a_list(self, malformed):
         from altk_evolve.frontend.client.evolve_client import _merged_task_metadata
