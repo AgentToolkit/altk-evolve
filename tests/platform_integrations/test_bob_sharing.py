@@ -23,7 +23,7 @@ def _load_bob_config_module():
 
 cfg_module = _load_bob_config_module()
 
-pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
+pytestmark = [pytest.mark.platform_integrations]
 
 SUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-subscribe/scripts/subscribe.py"
 UNSUBSCRIBE_SCRIPT = _BOB_ROOT / "skills/evolve-lite-unsubscribe/scripts/unsubscribe.py"

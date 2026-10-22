@@ -234,6 +234,10 @@ class TestDownloadedInstallMarketplace:
         _run_piped(fake_cli, piped_cwd, temp_project_dir, "install")
         copy_dir = _copy_dir(sandbox_home)
         assert copy_dir.is_dir()
+        for suffix in (".staging", ".old"):
+            leftover = copy_dir.with_name(copy_dir.name + suffix)
+            leftover.mkdir()
+            (leftover / "interrupted").write_text("partial install")
 
         _run_piped(fake_cli, piped_cwd, temp_project_dir, "uninstall")
 

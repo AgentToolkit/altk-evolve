@@ -106,7 +106,7 @@ Wrap the messages array in a trajectory envelope:
 
 - **model**: Use the exact model ID from the current session's environment context (e.g., the value after "You are powered by the model named …"). Do not hardcode a default — always read it from the session.
 - **timestamp**: Current ISO 8601 timestamp
-- **session_id**: The current session identifier. Read it from whatever the harness exposes — the `session_id` passed into the skill, the session id surfaced in the session context, or a runtime-provided environment variable. Include it verbatim so offline provenance can match this trajectory to `recall` audit events for the same session. Omit the field only if no session id is truly available in this environment.
+- **session_id**: The current session identifier. Read it from whatever the harness exposes — the `session_id` passed into the skill, the session id surfaced in the session context, or a runtime-provided environment variable (`CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, or `CODEX_SESSION_ID`). The helper uses these variables in that order when the JSON omits the id. Include it verbatim so offline provenance can match this trajectory to `recall` audit events for the same session. Omit the field only if no session id is truly available in this environment.
 
 ### Step 5: Save via Helper Script
 
@@ -116,7 +116,7 @@ Write the trajectory JSON to a temporary file using the **Write** tool, then pas
 2. Run the helper script with the file path as an argument:
 
 ```bash
-tmp=.evolve/tmp/trajectory_input.json; mkdir -p .evolve/tmp; trap 'rm "$tmp" 2>/dev/null' EXIT; python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/save-trajectory/scripts/save_trajectory.py" "$tmp"
+tmp=.evolve/tmp/trajectory_input.json; mkdir -p .evolve/tmp; python3 "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/plugins/evolve-lite/skills/evolve-lite/save-trajectory/scripts/save_trajectory.py" "$tmp" --delete-input
 ```
 
 **Important**: Do NOT use inline Python scripts, heredocs, or stdin piping to pass the trajectory JSON. Always use the Write tool to create a temp file first. This avoids escaping issues with backslashes, quotes, and newlines in conversation content.
@@ -125,7 +125,7 @@ The script will:
 - Read the trajectory JSON from the provided file path
 - Create the `.evolve/trajectories/` directory if needed
 - Generate a timestamped filename (`trajectory_YYYY-MM-DDTHH-MM-SS.json`)
-- Write the formatted JSON
+- Write the formatted JSON, then remove the temporary input only after a successful save
 - Print confirmation with file path and message count
 
 ## Example Output

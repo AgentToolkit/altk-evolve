@@ -12,15 +12,20 @@ check = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/check_
 
 
 def artifact_pair(
-    directory, name, metadata_version="1.2.3", requirement="altk-evolve-core[server,cli,fastembed,tracing]==1.2.3", bad_format=None
+    directory,
+    name,
+    metadata_version="1.2.3",
+    requirement="altk-evolve-core[server,cli,fastembed,tracing]==1.2.3",
+    bad_format=None,
+    artifact_version="1.2.3",
 ):
     metadata = f"Name: {name.replace('_', '-')}\nVersion: {metadata_version}\n".encode()
     valid = metadata + (f"Requires-Dist: {requirement}\n".encode() if name == "altk_evolve" and requirement else b"")
-    with zipfile.ZipFile(directory / f"{name}-1.2.3-py3-none-any.whl", "w") as archive:
-        archive.writestr(f"{name}-1.2.3.dist-info/METADATA", metadata if bad_format == "wheel" else valid)
-    with tarfile.open(directory / f"{name}-1.2.3.tar.gz", "w:gz") as archive:
+    with zipfile.ZipFile(directory / f"{name}-{artifact_version}-py3-none-any.whl", "w") as archive:
+        archive.writestr(f"{name}-{artifact_version}.dist-info/METADATA", metadata if bad_format == "wheel" else valid)
+    with tarfile.open(directory / f"{name}-{artifact_version}.tar.gz", "w:gz") as archive:
         metadata = metadata if bad_format == "sdist" else valid
-        info = tarfile.TarInfo(f"{name}-1.2.3/PKG-INFO")
+        info = tarfile.TarInfo(f"{name}-{artifact_version}/PKG-INFO")
         info.size = len(metadata)
         archive.addfile(info, io.BytesIO(metadata))
 
@@ -73,3 +78,16 @@ def test_invalid_core_dependency_is_rejected(tmp_path, requirement):
     artifact_pair(tmp_path, "altk_evolve", requirement=requirement)
     with pytest.raises(ValueError, match="matching core"):
         check(tmp_path, "1.2.3")
+
+
+@pytest.mark.parametrize("version, normalized", [("1.7.0-rc.1", "1.7.0rc1"), ("1.7.0-beta.2", "1.7.0b2")])
+def test_prerelease_versions_use_normalized_artifact_names(tmp_path, version, normalized):
+    for name in ("altk_evolve_core", "altk_evolve"):
+        artifact_pair(
+            tmp_path,
+            name,
+            metadata_version=normalized,
+            requirement=f"altk-evolve-core[server,cli,fastembed,tracing]=={version}",
+            artifact_version=normalized,
+        )
+    check(tmp_path, version)

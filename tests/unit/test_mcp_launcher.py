@@ -1,11 +1,14 @@
 import asyncio
+import http.client
 import logging
 import socket
 import threading
 import time
 import tomllib
-from contextlib import asynccontextmanager, contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, asynccontextmanager, contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -141,12 +144,26 @@ def test_dashboard_flag_overrides_an_unrecognised_value(monkeypatch, runtime, ca
     assert "is not a boolean" not in caplog.text
 
 
-@pytest.mark.parametrize(("dotenv", "expected_started"), [("EVOLVE_DASHBOARD=false\n", False), ("", True)])
-def test_empty_dashboard_value_counts_as_unset(monkeypatch, runtime, tmp_path, dotenv, expected_started) -> None:
-    """`EVOLVE_DASHBOARD=` in the environment doesn't hide `.env`, and on its own means the default (on)."""
+@pytest.mark.parametrize("env", ["", " ", "\t", " \n "])
+@pytest.mark.parametrize(
+    ("dotenv", "expected_started"), [("EVOLVE_DASHBOARD=false\n", False), ("EVOLVE_DASHBOARD=true\n", True), ("", True)]
+)
+def test_empty_dashboard_value_counts_as_unset(monkeypatch, runtime, tmp_path, caplog, env, dotenv, expected_started) -> None:
+    """An empty or whitespace-only `EVOLVE_DASHBOARD` in the environment doesn't hide `.env`,
+    and on its own means the default (on). It is not reported as a bad value."""
     (tmp_path / ".env").write_text(dotenv)
-    monkeypatch.setenv("EVOLVE_DASHBOARD", "")
-    assert (_run_stdio(monkeypatch, []) == [launcher.run_api_server]) is expected_started
+    monkeypatch.setenv("EVOLVE_DASHBOARD", env)
+    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
+        assert (_run_stdio(monkeypatch, []) == [launcher.run_api_server]) is expected_started
+    assert "is not a boolean" not in caplog.text
+
+
+def test_blank_dashboard_value_in_dotenv_counts_as_unset(monkeypatch, runtime, tmp_path, caplog) -> None:
+    (tmp_path / ".env").write_text('EVOLVE_DASHBOARD="  "\n')
+    monkeypatch.delenv("EVOLVE_DASHBOARD", raising=False)
+    with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
+        assert _run_stdio(monkeypatch, []) == [launcher.run_api_server]
+    assert "is not a boolean" not in caplog.text
 
 
 @pytest.mark.parametrize(("env", "expected_started"), [(None, False), ("true", True)])
@@ -162,25 +179,106 @@ def test_dashboard_setting_is_read_from_dotenv(monkeypatch, runtime, tmp_path, e
     assert (_run_stdio(monkeypatch, []) == [launcher.run_api_server]) is expected_started
 
 
-def test_dashboard_logs_the_address_it_bound(caplog) -> None:
-    """The listener is announced, with its real address, only once the socket is bound."""
+@contextmanager
+def _serving(target: Callable[[], object], get_server: Callable[[], Any], timeout: float = 10.0) -> Iterator[Any]:
+    """Run a dashboard server in a thread, yield it once it is serving, and always stop it.
+
+    A startup that fails or hangs is reported as such, and the server thread is told to exit either way.
+    """
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + timeout
+        while thread.is_alive() and not getattr(get_server(), "started", False) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        server = get_server()
+        assert getattr(server, "started", False), f"dashboard server did not start within {timeout:g} s"
+        yield server
+    finally:
+        if (server := get_server()) is not None:
+            server.should_exit = True
+        thread.join(timeout)
+    assert not thread.is_alive(), f"dashboard server did not stop within {timeout:g} s"
+
+
+def _real_api_server(monkeypatch) -> AbstractContextManager[Any]:
+    """The real `run_api_server`, with its default host, on a port the OS picks."""
+    servers: list[launcher._DashboardServer] = []
+
+    class RecordingServer(launcher._DashboardServer):
+        def __init__(self, config) -> None:
+            super().__init__(config)
+            servers.append(self)
+
+    monkeypatch.setattr(launcher, "_DashboardServer", RecordingServer)
+    return _serving(lambda: launcher.run_api_server(port=0), lambda: servers[0] if servers else None)
+
+
+def _bound(server) -> list[tuple[str, int]]:
+    return [sock.getsockname()[:2] for listener in server.servers for sock in listener.sockets]
+
+
+def _can_bind(host: str) -> bool:
+    try:
+        with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET) as sock:
+            sock.bind((host, 0))
+    except OSError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize(("host", "url_host"), [("127.0.0.1", "127.0.0.1"), ("::1", "[::1]")])
+def test_dashboard_logs_the_address_it_bound(caplog, host, url_host) -> None:
+    """The listener is announced, with its real address, only once the socket is bound.
+    An IPv6 address is bracketed, so the logged URL can be opened as is."""
+    if not _can_bind(host):
+        pytest.skip(f"cannot bind {host} here")
 
     async def asgi(scope, receive, send):  # minimal app; lifespan is disabled below
         raise RuntimeError("no requests expected")
 
-    server = launcher._DashboardServer(launcher.uvicorn.Config(asgi, host="127.0.0.1", port=0, log_level="warning", lifespan="off"))
-    thread = threading.Thread(target=lambda: asyncio.run(server.serve()), daemon=True)
+    server = launcher._DashboardServer(launcher.uvicorn.Config(asgi, host=host, port=0, log_level="warning", lifespan="off"))
     with caplog.at_level(logging.WARNING, logger="evolve-mcp"):
-        thread.start()
-        deadline = time.monotonic() + 10
-        while not server.started and time.monotonic() < deadline:
-            time.sleep(0.05)
-        port = server.servers[0].sockets[0].getsockname()[1]
-        server.should_exit = True
-        thread.join(10)
-    assert server.started
-    assert f"listening on http://127.0.0.1:{port}/ without authentication" in caplog.text
+        with _serving(lambda: asyncio.run(server.serve()), lambda: server):
+            (_, port), *_ = _bound(server)
+    assert f"listening on http://{url_host}:{port}/ without authentication" in caplog.text
     assert "--no-dashboard" in caplog.text
+
+
+def test_dashboard_keeps_uvicorn_logs_off_stdout(monkeypatch, capfd) -> None:
+    """Over stdio, stdout is the MCP JSON-RPC channel. uvicorn writes its access log to stdout at INFO,
+    so a request to the dashboard must leave stdout untouched (fd 1 as well as sys.stdout)."""
+    capfd.readouterr()
+    with _real_api_server(monkeypatch) as server:
+        (_, port), *_ = _bound(server)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("GET", "/api/no-such-route")
+            status = conn.getresponse().status
+        finally:
+            conn.close()
+    assert status == 404
+    assert capfd.readouterr().out == ""
+
+
+def test_dashboard_binds_loopback_only(monkeypatch) -> None:
+    """The REST API has no authentication, so by default it must listen on 127.0.0.1 and nowhere else."""
+    with _real_api_server(monkeypatch) as server:
+        hosts = {host for host, _ in _bound(server)}
+    assert hosts == {"127.0.0.1"}
+
+
+@pytest.mark.parametrize(
+    ("host", "url"),
+    [
+        ("127.0.0.1", "http://127.0.0.1:8000/"),
+        ("localhost", "http://localhost:8000/"),
+        ("::1", "http://[::1]:8000/"),
+        ("::", "http://[::]:8000/"),
+    ],
+)
+def test_dashboard_url_brackets_ipv6_hosts(host, url) -> None:
+    assert launcher._http_url(host, 8000) == url
 
 
 def test_dashboard_bind_failure_is_reported_and_does_not_raise(caplog) -> None:
