@@ -64,7 +64,7 @@ class TestCodexLegacyMigration:
     def test_uninstall_strips_legacy_config_tables(self, sandbox_home, install_runner):
         config, _ = _seed_legacy_codex(sandbox_home)
 
-        install_runner.run("uninstall", platform="codex")
+        install_runner.run("uninstall", platform="codex", global_cleanup=True)
 
         text = config.read_text()
         assert "evolve-lite@evolve-marketplace" not in text
@@ -82,7 +82,7 @@ class TestCodexLegacyMigration:
     def test_uninstall_removes_legacy_plugin_cache(self, sandbox_home, install_runner):
         _, cache = _seed_legacy_codex(sandbox_home)
 
-        install_runner.run("uninstall", platform="codex")
+        install_runner.run("uninstall", platform="codex", global_cleanup=True)
 
         # evolve-lite subdir gone; its now-empty marketplace parent gone too,
         # BUT only because the sibling other-plugin keeps it alive here.
@@ -96,23 +96,23 @@ class TestCodexLegacyMigration:
         (cache / "evolve-lite").mkdir(parents=True, exist_ok=True)
         (cache / "evolve-lite" / "x.json").write_text("{}\n")
 
-        install_runner.run("uninstall", platform="codex")
+        install_runner.run("uninstall", platform="codex", global_cleanup=True)
 
         assert not (cache / "evolve-lite").exists()
         assert not cache.exists(), "emptied marketplace parent should be rmdir'd"
 
     def test_uninstall_no_codex_config_is_noop(self, sandbox_home, install_runner):
         """Absent legacy artifacts: uninstall must not error or create anything."""
-        result = install_runner.run("uninstall", platform="codex")
+        result = install_runner.run("uninstall", platform="codex", global_cleanup=True)
         assert result.returncode == 0
         assert not (sandbox_home / ".codex" / "config.toml").exists()
 
     def test_uninstall_codex_legacy_is_idempotent(self, sandbox_home, install_runner):
         config, cache = _seed_legacy_codex(sandbox_home)
-        install_runner.run("uninstall", platform="codex")
+        install_runner.run("uninstall", platform="codex", global_cleanup=True)
         first = config.read_text()
         # Second run over the already-cleaned state is a clean no-op.
-        install_runner.run("uninstall", platform="codex")
+        install_runner.run("uninstall", platform="codex", global_cleanup=True)
         assert config.read_text() == first
         assert not (cache / "evolve-lite").exists()
         assert (cache / "other-plugin").exists()

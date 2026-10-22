@@ -155,12 +155,79 @@ def _select_target_repo(cfg, requested_name):
     return write[0], None
 
 
+def _unpublish(evolve_dir, project_root, target, effective_user, args):
+    """Restore an owned publication without overwriting a newer private mirror."""
+    clone = evolve_dir / "entities" / "subscribed" / target["name"]
+    if not (clone / ".git").exists():
+        raise SystemExit("Error: target repo clone not found")
+    entity_type, published, err = _find_private_entity(clone, args.entity, args.type)
+    if err:
+        raise SystemExit(f"Error: {err}")
+    if (
+        not published.is_relative_to(clone.resolve())
+        or (clone / entity_type).is_symlink()
+        or (clone / entity_type / args.entity).is_symlink()
+    ):
+        raise SystemExit("Error: refusing symlinked publication")
+    if not effective_user or _published_owner(published) != effective_user:
+        raise SystemExit("Error: unpublish requires a known matching owner")
+    private = evolve_dir / "entities" / entity_type / args.entity
+    if private.exists() or private.is_symlink():
+        raise SystemExit(f"Error: private copy already exists at {private}; reconcile it before unpublishing")
+    if _inside_any(private.parent.resolve(), _subscribed_dirs(evolve_dir / "entities")):
+        raise SystemExit("Error: refusing private type directory inside a subscribed clone")
+    entity = markdown_to_entity(published)
+    entity["visibility"] = "private"
+    for key in ("published_at", "source"):
+        entity.pop(key, None)
+    private.parent.mkdir(parents=True, exist_ok=True)
+    # Prepare a complete file before exposing it to readers. A hard link installs
+    # it exclusively: unlike replace(), it cannot overwrite a concurrent mirror.
+    temp_path = None
+    restored_content = entity_to_markdown(entity)
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=private.parent, prefix=".unpublish-", suffix=".tmp", delete=False
+        ) as output:
+            temp_path = Path(output.name)
+            output.write(restored_content)
+            output.flush()
+            os.fsync(output.fileno())
+        os.link(temp_path, private)
+        try:
+            published.unlink()
+        except OSError:
+            # Undo only our unchanged restoration, never a newer private mirror.
+            try:
+                if private.samefile(temp_path) and private.read_text(encoding="utf-8") == restored_content:
+                    private.unlink()
+            except OSError as rollback_error:
+                print(f"Warning: failed to roll back private restoration: {rollback_error}", file=sys.stderr)
+            raise
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                print(f"Warning: failed to remove temporary restoration: {cleanup_error}", file=sys.stderr)
+    try:
+        audit_append(
+            project_root=project_root, action="unpublish", actor=effective_user, entity=args.entity, type=entity_type, repo=target["name"]
+        )
+    except Exception as exc:
+        print(f"Warning: failed to append audit entry for unpublish: {exc}", file=sys.stderr)
+    print(f"Unpublished: {published} -> {private}. Commit and push the deletion to remove the remote copy.")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--entity", required=True, help="Basename of the .md file to publish")
     parser.add_argument("--type", default=None, help="Entity type directory to publish from (optional unless the name is ambiguous)")
     parser.add_argument("--user", default=None, help="Username to stamp as owner")
     parser.add_argument("--repo", default=None, help="Write-scope repo name (optional if exactly one is configured)")
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--update", action="store_true", help="Replace an existing publication owned by the configured user")
+    actions.add_argument("--unpublish", action="store_true", help="Restore an owned publication to private storage")
     args = parser.parse_args()
 
     evolve_dir = Path(os.environ.get("EVOLVE_DIR", ".evolve"))
@@ -171,10 +238,11 @@ def main():
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
         sys.exit(1)
 
-    entity_type, src_path, err = _find_private_entity(evolve_dir / "entities", args.entity, args.type)
-    if err is not None:
-        print(f"Error: {err}", file=sys.stderr)
-        sys.exit(1)
+    if not args.unpublish:
+        entity_type, src_path, err = _find_private_entity(evolve_dir / "entities", args.entity, args.type)
+        if err is not None:
+            print(f"Error: {err}", file=sys.stderr)
+            sys.exit(1)
 
     config = load_config(project_root)
     target, err = _select_target_repo(config, args.repo)
@@ -183,7 +251,21 @@ def main():
         sys.exit(1)
 
     identity = config.get("identity", {})
-    effective_user = args.user or (identity.get("user") if isinstance(identity, dict) else None)
+    configured_user = identity.get("user") if isinstance(identity, dict) else None
+    if (args.update or args.unpublish) and configured_user and args.user and args.user != configured_user:
+        raise SystemExit("Error: --user must match configured identity.user for update or unpublish")
+    effective_user = args.user or configured_user
+
+    if args.unpublish:
+        _unpublish(evolve_dir, project_root, target, effective_user, args)
+        return
+
+    if entity_type.casefold() == "user":
+        print(
+            "Error: user memories are private; rewrite the content as an explicitly attributed project or reference entity before publishing.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     entity = markdown_to_entity(src_path)
     # Where the publisher's native memory lives on their machine; meaningless to
@@ -234,6 +316,8 @@ def main():
     if not dest_base.is_relative_to(clone_root.resolve()):
         print(f"Error: refusing to publish into {dest_dir}: it resolves outside the target repo clone.", file=sys.stderr)
         sys.exit(1)
+    if (dest_dir / args.entity).is_symlink():
+        raise SystemExit("Error: refusing symlinked publication")
     dest_path = (dest_dir / args.entity).resolve()
     if not dest_path.is_relative_to(dest_base):
         print(f"Error: invalid entity name: {args.entity!r}", file=sys.stderr)
@@ -250,8 +334,15 @@ def main():
                 f"Rename your memory or entity, then publish it again.",
                 file=sys.stderr,
             )
-        else:
-            print(f"Error: already published: {dest_path}\nUnpublish it first or delete it manually.", file=sys.stderr)
+            sys.exit(1)
+        if not args.update:
+            print(f"Error: already published: {dest_path}\nUnpublish it first or use --update with the same owner.", file=sys.stderr)
+            sys.exit(1)
+        if not effective_user or existing_owner != effective_user:
+            print("Error: --update requires a known matching owner.", file=sys.stderr)
+            sys.exit(1)
+    elif args.update:
+        print("Error: --update requires an existing publication.", file=sys.stderr)
         sys.exit(1)
 
     temp_path = None

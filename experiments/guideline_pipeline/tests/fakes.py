@@ -9,6 +9,7 @@ from typing import ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict
 
+from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 from altk_evolve.processing import ProcessorContext, ProcessorResult, Trajectory, TrajectoryBatch, TrajectoryOutcome
 from altk_evolve.processing.builtin import GuidelineProcessor
@@ -105,6 +106,12 @@ def profile(label: str = "v1", fail_on: str | None = None) -> dict:
 
 def guideline_profile() -> dict:
     return {"processors": [{"id": "guidelines", "plugin": ScriptedGuidelineProcessor.id, "config": {}}]}
+
+
+def profile_window(path: Path) -> GuidelineRuntime:
+    """The trajectory window a sample profile's guideline processor sets, as the runtime the extractor reads."""
+    (processor,) = json.loads(path.read_text())["processors"]
+    return GuidelineRuntime(**{key: value for key, value in processor["config"].items() if key.startswith("trajectory_")})
 
 
 def store_guidelines(client: EvolveClient, namespace_id: str, *guidelines: tuple[str, dict]) -> None:

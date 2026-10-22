@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
+pytestmark = [pytest.mark.platform_integrations]
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/codex/plugins/evolve-lite"
 # recall/learn (retrieve_entities.py / save_entities.py) are excluded from
