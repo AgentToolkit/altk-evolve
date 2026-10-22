@@ -1024,7 +1024,11 @@ def test_llm_pre_call_fires_at_fact_extraction_call_site():
         fact_extraction.extract_facts_from_messages([{"role": "user", "content": "I like tea"}], use_categorization=False)
 
     sent = mock_completion.call_args.kwargs["messages"]
-    assert sent[0]["content"].startswith("[tagged:fact_extraction] ")
+    prompt = sent[0]["content"]
+    original = fact_extraction._build_prompt([{"role": "user", "content": "I like tea"}], False)
+    prefix = original.split("I like tea")[0]
+    assert prompt.startswith(prefix)
+    assert "[tagged:fact_extraction] I like tea" in prompt[len(prefix) :]
 
 
 def _tagged_recorded_entity(entity_id: str, content: str):

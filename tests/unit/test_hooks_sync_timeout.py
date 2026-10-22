@@ -43,6 +43,7 @@ from altk_evolve.hooks.manager import (
     _build_native_adapter,
     _initialize_manager,
     _run_call,
+    _SyncHookRunner,
     dispatch_llm_pre_call,
     get_plugin_manager,
     shutdown_hooks,
@@ -329,22 +330,26 @@ def test_patch_from_a_call_that_timed_out_mid_read_is_refused(tmp_path: Path, sl
 
 
 class ReadThenWait:
-    """Reads through context.backend just before its timeout; the nested post_read outlives it."""
+    """Reads through context.backend; the nested post_read waits for parent revocation."""
 
     def memory_pre_write(self, payload: Any, context: Any) -> Any:
-        time.sleep(0.4)
         context.backend.search_entities(payload.namespace_id, limit=5)
         return None
 
 
-class StampAfterAPause:
+class StampAfterRevocation:
     def __init__(self) -> None:
         self.errors: list[BaseException] = []
+        self.started = threading.Event()
+        self.release = threading.Event()
         self.finished = threading.Event()
 
     def memory_post_read(self, payload: Any, context: Any) -> Any:
-        time.sleep(0.3)
+        if self.started.is_set():
+            return None
+        self.started.set()
         try:
+            assert self.release.wait(5), "parent hook did not release the nested writer"
             for entity in payload.entities:
                 context.backend.update_entity_metadata(payload.namespace_id, entity["id"], {"stamped_late": True})
         except BaseException as exc:  # noqa: BLE001 - inspected by the test
@@ -354,20 +359,60 @@ class StampAfterAPause:
         return None
 
 
-@pytest.mark.unit
-def test_revocation_reaches_views_created_by_nested_hooks(tmp_path: Path):
-    client, target_id = _client_with_one_entity(tmp_path)
-    stamper = StampAfterAPause()
+class ReleaseNestedWriter:
+    """Keep preparation open until the nested write attempt has finished."""
+
+    def __init__(self, stamper: StampAfterRevocation) -> None:
+        self.stamper = stamper
+
+    def memory_pre_write(self, payload: Any, context: Any) -> Any:
+        # This hook starts only after x has timed out and its view was revoked.
+        self.stamper.release.set()
+        assert self.stamper.finished.wait(5), "nested writer did not finish"
+        return None
+
+
+def _enable_revocation_chain(reader: Any, stamper: StampAfterRevocation, monkeypatch) -> None:
+    original_run = _SyncHookRunner.run
+
+    async def run(self, started, fn, *args):
+        if self._name != "x":
+            return await original_run(self, started, fn, *args)
+        task = asyncio.create_task(original_run(self, started, fn, *args))
+        try:
+            assert await asyncio.to_thread(stamper.started.wait, 5), "nested hook did not start"
+            # Expire the real runner task only after the nested view exists.
+            # Other tests cover elapsed-time enforcement; here the invariant is
+            # revocation propagating to a still-running child before commit.
+            return await asyncio.wait_for(task, timeout=0)
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    monkeypatch.setattr(_SyncHookRunner, "run", run)
     _enable_chain(
-        (ReadThenWait(), "x", ["memory_pre_write"], "ignore"),
+        (reader, "x", ["memory_pre_write"], "ignore"),
         (stamper, "y", ["memory_post_read"], "ignore"),
-        (SlowPreWrite(), "z", ["memory_pre_write"], "fail"),
+        (ReleaseNestedWriter(stamper), "z", ["memory_pre_write"], "fail"),
+        timeout=10,  # Deadlock safeguard, not the mechanism that orders the test.
     )
 
-    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
-    assert stamper.finished.wait(5)
 
-    assert stamper.errors and "hook call" in str(stamper.errors[0])
+@pytest.mark.unit
+def test_revocation_reaches_views_created_by_nested_hooks(tmp_path: Path, monkeypatch):
+    client, target_id = _client_with_one_entity(tmp_path)
+    stamper = StampAfterRevocation()
+    _enable_revocation_chain(ReadThenWait(), stamper, monkeypatch)
+
+    try:
+        client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+        assert stamper.finished.wait(5)
+    finally:
+        stamper.release.set()
+
+    assert stamper.errors and isinstance(stamper.errors[0], EvolveException)
+    assert "hook call" in str(stamper.errors[0])
     stored = client.get_entity_by_id("ns", target_id)
     assert stored is not None and "stamped_late" not in stored.metadata
 
@@ -376,26 +421,25 @@ class ReadOnAHelperThreadThenWait:
     """Like ReadThenWait, but the read runs on the plugin's own pool thread (no contextvars copied)."""
 
     def memory_pre_write(self, payload: Any, context: Any) -> Any:
-        time.sleep(0.4)
         with concurrent.futures.ThreadPoolExecutor(1) as pool:
             pool.submit(context.backend.search_entities, payload.namespace_id, limit=5).result()
         return None
 
 
 @pytest.mark.unit
-def test_revocation_reaches_views_created_from_a_plugin_helper_thread(tmp_path: Path):
+def test_revocation_reaches_views_created_from_a_plugin_helper_thread(tmp_path: Path, monkeypatch):
     client, target_id = _client_with_one_entity(tmp_path)
-    stamper = StampAfterAPause()
-    _enable_chain(
-        (ReadOnAHelperThreadThenWait(), "x", ["memory_pre_write"], "ignore"),
-        (stamper, "y", ["memory_post_read"], "ignore"),
-        (SlowPreWrite(), "z", ["memory_pre_write"], "fail"),
-    )
+    stamper = StampAfterRevocation()
+    _enable_revocation_chain(ReadOnAHelperThreadThenWait(), stamper, monkeypatch)
 
-    client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
-    assert stamper.finished.wait(5)
+    try:
+        client.update_entities("ns", [Entity(content="second", type="note")], enable_conflict_resolution=False)
+        assert stamper.finished.wait(5)
+    finally:
+        stamper.release.set()
 
-    assert stamper.errors and "hook call" in str(stamper.errors[0])
+    assert stamper.errors and isinstance(stamper.errors[0], EvolveException)
+    assert "hook call" in str(stamper.errors[0])
     stored = client.get_entity_by_id("ns", target_id)
     assert stored is not None and "stamped_late" not in stored.metadata
 

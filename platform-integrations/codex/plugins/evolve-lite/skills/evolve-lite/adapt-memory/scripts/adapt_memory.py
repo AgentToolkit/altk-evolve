@@ -185,7 +185,7 @@ def main():
     # entity id is ``<type>/<name>`` on both sides — provenance can map an
     # audited native memory straight onto its mirror. Fall back to a
     # content-derived slug only when the native frontmatter has no name.
-    slug = slugify(name) if name else slugify(content)
+    slug = slugify(name, max_length=None) if name else slugify(content)
 
     # Explicit --type wins (back-compat); otherwise infer from the native
     # frontmatter metadata.type, defaulting to "project" when neither is set.
@@ -212,7 +212,7 @@ def main():
     # (same name + type) overwrites <type>/<name>.md in place rather than
     # creating <name>-2.md, keeping the entity id stable.
     path = write_entity_file(entities_dir, entity, filename=slug, overwrite=True)
-    entity_id = f"{entity['type']}/{slug}"
+    entity_id = f"{entity['type']}/{path.stem}"
     log(f"Mirrored {memory_path} -> {path} (id: {entity_id})")
     print(f"Mirrored native memory into evolve store: {path}")
     print(f"Entity id: {entity_id}")

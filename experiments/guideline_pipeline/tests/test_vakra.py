@@ -18,13 +18,14 @@ from altk_evolve.processing import TrajectoryOutcome
 
 from experiments.guideline_pipeline import __main__ as cli
 from experiments.guideline_pipeline.adapters import ADAPTERS, AdapterRecord, get_adapter
-from experiments.guideline_pipeline.adapters.elision import PARSER_STEP_LIMIT
 from experiments.guideline_pipeline.adapters.vakra import VakraAdapter
 from experiments.guideline_pipeline.stages.mine import mine
+from experiments.guideline_pipeline.tests.fakes import profile_window
 
 pytestmark = pytest.mark.unit
 
 FIXTURES = Path(__file__).parent / "fixtures" / "vakra"
+CUGA_PROFILE = Path(__file__).parents[1] / "profiles" / "cuga.json"  # the README suggests it for VAKRA too
 LOGGER = "experiments.guideline_pipeline.adapters.vakra"
 ALL = ["auth-01", "auth-02", "auth-03", "auth-04", "auth-05", "auth-06", "auth-07", "auth-08", "auth-09", "hock-01", "hock-02", "mov-01"]
 # Under the default dev_frac=0.3, by the sha256 of each uuid.
@@ -185,7 +186,7 @@ def test_records_without_a_trajectory_are_mined_from_their_output_turns(tmp_path
     ]
 
 
-def test_long_text_is_chunked_and_long_trajectories_are_elided():
+def test_long_text_is_chunked_and_long_trajectories_pass_through_whole():
     observation = "x" * 4500
     calls = [{"type": "AIMessage", "tool_calls": [{"name": "lookup", "args": {"i": i}}]} for i in range(60)]
     raw = {
@@ -199,12 +200,11 @@ def test_long_text_is_chunked_and_long_trajectories_are_elided():
     assert "".join(chunk.split(":\n", 1)[1] for chunk in chunks) == observation
     assert all(len(chunk) <= 2000 for chunk in chunks)
 
-    # 3 chunks + 60 calls = 63 steps: the shared helper keeps 6 + marker + 43, so the last call survives.
-    assert len(record.messages) == 1 + PARSER_STEP_LIMIT
-    assert record.messages[7] == {"role": "assistant", "content": "[14 steps elided: the trajectory continues below]"}
-    parsed = parse_openai_agents_trajectory(record.messages)
-    assert parsed["num_steps"] == PARSER_STEP_LIMIT
-    assert parsed["steps_list"][-1] == "**Step 50 - Action:**\nlookup(i=59)"
+    # 3 chunks + 60 calls = 63 steps, all passed on; a window with a tail keeps the last call.
+    assert len(record.messages) == 1 + 63
+    parsed = parse_openai_agents_trajectory(record.messages, options=profile_window(CUGA_PROFILE))
+    assert parsed["steps_list"][parsed["marker_index"]].startswith("**[... 13 intermediate step(s) omitted; 63 steps")
+    assert parsed["steps_list"][-1] == "**Step 51 - Action:**\nlookup(i=59)"  # labels number positions, marker included
 
 
 def test_long_tool_arguments_are_kept_whole():

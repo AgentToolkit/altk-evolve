@@ -26,6 +26,8 @@ On the AppWorld benchmark, Evolve improved agent reliability by +8.9 points over
 Research, releases, and practical findings from the Evolve team.
 
 <!-- BEGIN LATEST-UPDATES (generated; edit includes/latest-updates.md then run scripts/sync_latest_updates.py) -->
+- **2026-10-20** · Article — **[ALTK-Evolve: How learned memory tops the τ²-bench leaderboard on customer service tasks without a frontier model](https://huggingface.co/blog/ibm-research/altk-evolve-bc)**
+  How learned guidelines improve GPT-4.1's customer-service reliability on τ²-bench without updating model weights.
 - **2026-09-25** · Paper — **[Memory as Middleware for Self-Improving AI Agents](https://arxiv.org/abs/2609.32091)**
   The case for agent memory as a pluggable middleware layer, with Evolve as the reference implementation (to appear at [Middleware 2026](https://middleware-conf.github.io/2026)).
 - **2026-09-15** · Article — **[Your Agent Aced the Task. Will It Do It Again?](https://huggingface.co/blog/ibm-research/altk-evolve-consistency)**
@@ -99,9 +101,7 @@ runtime. Features that embed text require `[fastembed]` or `[sentence-transforme
 previous runtime, install `altk-evolve-core[sentence-transformers]` and set
 `EVOLVE_EMBEDDING_PROVIDER=sentence_transformers`. Validate retrieval quality before
 switching an existing vector store to another runtime; changing models requires
-re-embedding stored vectors. The specialized `sbert_large` CodeRank metric requires
-an exported CodeRank ONNX artifact with FastEmbed, or the Sentence Transformers
-provider. `[fastembed-export]` includes both runtimes for that export.
+re-embedding stored vectors.
 
 **Source development and releases:** The root project is core. Use
 `uv sync --package altk-evolve` for the convenience bundle, or select root extras

@@ -3,6 +3,9 @@ name: Check Formatting with Ruff
 on:
   workflow_call:
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   check-distributions:
@@ -142,11 +145,24 @@ jobs:
     - name: Verify platform-integrations matches a fresh render of plugin-source
       run: uv run python plugin-source/build_plugins.py check
 
-  # Supersedes main's `unit-tests` job (added in #289): this runs the full
-  # suite with all extras installed, a strict superset of `pytest tests/unit/`,
-  # and does so credential-free. Adding main's job back would only duplicate
-  # coverage with a credentialed checkout.
-  run-tests:
+  test-plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      platform: ${{ steps.plan.outputs.platform }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+      - id: plan
+        run: uv run --no-project python scripts/ci/platform_tests.py
+
+  regular-tests:
     runs-on: ubuntu-latest
     # This job runs PR-authored test code (pull_request trigger). It must stay
     # credential-free so a malicious PR cannot exfiltrate secrets or the
@@ -176,6 +192,59 @@ jobs:
       # Runs the suite with all extras installed (uv sync --all-extras in the
       # composite action), so the cpex-guarded hook tests actually gate PRs.
       - uses: ./.github/actions/run-tests
+        with:
+          suite: regular
+
+  platform-tests:
+    needs: test-plan
+    # A failed planner must never silently suppress coverage.
+    if: ${{ always() && (needs.test-plan.result != 'success' || needs.test-plan.outputs.platform != 'false') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - uses: ./.github/actions/run-tests
+        with:
+          suite: platform
+
+  # Preserve existing required check names while gating both test groups.
+  run-tests:
+    needs: [test-plan, regular-tests, platform-tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - name: Verify selected test groups succeeded
+        env:
+          PLAN_RESULT: ${{ needs.test-plan.result }}
+          PLATFORM_SELECTED: ${{ needs.test-plan.outputs.platform }}
+          REGULAR_RESULT: ${{ needs.regular-tests.result }}
+          PLATFORM_RESULT: ${{ needs.platform-tests.result }}
+        run: |
+          test "$PLAN_RESULT" = success
+          test "$REGULAR_RESULT" = success
+          case "$PLATFORM_SELECTED" in
+            true) test "$PLATFORM_RESULT" = success ;;
+            false) test "$PLATFORM_RESULT" = skipped ;;
+            *) echo 'Missing or invalid test plan' >&2; exit 1 ;;
+          esac
 
   ui-tests:
     runs-on: ubuntu-latest

@@ -22,11 +22,6 @@ from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
 from experiments.guideline_pipeline.adapters.base import AdapterRecord, option_boolean, option_names
 
-# Re-exported: the helper moved to adapters/elision.py, and callers import these from here.
-from experiments.guideline_pipeline.adapters.elision import ELISION_HEAD as ELISION_HEAD
-from experiments.guideline_pipeline.adapters.elision import PARSER_STEP_LIMIT as PARSER_STEP_LIMIT
-from experiments.guideline_pipeline.adapters.elision import elide_middle as elide_middle
-
 logger = logging.getLogger(__name__)
 
 SOURCE = "cuga"
@@ -119,7 +114,7 @@ class CugaAdapter:
             "pass_percentage": evaluation.get("pass_percentage"),
         }
         content: dict[str, Any] = {
-            "messages": [{"role": "user", "content": task.get("intent") or ""}, *elide_middle(agent_steps(steps))],
+            "messages": [{"role": "user", "content": task.get("intent") or ""}, *agent_steps(steps)],
             "context_messages": self._context(steps),
             "trace_id": task_id,
             "model": self.model,
