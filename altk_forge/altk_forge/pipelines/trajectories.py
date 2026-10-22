@@ -10,6 +10,9 @@ from ..trajectory.slices import slices
 from ..trajectory.summary import summary
 from .state import memory_of, namespace_settings
 
+# The ids trajectories may have (trajectory.schema.json): also what keeps a trace id from naming another folder.
+TRACE_ID = re.compile(r"^[A-Za-z0-9_:.-]{1,128}$")
+
 
 def write_index(pipeline_id):
     root = pipe_dir(pipeline_id) / "trajectories"
@@ -38,7 +41,7 @@ def write_index(pipeline_id):
 
 
 def trajectory(pipeline_id, trace_id):
-    if not re.match(r"^[A-Za-z0-9_:.-]{1,128}$", trace_id or ""):
+    if not TRACE_ID.match(trace_id or ""):
         raise InputError("Invalid id")
     f = pipe_dir(pipeline_id) / "trajectories" / f"{trace_id}.trajectory.json"
     return json.loads(f.read_text()) if f.exists() else None

@@ -40,6 +40,7 @@ API (JSON)
   GET    /api/pipelines/<id>/trajectories                   index.json
   GET    /api/pipelines/<id>/trajectories/<tid>             one trajectory
   GET    /api/pipelines/<id>/trajectories/<tid>/slices      what goes to memory, and what was sent
+  GET    /api/pipelines/<id>/trajectories/<tid>/trace       the original trace, as the source gave it
   POST   /api/pipelines/<id>/trajectories/<tid>/send        test: send this one trajectory to memory
   POST   /api/pipelines/<id>/trajectories/<tid>/unsend      test: delete what it produced in memory
   GET    /api/pipelines/<id>/memory/<namespace>             guidelines in a namespace of the output

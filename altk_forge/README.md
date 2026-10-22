@@ -127,13 +127,18 @@ Environment variables can also be set in a `.env` file next to `.data/`; variabl
   pipelines/<id>/
     pipeline.json      definition and run history
     state.json         processed traces and watermarks
+    traces/            the original traces, as the source gave them: <trace_id>/trace.langfuse.json, or a
+                       copy of the file from a folder and its source.json (path, modification time, size)
     trajectories/      <trace_id>.trajectory.json, index.json
     converters/        generated converters, versions, schema.json, samples
     memory.json        what each trace sent to memory (namespaces, entity ids)
     worker.log         last 2 MB of worker activity
 ```
 
-Traces are not copied: they are read from the source when needed.
+Every trace a pipeline imports is kept as a snapshot in `traces/`, exactly as the source gave it, next to the
+trajectory made of it: the trajectory can always be checked against (or rebuilt from) its trace, even after the source
+has changed or deleted it. A Langfuse snapshot is the format `cli.build` reads. Purging a pipeline's trajectories
+deletes their snapshots too, and the next poll downloads the traces again.
 
 ## Supported
 

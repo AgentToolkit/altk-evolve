@@ -78,18 +78,9 @@ class Filesystem:
         return out[:limit] if limit else out
 
     def trace(self, trace_id):
-        if self._paths is None or trace_id not in self._paths:
-            self.list_traces()
-        f = self._paths.get(trace_id)
-        if f is None:
-            raise FileTraceError(f"No JSON file for trace {trace_id} in {self.root} any more")
+        f, st, data = self._read(trace_id)
         try:
-            st = f.stat()
-            if st.st_size > MAX_FILE_BYTES:
-                raise FileTraceError(f"{f.name} is {st.st_size >> 20} MB; files over {MAX_FILE_BYTES >> 20} MB are not read")
-            content = json.loads(f.read_bytes())
-        except OSError as e:
-            raise FileTraceError(f"Cannot read {f}: {e.strerror or e}") from None
+            content = json.loads(data)
         except ValueError as e:
             raise FileTraceError(f"{f.relative_to(self.root)} is not JSON: {e}") from None
         rel = f.relative_to(self.root).as_posix()
@@ -102,6 +93,26 @@ class Filesystem:
             "size": st.st_size,
             "content": content,
         }
+
+    def original(self, trace_id):
+        """(the file's bytes, exactly as they are on disk, and its name), for keeping a snapshot of the trace."""
+        f, _, data = self._read(trace_id)
+        return data, f.name
+
+    def _read(self, trace_id):
+        """(file, its stat, its bytes) of a trace."""
+        if self._paths is None or trace_id not in self._paths:
+            self.list_traces()
+        f = self._paths.get(trace_id)
+        if f is None:
+            raise FileTraceError(f"No JSON file for trace {trace_id} in {self.root} any more")
+        try:
+            st = f.stat()
+            if st.st_size > MAX_FILE_BYTES:
+                raise FileTraceError(f"{f.name} is {st.st_size >> 20} MB; files over {MAX_FILE_BYTES >> 20} MB are not read")
+            return f, st, f.read_bytes()
+        except OSError as e:
+            raise FileTraceError(f"Cannot read {f}: {e.strerror or e}") from None
 
 
 def exclude_patterns(value):

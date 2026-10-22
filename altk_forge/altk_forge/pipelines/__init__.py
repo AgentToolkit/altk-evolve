@@ -1,8 +1,8 @@
 """Integrations, observability filters and pipelines, and the worker that runs pipelines in the background.
 
-Traces are not stored here: they are read from the source when needed. A pipeline stores only what it produced
-(see state, trajectories, converters.store and log); the worker polls, converts and, in production, sends (worker,
-sending); the API changes pipelines through manage, integrations and filters."""
+A pipeline keeps a snapshot of every trace it imported (originals), what it made of them (state, trajectories,
+converters.store) and what it did (log); the worker polls, converts and, in production, sends (worker, sending); the
+API changes pipelines through manage, integrations and filters."""
 
 from .filters import delete_filter, get_filter, list_filters, preview, save_filter
 from .integrations import browse_folder, delete_integration, list_integrations, save_integration, seed_from_env, test_integration
@@ -10,6 +10,7 @@ from .kinds import FILTER_KINDS, KINDS, MEMORY_CHOICES, MEMORY_FIELDS, MODES
 from .log import read_log
 from .runtime import RUNTIME
 from .manage import delete_pipeline, list_pipelines, pipeline_view, promote, purge, save_pipeline, set_enabled
+from .originals import original
 from .migrations import migrate_experiments, migrate_memory_settings
 from .sending import memory_guidelines, retry_send, send_all, send_all_progress, send_progress, send_trace, stop_send_all
 from .state import get_pipeline, reset_watermarks, state_of
@@ -45,6 +46,7 @@ __all__ = [
     "memory_guidelines",
     "migrate_experiments",
     "migrate_memory_settings",
+    "original",
     "pipeline_view",
     "preview",
     "promote",
