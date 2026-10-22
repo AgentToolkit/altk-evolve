@@ -1,5 +1,9 @@
 name: Run tests
 description: "Run the tests"
+inputs:
+  suite:
+    description: "Test group: all, regular, or platform"
+    default: all
 runs:
   using: 'composite'
   steps:
@@ -9,5 +13,12 @@ runs:
 
     - name: Run tests
       shell: bash
+      env:
+        TEST_SUITE: ${{ inputs.suite }}
       run: |
-        uv run --no-sync pytest -v --cov=. --cov-report=html
+        case "$TEST_SUITE" in
+          all) uv run --no-sync pytest -v --cov=. --cov-report=html ;;
+          regular) uv run --no-sync pytest -v -m 'not platform_integrations and not e2e and not llm' --cov=. --cov-report=html ;;
+          platform) uv run --no-sync pytest -v tests/platform_integrations -m 'platform_integrations and not e2e and not llm' --cov=. --cov-report=html ;;
+          *) echo "Unknown test suite: $TEST_SUITE" >&2; exit 1 ;;
+        esac

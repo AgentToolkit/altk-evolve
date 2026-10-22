@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.platform_integrations, pytest.mark.e2e]
+pytestmark = [pytest.mark.platform_integrations]
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent / "platform-integrations/claw-code/plugins/evolve-lite"
 SAVE_SCRIPT = _PLUGIN_ROOT / "skills/evolve-lite/learn/scripts/save_entities.py"

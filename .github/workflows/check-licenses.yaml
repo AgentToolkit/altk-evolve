@@ -1,0 +1,206 @@
+name: Check Dependency Licenses
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Keep every push: sharing a group can also replace a queued main run.
+  group: licenses-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.changes.outputs.image }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: '0.9.5'
+          python-version: '3.12'
+      - id: changes
+        run: uv run --no-project python scripts/licenses/ci.py plan
+
+  policy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: '0.9.5'
+          python-version: '3.12'
+      - name: Test license policy and job planning
+        run: uv run --no-project --with pytest==8.4.2 python -m pytest --noconftest -c /dev/null -p no:cacheprovider -v tests/test_license_ci.py tests/test_image_promotion.py
+
+  python:
+    name: Python licenses (${{ matrix.profile }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [core, convenience, optional]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: .license-policy-base
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: '0.9.5'
+          python-version: '3.12'
+          enable-cache: true
+      - id: policy
+        env:
+          LICENSE_MODE: ${{ vars.LICENSE_ENFORCEMENT || 'report' }}
+        run: uv run --no-project python scripts/licenses/ci.py policy
+      - name: Install frozen profile and collect independent inventory
+        env:
+          LICENSE_PROFILE: ${{ matrix.profile }}
+        run: |
+          uv run --no-project python scripts/licenses/check.py prepare-python "$LICENSE_PROFILE" "$RUNNER_TEMP/license-venv"
+          uv run --no-project python scripts/licenses/check.py inventory python "$RUNNER_TEMP/license-venv" license-reports/inventory.json
+      - uses: ./.github/actions/license-scan
+        with:
+          target-type: rootfs
+          target: ${{ runner.temp }}/license-venv
+          scope: python-${{ matrix.profile }}
+          inventory: license-reports/inventory.json
+          policy-dir: ${{ steps.policy.outputs.directory }}
+          mode: ${{ vars.LICENSE_ENFORCEMENT || 'report' }}
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: licenses-python-${{ matrix.profile }}
+          path: license-reports/
+          if-no-files-found: error
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: .license-policy-base
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: '0.9.5'
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - id: policy
+        env:
+          LICENSE_MODE: ${{ vars.LICENSE_ENFORCEMENT || 'report' }}
+        run: uv run --no-project python scripts/licenses/ci.py policy
+      - name: Install frontend without lifecycle scripts
+        working-directory: altk_evolve/frontend/ui
+        run: npm ci --ignore-scripts
+      - run: uv run --no-project python scripts/licenses/check.py inventory node altk_evolve/frontend/ui/node_modules license-reports/inventory.json
+      - uses: ./.github/actions/license-scan
+        with:
+          target-type: fs
+          target: altk_evolve/frontend/ui
+          scope: frontend-build-and-runtime
+          inventory: license-reports/inventory.json
+          policy-dir: ${{ steps.policy.outputs.directory }}
+          mode: ${{ vars.LICENSE_ENFORCEMENT || 'report' }}
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: licenses-frontend
+          path: license-reports/
+          if-no-files-found: error
+
+  image:
+    name: Core image licenses (${{ matrix.arch }})
+    needs: plan
+    if: needs.plan.outputs.image == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: .license-policy-base
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: '0.9.5'
+          python-version: '3.12'
+      - id: policy
+        env:
+          LICENSE_MODE: ${{ vars.LICENSE_ENFORCEMENT || 'report' }}
+        run: uv run --no-project python scripts/licenses/ci.py policy
+      - name: Build core image without publishing
+        run: docker build --file Dockerfile.core --tag evolve-license:local .
+      - name: Collect installed Python inventory from the built image
+        run: |
+          mkdir -p license-reports
+          docker run --rm --network none --read-only --user 0 --entrypoint /app/.venv/bin/python \
+            --mount "type=bind,source=$PWD/scripts/licenses/check.py,target=/tmp/check-licenses.py,readonly" \
+            evolve-license:local -S /tmp/check-licenses.py inventory python /app/.venv - > license-reports/inventory.json
+      - uses: ./.github/actions/license-scan
+        with:
+          target-type: image
+          target: evolve-license:local
+          scope: image-core-${{ matrix.arch }}
+          inventory: license-reports/inventory.json
+          policy-dir: ${{ steps.policy.outputs.directory }}
+          mode: ${{ vars.LICENSE_ENFORCEMENT || 'report' }}
+          full: 'true'
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: licenses-image-${{ matrix.arch }}
+          path: license-reports/
+          if-no-files-found: error
+
+  license-check:
+    if: always()
+    needs: [plan, policy, python, frontend, image]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: '0.9.5'
+          python-version: '3.12'
+      - name: Fail on failed jobs or unexpected skips
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: uv run --no-project python scripts/licenses/ci.py aggregate

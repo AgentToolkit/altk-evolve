@@ -255,7 +255,7 @@ def test_malformed_files_are_skipped_with_a_warning(tau_dir: Path, caplog: pytes
     with caplog.at_level(logging.WARNING):
         assert list(records(tau_dir)) == ["task_1", "task_2"]
 
-    assert [record.getMessage().split(": ", 1)[1] for record in caplog.records] == [
+    assert [record.getMessage().split(": ", 1)[1] for record in caplog.records if record.getMessage().startswith("skipping ")] == [
         "TASK header has no reward",
         "missing section(s): CONVERSATION",
         "missing section(s): HEADER, CONVERSATION",
@@ -383,7 +383,9 @@ def test_split_is_recorded_and_selects_tasks(tau_dir: Path, caplog: pytest.LogCa
     # (each guideline's source_task_id) and the conversation alike.
     assert (tasks["train/task_3"].batch.conversation_id, tasks["task_1"].batch.conversation_id) == ("train/task_3", "task_1")
     assert tasks["train/task_3"].batch.batch_id == "task_3"
-    assert sorted(tasks) == ["task_1", "task_2", "test/task_4", "train/task_3"]
+    assert sorted(tasks) == ["task_1", "task_2", "train/task_3"]
+    assert "skipped test-split tasks" in caplog.text
+    assert list(records(tau_dir, splits=frozenset({"test"}))) == ["test/task_4"]
 
     with caplog.at_level(logging.WARNING):
         assert list(records(tau_dir, splits=frozenset({"train"}))) == ["train/task_3"]
@@ -409,12 +411,13 @@ def test_split_file_selects_tasks_by_number(tau_dir: Path, tmp_path: Path):
     assert mined("test") == ["task_1", "task_3", "task_10"]
     assert mined("train,test") == mined("base") == ["task_0", "task_1", "task_2", "task_3", "task_4", "task_10"]
     assert mined("test", tau_dir / "task_2.txt") == []
+    adapter = get_adapter("tau-retail", {"split_file": str(table)})
+    assert [r.batch.batch_id for r in adapter.records(tau_dir)] == ["task_0", "task_2", "task_4"]
     # Numbers match without leading zeros, and IDs may be JSON numbers.
     table.write_text(json.dumps({"train": [0, "002"]}))
     assert mined("train") == ["task_0", "task_2"]
 
-    with pytest.raises(ValueError, match=r"split_file needs splits="):
-        get_adapter("tau-retail", {"split_file": str(table)})
+    assert len(list(get_adapter("tau-retail", {"split_file": str(table)}).records(tau_dir))) == 6
     with pytest.raises(ValueError, match=r"Splits not found in tau-retail split file .*\['dev'\] \(found \['train'\]\)"):
         get_adapter("tau-retail", {"splits": "dev,train", "split_file": str(table)})
     for bad in ('["0", "1"]', '{"train": "0"}', '{"train": [true]}', "{}", "not json"):
@@ -460,3 +463,83 @@ def test_registered_and_mined_end_to_end(client: EvolveClient, capsys: pytest.Ca
     assert [entity.metadata["success"] for entity in stored] == [True, False]
     again = mine(ADAPTERS["tau-retail"].records(FIXTURES), client, namespace_id="memories", processing_profile="echo")
     assert (again.processed, again.skipped) == (0, 2)
+
+
+def test_default_split_warning_is_once_per_run(tau_dir, caplog):
+    split_file(tau_dir, "task_3.txt", "test_normal")
+    split_file(tau_dir, "task_4.txt", "test")
+    with caplog.at_level(logging.WARNING):
+        assert sorted(records(tau_dir)) == ["task_1", "task_2"]
+    warnings = [r.getMessage() for r in caplog.records if "skipped test-split tasks" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "2; kept 2 tasks with unknown split" in warnings[0]
+    assert list(records(tau_dir, splits=frozenset({"test_normal"}))) == ["test_normal/task_3"]
+
+
+@pytest.mark.parametrize("label", [None, "base", "dev"])
+def test_default_warns_for_unknown_labels_only_after_valid_records(tau_dir, caplog, label):
+    for number in (1, 2):
+        split_file(tau_dir, f"task_{number}.txt", label)
+    (tau_dir / "task_3.txt").write_text("not a trajectory")
+    (tau_dir / "task_4.txt").write_text("TASK 4 trial=0 reward=1\n")
+    assert len(records(tau_dir)) == 2
+    summaries = [r.getMessage() for r in caplog.records if "unknown split" in r.getMessage()]
+    assert summaries == [f"kept 2 tasks with unknown split in {tau_dir}; use split_file= to classify base or unknown tasks"]
+    assert "skipped test-split tasks" not in caplog.text
+
+
+@pytest.mark.parametrize("with_table", [False, True])
+def test_all_train_run_has_no_warning(tau_dir, tmp_path, caplog, with_table):
+    for number in (1, 2):
+        split_file(tau_dir, f"task_{number}.txt", "train")
+    options = {}
+    if with_table:
+        table = tmp_path / "splits.json"
+        table.write_text(json.dumps({"train": [1, 2]}))
+        options["split_file"] = str(table)
+    assert len(list(get_adapter("tau-retail", options).records(tau_dir))) == 2
+    assert not caplog.records
+
+
+@pytest.mark.parametrize("header", ["test", "test_normal", "Test", "TEST_NORMAL"])
+@pytest.mark.parametrize("listed", [True, False])
+def test_either_source_excludes_test_tasks(tau_dir, tmp_path, caplog, header, listed):
+    split_file(tau_dir, "task_1.txt", header)
+    split_file(tau_dir, "task_2.txt", "train")
+    split_file(tau_dir, "task_3.txt", "train")
+    split_file(tau_dir, "task_4.txt", "base")
+    split_file(tau_dir, "task_5.txt", None)
+    table = tmp_path / "splits.json"
+    table.write_text(json.dumps({"train": [1, 2] if listed else [2], "Test_Normal": ["003"], "base": [4]}))
+    adapter = get_adapter("tau-retail", {"split_file": str(table)})
+    assert [r.batch.batch_id for r in adapter.records(tau_dir)] == ["task_2", "task_4", "task_5"]
+    assert [r.getMessage() for r in caplog.records] == [
+        f"skipped test-split tasks in {tau_dir}: 2; kept 2 tasks with unknown split; "
+        "use splits= to opt in to test splits; use split_file= to classify base or unknown tasks"
+    ]
+    # Explicit filters still use the requested source, including conflicting metadata.
+    opted_in = get_adapter("tau-retail", {"split_file": str(table), "splits": "Test_Normal"})
+    assert [r.batch.batch_id for r in opted_in.records(tau_dir)] == ["task_3"]
+    assert list(records(tau_dir, splits=frozenset({header}))) == [f"{header}/task_1"]
+
+
+@pytest.mark.parametrize("header", ["Test", "TEST_NORMAL"])
+def test_default_excludes_case_insensitive_header_without_table(tau_dir, header):
+    split_file(tau_dir, "task_1.txt", header)
+    assert list(records(tau_dir)) == ["task_2"]
+
+
+def test_direct_split_table_construction_and_reconfiguration(tau_dir: Path, tmp_path: Path):
+    table = tmp_path / "split_tasks.json"
+    table.write_text(json.dumps({"train": ["2"], "test_normal": ["1"]}))
+    adapter = TauRetailAdapter(split_file=table)
+    assert [r.batch.batch_id for r in adapter.records(tau_dir)] == ["task_2"]
+    selected = TauRetailAdapter(split_file=table, splits=frozenset({"test_normal"}))
+    assert [r.batch.batch_id for r in selected.records(tau_dir)] == ["task_1"]
+    changed = adapter.configure({"splits": "test_normal"})
+    assert [r.batch.batch_id for r in changed.records(tau_dir)] == ["task_1"]
+    assert [r.batch.batch_id for r in adapter.records(tau_dir)] == ["task_2"]
+    with pytest.raises(ValueError, match="Splits not found"):
+        adapter.configure({"splits": "missing"})
+    with pytest.raises(ValueError, match="Cannot read"):
+        TauRetailAdapter(split_file=tmp_path / "missing.json")

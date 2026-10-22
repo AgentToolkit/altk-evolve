@@ -1,0 +1,8 @@
+{
+  "approved_expressions": [
+    "Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "0BSD",
+    "CC0-1.0", "Unlicense", "Zlib", "BSL-1.0", "OFL-1.1", "BlueOak-1.0.0",
+    "PSF-2.0", "Python-2.0", "Apache-2.0 WITH LLVM-exception", "MIT-CMU"
+  ],
+  "exceptions": []
+}
