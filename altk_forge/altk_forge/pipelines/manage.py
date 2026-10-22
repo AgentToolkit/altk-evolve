@@ -17,6 +17,7 @@ from .filters import get_filter
 from .integrations import client_for, get_integration
 from .kinds import KINDS, MODES
 from .log import log
+from .originals import delete_originals
 from .runtime import RUNTIME
 from .sending import send_all_progress, stop_send_all
 from .state import all_pipelines, clean_memory, counts, get_pipeline, memory_of, reset_watermarks, state_of
@@ -143,13 +144,14 @@ def delete_pipeline(pipeline_id, purge_memory=False):
 
 
 def purge(pipeline_id, memory=True, trajectories=True, trace_ids=None):
-    """Delete what a pipeline produced: its entities in memory and/or its trajectories (which also forgets the traces,
-    so the next poll processes them again). Only for test pipelines, except memory removal on delete."""
+    """Delete what a pipeline produced: its entities in memory and/or its trajectories (which also forgets the traces
+    and deletes their snapshots, so the next poll downloads and processes them again). Only for test pipelines, except
+    memory removal on delete."""
     p = get_pipeline(pipeline_id)
     if p["mode"] == "production" and trajectories:
         raise InputError("A production pipeline keeps what it produced; switch it to test first")
     root = pipe_dir(pipeline_id)
-    deleted = {"entities": 0, "trajectories": 0, "errors": []}
+    deleted = {"entities": 0, "trajectories": 0, "traces": 0, "errors": []}
     stop_send_all(pipeline_id)  # it stops after the turn it is sending
     RUNTIME.cancel(pipeline_id)  # a run in progress stops after the trace it is converting, then this goes ahead
     try:
@@ -159,7 +161,7 @@ def purge(pipeline_id, memory=True, trajectories=True, trace_ids=None):
             RUNTIME.resume(pipeline_id)
     log(
         pipeline_id,
-        f"Purged: {deleted['entities']} memory entities, {deleted['trajectories']} trajectories"
+        f"Purged: {deleted['entities']} memory entities, {deleted['trajectories']} trajectories, {deleted['traces']} trace snapshots"
         + (f"; errors: {'; '.join(deleted['errors'])}" if deleted["errors"] else ""),
     )
     return deleted
@@ -198,6 +200,8 @@ def _purge(p, pipeline_id, root, deleted, memory, trajectories, trace_ids):
                 if f.exists():
                     f.unlink()
                     deleted["trajectories"] += 1
+            # The trace is forgotten, so the next poll downloads it again: its snapshot goes with its trajectory.
+            deleted["traces"] += delete_originals(pipeline_id, trace_ids)
             for tid in ids:
                 st["traces"].pop(tid, None)
                 mem.pop(tid, None)

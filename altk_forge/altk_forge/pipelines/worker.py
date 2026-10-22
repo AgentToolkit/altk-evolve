@@ -26,6 +26,7 @@ from .filters import matching_traces
 from .integrations import client_for, get_integration
 from .kinds import KINDS
 from .log import log
+from .originals import save_original
 from .runtime import RUNTIME
 from .sending import send_trace
 from .state import all_pipelines, converters_state, get_pipeline, memory_of, state_of
@@ -212,6 +213,7 @@ class Worker:
                 info, raw = None, None
                 try:
                     raw = client.trace(t["id"])
+                    save_original(p["id"], t["id"], raw, client)
                     doc, problems, info = convert(p, raw, integ, status)
                 except SourceError as e:
                     raise InputError(f"{integ['name']}: {e}") from None

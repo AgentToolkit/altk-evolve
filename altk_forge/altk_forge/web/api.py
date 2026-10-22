@@ -142,6 +142,10 @@ def pipeline_api(method, pid, rest, query, body):
             return P.slices_of(pid, more[0])
         if more[1:] == ["sending"]:
             return {"progress": P.send_progress(pid, more[0])}
+        if more[1:] == ["trace"]:
+            # The trace the trajectory was made of, exactly as the source gave it (a JSON document either way).
+            snapshot = P.original(pid, more[0])
+            return None if snapshot is None else snapshot[0]
         return None
     if action == "memory" and len(more) == 1:
         return P.memory_guidelines(pid, more[0])

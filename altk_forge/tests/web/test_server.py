@@ -101,3 +101,28 @@ def test_settings_over_http(api):
     assert status == 200 and body["llm"]["api_key_hint"] == "…9999"
     status, body = api("GET", "/api/settings")
     assert body["llm"]["model"] == "m" and "api_key" not in body["llm"]
+
+
+def test_the_original_trace_comes_back_exactly_as_it_was_imported(data_dir, pipeline, chat, traces):
+    from altk_forge.pipelines.worker import WORKER
+    from altk_forge.sources.filesystem import Filesystem
+
+    exact = '{"answer":"A1",  "question": "Q1?"}'
+    (traces / "run1.json").write_text(exact)
+    WORKER.run_once("qa-bot")
+    tid = Filesystem.trace_id("run1.json")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=10)
+        conn.request("GET", f"/api/pipelines/qa-bot/trajectories/{tid}/trace")
+        r = conn.getresponse()
+        assert r.status == 200 and r.getheader("Content-Type").startswith("application/json")
+        assert r.read() == exact.encode()
+        conn.request("GET", "/api/pipelines/qa-bot/trajectories/unknown/trace")
+        r = conn.getresponse()
+        r.read()
+        assert r.status == 404
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
