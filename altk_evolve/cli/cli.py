@@ -215,6 +215,11 @@ def add_entity(
             raise typer.Exit(1)
     else:
         parsed_metadata = {}
+    # merged_from is consolidation's record of what a guideline absorbed, and its entries
+    # skip redaction, so a caller can't set it (the REST and MCP create paths drop it too).
+    if isinstance(parsed_metadata, dict) and "merged_from" in parsed_metadata:
+        parsed_metadata = {k: v for k, v in parsed_metadata.items() if k != "merged_from"}
+        console.print("[yellow]Ignoring metadata.merged_from: it is managed by consolidation.[/yellow]")
 
     # Ensure namespace exists
     if not client.namespace_exists(namespace):
