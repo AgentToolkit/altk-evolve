@@ -667,6 +667,8 @@ def patch_entity_metadata(
         patch = _parse_metadata(metadata_patch)
     except ValueError as exc:
         return _json_response({"error": str(exc)})
+    if "merged_from" in patch:
+        return _json_response({"error": "merged_from is managed by consolidation and cannot be patched"})
 
     resolved_ns = _resolve_namespace(namespace_id)
     client = get_client()
@@ -1336,7 +1338,8 @@ def create_entity(
         if visibility == "public" and not owner_id:
             return json.dumps({"error": "Missing owner_id", "message": "public entities must have an owner_id"})
 
-        _RESERVED_KEYS = {"owner_id", "visibility", "published_at", "creation_mode"}
+        # merged_from is consolidation's record of what a guideline absorbed (see consolidate_guidelines).
+        _RESERVED_KEYS = {"owner_id", "visibility", "published_at", "creation_mode", "merged_from"}
 
         metadata_dict = {}
         if metadata:
