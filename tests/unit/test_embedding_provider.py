@@ -57,18 +57,16 @@ def test_fastembed_used_by_consistency_and_guideline_selection(fastembed, monkey
 
     monkeypatch.setattr(metrics, "guidelines_settings", GuidelinesSettings(_env_file=None))
     monkeypatch.setattr(metrics.guidelines_settings, "consistency_embedding_model_small", "BAAI/bge-small-en-v1.5")
-    monkeypatch.setattr(metrics.guidelines_settings, "consistency_embedding_model_large", "BAAI/bge-small-en-v1.5")
     monkeypatch.setattr(
         retrieval, "_embed", lambda texts, _: get_embedding_model("BAAI/bge-small-en-v1.5").encode(texts, normalize_embeddings=True)
     )
     clustering._get_sentence_transformer.cache_clear()
     try:
-        for name in ("sbert_small", "sbert_large"):
-            metric = metrics.get_metric_instance(name)
-            score, distance = metric.get_consistency_and_distance(["same", "same"])
-            assert score == pytest.approx(1)
-            assert distance == pytest.approx(0)
-            assert metric.get_distance_from_chosen_trajectory(["same", "other"], "same") == pytest.approx([0, 1])
+        metric = metrics.get_metric_instance("sbert_small")
+        score, distance = metric.get_consistency_and_distance(["same", "same"])
+        assert score == pytest.approx(1)
+        assert distance == pytest.approx(0)
+        assert metric.get_distance_from_chosen_trajectory(["same", "other"], "same") == pytest.approx([0, 1])
         entities = [
             RecordedEntity(
                 created_at=datetime.now(timezone.utc), id="1", type="guideline", content="same", metadata={"task_description": "same"}
@@ -107,14 +105,11 @@ def test_fastembed_accepts_case_insensitive_model_name(fastembed):
 
 @pytest.mark.unit
 def test_fastembed_cache_path_from_dotenv(fastembed, monkeypatch, tmp_path):
-    from altk_evolve.embedding_assets import coderank_directory
-
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("FASTEMBED_CACHE_PATH")
     (tmp_path / ".env").write_text("EVOLVE_EMBEDDING_PROVIDER=fastembed\nFASTEMBED_CACHE_PATH=/dotenv/cache\n")
     get_embedding_model("BAAI/bge-small-en-v1.5")
     assert fastembed.calls[-1]["cache_dir"] == "/dotenv/cache"
-    assert coderank_directory().parent.as_posix() == "/dotenv/cache"
     monkeypatch.setenv("FASTEMBED_CACHE_PATH", "/environment/cache")
     get_embedding_model("BAAI/bge-small-en-v1.5")
     assert fastembed.calls[-1]["cache_dir"] == "/environment/cache"

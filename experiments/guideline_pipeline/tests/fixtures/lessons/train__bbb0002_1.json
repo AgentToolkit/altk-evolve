@@ -1,0 +1,21 @@
+{
+  "task_id": "bbb0002_1",
+  "partition": "train",
+  "success": true,
+  "difficulty": 1,
+  "instruction_preview": "My name is: Bo Example. My phone number is 5550100.\nTask: How many songs are in my longest playlist?",
+  "lessons": [
+    {
+      "theme": "Pagination",
+      "polarity": "success_pattern",
+      "evidence": "The agent paged until an empty page and counted every song.",
+      "lesson": "  Page through list APIs until an empty page is returned.  "
+    },
+    {
+      "theme": "Answer format",
+      "polarity": "failure_fix",
+      "evidence": "Self-reported as a fix, though the task succeeded.",
+      "lesson": "Return the answer in exactly the format the task asks for."
+    }
+  ]
+}

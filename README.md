@@ -101,9 +101,7 @@ runtime. Features that embed text require `[fastembed]` or `[sentence-transforme
 previous runtime, install `altk-evolve-core[sentence-transformers]` and set
 `EVOLVE_EMBEDDING_PROVIDER=sentence_transformers`. Validate retrieval quality before
 switching an existing vector store to another runtime; changing models requires
-re-embedding stored vectors. The specialized `sbert_large` CodeRank metric requires
-an exported CodeRank ONNX artifact with FastEmbed, or the Sentence Transformers
-provider. `[fastembed-export]` includes both runtimes for that export.
+re-embedding stored vectors.
 
 **Source development and releases:** The root project is core. Use
 `uv sync --package altk-evolve` for the convenience bundle, or select root extras
