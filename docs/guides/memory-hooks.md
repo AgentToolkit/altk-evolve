@@ -32,9 +32,12 @@ Rather than baking each concern in, Evolve defines one extension seam with backe
 | `memory_pre_delete` | Before **every** entity delete — the public `delete_entity_by_id` and conflict-resolution DELETE verdicts inside `update_entities` | halt | `namespace_id`, `entity_id`, `metadata` (the stored entity's metadata; `None` if the entity was not found) |
 | `memory_pre_namespace_delete` | Before `delete_namespace` | halt | `namespace_id` |
 | `memory_post_read` | On public `search_entities` results only — internal reads (conflict-resolution pre-reads, the metadata-patch read-before-merge) never fire it | transform (filter/redact) / observe | `namespace_id`, `entities`, `query`, `filters` |
-| `llm_pre_call` | Immediately before every litellm `completion` (fact extraction, guidelines, segmentation, clustering, conflict resolution) | transform (redact) / halt | `messages`, `purpose` (call-site tag), `model` |
+| `llm_pre_call` | Before preparing a litellm `completion` (fact extraction, guidelines, segmentation, clustering, conflict resolution) | transform (redact) / halt | `messages`, `purpose` (call-site tag), `model` |
 
 For `purpose="conflict_resolution"`, `llm_pre_call` receives only memory content: each memory’s content is serialized to text and passed as one user message, including dictionary keys and numeric values. The caller uses only the returned text and requires one user message containing a string. IDs, types, custom conflict instructions, and built-in instructions are added afterward and cannot be replaced through the hook response. The model's decisions are produced later and are not passed to this hook. This is a general-purpose content hook; redaction is one possible use.
+
+For `purpose="fact_extraction"`, the hook receives one user message containing all supplied user turns joined with newlines (other roles are excluded). Its returned string is used to render the extraction template afterward; plugins do not see the final prompt. The response must contain exactly one user message with string content; malformed responses raise before any model call. The hook runs once and retries reuse the transformed prompt.
+
 
 Recursion safety: a `memory_post_read` plugin that patches metadata goes through `update_entity_metadata`, whose read-before-merge uses the internal `_search_entities_impl` seam — plus a context-local guard suppresses nested `memory_post_read` dispatch.
 

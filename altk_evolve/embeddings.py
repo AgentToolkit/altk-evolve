@@ -1,26 +1,19 @@
 """Shared embedding loader for storage, guideline selection and consistency."""
 
 from functools import lru_cache
-from threading import Lock
-from typing import Any, Literal, Protocol, cast
+from typing import Literal, Protocol, cast
 
 import numpy as np
-from pydantic_settings import SettingsConfigDict
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from altk_evolve.embedding_assets import (
-    CODERANK_MODEL,
-    CODERANK_REVISION,
-    FastEmbedCacheSettings,
-    coderank_directory,
-    validate_coderank_artifact,
-)
-
-_registration_lock = Lock()
+MINILM_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
-class EmbeddingSettings(FastEmbedCacheSettings):
+class EmbeddingSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EVOLVE_", env_file=".env", extra="ignore")
     embedding_provider: Literal["sentence_transformers", "fastembed"] = "fastembed"
+    fastembed_cache_path: str | None = Field(default=None, validation_alias="FASTEMBED_CACHE_PATH")
 
 
 class EmbeddingModel(Protocol):
@@ -44,29 +37,8 @@ class FastEmbedModel:
                 raise
             raise ImportError("Install 'altk-evolve-core[fastembed]' or the 'altk-evolve' convenience package.") from exc
 
-        if model_name.lower() == CODERANK_MODEL.lower():
-            model_name = CODERANK_MODEL
-        options: dict[str, Any] = {}
-        if model_name == CODERANK_MODEL:
-            from fastembed.common.model_description import ModelSource, PoolingType
-
-            directory = coderank_directory(cache_dir)
-            validate_coderank_artifact(directory)
-            with _registration_lock:
-                if not any(item["model"] == model_name for item in TextEmbedding.list_supported_models()):
-                    TextEmbedding.add_custom_model(
-                        model=model_name,
-                        pooling=PoolingType.DISABLED,  # CLS pooling is part of Evolve's exported graph.
-                        normalization=True,
-                        sources=ModelSource(hf=CODERANK_MODEL),
-                        dim=768,
-                        model_file="model.onnx",
-                        description="Evolve-owned FP32 export of pinned official CodeRankEmbed weights",
-                        license="MIT",
-                    )
-            options["specific_model_path"] = str(directory)
         try:
-            self._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir, **options)
+            self._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir)
         except ValueError as exc:
             if any(item["model"].lower() == model_name.lower() for item in TextEmbedding.list_supported_models()):
                 raise
@@ -115,9 +87,7 @@ def get_embedding_model(model_name: str, *, trust_remote_code: bool = False) -> 
 @lru_cache(maxsize=4)
 def _load_embedding_model(provider: str, model_name: str, trust_remote_code: bool, cache_dir: str | None) -> EmbeddingModel:
     if provider == "fastembed":
-        if model_name.lower() == CODERANK_MODEL.lower():
-            model_name = CODERANK_MODEL
-        if trust_remote_code and model_name != CODERANK_MODEL:
+        if trust_remote_code:
             raise ValueError("FastEmbed does not support trust_remote_code; use a supported ONNX model")
         return FastEmbedModel(model_name, cache_dir)
     try:
@@ -129,10 +99,4 @@ def _load_embedding_model(provider: str, model_name: str, trust_remote_code: boo
             "Install 'altk-evolve-core[sentence-transformers]' to use EVOLVE_EMBEDDING_PROVIDER=sentence_transformers."
         ) from exc
 
-    if model_name == CODERANK_MODEL:
-        # This built-in model uses reviewed, pinned upstream custom code.
-        return cast(
-            EmbeddingModel,
-            SentenceTransformer(model_name, revision=CODERANK_REVISION, trust_remote_code=True),
-        )
     return cast(EmbeddingModel, SentenceTransformer(model_name, trust_remote_code=trust_remote_code))

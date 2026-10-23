@@ -10,7 +10,7 @@ from pathlib import Path
 from altk_evolve.frontend.client.evolve_client import EvolveClient
 
 from experiments.guideline_pipeline.adapters import get_adapter
-from experiments.guideline_pipeline.commands import add_adapter_option, add_output_stages, adapter_options
+from experiments.guideline_pipeline.commands import add_adapter_option, add_import_stage, add_output_stages, adapter_options
 from experiments.guideline_pipeline.runtime import stabilize_runtime
 from experiments.guideline_pipeline.stages.mine import mine
 
@@ -40,6 +40,7 @@ def _parser() -> argparse.ArgumentParser:
     mine_parser.add_argument("--revision", type=_positive, help="pin a profile revision (default: latest, resolved once per run)")
     mine_parser.add_argument("--limit", type=_positive, help="process at most N records")
     mine_parser.add_argument("--dry-run", action="store_true", help="build and validate trajectories without touching storage")
+    add_import_stage(stages, make_client=lambda: make_client())
     add_output_stages(stages, make_client=lambda: make_client())
     return parser
 
