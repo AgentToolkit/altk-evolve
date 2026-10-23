@@ -342,7 +342,7 @@ def consolidate(backend, *groups):
     with (
         patch(
             "altk_evolve.llm.guidelines.clustering.cluster_entities",
-            side_effect=lambda entities, threshold: [entities] if len(entities) > 1 else [],
+            side_effect=lambda entities, threshold, **_: [entities] if len(entities) > 1 else [],
         ),
         patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[]),
         patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False),

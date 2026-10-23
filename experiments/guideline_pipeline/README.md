@@ -146,7 +146,8 @@ invalid thresholds, unrecognized evidence).
 
 ```bash
 # Merge similar guidelines in place, with Evolve's consolidation (makes LLM calls).
-uv run python -m experiments.guideline_pipeline consolidate --namespace <ns> [--mode lossless] [--threshold 0.8]
+uv run python -m experiments.guideline_pipeline consolidate --namespace <ns> [--mode lossless] [--threshold 0.8] \
+    [--cluster-key task_description|guideline_text] [--max-cluster-size N] [--max-rounds N]
 
 # Playbook: {"entries": [{"r": rule, "n": support, "e": evidence}]}
 uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/playbook.json [--min-support N]

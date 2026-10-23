@@ -2,13 +2,18 @@
 
 import json
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
+from altk_evolve.backend.filesystem import FilesystemEntityBackend
+from altk_evolve.config.evolve import EvolveConfig
+from altk_evolve.config.filesystem import FilesystemSettings
 from altk_evolve.llm.guidelines import clustering as clustering_module
 from altk_evolve.llm.guidelines.clustering import combine_cluster
-from altk_evolve.schema.core import RecordedEntity
+from altk_evolve.schema.core import Entity, RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
 from altk_evolve.schema.guidelines import ConsolidationResult, Guideline
 
@@ -207,6 +212,38 @@ class TestCombineCluster:
     @patch("altk_evolve.llm.guidelines.clustering.completion")
     @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
     @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
+    def test_combine_cluster_prompt_names_what_the_cluster_shares(self, _mock_params, _mock_schema, mock_completion):
+        mock_completion.return_value = _mock_completion_response([_cg("Merged", "strategy", [0, 1])])
+        entities = [_make_entity("1", "A"), _make_entity("2", "B")]
+
+        combine_cluster(entities)
+        by_task = mock_completion.call_args.kwargs["messages"][0]["content"]
+        combine_cluster(entities, clustering_key="guideline_text")
+        by_text = mock_completion.call_args.kwargs["messages"][0]["content"]
+
+        # The default prompt is unchanged; clustering on text says the advice, not the task, is shared.
+        assert by_task.splitlines()[0] == "You are consolidating multiple AI agent guidelines that were generated from similar tasks."
+        assert by_text.splitlines()[0] == (
+            "You are consolidating multiple AI agent guidelines that give similar advice, possibly learned on different tasks."
+        )
+        assert by_task.splitlines()[1:] == by_text.splitlines()[1:]
+
+    @patch("altk_evolve.llm.guidelines.clustering.completion")
+    @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
+    @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
+    def test_combine_cluster_prompt_omits_the_task_section_without_tasks(self, _mock_params, _mock_schema, mock_completion):
+        mock_completion.return_value = _mock_completion_response([_cg("Merged", "strategy", [0, 1])])
+
+        combine_cluster([_make_entity("1", "A", ""), _make_entity("2", "B", "")], clustering_key="guideline_text")
+        prompt = mock_completion.call_args.kwargs["messages"][0]["content"]
+
+        assert "# Task Descriptions" not in prompt
+        assert "came from tasks like" not in prompt
+        assert "## Guideline 0" in prompt
+
+    @patch("altk_evolve.llm.guidelines.clustering.completion")
+    @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=False)
+    @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=[])
     def test_combine_cluster_retries_on_failure(self, _mock_params, _mock_schema, mock_completion):
         mock_completion.side_effect = [
             ValueError("bad json"),
@@ -287,6 +324,9 @@ def _make_client(mock_backend, mode: str = "lossless"):
     client.config = MagicMock()
     client.config.clustering_threshold = 0.80
     client.config.consolidation_mode = mode
+    client.config.clustering_key = "task_description"
+    client.config.consolidation_max_cluster_size = None
+    client.config.consolidation_max_rounds = 1
     return client
 
 
@@ -377,6 +417,229 @@ class TestConsolidateGuidelines:
 
         result = client.consolidate_guidelines("test-ns")
 
-        assert result == ConsolidationResult(clusters_found=0, guidelines_before=0, guidelines_after=0)
+        assert result == ConsolidationResult(clusters_found=0, guidelines_before=0, guidelines_after=0, rounds=0)
         mock_backend.update_entities.assert_not_called()
         mock_backend.delete_entity_by_id.assert_not_called()
+
+    @patch("altk_evolve.llm.guidelines.clustering.combine_cluster_with_members")
+    def test_consolidate_guidelines_passes_the_clustering_options_through(self, mock_combine):
+        first, second, third = (_make_entity("1", "A", "task a"), _make_entity("2", "B", "task b"), _make_entity("3", "C", "task c"))
+        mock_combine.return_value = [
+            (Guideline(content="A", rationale="R", category="strategy", trigger="T", support=1), [first]),
+            (Guideline(content="B and C", rationale="R", category="strategy", trigger="T", support=2), [second, third]),
+        ]
+        client = _make_client(MagicMock())
+
+        with patch.object(client, "_cluster_guideline_entities", return_value=[[first, second, third]]) as cluster:
+            client.consolidate_guidelines("test-ns", key="guideline_text", max_cluster_size=4)
+
+        assert cluster.call_args.kwargs == {"threshold": None, "key": "guideline_text", "max_cluster_size": 4}
+        assert mock_combine.call_args.kwargs == {"mode": "lossless", "clustering_key": "guideline_text"}
+        # Each output takes its task description from its own members, not from the cluster's
+        # first; one whose members span different tasks keeps none.
+        new_entities = client.backend.update_entities.call_args[0][1]
+        assert [e.metadata["task_description"] for e in new_entities] == ["task a", ""]
+        assert [e.metadata.get("source_tasks") for e in new_entities] == [None, ["task b", "task c"]]
+
+    def test_merged_task_metadata_depends_on_the_clustering_key(self):
+        from altk_evolve.frontend.client.evolve_client import _merged_task_metadata
+
+        a, b, a_again = _make_entity("1", "x", "task a"), _make_entity("2", "y", "task b"), _make_entity("3", "z", "task a")
+        untasked = _make_entity("4", "w", "")
+        earlier_merge = _make_entity("5", "v", "")
+        earlier_merge.metadata["source_tasks"] = ["task c", "task a"]
+
+        # Clustered by task, the members' tasks are similar: the first is kept.
+        assert _merged_task_metadata([a, b], "task_description") == {"task_description": "task a"}
+        # Clustered by text, unrelated tasks would tie retrieval by source task to one of them.
+        assert _merged_task_metadata([a, b], "guideline_text") == {"task_description": "", "source_tasks": ["task a", "task b"]}
+        assert _merged_task_metadata([untasked, a, a_again], "guideline_text") == {"task_description": "task a"}
+        assert _merged_task_metadata([untasked], "guideline_text") == {"task_description": ""}
+        # An earlier cross-task merge contributes its source tasks, not its empty description.
+        assert _merged_task_metadata([earlier_merge, a], "guideline_text") == {
+            "task_description": "",
+            "source_tasks": ["task c", "task a"],
+        }
+        # A task description set on it later (an update or a patch) is kept alongside them.
+        earlier_merge.metadata["task_description"] = "task d"
+        assert _merged_task_metadata([earlier_merge, b], "guideline_text") == {
+            "task_description": "",
+            "source_tasks": ["task c", "task a", "task d", "task b"],
+        }
+
+    def test_a_task_key_merge_keeps_an_earlier_merges_source_tasks(self):
+        from altk_evolve.frontend.client.evolve_client import _merged_task_metadata
+
+        # A cross-task merge that was later given a task description clusters on that
+        # description; the output keeps it, and keeps the earlier source tasks so retrieval
+        # by source task still ranks it for them.
+        earlier_merge = _make_entity("5", "v", "send an invoice")
+        earlier_merge.metadata["source_tasks"] = ["pay a friend", "make a playlist"]
+        similar = _make_entity("6", "w", "send a bill")
+
+        assert _merged_task_metadata([earlier_merge, similar], "task_description") == {
+            "task_description": "send an invoice",
+            "source_tasks": ["pay a friend", "make a playlist", "send an invoice", "send a bill"],
+        }
+
+    @pytest.mark.parametrize("malformed", [5, "abc", {"x": 1}, None])
+    def test_merged_task_metadata_ignores_a_source_tasks_value_that_is_not_a_list(self, malformed):
+        from altk_evolve.frontend.client.evolve_client import _merged_task_metadata
+
+        # An int would raise inside the merge and skip the cluster on every run; a string or a
+        # dict would be stored as its characters or keys.
+        first, second = _make_entity("1", "x", "t1"), _make_entity("2", "y", "t2")
+        first.metadata["source_tasks"] = malformed
+
+        assert _merged_task_metadata([first, second], "guideline_text") == {"task_description": "", "source_tasks": ["t1", "t2"]}
+
+    def test_consolidate_guidelines_rejects_zero_rounds(self):
+        with pytest.raises(ValueError, match="max_rounds"):
+            _make_client(MagicMock()).consolidate_guidelines("test-ns", max_rounds=0)
+
+
+@pytest.mark.unit
+def test_config_validates_the_consolidation_knobs():
+    fields = EvolveConfig.model_fields
+    assert fields["clustering_key"].default == "task_description"
+    assert fields["consolidation_max_cluster_size"].default is None
+    assert fields["consolidation_max_rounds"].default == 1
+    for bad in ({"clustering_key": "content"}, {"consolidation_max_cluster_size": 1}, {"consolidation_max_rounds": 0}):
+        with pytest.raises(ValidationError):
+            EvolveConfig(_env_file=None, **bad)
+
+
+# ---------------------------------------------------------------------------
+# Multi-round consolidation, against a real filesystem store
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def store(tmp_path):
+    backend = FilesystemEntityBackend(FilesystemSettings(data_dir=str(tmp_path)))
+    backend.create_namespace("n")
+    return backend
+
+
+def _store_guidelines(store, **tasks: str) -> None:
+    """Store one guideline per keyword: its content is the name and its task the value."""
+    store.update_entities(
+        "n",
+        [
+            Entity(type="guideline", content=content, metadata={"task_description": task, "category": "strategy", "user_id": "u"})
+            for content, task in tasks.items()
+        ],
+        False,
+    )
+
+
+def _fake_cluster(entities, threshold, key="task_description", max_cluster_size=None, **_):
+    """Cluster by task description (or by the content's first letter for the text key), then
+    cut each cluster into chunks of max_cluster_size."""
+    groups: dict[str, list[RecordedEntity]] = {}
+    for entity in sorted(entities, key=lambda e: str(e.content)):
+        group = str(entity.content)[0] if key == "guideline_text" else entity.metadata["task_description"]
+        groups.setdefault(group, []).append(entity)
+    size = max_cluster_size or len(entities)
+    chunks = [group[i : i + size] for group in groups.values() for i in range(0, len(group), size)]
+    return [chunk for chunk in chunks if len(chunk) > 1]
+
+
+def _fake_combine(merge_tasks: set[str]):
+    """Merge a cluster into one guideline if it was clustered by text or its task is in
+    merge_tasks; otherwise keep every member."""
+
+    def combine(cluster, mode="lossless", clustering_key="task_description"):
+        def out(content, members):
+            support = sum(int(m.metadata.get("support", 1)) for m in members)
+            return Guideline(content=content, rationale="", category="strategy", trigger="", support=support), members
+
+        if clustering_key != "guideline_text" and cluster[0].metadata["task_description"] not in merge_tasks:
+            return [out(str(m.content), [m]) for m in cluster]
+        return [out("+".join(sorted(str(m.content) for m in cluster)), list(cluster))]
+
+    return combine
+
+
+def _consolidate(store, merge_tasks, undeletable=(), **kwargs):
+    from altk_evolve.frontend.client.evolve_client import EvolveClient
+
+    client = EvolveClient.__new__(EvolveClient)
+    client.backend = store
+    client.config = SimpleNamespace(clustering_threshold=0.8, consolidation_mode="lossless")
+
+    def delete(namespace_id, entity_id):
+        # Stands in for a vetoed (legal hold) or failed delete of the named guidelines.
+        stored = {str(e.id): str(e.content) for e in store.scan_entities(namespace_id, filters={"type": "guideline"})}
+        if stored[str(entity_id)] in undeletable:
+            raise RuntimeError("delete blocked")
+        store.delete_entity_by_id(namespace_id, entity_id)
+
+    with (
+        patch.object(clustering_module, "cluster_entities", side_effect=_fake_cluster),
+        patch.object(clustering_module, "combine_cluster_with_members", side_effect=_fake_combine(merge_tasks)) as combine,
+        patch.object(client, "delete_entity_by_id", side_effect=delete),
+    ):
+        result = client.consolidate_guidelines("n", **kwargs)
+    stored = {str(e.content): e.metadata.get("support") for e in store.scan_entities("n", filters={"type": "guideline"})}
+    return result, stored, combine.call_count
+
+
+@pytest.mark.unit
+class TestConsolidationRounds:
+    def test_later_rounds_merge_what_the_size_cap_split(self, store):
+        _store_guidelines(store, A="x", B="x", C="x", D="x")
+
+        result, stored, _ = _consolidate(store, {"x"}, max_cluster_size=2, max_rounds=3)
+
+        assert stored == {"A+B+C+D": 4}
+        # Round 1 merges two chunks, round 2 merges their outputs, round 3 finds nothing to cluster.
+        # The before count covers the four stored guidelines once, not round 1's outputs again.
+        assert result == ConsolidationResult(
+            clusters_found=3, guidelines_before=4, guidelines_after=1, support_before=4, support_after=4, rounds=3
+        )
+
+    def test_one_round_by_default(self, store):
+        _store_guidelines(store, A="x", B="x", C="x", D="x")
+
+        result, stored, _ = _consolidate(store, {"x"}, max_cluster_size=2)
+
+        assert stored == {"A+B": 2, "C+D": 2}
+        assert result == ConsolidationResult(
+            clusters_found=2, guidelines_before=4, guidelines_after=2, support_before=4, support_after=4, rounds=1
+        )
+
+    def test_stops_after_a_round_that_reduces_nothing_without_re_asking(self, store):
+        _store_guidelines(store, A="x", B="x", C="y", D="y")
+
+        result, stored, merge_calls = _consolidate(store, {"y"}, max_rounds=5)
+
+        assert stored == {"A": 1, "B": 1, "C+D": 2}
+        # Round 2 clusters A and B again, but they are the outputs of one earlier merge, so
+        # the model is not asked again, and with nothing else to merge the run stops.
+        assert merge_calls == 2
+        assert (result.rounds, result.guidelines_before, result.guidelines_after) == (2, 4, 3)
+
+    def test_an_original_that_could_not_be_deleted_is_not_merged_again(self, store):
+        _store_guidelines(store, A="x", B="x")
+
+        result, stored, merge_calls = _consolidate(store, {"x"}, undeletable={"A"}, max_rounds=4)
+
+        # A survives next to the merge that already counts its support. Re-merging it in
+        # later rounds would add its support again each round (A+B would reach 5).
+        assert stored == {"A": None, "A+B": 2}
+        assert merge_calls == 1
+        assert (result.rounds, result.guidelines_before, result.support_before, result.support_after) == (2, 2, 2, 2)
+
+    def test_a_later_merge_keeps_the_source_tasks_of_an_earlier_cross_task_merge(self, store):
+        _store_guidelines(store, A1="pay a friend", A2="make a playlist", A3="make a playlist")
+
+        result, stored, _ = _consolidate(store, set(), key="guideline_text", max_cluster_size=2, max_rounds=3)
+
+        # Round 1 merges A1 and A2 across tasks; round 2 merges that output with A3. Reading
+        # only A3's task in round 2 would tie the result to the playlist task again.
+        assert stored == {"A1+A2+A3": 3}
+        (merged,) = store.scan_entities("n", filters={"type": "guideline"})
+        assert merged.metadata["task_description"] == ""
+        assert merged.metadata["source_tasks"] == ["pay a friend", "make a playlist"]
+        assert result.rounds == 3

@@ -171,6 +171,8 @@ class ConsolidationResult:
     the affected guidelines) before and after consolidation. For the current lossless/lossy
     modes they are equal (support is conserved). A future support-threshold filtering step
     (not yet implemented) may reduce ``support_after`` by pruning low-support guidelines.
+
+    ``rounds`` is how many cluster-and-merge rounds ran (0 when consolidation was skipped).
     """
 
     clusters_found: int
@@ -178,3 +180,4 @@ class ConsolidationResult:
     guidelines_after: int
     support_before: int = 0
     support_after: int = 0
+    rounds: int = 1

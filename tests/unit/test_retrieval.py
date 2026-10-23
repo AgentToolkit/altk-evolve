@@ -79,6 +79,53 @@ class TestSelectGuidelines:
         assert sel.core == []
         assert [e.id for e in sel.retrieved] == ["venmo"]
 
+    def test_a_guideline_merged_across_tasks_scores_by_its_best_source_task(self, mock_st):
+        self._model(mock_st)
+        # Listed first, so it wins a tie: ranked by content alone, the merged guideline ties it.
+        generic = _make_entity("generic", "Generic rule", task_description="a generic task", support=1)
+        merged = _make_entity("merged", "Check the API docs first", support=2)
+        merged.metadata["source_tasks"] = ["a spotify task", "a venmo task"]
+
+        for query in ("make a spotify playlist", "pay someone on venmo"):
+            sel = select_guidelines([generic, merged], query, top_k=1, core_support=3, embedding_model="test")
+            assert [e.id for e in sel.retrieved] == ["merged"], query
+
+    def test_a_merged_guideline_also_scores_by_a_task_description_set_later(self, mock_st):
+        self._model(mock_st)
+        # A conflict-resolution update or a metadata patch can set a new task description
+        # on a cross-task merge; its earlier source tasks still count, and so does the new one.
+        generic = _make_entity("generic", "Generic rule", task_description="a generic task", support=1)
+        merged = _make_entity("merged", "Check the API docs first", task_description="an email task", support=2)
+        merged.metadata["source_tasks"] = ["a spotify task", "a venmo task"]
+
+        for query in ("make a spotify playlist", "pay someone on venmo", "send an email"):
+            sel = select_guidelines([generic, merged], query, top_k=1, core_support=3, embedding_model="test")
+            assert [e.id for e in sel.retrieved] == ["merged"], query
+
+    @pytest.mark.parametrize("malformed", [5, "spotify", {"a spotify task": 1}, None])
+    def test_a_source_tasks_value_that_is_not_a_list_is_ignored(self, mock_st, malformed):
+        self._model(mock_st)
+        # Written through a metadata patch, REST or MCP, a non-list must not fail retrieval for
+        # the whole namespace, nor be split into characters or keys: the task description ranks it.
+        spotify = _make_entity("spotify", "Spotify rule", task_description="a spotify task", support=1)
+        venmo = _make_entity("venmo", "Venmo rule", task_description="a venmo task", support=1)
+        venmo.metadata["source_tasks"] = malformed
+
+        sel = select_guidelines([spotify, venmo], "pay someone on venmo", top_k=1, core_support=3, embedding_model="test")
+
+        assert [e.id for e in sel.retrieved] == ["venmo"]
+
+    def test_a_guideline_without_a_task_is_ranked_by_its_content(self, mock_st):
+        self._model(mock_st)
+        # Neither has a task; ranked against an empty string instead, both would tie on the generic vector.
+        spotify = _make_entity("spotify", "Search Spotify by exact title", support=1)
+        venmo = _make_entity("venmo", "Confirm the Venmo recipient first", support=1)
+        venmo.metadata["source_tasks"] = 5
+
+        sel = select_guidelines([spotify, venmo], "pay someone on venmo", top_k=1, core_support=3, embedding_model="test")
+
+        assert [e.id for e in sel.retrieved] == ["venmo"]
+
     def test_min_support_filters_candidate_pool(self, mock_st):
         self._model(mock_st)
         cands = [
