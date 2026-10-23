@@ -19,6 +19,11 @@ _REMOVED_UNCERTAINTY_ENV_VARS = (
     "EVOLVE_SKIP_ON_NO_UNCERTAINTY",
 )
 
+# Removed when the sbert_large metric and the CodeRankEmbed pipeline were dropped.
+# Same extra="ignore" trap: a deployment that still sets this gets no error, so
+# warn and point at the surviving small-model setting.
+_REMOVED_EMBEDDING_ENV_VARS = ("EVOLVE_CONSISTENCY_EMBEDDING_MODEL_LARGE",)
+
 
 class GuidelinesSettings(BaseSettings):
     """Guideline-generation settings, read from `EVOLVE_`-prefixed environment variables."""
@@ -27,9 +32,8 @@ class GuidelinesSettings(BaseSettings):
 
     guidelines_mode: str = "standard"
     consistency_method: str = "fast"
-    # Unset metrics use MiniLM (small) and CodeRankEmbed (large) with the selected provider.
+    # Unset, the sbert_small metric uses MiniLM with the selected provider.
     consistency_embedding_model_small: str | None = Field(default=None, min_length=1)
-    consistency_embedding_model_large: str | None = Field(default=None, min_length=1)
     consistency_embedding_trust_remote_code: bool = False
     debug_dir: Optional[Path] = Field(default=None)
     # Concurrency cap for the accurate method's resampling fallback: when a provider
@@ -70,9 +74,21 @@ class GuidelinesSettings(BaseSettings):
             return "fast"
         return v
 
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
+        """Capture the configured dotenv source so retired-variable detection can see dotenv-only values.
+
+        ``extra="ignore"`` applies to the dotenv loader as well as the process environment, so a
+        retired variable kept only in ``.env`` would be silently dropped. We stash the actual
+        source pydantic-settings is about to use (honouring any per-instance ``_env_file``
+        override) and read its keys in the migration-warning validators below.
+        """
+        cls.__dotenv_source = dotenv_settings  # type: ignore[attr-defined]
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings)
+
     @model_validator(mode="after")
     def warn_on_removed_uncertainty_env_vars(self) -> Self:
-        stale = [name for name in _REMOVED_UNCERTAINTY_ENV_VARS if os.getenv(name) is not None]
+        stale = self._stale_env_vars(_REMOVED_UNCERTAINTY_ENV_VARS)
         if stale:
             logger.warning(
                 f"{', '.join(stale)} are no longer read (extra='ignore' silently drops them) — "
@@ -81,6 +97,29 @@ class GuidelinesSettings(BaseSettings):
                 "passed via generate_consistency_guidelines(config_path=...)."
             )
         return self
+
+    @model_validator(mode="after")
+    def warn_on_removed_embedding_env_vars(self) -> Self:
+        stale = self._stale_env_vars(_REMOVED_EMBEDDING_ENV_VARS)
+        if stale:
+            logger.warning(
+                f"{', '.join(stale)} are no longer read (extra='ignore' silently drops them) — "
+                "the sbert_large consistency metric and its large-model embedding setting have "
+                "been removed. Switch to the 'sbert_small' metric and, if a non-default model is "
+                "needed, set EVOLVE_CONSISTENCY_EMBEDDING_MODEL_SMALL."
+            )
+        return self
+
+    def _stale_env_vars(self, names: tuple[str, ...]) -> list[str]:
+        """Retired names set either in the process environment or in the dotenv file."""
+        source = getattr(type(self), "_GuidelinesSettings__dotenv_source", None)
+        dotenv_keys: set[str] = set()
+        try:
+            if source is not None and getattr(source, "env_vars", None):
+                dotenv_keys = set(source.env_vars)
+        except Exception:
+            dotenv_keys = set()
+        return [name for name in names if os.getenv(name) is not None or name.lower() in dotenv_keys]
 
 
 # to reload settings call guidelines_settings.__init__()
