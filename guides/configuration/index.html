@@ -2256,9 +2256,7 @@ join, even when A and C are not similar. On a large namespace, and especially wi
 neighbours, each within the threshold of its first member. Duplicates that land in different
 chunks are left apart unless you allow more than one round: <code>EVOLVE_CONSOLIDATION_MAX_ROUNDS</code>
 re-clusters the namespace after each round, stops after a round that merges nothing, and
-does not send the same merge's outputs back to the model together. An original whose delete
-failed or was vetoed (for example by a legal hold) stays stored and is not merged again in
-later rounds of the same run; a later <code>consolidate</code> run can merge it again.
+does not send the same merge's outputs back to the model together.
 Each round re-embeds the whole namespace, which on CPU takes minutes for thousands of long
 guidelines.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>evolve<span class="w"> </span>entities<span class="w"> </span>consolidate<span class="w"> </span>my-ns<span class="w"> </span>--cluster-key<span class="w"> </span>guideline_text<span class="w"> </span>--threshold<span class="w"> </span><span class="m">0</span>.85<span class="w"> </span><span class="se">\</span>
@@ -2266,6 +2264,26 @@ guidelines.</p>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>evolve<span class="w"> </span>entities<span class="w"> </span>consolidate<span class="w"> </span>my-ns<span class="w"> </span>--cluster-key<span class="w"> </span>guideline_text<span class="w"> </span>--threshold<span class="w"> </span><span class="m">0</span>.85<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span>--max-cluster-size<span class="w"> </span><span class="m">20</span><span class="w"> </span>--max-rounds<span class="w"> </span><span class="m">3</span><span class="w"> </span>--no-dry-run
 </code></pre></div>
+<p><strong>Originals that cannot be deleted.</strong> After writing a merged guideline, consolidation deletes
+its originals. If a delete is vetoed (for example by the <code>legal_hold</code> plugin) or fails, the
+original stays stored next to the merged guideline that already counts its support. Each
+merged guideline therefore records the originals it absorbed in <code>metadata.merged_from</code>: one
+<code>{"id", "content_sha256"}</code> entry per original, with the digest of the content the merge read.
+When a guideline is merged again, the new guideline keeps the entries of absorbed originals
+that are still stored. Later rounds and later <code>consolidate</code> runs leave a recorded original out
+of clustering, so its support is never counted twice, and the dry-run listing leaves it out
+too. Each run retries the delete once: if the hold has since been lifted, the original is
+deleted then, with no change to any support count. An original edited after it was merged is
+not deleted, because the merged guideline does not hold the edit; it stays out of clustering
+too, since its support is still counted. Delete it, or delete the merged guideline, which
+makes the original eligible to merge again. A record matches the original by ID, so it still
+holds after the merged guideline is published or unpublished. <code>merged_from</code> is managed by
+consolidation: the MCP <code>create_entity</code> tool and the REST create route drop it, and
+<code>patch_entity_metadata</code> rejects it.
+Redactors leave well-formed entries alone and treat any other value under the key as free
+text. Consolidation reads at most 10,000 guidelines and logs a warning when it hits that
+limit. Past it, a merged guideline can fall outside the read while its held original does
+not, and the original is then merged again.</p>
 <h3 id="milvus-backend-settings">Milvus Backend Settings<a class="headerlink" href="#milvus-backend-settings" title="Permanent link">&para;</a></h3>
 <p>When <code>EVOLVE_BACKEND=milvus</code>:</p>
 <table>
