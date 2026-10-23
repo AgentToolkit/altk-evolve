@@ -727,6 +727,23 @@ def test_agent_view_task_message_index_picks_the_real_task_not_a_fewshot_prefix(
         task_message_index(messages, "Book a flight to Paris")
 
 
+def test_agent_view_task_message_index_handles_multi_line_intent():
+    # A CUGA task formatted as "<intent>\n\n## User Context..." may carry a multi-line
+    # intent. task_message_index must match the first line of the intent against the
+    # first line of the user message, so the task is still found. A full-string compare
+    # would silently drop every such task to a "task message not found" skip.
+    from experiments.guideline_pipeline.adapters.cuga_agent_view import task_message_index
+
+    multi_line_intent = "Line 1 of the task\nLine 2 with more detail"
+    messages = [
+        {"role": "system", "content": "..."},
+        {"role": "user", "content": "Book a flight for the example user."},  # a few-shot
+        {"role": "assistant", "content": "..."},
+        {"role": "user", "content": multi_line_intent + "\n\n## User Context\n..."},
+    ]
+    assert task_message_index(messages, multi_line_intent) == 3
+
+
 def test_bundle_task_id_with_dot_still_read():
     # Companion files use known suffixes (.calls.json, .agent_messages.json). A legacy
     # task id that itself contains a dot ("appworld.v2_01.json") must remain a task.

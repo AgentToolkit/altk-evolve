@@ -76,16 +76,20 @@ def task_message_index(messages: list[dict], intent: str) -> int:
 
     Everything between the system prompt and this message is CUGA's built-in
     example conversation. Matches the LAST user message whose first line equals
-    the intent exactly, so a few-shot example whose body starts with the same
-    phrase (``"Book a flight"`` vs. ``"Book a flight for the example user"``)
-    cannot select ahead of the real task.
+    the first line of the intent exactly, so a few-shot example whose body
+    starts with the same phrase (``"Book a flight"`` vs.
+    ``"Book a flight for the example user"``) cannot select ahead of the real
+    task, and a multi-line intent still finds its message (CUGA formats the task
+    as ``<intent>\\n\\n## User Context…``, so comparing on the first line is
+    enough).
     """
-    intent = intent.strip()
-    if not intent:
+    intent_lines = intent.strip().splitlines()
+    if not intent_lines:
         raise ValueError("task message not found (intent missing or not matched)")
+    head = intent_lines[0].strip()
     for i in range(len(messages) - 1, -1, -1):
         m = messages[i]
-        if m["role"] == "user" and m["content"].strip().split("\n", 1)[0] == intent:
+        if m["role"] == "user" and m["content"].strip().split("\n", 1)[0].strip() == head:
             return i
     raise ValueError("task message not found (intent missing or not matched)")
 

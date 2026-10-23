@@ -224,8 +224,8 @@ are supported.
                                           #  "runtime_config": {"env_vars": {"MODEL_NAME": ...}}}
     trajectories/
       <task_id>.json                      # same per-task shape as the legacy layout
-      <task_id>.calls.json                # ignored (any file with a dotted stem)
-      <task_id>.agent_messages.json       # ignored
+      <task_id>.calls.json                # ignored (matched by the exact ".calls.json" suffix)
+      <task_id>.agent_messages.json       # ignored (matched by the exact ".agent_messages.json" suffix)
     results/
       appworld_sdk_*_final_report.json    # {"results": [{"task_name", "success", ...}, ...]}
 ```
@@ -234,8 +234,8 @@ A bundle is recognised by its `bundle_version`. The partition comes from
 `metadata.json`'s `run.eval_key`, and the record's model defaults from
 `runtime_config.env_vars.MODEL_NAME` when the `model` option is not set. The SDK
 final report is one additional verdict source: a task's `success` is read from
-the first available of `results.json`, the SDK report, the task's own
-`EvaluationResult` step, and `score >= 1`. If a bundle's env records
+the first available of the SDK report, the legacy `results.json` entry, the
+task's own `EvaluationResult` step, and `score >= 1`. If a bundle's env records
 `DYNACONF_CONTEXT_SUMMARIZATION__ENABLED=true` a warning is logged, since
 `agent_view` resampling prefixes may then differ from what the agent was asked.
 
@@ -253,8 +253,9 @@ is an error; a selection that reads no task logs a warning. Reading a run whose
 
 When `metadata.json` lists `task_ids`, those are the tasks; otherwise every
 `<name>.json` in the task directory other than `results` / `metadata` /
-`appworld_sdk_*` and without a dotted stem is one. A task whose `intent` is
-missing, blank or not a string is skipped with a warning.
+`appworld_sdk_*` and not ending in `.calls.json` or `.agent_messages.json`
+is one, so a legacy task id that itself contains a dot stays readable. A task
+whose `intent` is missing, blank or not a string is skipped with a warning.
 
 ### Message conversion
 
@@ -305,12 +306,12 @@ reads messages, including consistency-accurate IR prefixes).
   (`include_system_prompt`) and reflection summaries (`include_summaries`). In
   `agent_view` always empty — the system prompt is `messages[0]` and the
   reflection summaries live inside the user turns.
-- **outcome**: `success` from the first readable source (`results.json`,
-  the SDK report, the task's `EvaluationResult` step, then `score >= 1`;
-  a verdict counts only as a bool, the integer `0`/`1` or the string
-  `"true"`/`"false"`), the failed ground-truth requirements as `failed_checks`,
-  and the first 2000 characters of the evaluation report as `detail`. A task
-  with no evaluation and no score has no outcome.
+- **outcome**: `success` from the first readable source (the SDK report, the
+  legacy `results.json` entry, the task's `EvaluationResult` step, then
+  `score >= 1`; a verdict counts only as a bool, the integer `0`/`1` or the
+  string `"true"`/`"false"`), the failed ground-truth requirements as
+  `failed_checks`, and the first 2000 characters of the evaluation report as
+  `detail`. A task with no evaluation and no score has no outcome.
 - **batch**: source `cuga`, conversation `<run>/<task_id>`, batch `<task_id>`,
   and a revision digest.
 
