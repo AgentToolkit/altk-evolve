@@ -17,8 +17,9 @@ from altk_evolve.processing import ProcessingManager, TrajectoryOutcome
 
 from experiments.guideline_pipeline import __main__ as cli
 from experiments.guideline_pipeline.adapters import ADAPTERS, AdapterRecord, get_adapter
-from experiments.guideline_pipeline.adapters.cuga import PARSER_STEP_LIMIT, CugaAdapter, elide_middle
+from experiments.guideline_pipeline.adapters.cuga import CugaAdapter
 from experiments.guideline_pipeline.stages.mine import mine
+from experiments.guideline_pipeline.tests.fakes import profile_window
 
 pytestmark = pytest.mark.unit
 
@@ -315,22 +316,17 @@ def test_batch_is_stable_and_the_revision_follows_content(run_copy: Path):
     assert with_context["aaa0001_2"].batch.revision != edited["aaa0001_2"].batch.revision
 
 
-def test_long_trajectories_keep_head_and_tail():
-    steps = [{"role": "assistant", "content": f"OBSERVATION:\nstep {i}"} for i in range(80)]
-    elided = elide_middle(steps)
-
-    assert len(elided) == PARSER_STEP_LIMIT
-    assert elided[:6] == steps[:6] and elided[7:] == steps[-43:]
-    assert elided[6] == {"role": "assistant", "content": "[31 steps elided: the trajectory continues below]"}
-    assert elide_middle(steps[:50]) == steps[:50]
-
+def test_long_trajectories_pass_through_whole_and_the_profile_keeps_their_ending():
     task = {"intent": "long task", "steps": [{"name": "Raw_Assistant_Response", "data": f"print({i})"} for i in range(70)]}
     record = CugaAdapter().record("run", "long_1", task, None)
+
+    # The adapter no longer elides: the extractor's window decides what is rendered.
     assert record.messages[0] == {"role": "user", "content": "long task"}
-    parsed = parse_openai_agents_trajectory(record.messages)
-    # Every step reaches the parser, and the last action survives the 50-step cap.
-    assert parsed["num_steps"] == PARSER_STEP_LIMIT
-    assert parsed["steps_list"][6] == "**Step 7 - Reasoning:**\n[21 steps elided: the trajectory continues below]"
+    assert len(record.messages) == 1 + 70
+    parsed = parse_openai_agents_trajectory(record.messages, options=profile_window(PROFILE))
+    # The sample profile's tail keeps the last action past the 50-step budget.
+    assert parsed["num_steps"] == 50  # 7 head + 43 tail; the marker is not a step
+    assert parsed["steps_list"][parsed["marker_index"]].startswith("**[... 20 intermediate step(s) omitted; 70 steps")
     assert "print(69)" in parsed["steps_list"][-1]
     record.model_dump_json()
 
@@ -416,6 +412,7 @@ def test_sample_profile_validates_with_the_builtin_processor():
     (processor,) = plan.manifest()["processors"]
     assert processor["plugin"] == "evolve.guidelines"
     assert (processor["config"]["guidelines_mode"], processor["config"]["segmentation_enabled"]) == ("standard", False)
+    assert (processor["config"]["trajectory_max_steps"], processor["config"]["trajectory_tail_steps"]) == (50, 43)
 
 
 def test_mine_dry_run_from_the_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):

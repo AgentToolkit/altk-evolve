@@ -44,6 +44,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from altk_evolve.hooks.plugin import HookContext, HookPluginBase
+from altk_evolve.hooks.plugins.identity import restore_merged_from_entries, without_merged_from_entries
 
 DEFAULT_REDACTION_TEXT = "[REDACTED]"
 
@@ -196,7 +197,23 @@ class SecretsFilterMemoryPlugin(HookPluginBase):
         return cast("list[dict]", redacted)
 
     def memory_pre_write(self, payload: Any, context: HookContext) -> Any | None:
-        redacted = self._redact_items(payload.entities)
+        # The scanner sees every other metadata value, but not the merged_from
+        # entries consolidation keys on: a content digest reads as a hex secret.
+        originals = payload.entities
+        views = [
+            {**entity, "metadata": without_merged_from_entries(entity["metadata"])} if entity.get("metadata") else entity
+            for entity in originals
+        ]
+        redacted = self._redact_items(views)
+        if redacted is not None:
+            if len(redacted) != len(originals):
+                raise ValueError("Secrets filter changed the entity count")
+            redacted = [
+                {**entity, "metadata": restore_merged_from_entries(entity.get("metadata") or {}, original["metadata"])}
+                if original.get("metadata")
+                else entity
+                for original, entity in zip(originals, redacted, strict=True)
+            ]
         # Contract: changes travel back as a replacement payload; the input
         # payload is never mutated in place.
         return None if redacted is None else payload.replace(entities=redacted)

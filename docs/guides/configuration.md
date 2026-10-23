@@ -217,8 +217,14 @@ too. Each run retries the delete once: if the hold has since been lifted, the or
 deleted then, with no change to any support count. An original edited after it was merged is
 not deleted, because the merged guideline does not hold the edit; it stays out of clustering
 too, since its support is still counted. Delete it, or delete the merged guideline, which
-makes the original eligible to merge again. A record only applies within the memory scope of
-the guideline that carries it.
+makes the original eligible to merge again. A record matches the original by ID, so it still
+holds after the merged guideline is published or unpublished. `merged_from` is managed by
+consolidation: the MCP `create_entity` tool and the REST create route drop it, and
+`patch_entity_metadata` rejects it.
+Redactors leave well-formed entries alone and treat any other value under the key as free
+text. Consolidation reads at most 10,000 guidelines and logs a warning when it hits that
+limit. Past it, a merged guideline can fall outside the read while its held original does
+not, and the original is then merged again.
 
 ### Milvus Backend Settings
 

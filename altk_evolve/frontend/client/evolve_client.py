@@ -76,13 +76,12 @@ def _split_absorbed(entities: list[RecordedEntity]) -> tuple[list[RecordedEntity
     with whether its content is still what the merge read (``False`` once it was edited).
     """
     from altk_evolve.llm.guidelines.clustering import absorbed_originals, content_digest
-    from altk_evolve.schema.provenance import scope_key
 
     absorbed = absorbed_originals(entities)
     remaining: list[RecordedEntity] = []
     originals: list[tuple[RecordedEntity, bool]] = []
     for entity in entities:
-        digests = absorbed.get((scope_key(entity), str(entity.id)))
+        digests = absorbed.get(str(entity.id))
         if digests is None:
             remaining.append(entity)
         else:

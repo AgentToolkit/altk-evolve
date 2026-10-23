@@ -31,7 +31,6 @@ from typing import Any
 from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
 from experiments.guideline_pipeline.adapters.base import AdapterRecord
-from experiments.guideline_pipeline.adapters.elision import elide_middle
 from experiments.guideline_pipeline.output import write_json_atomic
 
 logger = logging.getLogger(__name__)
@@ -187,7 +186,7 @@ class VakraAdapter:
         steps, used = _agent_steps(raw)
         if self.include_tools:
             steps = _tool_space(raw, used) + steps
-        return [{"role": "user", "content": _first_query(raw)}, *elide_middle(steps)]
+        return [{"role": "user", "content": _first_query(raw)}, *steps]
 
     def _files(self, path: Path) -> list[Path]:
         # A results or heldout_out file kept in the run directory is not a domain file.

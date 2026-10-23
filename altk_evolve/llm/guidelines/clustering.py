@@ -28,7 +28,7 @@ from altk_evolve.schema.guidelines import (
     Guideline,
     resolve_guideline_category,
 )
-from altk_evolve.schema.provenance import scope_key
+from altk_evolve.hooks.plugins.identity import is_merged_from_entry
 from altk_evolve.utils.utils import clean_llm_response, serialize_content
 
 logger = logging.getLogger(__name__)
@@ -237,11 +237,14 @@ def content_digest(entity: RecordedEntity) -> str:
 
 
 def _merged_from(entity: RecordedEntity) -> list[dict]:
-    """The well-formed entries of ``metadata.merged_from``; anything else is ignored."""
+    """The well-formed entries of ``metadata.merged_from``; anything else is ignored.
+
+    Well-formed is the shape redactors leave alone, so a redacted entry never counts.
+    """
     value = (entity.metadata or {}).get("merged_from")
     if not isinstance(value, list):
         return []
-    return [entry for entry in value if isinstance(entry, dict) and isinstance(entry.get("id"), str)]
+    return [entry for entry in value if is_merged_from_entry(entry)]
 
 
 def merged_from_record(members: list[RecordedEntity], stored_ids: set[str]) -> list[dict]:
@@ -256,25 +259,23 @@ def merged_from_record(members: list[RecordedEntity], stored_ids: set[str]) -> l
     for member in members:
         for entry in _merged_from(member):
             if entry["id"] in stored_ids:
-                record.setdefault(entry["id"], {"id": entry["id"], "content_sha256": entry.get("content_sha256")})
+                record.setdefault(entry["id"], {"id": entry["id"], "content_sha256": entry["content_sha256"]})
     return list(record.values())
 
 
-def absorbed_originals(entities: list[RecordedEntity]) -> dict[tuple, set[str]]:
+def absorbed_originals(entities: list[RecordedEntity]) -> dict[str, set[str]]:
     """The originals that stored merge outputs record as already merged.
 
-    Maps ``(scope, id)`` to the content digests recorded for that original. A record
-    applies only within the scope of the guideline carrying it, since a merge never
-    crosses scopes; a guideline with a non-scalar scope records nothing.
+    Maps an original's ID to the content digests recorded for it. A merge never crosses
+    scopes, so the carrier was in the original's scope when it recorded it; matching on
+    the ID alone keeps the record valid after the carrier's scope changes (it is
+    published, say). IDs are not reused, and callers cannot write ``merged_from``.
     """
-    absorbed: dict[tuple, set[str]] = {}
+    absorbed: dict[str, set[str]] = {}
     for entity in entities:
-        scope = scope_key(entity)
-        if scope is None:
-            continue
         for entry in _merged_from(entity):
             if entry["id"] != str(entity.id):
-                absorbed.setdefault((scope, entry["id"]), set()).add(str(entry.get("content_sha256")))
+                absorbed.setdefault(entry["id"], set()).add(entry["content_sha256"])
     return absorbed
 
 

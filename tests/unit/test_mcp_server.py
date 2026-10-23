@@ -123,6 +123,18 @@ def test_create_entity_no_metadata_injection_for_other_types(mock_get_client):
     assert "creation_mode" not in (entity.metadata or {})
 
 
+def test_create_entity_drops_merged_from(mock_get_client):
+    # Consolidation's record of absorbed originals; a forged one could hide or delete a guideline.
+    mock_get_client.update_entities.return_value = [EntityUpdate(id="123", type="guideline", content="g", event="ADD", metadata={})]
+    forged = json.dumps({"merged_from": [{"id": "1", "content_sha256": "0" * 64}], "title": "t"})
+
+    create_entity(content="g", entity_type="guideline", metadata=forged)
+
+    (entity,) = mock_get_client.update_entities.call_args[1]["entities"]
+    assert "merged_from" not in entity.metadata
+    assert entity.metadata["title"] == "t"
+
+
 def test_get_client_uses_idempotent_namespace_bootstrap(monkeypatch):
     original_client = mcp_server_module._client
     original_namespaces = mcp_server_module._initialized_namespaces.copy()
