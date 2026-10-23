@@ -13,6 +13,11 @@ from altk_evolve.schema.core import RecordedEntity
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def active_hooks(monkeypatch):
+    monkeypatch.setattr(cr, "hooks_active", lambda hook: True)
+
+
 @pytest.mark.parametrize("event", ["ADD", "UPDATE", "DELETE", "NONE"])
 @pytest.mark.parametrize("retry", [False, True])
 def test_conflict_prompt_keeps_ids_but_redacts_content(monkeypatch, event, retry):
@@ -37,7 +42,7 @@ def test_conflict_prompt_keeps_ids_but_redacts_content(monkeypatch, event, retry
         assert incoming[0]["id"] == "7"
         assert existing[0]["type"] == incoming[0]["type"] == "guideline"
         assert "alice@example.com" not in prompt and "bob@example.com" not in prompt
-        assert "Compare memories; contact admin@example.com for 5 issues." in prompt
+        assert "Compare memories; contact [REDACTED] for [REDACTED] issues." in prompt
         assert "with 6 reports" not in prompt and "with 8 reports" not in prompt
         target = incoming[0] if event == "ADD" else existing[0]
         decisions = [{**target, "event": event, "incoming_ids": ["7"]}]
@@ -54,7 +59,7 @@ def test_conflict_prompt_keeps_ids_but_redacts_content(monkeypatch, event, retry
     assert result[0].incoming_ids == ["7"]
     assert result[0].event == event
     assert len(attempts) == (2 if retry else 1)
-    assert seen_content == [old.content, new.content]
+    assert seen_content == [old.content, new.content, "Compare memories; contact admin@example.com for 5 issues."]
     assert old.content == "Email alice@example.com with 6 reports"
     assert new.content == "Email bob@example.com with 8 reports"
 
@@ -122,4 +127,50 @@ def test_filter_failure_prevents_model_call(monkeypatch):
 def test_unchanged_structured_content_uses_storage_serialization(monkeypatch):
     monkeypatch.setattr(cr, "dispatch_llm_pre_call", lambda messages, **kwargs: messages)
     content = {"probability": 0.8, "count": 6, "enabled": True, "optional": None}
-    assert json.loads(cr._apply_llm_pre_call(content, "test")) == content
+    assert cr._apply_llm_pre_call(content, "test") == content
+
+
+@pytest.mark.parametrize("content", [{"name": "José", "weight": 0.5}, ["José", {"flags": ["-r"]}], "123"])
+def test_no_hook_prompt_preserves_original_content(monkeypatch, content):
+    monkeypatch.setattr(cr, "hooks_active", lambda hook: False)
+    monkeypatch.setattr(cr, "dispatch_llm_pre_call", lambda *a, **kw: pytest.fail("inactive hook dispatched"))
+    entity = RecordedEntity(id="7", type="fact", content=content, created_at=datetime.now())
+    expected = cr.get_update_entities_messages([], cr.SimpleEntity.from_recorded_entities([entity]), "custom instructions")
+
+    def complete(**kwargs):
+        assert kwargs["messages"][0]["content"].split("\nFor each decision include incoming_ids:")[0] == expected
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=json.dumps({"entities": [{"id": "7", "type": "fact", "content": content, "event": "ADD"}]})
+                    ),
+                    finish_reason="stop",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(cr, "completion", complete)
+    assert cr.resolve_conflicts([], [entity], custom_update_entities_prompt="custom instructions")[0].content == content
+
+
+def test_valid_redacted_json_preserves_structure(monkeypatch):
+    monkeypatch.setattr(
+        cr,
+        "dispatch_llm_pre_call",
+        lambda messages, **kw: [{"role": "user", "content": messages[0]["content"].replace("alice@example.com", "[REDACTED]")}],
+    )
+    assert cr._apply_llm_pre_call({"email": "alice@example.com"}, "test") == {"email": "[REDACTED]"}
+    assert cr._apply_llm_pre_call("123", "test") == "123"
+
+
+def test_duplicate_redacted_keys_preserve_both_values_as_text(monkeypatch):
+    def redact(messages, **kwargs):
+        return [{"role": "user", "content": re.sub(r"\w+@example\.com", "[REDACTED]", messages[0]["content"])}]
+
+    monkeypatch.setattr(cr, "dispatch_llm_pre_call", redact)
+    content = {"alice@example.com": "first", "bob@example.com": "second"}
+    result = cr._apply_llm_pre_call(content, "test")
+    assert isinstance(result, str)
+    assert '"first"' in result and '"second"' in result
+    assert result.count('"[REDACTED]"') == 2
