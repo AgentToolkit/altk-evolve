@@ -864,12 +864,12 @@ def test_slack_like_words_do_not_change_content_or_agent_identity(tmp_path):
     client.create_namespace("ns")
     client.update_entities(
         "ns",
-        [Entity(content="Use the xapp-config loader and xoxs-prefix", type="note", metadata={"agent_id": "xapp-planner"})],
+        [Entity(content="Use the xapp-config-loader and xoxs-prefix-loader", type="note", metadata={"agent_id": "xapp-config-loader"})],
         enable_conflict_resolution=False,
     )
     entity = client.search_entities("ns", limit=1)[0]
-    assert entity.content == "Use the xapp-config loader and xoxs-prefix"
-    assert entity.metadata["agent_id"] == "xapp-planner"
+    assert entity.content == "Use the xapp-config-loader and xoxs-prefix-loader"
+    assert entity.metadata["agent_id"] == "xapp-config-loader"
 
 
 @pytest.mark.unit
@@ -1072,3 +1072,63 @@ def test_real_secrets_conflict_custom_json_keeps_duplicate_instruction_values(tm
     monkeypatch.setattr(cr, "completion", complete)
     assert cr.resolve_conflicts([], [], custom_update_entities_prompt=instructions) == []
     assert len(prompts) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("serialize", ["plain", "json", "repr"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_pgp_quoted_armor_headers_are_redacted(tmp_path, serialize, newline):
+    import json
+
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    block = newline.join(
+        [
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----",  # pragma: allowlist secret
+            "Version: Test",
+            'Comment: Alice\'s "private" key',
+            "",
+            "ZmFrZVByaXZhdGVLZXlNYXRlcmlhbA==",
+            "=abcd",
+            "-----END PGP PRIVATE KEY BLOCK-----",
+        ]
+    )
+    value = {"key": block, "instruction": "Keep this evidence"}
+    content = block if serialize == "plain" else (json.dumps(value) if serialize == "json" else str(value))
+    result = dispatch_llm_pre_call([{"role": "user", "content": content}], purpose="test")[0]["content"]
+    assert "ZmFrZVByaXZhdGVLZXlNYXRlcmlhbA" not in result
+    assert "Alice" not in result
+    if serialize != "plain":
+        assert "Keep this evidence" in result
+
+
+@pytest.mark.unit
+def test_secrets_preserve_structural_metadata_and_scan_free_text(tmp_path):
+    pytest.importorskip("cpex_secrets_detection")
+    subject = "ASIA" + "A" * 16
+    client = make_client(tmp_path, SECRETS_SPEC)
+    client.create_namespace("ns")
+    client.update_entities(
+        "ns",
+        [
+            Entity(
+                type="note",
+                content="safe",
+                metadata={
+                    "agent_id": subject,
+                    "sources": [{"conversation_id": subject, "agent_id": subject, "note": subject}],
+                    "note": subject,
+                },
+            )
+        ],
+        enable_conflict_resolution=False,
+    )
+    (entity,) = client.scan_entities("ns", filters={"agent_id": subject})
+    assert entity.metadata["agent_id"] == subject
+    assert entity.metadata["note"] == "[REDACTED]"
+    (source,) = entity.metadata["sources"]
+    assert {key: source[key] for key in ("conversation_id", "agent_id", "note")} == {
+        "conversation_id": subject,
+        "agent_id": subject,
+        "note": "[REDACTED]",
+    }

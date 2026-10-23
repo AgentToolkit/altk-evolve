@@ -46,7 +46,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from altk_evolve.hooks.plugin import HookContext, HookPluginBase
-from altk_evolve.hooks.plugins.identity import restore_merged_from_entries, without_merged_from_entries
+from altk_evolve.hooks.plugins.identity import redactable_metadata, restore_structural
 
 DEFAULT_REDACTION_TEXT = "[REDACTED]"
 
@@ -148,6 +148,13 @@ _PRIVATE_KEY_MARKERS = re.compile(
 # or Python repr: their line separators are escaped, and the final key-body
 # line ends at a closing quote. Treat those boundaries like physical newlines.
 _KEY_BODY_LINES = re.compile(r"(?:(?:\r?\n|\\(?:r\\)?n)[A-Za-z0-9+/=]+(?=\r?\n|\\(?:r\\)?n|[\"']|\Z))*")
+# PGP permits quoted free-text armor headers before a blank line and the
+# base64 payload. Validate the whole interior before permitting quotes, so
+# separate serialized values cannot accidentally become a single key block.
+_PGP_ARMOR_BODY = re.compile(
+    r"\n(?:[A-Za-z][A-Za-z0-9-]*: [^\n]*\n)*\n"
+    r"(?:[A-Za-z0-9+/=]+\n)+(?:=[A-Za-z0-9+/]{4}\n)?"
+)
 _SUPPLEMENTARY_PATTERNS = {
     "aws_secret_access_key": re.compile(
         r"(?i)(\baws[ \t]+)((?:AKIA|ASIA)[A-Z0-9]{16})"
@@ -156,7 +163,7 @@ _SUPPLEMENTARY_PATTERNS = {
     ),
     "aws_access_key_id": re.compile(r"\bASIA[A-Z0-9]{16}\b"),
     "slack_token": re.compile(
-        r"\b(?:xoxs|xapp)-[A-Za-z0-9-]{10,80}(?![A-Za-z0-9-])"
+        r"\b(?:xoxs-[0-9]+-[A-Za-z0-9-]+|xapp-[0-9]+-A[A-Za-z0-9]+-[0-9]+-[A-Za-z0-9]+)(?![A-Za-z0-9-])"
         r"|https://hooks\.slack\.com/services/T[A-Za-z0-9]+/B[A-Za-z0-9]+/[A-Za-z0-9]+"
     ),
 }
@@ -175,14 +182,16 @@ def _mask_private_keys(text: str, replacement: str) -> tuple[int, str]:
         if marker.group("edge") != "BEGIN":
             continue
         following = markers[index + 1] if index + 1 < len(markers) else None
-        # Quotes cannot occur in an armored key body. In serialized content
-        # they can instead separate two distinct values: never pair a header
-        # in one value with a footer in another and erase intervening fields.
+        # Quotes in PGP armor headers are valid. Elsewhere they may separate
+        # serialized values, which must never be swallowed as one key block.
+        interior = text[marker.end() : following.start()] if following else ""
+        normalized = interior.replace(r"\r\n", "\n").replace(r"\n", "\n").replace("\r\n", "\n")
+        pgp_armor = marker.group("kind") == "PGP PRIVATE KEY BLOCK" and _PGP_ARMOR_BODY.fullmatch(normalized) is not None
         paired = (
             following is not None
             and following.group("edge") == "END"
             and following.group("kind") == marker.group("kind")
-            and not re.search(r"[\"']", text[marker.end() : following.start()])
+            and (not re.search(r"[\"']", interior) or pgp_armor)
         )
         if paired:
             assert following is not None
@@ -303,21 +312,14 @@ class SecretsFilterMemoryPlugin(HookPluginBase):
         return cast("list[dict]", redacted)
 
     def memory_pre_write(self, payload: Any, context: HookContext) -> Any | None:
-        # The scanner sees every other metadata value, but not the merged_from
-        # entries consolidation keys on: a content digest reads as a hex secret.
         originals = payload.entities
-        views = [
-            {**entity, "metadata": without_merged_from_entries(entity["metadata"])} if entity.get("metadata") else entity
-            for entity in originals
-        ]
+        views = [{**entity, "metadata": redactable_metadata(entity.get("metadata", {}))} for entity in originals]
         redacted = self._redact_items(views)
         if redacted is not None:
             if len(redacted) != len(originals):
                 raise ValueError("Secrets filter changed the entity count")
             redacted = [
-                {**entity, "metadata": restore_merged_from_entries(entity.get("metadata") or {}, original["metadata"])}
-                if original.get("metadata")
-                else entity
+                {**entity, "metadata": restore_structural(entity.get("metadata", {}), original.get("metadata", {}))}
                 for original, entity in zip(originals, redacted, strict=True)
             ]
         # Contract: changes travel back as a replacement payload; the input
