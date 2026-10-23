@@ -144,9 +144,17 @@ def test_outcome_from_typed_or_string_evaluations(root: Path):
     records = by_id(AppWorldAdapter(appworld_root=root))
 
     assert records["aaa0001_1"].outcome == TrajectoryOutcome(success=True)
-    assert records["aaa0001_2"].outcome == TrajectoryOutcome(success=False)
+    assert records["aaa0001_2"].outcome == TrajectoryOutcome(
+        success=False,
+        failed_checks=("assert todo 'buy milk' is marked done",),
+        detail="FAILED checks:\n- assert todo 'buy milk' is marked done\n  AssertionError: False == True",
+    )
     # "False" / "True" strings, with string num_tests and Python-repr passes/failures.
-    assert records["bbb0002_1"].outcome == TrajectoryOutcome(success=False)
+    assert records["bbb0002_1"].outcome == TrajectoryOutcome(
+        success=False,
+        failed_checks=("assert the note was shared",),
+        detail="FAILED checks:\n- assert the note was shared\n  AssertionError",
+    )
     assert records["bbb0002_3"].outcome == TrajectoryOutcome(success=True)
     # Not in the evaluation: no outcome, not a guessed failure.
     assert records["bbb0002_2"].outcome is None
@@ -165,6 +173,139 @@ def test_outcome_from_typed_or_string_evaluations(root: Path):
         evaluation = ("train", {"success": value})
         numeric = adapter.record("run", "t_1", instruction="x", instruction_source="s", environment_io="", evaluation=evaluation)
         assert numeric.outcome == TrajectoryOutcome(success=success)
+
+
+def _outcome(entry: dict) -> TrajectoryOutcome | None:
+    record = AppWorldAdapter().record("run", "t_1", instruction="x", instruction_source="s", environment_io="", evaluation=("train", entry))
+    return record.outcome
+
+
+def test_failed_requirements_become_failed_checks_with_their_assertion_messages():
+    trace = "```python\nwith test(\n    'assert 1 record has been added'\n):\n    assert len(added) == 1\n```\n----------\nAssertionError:  0 == 1"
+    outcome = _outcome(
+        {
+            "success": False,
+            "passes": [{"requirement": "assert 0 records were deleted", "label": "no_op_pass"}],
+            "failures": [
+                {"requirement": "assert 1 record has been\n  added to amazon.Order", "trace": trace, "label": "no_op_fail"},
+                {"requirement": "assert answers match.", "trace": "AssertionError:  '<<not_given>>' == 'null'"},
+                # A repeated requirement is one failed check; its message is still shown.
+                {"requirement": "assert answers match.", "trace": "AssertionError:  'a' == 'b'"},
+                {"requirement": "", "trace": "AssertionError: orphan"},
+                {"requirement": "assert nothing was printed"},
+                "not a check",
+                {},
+            ],
+        }
+    )
+
+    assert outcome == TrajectoryOutcome(
+        success=False,
+        failed_checks=("assert 1 record has been added to amazon.Order", "assert answers match.", "assert nothing was printed"),
+        detail="\n".join(
+            [
+                "FAILED checks:",
+                "- assert 1 record has been added to amazon.Order",
+                "  AssertionError: 0 == 1",
+                "- assert answers match.",
+                "  AssertionError: '<<not_given>>' == 'null'",
+                "- assert answers match.",
+                "  AssertionError: 'a' == 'b'",
+                "- AssertionError: orphan",
+                "- assert nothing was printed",
+            ]
+        ),
+    )
+
+
+def test_a_trace_without_an_assertion_message_does_not_show_the_test_code():
+    # AppWorld fills the part after the dashes only for "AssertionError: ..."; a bare assert, a
+    # KeyError or a ValueError leaves it empty, and its line-rstrip drops the final newline.
+    code = "```python\nwith test(\n    'assert 1 record has been added'\n):\n    assert len(added) == 1\n```"
+    failures = [
+        {"requirement": "assert 1 record has been added", "trace": code + "\n----------"},
+        {"requirement": "assert answers match.", "trace": code + "\n----------\n"},
+        {"requirement": "assert the note was shared", "trace": code + "\n----------\nAssertionError: 0 == 1"},
+    ]
+
+    assert _outcome({"success": False, "failures": failures}) == TrajectoryOutcome(
+        success=False,
+        failed_checks=("assert 1 record has been added", "assert answers match.", "assert the note was shared"),
+        detail="\n".join(
+            [
+                "FAILED checks:",
+                "- assert 1 record has been added",
+                "- assert answers match.",
+                "- assert the note was shared",
+                "  AssertionError: 0 == 1",
+            ]
+        ),
+    )
+
+
+def test_assertion_messages_and_the_detail_are_bounded():
+    huge = "AssertionError: " + "{'id': 1} " * 500
+    outcome = _outcome({"success": False, "failures": [{"requirement": f"assert set {i} matches", "trace": huge} for i in range(10)]})
+
+    assert outcome is not None and outcome.detail is not None
+    assert len(outcome.detail) <= 2000
+    message = "  " + " ".join(huge.split())[:600]
+    # Cut between checks, never inside one, and the cut is stated.
+    kept = [line for i in range(3) for line in (f"- assert set {i} matches", message)]
+    assert outcome.detail.splitlines() == ["FAILED checks:", *kept, "- ... and 7 more"]
+    # Every requirement is a failed check even when its message falls past the cap.
+    assert outcome.failed_checks == tuple(f"assert set {i} matches" for i in range(10))
+
+    # A detail that fits is not cut and has no marker.
+    fits = _outcome({"success": False, "failures": [{"requirement": f"assert set {i} matches", "trace": huge} for i in range(3)]})
+    assert fits is not None and fits.detail == "\n".join(["FAILED checks:", *kept])
+
+
+def test_unreadable_failures_keep_the_verdict(caplog: pytest.LogCaptureFixture):
+    with caplog.at_level(logging.WARNING):
+        # The last is nested deeper than json can parse: RecursionError, not ValueError.
+        for failures in ("[{'requirement': ", "not a list", {"requirement": "x"}, 3, "[" * 10000 + "]" * 10000):
+            assert _outcome({"success": False, "failures": failures}) == TrajectoryOutcome(success=False)
+    assert caplog.messages.count("run/t_1: cannot read the evaluation's failures; the outcome has no failed checks") == 5
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        # Entries that are not checks are skipped, and said to be, unlike "no failures".
+        assert _outcome({"success": False, "failures": ["assert x", "assert y", {"requirement": "assert z"}]}) == TrajectoryOutcome(
+            success=False, failed_checks=("assert z",), detail="FAILED checks:\n- assert z"
+        )
+    assert caplog.messages == ["run/t_1: skipped 2 of the evaluation's failures that are not objects"]
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        # Absent, null or empty: nothing to read, nothing to report.
+        assert _outcome({"success": False}) == TrajectoryOutcome(success=False)
+        assert _outcome({"success": False, "failures": None}) == TrajectoryOutcome(success=False)
+        assert _outcome({"success": False, "failures": "[]"}) == TrajectoryOutcome(success=False)
+        assert _outcome({"success": False, "failures": [{"label": "fail"}]}) == TrajectoryOutcome(success=False)
+    assert caplog.messages == []
+
+    # A JSON string reads as well as a Python repr.
+    assert _outcome({"success": "False", "failures": '[{"requirement": "assert x"}]'}) == TrajectoryOutcome(
+        success=False, failed_checks=("assert x",), detail="FAILED checks:\n- assert x"
+    )
+
+
+def test_a_requirement_that_is_not_a_string_is_not_a_failed_check():
+    # Stringified, {"bad": 1} would enter failed_checks as "{'bad': 1}"; its message is still kept.
+    failures = [{"requirement": {"bad": 1}, "trace": "AssertionError: 1 == 2"}, {"requirement": 7}, {"requirement": "assert y"}]
+
+    assert _outcome({"success": False, "failures": failures}) == TrajectoryOutcome(
+        success=False, failed_checks=("assert y",), detail="FAILED checks:\n- AssertionError: 1 == 2\n- assert y"
+    )
+
+
+def test_a_successful_task_has_no_failed_checks():
+    # A runner's stray failures on a passing task do not make it a failure.
+    assert _outcome({"success": True, "failures": [{"requirement": "assert x", "trace": "AssertionError"}]}) == TrajectoryOutcome(
+        success=True
+    )
+    assert _outcome({"failures": [{"requirement": "assert x"}]}) is None
 
 
 def test_identity_metadata_and_model():
@@ -214,6 +355,17 @@ def test_batch_is_stable_and_the_revision_follows_content(run_copy: Path):
     evaluation.write_text(json.dumps(payload))
     regraded = by_id(AppWorldAdapter(), run_copy)
     assert regraded["aaa0001_1"].batch.revision != first["aaa0001_1"].batch.revision
+
+    # A changed failure message reprocesses only its task; a passing check is not seen.
+    payload["individual"]["aaa0001_2"]["failures"][0]["trace"] = "AssertionError: None == True"
+    payload["individual"]["aaa0001_2"]["passes"] = []
+    evaluation.write_text(json.dumps(payload))
+    rechecked = by_id(AppWorldAdapter(), run_copy)
+    assert rechecked["aaa0001_1"].batch == regraded["aaa0001_1"].batch
+    assert rechecked["aaa0001_2"].batch.revision != regraded["aaa0001_2"].batch.revision
+    payload["individual"]["aaa0001_2"]["passes"] = [{"requirement": "assert answers match."}]
+    evaluation.write_text(json.dumps(payload))
+    assert by_id(AppWorldAdapter(), run_copy)["aaa0001_2"].batch == rechecked["aaa0001_2"].batch
 
     # Recording the model changes what processors see, so it is a new revision too.
     assert by_id(AppWorldAdapter(model="m"), run_copy)["aaa0001_2"].batch.revision != edited["aaa0001_2"].batch.revision
