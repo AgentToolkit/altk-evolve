@@ -1,0 +1,3 @@
+# Override the experiments-wide ``results/`` ignore: the SDK final report inside
+# this test bundle is a fixture that must be committed, not experiment output.
+!results/

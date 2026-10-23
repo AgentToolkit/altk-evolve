@@ -1,10 +1,22 @@
-"""CUGA benchmark runs: one record per task, from per-task JSON plus the run's results.json.
+"""CUGA benchmark runs: one record per task.
 
-A run directory holds one ``<task_id>.json`` per task, ``{"intent", "task_id",
-"score", "steps": [{"name", "data", "prompts"?}, ...]}``, a ``results.json``
-mapping task IDs to their evaluation, and optionally a ``metadata.json`` whose
-``task_ids`` list is the authoritative task manifest. ``--input`` is either a
-run directory (one holding a task file with an intent) or a parent of run directories.
+Two run layouts are supported:
+
+- **Legacy run directory**: ``<run>/{<task_id>.json, results.json, metadata.json}``.
+  ``metadata.json``'s ``task_ids`` is the authoritative task manifest. The partition is
+  parsed from the directory name (``cuga_all_<split>_<model>``).
+- **Evaluation bundle**: ``<bundle>/{metadata.json, trajectories/<task_id>.json, results/
+  appworld_sdk_*_final_report.json}``. ``metadata.json``'s ``bundle_version`` marks it as a
+  bundle; ``run.eval_key`` becomes the partition, and ``runtime_config.env_vars.MODEL_NAME``
+  the default model when the adapter's ``model`` option is unset.
+
+``--input`` is either a run (bundle or legacy) or a parent of them.
+
+The adapter emits one ``AdapterRecord`` per task. ``conversion=steps`` (default) is the
+original flattened shape — every action is an ``execute_ipython`` function call and every
+observation is an assistant ``OBSERVATION:`` message. ``conversion=agent_view`` is a
+single-agent reconstruction built with :mod:`.cuga_agent_view`: only the main agent's
+calls are assistant turns and everything the agent received stays in user turns.
 """
 
 from __future__ import annotations
@@ -16,11 +28,12 @@ import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from altk_evolve.processing import TrajectoryBatch, TrajectoryOutcome
 
 from experiments.guideline_pipeline.adapters.base import AdapterRecord, option_boolean, option_names
+from experiments.guideline_pipeline.adapters.cuga_agent_view import agent_messages
 
 logger = logging.getLogger(__name__)
 
@@ -30,21 +43,40 @@ DETAIL_CHARS = 2000
 FAIL_TRACE_CHARS = 600
 _ACTION_STEPS = ("Raw_Assistant_Response", "Assistant_response")
 _OBSERVATION_STEPS = ("User_output", "Observation", "Tool_output")
+# agent_view produces strict ``system, user, (assistant, user)*, assistant`` alternation.
+# Over this many agent calls the library's extractor would elide the middle (#437), and
+# its marker would break the alternation agent_view relies on, so the task is skipped.
+# Matches the library default `trajectory_max_steps`.
+_AGENT_VIEW_STEP_LIMIT = 50
 _NOT_TASKS = ("results", "metadata")
+# Bundle layout: these subdirectories live beside the task files, never contain them.
+_BUNDLE_TRAJECTORIES = "trajectories"
+_BUNDLE_RESULTS = "results"
+_CONVERSIONS = ("steps", "agent_view")
+# Companion files written next to a bundle task file. Matched by exact suffix so a legacy
+# task id that itself contains a dot ("appworld.v2_1.json") stays readable as a task.
+_COMPANION_SUFFIXES = (".calls.json", ".agent_messages.json")
 
 
 @dataclass
 class CugaAdapter:
     """Yields one AdapterRecord per CUGA task. Configure with ``--adapter-option KEY=VALUE``.
 
-    Options: include_system_prompt, include_summaries (booleans; add them as
-    context_messages), task_ids (comma-separated), task_manifest (a JSON file with
-    ``task_ids`` or ``tasks[].task_id``, or one ID per line), partitions
-    (comma-separated; only runs whose metadata.partition is listed) and model (the
-    agent's model, recorded on the trajectory).
+    Options:
+
+    - ``conversion``: ``steps`` (default, the flattened shape every action/observation
+      becomes an assistant turn) or ``agent_view`` (a single-agent reconstruction where
+      only the main agent's calls are assistant turns and everything it received stays
+      in user turns, built with :mod:`.cuga_agent_view`).
+    - ``include_system_prompt``, ``include_summaries``: in ``steps`` only, add the
+      agent's system prompt and reflection summaries to ``context_messages``. Rejected
+      in ``agent_view`` where that content already lives in ``messages``.
+    - ``task_ids``, ``task_manifest``, ``partitions``, ``model``: filter tasks or
+      record the agent's model on each trajectory.
     """
 
     name: str = "cuga"
+    conversion: Literal["steps", "agent_view"] = "steps"
     include_system_prompt: bool = False
     include_summaries: bool = False
     task_ids: frozenset[str] = field(default_factory=frozenset)
@@ -65,29 +97,51 @@ class CugaAdapter:
                 changes[key] = frozenset(option_names(SOURCE, key, value))
             elif key == "model":
                 changes[key] = value or None
+            elif key == "conversion":
+                if value not in _CONVERSIONS:
+                    raise ValueError(f"cuga option conversion must be one of {_CONVERSIONS}, not {value!r}")
+                changes[key] = value
             else:
                 raise ValueError(
-                    f"Unknown cuga option {key!r} (expected include_system_prompt, include_summaries, task_ids, task_manifest, partitions, model)"
+                    f"Unknown cuga option {key!r} (expected conversion, include_system_prompt, include_summaries, task_ids, task_manifest, partitions, model)"
                 )
-        return replace(self, **changes, task_ids=frozenset(task_ids))
+        merged = replace(self, **changes, task_ids=frozenset(task_ids))
+        # agent_view's messages already carry the system prompt (verbatim) and the reflection
+        # summaries (inside user turns), so adding them to context_messages would duplicate
+        # them in every generation prompt, and the summary case would re-role reflection
+        # output as the main agent's own reasoning — exactly what agent_view exists to avoid.
+        if merged.conversion == "agent_view" and (merged.include_system_prompt or merged.include_summaries):
+            raise ValueError(
+                "cuga option conversion=agent_view cannot be combined with include_system_prompt or include_summaries"
+                " (the system prompt and reflection summaries are already in agent_view messages)"
+            )
+        return merged
 
     def records(self, path: Path) -> Iterator[AdapterRecord]:
         run_dirs = _run_dirs(path)
         if not run_dirs:
             raise ValueError(f"No CUGA run directory at {path}: neither it nor a child holds a task file with an intent")
         if self.partitions:
-            found_partitions = {_partition(run_dir.name) for run_dir in run_dirs}
+            found_partitions = {_eval_key(run_dir) for run_dir in run_dirs}
             if missing := sorted(self.partitions - found_partitions):
                 raise ValueError(f"Partitions not found beneath {path}: {missing} (found {sorted(found_partitions)})")
-            run_dirs = [run_dir for run_dir in run_dirs if _partition(run_dir.name) in self.partitions]
+            run_dirs = [run_dir for run_dir in run_dirs if _eval_key(run_dir) in self.partitions]
         if self.task_ids:
             found = {task_file.stem for run_dir in run_dirs for task_file in _task_files(run_dir)}
             if missing := sorted(self.task_ids - found):
                 raise ValueError(f"Task IDs not found beneath {path}: {missing}")
         read = 0
         for run_dir in run_dirs:
+            if self.conversion == "agent_view" and _context_summarization_enabled(run_dir):
+                logger.warning(
+                    "%s has context summarization enabled; agent_view messages may not reflect the full conversation",
+                    run_dir.name,
+                )
             results = _load_results(run_dir)
-            experiment = _metadata(run_dir).get("experiment_name")
+            metadata = _metadata(run_dir)
+            experiment = metadata.get("experiment_name")
+            partition = _eval_key(run_dir)
+            default_model = _default_model(metadata)
             for task_file in _task_files(run_dir):
                 if self.task_ids and task_file.stem not in self.task_ids:
                     continue
@@ -95,29 +149,65 @@ class CugaAdapter:
                 if not (isinstance(intent := task.get("intent"), str) and intent.strip()):
                     logger.warning("skipped %s/%s: no intent", run_dir.name, task_file.stem)
                     continue
+                record = self.record(
+                    run_dir.name,
+                    task_file.stem,
+                    task,
+                    results.get(task_file.stem),
+                    experiment=experiment,
+                    partition=partition,
+                    default_model=default_model,
+                )
+                if record is None:
+                    continue
                 read += 1
-                yield self.record(run_dir.name, task_file.stem, task, results.get(task_file.stem), experiment=experiment)
+                yield record
         if not read:
             logger.warning("read no CUGA task beneath %s", path)
 
-    def record(self, run: str, task_id: str, task: dict, result: dict | None, *, experiment: str | None = None) -> AdapterRecord:
-        """Build one record from a parsed task file and its results.json entry (if any)."""
+    def record(
+        self,
+        run: str,
+        task_id: str,
+        task: dict,
+        result: dict | None,
+        *,
+        experiment: str | None = None,
+        partition: str | None = None,
+        default_model: str | None = None,
+    ) -> AdapterRecord | None:
+        """Build one record from a parsed task file and its evaluation entry (if any).
+
+        Returns ``None`` when ``conversion=agent_view`` cannot build messages for this
+        task (the trajectory has no main-agent call with prompts, the intent is missing,
+        or the recovered prompt is unsplittable); a warning naming the task is logged.
+        A long run (>50 agent calls) is skipped the same way.
+        """
         steps = [step for step in task.get("steps") or [] if isinstance(step, dict)]
         evaluation = _evaluation(steps, result)
+        resolved_model = self.model if self.model is not None else default_model
         metadata = {
             "run": run,
-            "partition": _partition(run),
+            "partition": partition if partition is not None else _partition(run),
             "dataset": task.get("dataset_name") or None,
             "experiment": experiment,
-            "model": self.model,  # also in metadata: the guideline processor stores metadata, not Trajectory.model
+            "model": resolved_model,  # also in metadata: the guideline processor stores metadata, not Trajectory.model
             "score": task.get("score"),
             "pass_percentage": evaluation.get("pass_percentage"),
         }
+        if self.conversion == "agent_view":
+            built = self._agent_view_messages(run, task_id, task, steps)
+            if built is None:
+                return None
+            messages, context_messages = built
+        else:
+            messages = [{"role": "user", "content": task.get("intent") or ""}, *agent_steps(steps)]
+            context_messages = self._context(steps)
         content: dict[str, Any] = {
-            "messages": [{"role": "user", "content": task.get("intent") or ""}, *agent_steps(steps)],
-            "context_messages": self._context(steps),
+            "messages": messages,
+            "context_messages": context_messages,
             "trace_id": task_id,
-            "model": self.model,
+            "model": resolved_model,
             "metadata": {key: value for key, value in metadata.items() if value is not None},
             "outcome": _outcome(_success(task, steps, result), evaluation),
         }
@@ -126,6 +216,35 @@ class CugaAdapter:
         digest = hashlib.sha256(json.dumps(_plain(content), sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
         batch = TrajectoryBatch(source=SOURCE, conversation_id=f"{run}/{task_id}", batch_id=task_id, revision=digest)
         return AdapterRecord(**content, batch=batch)
+
+    def _agent_view_messages(
+        self, run: str, task_id: str, task: dict, steps: list[dict]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
+        """The agent-view messages and (empty) context_messages for one task, or None.
+
+        Passes the filtered ``steps`` into ``agent_messages`` rather than the raw task,
+        so a malformed ``steps`` field (``null``, non-dict entries, non-list) is caught
+        in ``record()`` and does not reach the helpers. Shape errors from the heuristic
+        splitters (``agent_turns`` iterating prompts, ``call_input_output`` indexing
+        role/value) are caught alongside the usual ``ValueError`` and reported as a
+        per-task skip, so one bad task does not stop the generator.
+        """
+        try:
+            messages = agent_messages({**task, "steps": steps}, drop_examples=True, strip_last_available_variables=True)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            logger.warning("skipped %s/%s: %s", run, task_id, exc)
+            return None
+        assistant_count = sum(1 for m in messages if m.get("role") == "assistant")
+        if assistant_count > _AGENT_VIEW_STEP_LIMIT:
+            logger.warning(
+                "skipped %s/%s: %d agent calls exceed the parser cap of %d",
+                run,
+                task_id,
+                assistant_count,
+                _AGENT_VIEW_STEP_LIMIT,
+            )
+            return None
+        return messages, []
 
     def _context(self, steps: list[dict]) -> list[dict[str, Any]]:
         context: list[dict[str, Any]] = []
@@ -167,8 +286,18 @@ def agent_steps(steps: list[dict]) -> list[dict[str, Any]]:
 
 
 def _evaluation(steps: list[dict], result: dict | None) -> dict:
-    """The task's evaluation: the EvaluationResult step, overridden by the authoritative results.json eval."""
-    return {**_step_evaluation(steps), **_loads((result or {}).get("eval"))}
+    """The task's evaluation report, with the richest fields winning.
+
+    The AppWorld-SDK ``results`` entry is the base: ``success`` and ``match_rate`` but no
+    ``evaluation`` sub-report. A legacy ``results.json`` entry (and the ``EvaluationResult``
+    step) carries the full report, so its fields overwrite the SDK's. ``_success`` reads
+    the two in a different, documented order, so verdict precedence is not decided here.
+    """
+    return {
+        **_loads((result or {}).get("sdk_eval")),
+        **_step_evaluation(steps),
+        **_loads((result or {}).get("eval")),
+    }
 
 
 def _step_evaluation(steps: list[dict]) -> dict:
@@ -176,8 +305,21 @@ def _step_evaluation(steps: list[dict]) -> dict:
 
 
 def _success(task: dict, steps: list[dict], result: dict | None) -> bool | None:
-    """The verdict from the first source with a readable one: results.json, the EvaluationResult step, then score >= 1."""
-    for evaluation in (_loads((result or {}).get("eval")), _step_evaluation(steps)):
+    """The verdict from the first readable source: an SDK-bundle entry, a legacy
+    ``results.json`` entry, the ``EvaluationResult`` step, then ``score >= 1``.
+
+    ``result`` carries both an ``eval`` payload (the legacy entry) and an
+    ``sdk_eval`` payload (the AppWorld-SDK ``results[*]`` entry) when both are
+    present. Each is consulted in the order the README documents, so a legacy
+    entry with no readable ``success`` field falls through to the SDK verdict
+    rather than hiding it.
+    """
+    sources = (
+        _loads((result or {}).get("sdk_eval")),
+        _loads((result or {}).get("eval")),
+        _step_evaluation(steps),
+    )
+    for evaluation in sources:
         if (found := verdict(evaluation.get("success"))) is not None:
             return found
     return task["score"] >= 1.0 if isinstance(task.get("score"), (int, float)) else None
@@ -251,9 +393,42 @@ def _summary(data: str) -> str | None:
 
 
 def _load_results(run_dir: Path) -> dict[str, dict]:
+    """Per-task evaluation entries from ``results.json`` and ``results/appworld_sdk_*_final_report.json``.
+
+    Entries carry up to two keys, each a dict:
+    - ``sdk_eval``: the AppWorld-SDK ``results[*]`` payload (bundle layout).
+    - ``eval``: the legacy ``results.json`` entry's ``eval`` payload.
+
+    They are kept separate so :func:`_success` can consult them in the order the README
+    documents (SDK → legacy → step → score). A legacy entry with no readable ``success``
+    then falls through to the SDK verdict rather than hiding it.
+    """
+    results: dict[str, dict] = {}
+    sdk_dir = run_dir / _BUNDLE_RESULTS
+    if sdk_dir.is_dir():
+        for report in sorted(sdk_dir.glob("appworld_sdk_*_final_report.json")):
+            try:
+                payload = _read_json(report)
+            except (OSError, ValueError) as exc:
+                logger.warning("skipped %s: %s", report, exc)
+                continue
+            entries = payload.get("results")
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("task_name")
+                if isinstance(name, str) and name:
+                    results.setdefault(name, {})["sdk_eval"] = {k: v for k, v in entry.items() if k != "task_name"}
     path = run_dir / "results.json"
-    results = _read_json(path) if path.exists() else {}
-    return {task_id: entry for task_id, entry in results.items() if isinstance(entry, dict)}
+    if path.exists():
+        legacy = _read_json(path)
+        for task_id, entry in legacy.items():
+            if isinstance(entry, dict):
+                merged = results.setdefault(task_id, {})
+                merged.update(entry)
+    return results
 
 
 def _metadata(run_dir: Path) -> dict:
@@ -270,12 +445,83 @@ def _metadata(run_dir: Path) -> dict:
     return metadata
 
 
+def _is_bundle(run_dir: Path, *, detecting: bool = False) -> bool:
+    """A directory with ``metadata.json`` carrying ``bundle_version`` and a ``trajectories/`` child.
+
+    An unreadable ``metadata.json`` is an error when reading a run (matching :func:`_metadata`
+    and :func:`_task_files`), so a corrupted bundle is reported rather than silently read as
+    a legacy run with the ``trajectories/`` subdirectory. The ``trajectories/`` child alone
+    is enough to classify the directory as a bundle for this purpose: without the readable
+    metadata we cannot tell its ``run.eval_key`` or whether this is an unrelated layout, and
+    the right behaviour is a clear error.
+    """
+    try:
+        metadata = _metadata(run_dir)
+    except ValueError:
+        if not detecting:
+            raise
+        # On detection, still flag the directory as a bundle so a parent sweep notices
+        # the corrupted bundle via _is_run_dir rather than silently reading its
+        # ``trajectories/`` subdirectory as a legacy run.
+        return (run_dir / "metadata.json").exists() and (run_dir / _BUNDLE_TRAJECTORIES).is_dir()
+    return bool(metadata.get("bundle_version")) and (run_dir / _BUNDLE_TRAJECTORIES).is_dir()
+
+
+def _task_dir(run_dir: Path, *, detecting: bool = False) -> Path:
+    """The directory holding task JSON files for ``run_dir``: ``<bundle>/trajectories`` for a bundle, the run itself otherwise."""
+    return run_dir / _BUNDLE_TRAJECTORIES if _is_bundle(run_dir, detecting=detecting) else run_dir
+
+
+def _eval_key(run_dir: Path) -> str:
+    """The partition for ``run_dir``: ``run.eval_key`` for a bundle, else the legacy name split."""
+    try:
+        metadata = _metadata(run_dir)
+    except ValueError:
+        metadata = {}
+    run = metadata.get("run")
+    if isinstance(run, dict) and isinstance(key := run.get("eval_key"), str) and key:
+        return key
+    return _partition(run_dir.name)
+
+
+def _default_model(metadata: dict) -> str | None:
+    """The agent's model from a bundle's ``runtime_config.env_vars.MODEL_NAME``, or None."""
+    runtime = metadata.get("runtime_config")
+    if not isinstance(runtime, dict):
+        return None
+    env_vars = runtime.get("env_vars")
+    if not isinstance(env_vars, dict):
+        return None
+    model = env_vars.get("MODEL_NAME")
+    return model if isinstance(model, str) and model else None
+
+
+def _context_summarization_enabled(run_dir: Path) -> bool:
+    """True when a bundle's env records ``DYNACONF_CONTEXT_SUMMARIZATION__ENABLED=true``.
+
+    Context summarization rewrites older messages, so the last call's input would no longer
+    contain the whole run verbatim and agent_view resampling prefixes would differ from
+    what the agent was asked. ``records()`` warns rather than skipping, since
+    ``conversion=steps`` is unaffected.
+    """
+    try:
+        metadata = _metadata(run_dir)
+    except ValueError:
+        return False
+    runtime = metadata.get("runtime_config")
+    env_vars = runtime.get("env_vars") if isinstance(runtime, dict) else None
+    value = env_vars.get("DYNACONF_CONTEXT_SUMMARIZATION__ENABLED") if isinstance(env_vars, dict) else None
+    return isinstance(value, str) and value.strip().lower() == "true"
+
+
 def _task_files(run_dir: Path, *, detecting: bool = False) -> list[Path]:
     """The manifest's tasks (metadata.json task_ids), else every JSON that is not a run-level file.
 
-    Reading a run with a bad metadata.json fails: the manifest is authoritative, and the glob
-    could read tasks it leaves out. Detection falls back to the glob instead, so a parent's
-    bad metadata.json neither hides its child runs nor ends the mine.
+    For a bundle the task files live under ``trajectories/``; for a legacy run they sit
+    alongside ``metadata.json`` and ``results.json``. Reading a run with a bad
+    metadata.json fails: the manifest is authoritative, and the glob could read tasks it
+    leaves out. Detection falls back to the glob instead, so a parent's bad metadata.json
+    neither hides its child runs nor ends the mine.
     """
     try:
         manifest = _metadata(run_dir).get("task_ids")
@@ -283,16 +529,26 @@ def _task_files(run_dir: Path, *, detecting: bool = False) -> list[Path]:
         if not detecting:
             raise
         manifest = None
+    tasks_dir = _task_dir(run_dir, detecting=detecting)
     if manifest:
         files = []
         for task_id in manifest:
-            task_file = run_dir / f"{task_id}.json"
+            task_file = tasks_dir / f"{task_id}.json"
             if task_file.exists():
                 files.append(task_file)
             elif not detecting:
                 logger.warning("manifest task %s has no trajectory file in %s", task_id, run_dir.name)
         return sorted(files)
-    return sorted(f for f in run_dir.glob("*.json") if f.stem not in _NOT_TASKS and not f.stem.startswith("appworld_sdk_"))
+    # Companion files beside a task use a known inner suffix (``<task>.agent_messages.json``,
+    # ``<task>.calls.json``). Matching exact suffixes keeps task IDs that themselves contain
+    # a dot ("appworld.v2_01.json") readable.
+    return sorted(
+        f
+        for f in tasks_dir.glob("*.json")
+        if f.stem not in _NOT_TASKS
+        and not f.stem.startswith("appworld_sdk_")
+        and not any(f.name.endswith(suffix) for suffix in _COMPANION_SUFFIXES)
+    )
 
 
 def load_task_manifest(path: Path) -> list[str]:
@@ -319,13 +575,14 @@ def _run_dirs(path: Path) -> list[Path]:
     """path itself when it is a run, else its child runs.
 
     What makes a run is a task, not a marker file: neither a subdirectory of JSON inside
-    a run (logs, traces) nor a parent's own results, metadata, appworld_sdk or summary
-    file can make a directory the wrong kind. Whatever is left unread gets a warning:
-    child runs beneath a run, a parent's own JSON files, and child directories with
-    JSON but no readable task.
+    a run (logs, traces, a bundle's ``trajectories/``) nor a parent's own results,
+    metadata, appworld_sdk or summary file can make a directory the wrong kind. Whatever
+    is left unread gets a warning: child runs beneath a run, a parent's own JSON files,
+    and child directories with JSON but no readable task.
     """
     if _is_run_dir(path):
-        if nested := sorted(child.name for child in path.iterdir() if _is_run_dir(child)):
+        bundle_task_dir = _task_dir(path, detecting=True) if _is_bundle(path, detecting=True) else None
+        if nested := sorted(child.name for child in path.iterdir() if child != bundle_task_dir and _is_run_dir(child)):
             logger.warning("read %s as one run; not read: %s, which also hold tasks", path, ", ".join(nested))
         return [path]
     if not path.is_dir():
@@ -344,12 +601,17 @@ def _run_dirs(path: Path) -> list[Path]:
 
 
 def _partition(run: str) -> str:
-    """The split a run evaluated: "dev" in ``cuga_all_dev_<model>``, else the run's own name."""
+    """The split a legacy run evaluated: "dev" in ``cuga_all_dev_<model>``, else the run's own name."""
     return run.split("_all_")[1].split("_")[0] if "_all_" in run else run
 
 
 def _is_run_dir(path: Path) -> bool:
-    """A directory with at least one task file (by its manifest, if any) that records() would read: one with an intent."""
+    """A directory records() would read: one with at least one task file carrying an intent.
+
+    Covers both legacy runs (task files alongside ``metadata.json``) and bundles (task
+    files under ``trajectories/``) because :func:`_task_files` resolves the right source
+    for each layout.
+    """
     return path.is_dir() and any(_has_intent(task_file) for task_file in _task_files(path, detecting=True))
 
 

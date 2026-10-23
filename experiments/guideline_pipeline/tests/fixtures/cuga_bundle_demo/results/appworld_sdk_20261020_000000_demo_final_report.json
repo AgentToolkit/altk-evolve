@@ -1,0 +1,23 @@
+{
+  "metrics": {
+    "total": 2,
+    "success": 1,
+    "failure": 1
+  },
+  "results": [
+    {
+      "task_name": "demo_01_1",
+      "difficulty": "1",
+      "intent": "List my open todos.",
+      "success": true,
+      "match_rate": 1.0
+    },
+    {
+      "task_name": "demo_02_1",
+      "difficulty": "2",
+      "intent": "Mark 'buy milk' as done.",
+      "success": false,
+      "match_rate": 0.5
+    }
+  ]
+}
