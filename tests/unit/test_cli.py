@@ -1,6 +1,7 @@
 """Tests for Evolve CLI commands."""
 
 import datetime
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -321,6 +322,31 @@ class TestEntitiesAdd:
         # Verify metadata was passed to update_entities
         call_args = mock_client.update_entities.call_args
         entity = call_args[0][1][0]
+        assert entity.metadata == {"source": "test"}
+
+    def test_add_entity_drops_merged_from(self, mock_client):
+        """merged_from is managed by consolidation and skips redaction, so the CLI can't set it."""
+        mock_client.namespace_exists.return_value = True
+        mock_client.update_entities.return_value = [EntityUpdate(id="1", type="guideline", content="Test", event="ADD")]
+        merged_from = [{"id": "alice@example.com", "content_sha256": "0" * 64}]
+
+        result = runner.invoke(
+            app,
+            [
+                "entities",
+                "add",
+                "my_namespace",
+                "--content",
+                "Test",
+                "--metadata",
+                json.dumps({"source": "test", "merged_from": merged_from}),
+                "--no-conflict-resolution",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Ignoring metadata.merged_from" in result.stdout
+        entity = mock_client.update_entities.call_args[0][1][0]
         assert entity.metadata == {"source": "test"}
 
     def test_add_entity_invalid_metadata(self, mock_client):
