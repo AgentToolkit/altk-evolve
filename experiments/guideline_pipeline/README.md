@@ -51,8 +51,10 @@ uv run python -m experiments.guideline_pipeline mine --adapter <name> --input <p
 `import-lessons` writes lessons that were already distilled elsewhere into a
 namespace, one guideline per lesson, **without any LLM call**. It exists so the
 consolidation-parity check can start from a known raw set: import a model's
-lessons, run `consolidate`, and check the total support is unchanged (for the
-DeepSeek v3.2 AppWorld lessons, 290 in and 290 out).
+lessons, run `consolidate`, and check the total stored support (the `stored` number
+in the `export playbook` summary) is unchanged (for the DeepSeek v3.2 AppWorld
+lessons, 290 in and 290 out). The `support sum` itself counts distinct source
+tasks, so it drops when lessons from the same task are merged.
 
 ```bash
 # Validate the files and print the counts, without touching storage.
@@ -62,9 +64,9 @@ uv run python -m experiments.guideline_pipeline import-lessons \
 # Import, then check the total support survives consolidation.
 uv run python -m experiments.guideline_pipeline import-lessons \
     --input <dir>/guidelines_per_task_deepseek_v32 --namespace <ns> [--source LABEL]
-uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/raw.json   # support sum=290
+uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/raw.json   # (stored 290)
 uv run python -m experiments.guideline_pipeline consolidate --namespace <ns>
-uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/merged.json  # support sum must still be 290
+uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/merged.json  # stored must still be 290
 ```
 
 `--input` is a directory of per-task `*.json` files (subdirectories are not read,

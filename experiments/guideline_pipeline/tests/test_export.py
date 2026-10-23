@@ -91,7 +91,7 @@ def test_min_support_keeps_guidelines_at_the_threshold(client: EvolveClient):
         assert [e["n"] for e in document["entries"]] == expected
         assert report.below_min_support == 3 - len(expected)
     assert build_playbook(rows, min_support=2)[1].summary() == (
-        "playbook: 2 entries (1 below min-support skipped); support sum=5 max=3 | n>=2: 2 | n>=3: 1"
+        "playbook: 2 entries (1 below min-support skipped); support sum=5 (stored 5) max=3 | n>=2: 2 | n>=3: 1"
     )
 
 
