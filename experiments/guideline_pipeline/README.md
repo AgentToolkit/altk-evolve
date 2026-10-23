@@ -333,8 +333,9 @@ Each task becomes one record:
   `requirement`s of its `failures` (a list, or a JSON or Python-repr string of
   one), whitespace-collapsed and de-duplicated. Its `detail` lists each failed
   requirement with its trace's assertion message (the text after the last
-  `----------` line, first 600 characters; a trace with nothing after that line,
-  as for a non-assertion error, gives no message rather than the test's code). The
+  `----------` line, or the whole trace when it has no such line, first 600
+  characters; a trace with nothing after that line, as for a non-assertion error,
+  gives no message rather than the test's code). The
   detail is capped at 2000 characters, cut between checks with a closing
   `- ... and N more`. `failures` that cannot be read are reported and leave the
   verdict alone, and entries that are not objects are skipped with a warning. A
