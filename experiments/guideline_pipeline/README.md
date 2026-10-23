@@ -146,7 +146,8 @@ invalid thresholds, unrecognized evidence).
 
 ```bash
 # Merge similar guidelines in place, with Evolve's consolidation (makes LLM calls).
-uv run python -m experiments.guideline_pipeline consolidate --namespace <ns> [--mode lossless] [--threshold 0.8]
+uv run python -m experiments.guideline_pipeline consolidate --namespace <ns> [--mode lossless] [--threshold 0.8] \
+    [--cluster-key task_description|guideline_text] [--max-cluster-size N] [--max-rounds N]
 
 # Playbook: {"entries": [{"r": rule, "n": support, "e": evidence}]}
 uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/playbook.json [--min-support N]
@@ -200,8 +201,10 @@ has no `sources` and shows up as `missing`.
 
 ## CUGA
 
-The `cuga` adapter reads CUGA benchmark runs (AppWorld tasks). `--input` is one
-run directory or a directory of them:
+The `cuga` adapter reads CUGA benchmark runs (AppWorld tasks). Two run layouts
+are supported.
+
+### Legacy run directory
 
 ```text
 <input>/
@@ -213,59 +216,123 @@ run directory or a directory of them:
     appworld_sdk_*.json       # ignored
 ```
 
-A directory is a run when it holds at least one task file (as defined below)
-with an intent. `results.json`, `metadata.json`, `appworld_sdk_*.json` and
-subdirectories (logs, traces) neither make a directory a run nor stop it being
-one. Otherwise `--input` is read as the parent of the runs directly inside it.
-Anything left unread gets a warning: child runs beneath a directory that is itself
-a run, a parent's own JSON files (a sweep's metadata, results or summary, even a
-malformed one), and a child directory with JSON but no readable task with an
-intent. A path where neither it nor a child directory holds a task is an error,
-and a selection that reads no task logs a warning. Reading a run whose
+### Evaluation bundle
+
+```text
+<input>/
+  <bundle>/                               # becomes metadata.run; conversation_id is <bundle>/<task_id>
+    metadata.json                         # {"bundle_version": "2", "run": {"eval_key": ...},
+                                          #  "runtime_config": {"env_vars": {"MODEL_NAME": ...}}}
+    trajectories/
+      <task_id>.json                      # same per-task shape as the legacy layout
+      <task_id>.calls.json                # ignored (matched by the exact ".calls.json" suffix)
+      <task_id>.agent_messages.json       # ignored (matched by the exact ".agent_messages.json" suffix)
+    results/
+      appworld_sdk_*_final_report.json    # {"results": [{"task_name", "success", ...}, ...]}
+```
+
+A bundle is recognised by its `bundle_version`. The partition comes from
+`metadata.json`'s `run.eval_key`, and the record's model defaults from
+`runtime_config.env_vars.MODEL_NAME` when the `model` option is not set. The SDK
+final report is one additional verdict source: a task's `success` is read from
+the first available of the SDK report, the legacy `results.json` entry, the
+task's own `EvaluationResult` step, and `score >= 1`. If a bundle's env records
+`DYNACONF_CONTEXT_SUMMARIZATION__ENABLED=true` a warning is logged, since
+`agent_view` resampling prefixes may then differ from what the agent was asked.
+
+### Discovery, in both layouts
+
+A directory is a run when it holds at least one task file with an intent;
+`results.json`, `metadata.json`, `appworld_sdk_*.json` and subdirectories (logs,
+traces, a bundle's own `trajectories/` or `results/`) neither make a directory a
+run nor stop it being one. Otherwise `--input` is the parent of the runs directly
+inside it. Anything left unread gets a warning: child runs beneath a directory
+that is itself a run, a parent's own JSON files, and a child directory with JSON
+but no readable task. A path where neither it nor a child directory holds a task
+is an error; a selection that reads no task logs a warning. Reading a run whose
 `metadata.json` is malformed, or whose `task_ids` is not a list, is an error.
 
-When `metadata.json` lists `task_ids`, those are the tasks; otherwise every JSON
-file other than `results`, `metadata` and `appworld_sdk_*` is one. A task whose
-`intent` is missing, blank or not a string is skipped with a warning. Each other task becomes one record:
+When `metadata.json` lists `task_ids`, those are the tasks; otherwise every
+`<name>.json` in the task directory other than `results` / `metadata` /
+`appworld_sdk_*` and not ending in `.calls.json` or `.agent_messages.json`
+is one, so a legacy task id that itself contains a dot stays readable. A task
+whose `intent` is missing, blank or not a string is skipped with a warning.
 
-- **messages**: the intent as the user message, then each `Raw_Assistant_Response`
-  as an `execute_ipython` function call and each `User_output` / `Observation` /
-  `Tool_output` as an `OBSERVATION:` assistant message (the extractor ignores
-  `role: "tool"`). Steps are cut to 2000 characters. CUGA's duplicate logs
-  (`Assistant_code`, `Assistant_nl`), the final-answer step and the evaluation
-  are left out.
-- **outcome**: `success` from `results.json` (falling back to the task's
-  `EvaluationResult` step, then to `score >= 1`; a verdict counts only as a bool,
-  the integer `0`/`1` or the string `"true"`/`"false"`, and anything else falls through), the failed ground-truth
-  requirements as `failed_checks`, and the first 2000 characters of the
-  evaluation report as `detail`. A task with no evaluation and no score has no outcome.
-- **batch**: source `cuga`, conversation `<run>/<task_id>`, batch `<task_id>`, and
-  a revision that digests the record's content. Correcting a task file or its
-  `results.json` entry, or changing an option that changes the content, reprocesses
-  that task; re-running unchanged input skips it. Renaming a run directory changes
-  its identity.
-- **Long runs**: every step is passed on. The extractor's window decides what it
-  renders: by default the first 50 steps, so a longer run loses its ending unless
-  `trajectory_tail_steps` is set (the sample profile below keeps the last 43).
+### Message conversion
 
-Options (`--adapter-option KEY=VALUE`):
+Each task yields one record. The `conversion` option (`steps` by default,
+`agent_view` as the alternative) selects how `messages` is built. `conversion`
+is mode-agnostic: both shapes drive any `guidelines_mode` the processing profile
+chooses; what changes is how the main agent's trajectory is reconstructed from
+the multi-agent recording.
+
+- **`conversion=steps`** flattens CUGA's recording directly: each
+  `Raw_Assistant_Response` becomes an `execute_ipython` function call and each
+  `User_output` / `Observation` / `Tool_output` becomes an `OBSERVATION:`
+  assistant message (the extractor ignores `role: "tool"`). Steps are cut to
+  2000 characters; the library's trajectory window
+  (`trajectory_max_steps` / `trajectory_tail_steps`) decides what is rendered
+  from a long run.
+- **`conversion=agent_view`** reconstructs a single-agent trajectory: only
+  the main code-writing agent's calls are assistant turns, and everything the
+  agent received (environment output and the reflection model's STATUS/NEXT
+  summary) stays in user turns, exactly where the agent read it. Helper agents
+  (`find_tools`, reflection, pre-execute verifier, final-answer classifier)
+  appear only inside those user turns. The messages come from the main agent's
+  last call's recovered input plus its own output, so the resulting shape is
+  `system, user, (assistant, user)*, assistant`. Runs over 50 agent calls are
+  skipped with a warning. See the vendored
+  [cuga_agent_view.py](adapters/cuga_agent_view.py) for the recovery heuristic
+  and two deliberate differences from the external source (the `## User Context`
+  strip on the task message, and the output-source fix for the classifier
+  `auto_continue:true` edge case).
+
+Both modes produce the same `outcome` and `metadata`. The revision digest covers
+`messages` and `context_messages`, so switching modes reprocesses each task.
+
+**Prompt rendering, today.** The generation prompts (standard,
+consistency-fast and consistency-accurate) all render through
+`parse_openai_agents_trajectory` or `format_trajectory_data`, which read
+assistant messages only. In `conversion=steps` observations have been written as
+assistant turns, so they are rendered; in `conversion=agent_view` observations
+sit in user turns and are not rendered until the parser/renderer learns to
+include them. For richer failure grounding today, use `steps`; use `agent_view`
+when correct role attribution matters more (any later renderer or scorer that
+reads messages, including consistency-accurate IR prefixes).
+
+### What each record carries
+
+- **messages**: as described above.
+- **context_messages**: in `steps` mode, optionally the agent's system prompt
+  (`include_system_prompt`) and reflection summaries (`include_summaries`). In
+  `agent_view` always empty — the system prompt is `messages[0]` and the
+  reflection summaries live inside the user turns.
+- **outcome**: `success` from the first readable source (the SDK report, the
+  legacy `results.json` entry, the task's `EvaluationResult` step, then
+  `score >= 1`; a verdict counts only as a bool, the integer `0`/`1` or the
+  string `"true"`/`"false"`), the failed ground-truth requirements as
+  `failed_checks`, and the first 2000 characters of the evaluation report as
+  `detail`. A task with no evaluation and no score has no outcome.
+- **batch**: source `cuga`, conversation `<run>/<task_id>`, batch `<task_id>`,
+  and a revision digest.
+
+### Options (`--adapter-option KEY=VALUE`)
 
 | Key | Effect |
 | --- | --- |
-| `include_system_prompt=true` | Add the agent's system prompt (the first `system` message in any step's `prompts`) as a `system` context message. |
-| `include_summaries=true` | Add each reflective `Summary` block from `User_return` steps as an assistant context message. |
+| `conversion=steps\|agent_view` | How `messages` is built. Default `steps`. `agent_view` cannot be combined with `include_system_prompt` or `include_summaries`. |
+| `include_system_prompt=true` | **(`steps` only)** Add the agent's system prompt (the first `system` message in any step's `prompts`) as a `system` context message. |
+| `include_summaries=true` | **(`steps` only)** Add each reflective `Summary` block from `User_return` steps as an assistant context message. |
 | `task_ids=a_1,b_2` | Only these tasks. A listed ID that is not found ends the run with an error, and so does a value that lists no IDs. |
 | `task_manifest=<file>` | Only the tasks in a JSON file (`task_ids` or `tasks[].task_id`) or a text file with one ID per line (`#` comments). Combines with `task_ids`. |
 | `partitions=dev,test` | Only runs whose `metadata.partition` is listed. A listed partition that is not found ends the run with an error, and so does a value that lists none. |
-| `model=<name>` | The agent's model, recorded on the trajectory and in metadata. |
+| `model=<name>` | The agent's model, recorded on the trajectory and in metadata. Overrides a bundle's `MODEL_NAME` default. |
 
-A directory of runs is mined into one namespace whatever its partitions, so mining
-train and dev runs together puts dev-derived guidelines into a namespace you may
-later evaluate on dev. Pass `partitions=` to mine one split.
+A directory of runs is mined into one namespace whatever its partitions, so
+mining train and dev together puts dev-derived guidelines into a namespace you
+may later evaluate on dev. Pass `partitions=` to mine one split.
 
-Context messages are supporting history: the extractor sees them, but they are
-not counted as steps and are rendered within a character budget that keeps the
-most recent ones.
+### Profile
 
 A sample profile, [profiles/cuga.json](profiles/cuga.json), runs the built-in
 `evolve.guidelines` processor in `standard` mode with segmentation off. Its
@@ -273,15 +340,22 @@ trajectory window is 50 steps with the last 43 kept for the ending
 (`trajectory_max_steps`, `trajectory_tail_steps`; see
 [the trajectory limits](../../docs/guides/configuration.md#trajectory-limits)). Its
 model and provider are omitted, so they are captured from the `EVOLVE_*` / LLM
-settings when the profile is published.
+settings when the profile is published. The same profile fits both conversions;
+separation between runs comes from `--namespace`, not the profile.
 
 ```bash
 uv run evolve processing-profiles apply cuga-guidelines \
     --file experiments/guideline_pipeline/profiles/cuga.json --expected-revision 0
 
+# steps mode (today's behaviour)
 uv run python -m experiments.guideline_pipeline mine --adapter cuga --input path/to/cuga_runs \
     --namespace cuga --processing-profile cuga-guidelines \
     --adapter-option include_summaries=true --adapter-option model=gpt-4.1 --dry-run
+
+# agent_view, under a separate namespace to compare side by side
+uv run python -m experiments.guideline_pipeline mine --adapter cuga --input path/to/cuga_bundles \
+    --namespace cuga_av --processing-profile cuga-guidelines \
+    --adapter-option conversion=agent_view --dry-run
 ```
 
 Drop `--dry-run` to mine. The built-in processor sets each guideline's `evidence`
