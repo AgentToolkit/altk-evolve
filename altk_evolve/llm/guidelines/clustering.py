@@ -203,8 +203,15 @@ def _split_oversized(group: list[int], similarity: np.ndarray, max_size: int, th
 
 
 def stored_support(entity: RecordedEntity) -> int:
-    """A stored guideline's support count: ``metadata.support``, at least 1."""
-    return max(1, int((entity.metadata or {}).get("support", 1) or 1))
+    """A stored guideline's support count: ``metadata.support``, at least 1.
+
+    A missing or unusable value (``"high"``, a list) counts as 1, so one bad record can't
+    keep its cluster from merging or fail retrieval.
+    """
+    try:
+        return max(1, int((entity.metadata or {}).get("support", 1) or 1))
+    except (TypeError, ValueError):
+        return 1
 
 
 def stored_tasks(entity: RecordedEntity) -> list[str]:

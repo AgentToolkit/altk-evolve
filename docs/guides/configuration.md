@@ -165,8 +165,9 @@ use a fresh namespace when you change this setting.
 ### Guideline consolidation
 
 `evolve entities consolidate <namespace> --no-dry-run` (or `EvolveClient.consolidate_guidelines`)
-embeds each guideline, joins pairs whose cosine similarity is at least
-`EVOLVE_CLUSTERING_THRESHOLD`, and asks the LLM to merge each cluster. Support is conserved:
+embeds each guideline's clustering key (its task description or its text; see below), joins
+pairs whose cosine similarity is at least `EVOLVE_CLUSTERING_THRESHOLD`, and asks the LLM to
+merge each cluster. Support is conserved:
 a merged guideline's `support` is the sum of its sources'. Clusters never mix memory scopes.
 Without `--no-dry-run` the command only lists the clusters it would merge.
 
