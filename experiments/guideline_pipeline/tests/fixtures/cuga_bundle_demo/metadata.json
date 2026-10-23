@@ -1,0 +1,18 @@
+{
+  "bundle_version": "2",
+  "created_at": "2026-10-20T00:00:00+00:00",
+  "benchmark": "appworld",
+  "run": {
+    "agent": "cuga_sdk",
+    "model_profile": null,
+    "task_ids": null,
+    "eval_key": "test_normal_all_demo"
+  },
+  "runtime_config": {
+    "env_vars": {
+      "MODEL_NAME": "Azure/gpt-4.1",
+      "DYNACONF_CONTEXT_SUMMARIZATION__ENABLED": "false"
+    }
+  },
+  "experiment_name": "synthetic_bundle"
+}
