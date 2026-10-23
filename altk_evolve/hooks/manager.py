@@ -20,6 +20,11 @@ Design of the CPEX integration (mirrors Mellea's plugin wrapper layer):
 - CPEX's ``invoke_hook`` is async-only; our call sites are sync. The bridge
   uses ``asyncio.run`` when no loop is running and a dedicated thread when one
   is (the Mellea pattern).
+- A native plugin's sync method runs off the event loop on a short-lived
+  daemon thread (:class:`_SyncHookRunner`), so cpex's ``plugin_timeout`` can
+  fire. A timed-out call's late result is discarded and its backend capability
+  revoked; threads cannot be killed, so the call keeps running until it
+  returns, and new calls to that plugin fail fast meanwhile.
 - Fire-and-forget plugin tasks are awaited before the bridge returns:
   at a sync seam the event loop closes immediately after ``invoke_hook``, so
   detached tasks would be cancelled and their side effects silently lost.
@@ -54,7 +59,11 @@ import contextvars
 import copy
 import importlib
 import logging
+import os
+import threading
+import time
 import uuid
+import weakref
 from typing import TYPE_CHECKING, Any
 
 from altk_evolve.config.hooks import discover_hooks_config_path
@@ -397,6 +406,7 @@ def _native_adapter_cls() -> Any:
     from cpex.framework import Plugin
     from cpex.framework.models import PluginResult, PluginViolation
 
+    from altk_evolve.hooks.backend import HookBackend
     from altk_evolve.hooks.plugin import HookContext, HookPolicyViolation
     from altk_evolve.hooks.types import HOOK_PAYLOADS, active_payload_cls
 
@@ -423,6 +433,7 @@ def _native_adapter_cls() -> Any:
         def __init__(self, native: Any, cpex_config: Any) -> None:
             super().__init__(cpex_config)
             self._native = native
+            self._runner = _SyncHookRunner(cpex_config.name)
 
         def startup_validate(self) -> None:
             # Forwarded so _validate_plugin_dependencies trips a native plugin's
@@ -432,6 +443,7 @@ def _native_adapter_cls() -> Any:
                 validate()
 
         async def _run(self, hook_type: HookType, cpex_payload: Any, context: Any) -> Any:
+            started = time.monotonic()  # cpex's timeout clock started just before this call
             method = getattr(self._native, hook_type.value, None)
             if method is None:
                 return PluginResult(continue_processing=True)
@@ -446,13 +458,20 @@ def _native_adapter_cls() -> Any:
             plain = plain_cls.model_validate({f: _to_plain(getattr(cpex_payload, f)) for f in plain_cls.model_fields})
             gc = getattr(context, "global_context", None)
             state = dict(getattr(gc, "state", None) or {})
+            backend = state.get("backend")
+            view = None
+            if isinstance(backend, HookBackend):
+                # A per-call view, revoked once this call is over (with every view
+                # created by hooks it dispatches through it), so a timed-out call
+                # that is still running cannot patch the store late.
+                backend = view = state["backend"] = backend._for_call()
             hook_ctx = HookContext(
-                backend=state.get("backend"),
+                backend=backend,
                 state=state,
                 request_id=getattr(gc, "request_id", "") if gc else "",
             )
             try:
-                out = method(plain, hook_ctx)
+                out = await self._runner.run(started, method, plain, hook_ctx)
             except HookPolicyViolation as violation:
                 return PluginResult(
                     continue_processing=False,
@@ -463,6 +482,9 @@ def _native_adapter_cls() -> Any:
                         details=violation.details,
                     ),
                 )
+            finally:
+                if view is not None:
+                    view._revoke()
             if out is None:
                 return PluginResult(continue_processing=True)
             engine_cls: Any = active_payload_cls(hook_type)
@@ -509,6 +531,123 @@ def _to_plain(value: Any) -> Any:
     if isinstance(value, list):
         return [_to_plain(v) for v in value]
     return value
+
+
+# ── native sync runner ───────────────────────────────────────────────
+
+
+class _SyncHookRunner:
+    """Runs one native plugin's sync methods off the event loop.
+
+    Native methods are sync and often CPU-bound (regex, spaCy, secrets scans).
+    Called inline they block the loop, so cpex's ``asyncio.wait_for`` timeout
+    cannot fire until they return. Here each call runs on its own daemon thread
+    and is awaited, so the timeout cancels the await on time.
+
+    - **Not owned by any event loop.** The sync bridge closes its loop after
+      every dispatch; ``asyncio.to_thread`` would join the loop's default
+      executor at that point and wait for a timed-out call. A daemon thread
+      holds up neither loop close nor interpreter exit, and it exits (dropping
+      the plugin, payload and context) as soon as its call returns.
+    - **Concurrency is unchanged.** Calls from different caller threads run
+      concurrently, as they did inline, so a native plugin must be thread-safe
+      (or lock internally, as READI does). There is no queue: a call never
+      waits behind another, so queue time never counts against the timeout.
+    - **Late results are discarded.** A call whose caller timed out is
+      skipped if it has not started; if it is running, its result is dropped
+      when it returns.
+    - **Admission after timeout.** Threads cannot be stopped, so a timed-out
+      call keeps its thread until it returns. While at least
+      ``_MAX_ABANDONED`` timed-out calls remain running, new calls raise at
+      once (fail-closed under ``on_error="fail"``). Calls already admitted can
+      each time out, so ``_MAX_ABANDONED`` is not a hard cap on abandoned
+      threads. A call cancelled early (a halting sibling in ``concurrent``
+      mode) is not counted.
+    - **contextvars** (tracing, re-entrancy guards) are copied into each call.
+    - **Fork-safe.** A forked child has none of the parent's threads, so
+      :func:`_reset_runners_after_fork` clears the inherited abandoned calls
+      and replaces a lock another parent thread may have held at fork time.
+    """
+
+    _MAX_ABANDONED = 1
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._lock = threading.Lock()
+        self._abandoned: set[concurrent.futures.Future] = set()
+        _RUNNERS.add(self)
+
+    async def run(self, started: float, fn: Any, *args: Any) -> Any:
+        with self._lock:
+            if len(self._abandoned) >= self._MAX_ABANDONED:
+                raise RuntimeError(f"Plugin {self._name} is still running a call that timed out; refusing new calls until it returns")
+        future: concurrent.futures.Future = concurrent.futures.Future()
+        thread = threading.Thread(
+            target=_run_call,
+            args=(future, contextvars.copy_context(), fn, args),
+            name=f"evolve-hook-{self._name}",
+            daemon=True,
+        )
+        thread.start()
+        try:
+            return await asyncio.wrap_future(future)
+        except asyncio.CancelledError:
+            self._abandon(future, timed_out=_used_up_timeout(started))
+            raise
+
+    def _abandon(self, future: concurrent.futures.Future, *, timed_out: bool) -> None:
+        if future.cancel():  # not started yet: it will never run
+            return
+        if not timed_out:
+            # Cancelled early, e.g. by a halting sibling in cpex ``concurrent``
+            # mode: the plugin is not stuck, so it does not refuse new calls.
+            # Its result is still discarded and its backend view revoked.
+            return
+        with self._lock:
+            self._abandoned.add(future)
+        future.add_done_callback(self._release)
+
+    def _release(self, future: concurrent.futures.Future) -> None:
+        with self._lock:
+            self._abandoned.discard(future)
+
+
+def _used_up_timeout(started: float) -> bool:
+    """Whether a call cancelled now had used up the engine's ``plugin_timeout``.
+
+    cpex cancels a call both on timeout and when a sibling halts the pipeline
+    in ``concurrent`` mode, and the two look the same from inside the call.
+    The clock starts slightly after cpex's, so allow 5% slack.
+    """
+    timeout = getattr(getattr(_plugin_manager, "executor", None), "timeout", None)
+    if not isinstance(timeout, (int, float)):
+        return True
+    return time.monotonic() - started >= timeout * 0.95
+
+
+_RUNNERS: weakref.WeakSet[_SyncHookRunner] = weakref.WeakSet()
+
+
+def _reset_runners_after_fork() -> None:
+    for runner in list(_RUNNERS):
+        runner._lock = threading.Lock()
+        runner._abandoned = set()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_runners_after_fork)
+
+
+def _run_call(future: concurrent.futures.Future, ctx: contextvars.Context, fn: Any, args: tuple[Any, ...]) -> None:
+    """Thread body: run ``fn`` in ``ctx`` unless its caller already gave up."""
+    if not future.set_running_or_notify_cancel():
+        return
+    try:
+        result = ctx.run(fn, *args)
+    except BaseException as exc:  # noqa: BLE001 - handed to the awaiting caller
+        future.set_exception(exc)
+    else:
+        future.set_result(result)
 
 
 # ── sync bridge ──────────────────────────────────────────────────────
@@ -650,6 +789,11 @@ def dispatch_memory_pre_metadata_patch(backend: BaseEntityBackend, namespace_id:
         modified = _invoke(HookType.MEMORY_PRE_METADATA_PATCH, payload, backend=backend)
     finally:
         _in_write.reset(token)
+    # A patch proposed through a plugin's context.backend must not go on to the
+    # store if that plugin call timed out while these hooks ran.
+    from altk_evolve.hooks.backend import _check_calling_view
+
+    _check_calling_view()
     if modified is None:
         return metadata_patch
     return dict(modified.metadata_patch)

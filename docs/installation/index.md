@@ -33,7 +33,7 @@ Next: [Hermes Memory Provider](../integrations/hermes.md)
 curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/main/platform-integrations/install.sh -o install.sh && chmod +x install.sh
 
 # Latest Stable Version
-curl -fsSL https://raw.githubusercontent.com/AgentToolkit/altk-evolve/v1.0.5/platform-integrations/install.sh -o install.sh && chmod +x install.sh
+curl -fsSL https://github.com/AgentToolkit/altk-evolve/releases/latest/download/install.sh -o install.sh && chmod +x install.sh
 ```
 ### Install Script Usage
 ```bash

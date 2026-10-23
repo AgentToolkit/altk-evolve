@@ -79,7 +79,7 @@ class TestBobAuditAllowlist:
             + "\n"
         )
         install_runner.run("install", platform="bob")
-        install_runner.run("uninstall", platform="bob")
+        install_runner.run("uninstall", platform="bob", global_cleanup=True)
 
         data = json.loads(bob_settings_file.read_text())
         assert data["ide"] == {"enabled": True}
@@ -92,7 +92,7 @@ class TestBobAuditAllowlist:
         install_runner.run("install", platform="bob")
         file_assertions.assert_file_exists(bob_settings_file)
 
-        install_runner.run("uninstall", platform="bob")
+        install_runner.run("uninstall", platform="bob", global_cleanup=True)
 
         # File persists; our now-empty keys are cleaned up to {}.
         file_assertions.assert_file_exists(bob_settings_file)

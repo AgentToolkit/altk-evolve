@@ -8,9 +8,12 @@ import zipfile
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
+from packaging.version import Version
+from packaging.specifiers import SpecifierSet
 
 
 def check(directory: Path, version: str) -> None:
+    version = str(Version(version))
     for name in ("altk_evolve_core", "altk_evolve"):
         wheel = directory / f"{name}-{version}-py3-none-any.whl"
         sdist = directory / f"{name}-{version}.tar.gz"
@@ -28,7 +31,7 @@ def check(directory: Path, version: str) -> None:
 
 def _check_metadata(data: bytes, name: str, version: str) -> None:
     metadata = BytesParser().parsebytes(data)
-    if metadata["Name"].replace("-", "_") != name or metadata["Version"] != version:
+    if metadata["Name"].replace("-", "_") != name or Version(metadata["Version"]) != Version(version):
         raise ValueError(f"Release metadata mismatch: expected {name}=={version}")
 
     if name == "altk_evolve":
@@ -37,7 +40,7 @@ def _check_metadata(data: bytes, name: str, version: str) -> None:
         if (
             len(defaults) != 1
             or canonicalize_name(defaults[0].name) != "altk-evolve-core"
-            or str(defaults[0].specifier) != f"=={version}"
+            or defaults[0].specifier != SpecifierSet(f"=={version}")
             or defaults[0].url is not None
             or defaults[0].extras != {"server", "cli", "fastembed", "tracing"}
         ):

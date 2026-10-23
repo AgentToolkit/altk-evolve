@@ -2,7 +2,8 @@
 
 Turns benchmark trajectories into guidelines with this checkout of Evolve. A
 dataset **adapter** reads one dataset format and yields records; a **stage**
-consumes them. `mine` writes guidelines into a namespace; `consolidate`,
+consumes them. `mine` writes guidelines into a namespace (`import-lessons`
+writes already-distilled lessons, without an LLM); `consolidate`,
 `export` and `lineage` read that namespace back and turn it into the static
 files a benchmark harness loads.
 
@@ -44,6 +45,94 @@ uv run python -m experiments.guideline_pipeline mine --adapter <name> --input <p
   as is passing options to an adapter that takes none.
 - On macOS, `make_client()` first calls `runtime.stabilize_runtime()` to keep
   the embedding model off MPS. This is a temporary workaround.
+
+## Importing lessons
+
+`import-lessons` writes lessons that were already distilled elsewhere into a
+namespace, one guideline per lesson, **without any LLM call**. It exists so the
+consolidation-parity check can start from a known raw set: import a model's
+lessons, run `consolidate`, and check the total support is unchanged (for the
+DeepSeek v3.2 AppWorld lessons, 290 in and 290 out).
+
+```bash
+# Validate the files and print the counts, without touching storage.
+uv run python -m experiments.guideline_pipeline import-lessons \
+    --input <dir>/guidelines_per_task_deepseek_v32 --namespace <ns> --dry-run
+
+# Import, then check the total support survives consolidation.
+uv run python -m experiments.guideline_pipeline import-lessons \
+    --input <dir>/guidelines_per_task_deepseek_v32 --namespace <ns> [--source LABEL]
+uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/raw.json   # support sum=290
+uv run python -m experiments.guideline_pipeline consolidate --namespace <ns>
+uv run python -m experiments.guideline_pipeline export playbook --namespace <ns> --out <dir>/merged.json  # support sum must still be 290
+```
+
+`--input` is a directory of per-task `*.json` files (subdirectories are not read,
+and the suffix is matched case-sensitively, so `*.JSON` files are not read either):
+
+```json
+{"task_id": "0d8a4ee_1", "partition": "dev", "success": false, "difficulty": 2,
+ "instruction_preview": "My name is: ... Task: Send the following phone message ...",
+ "lessons": [{"theme": "...", "polarity": "failure_fix", "evidence": "<free text>", "lesson": "Before acting on ..."}]}
+```
+
+It reads them the way `consolidate_lossless.py::_load_lessons` does: files in
+sorted name order, a lesson whose text is blank after stripping is skipped,
+each other lesson has support 1, and **evidence comes from the file's
+`success`** (`success` or `failure`), not from the lesson's own `polarity` or
+`evidence` text. Each guideline then carries the metadata a mined one has, so
+`consolidate`, `export` and `lineage` treat both alike:
+
+| Lesson file | Guideline metadata |
+|---|---|
+| `lesson` (stripped) | content |
+| `task_id` | `source_task_id`, and `sources[].task_id` (`provenance_incomplete` false) |
+| `instruction_preview` | `task_description`, read as the AppWorld adapter reads a task (see below) |
+| `success` | `evidence` |
+| `partition`, `difficulty` | `partition`, `difficulty` |
+| lesson `theme`, `polarity`, `evidence` | `lesson_theme`, `lesson_polarity`, `lesson_evidence` |
+| file name, index in `lessons` | `source_file`, `lesson_index` (counting blank lessons) |
+| `--source` (default: the `--input` directory's name) | `lesson_source` |
+| — | `support` 1, `category` `strategy` (the library's default), `generation_method` `imported`, empty `rationale`, `trigger`, `implementation_steps` |
+
+The previews are the first 200 characters of the instruction, so a long task
+description is truncated, as it is in the source files. The AppWorld adapter's
+reading starts at a `My name is:` line within 600 characters before the last
+`Task:`, else 200 characters before it. A 200-character preview is therefore
+always kept whole, preamble included (every DeepSeek v3.2 preview starts with
+`My name is:`); a preview without `Task:` is used whole too.
+
+**Validation.** Every file is checked before anything is written: it must hold
+an object with a non-empty string `task_id`, `partition` and
+`instruction_preview`, a boolean `success`, an integer or absent `difficulty`,
+and a `lessons` list of objects whose `lesson` is a string (blank allowed) and
+whose `theme`, `polarity` and `evidence` are strings when present. A task id in
+two files is also an error, and so is a file that can't be read (a broken
+symlink, say). Every problem is listed and the run exits 2 without writing; an
+`--input` directory that can't be listed exits 1. A file whose write fails (a memory hook rejecting it, say) is reported
+on stderr, the rest are imported, and the run exits 1; re-running retries it.
+
+**Re-running is idempotent.** Writes go through the backend's prepare/commit
+seam with conflict resolution off, so memory hooks run and nothing is compared
+with what is stored. Each file's guidelines are committed atomically together
+with a namespace checkpoint keyed on the file's `task_id`, the same mechanism
+`mine` uses, so a re-run counts the file as `already imported` and writes
+nothing for it, even after `consolidate` has merged its guidelines into others.
+Renaming a file or its directory doesn't change its key, so a renamed copy is
+not imported twice. A file with a new `task_id` is imported on its own. A file
+whose content changed since its task was imported is an error (exit 2) rather
+than a second copy of its lessons; any change to the JSON counts, even a field
+that isn't imported, though whitespace doesn't. Import it into a new namespace,
+or pass `--source`: an explicit `--source` also scopes the checkpoint, so the
+same tasks under another `--source` are a separate import. Like
+`mine`, this needs a backend with atomic writes (filesystem or PostgreSQL).
+
+The summary line reports files read, lessons imported, lessons skipped as
+empty, lessons already imported, lessons dropped by memory hooks (a
+`MEMORY_PRE_WRITE` plugin that removes entities; the file is still marked
+imported), files failed, and the support total written by this run. A dry run
+reads no checkpoints, so it reports the lessons and support it read, not what a
+real run would write into a namespace that already holds some of them.
 
 ## Consolidating, exporting and lineage
 
@@ -156,9 +245,9 @@ file other than `results`, `metadata` and `appworld_sdk_*` is one. A task whose
   `results.json` entry, or changing an option that changes the content, reprocesses
   that task; re-running unchanged input skips it. Renaming a run directory changes
   its identity.
-- **Long runs**: the extractor keeps only the first 50 steps, so the adapter keeps
-  the first 6 and the last 43 steps with one `[N steps elided ...]` marker between
-  them. This is temporary, until the extractor's limits are configurable.
+- **Long runs**: every step is passed on. The extractor's window decides what it
+  renders: by default the first 50 steps, so a longer run loses its ending unless
+  `trajectory_tail_steps` is set (the sample profile below keeps the last 43).
 
 Options (`--adapter-option KEY=VALUE`):
 
@@ -180,9 +269,12 @@ not counted as steps and are rendered within a character budget that keeps the
 most recent ones.
 
 A sample profile, [profiles/cuga.json](profiles/cuga.json), runs the built-in
-`evolve.guidelines` processor in `standard` mode with segmentation off. Its model
-and provider are omitted, so they are captured from the `EVOLVE_*` / LLM settings
-when the profile is published.
+`evolve.guidelines` processor in `standard` mode with segmentation off. Its
+trajectory window is 50 steps with the last 43 kept for the ending
+(`trajectory_max_steps`, `trajectory_tail_steps`; see
+[the trajectory limits](../../docs/guides/configuration.md#trajectory-limits)). Its
+model and provider are omitted, so they are captured from the `EVOLVE_*` / LLM
+settings when the profile is published.
 
 ```bash
 uv run evolve processing-profiles apply cuga-guidelines \
@@ -234,8 +326,7 @@ Each task becomes one record:
 - **messages**: after the instruction, each `### Environment Interaction N` block in
   `environment_io.md` gives its code as an `execute_ipython` function call and its
   output as an `OBSERVATION:` assistant message, rendered and cut to 2000 characters
-  exactly as the CUGA adapter does. Long runs keep the first 6 and last 43 steps,
-  as there.
+  exactly as the CUGA adapter does. Long runs are passed on whole, as there.
 - **outcome**: `success` from the task's entry in `evaluations/<split>.json`. As for
   CUGA, a verdict counts only as a bool, the integer `0`/`1` or the string
   `"true"`/`"false"` in any case. Any other value, or a task missing from the
@@ -274,8 +365,8 @@ To mine a test split anyway, name it: `splits=test_normal`. A task with no
 evaluation has no known split, so it is still read.
 
 [profiles/appworld.json](profiles/appworld.json) is the same sample profile as
-CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, model and
-provider captured when published.
+CUGA's: `evolve.guidelines` in `standard` mode, segmentation off, the same
+50-step window with a 43-step tail, model and provider captured when published.
 
 ```bash
 uv run evolve processing-profiles apply appworld-guidelines \
@@ -327,8 +418,8 @@ becomes one record:
   each later turn's query as a `USER MESSAGE:`). Message content is a string or a list of content blocks, whose
   text parts are joined; any other type is left out rather than rendered as a
   Python repr. Text longer than a step is split into `(part i/n)` steps rather
-  than truncated, and tool-call arguments are kept whole (still valid JSON). Runs longer than the extractor's 50 steps are elided as for
-  CUGA (the helper is shared, in `adapters/elision.py`).
+  than truncated, and tool-call arguments are kept whole (still valid JSON). Long runs are passed on whole, as for
+  CUGA; publish the CUGA sample profile to keep their ending.
 - **outcome**: from the record's `results.json` dialogue, matched by the domain
   file's name and the uuid (the evaluator names each results domain after its
   file and pairs uuids only within a domain, so a uuid repeated in another domain
@@ -387,6 +478,10 @@ Options (`--adapter-option KEY=VALUE`):
 | `heldout_out=<file>` | Write the held-out manifest to this file. Inside the run directory, it is not read as a domain file. |
 
 ```bash
+# Publish the CUGA sample profile under VAKRA's own ID, once.
+uv run evolve processing-profiles apply vakra-guidelines \
+    --file experiments/guideline_pipeline/profiles/cuga.json --expected-revision 0
+
 # Check the split and write the held-out manifest, without touching storage.
 uv run python -m experiments.guideline_pipeline mine --adapter vakra --input path/to/vakra_run \
     --namespace vakra --processing-profile vakra-guidelines \
@@ -397,7 +492,7 @@ uv run python -m experiments.guideline_pipeline mine --adapter vakra --input pat
     --namespace vakra --processing-profile vakra-guidelines
 ```
 
-The CUGA sample profile works here too (publish it under another ID). Evaluating
+The CUGA sample profile is used here as is. Evaluating
 retrieval on the held-out queries is not part of this stage; a later eval stage
 will read the manifest.
 
@@ -427,10 +522,11 @@ Each task becomes one record:
   `task_instructions`), which the agent never saw, so it is left out unless
   `include_scenario=true`.
 - **Long runs:** long turns are split into parts under the extractor's
-  2000-character step cap. The extractor's default window is the first 50 steps
-  (`EVOLVE_TRAJECTORY_*`), so, as the CUGA adapter does, a longer conversation
-  keeps its first 25 and last 24 steps with one `[N steps elided ...]` marker
-  between them. The adapter caps at 50 whatever the extractor's settings.
+  2000-character step cap, and every step is passed on. The extractor's default
+  window is the first 50 steps, so set `trajectory_tail_steps` in the profile to
+  keep a longer conversation's ending. `EVOLVE_TRAJECTORY_TAIL_STEPS` only counts
+  when the profile is published, where it is captured as that profile's default;
+  setting it when mining against an already-published profile changes nothing.
 - **outcome:** `success` when the reward is 1.0; judge lines with
   `action_match=False` or `met=False` (or the JSON / dict forms
   `"action_match": false`, `'met': False`) become `failed_checks`, and the start
@@ -456,16 +552,16 @@ Options (`--adapter-option KEY=VALUE`):
 | `include_policy=true` | Add the agent domain policy as `system` context messages. It is the same in every task, so it is off by default. |
 | `include_scenario=true` | Add the user simulator's scenario as a `system` context message. It holds facts the agent never had, so guidelines mined with it can encode them. |
 | `splits=train` | Only tasks in these splits. Without `split_file`, a task's split is the `split=` its header records: a task without one is skipped with a warning, and a listed split that no task records ends the run with an error. A value that lists no split is an error. |
-| `split_file=<split_tasks.json>` | Take each task's split from tau2's `split_tasks.json` (a JSON object mapping each split to its task IDs) instead of the headers. A task is matched on the number in its file name (`task_12.txt` is task `12`). Needs `splits=`; a listed split that the file lacks is an error. |
+| `split_file=<split_tasks.json>` | Select task IDs using tau2's `split_tasks.json` (a JSON object mapping each split to its task IDs) for explicit `splits=` selection. A task is matched on the number in its file name (`task_12.txt` is task `12`). Without `splits=`, tasks marked `test*` by either the file or header are skipped (case-insensitive). A listed split that the file lacks is an error. |
 
 Context is supporting history: the extractor sees it, but it is not counted as
 new material.
 
 **Splits and leakage.** Mining test tasks and then evaluating on them leaks the
-test set into the namespace, and nothing is filtered by default. tau2's retail
+test set into the namespace, and known `test*` tasks are skipped by default. Tasks with unknown splits are retained; one summary warning per completed run reports skipped test tasks and successfully read unknown tasks. Only `train` and `test*` labels establish train/test membership; labels such as `base` remain unknown. Use `splits=test` to opt in explicitly. tau2's retail
 `train` and `test` splits are lists of task IDs over the `base` set, so a normal
 run over `base` holds both in one directory and its headers can record at most
-`split=base`. Pass tau2's split file to mine only the training tasks:
+`split=base`. These headers alone cannot protect test tasks: the default retains them with an unknown-split warning. Pass tau2's split file to mine only the training tasks:
 
 ```bash
 uv run python -m experiments.guideline_pipeline mine --adapter tau-retail \
@@ -536,8 +632,14 @@ validates the `KEY=VALUE` strings and returns a configured copy (see
 `option_boolean` and `option_names` in `adapters/base.py` parse boolean and
 comma-separated options strictly: a typo or an empty filter is an error.
 
-If long runs can exceed the extractor's 50-step cap, keep their ending with
-`adapters/elision.py`'s `elide_middle`.
+Pass every step on. Bounding long runs is the extractor's job: its window
+(`trajectory_max_steps`, `trajectory_tail_steps`) is set in the processing
+profile, and a profile for a dataset with long runs should set a tail so their
+ending is kept. One path does not apply the window yet: the accurate consistency
+method (`guidelines_mode` `consistency` or `all` with `consistency_method:
+accurate`) renders only the first 50 steps, whatever the profile sets, so it
+still loses a long run's ending. With `EVOLVE_DEBUG_DIR` set, its debug dump also
+grows with the square of the run's length.
 
 Each adapter needs unit tests under `tests/` that use a tiny synthetic fixture,
 never a copy of the real dataset. See `tests/fakes.py` and `tests/fixtures/`.

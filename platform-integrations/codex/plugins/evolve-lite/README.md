@@ -288,3 +288,14 @@ evolve-lite/
 │       └── unsubscribe/             # each: SKILL.md [+ scripts/]
 └── README.md
 ```
+
+### Updating or withdrawing shared memories
+
+Use `evolve-lite:publish --update` to update an owned publication and
+`evolve-lite:unpublish` to restore it to private storage. Supply `--entity` and,
+when needed, `--type` and `--repo`. Update and unpublish require a matching
+owner; when `identity.user` is configured, `--user` must agree with it.
+Unpublish refuses to overwrite an existing private copy. If removing the shared
+copy fails, it rolls back its unchanged private restoration so the operation
+can be retried. Commit and push the deletion in the shared clone to withdraw
+the remote copy; existing subscribers may retain copies until they sync.

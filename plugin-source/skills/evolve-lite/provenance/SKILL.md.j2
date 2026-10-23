@@ -83,7 +83,9 @@ verdict:
   step is not in the transcript). Abstain with this rather than forcing one of
   the other three.
 
-Keep `evidence` to one short sentence citing a concrete action, tool call, or
+The writer accepts omitted, null, or empty `evidence` for compatibility; null is
+stored as an empty string. For new assessments, provide evidence so the verdict
+can be reviewed. Keep `evidence` to one short sentence citing a concrete action, tool call, or
 absence in the trajectory. This judgment is yours — there is no heuristic
 fallback.
 

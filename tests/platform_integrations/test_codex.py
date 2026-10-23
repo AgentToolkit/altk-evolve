@@ -40,7 +40,6 @@ def _marker_lines(text):
 
 
 @pytest.mark.platform_integrations
-@pytest.mark.e2e
 class TestCodexInstall:
     """Test the Codex install flow."""
 
@@ -135,7 +134,7 @@ class TestCodexInstall:
         file_assertions.assert_file_exists(codex_audit_script)
         assert len(_marker_lines(codex_agents_file.read_text())) == 1
 
-        install_runner.run("uninstall", platform="codex")
+        install_runner.run("uninstall", platform="codex", global_cleanup=True)
 
         assert _marker_lines(codex_agents_file.read_text()) == []
         file_assertions.assert_file_not_exists(codex_evolve_md)
@@ -157,8 +156,7 @@ class TestCodexInstall:
 
 @pytest.mark.platform_integrations
 class TestCodexStatus:
-    """`status` must report a healthy install as healthy. Kept out of the
-    e2e-marked class above so it runs in the default tier: before #335 the
+    """`status` must report a healthy install as healthy. Before #335 the
     status rows probed `learn` and `recall`, which codex builds out, and
     printed ✗ on every good install while the label-only test still passed."""
 
