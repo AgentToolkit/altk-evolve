@@ -1077,7 +1077,8 @@ def test_real_secrets_conflict_custom_json_keeps_duplicate_instruction_values(tm
 @pytest.mark.unit
 @pytest.mark.parametrize("serialize", ["plain", "json", "repr"])
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
-def test_pgp_quoted_armor_headers_are_redacted(tmp_path, serialize, newline):
+@pytest.mark.parametrize("header_space, checksum_space", [(" ", ""), ("", ""), (" ", " ")])
+def test_pgp_quoted_armor_headers_are_redacted(tmp_path, serialize, newline, header_space, checksum_space):
     import json
 
     pytest.importorskip("cpex_secrets_detection")
@@ -1086,10 +1087,10 @@ def test_pgp_quoted_armor_headers_are_redacted(tmp_path, serialize, newline):
         [
             "-----BEGIN PGP PRIVATE KEY BLOCK-----",  # pragma: allowlist secret
             "Version: Test",
-            'Comment: Alice\'s "private" key',
+            f'Comment:{header_space}Alice\'s "private" key',
             "",
             "ZmFrZVByaXZhdGVLZXlNYXRlcmlhbA==",
-            "=abcd",
+            "=abcd" + checksum_space,
             "-----END PGP PRIVATE KEY BLOCK-----",
         ]
     )
@@ -1132,3 +1133,25 @@ def test_secrets_preserve_structural_metadata_and_scan_free_text(tmp_path):
         "agent_id": subject,
         "note": "[REDACTED]",
     }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("serialize", ["json", "repr"])
+@pytest.mark.parametrize("instruction", ["Don't skip the audit", "keep me"])
+def test_pgp_armor_cannot_cross_serialized_fields(tmp_path, serialize, instruction):
+    import ast
+    import json
+
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    values = {
+        "content": "Rotate the key\n-----BEGIN PGP PRIVATE KEY BLOCK-----\nComment: see runbook",  # pragma: allowlist secret
+        "task": instruction,
+        "footer": "\n\nAAAA\n-----END PGP PRIVATE KEY BLOCK-----",
+    }
+    content = json.dumps(values) if serialize == "json" else repr(values)
+    result = dispatch_llm_pre_call([{"role": "user", "content": content}], purpose="test")[0]["content"]
+    restored = json.loads(result) if serialize == "json" else ast.literal_eval(result)
+    assert restored["task"] == instruction
+    assert restored["footer"] == values["footer"]
+    assert restored["content"] == "Rotate the key\n[REDACTED]\nComment: see runbook"

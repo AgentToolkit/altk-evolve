@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import re
 
+from bisect import bisect_right
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -148,12 +149,13 @@ _PRIVATE_KEY_MARKERS = re.compile(
 # or Python repr: their line separators are escaped, and the final key-body
 # line ends at a closing quote. Treat those boundaries like physical newlines.
 _KEY_BODY_LINES = re.compile(r"(?:(?:\r?\n|\\(?:r\\)?n)[A-Za-z0-9+/=]+(?=\r?\n|\\(?:r\\)?n|[\"']|\Z))*")
-# PGP permits quoted free-text armor headers before a blank line and the
-# base64 payload. Validate the whole interior before permitting quotes, so
-# separate serialized values cannot accidentally become a single key block.
+# PGP permits quotes in free-text armor headers. For escaped line separators,
+# also require both markers to be in one JSON/Python string literal: validating
+# the normalized armor alone cannot distinguish headers from adjacent fields.
+_SERIALIZED_STRINGS = re.compile(r"\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'", re.DOTALL)
 _PGP_ARMOR_BODY = re.compile(
-    r"\n(?:[A-Za-z][A-Za-z0-9-]*: [^\n]*\n)*\n"
-    r"(?:[A-Za-z0-9+/=]+\n)+(?:=[A-Za-z0-9+/]{4}\n)?"
+    r"\n(?:[A-Za-z][A-Za-z0-9-]*:[ \t]*[^\n]*\n)*\n"
+    r"(?:[A-Za-z0-9+/=]+[ \t]*\n)+(?:=[A-Za-z0-9+/]{4}[ \t]*\n)?"
 )
 _SUPPLEMENTARY_PATTERNS = {
     "aws_secret_access_key": re.compile(
@@ -176,6 +178,10 @@ def _mask_private_keys(text: str, replacement: str) -> tuple[int, str]:
     consume prose or another key. Each intervening region is visited once.
     """
     markers = list(_PRIVATE_KEY_MARKERS.finditer(text))
+    if not markers:
+        return 0, text
+    string_spans = [(match.start(), match.end()) for match in _SERIALIZED_STRINGS.finditer(text)]
+    string_starts = [start for start, _ in string_spans]
     pieces: list[str] = []
     previous = count = 0
     for index, marker in enumerate(markers):
@@ -187,6 +193,12 @@ def _mask_private_keys(text: str, replacement: str) -> tuple[int, str]:
         interior = text[marker.end() : following.start()] if following else ""
         normalized = interior.replace(r"\r\n", "\n").replace(r"\n", "\n").replace("\r\n", "\n")
         pgp_armor = marker.group("kind") == "PGP PRIVATE KEY BLOCK" and _PGP_ARMOR_BODY.fullmatch(normalized) is not None
+        if pgp_armor and interior.startswith((r"\n", r"\r\n")):
+            # Check boundaries in the original text, before escape normalization.
+            # A header can contain escaped quotes, but no closing
+            # quote separating another field may be consumed by this block.
+            span_index = bisect_right(string_starts, marker.start()) - 1
+            pgp_armor = following is not None and span_index >= 0 and following.end() < string_spans[span_index][1]
         paired = (
             following is not None
             and following.group("edge") == "END"
