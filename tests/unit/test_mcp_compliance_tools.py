@@ -195,6 +195,15 @@ def test_patch_entity_metadata_routes_through_client_hook_seam(client):
     client.patch_entity_metadata.assert_called_once_with("tenant-a", "one", {"legal_hold": True})
 
 
+def test_patch_entity_metadata_rejects_merged_from(client):
+    client.scan_entities.return_value = [_entity("one", metadata={"owner_id": "user-1"})]
+
+    result = json.loads(patch_entity_metadata("one", json.dumps({"merged_from": []}), user_id="user-1", namespace_id="tenant-a"))
+
+    assert "merged_from" in result["error"]
+    client.patch_entity_metadata.assert_not_called()
+
+
 def test_patch_entity_metadata_enforces_agent_scope(client):
     client.scan_entities.return_value = [
         _entity(

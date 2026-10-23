@@ -561,7 +561,7 @@ def _fake_combine(merge_tasks: set[str]):
     return combine
 
 
-def _consolidate(store, merge_tasks, undeletable=(), **kwargs):
+def _consolidate(store, merge_tasks, undeletable=(), attempts=None, **kwargs):
     from altk_evolve.frontend.client.evolve_client import EvolveClient
 
     client = EvolveClient.__new__(EvolveClient)
@@ -571,6 +571,8 @@ def _consolidate(store, merge_tasks, undeletable=(), **kwargs):
     def delete(namespace_id, entity_id):
         # Stands in for a vetoed (legal hold) or failed delete of the named guidelines.
         stored = {str(e.id): str(e.content) for e in store.scan_entities(namespace_id, filters={"type": "guideline"})}
+        if attempts is not None:
+            attempts.append(stored[str(entity_id)])
         if stored[str(entity_id)] in undeletable:
             raise RuntimeError("delete blocked")
         store.delete_entity_by_id(namespace_id, entity_id)
@@ -643,3 +645,170 @@ class TestConsolidationRounds:
         assert merged.metadata["task_description"] == ""
         assert merged.metadata["source_tasks"] == ["pay a friend", "make a playlist"]
         assert result.rounds == 3
+
+
+def _stored(store) -> dict[str, RecordedEntity]:
+    return {str(e.content): e for e in store.scan_entities("n", filters={"type": "guideline"})}
+
+
+@pytest.mark.unit
+class TestAbsorbedOriginalsAcrossRuns:
+    """An original that survives its merge (vetoed or failed delete) is not merged again by a later run (#427)."""
+
+    def test_separate_runs_do_not_re_merge_an_undeleted_original(self, store):
+        _store_guidelines(store, A="x", B="x")
+
+        results = [_consolidate(store, {"x"}, undeletable={"A"}) for _ in range(3)]
+
+        # Each run used to cluster A with A+B again, so support went 2 -> 3 -> 4.
+        assert [stored for _, stored, _ in results] == [{"A": None, "A+B": 2}] * 3
+        assert [calls for _, _, calls in results] == [1, 0, 0]
+        assert results[0][0] == ConsolidationResult(
+            clusters_found=1, guidelines_before=2, guidelines_after=1, support_before=2, support_after=2, rounds=1
+        )
+        assert results[2][0] == ConsolidationResult(
+            clusters_found=0, guidelines_before=0, guidelines_after=0, support_before=0, support_after=0, rounds=1
+        )
+
+    def test_guideline_text_key(self, store):
+        _store_guidelines(store, A1="x", A2="y")
+
+        for _ in range(3):
+            _, stored, _ = _consolidate(store, set(), undeletable={"A1"}, key="guideline_text")
+
+        assert stored == {"A1": None, "A1+A2": 2}
+
+    def test_a_later_merge_of_the_output_carries_the_absorbed_ids_forward(self, store):
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+        _store_guidelines(store, C="x")
+
+        _, stored, _ = _consolidate(store, {"x"}, undeletable={"A"})
+        assert stored == {"A": None, "A+B+C": 3}
+        _, stored, calls = _consolidate(store, {"x"}, undeletable={"A"})
+
+        assert (stored, calls) == ({"A": None, "A+B+C": 3}, 0)
+        held = _stored(store)["A"]
+        assert held.id in {entry["id"] for entry in _stored(store)["A+B+C"].metadata["merged_from"]}
+
+    def test_a_lifted_hold_lets_a_later_run_finish_the_delete(self, store):
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+
+        result, stored, calls = _consolidate(store, {"x"})
+
+        # A's support is already in A+B, and the run that merged it already reported it
+        # as removed, so finishing the delete changes neither count.
+        assert (stored, calls) == ({"A+B": 2}, 0)
+        assert (result.clusters_found, result.guidelines_before, result.guidelines_after) == (0, 0, 0)
+
+    def test_an_original_edited_after_the_merge_is_neither_deleted_nor_merged_again(self, store):
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+        held = _stored(store)["A"]
+        store._patch_entity("n", held.id, "guideline", "A edited", int(held.created_at.timestamp()), held.metadata)
+
+        _, stored, calls = _consolidate(store, {"x"})
+
+        # The edit is not what A+B absorbed, so deleting A would lose it; but A's support is
+        # still counted in A+B, so merging it again would count it twice.
+        assert (stored, calls) == ({"A edited": None, "A+B": 2}, 0)
+
+    def test_deleting_the_merge_output_makes_the_original_eligible_again(self, store):
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+        store.delete_entity_by_id("n", _stored(store)["A+B"].id)
+        _store_guidelines(store, C="x")
+
+        _, stored, _ = _consolidate(store, {"x"}, undeletable={"A"})
+
+        assert stored == {"A": None, "A+C": 2}
+
+    @pytest.mark.parametrize("published", ["A+B", "A"])
+    def test_a_record_still_applies_after_a_scope_change(self, store, published):
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+        # What publish_entity does: the guideline moves to the public scope.
+        public = {"visibility": "public", "owner_id": "u"}
+        store.update_entity_metadata("n", _stored(store)[published].id, public)
+        # C shares A's scope, so A and C could merge, and A+B is in the other scope.
+        c_scope = public if published == "A" else {}
+        store.update_entities(
+            "n", [Entity(type="guideline", content="C", metadata={"task_description": "x", "user_id": "u", **c_scope})], False
+        )
+
+        _, stored, _ = _consolidate(store, {"x"}, undeletable={"A"})
+
+        # A's support is in A+B; merging it with C would count it in A+C too.
+        assert stored == {"A": None, "A+B": 2, "C": None}
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            {"id": "ID"},
+            {"id": "ID", "content_sha256": "[REDACTED]"},
+            {"id": "ID", "content_sha256": "0" * 64, "note": "extra"},
+            "ID",
+        ],
+    )
+    def test_a_malformed_record_is_ignored(self, store, entry):
+        _store_guidelines(store, A="x", B="x")
+        target = _stored(store)["A"]
+        entry = entry.replace("ID", target.id) if isinstance(entry, str) else {**entry, "id": target.id}
+        store.update_entities(
+            "n", [Entity(type="guideline", content="other", metadata={"task_description": "z", "merged_from": [entry]})], False
+        )
+
+        _, stored, _ = _consolidate(store, {"x"})
+
+        assert stored == {"A+B": 2, "other": None}
+
+    def test_each_run_retries_a_held_delete_once(self, store):
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+        _store_guidelines(store, C="x")
+
+        attempts: list[str] = []
+        result, stored, _ = _consolidate(store, {"x"}, undeletable={"A"}, attempts=attempts, max_rounds=3)
+
+        # The second round finds A absorbed again, but does not retry its delete.
+        assert (stored, result.rounds) == ({"A": None, "A+B+C": 3}, 2)
+        assert attempts.count("A") == 1
+
+    def test_the_dry_run_listing_leaves_absorbed_originals_out(self, store):
+        from altk_evolve.frontend.client.evolve_client import EvolveClient
+
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+        _store_guidelines(store, C="x")
+        client = EvolveClient.__new__(EvolveClient)
+        client.backend = store
+        client.config = SimpleNamespace(clustering_threshold=0.8)
+
+        with patch.object(clustering_module, "cluster_entities", side_effect=_fake_cluster):
+            clusters = client.cluster_guidelines("n")
+
+        assert [sorted(str(e.content) for e in cluster) for cluster in clusters] == [["A+B", "C"]]
+
+    def test_a_successful_merge_records_its_members(self, store):
+        _store_guidelines(store, A="x", B="x")
+        ids = {content: e.id for content, e in _stored(store).items()}
+
+        _, stored, _ = _consolidate(store, {"x"})
+
+        assert stored == {"A+B": 2}
+        merged_from = _stored(store)["A+B"].metadata["merged_from"]
+        assert {entry["id"] for entry in merged_from} == {ids["A"], ids["B"]}
+        assert all(len(entry["content_sha256"]) == 64 for entry in merged_from)
+
+    def test_an_entry_is_dropped_once_its_original_is_gone(self, store):
+        _store_guidelines(store, A="x", B="x")
+        _consolidate(store, {"x"}, undeletable={"A"})
+        _store_guidelines(store, C="x")
+
+        # The hold is lifted: this run deletes A first, then merges A+B with C.
+        _, stored, _ = _consolidate(store, {"x"})
+
+        assert stored == {"A+B+C": 3}
+        merged_from = _stored(store)["A+B+C"].metadata["merged_from"]
+        assert len(merged_from) == 2  # A+B and C, not A

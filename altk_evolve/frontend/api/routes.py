@@ -208,20 +208,21 @@ def create_namespace_entity(namespace_id: str, req: EntityCreateRequest) -> dict
     if not req.content or not req.content.strip():
         raise HTTPException(status_code=422, detail="Entity content must be non-empty.")
 
-    # 2. Enforce specific schema typing prior to insertion
-    metadata = req.metadata
+    # 2. Enforce specific schema typing prior to insertion. merged_from is
+    # consolidation's record of what a guideline absorbed, so a caller can't set it.
+    metadata = {k: v for k, v in req.metadata.items() if k != "merged_from"}
     if entity_type == "guideline":
         from altk_evolve.schema.guidelines import Guideline
 
         try:
             # Keep compact guideline entities backward-compatible and only enforce
             # the structured generation schema when callers provide those fields.
-            guideline_meta = {k: v for k, v in req.metadata.items() if k != "content"}
+            guideline_meta = {k: v for k, v in metadata.items() if k != "content"}
             structured_fields = {"rationale", "category", "trigger"}
             if structured_fields <= guideline_meta.keys():
                 validated = Guideline(content=req.content, **guideline_meta)
                 # Store the category the gate accepted, not the raw value it repaired.
-                metadata = {**req.metadata, "category": validated.category}
+                metadata = {**metadata, "category": validated.category}
         except Exception as e:
             logger.error(f"Guideline validation failed: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid guideline metadata schema: {e}")

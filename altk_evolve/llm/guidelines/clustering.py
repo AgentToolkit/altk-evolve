@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from functools import lru_cache
@@ -27,7 +28,8 @@ from altk_evolve.schema.guidelines import (
     Guideline,
     resolve_guideline_category,
 )
-from altk_evolve.utils.utils import clean_llm_response
+from altk_evolve.hooks.plugins.identity import is_merged_from_entry
+from altk_evolve.utils.utils import clean_llm_response, serialize_content
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +222,54 @@ def stored_tasks(entity: RecordedEntity) -> list[str]:
     if description := md.get("task_description"):
         tasks.append(str(description))
     return list(dict.fromkeys(tasks))
+
+
+def content_digest(entity: RecordedEntity) -> str:
+    """SHA-256 of an entity's serialized content, to tell whether it changed since a merge read it."""
+    return hashlib.sha256(serialize_content(entity.content).encode()).hexdigest()
+
+
+def _merged_from(entity: RecordedEntity) -> list[dict]:
+    """The well-formed entries of ``metadata.merged_from``; anything else is ignored.
+
+    Well-formed is the shape redactors leave alone, so a redacted entry never counts.
+    """
+    value = (entity.metadata or {}).get("merged_from")
+    if not isinstance(value, list):
+        return []
+    return [entry for entry in value if is_merged_from_entry(entry)]
+
+
+def merged_from_record(members: list[RecordedEntity], stored_ids: set[str]) -> list[dict]:
+    """The ``metadata.merged_from`` of a guideline merged from ``members``.
+
+    Each member is recorded with the digest of the content the merge read. Entries the
+    members themselves carry (from earlier merges) are carried forward only while the
+    original they name is still stored: a deleted original cannot be merged again, and IDs
+    are not reused, so its entry would only grow the record.
+    """
+    record: dict[str, dict] = {str(member.id): {"id": str(member.id), "content_sha256": content_digest(member)} for member in members}
+    for member in members:
+        for entry in _merged_from(member):
+            if entry["id"] in stored_ids:
+                record.setdefault(entry["id"], {"id": entry["id"], "content_sha256": entry["content_sha256"]})
+    return list(record.values())
+
+
+def absorbed_originals(entities: list[RecordedEntity]) -> dict[str, set[str]]:
+    """The originals that stored merge outputs record as already merged.
+
+    Maps an original's ID to the content digests recorded for it. A merge never crosses
+    scopes, so the carrier was in the original's scope when it recorded it; matching on
+    the ID alone keeps the record valid after the carrier's scope changes (it is
+    published, say). IDs are not reused, and callers cannot write ``merged_from``.
+    """
+    absorbed: dict[str, set[str]] = {}
+    for entity in entities:
+        for entry in _merged_from(entity):
+            if entry["id"] != str(entity.id):
+                absorbed.setdefault(entry["id"], set()).add(entry["content_sha256"])
+    return absorbed
 
 
 def _normalize_steps(raw: object) -> list[str]:
