@@ -953,6 +953,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#guideline-consolidation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guideline consolidation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#milvus-backend-settings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1776,6 +1787,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#guideline-consolidation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guideline consolidation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#milvus-backend-settings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2064,6 +2086,31 @@
 <td><code>0</code></td>
 </tr>
 <tr>
+<td><code>EVOLVE_CONSOLIDATION_MODE</code></td>
+<td>How consolidation merges a cluster: <code>none</code> (skip), <code>lossless</code> (merge only equivalent advice) or <code>lossy</code> (merge more aggressively) — see <a href="#guideline-consolidation">Guideline consolidation</a></td>
+<td><code>lossless</code></td>
+</tr>
+<tr>
+<td><code>EVOLVE_CLUSTERING_KEY</code></td>
+<td>What consolidation clusters on: <code>task_description</code> or <code>guideline_text</code></td>
+<td><code>task_description</code></td>
+</tr>
+<tr>
+<td><code>EVOLVE_CLUSTERING_THRESHOLD</code></td>
+<td>Cosine similarity at which two guidelines join a cluster</td>
+<td><code>0.80</code></td>
+</tr>
+<tr>
+<td><code>EVOLVE_CONSOLIDATION_MAX_CLUSTER_SIZE</code></td>
+<td>Split larger clusters into chunks of at most this many guidelines (at least <code>2</code>). Unset means unbounded</td>
+<td>unset</td>
+</tr>
+<tr>
+<td><code>EVOLVE_CONSOLIDATION_MAX_ROUNDS</code></td>
+<td>Re-cluster and merge up to this many times; stops early once a round merges nothing</td>
+<td><code>1</code></td>
+</tr>
+<tr>
 <td><code>EVOLVE_GUIDELINES_MODEL</code></td>
 <td>Model for guideline generation only</td>
 <td><code>EVOLVE_MODEL_NAME</code> -&gt; <code>gpt-4o</code></td>
@@ -2170,8 +2217,8 @@ learning-episode trajectory, enabling segmentation produced directly contradicto
 rules and cost roughly half of the achievable improvement on the affected cases; disabling
 it removed the contradiction at source.</p>
 <p><strong>What you give up by leaving it off.</strong> <code>task_description</code> becomes the raw first user
-message, verbatim, shared by every guideline from that trajectory. It is the clustering key
-and the retrieval ranking key, so within a single trajectory it no longer separates
+message, verbatim, shared by every guideline from that trajectory. It is the default
+clustering key and the retrieval ranking key, so within a single trajectory it no longer separates
 subtasks, and it carries whatever user-specific values the original request contained into
 stored entity metadata. If your trajectories are single-purpose, this costs little; if one
 trajectory routinely spans unrelated subtasks, weigh enabling it.</p>
@@ -2182,6 +2229,43 @@ space, so a namespace written across a change of this setting holds two kinds of
 Nothing breaks and no migration is required — clustering and retrieval keep working — but similarity between the two kinds is lower
 than within either, so recurrence spanning the change may go undetected. To avoid the mix,
 use a fresh namespace when you change this setting.</p>
+<h3 id="guideline-consolidation">Guideline consolidation<a class="headerlink" href="#guideline-consolidation" title="Permanent link">&para;</a></h3>
+<p><code>evolve entities consolidate &lt;namespace&gt; --no-dry-run</code> (or <code>EvolveClient.consolidate_guidelines</code>)
+embeds each guideline, joins pairs whose cosine similarity is at least
+<code>EVOLVE_CLUSTERING_THRESHOLD</code>, and asks the LLM to merge each cluster. Support is conserved:
+a merged guideline's <code>support</code> is the sum of its sources'. Clusters never mix memory scopes.
+Without <code>--no-dry-run</code> the command only lists the clusters it would merge.</p>
+<p><strong>What to cluster on.</strong> By default (<code>EVOLVE_CLUSTERING_KEY=task_description</code>) guidelines are
+grouped by the task they were learned on. That merges advice from similar tasks, but the
+same advice learned on dissimilar tasks never meets, and guidelines without a task
+description are left out. <code>guideline_text</code> groups by the guideline's own text instead.
+Guidelines share a lot of phrasing ("When ..., check ..."), so two unrelated guidelines can
+score higher than their tasks would; calibrate the threshold on your corpus (a dry run shows
+the clusters) rather than reusing the task-key value. The embedding model reads only the
+start of a long input (the default <code>all-MiniLM-L6-v2</code> truncates at 256 tokens), so two long
+guidelines that share a preamble and differ only at the end can look identical.</p>
+<p>A guideline merged from members learned on different tasks keeps no single task
+description, because keeping one would tie it to that task alone. It records every member
+task in <code>source_tasks</code> instead (carried through later merges), and with the default
+<code>EVOLVE_RETRIEVAL_SIMILARITY_KEY=source_task</code> retrieval scores it by the source task that
+best matches the current one, so it stays retrievable for each task it was learned on.</p>
+<p><strong>Large clusters.</strong> Clustering is transitive: if A is similar to B and B to C, all three
+join, even when A and C are not similar. On a large namespace, and especially with
+<code>guideline_text</code>, this can chain hundreds of guidelines into one merge call.
+<code>EVOLVE_CONSOLIDATION_MAX_CLUSTER_SIZE</code> splits such a cluster into chunks of nearest
+neighbours, each within the threshold of its first member. Duplicates that land in different
+chunks are left apart unless you allow more than one round: <code>EVOLVE_CONSOLIDATION_MAX_ROUNDS</code>
+re-clusters the namespace after each round, stops after a round that merges nothing, and
+does not send the same merge's outputs back to the model together. An original whose delete
+failed or was vetoed (for example by a legal hold) stays stored and is not merged again in
+later rounds of the same run; a later <code>consolidate</code> run can merge it again.
+Each round re-embeds the whole namespace, which on CPU takes minutes for thousands of long
+guidelines.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>evolve<span class="w"> </span>entities<span class="w"> </span>consolidate<span class="w"> </span>my-ns<span class="w"> </span>--cluster-key<span class="w"> </span>guideline_text<span class="w"> </span>--threshold<span class="w"> </span><span class="m">0</span>.85<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>--max-cluster-size<span class="w"> </span><span class="m">20</span><span class="w"> </span>--max-rounds<span class="w"> </span><span class="m">3</span><span class="w">            </span><span class="c1"># dry run: lists round-1 clusters</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>evolve<span class="w"> </span>entities<span class="w"> </span>consolidate<span class="w"> </span>my-ns<span class="w"> </span>--cluster-key<span class="w"> </span>guideline_text<span class="w"> </span>--threshold<span class="w"> </span><span class="m">0</span>.85<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span>--max-cluster-size<span class="w"> </span><span class="m">20</span><span class="w"> </span>--max-rounds<span class="w"> </span><span class="m">3</span><span class="w"> </span>--no-dry-run
+</code></pre></div>
 <h3 id="milvus-backend-settings">Milvus Backend Settings<a class="headerlink" href="#milvus-backend-settings" title="Permanent link">&para;</a></h3>
 <p>When <code>EVOLVE_BACKEND=milvus</code>:</p>
 <table>
@@ -2329,14 +2413,14 @@ use a fresh namespace when you change this setting.</p>
 </tbody>
 </table>
 <h3 id="switching-backends">Switching Backends<a class="headerlink" href="#switching-backends" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Use Milvus backend (default)</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>milvus
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Use Filesystem backend</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Use Postgres backend</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>postgres
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Use Milvus backend (default)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>milvus
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Use Filesystem backend</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># Use Postgres backend</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>postgres
 </code></pre></div>
 <h3 id="filesystem-backend-details">Filesystem Backend Details<a class="headerlink" href="#filesystem-backend-details" title="Permanent link">&para;</a></h3>
 <p>The filesystem backend stores all data in JSON files - one file per namespace. This is ideal for:
@@ -2346,37 +2430,37 @@ use a fresh namespace when you change this setting.</p>
 - Quick prototyping without embedding model overhead</p>
 <p><strong>JSON File Structure:</strong></p>
 <p>Each namespace is stored as <code>&lt;data_dir&gt;/&lt;namespace_id&gt;.json</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_guidelines&quot;</span><span class="p">,</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:29:51.986882+00:00&quot;</span><span class="p">,</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">&quot;entities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;guideline&quot;</span><span class="p">,</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Always write tests before code&quot;</span><span class="p">,</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">      </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:30:00.023283+00:00&quot;</span><span class="p">,</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">      </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span><span class="p">],</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">  </span><span class="nt">&quot;next_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_guidelines&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:29:51.986882+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">&quot;entities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;guideline&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Always write tests before code&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:30:00.023283+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">      </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="p">],</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="nt">&quot;next_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="p">}</span>
 </code></pre></div>
 <h2 id="low-code-tracing-phoenix-integration">Low-Code Tracing (Phoenix Integration)<a class="headerlink" href="#low-code-tracing-phoenix-integration" title="Permanent link">&para;</a></h2>
 <p>Evolve provides easy integration with Phoenix for tracing LLM calls.</p>
 <h3 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span>evolve<span class="o">[</span>tracing<span class="o">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span>evolve<span class="o">[</span>tracing<span class="o">]</span>
 </code></pre></div>
 <h3 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h3>
 <p>First, enable auto-mode by setting the environment variable:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_AUTO_ENABLED</span><span class="o">=</span><span class="nb">true</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_AUTO_ENABLED</span><span class="o">=</span><span class="nb">true</span>
 </code></pre></div>
 <p>Then, add one import at the top of your agent to trigger the patching:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">altk_evolve.auto</span> <span class="c1"># noqa: F401</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="k">pass</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="c1"># Your existing code unchanged...</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">altk_evolve.auto</span> <span class="c1"># noqa: F401</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="k">pass</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="c1"># Your existing code unchanged...</span>
 </code></pre></div>
 <h3 id="tracing-environment-variables">Tracing Environment Variables<a class="headerlink" href="#tracing-environment-variables" title="Permanent link">&para;</a></h3>
 <table>
