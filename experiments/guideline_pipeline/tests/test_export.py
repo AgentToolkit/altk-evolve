@@ -91,7 +91,7 @@ def test_min_support_keeps_guidelines_at_the_threshold(client: EvolveClient):
         assert [e["n"] for e in document["entries"]] == expected
         assert report.below_min_support == 3 - len(expected)
     assert build_playbook(rows, min_support=2)[1].summary() == (
-        "playbook: 2 entries (1 below min-support skipped); support sum=5 max=3 | n>=2: 2 | n>=3: 1"
+        "playbook: 2 entries (1 below min-support skipped); support sum=5 (stored 5) max=3 | n>=2: 2 | n>=3: 1"
     )
 
 
@@ -135,8 +135,9 @@ def test_core_singleton_split_at_the_boundary(client: EvolveClient):
     }
     assert (report.core, report.singletons, report.below_min_support) == (2, 2, 0)
 
+    # "below core" stores support 2 but has one source task, so it counts 1 like "floor".
     floored, report = build_retrieval_index(rows, core_support=3, min_support=2)
-    assert [s["rule"] for s in floored["singletons"]] == ["below core"] and report.below_min_support == 1
+    assert floored["singletons"] == [] and report.below_min_support == 2
     assert build_retrieval_index(rows, core_support=4)[0]["core"] == ["above core"]
     with pytest.raises(ValueError, match="min-support"):
         build_retrieval_index(rows, core_support=2, min_support=3)

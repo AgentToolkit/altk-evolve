@@ -4,8 +4,8 @@ Instead of injecting the whole playbook every task (best only for strong models)
 selects a small, task-relevant dose (best for weaker models — the capability-dependent
 dosage finding):
 
-    core      = guidelines whose ``support`` >= ``core_support`` (they recurred across many
-                tasks, so they generalise) — always included.
+    core      = guidelines backed by >= ``core_support`` distinct source tasks (they recurred
+                across many tasks, so they generalise) — always included.
     retrieved = up to ``top_k`` further guidelines whose SOURCE task (``task_description``)
                 is most similar to the current task ("a lesson from a task like this one"),
                 after dropping ones already covered by the core or duplicating each other.
@@ -22,8 +22,9 @@ from typing import Literal
 
 import numpy as np
 
-from altk_evolve.llm.guidelines.clustering import _get_sentence_transformer, stored_tasks
+from altk_evolve.llm.guidelines.clustering import _get_sentence_transformer, stored_support, stored_tasks
 from altk_evolve.schema.core import RecordedEntity
+from altk_evolve.schema.provenance import sources
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +44,21 @@ class GuidelineSelection:
 
 
 def _support(entity: RecordedEntity) -> int:
-    try:
-        return max(1, int((entity.metadata or {}).get("support", 1) or 1))
-    except (TypeError, ValueError):
-        return 1
+    """How many distinct source tasks back a guideline.
+
+    Counted from its supporting ``sources`` associations, so rewordings merged from one
+    task count once. That count is used only when every supporting source names a task and
+    provenance is complete. Otherwise (provenance predates it, a merge took in a guideline
+    with no known source, or a source records only a conversation) some support is not in
+    the task count, so the stored ``support`` applies, but never less than the known tasks.
+    A ``task_id`` that is not a string or an integer is ignored.
+    """
+    task_ids = [source.get("task_id") for source in sources(entity) if source.get("status") == "supporting"]
+    tasks = {task for task in task_ids if isinstance(task, (str, int)) and task}
+    complete = all(isinstance(task, (str, int)) and task for task in task_ids) and not (entity.metadata or {}).get("provenance_incomplete")
+    if tasks and complete:
+        return len(tasks)
+    return max(len(tasks), stored_support(entity))
 
 
 def _source_tasks(entity: RecordedEntity) -> list[str]:
@@ -82,7 +94,7 @@ def select_guidelines(
             ``similarity_key="source_task"``, ``task_description`` in metadata).
         task_query: The current task instruction to retrieve for.
         top_k: Maximum number of retrieved (non-core) guidelines.
-        core_support: Guidelines with support >= this are always included.
+        core_support: Guidelines backed by >= this many distinct source tasks are always included.
         min_support: Non-destructive sup2/sup3 floor applied to the whole pool *before* the
             core/candidate split. Callers should keep ``min_support <= core_support`` (enforced
             by ``EvolveConfig``) so the floor never drops a guideline that qualifies for the core.

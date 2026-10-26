@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from altk_evolve.llm.guidelines.clustering import _attribute_support, _split_oversized, _union_find, cluster_entities
+from altk_evolve.llm.guidelines.clustering import _attribute_support, _split_oversized, _union_find, cluster_entities, stored_support
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.guidelines import ConsolidatedGuideline
 
@@ -308,3 +308,12 @@ class TestAttributeSupport:
         out = _attribute_support(entities, consolidated, [1, 1], [None, None])
 
         assert [(g.content, members) for g, members in out] == [("real", [0, 1])]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("support", "expected"), [(4, 4), ("2", 2), (0, 1), (None, 1), ("high", 1), ([3], 1), ({"n": 3}, 1)])
+def test_stored_support_counts_an_unusable_value_as_one(support, expected):
+    # combine_cluster_with_members reads this before the LLM call, so a raise here would skip
+    # the whole cluster on every run.
+    entity = RecordedEntity(id="1", type="guideline", content="x", metadata={"support": support}, created_at=datetime.now())
+    assert stored_support(entity) == expected
