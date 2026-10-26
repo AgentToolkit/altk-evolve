@@ -2231,8 +2231,9 @@ than within either, so recurrence spanning the change may go undetected. To avoi
 use a fresh namespace when you change this setting.</p>
 <h3 id="guideline-consolidation">Guideline consolidation<a class="headerlink" href="#guideline-consolidation" title="Permanent link">&para;</a></h3>
 <p><code>evolve entities consolidate &lt;namespace&gt; --no-dry-run</code> (or <code>EvolveClient.consolidate_guidelines</code>)
-embeds each guideline, joins pairs whose cosine similarity is at least
-<code>EVOLVE_CLUSTERING_THRESHOLD</code>, and asks the LLM to merge each cluster. Support is conserved:
+embeds each guideline's clustering key (its task description or its text; see below), joins
+pairs whose cosine similarity is at least <code>EVOLVE_CLUSTERING_THRESHOLD</code>, and asks the LLM to
+merge each cluster. Support is conserved:
 a merged guideline's <code>support</code> is the sum of its sources'. Clusters never mix memory scopes.
 Without <code>--no-dry-run</code> the command only lists the clusters it would merge.</p>
 <p><strong>What to cluster on.</strong> By default (<code>EVOLVE_CLUSTERING_KEY=task_description</code>) guidelines are
