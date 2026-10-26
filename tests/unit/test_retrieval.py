@@ -16,12 +16,15 @@ def _make_entity(
     task_description: str = "",
     support: int = 1,
     evidence: str | None = None,
+    source_tasks: list[str] | None = None,
 ) -> RecordedEntity:
     metadata: dict = {"support": support}
     if task_description:
         metadata["task_description"] = task_description
     if evidence is not None:
         metadata["evidence"] = evidence
+    if source_tasks is not None:
+        metadata["sources"] = [{"conversation_id": None, "task_id": task, "status": "supporting"} for task in source_tasks]
     return RecordedEntity(
         id=entity_id,
         content=content,
@@ -66,6 +69,85 @@ class TestSelectGuidelines:
 
         assert [e.id for e in sel.core] == ["c"]
         assert [e.id for e in sel.retrieved] == ["s"]
+
+    def test_rewordings_from_one_task_do_not_make_a_guideline_core(self, mock_st):
+        # Ten rewordings merged from a single source task: support 10, but one distinct source.
+        self._model(mock_st)
+        reworded = _make_entity("r", "Venmo rule", task_description="a venmo task", support=10, source_tasks=["t1"] * 10)
+        sel = select_guidelines([reworded], "pay on venmo", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == []
+        assert [e.id for e in sel.retrieved] == ["r"]
+
+    def test_core_counts_distinct_source_tasks(self, mock_st):
+        self._model(mock_st)
+        recurring = _make_entity("c", "Handle email pagination", task_description="email task", support=3, source_tasks=["t1", "t2", "t3"])
+        sel = select_guidelines([recurring], "do something on spotify", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == ["c"]
+
+    def test_superseded_sources_do_not_count(self, mock_st):
+        self._model(mock_st)
+        entity = _make_entity("c", "Email rule", task_description="email task", support=3, source_tasks=["t1", "t2", "t3"])
+        entity.metadata["sources"][2]["status"] = "superseded"
+        sel = select_guidelines([entity], "spotify", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == []
+
+    def test_min_support_counts_distinct_source_tasks(self, mock_st):
+        self._model(mock_st)
+        reworded = _make_entity("r", "Venmo rule", task_description="a venmo task", support=4, source_tasks=["t1", "t1"])
+        sel = select_guidelines([reworded], "pay on venmo", top_k=5, core_support=3, min_support=2, embedding_model="test")
+        assert sel.all == []
+
+    def test_a_guideline_without_recorded_sources_keeps_its_support(self, mock_st):
+        # Legacy entities predate source provenance; their stored support still applies.
+        self._model(mock_st)
+        legacy = _make_entity("c", "Email rule", task_description="email task", support=3)
+        sel = select_guidelines([legacy], "spotify", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == ["c"]
+
+    @pytest.mark.parametrize(
+        "partial",
+        [
+            pytest.param(lambda md: md.update(provenance_incomplete=True), id="provenance_incomplete"),
+            pytest.param(
+                lambda md: md["sources"].append({"conversation_id": "c9", "task_id": None, "status": "supporting"}), id="conversation-only"
+            ),
+        ],
+    )
+    def test_partial_provenance_keeps_the_stored_support(self, mock_st, partial):
+        # A merge that took in a guideline with no known source sums its support, but only
+        # some of it shows up as task ids; counting just those would drop it from the core.
+        self._model(mock_st)
+        merged = _make_entity("m", "Email rule", task_description="email task", support=3, source_tasks=["t1"])
+        partial(merged.metadata)
+        sel = select_guidelines([merged], "spotify", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == ["m"]
+
+    def test_partial_provenance_never_counts_below_the_known_tasks(self, mock_st):
+        self._model(mock_st)
+        merged = _make_entity("m", "Email rule", task_description="email task", support=1, source_tasks=["t1", "t2", "t3"])
+        merged.metadata["provenance_incomplete"] = True
+        sel = select_guidelines([merged], "spotify", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == ["m"]
+
+    @pytest.mark.parametrize("task_id", [["t1"], {"id": "t1"}])
+    def test_an_unhashable_task_id_is_ignored(self, mock_st, task_id):
+        # Metadata can be written through a patch, REST or MCP; one bad record must not fail
+        # selection for the whole namespace.
+        self._model(mock_st)
+        odd = _make_entity("o", "Email rule", task_description="email task", support=1, source_tasks=["t1"])
+        odd.metadata["sources"][0]["task_id"] = task_id
+        ok = _make_entity("k", "Venmo rule", task_description="a venmo task", support=3, source_tasks=["t1", "t2", "t3"])
+        sel = select_guidelines([odd, ok], "spotify", top_k=5, core_support=3, embedding_model="test")
+        assert [e.id for e in sel.core] == ["k"]
+        assert [e.id for e in sel.retrieved] == ["o"]
+
+    @pytest.mark.parametrize("support", ["high", [3], {"n": 3}])
+    def test_an_unusable_stored_support_counts_as_one(self, mock_st, support):
+        self._model(mock_st)
+        legacy = _make_entity("c", "Email rule", task_description="email task")
+        legacy.metadata["support"] = support
+        sel = select_guidelines([legacy], "spotify", top_k=5, core_support=1, min_support=1, embedding_model="test")
+        assert [e.id for e in sel.core] == ["c"]
 
     def test_topk_ranked_by_source_task_similarity(self, mock_st):
         self._model(mock_st)

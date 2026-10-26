@@ -86,7 +86,7 @@ def test_export_playbook_command(mined: Path, tmp_path: Path, capsys: pytest.Cap
             {"r": "For tasks like 'do task-3', check the answer 'done'.", "n": 1, "e": "s"},
         ]
     }
-    assert stdout == f"playbook: 3 entries (0 below min-support skipped); support sum=3 max=1 | n>=2: 0 | n>=3: 0; wrote {out}"
+    assert stdout == f"playbook: 3 entries (0 below min-support skipped); support sum=3 (stored 3) max=1 | n>=2: 0 | n>=3: 0; wrote {out}"
     assert run(capsys, "export", "playbook", "--namespace", "memories", "--out", str(out), "--min-support", "2")[0] == 0
     assert json.loads(out.read_text()) == {"entries": []}
 
