@@ -45,6 +45,7 @@ app.add_typer(processors_app, name="processors")
 app.add_typer(processing_app, name="processing")
 
 console = Console()
+err_console = Console(stderr=True)
 
 
 def get_client() -> EvolveClient:
@@ -206,20 +207,23 @@ def add_entity(
         content = typer.prompt("Entity content")
 
     # Parse metadata if provided
-    parsed_metadata = None
+    parsed_metadata = {}
     if metadata:
         try:
             parsed_metadata = json.loads(metadata)
         except json.JSONDecodeError:
-            console.print("[red]Invalid JSON metadata.[/red]")
+            err_console.print("[red]Invalid JSON metadata.[/red]")
             raise typer.Exit(1)
-    else:
-        parsed_metadata = {}
+        # pydantic rejects a non-object metadata later with a raw traceback; refuse it here
+        # with the same message MCP gives (mcp_server.py: "metadata must be a JSON object").
+        if not isinstance(parsed_metadata, dict):
+            err_console.print("[red]metadata must be a JSON object.[/red]")
+            raise typer.Exit(1)
     # merged_from is consolidation's record of what a guideline absorbed, and its entries
     # skip redaction, so a caller can't set it (the REST and MCP create paths drop it too).
-    if isinstance(parsed_metadata, dict) and "merged_from" in parsed_metadata:
+    if "merged_from" in parsed_metadata:
         parsed_metadata = {k: v for k, v in parsed_metadata.items() if k != "merged_from"}
-        console.print("[yellow]Ignoring metadata.merged_from: it is managed by consolidation.[/yellow]")
+        err_console.print("[yellow]Ignoring metadata.merged_from: it is managed by consolidation.[/yellow]")
 
     # Ensure namespace exists
     if not client.namespace_exists(namespace):

@@ -323,6 +323,8 @@ class TestEntitiesAdd:
         call_args = mock_client.update_entities.call_args
         entity = call_args[0][1][0]
         assert entity.metadata == {"source": "test"}
+        # A clean add must not emit the merged_from warning unconditionally.
+        assert "Ignoring metadata.merged_from" not in result.output
 
     def test_add_entity_drops_merged_from(self, mock_client):
         """merged_from is managed by consolidation and skips redaction, so the CLI can't set it."""
@@ -345,7 +347,8 @@ class TestEntitiesAdd:
         )
 
         assert result.exit_code == 0
-        assert "Ignoring metadata.merged_from" in result.stdout
+        # The warning goes to stderr so a `>/dev/null` scripted add still shows it.
+        assert "Ignoring metadata.merged_from" in result.stderr
         entity = mock_client.update_entities.call_args[0][1][0]
         assert entity.metadata == {"source": "test"}
 
@@ -368,7 +371,21 @@ class TestEntitiesAdd:
         )
 
         assert result.exit_code == 1
-        assert "Invalid JSON" in result.stdout
+        assert "Invalid JSON" in result.stderr
+
+    @pytest.mark.parametrize("metadata", ["[1, 2]", "null", '"a string"', "42"])
+    def test_add_entity_non_object_metadata(self, mock_client, metadata):
+        """Non-object --metadata is rejected cleanly (exit 1), not with a pydantic traceback."""
+        mock_client.namespace_exists.return_value = True
+
+        result = runner.invoke(
+            app,
+            ["entities", "add", "my_namespace", "--content", "Test", "--metadata", metadata, "--no-conflict-resolution"],
+        )
+
+        assert result.exit_code == 1
+        assert "metadata must be a JSON object" in result.stderr
+        mock_client.update_entities.assert_not_called()
 
     def test_add_entity_no_results(self, mock_client):
         """Test adding entity when conflict resolution filters it out."""
