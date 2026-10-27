@@ -13,6 +13,7 @@ import pytest
 
 import altk_evolve.backend.base as backend_base
 from altk_evolve.frontend.client.evolve_client import EvolveClient
+from altk_evolve.llm.guidelines.clustering import stored_support
 from altk_evolve.schema.core import Entity
 
 from experiments.guideline_pipeline import __main__ as cli
@@ -162,7 +163,10 @@ def test_rerun_imports_nothing_twice_even_after_consolidation(client: EvolveClie
     client.consolidate_guidelines("memories", threshold=0.5, mode="lossless")
     assert len(stored(client)) == 2
     assert run_import(client, lessons).imported == 0
-    assert sum(guideline.support for guideline in guideline_rows(fetch_guidelines(client, "memories"))[0]) == LESSONS
+    # The stored support is conserved; the distinct-task count drops, since bbb0002_1's two lessons merged.
+    rows = guideline_rows(fetch_guidelines(client, "memories"))[0]
+    assert sum(stored_support(row.entity) for row in rows) == LESSONS
+    assert sum(row.support for row in rows) == 2
 
     # A new task is imported on its own; another scope (an explicit --source) is a separate import,
     # but a new source label alone is not.
@@ -337,7 +341,7 @@ def test_cli_imports_and_round_trips_through_export(
 
     out = tmp_path / "playbook.json"
     code, stdout, _ = run(capsys, "export", "playbook", "--namespace", "memories", "--out", str(out))
-    assert code == 0 and "support sum=3 " in stdout
+    assert code == 0 and "support sum=3 (stored 3) " in stdout
     entries = json.loads(out.read_text())["entries"]
     assert sum(entry["n"] for entry in entries) == LESSONS
     assert sorted(entry["e"] for entry in entries) == ["f", "s", "s"]
@@ -348,13 +352,14 @@ def test_cli_imports_and_round_trips_through_export(
     singletons = json.loads(index.read_text())["singletons"]
     assert sorted(s["source_task"] for s in singletons) == ["aaa0001_1", "bbb0002_1", "bbb0002_1"]
 
-    # Consolidation (mocked) conserves the imported support, which is what the parity check relies on.
+    # Consolidation (mocked) conserves the imported (stored) support, which is what the parity check relies on;
+    # the distinct-task sum drops to 2 because both merged lessons came from bbb0002_1.
     # Its own summary counts only the clusters it merged, so the namespace total comes from export.
     mock_consolidation(monkeypatch)
     code, stdout, _ = run(capsys, "consolidate", "--namespace", "memories", "--threshold", "0.5")
     assert (code, stdout.endswith("2 -> 1 guidelines, support 2 -> 2")) == (0, True)
     code, stdout, _ = run(capsys, "export", "playbook", "--namespace", "memories", "--out", str(out))
-    assert code == 0 and stdout.startswith("playbook: 2 entries") and "support sum=3 " in stdout
+    assert code == 0 and stdout.startswith("playbook: 2 entries") and "support sum=2 (stored 3) " in stdout
 
 
 def test_cli_dry_run_never_builds_a_client(lessons: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):

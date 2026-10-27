@@ -165,8 +165,9 @@ use a fresh namespace when you change this setting.
 ### Guideline consolidation
 
 `evolve entities consolidate <namespace> --no-dry-run` (or `EvolveClient.consolidate_guidelines`)
-embeds each guideline, joins pairs whose cosine similarity is at least
-`EVOLVE_CLUSTERING_THRESHOLD`, and asks the LLM to merge each cluster. Support is conserved:
+embeds each guideline's clustering key (its task description or its text; see below), joins
+pairs whose cosine similarity is at least `EVOLVE_CLUSTERING_THRESHOLD`, and asks the LLM to
+merge each cluster. Support is conserved:
 a merged guideline's `support` is the sum of its sources'. Clusters never mix memory scopes.
 Without `--no-dry-run` the command only lists the clusters it would merge.
 
@@ -218,8 +219,10 @@ not deleted, because the merged guideline does not hold the edit; it stays out o
 too, since its support is still counted. Delete it, or delete the merged guideline, which
 makes the original eligible to merge again. A record matches the original by ID, so it still
 holds after the merged guideline is published or unpublished. `merged_from` is managed by
-consolidation: the MCP `create_entity` tool and the REST create route drop it, and
-`patch_entity_metadata` rejects it.
+consolidation: the three caller-facing create front doors drop it — the MCP `create_entity`
+tool and the REST create route silently, `evolve entities add` with a warning — and
+`patch_entity_metadata` rejects it. Paths that do not gate it yet (`process_trajectory` and the
+Python client) leave caller-supplied `merged_from` in place.
 Redactors leave well-formed entries alone and treat any other value under the key as free
 text. Consolidation reads at most 10,000 guidelines and logs a warning when it hits that
 limit. Past it, a merged guideline can fall outside the read while its held original does

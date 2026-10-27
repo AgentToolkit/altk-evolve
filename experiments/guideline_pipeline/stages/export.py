@@ -4,9 +4,11 @@ playbook         {"entries": [{"r": rule, "n": support, "e": "s" | "f" | "b"}, .
 retrieval index  {"core": [rule, ...],
                   "singletons": [{"rule", "source_task", "source_instruction"}, ...]}
 
-Support and the core use the library's definitions (``support`` in metadata, 1
-when absent; core is support >= core_support; min_support is a floor applied
-before the split), so an exported index splits a namespace exactly as
+Support and the core use the library's definitions (the number of distinct
+supporting source tasks, or ``support`` in metadata, 1 when absent, for a
+guideline whose provenance is partial; core is support >= core_support;
+min_support is a floor applied before the split), so an exported index splits a
+namespace exactly as
 ``EvolveClient.select_guidelines`` does. The index carries no embeddings: the
 retrieval harness embeds each ``source_instruction`` itself at load time.
 """
@@ -18,6 +20,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from altk_evolve.llm.guidelines.clustering import stored_support
 from experiments.guideline_pipeline.guidelines import GuidelineRow
 from experiments.guideline_pipeline.stages.lineage import resolve_source_tasks
 
@@ -47,11 +50,14 @@ class PlaybookReport:
     below_min_support: int = 0
     empty: int = 0
     supports: list[int] = field(default_factory=list)
+    # The entries' stored ``support``, which consolidation conserves; ``supports`` counts
+    # distinct source tasks, so it drops when rewordings from one task are merged.
+    stored_support: int = 0
 
     def summary(self) -> str:
         skipped = f"{self.below_min_support} below min-support" + (f", {self.empty} empty" if self.empty else "")
         return (
-            f"playbook: {self.entries} entries ({skipped} skipped); support sum={sum(self.supports)} "
+            f"playbook: {self.entries} entries ({skipped} skipped); support sum={sum(self.supports)} (stored {self.stored_support}) "
             f"max={max(self.supports, default=0)} | n>=2: {sum(n >= 2 for n in self.supports)} | "
             f"n>=3: {sum(n >= 3 for n in self.supports)}"
         )
@@ -61,7 +67,13 @@ def build_playbook(rows: list[GuidelineRow], *, min_support: int = 1, empty: int
     """The playbook for rows (already ordered) at or above min_support."""
     kept, below = _floor(rows, min_support)
     entries = [{"r": row.rule, "n": row.support, "e": evidence_code(row)} for row in kept]
-    report = PlaybookReport(entries=len(entries), below_min_support=below, empty=empty, supports=[row.support for row in kept])
+    report = PlaybookReport(
+        entries=len(entries),
+        below_min_support=below,
+        empty=empty,
+        supports=[row.support for row in kept],
+        stored_support=sum(stored_support(row.entity) for row in kept),
+    )
     return {"entries": entries}, report
 
 
