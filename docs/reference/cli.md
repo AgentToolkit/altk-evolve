@@ -48,6 +48,8 @@ evolve entities add my_namespace --content "Use descriptive names" --type guidel
 
 # Add entity with metadata (JSON format)
 evolve entities add my_namespace --content "Check return values" --type guideline --metadata '{"source": "code-review"}'
+# --metadata must be a JSON object; a caller-supplied `merged_from` key is dropped (it is
+# managed by consolidation), with a warning on stderr.
 
 # Search entities using semantic similarity
 evolve entities search my_namespace "testing best practices"
