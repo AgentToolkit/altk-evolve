@@ -84,16 +84,27 @@ async def test_cancelled_prepared_write_is_not_committed(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_mcp_notification_cancels_thread_before_save(monkeypatch):
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_mcp_notification_cancels_thread_before_save(monkeypatch, mode):
     import asyncio
+    from contextlib import suppress
 
     from fastmcp import Client, FastMCP
     from fastmcp.server.dependencies import get_context
-    from mcp.types import CancelledNotification, CancelledNotificationParams, ClientNotification
+    from fastmcp.server.middleware import Middleware
+    from mcp.types import CancelledNotification, CancelledNotificationParams
 
     started, release, finished = Event(), Event(), Event()
-    request_ids, saved = [], []
-    server = FastMCP("cancellation-test")
+    request_ids, saved, failures = [], [], []
+    cancellation_received = anyio.Event()
+
+    class ObserveCancellation(Middleware):
+        async def on_message(self, context, call_next):
+            if context.method == "notifications/cancelled":
+                cancellation_received.set()
+            return await call_next(context)
+
+    server = FastMCP("cancellation-test", middleware=[ObserveCancellation()])
 
     def completion(**kwargs):
         started.set()
@@ -111,25 +122,33 @@ async def test_mcp_notification_cancels_thread_before_save(monkeypatch):
             model_completion(model="test", messages=[])
             saved.append("memory")
             return "saved"
+        except BaseException as exc:
+            failures.append(type(exc))
+            raise
         finally:
             finished.set()
 
     with anyio.fail_after(10):
-        async with Client(server) as client:
+        async with Client(server, mode=mode) as client:
             task = asyncio.create_task(client.call_tool("save_memory"))
             try:
                 while not started.is_set():
                     await anyio.sleep(0.01)
-                await client.session.send_notification(
-                    ClientNotification(CancelledNotification(params=CancelledNotificationParams(requestId=request_ids[0])))
-                )
-                # Wait for the server's acknowledgement before releasing the model.
-                with pytest.raises(Exception, match="cancelled"):
-                    await task
+                await client.session.send_notification(CancelledNotification(params=CancelledNotificationParams(requestId=request_ids[0])))
+                # MCP 2 deliberately leaves a cancelled request unanswered. Observe
+                # delivery (the SDK cancels the scope before middleware runs), then
+                # let the blocking model return and hit our cooperative checkpoint.
+                await cancellation_received.wait()
                 release.set()
                 while not finished.is_set():
                     await anyio.sleep(0.01)
+                assert saved == []
+                assert failures == [asyncio.CancelledError]
             finally:
                 release.set()
                 task.cancel()
-    assert saved == []
+                with suppress(asyncio.CancelledError):
+                    await task
+            result = await client.call_tool("save_memory")
+            assert result.data == "saved"
+    assert saved == ["memory"]
