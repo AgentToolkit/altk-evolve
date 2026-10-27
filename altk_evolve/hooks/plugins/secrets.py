@@ -40,6 +40,8 @@ passed straight through — no pydantic ``model_dump``/``model_validate`` dance.
 
 from __future__ import annotations
 
+import ast
+import json
 import re
 
 from bisect import bisect_right
@@ -171,6 +173,81 @@ _SUPPLEMENTARY_PATTERNS = {
 }
 
 
+def _string_literal_spans(text: str, start: int = 0, end: int | None = None) -> list[tuple[int, int]]:
+    """Find literals without retrying every suffix after an unmatched quote.
+
+    If one quote type has no closing delimiter, later starts of that type
+    cannot match either. The other quote type can still form a valid literal.
+    """
+    limit = len(text) if end is None else end
+    spans: list[tuple[int, int]] = []
+    exhausted: set[str] = set()
+    while start < limit:
+        char = text[start]
+        if char in "\"'" and char not in exhausted:
+            literal = _SERIALIZED_STRINGS.match(text, start, limit)
+            if literal is not None:
+                spans.append((start, literal.end()))
+                start = literal.end()
+                continue
+            exhausted.add(char)
+        start += 1
+    return spans
+
+
+def _serialized_string_spans(text: str) -> list[tuple[int, int]]:
+    """Recognize valid container envelopes before scanning their string literals.
+
+    Outside an envelope, retain the best-effort plain-text behavior. Inside a
+    valid JSON/Python container, prose apostrophes outside it cannot establish
+    string boundaries, and quotes inside its values cannot start new literals.
+    Scan non-overlapping envelopes once; malformed outer containers do not
+    trigger repeated parser attempts at every nested opening bracket.
+    """
+    spans: list[tuple[int, int]] = []
+    stack: list[str] = []
+    exhausted: set[str] = set()
+    start = previous = index = 0
+    while index < len(text):
+        char = text[index]
+        if not stack:
+            if char not in "{[":
+                index += 1
+                continue
+            start = index
+        elif char in "\"'" and char not in exhausted:
+            literal = _SERIALIZED_STRINGS.match(text, index)
+            if literal is not None:
+                index = literal.end()
+                continue
+            exhausted.add(char)
+        if char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]":
+            if char != stack[-1]:
+                stack.clear()
+                index += 1
+                continue
+            stack.pop()
+            if not stack:
+                end = index + 1
+                fragment = text[start:end]
+                try:
+                    try:
+                        json.loads(fragment)
+                    except ValueError:
+                        ast.literal_eval(fragment)
+                except (ValueError, SyntaxError, TypeError, RecursionError):
+                    pass
+                else:
+                    spans.extend(_string_literal_spans(text, previous, start))
+                    spans.extend(_string_literal_spans(text, start, end))
+                    previous = end
+        index += 1
+    spans.extend(_string_literal_spans(text, previous))
+    return spans
+
+
 def _mask_private_keys(text: str, replacement: str) -> tuple[int, str]:
     """Mask matching armor pairs, or only the header and adjacent base64 lines.
 
@@ -180,7 +257,7 @@ def _mask_private_keys(text: str, replacement: str) -> tuple[int, str]:
     markers = list(_PRIVATE_KEY_MARKERS.finditer(text))
     if not markers:
         return 0, text
-    string_spans = [(match.start(), match.end()) for match in _SERIALIZED_STRINGS.finditer(text)]
+    string_spans = _serialized_string_spans(text)
     string_starts = [start for start, _ in string_spans]
     pieces: list[str] = []
     previous = count = 0

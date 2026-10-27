@@ -1138,20 +1138,138 @@ def test_secrets_preserve_structural_metadata_and_scan_free_text(tmp_path):
 @pytest.mark.unit
 @pytest.mark.parametrize("serialize", ["json", "repr"])
 @pytest.mark.parametrize("instruction", ["Don't skip the audit", "keep me"])
-def test_pgp_armor_cannot_cross_serialized_fields(tmp_path, serialize, instruction):
+@pytest.mark.parametrize("prefix,suffix", [("", ""), ("Don't lose this: ", " That's all"), ("Quote: '", "' after")])
+@pytest.mark.parametrize("value_prefix", ["Rotate the key", "Rotate: ' before"])
+def test_pgp_armor_cannot_cross_serialized_fields(tmp_path, serialize, instruction, prefix, suffix, value_prefix):
     import ast
     import json
 
     pytest.importorskip("cpex_secrets_detection")
     make_client(tmp_path, SECRETS_SPEC)
     values = {
-        "content": "Rotate the key\n-----BEGIN PGP PRIVATE KEY BLOCK-----\nComment: see runbook",  # pragma: allowlist secret
+        "content": value_prefix + "\n-----BEGIN PGP PRIVATE KEY BLOCK-----\nComment: see runbook",  # pragma: allowlist secret
         "task": instruction,
         "footer": "\n\nAAAA\n-----END PGP PRIVATE KEY BLOCK-----",
     }
-    content = json.dumps(values) if serialize == "json" else repr(values)
+    content = prefix + (json.dumps(values) if serialize == "json" else repr(values)) + suffix
     result = dispatch_llm_pre_call([{"role": "user", "content": content}], purpose="test")[0]["content"]
-    restored = json.loads(result) if serialize == "json" else ast.literal_eval(result)
+    assert result.startswith(prefix) and result.endswith(suffix)
+    serialized_result = result[len(prefix) : len(result) - len(suffix) if suffix else None]
+    restored = json.loads(serialized_result) if serialize == "json" else ast.literal_eval(serialized_result)
     assert restored["task"] == instruction
     assert restored["footer"] == values["footer"]
-    assert restored["content"] == "Rotate the key\n[REDACTED]\nComment: see runbook"
+    assert restored["content"] == value_prefix + "\n[REDACTED]\nComment: see runbook"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("prefix", ["Don't print this key: ", 'Here is an unmatched "quote: ', "A stray ' quote precedes this: "])
+@pytest.mark.parametrize("serialize", ["json", "pretty_json", "repr"])
+def test_pgp_serialized_armor_after_prose_quotes_is_redacted(tmp_path, prefix, serialize):
+    import json
+
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    block = "\n".join(
+        [
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----",  # pragma: allowlist secret
+            "Comment: Alice's key",
+            "",
+            "ZmFrZVByaXZhdGVLZXlNYXRlcmlhbA==",
+            "-----END PGP PRIVATE KEY BLOCK-----",
+        ]
+    )
+    values = {"key": block, "instruction": "Keep this evidence"}
+    text = prefix + (repr(values) if serialize == "repr" else json.dumps(values, indent=2 if serialize == "pretty_json" else None))
+    result = dispatch_llm_pre_call([{"role": "user", "content": text}], purpose="test")[0]["content"]
+    assert "ZmFrZVByaXZhdGVLZXlNYXRlcmlhbA==" not in result
+    assert "Alice" not in result
+    assert result.startswith(prefix)
+    assert "Keep this evidence" in result
+
+
+@pytest.mark.unit
+def test_fact_extraction_redacts_pgp_after_a_prose_turn(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from altk_evolve.llm.fact_extraction import fact_extraction as facts
+
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    block = "\n".join(
+        [
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----",  # pragma: allowlist secret
+            "Comment: Alice's key",
+            "",
+            "ZmFrZVByaXZhdGVLZXlNYXRlcmlhbA==",
+            "-----END PGP PRIVATE KEY BLOCK-----",
+        ]
+    )
+    calls = []
+
+    def complete(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        calls.append(prompt)
+        assert "ZmFrZVByaXZhdGVLZXlNYXRlcmlhbA==" not in prompt
+        assert "Alice" not in prompt
+        assert "Don't print this key" in prompt
+        assert "Keep this evidence" in prompt
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"facts": []}'))])
+
+    monkeypatch.setattr(facts, "completion", complete)
+    messages = [
+        {"role": "user", "content": "Don't print this key"},
+        {"role": "user", "content": {"key": block, "instruction": "Keep this evidence"}},
+    ]
+    assert facts.extract_facts_from_messages(messages, False) == []
+    assert len(calls) == 1
+    assert messages[1]["content"]["key"] == block
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("value_prefix", ["Key: 'note'\n", "Label: 'this key: ", "The ['key is: "])
+@pytest.mark.parametrize("serialize", ["json", "repr"])
+def test_pgp_armor_preserves_quotes_inside_its_serialized_value(tmp_path, value_prefix, serialize):
+    import json
+
+    pytest.importorskip("cpex_secrets_detection")
+    make_client(tmp_path, SECRETS_SPEC)
+    block = "\n".join(
+        [
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----",  # pragma: allowlist secret
+            "Comment: Alice's key",
+            "",
+            "ZmFrZQ==",
+            "-----END PGP PRIVATE KEY BLOCK-----",
+        ]
+    )
+    values = {"key": value_prefix + block, "instruction": "Keep this evidence"}
+    text = json.dumps(values) if serialize == "json" else repr(values)
+    result = dispatch_llm_pre_call([{"role": "user", "content": text}], purpose="test")[0]["content"]
+    assert "ZmFrZQ==" not in result and "Alice" not in result
+    assert "Keep this evidence" in result
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "prefix",
+    ["{[]: 1}", "{[1]}", "[}", "[" * 1500 + "]" * 1500, "[" * 1500],
+    ids=["unhashable-key", "unhashable-set-member", "mismatched-brackets", "too-deep", "unclosed"],
+)
+def test_malformed_container_text_does_not_break_private_key_scanning(prefix):
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    pytest.importorskip("cpex_secrets_detection")
+    block = "-----BEGIN PRIVATE KEY-----\nZmFrZQ==\n-----END PRIVATE KEY-----"  # pragma: allowlist secret
+    result = SecretsFilterMemoryPlugin()._redact_items([{"content": prefix + block}])
+    assert result == [{"content": prefix + "[REDACTED]"}]
+
+
+@pytest.mark.unit
+def test_large_unterminated_quoted_text_preserves_other_literals_and_redacts_keys():
+    from altk_evolve.hooks.plugins.secrets import SecretsFilterMemoryPlugin
+
+    pytest.importorskip("cpex_secrets_detection")
+    prefix = '{"' + '\\"' * 32768
+    block = "-----BEGIN PRIVATE KEY-----\nZmFrZQ==\n-----END PRIVATE KEY-----"  # pragma: allowlist secret
+    text = prefix + " 'Keep this evidence' " + block
+    result = SecretsFilterMemoryPlugin()._redact_items([{"content": text}])
+    assert result == [{"content": prefix + " 'Keep this evidence' [REDACTED]"}]
