@@ -43,7 +43,7 @@ Sources: [Closing the Consistency Gap](https://arxiv.org/abs/2609.08832), especi
 
 ## Model coverage and efficiency
 
-The reported eight-model sweep evaluates different ways to deliver learned guidelines. The examples below use AppWorld `test_normal`; guidelines are mined from the training split only. Each row shows the best of the tested delivery configurations for that model.
+The reported eight-model sweep evaluates different ways to deliver learned guidelines. The examples below use AppWorld `test_normal`; the article describes guideline mining from the training split only. Each row shows the best of the tested delivery configurations for that model.
 
 **Curated retrieval** supplies a fixed, high-confidence core plus task-relevant guidelines. The **full guideline set** supplies every mined guideline at each ReAct step.
 
@@ -74,6 +74,8 @@ Source: [How Much Memory Does Your Agent Actually Need?](https://huggingface.co/
 ### In-house comparison with ACE
 
 The ACE comparison uses in-house, single-run evaluations on AppWorld `test_normal` (168 tasks), with the same base models and ReAct harness. Memory is mined from train/dev. The systems use different prompt templates and have different no-memory baselines; the table shows their reported post-memory performance and inference tokens.
+
+For the repeated Evolve scores, the articles describe different guideline-mining splits: train only in the memory-dosage article and train/dev in the ACE comparison. The relationship between those runs remains unclear in the published descriptions.
 
 | Model | ACE TGC / SGC | Evolve TGC / SGC | ACE tokens/task | Evolve tokens/task |
 |---|---:|---:|---:|---:|
@@ -123,7 +125,7 @@ As of **October 27, 2026**, both submission PRs are open. Both disclose `modifie
 
 ## April launch evaluation
 
-The [April 8 introduction](https://huggingface.co/blog/ibm-research/altk-evolve) and [April 7 IBM announcement](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) reported the following AppWorld SGC figures. The introduction describes a ReAct agent receiving the top five guidelines generated from prior train/dev trajectories and evaluated on unseen `test-normal` tasks.
+The [April 8 introduction](https://huggingface.co/blog/ibm-research/altk-evolve) reports the following AppWorld SGC table. The [April 7 IBM announcement](https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents) highlights the aggregate **+8.9 pp** and hard-task **+14.2 pp** gains. The introduction describes a ReAct agent receiving the top five guidelines generated from prior train/dev trajectories and evaluated on unseen `test-normal` tasks.
 
 | Difficulty | Baseline SGC | + Evolve SGC | Gain |
 |---|---:|---:|---:|
