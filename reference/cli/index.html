@@ -1819,18 +1819,20 @@
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># Add entity with metadata (JSON format)</span>
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>evolve<span class="w"> </span>entities<span class="w"> </span>add<span class="w"> </span>my_namespace<span class="w"> </span>--content<span class="w"> </span><span class="s2">&quot;Check return values&quot;</span><span class="w"> </span>--type<span class="w"> </span>guideline<span class="w"> </span>--metadata<span class="w"> </span><span class="s1">&#39;{&quot;source&quot;: &quot;code-review&quot;}&#39;</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="c1"># Search entities using semantic similarity</span>
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>evolve<span class="w"> </span>entities<span class="w"> </span>search<span class="w"> </span>my_namespace<span class="w"> </span><span class="s2">&quot;testing best practices&quot;</span>
-<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
-<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="c1"># Search with type filter</span>
-<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>evolve<span class="w"> </span>entities<span class="w"> </span>search<span class="w"> </span>my_namespace<span class="w"> </span><span class="s2">&quot;error handling&quot;</span><span class="w"> </span>--type<span class="w"> </span>guideline
-<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>
-<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="c1"># Show full details of an entity</span>
-<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>evolve<span class="w"> </span>entities<span class="w"> </span>show<span class="w"> </span>my_namespace<span class="w"> </span><span class="m">12345</span>
-<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>
-<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="c1"># Delete an entity</span>
-<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>evolve<span class="w"> </span>entities<span class="w"> </span>delete<span class="w"> </span>my_namespace<span class="w"> </span><span class="m">12345</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="c1"># --metadata must be a JSON object; a caller-supplied `merged_from` key is dropped (it is</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="c1"># managed by consolidation), with a warning on stderr.</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="c1"># Search entities using semantic similarity</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>evolve<span class="w"> </span>entities<span class="w"> </span>search<span class="w"> </span>my_namespace<span class="w"> </span><span class="s2">&quot;testing best practices&quot;</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="c1"># Search with type filter</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>evolve<span class="w"> </span>entities<span class="w"> </span>search<span class="w"> </span>my_namespace<span class="w"> </span><span class="s2">&quot;error handling&quot;</span><span class="w"> </span>--type<span class="w"> </span>guideline
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="c1"># Show full details of an entity</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>evolve<span class="w"> </span>entities<span class="w"> </span>show<span class="w"> </span>my_namespace<span class="w"> </span><span class="m">12345</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a><span class="c1"># Delete an entity</span>
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>evolve<span class="w"> </span>entities<span class="w"> </span>delete<span class="w"> </span>my_namespace<span class="w"> </span><span class="m">12345</span>
 </code></pre></div>
 <h3 id="data-retention">Data Retention<a class="headerlink" href="#data-retention" title="Permanent link">&para;</a></h3>
 <p>Manage policies, rules, and schedules directly in Evolve:</p>
