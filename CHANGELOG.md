@@ -4,6 +4,460 @@
 
 <!-- version list -->
 
+## v1.8.0 (2026-10-27)
+
+### Bug Fixes
+
+- **api**: Drop merged_from from REST-created entities
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **api**: Drop merged_from from REST-created entities
+  ([#436](https://github.com/AgentToolkit/altk-evolve/pull/436),
+  [`65d1a38`](https://github.com/AgentToolkit/altk-evolve/commit/65d1a388329c31f95a868b1b6ad3995520e2113a))
+
+- **ci**: Bound trusted license inventory checks
+  ([#430](https://github.com/AgentToolkit/altk-evolve/pull/430),
+  [`5f76fd1`](https://github.com/AgentToolkit/altk-evolve/commit/5f76fd190bb9ad427dbac8f95e22f17cd8fddcb8))
+
+- **ci**: Preserve license scans and normalize wheel evidence paths
+  ([#430](https://github.com/AgentToolkit/altk-evolve/pull/430),
+  [`5f76fd1`](https://github.com/AgentToolkit/altk-evolve/commit/5f76fd190bb9ad427dbac8f95e22f17cd8fddcb8))
+
+- **ci**: Stop the CVE scan failing on fork PRs and bump pyjwt to 2.15.1
+  ([#465](https://github.com/AgentToolkit/altk-evolve/pull/465),
+  [`dc564c2`](https://github.com/AgentToolkit/altk-evolve/commit/dc564c2bd0b949588555576f4059c0ff2d3d6fca))
+
+- **cli**: Drop caller-supplied merged_from in entities add
+  ([#467](https://github.com/AgentToolkit/altk-evolve/pull/467),
+  [`03c041e`](https://github.com/AgentToolkit/altk-evolve/commit/03c041e42fa406555ba3544e5708a69cf8a31f24))
+
+- **codex**: Drop rm -f from the save-trajectory command so Codex's exec policy allows it
+  ([#384](https://github.com/AgentToolkit/altk-evolve/pull/384),
+  [`b178f0c`](https://github.com/AgentToolkit/altk-evolve/commit/b178f0c537adc57bf524cb3e261b048d93f4d4f3))
+
+- **consistency**: Detect retired env vars in .env, reject removed metrics in nested fields
+  ([#418](https://github.com/AgentToolkit/altk-evolve/pull/418),
+  [`f55ce42`](https://github.com/AgentToolkit/altk-evolve/commit/f55ce42d0bbb6e8195a4fdeaf44384167d80cb00))
+
+- **consistency**: Fail loudly on removed sbert_large metric and env var
+  ([#418](https://github.com/AgentToolkit/altk-evolve/pull/418),
+  [`f55ce42`](https://github.com/AgentToolkit/altk-evolve/commit/f55ce42d0bbb6e8195a4fdeaf44384167d80cb00))
+
+- **consistency**: Remove sbert_large metric and CodeRankEmbed support
+  ([#418](https://github.com/AgentToolkit/altk-evolve/pull/418),
+  [`f55ce42`](https://github.com/AgentToolkit/altk-evolve/commit/f55ce42d0bbb6e8195a4fdeaf44384167d80cb00))
+
+- **consolidation**: Keep an earlier merge's source tasks under the task key
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **consolidation**: Keep an earlier merge's source tasks under the task key
+  ([#436](https://github.com/AgentToolkit/altk-evolve/pull/436),
+  [`65d1a38`](https://github.com/AgentToolkit/altk-evolve/commit/65d1a388329c31f95a868b1b6ad3995520e2113a))
+
+- **consolidation**: Keep an earlier merge's source tasks under the task key
+  ([#417](https://github.com/AgentToolkit/altk-evolve/pull/417),
+  [`2c281a9`](https://github.com/AgentToolkit/altk-evolve/commit/2c281a9691bf4838c4c4d0b85fdb625783e003c2))
+
+- **deps**: Bump aiohttp to 3.14.5 for GHSA-2g87-pp6c-29x5
+  ([#440](https://github.com/AgentToolkit/altk-evolve/pull/440),
+  [`360de58`](https://github.com/AgentToolkit/altk-evolve/commit/360de5867305db4dab6d1d15bc768303f29c7314))
+
+- **deps**: Deliberately bump cpex-secrets-detection to 0.3.11, with redaction regression tests
+  ([#398](https://github.com/AgentToolkit/altk-evolve/pull/398),
+  [`a11d92a`](https://github.com/AgentToolkit/altk-evolve/commit/a11d92ab10f2223322c77d22e665cb55373316a2))
+
+- **deps**: Pin cpex-secrets-detection to the 0.3.11 patch release
+  ([#398](https://github.com/AgentToolkit/altk-evolve/pull/398),
+  [`a11d92a`](https://github.com/AgentToolkit/altk-evolve/commit/a11d92ab10f2223322c77d22e665cb55373316a2))
+
+- **docker**: Install and smoke-test core server runtime
+  ([#445](https://github.com/AgentToolkit/altk-evolve/pull/445),
+  [`38f658b`](https://github.com/AgentToolkit/altk-evolve/commit/38f658ba257387ecacff56e5df65a38001d06664))
+
+- **experiments**: Check consolidation parity on stored support
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **experiments**: CUGA adapter follow-ups from the second review
+  ([#441](https://github.com/AgentToolkit/altk-evolve/pull/441),
+  [`68ea190`](https://github.com/AgentToolkit/altk-evolve/commit/68ea1901ca5946e97e7489a25d5321c2e0d8ca9f))
+
+- **experiments**: CUGA adapter review follow-ups
+  ([#441](https://github.com/AgentToolkit/altk-evolve/pull/441),
+  [`68ea190`](https://github.com/AgentToolkit/altk-evolve/commit/68ea1901ca5946e97e7489a25d5321c2e0d8ca9f))
+
+- **experiments**: Exclude known tau-retail test splits by default
+  ([#448](https://github.com/AgentToolkit/altk-evolve/pull/448),
+  [`ec84b52`](https://github.com/AgentToolkit/altk-evolve/commit/ec84b529a246685a0c014e6b8767939bf95c9884))
+
+- **experiments**: Initialize split tables on construction
+  ([#448](https://github.com/AgentToolkit/altk-evolve/pull/448),
+  [`ec84b52`](https://github.com/AgentToolkit/altk-evolve/commit/ec84b529a246685a0c014e6b8767939bf95c9884))
+
+- **experiments**: Key import-lessons checkpoints on task_id so renamed files are not imported twice
+  ([#435](https://github.com/AgentToolkit/altk-evolve/pull/435),
+  [`c2c4488`](https://github.com/AgentToolkit/altk-evolve/commit/c2c44886d3bb0d91e8fe73ed320112dd975cc92f))
+
+- **experiments**: Skip an AppWorld requirement that is not a string
+  ([#433](https://github.com/AgentToolkit/altk-evolve/pull/433),
+  [`7185b40`](https://github.com/AgentToolkit/altk-evolve/commit/7185b4092534a18b22486cd27e48f7e9fcaef8af))
+
+- **guidelines**: Dedupe subtask ranges on the real steps they cover
+  ([#423](https://github.com/AgentToolkit/altk-evolve/pull/423),
+  [`37b2176`](https://github.com/AgentToolkit/altk-evolve/commit/37b21765465a07ac564c67c9b1d3e43f27b9d436))
+
+- **guidelines**: Follow-ups from the #382 review
+  ([#423](https://github.com/AgentToolkit/altk-evolve/pull/423),
+  [`37b2176`](https://github.com/AgentToolkit/altk-evolve/commit/37b21765465a07ac564c67c9b1d3e43f27b9d436))
+
+- **guidelines**: Gate regular-path segmentation on trajectory length and drop repeated subtask
+  ranges ([#382](https://github.com/AgentToolkit/altk-evolve/pull/382),
+  [`2e32767`](https://github.com/AgentToolkit/altk-evolve/commit/2e32767d67eb092a16356785344f9733d576ddd9))
+
+- **guidelines**: Generate a repeated subtask range once on the accurate path
+  ([#423](https://github.com/AgentToolkit/altk-evolve/pull/423),
+  [`37b2176`](https://github.com/AgentToolkit/altk-evolve/commit/37b21765465a07ac564c67c9b1d3e43f27b9d436))
+
+- **guidelines**: Keep a cross-task merge retrievable for each of its source tasks
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **guidelines**: Keep a cross-task merge retrievable for each of its source tasks
+  ([#436](https://github.com/AgentToolkit/altk-evolve/pull/436),
+  [`65d1a38`](https://github.com/AgentToolkit/altk-evolve/commit/65d1a388329c31f95a868b1b6ad3995520e2113a))
+
+- **guidelines**: Keep a cross-task merge retrievable for each of its source tasks
+  ([#417](https://github.com/AgentToolkit/altk-evolve/pull/417),
+  [`2c281a9`](https://github.com/AgentToolkit/altk-evolve/commit/2c281a9691bf4838c4c4d0b85fdb625783e003c2))
+
+- **guidelines**: Keep consolidation rounds from re-merging undeleted originals
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **guidelines**: Keep consolidation rounds from re-merging undeleted originals
+  ([#436](https://github.com/AgentToolkit/altk-evolve/pull/436),
+  [`65d1a38`](https://github.com/AgentToolkit/altk-evolve/commit/65d1a388329c31f95a868b1b6ad3995520e2113a))
+
+- **guidelines**: Keep consolidation rounds from re-merging undeleted originals
+  ([#417](https://github.com/AgentToolkit/altk-evolve/pull/417),
+  [`2c281a9`](https://github.com/AgentToolkit/altk-evolve/commit/2c281a9691bf4838c4c4d0b85fdb625783e003c2))
+
+- **guidelines**: Match absorbed originals by ID and protect merged_from entries, not the whole key
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **guidelines**: Match absorbed originals by ID and protect merged_from entries, not the whole key
+  ([#436](https://github.com/AgentToolkit/altk-evolve/pull/436),
+  [`65d1a38`](https://github.com/AgentToolkit/altk-evolve/commit/65d1a388329c31f95a868b1b6ad3995520e2113a))
+
+- **guidelines**: Read source_tasks only as a list and keep a later task_description
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **guidelines**: Read source_tasks only as a list and keep a later task_description
+  ([#436](https://github.com/AgentToolkit/altk-evolve/pull/436),
+  [`65d1a38`](https://github.com/AgentToolkit/altk-evolve/commit/65d1a388329c31f95a868b1b6ad3995520e2113a))
+
+- **guidelines**: Read source_tasks only as a list and keep a later task_description
+  ([#417](https://github.com/AgentToolkit/altk-evolve/pull/417),
+  [`2c281a9`](https://github.com/AgentToolkit/altk-evolve/commit/2c281a9691bf4838c4c4d0b85fdb625783e003c2))
+
+- **guidelines**: Stop re-merging an original whose delete was vetoed in a later consolidate run
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **guidelines**: Stop re-merging an original whose delete was vetoed in a later consolidate run
+  ([#436](https://github.com/AgentToolkit/altk-evolve/pull/436),
+  [`65d1a38`](https://github.com/AgentToolkit/altk-evolve/commit/65d1a388329c31f95a868b1b6ad3995520e2113a))
+
+- **hooks**: Bound secret redaction and preserve colliding content
+  ([#446](https://github.com/AgentToolkit/altk-evolve/pull/446),
+  [`3a2490d`](https://github.com/AgentToolkit/altk-evolve/commit/3a2490dad9c0fb177d4a0f56ffd04dec5c44e5e4))
+
+- **hooks**: Enforce plugin_timeout for synchronous native hooks
+  ([#424](https://github.com/AgentToolkit/altk-evolve/pull/424),
+  [`7ab34a9`](https://github.com/AgentToolkit/altk-evolve/commit/7ab34a9264767b881906c09335f6ef19421dabe6))
+
+- **hooks**: Keep PGP armor within serialized values
+  ([#446](https://github.com/AgentToolkit/altk-evolve/pull/446),
+  [`3a2490d`](https://github.com/AgentToolkit/altk-evolve/commit/3a2490dad9c0fb177d4a0f56ffd04dec5c44e5e4))
+
+- **hooks**: Link nested backend views through the capability, not the thread
+  ([#424](https://github.com/AgentToolkit/altk-evolve/pull/424),
+  [`7ab34a9`](https://github.com/AgentToolkit/altk-evolve/commit/7ab34a9264767b881906c09335f6ef19421dabe6))
+
+- **hooks**: Make backend revocation atomic and transitive
+  ([#424](https://github.com/AgentToolkit/altk-evolve/pull/424),
+  [`7ab34a9`](https://github.com/AgentToolkit/altk-evolve/commit/7ab34a9264767b881906c09335f6ef19421dabe6))
+
+- **hooks**: Only a real timeout makes a native plugin refuse new calls
+  ([#424](https://github.com/AgentToolkit/altk-evolve/pull/424),
+  [`7ab34a9`](https://github.com/AgentToolkit/altk-evolve/commit/7ab34a9264767b881906c09335f6ef19421dabe6))
+
+- **hooks**: Preserve conflict content and strengthen secret redaction
+  ([#446](https://github.com/AgentToolkit/altk-evolve/pull/446),
+  [`3a2490d`](https://github.com/AgentToolkit/altk-evolve/commit/3a2490dad9c0fb177d4a0f56ffd04dec5c44e5e4))
+
+- **hooks**: Preserve conflict content types and filter custom instructions
+  ([#446](https://github.com/AgentToolkit/altk-evolve/pull/446),
+  [`3a2490d`](https://github.com/AgentToolkit/altk-evolve/commit/3a2490dad9c0fb177d4a0f56ffd04dec5c44e5e4))
+
+- **hooks**: Preserve identity and redact quoted PGP armor
+  ([#446](https://github.com/AgentToolkit/altk-evolve/pull/446),
+  [`3a2490d`](https://github.com/AgentToolkit/altk-evolve/commit/3a2490dad9c0fb177d4a0f56ffd04dec5c44e5e4))
+
+- **hooks**: Preserve serialized secret content boundaries
+  ([#446](https://github.com/AgentToolkit/altk-evolve/pull/446),
+  [`3a2490d`](https://github.com/AgentToolkit/altk-evolve/commit/3a2490dad9c0fb177d4a0f56ffd04dec5c44e5e4))
+
+- **hooks**: Recognize serialized PGP boundaries after prose
+  ([#446](https://github.com/AgentToolkit/altk-evolve/pull/446),
+  [`3a2490d`](https://github.com/AgentToolkit/altk-evolve/commit/3a2490dad9c0fb177d4a0f56ffd04dec5c44e5e4))
+
+- **hooks**: Redact complete private keys and missing credential formats
+  ([#446](https://github.com/AgentToolkit/altk-evolve/pull/446),
+  [`3a2490d`](https://github.com/AgentToolkit/altk-evolve/commit/3a2490dad9c0fb177d4a0f56ffd04dec5c44e5e4))
+
+- **hooks**: Redact joined fact content before rendering
+  ([#428](https://github.com/AgentToolkit/altk-evolve/pull/428),
+  [`2dcffcd`](https://github.com/AgentToolkit/altk-evolve/commit/2dcffcdf6d53256b5ee05d30dfac87b7ff11b242))
+
+- **hooks**: Reject unknown secrets plugin config keys instead of forwarding them
+  ([#398](https://github.com/AgentToolkit/altk-evolve/pull/398),
+  [`a11d92a`](https://github.com/AgentToolkit/altk-evolve/commit/a11d92ab10f2223322c77d22e665cb55373316a2))
+
+- **hooks**: Reset native hook runner state in forked children
+  ([#424](https://github.com/AgentToolkit/altk-evolve/pull/424),
+  [`7ab34a9`](https://github.com/AgentToolkit/altk-evolve/commit/7ab34a9264767b881906c09335f6ef19421dabe6))
+
+- **hooks**: Run native hook calls concurrently on per-call threads
+  ([#424](https://github.com/AgentToolkit/altk-evolve/pull/424),
+  [`7ab34a9`](https://github.com/AgentToolkit/altk-evolve/commit/7ab34a9264767b881906c09335f6ef19421dabe6))
+
+- **hooks**: Send hook direct writes through the public metadata template
+  ([#424](https://github.com/AgentToolkit/altk-evolve/pull/424),
+  [`7ab34a9`](https://github.com/AgentToolkit/altk-evolve/commit/7ab34a9264767b881906c09335f6ef19421dabe6))
+
+- **install**: Recover Claude marketplace swaps and report plugin health
+  ([#451](https://github.com/AgentToolkit/altk-evolve/pull/451),
+  [`755764e`](https://github.com/AgentToolkit/altk-evolve/commit/755764e683d2e75bfa4579f26bcda620643d9549))
+
+- **install**: Require Python 3.9, which the installed plugin scripts need
+  ([#392](https://github.com/AgentToolkit/altk-evolve/pull/392),
+  [`efa6062`](https://github.com/AgentToolkit/altk-evolve/commit/efa6062dbe0ca012f07218ef57784bba0f3f4c7a))
+
+- **installer**: Harden platform recovery and uninstall lifecycle
+  ([#451](https://github.com/AgentToolkit/altk-evolve/pull/451),
+  [`755764e`](https://github.com/AgentToolkit/altk-evolve/commit/755764e683d2e75bfa4579f26bcda620643d9549))
+
+- **installer**: Preserve shared assets on project uninstall
+  ([#451](https://github.com/AgentToolkit/altk-evolve/pull/451),
+  [`755764e`](https://github.com/AgentToolkit/altk-evolve/commit/755764e683d2e75bfa4579f26bcda620643d9549))
+
+- **installer**: Restore marketplace after activation failure
+  ([#451](https://github.com/AgentToolkit/altk-evolve/pull/451),
+  [`755764e`](https://github.com/AgentToolkit/altk-evolve/commit/755764e683d2e75bfa4579f26bcda620643d9549))
+
+- **mcp**: Bracket an IPv6 host in the dashboard's logged URL
+  ([#429](https://github.com/AgentToolkit/altk-evolve/pull/429),
+  [`d4be6c3`](https://github.com/AgentToolkit/altk-evolve/commit/d4be6c309ae11928cc510e94bc201c584afd27e8))
+
+- **mcp**: Follow-ups from the #383 review
+  ([#429](https://github.com/AgentToolkit/altk-evolve/pull/429),
+  [`d4be6c3`](https://github.com/AgentToolkit/altk-evolve/commit/d4be6c309ae11928cc510e94bc201c584afd27e8))
+
+- **mcp**: Migrate to MCP 2 with safe cancellation and tracing
+  ([#455](https://github.com/AgentToolkit/altk-evolve/pull/455),
+  [`6c0ae3c`](https://github.com/AgentToolkit/altk-evolve/commit/6c0ae3c9a0e2b0fef9d04c1e40a71b81a3d32504))
+
+- **mcp**: Treat a whitespace-only EVOLVE_DASHBOARD as unset
+  ([#429](https://github.com/AgentToolkit/altk-evolve/pull/429),
+  [`d4be6c3`](https://github.com/AgentToolkit/altk-evolve/commit/d4be6c309ae11928cc510e94bc201c584afd27e8))
+
+- **memory**: Bound temporary filenames for full native IDs
+  ([#447](https://github.com/AgentToolkit/altk-evolve/pull/447),
+  [`c258144`](https://github.com/AgentToolkit/altk-evolve/commit/c2581445a06df270753e95f4f5b5dbd33e56c4f3))
+
+- **memory**: Publish names near the filesystem limit
+  ([#447](https://github.com/AgentToolkit/altk-evolve/pull/447),
+  [`c258144`](https://github.com/AgentToolkit/altk-evolve/commit/c2581445a06df270753e95f4f5b5dbd33e56c4f3))
+
+- **memory**: Recover unpublish failures and index saved provenance
+  ([#454](https://github.com/AgentToolkit/altk-evolve/pull/454),
+  [`2a75491`](https://github.com/AgentToolkit/altk-evolve/commit/2a75491a40b95b0e8b94e722b4f34b759e859b27))
+
+- **memory**: Restore unpublished entities atomically
+  ([#454](https://github.com/AgentToolkit/altk-evolve/pull/454),
+  [`2a75491`](https://github.com/AgentToolkit/altk-evolve/commit/2a75491a40b95b0e8b94e722b4f34b759e859b27))
+
+- **memory**: Retain full names when mirroring native memories
+  ([#447](https://github.com/AgentToolkit/altk-evolve/pull/447),
+  [`c258144`](https://github.com/AgentToolkit/altk-evolve/commit/c2581445a06df270753e95f4f5b5dbd33e56c4f3))
+
+- **packaging**: Address split migration and release follow-ups
+  ([#445](https://github.com/AgentToolkit/altk-evolve/pull/445),
+  [`38f658b`](https://github.com/AgentToolkit/altk-evolve/commit/38f658ba257387ecacff56e5df65a38001d06664))
+
+- **packaging**: Restore runtime and release support after package split
+  ([#445](https://github.com/AgentToolkit/altk-evolve/pull/445),
+  [`38f658b`](https://github.com/AgentToolkit/altk-evolve/commit/38f658ba257387ecacff56e5df65a38001d06664))
+
+- **plugins**: Bound native memory filenames without merging IDs
+  ([#447](https://github.com/AgentToolkit/altk-evolve/pull/447),
+  [`c258144`](https://github.com/AgentToolkit/altk-evolve/commit/c2581445a06df270753e95f4f5b5dbd33e56c4f3))
+
+- **plugins**: Preserve save success and support Claw unpublish layout
+  ([#454](https://github.com/AgentToolkit/altk-evolve/pull/454),
+  [`2a75491`](https://github.com/AgentToolkit/altk-evolve/commit/2a75491a40b95b0e8b94e722b4f34b759e859b27))
+
+- **plugins**: Use datetime.timezone.utc in the audit log writer so it runs on 3.9
+  ([#392](https://github.com/AgentToolkit/altk-evolve/pull/392),
+  [`efa6062`](https://github.com/AgentToolkit/altk-evolve/commit/efa6062dbe0ca012f07218ef57784bba0f3f4c7a))
+
+- **provenance**: Normalize null evidence as absent
+  ([#454](https://github.com/AgentToolkit/altk-evolve/pull/454),
+  [`2a75491`](https://github.com/AgentToolkit/altk-evolve/commit/2a75491a40b95b0e8b94e722b4f34b759e859b27))
+
+- **provenance**: Preserve evidence across memory publication lifecycle
+  ([#454](https://github.com/AgentToolkit/altk-evolve/pull/454),
+  [`2a75491`](https://github.com/AgentToolkit/altk-evolve/commit/2a75491a40b95b0e8b94e722b4f34b759e859b27))
+
+- **provenance**: Preserve trajectory session identity across hosts
+  ([#454](https://github.com/AgentToolkit/altk-evolve/pull/454),
+  [`2a75491`](https://github.com/AgentToolkit/altk-evolve/commit/2a75491a40b95b0e8b94e722b4f34b759e859b27))
+
+- **provenance**: Record insufficient_evidence verdicts and reject invalid ones loudly
+  ([#386](https://github.com/AgentToolkit/altk-evolve/pull/386),
+  [`c7a98c1`](https://github.com/AgentToolkit/altk-evolve/commit/c7a98c1fbaf9cd8ad6ba99f50ea1028ce8138abc))
+
+- **provenance**: Reject conflicting verdicts for one entity in a batch
+  ([#386](https://github.com/AgentToolkit/altk-evolve/pull/386),
+  [`c7a98c1`](https://github.com/AgentToolkit/altk-evolve/commit/c7a98c1fbaf9cd8ad6ba99f50ea1028ce8138abc))
+
+- **provenance**: Skip undecodable saved trajectories
+  ([#454](https://github.com/AgentToolkit/altk-evolve/pull/454),
+  [`2a75491`](https://github.com/AgentToolkit/altk-evolve/commit/2a75491a40b95b0e8b94e722b4f34b759e859b27))
+
+- **publish**: Follow-ups from the #381 review
+  ([#421](https://github.com/AgentToolkit/altk-evolve/pull/421),
+  [`28fc0a5`](https://github.com/AgentToolkit/altk-evolve/commit/28fc0a53072e23dc635baa1fe3ecb2765e71a0d8))
+
+- **publish**: Publish entities of any type, not just guidelines
+  ([#381](https://github.com/AgentToolkit/altk-evolve/pull/381),
+  [`c83561a`](https://github.com/AgentToolkit/altk-evolve/commit/c83561ab615d52c65e765e6d4162b55060fc8635))
+
+- **publish**: Support owned memory updates and unpublishing
+  ([#454](https://github.com/AgentToolkit/altk-evolve/pull/454),
+  [`2a75491`](https://github.com/AgentToolkit/altk-evolve/commit/2a75491a40b95b0e8b94e722b4f34b759e859b27))
+
+- **retrieval**: Count core support by distinct source tasks
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **retrieval**: Keep stored support for partial provenance and tolerate malformed metadata
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **tau**: Reconcile default split evidence and warning counts
+  ([#448](https://github.com/AgentToolkit/altk-evolve/pull/448),
+  [`ec84b52`](https://github.com/AgentToolkit/altk-evolve/commit/ec84b529a246685a0c014e6b8767939bf95c9884))
+
+### Documentation
+
+- Add tau2-bench blog to README and docs updates
+  ([#456](https://github.com/AgentToolkit/altk-evolve/pull/456),
+  [`af357cd`](https://github.com/AgentToolkit/altk-evolve/commit/af357cd6d4e7ba5ae8f4919c15b6f9057c737695))
+
+- **bob**: Fix the Python minimum, list every global write, and make wrong-directory recovery safe
+  ([#385](https://github.com/AgentToolkit/altk-evolve/pull/385),
+  [`7920972`](https://github.com/AgentToolkit/altk-evolve/commit/7920972e0331c2ae26bc8e894475c5b58ab6f0ee))
+
+- **bob**: Rewrite the Bob starter example for the current flow and its video
+  ([#385](https://github.com/AgentToolkit/altk-evolve/pull/385),
+  [`7920972`](https://github.com/AgentToolkit/altk-evolve/commit/7920972e0331c2ae26bc8e894475c5b58ab6f0ee))
+
+- **experiments**: Note that a trace without a separator is kept whole
+  ([#433](https://github.com/AgentToolkit/altk-evolve/pull/433),
+  [`7185b40`](https://github.com/AgentToolkit/altk-evolve/commit/7185b4092534a18b22486cd27e48f7e9fcaef8af))
+
+- **guidelines**: Note that the fast path's length gate no longer counts the elision marker
+  ([#423](https://github.com/AgentToolkit/altk-evolve/pull/423),
+  [`37b2176`](https://github.com/AgentToolkit/altk-evolve/commit/37b21765465a07ac564c67c9b1d3e43f27b9d436))
+
+- **guidelines**: Say how each path counts steps for the segmentation gate
+  ([#423](https://github.com/AgentToolkit/altk-evolve/pull/423),
+  [`37b2176`](https://github.com/AgentToolkit/altk-evolve/commit/37b21765465a07ac564c67c9b1d3e43f27b9d436))
+
+- **hooks**: Correct the native plugin timeout notes
+  ([#424](https://github.com/AgentToolkit/altk-evolve/pull/424),
+  [`7ab34a9`](https://github.com/AgentToolkit/altk-evolve/commit/7ab34a9264767b881906c09335f6ef19421dabe6))
+
+- **hooks**: Describe fail-fast as an admission rule
+  ([#424](https://github.com/AgentToolkit/altk-evolve/pull/424),
+  [`7ab34a9`](https://github.com/AgentToolkit/altk-evolve/commit/7ab34a9264767b881906c09335f6ef19421dabe6))
+
+- **hooks**: Group fact extraction with hook contracts
+  ([#428](https://github.com/AgentToolkit/altk-evolve/pull/428),
+  [`2dcffcd`](https://github.com/AgentToolkit/altk-evolve/commit/2dcffcdf6d53256b5ee05d30dfac87b7ff11b242))
+
+- **install**: Refresh stable download and Bob setup instructions
+  ([#451](https://github.com/AgentToolkit/altk-evolve/pull/451),
+  [`755764e`](https://github.com/AgentToolkit/altk-evolve/commit/755764e683d2e75bfa4579f26bcda620643d9549))
+
+### Features
+
+- **experiments**: Add agent_view conversion mode to CUGA adapter
+  ([#441](https://github.com/AgentToolkit/altk-evolve/pull/441),
+  [`68ea190`](https://github.com/AgentToolkit/altk-evolve/commit/68ea1901ca5946e97e7489a25d5321c2e0d8ca9f))
+
+- **experiments**: Add tau-retail adapter
+  ([#360](https://github.com/AgentToolkit/altk-evolve/pull/360),
+  [`882e8c2`](https://github.com/AgentToolkit/altk-evolve/commit/882e8c2767b267d42faffb3081c32b9a2aaeb5e1))
+
+- **experiments**: Add vakra adapter ([#362](https://github.com/AgentToolkit/altk-evolve/pull/362),
+  [`2d548e5`](https://github.com/AgentToolkit/altk-evolve/commit/2d548e5d9c334c7573ec8a287beb418463fde868))
+
+- **experiments**: Import per-task lessons into a namespace
+  ([#435](https://github.com/AgentToolkit/altk-evolve/pull/435),
+  [`c2c4488`](https://github.com/AgentToolkit/altk-evolve/commit/c2c44886d3bb0d91e8fe73ed320112dd975cc92f))
+
+- **experiments**: Map AppWorld failed requirements into failed_checks and detail
+  ([#433](https://github.com/AgentToolkit/altk-evolve/pull/433),
+  [`7185b40`](https://github.com/AgentToolkit/altk-evolve/commit/7185b4092534a18b22486cd27e48f7e9fcaef8af))
+
+- **experiments**: Skip AppWorld test splits by default
+  ([#415](https://github.com/AgentToolkit/altk-evolve/pull/415),
+  [`1bb866d`](https://github.com/AgentToolkit/altk-evolve/commit/1bb866d8f8e5a1e92cc10eb95ff769182e9da6c2))
+
+- **guidelines**: Cluster guidelines by guideline text as an alternative key
+  ([#439](https://github.com/AgentToolkit/altk-evolve/pull/439),
+  [`1a3b727`](https://github.com/AgentToolkit/altk-evolve/commit/1a3b727c814eb16465a8efae5a0f16eabf2bbdac))
+
+- **guidelines**: Cluster guidelines by guideline text as an alternative key
+  ([#436](https://github.com/AgentToolkit/altk-evolve/pull/436),
+  [`65d1a38`](https://github.com/AgentToolkit/altk-evolve/commit/65d1a388329c31f95a868b1b6ad3995520e2113a))
+
+- **guidelines**: Cluster guidelines by guideline text as an alternative key
+  ([#417](https://github.com/AgentToolkit/altk-evolve/pull/417),
+  [`2c281a9`](https://github.com/AgentToolkit/altk-evolve/commit/2c281a9691bf4838c4c4d0b85fdb625783e003c2))
+
+- **mcp**: Announce the stdio dashboard listener and allow turning it off
+  ([#383](https://github.com/AgentToolkit/altk-evolve/pull/383),
+  [`0abb442`](https://github.com/AgentToolkit/altk-evolve/commit/0abb44231c2ea36a7132238a5238cad4542c4734))
+
+### Performance Improvements
+
+- **facts**: Redact supplied content before building extraction prompts
+  ([#428](https://github.com/AgentToolkit/altk-evolve/pull/428),
+  [`2dcffcd`](https://github.com/AgentToolkit/altk-evolve/commit/2dcffcdf6d53256b5ee05d30dfac87b7ff11b242))
+
+- **facts**: Run content hooks before rendering extraction prompts
+  ([#428](https://github.com/AgentToolkit/altk-evolve/pull/428),
+  [`2dcffcd`](https://github.com/AgentToolkit/altk-evolve/commit/2dcffcdf6d53256b5ee05d30dfac87b7ff11b242))
+
+
 ## v1.7.1 (2026-10-15)
 
 ### Bug Fixes

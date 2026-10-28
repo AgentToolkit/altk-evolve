@@ -4,7 +4,8 @@ import os
 
 from jinja2 import Template
 from altk_evolve.config.llm import LLMSettings, llm_settings
-from altk_evolve.hooks.manager import dispatch_llm_pre_call
+from altk_evolve.hooks.manager import dispatch_llm_pre_call, hooks_active
+from altk_evolve.hooks.types import HookType
 from altk_evolve.schema.conflict_resolution import SimpleEntity, EntityUpdate
 from altk_evolve.schema.core import RecordedEntity
 from altk_evolve.schema.exceptions import EvolveException
@@ -80,18 +81,38 @@ def _conflict_resolution_completion_options(settings: LLMSettings | None = None)
     return options
 
 
-def _apply_llm_pre_call(content: str | list | dict, model: str) -> str:
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
+    """Reject redaction collisions instead of silently dropping earlier values."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Redacted JSON contains duplicate object keys")
+        result[key] = value
+    return result
+
+
+def _apply_llm_pre_call(content: str | list | dict, model: str) -> str | list | dict:
     """Pass memory content as text to the hook and use only its returned text.
 
     Serialize the whole content so dictionary keys and numbers are checked too.
-    IDs, types, metadata and conflict instructions are never passed here.
+    IDs, types, metadata and built-in instructions are never passed here.
     """
+    if not hooks_active(HookType.LLM_PRE_CALL):
+        return content
     messages = dispatch_llm_pre_call([{"role": "user", "content": serialize_content(content)}], purpose="conflict_resolution", model=model)
     if len(messages) != 1 or not isinstance(messages[0], dict) or messages[0].get("role") != "user":
         raise ValueError("llm_pre_call must return one user message containing text")
     text = messages[0].get("content")
     if not isinstance(text, str):
         raise ValueError("llm_pre_call must return one user message containing text")
+    if isinstance(content, (dict, list)):
+        try:
+            parsed = json.loads(text, object_pairs_hook=_unique_json_object)
+        except ValueError:
+            pass
+        else:
+            if isinstance(parsed, (dict, list)):
+                return parsed
     return text
 
 
@@ -119,6 +140,8 @@ def resolve_conflicts(
     # instructions afterward so a hook cannot replace them in its response.
     for entity in simplified_old_entities + simplified_new_entities:
         entity.content = _apply_llm_pre_call(entity.content, settings.conflict_resolution_model)
+    if custom_update_entities_prompt is not None:
+        custom_update_entities_prompt = str(_apply_llm_pre_call(custom_update_entities_prompt, settings.conflict_resolution_model))
     prompt = get_update_entities_messages(simplified_old_entities, simplified_new_entities, custom_update_entities_prompt)
     llm_messages = [{"role": "user", "content": prompt}]
 

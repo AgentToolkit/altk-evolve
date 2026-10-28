@@ -15,7 +15,7 @@ from datetime import datetime
 import glob
 import fnmatch
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 # Initialize FastMCP server
 mcp = FastMCP("secure-filesystem-server")
@@ -586,12 +586,14 @@ def main():
 
     print(f"Secure MCP Filesystem Server running on {args.transport} transport", file=sys.stderr)
     if args.transport == "sse":
-        mcp.settings.port = args.port
         print(f"Port: {args.port}", file=sys.stderr)
     print(f"Allowed directories: {dirs}", file=sys.stderr)
 
     # Run the server
-    mcp.run(transport=args.transport)
+    if args.transport == "sse":
+        mcp.run(transport="sse", port=args.port)
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

@@ -40,11 +40,16 @@ passed straight through — no pydantic ``model_dump``/``model_validate`` dance.
 
 from __future__ import annotations
 
+import ast
+import json
+import re
+
+from bisect import bisect_right
 from collections.abc import Callable
 from typing import Any, cast
 
 from altk_evolve.hooks.plugin import HookContext, HookPluginBase
-from altk_evolve.hooks.plugins.identity import restore_merged_from_entries, without_merged_from_entries
+from altk_evolve.hooks.plugins.identity import redactable_metadata, restore_structural
 
 DEFAULT_REDACTION_TEXT = "[REDACTED]"
 
@@ -137,6 +142,203 @@ def build_secrets_scanner() -> Scanner:
     return cast(Scanner, py_scan_container)
 
 
+# Supplement the pinned scanner's narrow structured patterns. Keep these under
+# its existing detector switches; no entropy heuristics or new defaults.
+_PRIVATE_KEY_MARKERS = re.compile(
+    r"-----(?P<edge>BEGIN|END) (?P<kind>(?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----"
+)
+# Conflict content and structured fact messages may arrive as serialized JSON
+# or Python repr: their line separators are escaped, and the final key-body
+# line ends at a closing quote. Treat those boundaries like physical newlines.
+_KEY_BODY_LINES = re.compile(r"(?:(?:\r?\n|\\(?:r\\)?n)[A-Za-z0-9+/=]+(?=\r?\n|\\(?:r\\)?n|[\"']|\Z))*")
+# PGP permits quotes in free-text armor headers. For escaped line separators,
+# also require both markers to be in one JSON/Python string literal: validating
+# the normalized armor alone cannot distinguish headers from adjacent fields.
+_SERIALIZED_STRINGS = re.compile(r"\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'", re.DOTALL)
+_PGP_ARMOR_BODY = re.compile(
+    r"\n(?:[A-Za-z][A-Za-z0-9-]*:[ \t]*[^\n]*\n)*\n"
+    r"(?:[A-Za-z0-9+/=]+[ \t]*\n)+(?:=[A-Za-z0-9+/]{4}[ \t]*\n)?"
+)
+_SUPPLEMENTARY_PATTERNS = {
+    "aws_secret_access_key": re.compile(
+        r"(?i)(\baws[ \t]+)((?:AKIA|ASIA)[A-Z0-9]{16})"
+        r"([ \t]+secret(?:_access_key)?[ \t]*[=:][ \t]*)(?P<quote>['\"]?)"
+        r"(?P<secret>[A-Za-z0-9/+=]{40})(?P=quote)(?![A-Za-z0-9/+=])"
+    ),
+    "aws_access_key_id": re.compile(r"\bASIA[A-Z0-9]{16}\b"),
+    "slack_token": re.compile(
+        r"\b(?:xoxs-[0-9]+-[A-Za-z0-9-]+|xapp-[0-9]+-A[A-Za-z0-9]+-[0-9]+-[A-Za-z0-9]+)(?![A-Za-z0-9-])"
+        r"|https://hooks\.slack\.com/services/T[A-Za-z0-9]+/B[A-Za-z0-9]+/[A-Za-z0-9]+"
+    ),
+}
+
+
+def _string_literal_spans(text: str, start: int = 0, end: int | None = None) -> list[tuple[int, int]]:
+    """Find literals without retrying every suffix after an unmatched quote.
+
+    If one quote type has no closing delimiter, later starts of that type
+    cannot match either. The other quote type can still form a valid literal.
+    """
+    limit = len(text) if end is None else end
+    spans: list[tuple[int, int]] = []
+    exhausted: set[str] = set()
+    while start < limit:
+        char = text[start]
+        if char in "\"'" and char not in exhausted:
+            literal = _SERIALIZED_STRINGS.match(text, start, limit)
+            if literal is not None:
+                spans.append((start, literal.end()))
+                start = literal.end()
+                continue
+            exhausted.add(char)
+        start += 1
+    return spans
+
+
+def _serialized_string_spans(text: str) -> list[tuple[int, int]]:
+    """Recognize valid container envelopes before scanning their string literals.
+
+    Outside an envelope, retain the best-effort plain-text behavior. Inside a
+    valid JSON/Python container, prose apostrophes outside it cannot establish
+    string boundaries, and quotes inside its values cannot start new literals.
+    Scan non-overlapping envelopes once; malformed outer containers do not
+    trigger repeated parser attempts at every nested opening bracket.
+    """
+    spans: list[tuple[int, int]] = []
+    stack: list[str] = []
+    exhausted: set[str] = set()
+    start = previous = index = 0
+    while index < len(text):
+        char = text[index]
+        if not stack:
+            if char not in "{[":
+                index += 1
+                continue
+            start = index
+        elif char in "\"'" and char not in exhausted:
+            literal = _SERIALIZED_STRINGS.match(text, index)
+            if literal is not None:
+                index = literal.end()
+                continue
+            exhausted.add(char)
+        if char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]":
+            if char != stack[-1]:
+                stack.clear()
+                index += 1
+                continue
+            stack.pop()
+            if not stack:
+                end = index + 1
+                fragment = text[start:end]
+                try:
+                    try:
+                        json.loads(fragment)
+                    except ValueError:
+                        ast.literal_eval(fragment)
+                except (ValueError, SyntaxError, TypeError, RecursionError):
+                    pass
+                else:
+                    spans.extend(_string_literal_spans(text, previous, start))
+                    spans.extend(_string_literal_spans(text, start, end))
+                    previous = end
+        index += 1
+    spans.extend(_string_literal_spans(text, previous))
+    return spans
+
+
+def _mask_private_keys(text: str, replacement: str) -> tuple[int, str]:
+    """Mask matching armor pairs, or only the header and adjacent base64 lines.
+
+    Delimiter pairing stops at the next marker, so an unmatched header cannot
+    consume prose or another key. Each intervening region is visited once.
+    """
+    markers = list(_PRIVATE_KEY_MARKERS.finditer(text))
+    if not markers:
+        return 0, text
+    string_spans = _serialized_string_spans(text)
+    string_starts = [start for start, _ in string_spans]
+    pieces: list[str] = []
+    previous = count = 0
+    for index, marker in enumerate(markers):
+        if marker.group("edge") != "BEGIN":
+            continue
+        following = markers[index + 1] if index + 1 < len(markers) else None
+        # Quotes in PGP armor headers are valid. Elsewhere they may separate
+        # serialized values, which must never be swallowed as one key block.
+        interior = text[marker.end() : following.start()] if following else ""
+        normalized = interior.replace(r"\r\n", "\n").replace(r"\n", "\n").replace("\r\n", "\n")
+        pgp_armor = marker.group("kind") == "PGP PRIVATE KEY BLOCK" and _PGP_ARMOR_BODY.fullmatch(normalized) is not None
+        if pgp_armor and interior.startswith((r"\n", r"\r\n")):
+            # Check boundaries in the original text, before escape normalization.
+            # A header can contain escaped quotes, but no closing
+            # quote separating another field may be consumed by this block.
+            span_index = bisect_right(string_starts, marker.start()) - 1
+            pgp_armor = following is not None and span_index >= 0 and following.end() < string_spans[span_index][1]
+        paired = (
+            following is not None
+            and following.group("edge") == "END"
+            and following.group("kind") == marker.group("kind")
+            and (not re.search(r"[\"']", interior) or pgp_armor)
+        )
+        if paired:
+            assert following is not None
+            end = following.end()
+        else:
+            body = _KEY_BODY_LINES.match(text, marker.end())
+            assert body is not None
+            end = body.end()
+        pieces.extend((text[previous : marker.start()], replacement))
+        previous = end
+        count += 1
+    pieces.append(text[previous:])
+    return count, "".join(pieces)
+
+
+def _supplementary_scan(items: list[dict], config: dict) -> tuple[int, list[dict]]:
+    """Scan string leaves before Rust can mask just a credential's prefix.
+
+    Each private-key block or AWS credential pair is one finding. This always
+    masks matched spans in a copy, even for detection-only calls, so the Rust
+    pass cannot count them a second time. The copy is discarded in that mode.
+    """
+    count = 0
+
+    def visit(value: Any) -> Any:
+        nonlocal count
+        if isinstance(value, dict):
+            return {key: visit(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [visit(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(visit(item) for item in value)
+        if not isinstance(value, str):
+            return value
+        replacement = cast(str, config["redaction_text"]) if config["redact"] else DEFAULT_REDACTION_TEXT
+        if config["enabled"]["private_key_block"]:
+            private_count, value = _mask_private_keys(value, replacement)
+            count += private_count
+        for name, pattern in _SUPPLEMENTARY_PATTERNS.items():
+            if not config["enabled"][name]:
+                continue
+
+            def replace(match: re.Match[str]) -> str:
+                nonlocal count
+                count += 1
+                if name == "aws_secret_access_key":
+                    key = replacement if config["enabled"]["aws_access_key_id"] else match.group(2)
+                    quote = match.group("quote")
+                    return match.group(1) + key + match.group(3) + quote + replacement + quote
+                return replacement
+
+            value = pattern.sub(replace, value)
+        return value
+
+    result = visit(items)
+    return count, result
+
+
 class SecretsFilterMemoryPlugin(HookPluginBase):
     """Native plugin: structured-secrets redaction on writes and LLM egress.
 
@@ -187,7 +389,9 @@ class SecretsFilterMemoryPlugin(HookPluginBase):
         raising (the seam converts it to a fail-closed ``MemoryPolicyViolation``
         under ``on_error: fail``), never by returning a payload.
         """
-        count, redacted, _findings = self._get_scanner()(list(items), self._scan_config)
+        supplementary_count, prepared = _supplementary_scan(items, self._scan_config)
+        count, redacted, _findings = self._get_scanner()(prepared, self._scan_config)
+        count += supplementary_count
         if count == 0:
             return None
         if not self._scan_config.get("redact", False):
@@ -197,21 +401,14 @@ class SecretsFilterMemoryPlugin(HookPluginBase):
         return cast("list[dict]", redacted)
 
     def memory_pre_write(self, payload: Any, context: HookContext) -> Any | None:
-        # The scanner sees every other metadata value, but not the merged_from
-        # entries consolidation keys on: a content digest reads as a hex secret.
         originals = payload.entities
-        views = [
-            {**entity, "metadata": without_merged_from_entries(entity["metadata"])} if entity.get("metadata") else entity
-            for entity in originals
-        ]
+        views = [{**entity, "metadata": redactable_metadata(entity.get("metadata", {}))} for entity in originals]
         redacted = self._redact_items(views)
         if redacted is not None:
             if len(redacted) != len(originals):
                 raise ValueError("Secrets filter changed the entity count")
             redacted = [
-                {**entity, "metadata": restore_merged_from_entries(entity.get("metadata") or {}, original["metadata"])}
-                if original.get("metadata")
-                else entity
+                {**entity, "metadata": restore_structural(entity.get("metadata", {}), original.get("metadata", {}))}
                 for original, entity in zip(originals, redacted, strict=True)
             ]
         # Contract: changes travel back as a replacement payload; the input
