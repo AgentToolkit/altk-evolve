@@ -12,11 +12,21 @@
 
 </div>
 
-Coding agents repeat the same mistakes because they start fresh every session. Evolve gives agents memory — they learn from what worked and what didn't, so each session is better than the last.
+Evolve helps AI agents learn from experience. It turns past trajectories into reusable guidelines that help agents complete future tasks, without changing model weights.
 
-Evolve is a system designed to help agents improve over time by learning from their trajectories. The Lite version is designed to effortlessly slot into existing agent assistants like Claude Code and Codex. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
+The Lite version is designed to effortlessly slot into existing agent assistants like Claude Code and Codex. The full service uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base. It also supports guideline consolidation, clustering related guidelines and merging equivalent advice while preserving support counts and source provenance.
 
-On the AppWorld benchmark, Evolve improved agent reliability by +8.9 points overall, with a 74% relative increase on hard multi-step tasks. Evolve is a system designed to help agents improve over time by learning from their trajectories. It uses a combination of an MCP server for tool integration, vector storage for memory, and LLM-based conflict resolution to refine its knowledge base.
+On AppWorld's held-out test split, a GPT-4.1 ReAct agent with Evolve increased scenario completion from **50.0% to 64.3% (+14.3 percentage points)**. [See the evaluation protocol and results](https://agenttoolkit.github.io/altk-evolve/results/#generalization-to-unseen-tasks).
+
+## Research highlights
+
+| Finding | Reported result |
+|---|---|
+| [More repeatable success](https://agenttoolkit.github.io/altk-evolve/results/#repeat-run-consistency) | AppWorld tasks passing all five attempts increased from **53% to 66%**, using sibling-task guidelines with GPT-4.1. |
+| [Efficient learning](https://agenttoolkit.github.io/altk-evolve/results/#model-coverage-and-efficiency) | With gpt-oss-120b, AppWorld task completion increased from **39.9% to 56.0%** using curated retrieval. |
+| [Lifts frontier and non-frontier models](https://agenttoolkit.github.io/altk-evolve/results/#customer-service-tasks) | On τ²-bench, Evolve lifts both frontier and non-frontier models (held-out Pass^4: GPT-5.5 **55% → 70%**; GPT-4.1 **57.5% → 67.5%**). |
+
+These are separate benchmark experiments with different metrics, models, and memory configurations. Follow each link for its evaluation protocol and sources.
 
 > [!IMPORTANT]
 > ⭐ **Star the repo**: it helps others discover it.  
@@ -27,7 +37,7 @@ Research, releases, and practical findings from the Evolve team.
 
 <!-- BEGIN LATEST-UPDATES (generated; edit includes/latest-updates.md then run scripts/sync_latest_updates.py) -->
 - **2026-10-20** · Article — **[ALTK-Evolve: How learned memory tops the τ²-bench leaderboard on customer service tasks without a frontier model](https://huggingface.co/blog/ibm-research/altk-evolve-bc)**
-  How learned guidelines improve GPT-4.1's customer-service reliability on τ²-bench without updating model weights.
+  Learned guidelines raise GPT-4.1's held-out retail Pass^4 from 57.5% to 67.5%; the article also compares pending custom submissions with an October 12 leaderboard snapshot.
 - **2026-09-25** · Paper — **[Memory as Middleware for Self-Improving AI Agents](https://arxiv.org/abs/2609.32091)**
   The case for agent memory as a pluggable middleware layer, with Evolve as the reference implementation (to appear at [Middleware 2026](https://middleware-conf.github.io/2026)).
 - **2026-09-15** · Article — **[Your Agent Aced the Task. Will It Do It Again?](https://huggingface.co/blog/ibm-research/altk-evolve-consistency)**
