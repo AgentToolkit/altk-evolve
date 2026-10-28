@@ -2,11 +2,12 @@
 
 Published evaluations of Evolve cover task completion, repeat-run consistency, and memory efficiency on [AppWorld](https://appworld.dev) and [τ²-bench](https://github.com/sierra-research/tau2-bench). Performance depends on the agent, model, memory configuration, and evaluation protocol. Each section identifies the setup and links to its reported evidence.
 
-The studies use three metrics:
+The studies use four metrics:
 
 - **Task Goal Completion (TGC):** the percentage of individual AppWorld tasks completed successfully, as checked by the benchmark's programmatic grader.
 - **Scenario Goal Completion (SGC):** the percentage of AppWorld scenarios for which every task variant succeeds, usually three variants per scenario.
-- **Pass^k:** success across all k attempts at the same task. The repeated-run studies below use five attempts on AppWorld and four on τ²-bench. **Mean accuracy** averages success across those attempts.
+- **Pass^k:** success across all k attempts at the same task. The repeated-run studies below use five attempts on AppWorld and four on τ²-bench.
+- **Mean accuracy (Mean@k):** success averaged across those k attempts.
 
 SGC measures success across related task variants; Pass^k measures success across repeated attempts. Completion and accuracy values are percentages, and absolute gains are reported in percentage points (pp).
 
