@@ -1445,22 +1445,55 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#appworld-benchmark" class="md-nav__link">
+  <a href="#generalization-to-unseen-tasks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        AppWorld Benchmark
+        Generalization to unseen tasks
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="AppWorld Benchmark">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repeat-run-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repeat-run consistency
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-coverage-and-efficiency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model coverage and efficiency
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Model coverage and efficiency">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#key-findings" class="md-nav__link">
+  <a href="#runtime-token-usage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Key findings
+        Runtime token usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-house-comparison-with-ace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In-house comparison with ACE
       
     </span>
   </a>
@@ -1473,10 +1506,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#paper" class="md-nav__link">
+  <a href="#customer-service-tasks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Paper
+        Customer-service tasks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Customer-service tasks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#held-out-test-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Held-out test results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#submitted-full-base-results-and-leaderboard-snapshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Submitted full-base results and leaderboard snapshot
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#april-launch-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        April launch evaluation
       
     </span>
   </a>
@@ -1552,15 +1624,332 @@
 
 
 <h1 id="results">Results<a class="headerlink" href="#results" title="Permanent link">&para;</a></h1>
-<h2 id="appworld-benchmark">AppWorld Benchmark<a class="headerlink" href="#appworld-benchmark" title="Permanent link">&para;</a></h2>
-<p>We evaluated Evolve on <a href="https://appworld.dev">AppWorld</a>, where agents complete realistic multi-step tasks via APIs, averaging 9.5 APIs across 1.8 apps. Hard tasks require more complex control flow across multiple services.</p>
-<p>A ReAct agent received the task instruction plus the top 5 retrieved guidelines generated from one prior run on train/dev and was tested on an unseen partition (test-normal). We report Scenario Goal Completion (SGC), a strict consistency metric requiring success across scenario variants.</p>
+<p>Published evaluations of Evolve cover task completion, repeat-run consistency, and memory efficiency on <a href="https://appworld.dev">AppWorld</a> and <a href="https://github.com/sierra-research/tau2-bench">τ²-bench</a>. Performance depends on the agent, model, memory configuration, and evaluation protocol. Each section identifies the setup and links to its reported evidence.</p>
+<p>The studies use four metrics:</p>
+<ul>
+<li><strong>Task Goal Completion (TGC):</strong> the percentage of individual AppWorld tasks completed successfully, as checked by the benchmark's programmatic grader.</li>
+<li><strong>Scenario Goal Completion (SGC):</strong> the percentage of AppWorld scenarios for which every task variant succeeds, usually three variants per scenario.</li>
+<li><strong>Pass^k:</strong> success across all k attempts at the same task. The repeated-run studies below use five attempts on AppWorld and four on τ²-bench.</li>
+<li><strong>Mean accuracy (Mean@k):</strong> success averaged across those k attempts.</li>
+</ul>
+<p>SGC measures success across related task variants; Pass^k measures success across repeated attempts. Completion and accuracy values are percentages, and absolute gains are reported in percentage points (pp).</p>
+<h2 id="generalization-to-unseen-tasks">Generalization to unseen tasks<a class="headerlink" href="#generalization-to-unseen-tasks" title="Permanent link">&para;</a></h2>
+<p>A GPT-4.1 ReAct agent was evaluated on AppWorld's held-out <code>test-normal</code> partition. Guidelines were generated from trajectories on the train and dev partitions. The configuration below uses subtask-level guidelines with LLM-guided selection, retrieving the top five guidelines before reasoning, with a maximum of 30 reasoning-action steps per task. It achieves the highest aggregate SGC among the configurations reported in the technical paper.</p>
+<table>
+<thead>
+<tr>
+<th>Difficulty</th>
+<th style="text-align: right;">Baseline TGC</th>
+<th style="text-align: right;">+ Evolve TGC</th>
+<th style="text-align: right;">Baseline SGC</th>
+<th style="text-align: right;">+ Evolve SGC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Easy</td>
+<td style="text-align: right;">89.5%</td>
+<td style="text-align: right;">91.2%</td>
+<td style="text-align: right;">79.0%</td>
+<td style="text-align: right;">89.5%</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td style="text-align: right;">66.7%</td>
+<td style="text-align: right;">70.8%</td>
+<td style="text-align: right;">56.2%</td>
+<td style="text-align: right;">56.2%</td>
+</tr>
+<tr>
+<td>Hard</td>
+<td style="text-align: right;">54.0%</td>
+<td style="text-align: right;">58.7%</td>
+<td style="text-align: right;">19.1%</td>
+<td style="text-align: right;">47.6%</td>
+</tr>
+<tr>
+<td><strong>Aggregate</strong></td>
+<td style="text-align: right;"><strong>69.6%</strong></td>
+<td style="text-align: right;"><strong>73.2%</strong></td>
+<td style="text-align: right;"><strong>50.0%</strong></td>
+<td style="text-align: right;"><strong>64.3%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Aggregate task completion improves by <strong>+3.6 pp</strong>, and scenario completion by <strong>+14.3 pp</strong>. Hard-task scenario completion rises from <strong>19.1% to 47.6% (+28.5 pp)</strong>. Medium-task scenario completion is unchanged, even though individual task completion improves. The effect therefore depends on both difficulty and metric.</p>
+<p>These results test transfer from train/dev experience to unseen tasks. The <a href="https://arxiv.org/html/2603.10600v1">technical paper</a> reports additional extraction and retrieval configurations; the <a href="https://arxiv.org/abs/2609.32091">Memory as Middleware paper</a> reproduces this table in its preliminary evaluation.</p>
+<h2 id="repeat-run-consistency">Repeat-run consistency<a class="headerlink" href="#repeat-run-consistency" title="Permanent link">&para;</a></h2>
+<p>A separate study evaluates a GPT-4.1 ReAct agent on AppWorld <code>test_normal</code> (168 tasks), with five attempts per task. Consistency guidelines are generated from one baseline trajectory per task. Same-task evaluation applies those guidelines to fresh attempts at that task; sibling-task evaluation applies guidelines from other variants of the same scenario.</p>
+<table>
+<thead>
+<tr>
+<th>Guidelines from</th>
+<th style="text-align: right;">Pass^5</th>
+<th style="text-align: right;">Gain vs. baseline</th>
+<th style="text-align: right;">Mean@5</th>
+<th style="text-align: right;">Gain vs. baseline</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No guidelines (baseline)</td>
+<td style="text-align: right;">53.0%</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">77.4%</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr>
+<td>Same task</td>
+<td style="text-align: right;">69.0%</td>
+<td style="text-align: right;">+16.0 pp</td>
+<td style="text-align: right;">81.0%</td>
+<td style="text-align: right;">+3.6 pp</td>
+</tr>
+<tr>
+<td>Sibling task</td>
+<td style="text-align: right;">66.0%</td>
+<td style="text-align: right;">+13.0 pp</td>
+<td style="text-align: right;">79.5%</td>
+<td style="text-align: right;">+2.1 pp</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>53% → 66%</strong> result measures transfer between related scenario variants. The <strong>53% → 69%</strong> result measures improved repeat use of the same task. Both improve aggregate mean accuracy, alongside the stricter all-five-attempts metric.</p>
+<p>Guideline generation has an additional offline cost: the paper's Consistency Analyzer uses 30 resamples per inference step, requiring roughly 30 times the tokens for each trajectory analyzed. That analysis cost is separate from the runtime inference-token figures in the next section.</p>
+<p>Sources: <a href="https://arxiv.org/abs/2609.08832">Closing the Consistency Gap</a>, especially the evaluation and Appendix Table 1; <a href="https://huggingface.co/blog/ibm-research/altk-evolve-consistency">Your Agent Aced the Task. Will It Do It Again?</a>.</p>
+<h2 id="model-coverage-and-efficiency">Model coverage and efficiency<a class="headerlink" href="#model-coverage-and-efficiency" title="Permanent link">&para;</a></h2>
+<p>The reported eight-model sweep evaluates different ways to deliver learned guidelines. The examples below use AppWorld <code>test_normal</code>; the article describes guideline mining from the training split only. Each row shows the best of the tested delivery configurations for that model.</p>
+<p><strong>Curated retrieval</strong> supplies a fixed, high-confidence core plus task-relevant guidelines. The <strong>full guideline set</strong> supplies every mined guideline at each ReAct step.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Best tested delivery</th>
+<th style="text-align: right;">TGC: baseline → Evolve</th>
+<th style="text-align: right;">SGC: baseline → Evolve</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gpt-oss-120b</td>
+<td>Curated retrieval</td>
+<td style="text-align: right;">39.9% → 56.0%</td>
+<td style="text-align: right;">21.4% → 37.5%</td>
+</tr>
+<tr>
+<td>DeepSeek-V3.2</td>
+<td>Full guideline set</td>
+<td style="text-align: right;">79.8% → 89.3%</td>
+<td style="text-align: right;">64.3% → 80.4%</td>
+</tr>
+<tr>
+<td>Claude Opus 4.6</td>
+<td>Full guideline set</td>
+<td style="text-align: right;">90.5% → 94.6%</td>
+<td style="text-align: right;">87.5% → 94.6%</td>
+</tr>
+<tr>
+<td>GPT-5.5</td>
+<td>Full guideline set</td>
+<td style="text-align: right;">92.3% → 95.2%</td>
+<td style="text-align: right;">82.1% → 89.3%</td>
+</tr>
+<tr>
+<td>GLM-5</td>
+<td>Full guideline set</td>
+<td style="text-align: right;">87.5% → 87.5%</td>
+<td style="text-align: right;">80.4% → 80.4%</td>
+</tr>
+</tbody>
+</table>
+<p>The results show benefits for several models, including ones with high baseline completion, and no measured gain for GLM-5 in this setup. Memory delivery is a configuration choice to evaluate for the model and task distribution.</p>
+<h3 id="runtime-token-usage">Runtime token usage<a class="headerlink" href="#runtime-token-usage" title="Permanent link">&para;</a></h3>
+<p>The article reports average inference tokens per task, accumulated across agent steps. These figures describe runtime usage; guideline generation is an additional operation. Token counts are rounded as reported (K = thousand tokens).</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Delivery</th>
+<th style="text-align: right;">No-memory tokens/task</th>
+<th style="text-align: right;">Evolve tokens/task</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gpt-oss-120b</td>
+<td>Curated retrieval</td>
+<td style="text-align: right;">110K</td>
+<td style="text-align: right;">116K</td>
+</tr>
+<tr>
+<td>gpt-oss-120b</td>
+<td>Full guideline set</td>
+<td style="text-align: right;">110K</td>
+<td style="text-align: right;">166K</td>
+</tr>
+<tr>
+<td>DeepSeek-V3.2</td>
+<td>Full guideline set</td>
+<td style="text-align: right;">148K</td>
+<td style="text-align: right;">263K</td>
+</tr>
+</tbody>
+</table>
+<p>With curated retrieval, gpt-oss-120b gains <strong>+16.1 pp task completion</strong>. Supplying all guidelines incurs substantially more tokens for both models in the table.</p>
+<p>Source: <a href="https://huggingface.co/blog/ibm-research/altk-evolve-hmm">How Much Memory Does Your Agent Actually Need?</a>.</p>
+<h3 id="in-house-comparison-with-ace">In-house comparison with ACE<a class="headerlink" href="#in-house-comparison-with-ace" title="Permanent link">&para;</a></h3>
+<p>The ACE comparison uses in-house, single-run evaluations on AppWorld <code>test_normal</code> (168 tasks), with the same base models and ReAct harness. Memory is mined from train/dev. The systems use different prompt templates and have different no-memory baselines; the table shows their reported post-memory performance and inference tokens.</p>
+<p>For the repeated Evolve scores, the articles describe different guideline-mining splits: train only in the memory-dosage article and train/dev in the ACE comparison. The relationship between those runs remains unclear in the published descriptions.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: right;">ACE TGC / SGC</th>
+<th style="text-align: right;">Evolve TGC / SGC</th>
+<th style="text-align: right;">ACE tokens/task</th>
+<th style="text-align: right;">Evolve tokens/task</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gpt-oss-120b</td>
+<td style="text-align: right;">54.8% / 35.7%</td>
+<td style="text-align: right;">56.0% / 37.5%</td>
+<td style="text-align: right;">777K</td>
+<td style="text-align: right;">116K</td>
+</tr>
+<tr>
+<td>DeepSeek-V3.2</td>
+<td style="text-align: right;">80.4% / 73.2%</td>
+<td style="text-align: right;">89.3% / 80.4%</td>
+<td style="text-align: right;">634K</td>
+<td style="text-align: right;">263K</td>
+</tr>
+</tbody>
+</table>
+<p>For gpt-oss-120b, Evolve uses about <strong>one-seventh of the inference tokens</strong>. The article treats task completion as approximately tied: an Evolve repeat run scored 54.8%, matching ACE. For DeepSeek-V3.2, Evolve reports higher completion with about <strong>41% of ACE's inference tokens</strong>. These are token comparisons; monetary cost depends on model pricing and caching.</p>
+<p>Source: <a href="https://huggingface.co/blog/ibm-research/altk-evolve-sldd">Thinking of ACE? We Can Do It with Fewer Tokens</a>, including its method notes and reference tables.</p>
+<h2 id="customer-service-tasks">Customer-service tasks<a class="headerlink" href="#customer-service-tasks" title="Permanent link">&para;</a></h2>
+<p>The τ²-bench experiments use the benchmark's native ReAct scaffold (THINK → ACT), with learned guidelines appended after the domain policy in the system prompt. Guidelines are learned from each domain's train split using the agent model. Evaluation uses τ²-bench v1.0.1, GPT-5.5 as the customer simulator, and four attempts per task.</p>
+<h3 id="held-out-test-results">Held-out test results<a class="headerlink" href="#held-out-test-results" title="Permanent link">&para;</a></h3>
+<p>The table below uses <strong>40 retail test tasks</strong> and <strong>20 airline test tasks</strong>. <code>sup3</code> retains guidelines supported by at least three training tasks; <code>sup2</code> uses a threshold of two. “All” retains every consolidated guideline, including support-one guidelines. Counts appear in parentheses.</p>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Agent model</th>
+<th>Guidelines</th>
+<th style="text-align: right;">Mean accuracy</th>
+<th style="text-align: right;">Pass^4</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Retail (40 test tasks)</td>
+<td>GPT-4.1</td>
+<td>None</td>
+<td style="text-align: right;">78.1%</td>
+<td style="text-align: right;">57.5%</td>
+</tr>
+<tr>
+<td>Retail (40 test tasks)</td>
+<td>GPT-4.1</td>
+<td>sup3 (31)</td>
+<td style="text-align: right;">78.8%</td>
+<td style="text-align: right;">60.0%</td>
+</tr>
+<tr>
+<td>Retail (40 test tasks)</td>
+<td>GPT-4.1</td>
+<td>All (292)</td>
+<td style="text-align: right;">82.5%</td>
+<td style="text-align: right;">67.5%</td>
+</tr>
+<tr>
+<td>Airline (20 test tasks)</td>
+<td>GPT-4.1</td>
+<td>None</td>
+<td style="text-align: right;">57.5%</td>
+<td style="text-align: right;">35.0%</td>
+</tr>
+<tr>
+<td>Airline (20 test tasks)</td>
+<td>GPT-4.1</td>
+<td>sup3 (14)</td>
+<td style="text-align: right;">60.0%</td>
+<td style="text-align: right;">45.0%</td>
+</tr>
+<tr>
+<td>Airline (20 test tasks)</td>
+<td>GPT-4.1</td>
+<td>All (101)</td>
+<td style="text-align: right;">65.0%</td>
+<td style="text-align: right;">40.0%</td>
+</tr>
+<tr>
+<td>Airline (20 test tasks)</td>
+<td>GPT-5.5</td>
+<td>None</td>
+<td style="text-align: right;">72.5%</td>
+<td style="text-align: right;">55.0%</td>
+</tr>
+<tr>
+<td>Airline (20 test tasks)</td>
+<td>GPT-5.5</td>
+<td>sup2 (103)</td>
+<td style="text-align: right;">80.0%</td>
+<td style="text-align: right;">70.0%</td>
+</tr>
+<tr>
+<td>Airline (20 test tasks)</td>
+<td>GPT-5.5</td>
+<td>All (146)</td>
+<td style="text-align: right;">82.5%</td>
+<td style="text-align: right;">70.0%</td>
+</tr>
+</tbody>
+</table>
+<p>On retail, GPT-4.1 gains <strong>+4.4 pp mean accuracy</strong> and <strong>+10.0 pp Pass^4</strong> with all guidelines. On airline, GPT-5.5 gains <strong>+10.0 pp mean accuracy</strong> and <strong>+15.0 pp Pass^4</strong> with all guidelines. GPT-4.1's airline result illustrates the delivery tradeoff: all guidelines give the highest mean accuracy, while the smaller sup3 set gives the highest Pass^4.</p>
+<p>The article also reports cost on the full base split: retail's combined agent and customer-simulator cost increases from approximately <strong>$0.084 to $0.139 per conversation (+65%)</strong> with all guidelines. This cost table covers a different task set from the held-out table above.</p>
+<p>Source: <a href="https://huggingface.co/blog/ibm-research/altk-evolve-bc">ALTK-Evolve: How learned memory tops the τ²-bench leaderboard on customer service tasks without a frontier model</a>, particularly Tables 2, 3, and 5.</p>
+<h3 id="submitted-full-base-results-and-leaderboard-snapshot">Submitted full-base results and leaderboard snapshot<a class="headerlink" href="#submitted-full-base-results-and-leaderboard-snapshot" title="Permanent link">&para;</a></h3>
+<p>The October 20 article compares full-base submissions with a leaderboard snapshot from <strong>October 12, 2026</strong>. The benchmark's base split includes both train and test tasks, so it includes tasks used to learn guidelines and differs from the held-out evaluation above.</p>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Agent model</th>
+<th style="text-align: right;">Base tasks × attempts</th>
+<th style="text-align: right;">Submitted Pass^4</th>
+<th>Submission</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Retail</td>
+<td>GPT-4.1</td>
+<td style="text-align: right;">114 × 4</td>
+<td style="text-align: right;">67.54%</td>
+<td><a href="https://github.com/sierra-research/tau2-bench/pull/542">PR #542</a></td>
+</tr>
+<tr>
+<td>Airline</td>
+<td>GPT-5.5</td>
+<td style="text-align: right;">50 × 4</td>
+<td style="text-align: right;">82.00%</td>
+<td><a href="https://github.com/sierra-research/tau2-bench/pull/551">PR #551</a></td>
+</tr>
+</tbody>
+</table>
+<p>As of <strong>October 27, 2026</strong>, both submission PRs are open. Both disclose <code>modified_prompts: true</code>, training-task overlap, and an expected <strong>Unverified</strong> status. The article's ranking comparisons refer to its dated snapshot; the held-out tables provide the evidence for transfer to unseen tasks.</p>
+<h2 id="april-launch-evaluation">April launch evaluation<a class="headerlink" href="#april-launch-evaluation" title="Permanent link">&para;</a></h2>
+<p>The <a href="https://huggingface.co/blog/ibm-research/altk-evolve">April 8 introduction</a> reports the following AppWorld SGC table. The <a href="https://www.ibm.com/new/announcements/altk-evolve-on-the-job-learning-for-ai-agents">April 7 IBM announcement</a> highlights the aggregate <strong>+8.9 pp</strong> and hard-task <strong>+14.2 pp</strong> gains. The introduction describes a ReAct agent receiving the top five guidelines generated from prior train/dev trajectories and evaluated on unseen <code>test-normal</code> tasks.</p>
 <table>
 <thead>
 <tr>
 <th>Difficulty</th>
 <th style="text-align: right;">Baseline SGC</th>
-<th style="text-align: right;">+ Evolve</th>
+<th style="text-align: right;">+ Evolve SGC</th>
 <th style="text-align: right;">Gain</th>
 </tr>
 </thead>
@@ -1569,39 +1958,29 @@
 <td>Easy</td>
 <td style="text-align: right;">79.0%</td>
 <td style="text-align: right;">84.2%</td>
-<td style="text-align: right;">+5.2</td>
+<td style="text-align: right;">+5.2 pp</td>
 </tr>
 <tr>
 <td>Medium</td>
 <td style="text-align: right;">56.2%</td>
 <td style="text-align: right;">62.5%</td>
-<td style="text-align: right;">+6.3</td>
+<td style="text-align: right;">+6.3 pp</td>
 </tr>
 <tr>
-<td><strong>Hard</strong></td>
-<td style="text-align: right;"><strong>19.1%</strong></td>
-<td style="text-align: right;"><strong>33.3%</strong></td>
-<td style="text-align: right;"><strong>+14.2</strong></td>
+<td>Hard</td>
+<td style="text-align: right;">19.1%</td>
+<td style="text-align: right;">33.3%</td>
+<td style="text-align: right;">+14.2 pp</td>
 </tr>
 <tr>
 <td><strong>Aggregate</strong></td>
 <td style="text-align: right;"><strong>50.0%</strong></td>
 <td style="text-align: right;"><strong>58.9%</strong></td>
-<td style="text-align: right;"><strong>+8.9</strong></td>
+<td style="text-align: right;"><strong>+8.9 pp</strong></td>
 </tr>
 </tbody>
 </table>
-<h3 id="key-findings">Key findings<a class="headerlink" href="#key-findings" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Generalization:</strong> The agent improves on unseen test tasks, showing it learns transferable principles rather than memorizing solutions.</li>
-<li><strong>Complexity scaling:</strong> The harder the task, the more the agent benefits from learned guidelines. Hard tasks saw a 74% relative increase in success rate.</li>
-<li><strong>Consistency:</strong> SGC gains exceeded raw pass-rate improvements, reducing "flaky" behavior across scenario variants. Guidelines help the agent solve tasks reliably, not just occasionally.</li>
-</ul>
-<h2 id="paper">Paper<a class="headerlink" href="#paper" title="Permanent link">&para;</a></h2>
-<p>For full details on the architecture, experiments, and analysis, see:</p>
-<blockquote>
-<p><a href="https://arxiv.org/abs/2603.10600">Trajectory-Informed Memory Generation for Self-Improving Agent Systems</a> (arXiv:2603.10600)</p>
-</blockquote>
+<p>These are the historical figures behind the original homepage headline, including the approximately 74% relative improvement on hard tasks. The <a href="#generalization-to-unseen-tasks">generalization section</a> presents the best SGC configuration reported in the technical papers with its stated setup.</p>
 
 
 
