@@ -114,3 +114,54 @@ def test_schema_violation_names_the_enum_field():
 
 def test_prune_keeps_null_content_and_empty_output():
     assert L.prune({"a": None, "b": [], "content": None, "output": [], "c": {"d": {}}}) == {"content": None, "output": [], "c": {}}
+
+
+def with_structured_output_call(trace):
+    """The trace with a second call of the agent wrapped in LangChain plumbing, as structured output records it:
+    RunnableSequence > RunnableParallel<raw> > the GENERATION, all inside the node sql_agent."""
+    in_node = {"langgraph_node": "sql_agent"}
+    trace["observations"] += [
+        {
+            "id": "seq",
+            "type": "CHAIN",
+            "name": "RunnableSequence",
+            "parentObservationId": "agent-1",
+            "startTime": "2026-01-01T00:00:08.000Z",
+            "endTime": "2026-01-01T00:00:08.900Z",
+            "metadata": in_node,
+        },
+        {
+            "id": "par",
+            "type": "CHAIN",
+            "name": "RunnableParallel<raw>",
+            "parentObservationId": "seq",
+            "startTime": "2026-01-01T00:00:08.100Z",
+            "endTime": "2026-01-01T00:00:08.800Z",
+            "metadata": in_node,
+        },
+        {
+            "id": "llm-3",
+            "type": "GENERATION",
+            "name": "ChatOpenAI",
+            "parentObservationId": "par",
+            "startTime": "2026-01-01T00:00:08.200Z",
+            "endTime": "2026-01-01T00:00:08.700Z",
+            "model": "gpt-4o",
+            "input": [{"role": "user", "content": "How many users?"}],
+            "output": {"content": "42"},
+            "metadata": {**in_node, "ls_provider": "openai"},
+        },
+    ]
+    return trace
+
+
+def test_plumbing_is_no_agent_and_its_calls_belong_to_their_node(langfuse_trace):
+    from altk_forge.converters.checks import fidelity_problems, problems_of
+
+    trace = with_structured_output_call(langfuse_trace)
+    doc = L.convert(trace)
+    s = spans(doc)
+    assert {x["agent_id"] for x in s.values() if x["kind"] == "agent"} == {"sql_agent"}
+    assert s["llm-3"]["step"].startswith("sql_agent.")
+    assert "seq" not in s and "par" not in s
+    assert problems_of(doc) == [] and fidelity_problems(trace, doc) == []

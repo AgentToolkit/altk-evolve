@@ -4,6 +4,7 @@ A file with `turns` is validated as a session; its turns are looked up next to i
 The command line is `python -m altk_forge.cli.validate`."""
 
 import json
+import re
 from pathlib import Path
 
 import jsonschema
@@ -12,20 +13,36 @@ from referencing import Registry, Resource
 from .spans import walk
 
 SCHEMAS = Path(__file__).resolve().parent / "schema"
-
-
 TRAJECTORY = json.loads((SCHEMAS / "trajectory.schema.json").read_text())
-
-
 SESSION = json.loads((SCHEMAS / "session.schema.json").read_text())
-
-
 REGISTRY = Registry().with_resources(
     [
         (TRAJECTORY["$id"], Resource.from_contents(TRAJECTORY)),
         ("trajectory.schema.json", Resource.from_contents(TRAJECTORY)),
     ]
 )
+
+
+# What an agent_id may be: the schema's own pattern, so the rules below never disagree with the schema.
+AGENT_ID = re.compile(TRAJECTORY["$defs"]["Span"]["properties"]["agent_id"]["pattern"])
+# LangGraph's entry and exit nodes run in every graph; they are the graph's, not an agent.
+GRAPH_INTERNAL_NODES = {"__start__", "__end__"}
+
+
+def is_agent_name(name):
+    """Whether `name` can be an agent_id."""
+    return isinstance(name, str) and bool(AGENT_ID.match(name))
+
+
+def graph_agent_node(observation):
+    """The agent a LangGraph node of a trace is, or None when the observation is no such node. A node is an agent
+    when its name can be an agent_id: the graph's own __start__ / __end__ are not, and neither are framework hooks
+    named like a method (PatchToolCallsMiddleware.before_agent, the middleware of a LangChain agent), which run
+    around an agent rather than being one."""
+    name = observation.get("name")
+    if observation.get("type") not in ("CHAIN", "AGENT") or name != (observation.get("metadata") or {}).get("langgraph_node"):
+        return None
+    return name if name not in GRAPH_INTERNAL_NODES and is_agent_name(name) else None
 
 
 def refs(doc):
@@ -84,11 +101,26 @@ def check(doc, traces):
         for x in spans:
             if x["kind"] == "agent" and agent_ids and x["agent_id"] not in agent_ids:
                 problems.append(f"{x['span_id']}: agent {x['agent_id']} not in agents")
-        for agent in (x for x in spans if x["kind"] == "agent"):
-            for x in walk(agent):
-                if x["kind"] == "llm" and x["step"].split(".")[0] != agent["agent_id"]:
-                    problems.append(f"{x['span_id']}: step {x['step']} is not under agent {agent['agent_id']}")
+        problems += steps_off_their_agent(doc["tree"])
     return problems
+
+
+def steps_off_their_agent(span, agent=None):
+    """An llm span's step is `<agent_id>.<purpose>` of the agent it runs in: the nearest agent span above it. A call
+    in an agent nested in another belongs to the inner one only."""
+    out = []
+    if span.get("kind") == "agent":
+        agent = span.get("agent_id")
+    elif span.get("kind") == "llm" and agent is not None and str(span.get("step")).split(".")[0] != agent:
+        step = str(span.get("step"))
+        purpose = step.split(".")[1] if "." in step else "<purpose>"
+        out.append(
+            f"{span.get('span_id')}: step {step} is not under agent {agent}: an llm span's step starts with the "
+            f"agent_id of the agent span it is in ({agent}.{purpose})"
+        )
+    for child in span.get("children") or []:
+        out += steps_off_their_agent(child, agent)
+    return out
 
 
 def validator_for(doc):

@@ -30,7 +30,7 @@ from .originals import save_original
 from .runtime import RUNTIME
 from .sending import send_trace
 from .state import all_pipelines, converters_state, get_pipeline, memory_of, state_of
-from .trajectories import write_index
+from .trajectories import update_index, write_index
 
 OVERLAP = timedelta(minutes=10)  # ingestion is asynchronous: re-list a window before the watermark
 
@@ -252,6 +252,7 @@ class Worker:
                 else:
                     (root / "trajectories").mkdir(parents=True, exist_ok=True)
                     (root / "trajectories" / f"{t['id']}.trajectory.json").write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+                    update_index(p["id"], doc)
                     entry["status"] = "built"
                     run["built"] += 1
                     log(p["id"], f"Built {t['id']} ({t.get('name')})")
@@ -259,13 +260,17 @@ class Worker:
                 changed = True
                 if not blocked and (not newest_done or t["timestamp"] > newest_done):
                     newest_done = t["timestamp"]
-                if run["new"] % 10 == 0:  # keep progress across a crash
-                    write_json(root / "state.json", st)
+                # After every trace: the console counts trajectories from state.json, and with an LLM call per new
+                # trace shape a run can take hours. One small write costs nothing next to that, and keeps progress
+                # across a crash.
+                write_json(root / "state.json", st)
             if newest_done != mark:
                 st["watermarks"][key] = newest_done
                 changed = True
         if changed:
             write_json(root / "state.json", st)
+        # Each trajectory went into the index when it was built; a full rebuild at the end keeps the index exactly the
+        # files on disk, whatever happened during the run.
         if run["built"] or not (root / "trajectories" / "index.json").exists():
             write_index(p["id"])
 

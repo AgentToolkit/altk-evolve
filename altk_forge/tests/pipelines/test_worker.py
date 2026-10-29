@@ -72,3 +72,29 @@ def test_a_paused_pipeline_stops_its_run(pipeline, chat):
     assert run["status"] == "stopped"
     set_enabled("qa-bot", True)
     assert WORKER.run_once("qa-bot")["built"] == 2
+
+
+def test_a_trajectory_shows_in_the_console_and_viewer_as_soon_as_it_is_built(pipeline, traces, monkeypatch):
+    # A run over many new traces can take hours (an LLM call per new shape): the viewer's list, the console's counts
+    # and its Open viewer button must not wait for the run to end. The second trace has another shape, so the LLM is
+    # asked while the run is still going; that is when the first trajectory must already show.
+    import json as _json
+
+    from altk_forge.converters import writer
+    from altk_forge.core.paths import pipe_dir
+    from forge_helpers import SIMPLE_CONVERTER, answer_with
+
+    (traces / "run2.json").write_text(_json.dumps({"question": "Q2?", "answer": 2}))
+    seen = []
+
+    def llm(messages):
+        index = pipe_dir("qa-bot") / "trajectories" / "index.json"
+        listed = [row["question"] for row in _json.loads(index.read_text())] if index.exists() else None
+        seen.append((listed, counts("qa-bot")["trajectories"]))
+        return answer_with(SIMPLE_CONVERTER)
+
+    monkeypatch.setattr(writer, "chat", llm)
+    run = WORKER.run_once("qa-bot")
+    assert run["built"] == 2
+    # (viewer list, console count) while each converter was being written: nothing before the first, then the first.
+    assert seen == [(None, 0), (["Q1?"], 1)]

@@ -9,8 +9,11 @@ an import that admits only the allowed modules, so a check that missed something
 
 import builtins
 import importlib
+import io
 import json
+import keyword
 import sys
+import tokenize
 import traceback
 
 ALLOWED = {
@@ -60,6 +63,54 @@ def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
     return importlib.__import__(name, globals, locals, fromlist, level)
 
 
+# How much of the failing line's variables the error shows: enough to see a value's type and shape, short enough that
+# the error stays readable when a variable holds the whole trace.
+SHOWN_VALUE = 160
+SHOWN_NAMES = 8
+
+
+def describe_failure(e, code):
+    """`Type: message`, then where in converter.py it happened: the line itself, and the type and start of every
+    variable that line uses. A model fixing its code needs to see *which* value had the wrong shape ('output' was a
+    str), not only a line number."""
+    head = f"{type(e).__name__}: {e}"
+    frames = [f for f in traceback.walk_tb(e.__traceback__) if f[0].f_code.co_filename == "converter.py"]
+    if not frames:
+        return head
+    frame, lineno = frames[-1]
+    lines = code.splitlines()
+    source = lines[lineno - 1].strip() if 0 < lineno <= len(lines) else ""
+    used = [n for n in _read_names(source) if n in frame.f_locals]
+    shown = []
+    for name in used[:SHOWN_NAMES]:
+        value = frame.f_locals[name]
+        try:
+            text = json.dumps(value, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            text = repr(value)
+        if len(text) > SHOWN_VALUE:
+            text = text[:SHOWN_VALUE] + "…"
+        shown.append(f"{name} = {text} ({type(value).__name__})")
+    out = f"{head} at line {lineno}: {source}"
+    return out + ("; where " + "; ".join(shown) if shown else "")
+
+
+def _read_names(source):
+    """The names a line reads, in order: not those it assigns (left of `=`), which still hold an earlier value when
+    the line fails, nor attribute names (the `get` of `x.get`)."""
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return []
+    assign = next((i for i, tok in enumerate(tokens) if tok.type == tokenize.OP and tok.string in ("=", "+=", "-=", "|=")), -1)
+    out = []
+    for i, tok in enumerate(tokens):
+        after_dot = i and tokens[i - 1].type == tokenize.OP and tokens[i - 1].string == "."
+        if tok.type == tokenize.NAME and i > assign and not after_dot and not keyword.iskeyword(tok.string) and tok.string not in out:
+            out.append(tok.string)
+    return out
+
+
 def main():
     job = json.loads(sys.stdin.read())
     safe = {k: v for k, v in vars(builtins).items() if k not in BLOCKED}
@@ -87,9 +138,7 @@ def main():
             result = convert(item["trace"], item.get("context") or {})
             out.append({"ok": True, "result": json.loads(json.dumps(result, ensure_ascii=False, default=str))})
         except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
-            where = next((f"line {f.lineno}" for f in reversed(tb) if f.filename == "converter.py"), "")
-            out.append({"ok": False, "error": f"{type(e).__name__}: {e}" + (f" ({where})" if where else "")})
+            out.append({"ok": False, "error": describe_failure(e, job["code"])})
     sys.stdout.write(json.dumps(out, ensure_ascii=False))
 
 

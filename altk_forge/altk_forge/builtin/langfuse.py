@@ -22,6 +22,7 @@ import re
 import jsonschema
 
 from ..trajectory.spans import walk
+from ..trajectory.validate import graph_agent_node
 
 EMPTY_RESULT = re.compile(r"^\s*(no results? found|\[\s*\])?\s*$", re.I)
 
@@ -41,9 +42,6 @@ ERROR_CODE = re.compile(r"\b(SQL\d{4}[NW]|SQLSTATE[ =:]*\d{5})\b")
 
 
 RETRIEVER_NAME = re.compile(r"search|retriev|vector", re.I)
-
-
-GRAPH_INTERNAL_NODES = {"__start__", "__end__"}
 
 
 # A step the agent declared (memory.step) is used only when it is a valid step of the agent the call ran in.
@@ -252,10 +250,9 @@ def kind_of(o, graph_id):
         return "retriever"
     if o["type"] == "TOOL":
         return "tool"
-    node = (o.get("metadata") or {}).get("langgraph_node")
-    if o["type"] in ("CHAIN", "AGENT") and o["name"] == node and o["name"] not in GRAPH_INTERNAL_NODES:
+    if graph_agent_node(o):
         return "agent"
-    return None  # plumbing
+    return None  # plumbing: kept out, its children go to the nearest kept ancestor
 
 
 def convert(trace, host=None):

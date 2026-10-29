@@ -1,18 +1,15 @@
 """Whether a trajectory a converter produced is acceptable: valid against the schema, and faithful to the trace.
 
-A trajectory can be valid and still flatten the graph away. `fidelity_problems` checks that every LangGraph node is
-an agent span, every generation an llm span, every tool / retriever a span of that name, and every span has its
+A trajectory can be valid and still flatten the graph away. `fidelity_problems` checks that every LangGraph node that
+is an agent (trajectory.validate.graph_agent_node) is an agent span, every generation an llm span, every tool / retriever a span of that name, and every span has its
 start time. The messages are written for the model that wrote the code, so it can fix it."""
 
 import json
 import re
 
 from ..trajectory.spans import walk
-from ..trajectory.validate import check, span_ids, validator_for
+from ..trajectory.validate import check, graph_agent_node, span_ids, validator_for
 from .schema import MAX_DEPTH
-
-GRAPH_INTERNAL_NODES = {"__start__", "__end__"}
-
 
 CHAT_ROLES = {"system", "user", "human", "assistant", "ai", "tool"}
 
@@ -61,7 +58,7 @@ def llm_messages_in(value, depth=0):
 
 def fidelity_problems(trace, doc):
     """Where a valid trajectory misrepresents the trace it came from (for traces with Langfuse-style observations):
-    a LangGraph node that is not an agent span, a generation without its llm span, a tool or retriever without its
+    a LangGraph agent node that is not an agent span, a generation without its llm span, a tool or retriever without its
     span (span ids are observation ids), a span without its start time. Empty when nothing is missing."""
     if not isinstance(doc, dict) or not isinstance(doc.get("tree"), dict):
         return []
@@ -89,15 +86,7 @@ def fidelity_problems(trace, doc):
         return out
     by_id = {s.get("span_id"): s for s in spans}
     agents = {s.get("agent_id") for s in spans if s.get("kind") == "agent"}
-    nodes = sorted(
-        {
-            o["name"]
-            for o in obs
-            if o.get("type") in ("CHAIN", "AGENT")
-            and o.get("name") == (o.get("metadata") or {}).get("langgraph_node")
-            and o["name"] not in GRAPH_INTERNAL_NODES
-        }
-    )
+    nodes = sorted({n for n in map(graph_agent_node, obs) if n})
     out += [f"LangGraph node {n} ran in the trace but is no agent span (agent_id {n!r})" for n in nodes if n not in agents]
     for o in sorted(obs, key=lambda o: o.get("startTime") or ""):
         kinds = {"GENERATION": {"llm"}, "TOOL": {"tool", "retriever"}, "RETRIEVER": {"retriever"}}.get(o.get("type"))

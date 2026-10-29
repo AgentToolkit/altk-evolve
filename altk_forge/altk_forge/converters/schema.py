@@ -175,3 +175,21 @@ def schema_paths(schema, path=""):
     if (schema or {}).get("items"):
         out += schema_paths(schema["items"], f"{path}[]")
     return out
+
+
+def mixed_types(schema, path=""):
+    """[(path, [types])] of every place where the trace holds more than one kind of value (null aside): code written
+    for one of them fails on the other, e.g. an observation's output that is an object in one place and a string in
+    another."""
+    out = []
+    node = schema or {}
+    kinds = sorted(_types(node) - {"null"})
+    if len(kinds) > 1:
+        out.append((path or "(root)", kinds + (["null"] if "null" in _types(node) else [])))
+    for key, sub in (node.get("properties") or {}).items():
+        out += mixed_types(sub, f"{path}.{key}" if path else key)
+    if node.get("additionalProperties"):
+        out += mixed_types(node["additionalProperties"], f"{path}.*")
+    if node.get("items"):
+        out += mixed_types(node["items"], f"{path}[]")
+    return out

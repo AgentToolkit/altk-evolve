@@ -60,3 +60,11 @@ def test_a_type_where_only_null_was_seen_is_an_addition():
 def test_schema_paths():
     s = infer_schema({"a": {"b": 1}, "l": [{"c": 1}]})
     assert sorted(schema_paths(s)) == ["a", "a.b", "l", "l[].c"]
+
+
+def test_mixed_types_lists_fields_with_more_than_one_kind_of_value():
+    from altk_forge.converters.schema import mixed_types
+
+    trace = {"observations": [{"output": {"content": "a"}}, {"output": "Done."}, {"output": None}], "goto": "x", "n": 1}
+    assert mixed_types(infer_schema(trace)) == [("observations[].output", ["object", "string", "null"])]
+    assert mixed_types(infer_schema({"a": 1, "b": [None, 2]})) == []  # null alone is no second type

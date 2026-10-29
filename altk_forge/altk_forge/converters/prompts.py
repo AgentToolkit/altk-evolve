@@ -5,6 +5,7 @@ import re
 
 from ..core.paths import PACKAGE
 from .sandbox import ALLOWED_IMPORTS
+from .schema import infer_schema, mixed_types
 
 SCHEMA_TEXT = (PACKAGE / "trajectory" / "schema" / "trajectory.schema.json").read_text()
 
@@ -34,9 +35,19 @@ The contract:
 - Deterministic: the same trace always gives exactly the same trajectory. No current time, no random ids; derive ids
   from the trace (observation ids are span ids).
 - Robust: fields the samples have can be missing, null or of another shape in other traces of the same agent; use
-  .get() and type checks rather than indexing that can fail. Never raise on optional data.
+  .get() and type checks rather than indexing that can fail. Never raise on optional data. A field listed under
+  "Fields with more than one type" below holds each of those types somewhere in this very trace: check the type
+  with isinstance() before calling .get() or indexing it, and handle every type listed.
 - The result must validate against the schema (Draft 2020-12, additionalProperties false almost everywhere): drop
-  null and empty optional fields rather than emitting them, keep required ones.
+  null and empty optional fields rather than emitting them ("usage": {} or "tools": [] is wrong: leave the key out),
+  keep required ones. Add no keys the schema does not define, wherever you would like to keep extra data.
+- Every message in an llm span's input has its "source" (system_prompt, user, handoff, tool_result, ...: see
+  InputMessage in the schema). It is required.
+- The tools offered to a model are no messages, however the trace records them: a list next to the messages, span
+  attributes (OpenTelemetry: llm.tools), or messages with role "tool" whose content is a tool definition
+  ({"type": "function", "function": {...}}, as Langfuse logs them). They go to the llm span's "tools" (when a tool of
+  that name ran) or "response_format" (when nothing executed it), never into "input". A role "tool" message whose
+  content is a tool's result is a message, with source "tool_result".
 - Never drop content to satisfy the schema. When a value has a type the schema does not allow where it goes (e.g. an
   LLM output whose content is a dict or list from structured output, where the schema wants a string), serialize it
   with json.dumps(value, ensure_ascii=False) instead of emptying it, picking one field or setting it to None. An LLM
@@ -59,11 +70,21 @@ The contract:
   the input of an LLM call: one llm span with those messages as input (roles mapped to the schema's) and the
   model's reply as output. Code the model wrote and then ran is a tool span (name e.g. "execute_code") triggered by
   that llm span, with the code as input and the execution output as output. This is checked.
-- Never flatten the trace to satisfy the schema. Every LangGraph node that ran (a CHAIN whose name equals its
-  metadata.langgraph_node, except __start__/__end__) is its own agent span; every GENERATION is an llm span, every
-  TOOL / RETRIEVER a tool / retriever span of the same name, each with span_id = the observation id and start_time /
-  end_time from the observation. A structured-output schema that nothing executed is the llm's response_format, not
-  a tool. This is checked.
+- Never flatten the trace to satisfy the schema, whatever its format: every agent that ran is an agent span, every
+  call of a model an llm span, every tool or retrieval that ran a tool or retriever span, each with its own times,
+  and the trace's own ids as span ids where it has them. A structured-output schema that nothing executed is the
+  llm's response_format, not a tool.
+  Only for a trace of Langfuse observations (a list "observations" with type CHAIN / AGENT / GENERATION / TOOL), and
+  checked there: every LangGraph node that ran (a CHAIN or AGENT whose name equals its metadata.langgraph_node) is
+  its own agent span with the node's name as agent_id, except __start__ / __end__ and nodes whose name cannot be an
+  agent_id (it holds a dot or a space, e.g. PatchToolCallsMiddleware.before_agent, a framework hook around an
+  agent): those are no agent, and what ran inside them goes to the agent around them. Every other CHAIN is plumbing,
+  never an agent: RunnableSequence, RunnableParallel<...>, RunnableLambda, RunnableWithFallbacks, output parsers and
+  the like. Leave it out and put what ran inside it in its agent: an observation belongs to the agent its
+  metadata.langgraph_node names, however deep under plumbing it sits, and an llm span's step is that agent's id with
+  the call's purpose (db_skills.tool_call, never RunnableParallel<raw>.tool_call). Every GENERATION is an llm span,
+  every TOOL / RETRIEVER a tool / retriever span of the same name, each with span_id = the observation id and
+  start_time / end_time from the observation.
 - Answer with the complete file in one ```python block, nothing else."""
 )
 
@@ -86,6 +107,19 @@ def sample_text(trace, budget=90_000):
         if len(text) <= budget:
             return text
     return text[:budget]
+
+
+def mixed_text(trace, limit=60):
+    """The trace's fields with more than one type, for the prompt; empty when every field has one."""
+    mixed = mixed_types(infer_schema(trace))
+    if not mixed:
+        return ""
+    lines = [f"  {path}: {' | '.join(kinds)}" for path, kinds in mixed[:limit]]
+    more = f"\n  … {len(mixed) - limit} more" if len(mixed) > limit else ""
+    return (
+        "\n\nFields with more than one type in this trace (code that assumes one of them fails on the other; handle "
+        "each):\n" + "\n".join(lines) + more
+    )
 
 
 def code_of(answer):
@@ -112,7 +146,7 @@ messages, names steps, links tool calls, records errors and scores); adapt what 
 The trace to convert (decoded; long values shortened here, the real trace has them in full):
 ```json
 {sample_text(trace)}
-```
+```{mixed_text(trace)}
 
 Write the converter for traces shaped like this one.""",
         },
@@ -148,7 +182,7 @@ schema has a place for:
 The new trace (decoded; long values shortened here):
 ```json
 {sample_text(trace)}
-```
+```{mixed_text(trace)}
 
 Answer with the complete updated file.""",
         },
