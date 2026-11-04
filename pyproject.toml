@@ -131,7 +131,7 @@ secrets = [
     # package's detector and config keys, and a patch release can change those
     # or what gets redacted without surfacing as an error. Bump deliberately,
     # re-running the secrets tests against the new release.
-    "cpex-secrets-detection>=0.3.14,<0.3.15",
+    "cpex-secrets-detection>=0.3.14,<0.3.17",
 ]
 
 # Benchmarking the redactors against external labeled corpora
