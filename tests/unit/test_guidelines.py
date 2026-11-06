@@ -1001,6 +1001,8 @@ class TestOutcomePrompt:
         # A segment that had nothing to do with the failure may return nothing.
         allows_empty = "evaluation detail above. If this part of the trajectory did not contribute to the failure, return an empty list.\n"
         assert all(allows_empty in p for p in prompts)
+        # The quality threshold repeats the exception rather than contradicting it.
+        assert all("excluded items above, or if this part of the trajectory did not contribute to the failure." in p for p in prompts)
 
 
 @pytest.mark.unit
