@@ -36,6 +36,8 @@ _GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/gener
 _MAX_FAILED_CHECKS = 10
 _MAX_CHECK_CHARS = 500
 _MAX_DETAIL_CHARS = 2500
+# Bound on the rules and constraints rendered into the prompt.
+_MAX_RULES_CHARS = 20000
 
 # Matches one escape at a time: group 1 is a complete, valid JSON escape (\u only counts
 # when four hex digits follow, so LaTeX like \underbrace is repaired rather than left as
@@ -377,6 +379,7 @@ def _generate_guidelines_for_segment(
     *,
     options: GuidelineRuntime,
     supporting_context: str = "",
+    rules: str | None = None,
     outcome: "TrajectoryOutcome | None" = None,
     segmented: bool = False,
 ) -> GuidelineGenerationResult:
@@ -402,9 +405,12 @@ def _generate_guidelines_for_segment(
             "detail": detail,
             "segmented": segmented,
         }
+    if rules and len(rules) > _MAX_RULES_CHARS:
+        rules = rules[:_MAX_RULES_CHARS] + "\n... [truncated]"
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         supporting_context=supporting_context,
+        rules=rules,
         num_steps=num_steps,
         trajectory_summary=trajectory_slice,
         constrained_decoding_supported=constrained_decoding_supported,
@@ -451,6 +457,7 @@ def generate_guidelines(
     *,
     options: GuidelineRuntime | None = None,
     context_messages: list[dict] | None = None,
+    rules: str | None = None,
     outcome: "TrajectoryOutcome | None" = None,
 ) -> list[GuidelineGenerationResult]:
     """Generate guidelines from a trajectory, optionally segmented into subtasks.
@@ -474,6 +481,11 @@ def generate_guidelines(
     The default is disabled because the contradictory-guideline failure is the more
     damaging of the two in measured end-to-end runs. See docs/guides/configuration.md for
     the evidence and for when to turn it back on.
+
+    ``rules`` is optional text holding rules, policies, or constraints the agent had to
+    follow (for example a domain policy). When given, it is rendered in its own prompt
+    section and every guideline must stay consistent with it; without it the prompt is
+    unchanged.
 
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
     trajectory when segmentation is disabled, the rendered trajectory has fewer than
@@ -520,6 +532,7 @@ def generate_guidelines(
                 constrained_decoding_supported=constrained_decoding_supported,
                 options=options,
                 supporting_context=render_supporting_context(context_messages),
+                rules=rules,
                 outcome=outcome,
                 segmented=True,
             )
@@ -536,6 +549,7 @@ def generate_guidelines(
             constrained_decoding_supported=constrained_decoding_supported,
             options=options,
             supporting_context=render_supporting_context(context_messages),
+            rules=rules,
             outcome=outcome,
         )
     ]

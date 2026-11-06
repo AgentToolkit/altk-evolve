@@ -919,15 +919,15 @@ class TestOutcomePrompt:
         assert "Evaluation detail" not in prompt
         assert "corrective" not in prompt
 
-    @pytest.mark.parametrize("success", [True, False])
-    def test_outcome_with_context_requires_rule_consistency(self, success):
-        generate_guidelines(
-            self.MESSAGES,
-            context_messages=[{"role": "system", "content": "Domain policy: never refund twice."}],
-            outcome=TrajectoryOutcome(success=success),
-        )
+    @pytest.mark.parametrize("outcome", [None, TrajectoryOutcome(success=True), TrajectoryOutcome(success=False)])
+    def test_rules_render_in_their_own_section(self, outcome):
+        generate_guidelines(self.MESSAGES, rules="Never refund an order twice.", outcome=outcome)
 
-        assert "Every guideline must be consistent with them." in self._prompt(self.mock_completion)
+        prompt = self._prompt(self.mock_completion)
+        assert "# Rules and Constraints\n" in prompt
+        assert "Every guideline must be consistent with them." in prompt
+        assert "Never refund an order twice." in prompt
+        assert "# Supporting Conversation History" not in prompt
 
     def test_failure_without_checks_or_detail_is_not_told_to_ground_in_them(self):
         generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=False))

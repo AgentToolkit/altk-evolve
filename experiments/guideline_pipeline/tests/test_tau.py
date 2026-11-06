@@ -330,12 +330,15 @@ POLICY = (
 
 def test_policy_and_scenario_context_are_opt_in(tau_dir: Path):
     assert records()["task_1"].context_messages == []
-    assert records(include_policy=True)["task_1"].context_messages == [{"role": "system", "content": POLICY}]
+    assert records()["task_1"].rules is None
+    with_policy = records(include_policy=True)["task_1"]
+    assert with_policy.rules == POLICY.removeprefix("AGENT DOMAIN POLICY:\n")
+    assert with_policy.context_messages == []
 
     record = records(include_policy=True, include_scenario=True)["task_1"]
     scenario = section_body(split_sections((FIXTURES / "task_1.txt").read_text())["SCENARIO"])
+    assert record.rules == with_policy.rules
     assert record.context_messages == [
-        {"role": "system", "content": POLICY},
         {"role": "system", "content": f"USER SCENARIO (the user simulator's brief; the agent did not see it):\n{scenario}"},
     ]
     # Context is never mistaken for the task.
@@ -344,8 +347,8 @@ def test_policy_and_scenario_context_are_opt_in(tau_dir: Path):
 
     path = tau_dir / "task_1.txt"
     path.write_text(path.read_text().replace("Only act", "Only act " + "x" * 4000))
-    long_policy = records(tau_dir, include_policy=True)["task_1"].context_messages
-    assert len(long_policy) == 3 and long_policy[0]["content"].startswith("AGENT DOMAIN POLICY (part 1/3):\n")
+    long_policy = records(tau_dir, include_policy=True)["task_1"].rules
+    assert long_policy is not None and "x" * 4000 in long_policy
 
 
 def test_adapter_options_configure_a_copy():

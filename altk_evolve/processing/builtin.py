@@ -125,6 +125,8 @@ class GuidelineProcessor:
                         context_messages=trajectory.context_messages,
                         options=options,
                         outcome=trajectory.outcome,
+                        # Only when set, so the call is unchanged for trajectories without rules.
+                        **({"rules": trajectory.rules} if trajectory.rules else {}),
                     ),
                 )
             )
