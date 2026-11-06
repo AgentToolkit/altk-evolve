@@ -32,10 +32,6 @@ logger = logging.getLogger(__name__)
 
 _GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_guidelines.jinja2").read_text())
 
-# With an outcome, a failure yields 1-3 corrective guidelines and a success at most 2
-# non-obvious ones. The prompt states these limits and the parser enforces them.
-_MAX_FAILURE_GUIDELINES = 3
-_MAX_SUCCESS_GUIDELINES = 2
 # Bounds on the evaluator's report rendered into the prompt.
 _MAX_FAILED_CHECKS = 10
 _MAX_CHECK_CHARS = 500
@@ -391,10 +387,8 @@ def _generate_guidelines_for_segment(
     trajectory, so a failure prompt allows an empty result for a slice that did not
     contribute to the failure.
     """
-    max_guidelines = None
     outcome_context: dict = {}
     if outcome is not None:
-        max_guidelines = _MAX_SUCCESS_GUIDELINES if outcome.success else _MAX_FAILURE_GUIDELINES
         detail = outcome.detail
         if detail and len(detail) > _MAX_DETAIL_CHARS:
             detail = detail[:_MAX_DETAIL_CHARS] + "\n... [truncated]"
@@ -406,7 +400,6 @@ def _generate_guidelines_for_segment(
             ],
             "omitted_checks": max(0, len(outcome.failed_checks) - _MAX_FAILED_CHECKS),
             "detail": detail,
-            "max_guidelines": max_guidelines,
             "segmented": segmented,
         }
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
@@ -450,9 +443,6 @@ def _generate_guidelines_for_segment(
         logger.warning(f"LLM returned empty response for guideline generation. Model: {options.guidelines_model}")
         return GuidelineGenerationResult(guidelines=[], task_description=task_description)
     guidelines = parse_guideline_response(clean_response, "standard") or []
-    if max_guidelines is not None and len(guidelines) > max_guidelines:
-        logger.info(f"Keeping the first {max_guidelines} of {len(guidelines)} guidelines the outcome prompt allows.")
-        guidelines = guidelines[:max_guidelines]
     return GuidelineGenerationResult(guidelines=guidelines, task_description=task_description)
 
 
