@@ -12,7 +12,7 @@ Extract actionable, relevant guidelines from this trajectory that would help an 
 {% endif %}**Steps Taken:** {{num_steps}}
 
 {% if supporting_context %}
-# Supporting Conversation History
+# Rules and Constraints
 Use this history to interpret the new steps below, not as additional steps to learn from.
 {{supporting_context}}
 {% endif %}
@@ -54,7 +54,7 @@ Use this history to interpret the new steps below, not as additional steps to le
    - Structured its approach to the problem
    - Handled errors or unexpected responses
 {% endif %}{% if outcome and supporting_context %}
-**Rules and constraints:** The supporting conversation history may include rules, policies, or constraints the agent must follow (for example, a system prompt or domain policy). Every guideline must be consistent with them. Never produce a guideline that tells the agent to bypass, ignore, or work around such a rule (for example, "attempt the action anyway unless the API rejects it"). Where a rule forbids something the agent did, the lesson is to follow the rule.
+**Rules and Constraints** may include rules, policies, or constraints the agent must follow (for example, a system prompt or domain policy). Every guideline must be consistent with them. Never produce a guideline that tells the agent to bypass, ignore, or work around such a rule. Where a rule forbids something the agent did, the lesson is to follow the rule.
 {% endif %}
 # Quality threshold
 {% if outcome %}Each guideline should state a concrete lesson that would help an agent handle a similar task. Identify the situation, the action to take or avoid, and the evidence for it in the trajectory.{% else %}Generate a guideline only when the trajectory supports a concrete, non-trivial lesson that would change how an agent handles a similar task. Identify the situation, the action to take or avoid, and the evidence for its benefit. Do not invent a lesson to fill the output.{% endif %}
