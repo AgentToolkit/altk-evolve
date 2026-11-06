@@ -920,14 +920,14 @@ class TestOutcomePrompt:
         assert "corrective" not in prompt
 
     @pytest.mark.parametrize("success", [True, False])
-    def test_outcome_with_context_requires_policy_consistency(self, success):
+    def test_outcome_with_context_requires_rule_consistency(self, success):
         generate_guidelines(
             self.MESSAGES,
             context_messages=[{"role": "system", "content": "Domain policy: never refund twice."}],
             outcome=TrajectoryOutcome(success=success),
         )
 
-        assert "Every guideline must be consistent with that policy." in self._prompt(self.mock_completion)
+        assert "Every guideline must be consistent with them." in self._prompt(self.mock_completion)
 
     def test_failure_without_checks_or_detail_is_not_told_to_ground_in_them(self):
         generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=False))
