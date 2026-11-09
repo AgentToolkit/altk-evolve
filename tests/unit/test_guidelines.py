@@ -981,7 +981,10 @@ class TestOutcomePrompt:
         prompt = self._prompt(self.mock_completion)
         assert "\n\n# Quality threshold\n" in prompt
         assert "Self-reported success is not evidence of a successful operation." in prompt
-        assert 'Return {"guidelines": []} only if the trajectory contains nothing beyond the excluded items above.' in prompt
+        threshold = 'Return {"guidelines": []} only if the trajectory contains nothing beyond the excluded items above'
+        unpreventable = ", or if no action by the agent could have prevented the failure."
+        # Only a failure may be one no action could have prevented.
+        assert threshold + ("." if success else unpreventable) in prompt
 
     def test_success_with_nothing_new_returns_no_guidelines(self):
         self.mock_completion.return_value = _mock_completion_response({"guidelines": []})
@@ -1010,7 +1013,11 @@ class TestOutcomePrompt:
         allows_empty = "evaluation detail above. If this part of the trajectory did not contribute to the failure, return an empty list.\n"
         assert all(allows_empty in p for p in prompts)
         # The quality threshold repeats the exception rather than contradicting it.
-        assert all("excluded items above, or if this part of the trajectory did not contribute to the failure." in p for p in prompts)
+        assert all(
+            "excluded items above, if this part of the trajectory did not contribute to the failure, "
+            "or if no action by the agent could have prevented the failure." in p
+            for p in prompts
+        )
 
 
 @pytest.mark.unit
