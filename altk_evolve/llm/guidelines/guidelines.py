@@ -480,8 +480,8 @@ def generate_guidelines(
 
     ``rules`` is optional text holding rules, policies, or constraints the agent had to
     follow (for example a domain policy). When given, it is rendered in its own prompt
-    section and every guideline must stay consistent with it; without it the prompt is
-    unchanged.
+    section, whole and untruncated, and every guideline must stay consistent with it;
+    without it the prompt is unchanged.
 
     Returns a list with one GuidelineGenerationResult per subtask (or one for the full
     trajectory when segmentation is disabled, the rendered trajectory has fewer than

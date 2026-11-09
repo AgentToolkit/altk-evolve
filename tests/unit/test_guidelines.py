@@ -929,6 +929,14 @@ class TestOutcomePrompt:
         assert "Never refund an order twice." in prompt
         assert "# Supporting Conversation History" not in prompt
 
+    def test_long_rules_are_not_truncated(self):
+        rules = "Rule. " * 5000 + "Final rule: never refund twice."
+        generate_guidelines(self.MESSAGES, rules=rules)
+
+        prompt = self._prompt(self.mock_completion)
+        assert rules in prompt
+        assert "[truncated]" not in prompt
+
     def test_failure_without_checks_or_detail_is_not_told_to_ground_in_them(self):
         generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=False))
 
