@@ -902,29 +902,46 @@ class TestOutcomePrompt:
         assert "**Task Status:** FAILED, as judged by an external evaluation" in prompt
         assert "- refund matches duplicate amount\n" in prompt
         assert "**Evaluation detail:**\nExpected 19.99\n" in prompt
-        assert "Return 1 to 3 corrective guidelines that would have prevented this failure, grounded in" in prompt
-        assert "An empty list is better than generic advice" in prompt
+        assert "Return corrective guidelines that would have prevented this failure, grounded in" in prompt
+        assert "Make each guideline specific rather than generic" in prompt
         assert "leave out task IDs" in prompt
         assert "There is no evaluation" not in prompt
         assert "Consider positive patterns" not in prompt
         assert "did not contribute to the failure" not in prompt
 
-    def test_success_asks_only_for_non_obvious_patterns(self):
+    def test_success_asks_for_the_strategies_that_worked(self):
         generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=True))
 
         prompt = self._prompt(self.mock_completion)
         assert "**Task Status:** SUCCEEDED" in prompt
-        assert "Return at most 2 guidelines" in prompt
-        assert "If the agent succeeded without struggle, return an empty list." in prompt
+        assert "Return guidelines capturing the strategies and steps that made it succeed" in prompt
         assert "Failed checks" not in prompt
         assert "Evaluation detail" not in prompt
         assert "corrective" not in prompt
+
+    @pytest.mark.parametrize("outcome", [None, TrajectoryOutcome(success=True), TrajectoryOutcome(success=False)])
+    def test_rules_render_in_their_own_section(self, outcome):
+        generate_guidelines(self.MESSAGES, rules="Never refund an order twice.", outcome=outcome)
+
+        prompt = self._prompt(self.mock_completion)
+        assert "# Rules and Constraints\n" in prompt
+        assert "Every guideline must be consistent with them." in prompt
+        assert "Never refund an order twice." in prompt
+        assert "# Supporting Conversation History" not in prompt
+
+    def test_long_rules_are_not_truncated(self):
+        rules = "Rule. " * 5000 + "Final rule: never refund twice."
+        generate_guidelines(self.MESSAGES, rules=rules)
+
+        prompt = self._prompt(self.mock_completion)
+        assert rules in prompt
+        assert "[truncated]" not in prompt
 
     def test_failure_without_checks_or_detail_is_not_told_to_ground_in_them(self):
         generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=False))
 
         prompt = self._prompt(self.mock_completion)
-        assert "Return 1 to 3 corrective guidelines that would have prevented this failure.\n" in prompt
+        assert "Return corrective guidelines that would have prevented this failure.\n" in prompt
         assert "grounded in" not in prompt
 
     def test_outcome_inputs_are_bounded(self):
@@ -947,16 +964,14 @@ class TestOutcomePrompt:
         assert "y" * 501 not in prompt
         assert "- short check\n" in prompt
 
-    @pytest.mark.parametrize(("success", "limit"), [(False, 3), (True, 2)])
-    def test_outcome_limits_are_enforced(self, success, limit, caplog):
+    @pytest.mark.parametrize("success", [False, True])
+    def test_outcome_guidelines_are_not_capped(self, success):
         payload = {"guidelines": [{**_GUIDELINE, "content": f"guideline {i}"} for i in range(5)]}
         self.mock_completion.return_value = _mock_completion_response(payload)
 
-        with caplog.at_level(logging.INFO):
-            results = generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=success))
+        results = generate_guidelines(self.MESSAGES, outcome=TrajectoryOutcome(success=success))
 
-        assert [g.content for g in results[0].guidelines] == [f"guideline {i}" for i in range(limit)]
-        assert f"Keeping the first {limit} of 5" in caplog.text
+        assert [g.content for g in results[0].guidelines] == [f"guideline {i}" for i in range(5)]
 
     @pytest.mark.parametrize("success", [False, True])
     def test_outcome_prompt_keeps_the_quality_threshold(self, success):
@@ -966,7 +981,10 @@ class TestOutcomePrompt:
         prompt = self._prompt(self.mock_completion)
         assert "\n\n# Quality threshold\n" in prompt
         assert "Self-reported success is not evidence of a successful operation." in prompt
-        assert 'If nothing meets this threshold, return {"guidelines": []}.' in prompt
+        threshold = 'Return {"guidelines": []} only if the trajectory contains nothing beyond the excluded items above'
+        unpreventable = ", or if no action by the agent could have prevented the failure."
+        # Only a failure may be one no action could have prevented.
+        assert threshold + ("." if success else unpreventable) in prompt
 
     def test_success_with_nothing_new_returns_no_guidelines(self):
         self.mock_completion.return_value = _mock_completion_response({"guidelines": []})
@@ -994,6 +1012,12 @@ class TestOutcomePrompt:
         # A segment that had nothing to do with the failure may return nothing.
         allows_empty = "evaluation detail above. If this part of the trajectory did not contribute to the failure, return an empty list.\n"
         assert all(allows_empty in p for p in prompts)
+        # The quality threshold repeats the exception rather than contradicting it.
+        assert all(
+            "excluded items above, if this part of the trajectory did not contribute to the failure, "
+            "or if no action by the agent could have prevented the failure." in p
+            for p in prompts
+        )
 
 
 @pytest.mark.unit

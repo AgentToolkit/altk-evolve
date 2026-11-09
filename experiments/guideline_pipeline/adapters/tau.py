@@ -396,9 +396,9 @@ def load_split_file(path: Path) -> dict[str, frozenset[str]]:
 class TauRetailAdapter:
     """Reads a directory of ``task_*.txt`` files, or one such file, into one record per task.
 
-    Options (``--adapter-option KEY=VALUE``): include_policy and include_scenario
-    (booleans; add the agent domain policy or the user simulator's scenario as
-    context_messages), splits (comma-separated; only tasks in these splits) and
+    Options (``--adapter-option KEY=VALUE``): include_policy (boolean; add the
+    agent domain policy as the record's rules), include_scenario (boolean; add the
+    user simulator's scenario as context_messages), splits (comma-separated; only tasks in these splits) and
     split_file (tau2's ``split_tasks.json``). With split_file, a task is in a split
     when the file lists its number (``task_12.txt`` is task ``12``); without it,
     when its header records that ``split=``. Without explicit splits, either
@@ -536,10 +536,8 @@ class TauRetailAdapter:
         if not turns:
             raise MalformedTrajectory("conversation has no turns")
         context: list[dict[str, Any]] = []
-        if self.include_policy and (policy := section_body(sections.get("POLICY", ""))):
-            context.extend(_system_context("AGENT DOMAIN POLICY", policy))
+        rules = (section_body(sections.get("POLICY", "")) or None) if self.include_policy else None
         if self.include_scenario and (scenario := section_body(sections.get("SCENARIO", ""))):
-            # Last, because the context renderer keeps the most recent messages within its budget.
             context.extend(_system_context("USER SCENARIO (the user simulator's brief; the agent did not see it)", scenario))
 
         task_id = file.stem
@@ -555,6 +553,9 @@ class TauRetailAdapter:
             "model": header.get("model"),
             "metadata": {key: value for key, value in header.items() if key != "model"},
         }
+        if rules:
+            # Only when set, so records without a policy keep their existing revision.
+            content["rules"] = rules
         # The revision digests exactly what processors see, so an edited task or an option that
         # changes the content is reprocessed, and nothing else is.
         plain = {**content, "outcome": outcome.model_dump(mode="json")}

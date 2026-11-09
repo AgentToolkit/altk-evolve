@@ -15,17 +15,18 @@ Extract actionable, relevant guidelines from this trajectory that would help an 
 # Supporting Conversation History
 Use this history to interpret the new steps below, not as additional steps to learn from.
 {{supporting_context}}
-{% endif %}
+{% endif %}{% if rules_section %}
+{{rules_section}}{% endif %}
 
 # Agent Trajectory
 {{trajectory_summary}}
 
 **IMPORTANT TO REMEMBER:**
-{% if outcome %}{% if outcome.success %}1. The task succeeded. Return at most {{max_guidelines}} guidelines, and only for non-obvious patterns the agent had to work out: a discovery, a recovery, or a step it would easily have missed.
-2. If the agent succeeded without struggle, return an empty list.
-{% else %}1. The task failed. Return 1 to {{max_guidelines}} corrective guidelines that would have prevented this failure{% if failed_checks or detail %}, grounded in the failed checks and evaluation detail above{% endif %}.{% if segmented %}{# Added in #351 review, not yet evaluated: compare guideline yield and quality on segmented failed runs with and without this clause. #} If this part of the trajectory did not contribute to the failure, return an empty list.{% endif %}
+{% if outcome %}{% if outcome.success %}1. The task succeeded. Return guidelines capturing the strategies and steps that made it succeed, so an agent facing a similar task can repeat them.
+2. Focus on what the agent did right: how it found the information it needed, which checks or confirmations it made, and the order it took actions in.
+{% else %}1. The task failed. Return corrective guidelines that would have prevented this failure{% if failed_checks or detail %}, grounded in the failed checks and evaluation detail above{% endif %}.{% if segmented %}{# Added in #351 review, not yet evaluated: compare guideline yield and quality on segmented failed runs with and without this clause. #} If this part of the trajectory did not contribute to the failure, return an empty list.{% endif %}
 2. Identify the step where the agent went wrong, and state what it should have done instead.
-{% endif %}3. An empty list is better than generic advice. Never return platitudes like "be careful" or "double-check your work".
+{% endif %}3. Make each guideline specific rather than generic, e.g. name the concrete action to take instead of "be careful" or "double-check your work".
 4. Write each guideline as an imperative instruction about a specific behavior.
 5. Make guidelines generalize to similar tasks: leave out task IDs, people's names, record IDs, amounts, and other values specific to this task.
 6. Each guideline should have:
@@ -55,7 +56,7 @@ Use this history to interpret the new steps below, not as additional steps to le
    - Handled errors or unexpected responses
 {% endif %}
 # Quality threshold
-Generate a guideline only when the trajectory supports a concrete, non-trivial lesson that would change how an agent handles a similar task. Identify the situation, the action to take or avoid, and the evidence for its benefit. Do not invent a lesson to fill the output.
+{% if outcome %}Each guideline should state a concrete lesson that would help an agent handle a similar task. Identify the situation, the action to take or avoid, and the evidence for it in the trajectory.{% else %}Generate a guideline only when the trajectory supports a concrete, non-trivial lesson that would change how an agent handles a similar task. Identify the situation, the action to take or avoid, and the evidence for its benefit. Do not invent a lesson to fill the output.{% endif %}
 
 Exclude:
 - Greetings, acknowledgements, confirmations, offers of further help, and paraphrases of the assistant's response.
@@ -63,7 +64,7 @@ Exclude:
 - Personal facts or preferences by themselves; these are facts, not task-execution guidelines.
 - Claims that something was saved, remembered, or completed based only on the assistant saying so. Self-reported success is not evidence of a successful operation.
 
-A routine exchange or a confident answer does not by itself contain a reusable lesson. Uncertainty alone does not establish one either. If nothing meets this threshold, return {"guidelines": []}. An empty list is a valid and preferred result over low-value guidelines, including when a structured response schema is supplied.
+{% if outcome %}Return {"guidelines": []} only if the trajectory contains nothing beyond the excluded items above{% if not outcome.success %},{% if segmented %} if this part of the trajectory did not contribute to the failure,{% endif %} or if no action by the agent could have prevented the failure{% endif %}.{% else %}A routine exchange or a confident answer does not by itself contain a reusable lesson. Uncertainty alone does not establish one either. If nothing meets this threshold, return {"guidelines": []}. An empty list is a valid and preferred result over low-value guidelines, including when a structured response schema is supplied.{% endif %}
 
 {% if not constrained_decoding_supported %}
 **Output Format (JSON):**

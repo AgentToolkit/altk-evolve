@@ -313,6 +313,9 @@ reads messages, including consistency-accurate IR prefixes).
   (`include_system_prompt`) and reflection summaries (`include_summaries`). In
   `agent_view` always empty — the system prompt is `messages[0]` and the
   reflection summaries live inside the user turns.
+- **rules**: optional text of rules, policies, or constraints the agent had to
+  follow (tau's `include_policy`). The prompt renders it in its own Rules and
+  Constraints section, and every guideline must be consistent with it.
 - **outcome**: `success` from the first readable source (the SDK report, the
   legacy `results.json` entry, the task's `EvaluationResult` step, then
   `score >= 1`; a verdict counts only as a bool, the integer `0`/`1` or the
@@ -638,7 +641,7 @@ Options (`--adapter-option KEY=VALUE`):
 
 | Key | Effect |
 | --- | --- |
-| `include_policy=true` | Add the agent domain policy as `system` context messages. It is the same in every task, so it is off by default. |
+| `include_policy=true` | Add the agent domain policy as the record's `rules`, rendered in its own Rules and Constraints prompt section that guidelines must stay consistent with. It is the same in every task, so it is off by default. |
 | `include_scenario=true` | Add the user simulator's scenario as a `system` context message. It holds facts the agent never had, so guidelines mined with it can encode them. |
 | `splits=train` | Only tasks in these splits. Without `split_file`, a task's split is the `split=` its header records: a task without one is skipped with a warning, and a listed split that no task records ends the run with an error. A value that lists no split is an error. |
 | `split_file=<split_tasks.json>` | Select task IDs using tau2's `split_tasks.json` (a JSON object mapping each split to its task IDs) for explicit `splits=` selection. A task is matched on the number in its file name (`task_12.txt` is task `12`). Without `splits=`, tasks marked `test*` by either the file or header are skipped (case-insensitive). A listed split that the file lacks is an error. |
@@ -686,6 +689,7 @@ class MyDatasetAdapter:
             yield AdapterRecord(
                 messages=task.messages,          # this attempt's conversation
                 context_messages=[],             # supporting history, not counted as new material
+                rules=None,                      # optional rules/policy guidelines must stay consistent with
                 tools=task.tools,
                 model=task.model,
                 trace_id=task.id,                # the source task id
