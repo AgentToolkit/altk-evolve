@@ -4,7 +4,8 @@ You are analyzing an AI agent's execution trajectory to generate actionable guid
 # Supporting Conversation History
 Use this history to interpret the new steps below, not as additional steps to learn from.
 {{supporting_context}}
-{% endif %}
+{% endif %}{% if rules_section %}
+{{rules_section}}{% endif %}
 
 # Agent Trajectory
 Task: {{task_instruction}}

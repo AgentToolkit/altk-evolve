@@ -1,4 +1,4 @@
-from altk_evolve.llm.guidelines.context import render_supporting_context
+from altk_evolve.llm.guidelines.context import render_rules, render_supporting_context
 import json
 import logging
 import re
@@ -36,8 +36,6 @@ _GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/gener
 _MAX_FAILED_CHECKS = 10
 _MAX_CHECK_CHARS = 500
 _MAX_DETAIL_CHARS = 2500
-# Bound on the rules and constraints rendered into the prompt.
-_MAX_RULES_CHARS = 20000
 
 # Matches one escape at a time: group 1 is a complete, valid JSON escape (\u only counts
 # when four hex digits follow, so LaTeX like \underbrace is repaired rather than left as
@@ -405,12 +403,10 @@ def _generate_guidelines_for_segment(
             "detail": detail,
             "segmented": segmented,
         }
-    if rules and len(rules) > _MAX_RULES_CHARS:
-        rules = rules[:_MAX_RULES_CHARS] + "\n... [truncated]"
     prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
         task_instruction=task_description,
         supporting_context=supporting_context,
-        rules=rules,
+        rules_section=render_rules(rules),
         num_steps=num_steps,
         trajectory_summary=trajectory_slice,
         constrained_decoding_supported=constrained_decoding_supported,
