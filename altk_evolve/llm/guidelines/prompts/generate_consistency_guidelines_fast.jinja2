@@ -11,7 +11,9 @@ Task: {{task_instruction}}
 {{trajectory_summary}}
 
 # Your Analysis
-First, go through the trajectory step by step and make two assessments — keep both to yourself:
+First, go through the trajectory step by step and make two assessments — keep both to yourself:{% if extra_analysis_sentence %}
+
+{{ extra_analysis_sentence }}{% endif %}
 
 1. **Weak steps**: decisions that look like a guess, an unsupported leap, an arbitrary choice among alternatives, or where the reasoning is thin or contradictory.
 2. **Key decision points**: steps where the agent made a correct, non-trivial choice that isn't forced by the context — decisions where a different agent run could plausibly have gone a different way, even if the reasoning in this run looks sound.
@@ -20,11 +22,14 @@ Then generate guidelines that (a) guard against the weak steps and (b) reinforce
 
 # Instructions
 1. **Generate only what meets the quality threshold below.** Reinforce a correct decision only when it demonstrates a concrete, non-trivial strategy; otherwise return an empty guidelines list.
-2. **Avoid overfitting.** A guideline must generalize: ask yourself whether it would still hold with different data values, not just the ones in this trajectory.
-3. **Don't credit coincidence.** A guideline should reflect a sound, repeatable strategy, not a success that only happened because of this specific data — would the same approach work with different inputs, and can you explain *why* it works in general?
-4. **Judge success/failure from the trajectory's own content.** There is no ground-truth evaluation or user feedback to rely on, though the agent may self-evaluate within the trajectory.
-5. **Look for patterns in problem structure and error handling.** If — and only if — the agent's responses include code or API calls, also look at API discovery, parameter usage (pay particular attention to optional parameters), authentication, and pagination.
-6. **Never mention your confidence assessment in the guideline text.** The agent being guided will never see this prompt and would not understand the reference.
+{%- for instr in extra_instructions %}
+{{ loop.index + 1 }}. {{ instr }}
+{%- endfor %}
+{{ 2 + (extra_instructions | length) }}. **Avoid overfitting.** A guideline must generalize: ask yourself whether it would still hold with different data values, not just the ones in this trajectory.
+{{ 3 + (extra_instructions | length) }}. **Don't credit coincidence.** A guideline should reflect a sound, repeatable strategy, not a success that only happened because of this specific data — would the same approach work with different inputs, and can you explain *why* it works in general?
+{{ 4 + (extra_instructions | length) }}. **Judge success/failure from the trajectory's own content.** There is no ground-truth evaluation or user feedback to rely on, though the agent may self-evaluate within the trajectory.
+{{ 5 + (extra_instructions | length) }}. **Look for patterns in problem structure and error handling.** If — and only if — the agent's responses include code or API calls, also look at API discovery, parameter usage (pay particular attention to optional parameters), authentication, and pagination.
+{{ 6 + (extra_instructions | length) }}. **Never mention your confidence assessment in the guideline text.** The agent being guided will never see this prompt and would not understand the reference.
 
 # Quality threshold
 Generate a guideline only when the trajectory supports a concrete, non-trivial lesson that would change how an agent handles a similar task. Identify the situation, the action to take or avoid, and the evidence for its benefit. Do not invent a lesson to fill the output.
