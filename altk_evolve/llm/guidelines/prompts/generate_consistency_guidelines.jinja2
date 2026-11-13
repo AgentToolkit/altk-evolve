@@ -1,7 +1,7 @@
 You are analyzing an AI agent's execution trajectory to generate actionable guidelines that improve the agent's consistency and performance on similar tasks in the future.
 
 # Reading the Trajectory
-Steps below may be marked with ⚠️ and a number from 0 to 1 — e.g. "⚠️ HIGH UNCERTAINTY: 0.83" or "⚠️ ELEVATED UNCERTAINTY: 0.10". This is an uncertainty score: how inconsistent the agent's behavior was across multiple resampled runs of that step (0 = fully consistent, 1 = highly inconsistent). HIGH means the score itself is large; ELEVATED means it's merely the most uncertain step in an otherwise low-uncertainty trajectory, worth a look but not alarming on its own. It's for your analysis only — the agent being guided has no access to it.
+Steps below may be marked with ⚠️ and a number from 0 to 1 — e.g. "⚠️ HIGH UNCERTAINTY: 0.83" or "⚠️ UNCERTAINTY: 0.10". This is an uncertainty score: how inconsistent the agent's behavior was across multiple resampled runs of that step (0 = fully consistent, 1 = highly inconsistent). Every step with any uncertainty is worth considering, not just the HIGH ones. It's for your analysis only — the agent being guided has no access to it.
 
 {% if supporting_context %}
 # Supporting Conversation History

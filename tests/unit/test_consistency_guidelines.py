@@ -642,8 +642,8 @@ class TestFormatTrajectoryData:
         assert "HIGH UNCERTAINTY" in result
         assert "step two" in result
 
-    def test_marks_elevated_not_high_when_below_high_threshold(self):
-        """A non-zero score below the high threshold must be labeled ELEVATED, not
+    def test_marks_uncertainty_not_high_when_below_high_threshold(self):
+        """A non-zero score below the high threshold must be labeled UNCERTAINTY, not
         HIGH — the label must never claim a threshold that wasn't actually met
         (default high=0.15)."""
         messages = [
@@ -652,12 +652,13 @@ class TestFormatTrajectoryData:
         ]
         consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.1029}}
         result = format_trajectory_data(messages, consistency_data)
-        assert "ELEVATED UNCERTAINTY: 0.1029" in result
+        assert "UNCERTAINTY: 0.1029" in result
+        assert "UNCERTAINTY: 0.02" in result
         assert "HIGH UNCERTAINTY" not in result
 
-    def test_a_peak_in_the_old_band_is_now_high_not_elevated(self):
+    def test_a_peak_in_the_old_band_is_high_not_sub_threshold(self):
         """0.17 sits between the retired 0.2 and the current 0.15, so it is the one score
-        whose label depends on the threshold this PR changed: HIGH now, ELEVATED at 0.2.
+        whose label depends on the threshold this PR changed: HIGH now, sub-threshold at 0.2.
 
         Every other marker test uses scores well clear of both values, which left the
         default free to drift back to 0.2 with the suite still green.
@@ -669,34 +670,36 @@ class TestFormatTrajectoryData:
         consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.17}}
         result = format_trajectory_data(messages, consistency_data)
         assert "HIGH UNCERTAINTY: 0.17" in result
-        assert "ELEVATED UNCERTAINTY" not in result
+        # Step 1 (0.02) still carries the generic UNCERTAINTY tier.
+        assert "[⚠️ UNCERTAINTY: 0.02]" in result
 
-    def test_elevated_marks_only_the_top_step(self):
-        """The ELEVATED fallback flags just the most-uncertain step, so a trajectory of
-        uniformly-small scores doesn't end up marked end to end."""
+    def test_every_nonzero_step_gets_a_marker(self):
+        """Every non-zero step that didn't clear HIGH gets the generic UNCERTAINTY tier,
+        no matter how small the score. The old ELEVATED fallback only marked rank-1 when no
+        step cleared HIGH; the new behavior marks every non-zero step regardless."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
         ]
         consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.05}}
         result = format_trajectory_data(messages, consistency_data)
-        assert result.count("ELEVATED UNCERTAINTY") == 1
-        assert "ELEVATED UNCERTAINTY: 0.05" in result
-        assert "ELEVATED UNCERTAINTY: 0.02" not in result
+        # Both steps have non-zero uncertainty below HIGH, so both get UNCERTAINTY.
+        assert "[⚠️ UNCERTAINTY: 0.02]" in result
+        assert "[⚠️ UNCERTAINTY: 0.05]" in result
         assert "HIGH UNCERTAINTY" not in result
 
-    def test_elevated_stays_single_across_many_sub_threshold_steps(self):
-        """Adding more sub-threshold steps never widens the ELEVATED marker past the top one."""
+    def test_all_sub_threshold_steps_get_marked(self):
+        """All non-zero sub-threshold steps carry a UNCERTAINTY marker, not just the top one."""
         messages = [{"role": "assistant", "content": f"step {i}"} for i in range(1, 6)]
         consistency_data = {"step_uncertainties": {1: 0.01, 2: 0.02, 3: 0.03, 4: 0.04, 5: 0.05}}
         result = format_trajectory_data(messages, consistency_data)
-        assert result.count("ELEVATED UNCERTAINTY") == 1
-        assert "ELEVATED UNCERTAINTY: 0.05" in result
+        # All five non-zero sub-threshold steps get UNCERTAINTY markers.
+        assert result.count("[⚠️ UNCERTAINTY") == 5
         assert "HIGH UNCERTAINTY" not in result
 
     def test_no_marker_when_every_step_is_fully_consistent(self):
-        """Zero is the only score that earns no marker at all — with one threshold left,
-        every trajectory carrying measurable uncertainty gets at least one flag."""
+        """Zero is the only score that earns no marker at all — a trajectory with no
+        measurable uncertainty on any step renders with no markers."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
@@ -704,24 +707,26 @@ class TestFormatTrajectoryData:
         consistency_data = {"step_uncertainties": {1: 0.0, 2: 0.0}}
         result = format_trajectory_data(messages, consistency_data)
         assert "HIGH UNCERTAINTY" not in result
-        assert "ELEVATED UNCERTAINTY" not in result
+        assert "UNCERTAINTY: 0.0" not in result
 
-    def test_caps_high_markers_at_five(self):
+    def test_caps_high_markers_at_five_and_rest_get_uncertainty(self):
         """At most HIGH_MARKER_CAP steps carry the HIGH marker, even when more clear the
-        threshold — the lowest-scoring ones above the bar go unmarked."""
+        threshold — the lower-scoring ones above the bar fall through to UNCERTAINTY."""
         messages = [{"role": "assistant", "content": f"step {i}"} for i in range(1, 8)]
         consistency_data = {"step_uncertainties": {1: 0.9, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.5, 6: 0.4, 7: 0.3}}
         result = format_trajectory_data(messages, consistency_data)
         assert result.count("HIGH UNCERTAINTY") == 5
         assert "HIGH UNCERTAINTY: 0.4" not in result
         assert "HIGH UNCERTAINTY: 0.3" not in result
-        # The ELEVATED fallback stays silent whenever any step cleared the threshold.
-        assert "ELEVATED UNCERTAINTY" not in result
+        # The two steps that didn't make the HIGH cut (0.4 and 0.3) still carry the generic
+        # UNCERTAINTY marker rather than going unmarked.
+        assert "[⚠️ UNCERTAINTY: 0.4]" in result
+        assert "[⚠️ UNCERTAINTY: 0.3]" in result
 
     def test_out_of_window_step_cannot_steal_a_marker_slot(self):
         """The ranking is clamped to the rendered window, like the loop. Otherwise an
-        out-of-window step wins the HIGH slot — or the single ELEVATED slot — and then never
-        renders, so a trajectory kept alive by an in-window step shows no marker at all."""
+        out-of-window step wins the HIGH slot and then never renders, so a trajectory kept
+        alive by an in-window step shows no marker at all."""
         from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
 
         messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
@@ -729,15 +734,18 @@ class TestFormatTrajectoryData:
 
         for label, scores in [
             ("out-of-window would take HIGH", {5: 0.02, out_of_window: 0.9}),
-            ("out-of-window would take ELEVATED", {5: 0.02, out_of_window: 0.09}),
+            ("out-of-window would still be sub-threshold", {5: 0.02, out_of_window: 0.09}),
         ]:
             result = format_trajectory_data(messages, {"step_uncertainties": scores})
-            markers = result.count("HIGH UNCERTAINTY") + result.count("ELEVATED UNCERTAINTY")
-            assert markers == 1, label
+            # The in-window step must receive a marker. Either HIGH (if it cleared the
+            # threshold) or UNCERTAINTY (if it didn't) — never zero markers.
+            markers = result.count("HIGH UNCERTAINTY") + result.count("[⚠️ UNCERTAINTY")
+            assert markers >= 1, label
 
     def test_marker_does_not_depend_on_uncertainty_insertion_order(self):
         """`sorted` is stable, so with equal scores an unclamped ranking let dict insertion
-        order decide whether a marker appeared at all."""
+        order decide whether a marker appeared at all. Window clamp fixes this: the in-window
+        step gets its UNCERTAINTY marker regardless of insertion order."""
         from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
 
         messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
@@ -746,8 +754,10 @@ class TestFormatTrajectoryData:
         in_first = format_trajectory_data(messages, {"step_uncertainties": {5: 0.02, far: 0.02}})
         out_first = format_trajectory_data(messages, {"step_uncertainties": {far: 0.02, 5: 0.02}})
 
-        assert in_first.count("ELEVATED UNCERTAINTY") == 1
-        assert out_first.count("ELEVATED UNCERTAINTY") == 1
+        # Both orderings yield exactly one marker (on in-window step 5); the far step
+        # never renders.
+        assert in_first.count("[⚠️ UNCERTAINTY") == 1
+        assert out_first.count("[⚠️ UNCERTAINTY") == 1
 
     def test_tool_calls_none_does_not_crash(self):
         # Raw OpenAI message dumps always carry tool_calls: null
@@ -1085,7 +1095,9 @@ class TestSkipGateWindow:
 
         messages = [{"role": "assistant", "content": f"s{i}"} for i in range(MAX_RENDERED_STEPS + 10)]
         rendered = format_trajectory_data(messages, {"step_uncertainties": scores})
-        assert rendered.count("HIGH UNCERTAINTY") + rendered.count("ELEVATED UNCERTAINTY") == 1
+        # Step 5 (in-window, 0.02 — sub-threshold) carries UNCERTAINTY; the out-of-window
+        # 0.9 step never renders.
+        assert rendered.count("HIGH UNCERTAINTY") + rendered.count("[⚠️ UNCERTAINTY") == 1
 
     def test_skips_only_on_all_zero_uncertainty(self):
         """Pins the gate's `> 0`: raising it to a threshold left the whole suite green."""

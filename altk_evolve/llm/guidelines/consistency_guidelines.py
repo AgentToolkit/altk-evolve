@@ -315,16 +315,16 @@ def format_trajectory_data(
     config: Optional[dict] = None,
 ) -> str:
     """Render assistant steps (optionally scoped to step_range) into the text block the
-    accurate-method prompt embeds, marking each step ⚠️ HIGH/ELEVATED UNCERTAINTY per the
-    high_uncertainty_threshold in config (falling back to the DEFAULT_* module constant).
+    accurate-method prompt embeds, marking each step ⚠️ HIGH UNCERTAINTY or ⚠️ UNCERTAINTY
+    per the high_uncertainty_threshold in config (falling back to the DEFAULT_* module constant).
 
     The most-uncertain steps at or above the threshold are marked HIGH, up to
-    HIGH_MARKER_CAP of them. When no step clears the threshold, the single most-uncertain
-    step is marked ELEVATED instead, provided its score is non-zero — so any trajectory with
-    measurable uncertainty *among its first MAX_RENDERED_STEPS steps* carries at least one
-    marker. Uncertainty on a later step cannot be marked, because that step is never
-    rendered; the caller's skip gate applies the same window so such a trajectory is skipped
-    rather than generated with no markers at all.
+    HIGH_MARKER_CAP of them. Every other step with non-zero uncertainty gets the generic
+    ⚠️ UNCERTAINTY tier — so any trajectory with measurable uncertainty *among its first
+    MAX_RENDERED_STEPS steps* carries at least one marker. Uncertainty on a later step
+    cannot be marked, because that step is never rendered; the caller's skip gate applies
+    the same window so such a trajectory is skipped rather than generated with no markers
+    at all.
 
     Both limits keep the markers doing their job: they direct the model's attention, and a
     trajectory marked end to end conveys no more than one marked nowhere.
@@ -339,22 +339,24 @@ def format_trajectory_data(
         step_uncertainties = {k: v for k, v in step_uncertainties.items() if start <= k <= end}
 
     # Same window the loop below renders. Without this an out-of-window step can win a HIGH
-    # slot — or the single ELEVATED slot — and then never render, so a trajectory kept alive
-    # by an in-window step generates with no marker at all. With equal scores `sorted` is
-    # stable, which made insertion order decide whether a marker appeared.
+    # slot and then never render, so a trajectory kept alive by an in-window step generates
+    # with no marker at all. With equal scores `sorted` is stable, which made insertion
+    # order decide whether a marker appeared.
     step_uncertainties = {k: v for k, v in step_uncertainties.items() if k <= MAX_RENDERED_STEPS}
     ranked_steps = sorted(step_uncertainties.items(), key=lambda x: x[1], reverse=True)
     high_uncertainty_steps = {step_num: score for step_num, score in ranked_steps[:HIGH_MARKER_CAP] if score >= high_uncertainty_threshold}
 
-    # Fallback: no step cleared the high bar, but the most-uncertain step still scored
-    # above zero — worth a look, but honestly, not "HIGH". Tracked separately so the
-    # marker text never claims a threshold that was not actually met. Just the one step:
-    # this fires only for an otherwise-quiet trajectory, where widening the marker would
-    # dilute the little signal there is. Rank 2 may be a near-tie the metric can't really
-    # separate from rank 1 — accepted, in exchange for pointing somewhere specific.
-    elevated_uncertainty_steps: dict[int, float] = {}
-    if not high_uncertainty_steps:
-        elevated_uncertainty_steps = {step_num: score for step_num, score in ranked_steps[:1] if score > 0}
+    # Every non-zero step that didn't clear HIGH gets the generic ⚠️ UNCERTAINTY tier.
+    # Previously only the rank-1 step got an ELEVATED marker when no step cleared HIGH,
+    # which left genuinely-flappy secondary steps looking indistinguishable from
+    # fully-consistent ones to the generator — and the "worth a look but not alarming"
+    # phrasing in the prompt was reinforcing that. Any flap now carries a visual marker
+    # regardless of whether a HIGH step is also present.
+    nonzero_uncertainty_steps: dict[int, float] = {
+        step_num: score
+        for step_num, score in step_uncertainties.items()
+        if step_num not in high_uncertainty_steps and score > 0
+    }
 
     steps_text: list[str] = []
     step_num = 0
@@ -402,8 +404,8 @@ def format_trajectory_data(
         uncertainty_marker = ""
         if step_num in high_uncertainty_steps:
             uncertainty_marker = f" [⚠️ HIGH UNCERTAINTY: {high_uncertainty_steps[step_num]}]"
-        elif step_num in elevated_uncertainty_steps:
-            uncertainty_marker = f" [⚠️ ELEVATED UNCERTAINTY: {elevated_uncertainty_steps[step_num]}]"
+        elif step_num in nonzero_uncertainty_steps:
+            uncertainty_marker = f" [⚠️ UNCERTAINTY: {nonzero_uncertainty_steps[step_num]}]"
 
         steps_text.append(f"Step {step_num}{uncertainty_marker} - {step_type}:\n{this_step_text}")
 
