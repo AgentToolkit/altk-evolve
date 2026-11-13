@@ -1988,3 +1988,144 @@ class TestFastPathElisionWithDedupe:
 
         assert mock_segment.call_count == int(segmented)
         assert len(prompts) == (2 if segmented else 1)
+
+
+@pytest.mark.unit
+class TestPromptExtensionHooks:
+    """`extra_analysis_sentence` and `extra_instructions` splice into both pipelines'
+    prompts at fixed points; defaults are no-op so the stock output is byte-identical."""
+
+    _SENTINEL_SENTENCE = "SENTINEL ANALYSIS SENTENCE SPLICE."
+    _SENTINEL_INSTRUCTIONS = [
+        "SENTINEL INSTRUCTION ONE SPLICE.",
+        "SENTINEL INSTRUCTION TWO SPLICE.",
+    ]
+
+    def _trajectory(self):
+        return {
+            "trace_id": "ext-hooks",
+            "messages": [
+                {"role": "user", "content": "do the thing"},
+                {"role": "assistant", "content": "step one"},
+            ],
+        }
+
+    def _run_accurate(self, monkeypatch, *, options):
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: trajectory)
+        monkeypatch.setattr(
+            module,
+            "analyze_consistency",
+            lambda trajectory, **kwargs: ({"steps": [{"step_number": 1, "step_uncertainty": 0.4}]}, trajectory),
+        )
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(self._trajectory(), options=options)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    def _run_fast(self, monkeypatch, *, options):
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            generate_consistency_guidelines_fast(self._trajectory(), options=options)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    @pytest.mark.parametrize("runner", ["_run_accurate", "_run_fast"])
+    def test_extra_analysis_sentence_appears_in_analysis_section(self, runner, monkeypatch):
+        options = GuidelineRuntime(extra_analysis_sentence=self._SENTINEL_SENTENCE)
+        prompt = getattr(self, runner)(monkeypatch, options=options)
+        # The sentence lands inside the # Your Analysis block.
+        analysis_start = prompt.index("# Your Analysis")
+        # Both templates put the sentence immediately after the first analysis sentence,
+        # so there's always a next-section marker (# Instructions) further down.
+        analysis_end = prompt.index("# Instructions", analysis_start)
+        assert self._SENTINEL_SENTENCE in prompt[analysis_start:analysis_end]
+
+    @pytest.mark.parametrize("runner", ["_run_accurate", "_run_fast"])
+    def test_extra_instructions_are_numbered_after_stock_items(self, runner, monkeypatch):
+        options = GuidelineRuntime(extra_instructions=self._SENTINEL_INSTRUCTIONS)
+        prompt = getattr(self, runner)(monkeypatch, options=options)
+        # The two extras splice in as items #2 and #3; the stock items that followed shift up.
+        assert f"2. {self._SENTINEL_INSTRUCTIONS[0]}" in prompt
+        assert f"3. {self._SENTINEL_INSTRUCTIONS[1]}" in prompt
+        # Instruction #1 is always the stock lead-in; sentinel strings must not land there.
+        assert f"1. {self._SENTINEL_INSTRUCTIONS[0]}" not in prompt
+
+    @pytest.mark.parametrize("runner", ["_run_accurate", "_run_fast"])
+    def test_defaults_produce_no_extension_text(self, runner, monkeypatch):
+        prompt = getattr(self, runner)(monkeypatch, options=GuidelineRuntime())
+        assert self._SENTINEL_SENTENCE not in prompt
+        for sentinel in self._SENTINEL_INSTRUCTIONS:
+            assert sentinel not in prompt
+
+
+@pytest.mark.unit
+class TestCallerSuppliedRendererFast:
+    """The fast pipeline exposes the same `trajectory_renderer=` seam the accurate path has,
+    for callers whose own render differs from parse_openai_agents_trajectory's output."""
+
+    _TRAJECTORY = {
+        "trace_id": "fast-renderer",
+        "messages": [
+            {"role": "user", "content": "do the thing"},
+            {"role": "assistant", "content": "reasoning step 0"},
+            {"role": "assistant", "content": "reasoning step 1"},
+            {"role": "assistant", "content": "reasoning step 2"},
+            {"role": "assistant", "content": "reasoning step 3"},
+            {"role": "assistant", "content": "reasoning step 4"},
+        ],
+    }
+
+    def _run(self, monkeypatch, renderer):
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        # Segmentation ON: a renderer-supplied fast call must still skip segmentation,
+        # because segmentation would need per-segment rendering and that is a separate change.
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+
+        with (
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory") as mock_segment,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            results = generate_consistency_guidelines_fast(self._TRAJECTORY, trajectory_renderer=renderer)
+        _, kwargs = mock_completion.call_args
+        return results, kwargs["messages"][-1]["content"], mock_segment
+
+    def test_the_renderer_output_is_what_the_prompt_embeds(self, monkeypatch):
+        results, prompt, _ = self._run(monkeypatch, lambda *a, **k: "RENDERED BY CALLER FAST")
+        assert "RENDERED BY CALLER FAST" in prompt
+        # The default fast-pipeline renderer's output must be gone, not merely supplemented.
+        assert "Agent reasoning" not in prompt
+        # One result for the full trajectory, since the renderer path skips segmentation.
+        assert len(results) == 1
+
+    def test_the_renderer_is_called_exactly_once(self, monkeypatch):
+        calls = []
+
+        def renderer(*args, **kwargs):
+            calls.append((args, kwargs))
+            return "x"
+
+        self._run(monkeypatch, renderer)
+        assert len(calls) == 1
+
+    def test_segmentation_is_skipped_when_a_renderer_is_supplied(self, monkeypatch):
+        _, _, mock_segment = self._run(monkeypatch, lambda *a, **k: "RENDERED")
+        mock_segment.assert_not_called()
