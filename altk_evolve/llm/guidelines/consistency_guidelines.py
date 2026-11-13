@@ -353,9 +353,7 @@ def format_trajectory_data(
     # phrasing in the prompt was reinforcing that. Any flap now carries a visual marker
     # regardless of whether a HIGH step is also present.
     nonzero_uncertainty_steps: dict[int, float] = {
-        step_num: score
-        for step_num, score in step_uncertainties.items()
-        if step_num not in high_uncertainty_steps and score > 0
+        step_num: score for step_num, score in step_uncertainties.items() if step_num not in high_uncertainty_steps and score > 0
     }
 
     steps_text: list[str] = []
