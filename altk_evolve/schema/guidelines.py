@@ -2,7 +2,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,39 @@ class Guideline(BaseModel):
         return resolved
 
 
-class GuidelineGenerationResponse(BaseModel):
+class _ModelFacingSchema(BaseModel):
+    """A response model whose JSON schema, as sent to an LLM, carries no numeric bounds.
+
+    Structured output sends ``model_json_schema()`` to the provider (litellm forwards it
+    unchanged), and some providers refuse numeric-range keywords outright: Claude's
+    structured outputs reject the whole request with "For 'integer' type, property 'minimum'
+    is not supported" (seen through Bedrock). The bounds here (``support``, segment steps)
+    are integrity checks, not instructions the model needs, so the schema sent to the model
+    omits them and ``model_validate`` still enforces every one locally. Anthropic's SDK
+    helpers make the same transformation. See #476.
+    """
+
+    @classmethod
+    def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return _drop_numeric_bounds(super().model_json_schema(*args, **kwargs))
+
+
+_NUMERIC_BOUNDS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"})
+
+
+def _drop_numeric_bounds(schema: dict[str, Any]) -> dict[str, Any]:
+    return {key: _without_bounds(value) for key, value in schema.items() if key not in _NUMERIC_BOUNDS}
+
+
+def _without_bounds(value: Any) -> Any:
+    if isinstance(value, dict):
+        return _drop_numeric_bounds(value)
+    if isinstance(value, list):
+        return [_without_bounds(item) for item in value]
+    return value
+
+
+class GuidelineGenerationResponse(_ModelFacingSchema):
     guidelines: list[Guideline]
 
 
@@ -120,7 +152,7 @@ class ConsolidatedGuideline(Guideline):
     )
 
 
-class ConsolidatedGuidelineResponse(BaseModel):
+class ConsolidatedGuidelineResponse(_ModelFacingSchema):
     guidelines: list[ConsolidatedGuideline]
 
 
@@ -151,7 +183,7 @@ class SubtaskSegment(BaseModel):
         return self
 
 
-class SegmentationResponse(BaseModel):
+class SegmentationResponse(_ModelFacingSchema):
     subtasks: list[SubtaskSegment] = Field(description="Contiguous, non-overlapping logical subtasks of the trajectory")
 
 
