@@ -1014,7 +1014,7 @@ class TestOutcomePrompt:
         assert all(allows_empty in p for p in prompts)
         # The quality threshold repeats the exception rather than contradicting it.
         assert all(
-            "excluded items above, if this part of the trajectory did not contribute to the failure, "
+            "excluded items above, or if this part of the trajectory did not contribute to the failure, "
             "or if no action by the agent could have prevented the failure." in p
             for p in prompts
         )
