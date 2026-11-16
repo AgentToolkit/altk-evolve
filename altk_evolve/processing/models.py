@@ -111,7 +111,8 @@ class Trajectory(BaseModel):
     policies, or constraints the agent had to follow (for example a domain
     policy); generated guidelines must stay consistent with them. A batch identity
     enables per-processor durable deduplication. Without it, calls are untracked.
-    An outcome supplied after its batch was processed needs a new batch revision.
+    An outcome or rules supplied after its batch was processed need a new batch
+    revision; otherwise the batch counts as already processed and is skipped.
     """
 
     model_config = ConfigDict(extra="forbid")
