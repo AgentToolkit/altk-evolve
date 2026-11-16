@@ -148,6 +148,26 @@ def _classify_step_response(msg: dict) -> tuple[str, Any]:
     return "other", content if content is not None else ""
 
 
+def _prefix_with_rules(prefix: list[dict], rules: str | None) -> list[dict]:
+    """Put rules at the start of a replay prefix without adding a second system message.
+
+    Some providers and chat templates reject a second or non-leading system message, and
+    many trajectories already open with their own system prompt (in messages or in
+    context_messages). When the prefix starts with a system message, the rules are merged
+    into it, ahead of its content; otherwise they become a new leading system message.
+    """
+    if not rules:
+        return prefix
+    first = prefix[0] if prefix else None
+    if first and first.get("role") == "system":
+        content = first.get("content")
+        if isinstance(content, str):
+            return [{**first, "content": f"{rules}\n\n{content}" if content else rules}, *prefix[1:]]
+        if isinstance(content, list):
+            return [{**first, "content": [{"type": "text", "text": rules}, *content]}, *prefix[1:]]
+    return [{"role": "system", "content": rules}, *prefix]
+
+
 def transform_trajectory_to_IR(trajectory: dict) -> dict:
     """Transform a trajectory into Intermediate Representation for the consistency analyzer.
 
@@ -155,7 +175,9 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
     that preceded it, the assistant's raw response, and the LLM params used.
     context_messages seeds each replay prefix in its original roles/order, but
     only assistant turns in messages receive step numbers and are scored. rules,
-    when set, leads each prefix as a system message, as the agent saw its policy.
+    when set, lead each step's prefix: they are merged into the prefix's leading system
+    message when there is one, and become a new leading system message otherwise, so a
+    prefix never carries a second or non-leading system message (see _prefix_with_rules).
 
     Steps are named with an "OpenAIAgent" prefix when the trajectory carries a real OpenAI
     tools JSON schema (`trajectory["tools"]` populated) — meaning its tool_calls came from
@@ -181,7 +203,7 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
     steps: list[dict] = []
     step_number = 0
     rules = trajectory.get("rules")
-    current_messages: list[dict] = [*([{"role": "system", "content": rules}] if rules else []), *context_messages]
+    current_messages: list[dict] = list(context_messages)
 
     for msg in messages:
         role = msg.get("role")
@@ -211,7 +233,7 @@ def transform_trajectory_to_IR(trajectory: dict) -> dict:
                 "step_number": step_number,
                 "raw_response": raw_response,
                 "raw_response_type": raw_response_type,
-                "messages": _drop_non_input_message_keys(_strip_orphaned_tool_messages(current_messages.copy())),
+                "messages": _prefix_with_rules(_drop_non_input_message_keys(_strip_orphaned_tool_messages(current_messages.copy())), rules),
                 "llm_params": {"model": model},
             }
             # Pass the tool schemas for all OpenAIAgent steps, not only tool_calls steps.

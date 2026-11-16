@@ -1148,6 +1148,47 @@ class TestRules:
         ir = transform_trajectory_to_IR({**trajectory, "rules": self.RULES})
         assert ir["steps"][0]["messages"] == [{"role": "system", "content": self.RULES}, *history]
 
+    @staticmethod
+    def _system_messages(prefix):
+        return [m for m in prefix if m.get("role") == "system"]
+
+    def test_rules_merge_into_a_system_prompt_in_context(self):
+        system = {"role": "system", "content": "You are a retail agent."}
+        history = [system, {"role": "user", "content": "Refund"}]
+        trajectory = {"messages": [{"role": "assistant", "content": "Done."}], "context_messages": history, "rules": self.RULES}
+
+        prefix = transform_trajectory_to_IR(trajectory)["steps"][0]["messages"]
+        assert prefix == [{"role": "system", "content": f"{self.RULES}\n\nYou are a retail agent."}, history[1]]
+        assert history[0] == system  # the caller's message is not mutated
+
+    def test_rules_merge_into_a_system_prompt_in_messages(self):
+        messages = [
+            {"role": "system", "content": "You are a retail agent."},
+            {"role": "user", "content": "Refund"},
+            {"role": "assistant", "content": "Looking it up."},
+            {"role": "user", "content": "Thanks"},
+            {"role": "assistant", "content": "Done."},
+        ]
+        steps = transform_trajectory_to_IR({"messages": messages, "rules": self.RULES})["steps"]
+
+        assert len(steps) == 2
+        for step in steps:
+            prefix = step["messages"]
+            assert self._system_messages(prefix) == [{"role": "system", "content": f"{self.RULES}\n\nYou are a retail agent."}]
+            assert prefix[0]["role"] == "system"
+
+    def test_rules_merge_into_list_content_system_prompt(self):
+        system = {"role": "system", "content": [{"type": "text", "text": "You are a retail agent."}]}
+        trajectory = {
+            "messages": [{"role": "assistant", "content": "Done."}],
+            "context_messages": [system, {"role": "user", "content": "Refund"}],
+            "rules": self.RULES,
+        }
+
+        prefix = transform_trajectory_to_IR(trajectory)["steps"][0]["messages"]
+        assert prefix[0] == {"role": "system", "content": [{"type": "text", "text": self.RULES}, *system["content"]]}
+        assert len(self._system_messages(prefix)) == 1
+
 
 @pytest.mark.unit
 class TestShippedConfigMatchesModuleDefaults:
