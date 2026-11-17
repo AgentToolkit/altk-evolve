@@ -107,14 +107,18 @@ class Trajectory(BaseModel):
     """A processing input, not necessarily a finished conversation.
 
     messages contains this batch's new material; context_messages is supporting
-    history and must not be counted as another contribution. A batch identity
+    history and must not be counted as another contribution. rules holds rules,
+    policies, or constraints the agent had to follow (for example a domain
+    policy); generated guidelines must stay consistent with them. A batch identity
     enables per-processor durable deduplication. Without it, calls are untracked.
-    An outcome supplied after its batch was processed needs a new batch revision.
+    An outcome or rules supplied after its batch was processed need a new batch
+    revision; otherwise the batch counts as already processed and is skipped.
     """
 
     model_config = ConfigDict(extra="forbid")
     messages: list[dict[str, Any]]
     context_messages: list[dict[str, Any]] = Field(default_factory=list)
+    rules: str | None = None
     batch: TrajectoryBatch | None = None
     tools: list[dict[str, Any]] | None = None
     trace_id: str | None = None

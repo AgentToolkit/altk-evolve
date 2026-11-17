@@ -1094,6 +1094,103 @@ class TestSkipGateWindow:
 
 
 @pytest.mark.unit
+class TestRules:
+    """Rules reach both consistency prompts and lead each replay prefix."""
+
+    RULES = "Never refund an order twice."
+
+    def _completion(self):
+        response = MagicMock()
+        response.choices = [response]
+        response.message.content = json.dumps({"guidelines": []})
+        return response
+
+    @pytest.mark.parametrize("rules", [None, RULES])
+    def test_accurate_prompt_renders_rules_only_when_given(self, rules):
+        from altk_evolve.llm.guidelines.consistency_guidelines import _generate_guideline_result
+
+        with patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=self._completion()) as mock_completion:
+            _generate_guideline_result(
+                options=GuidelineRuntime.from_settings(),
+                messages=[{"role": "assistant", "content": "s0"}],
+                consistency_data={"step_uncertainties": {1: 0.5}},
+                task_description="t",
+                step_range=None,
+                constrained_decoding_supported=False,
+                debug_suffix="",
+                rules=rules,
+            )
+        prompt = mock_completion.call_args.kwargs["messages"][-1]["content"]
+        assert ("# Rules and Constraints\n" in prompt) is bool(rules)
+        assert (self.RULES in prompt) is bool(rules)
+
+    @pytest.mark.parametrize("rules", [None, RULES])
+    def test_fast_prompt_renders_rules_only_when_given(self, rules, monkeypatch):
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
+        trajectory = {"messages": [{"role": "user", "content": "Refund"}, {"role": "assistant", "content": "Done."}], "rules": rules}
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=self._completion()) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            generate_consistency_guidelines_fast(trajectory)
+        prompt = mock_completion.call_args.kwargs["messages"][-1]["content"]
+        assert ("# Rules and Constraints\n" in prompt) is bool(rules)
+        assert (self.RULES in prompt) is bool(rules)
+
+    def test_rules_lead_each_replay_prefix(self):
+        history = [{"role": "user", "content": "Refund"}]
+        trajectory = {"messages": [{"role": "assistant", "content": "Done."}], "context_messages": history}
+
+        assert transform_trajectory_to_IR(trajectory)["steps"][0]["messages"] == history
+        ir = transform_trajectory_to_IR({**trajectory, "rules": self.RULES})
+        assert ir["steps"][0]["messages"] == [{"role": "system", "content": self.RULES}, *history]
+
+    @staticmethod
+    def _system_messages(prefix):
+        return [m for m in prefix if m.get("role") == "system"]
+
+    def test_rules_merge_into_a_system_prompt_in_context(self):
+        system = {"role": "system", "content": "You are a retail agent."}
+        history = [system, {"role": "user", "content": "Refund"}]
+        trajectory = {"messages": [{"role": "assistant", "content": "Done."}], "context_messages": history, "rules": self.RULES}
+
+        prefix = transform_trajectory_to_IR(trajectory)["steps"][0]["messages"]
+        assert prefix == [{"role": "system", "content": f"{self.RULES}\n\nYou are a retail agent."}, history[1]]
+        assert history[0] == system  # the caller's message is not mutated
+
+    def test_rules_merge_into_a_system_prompt_in_messages(self):
+        messages = [
+            {"role": "system", "content": "You are a retail agent."},
+            {"role": "user", "content": "Refund"},
+            {"role": "assistant", "content": "Looking it up."},
+            {"role": "user", "content": "Thanks"},
+            {"role": "assistant", "content": "Done."},
+        ]
+        steps = transform_trajectory_to_IR({"messages": messages, "rules": self.RULES})["steps"]
+
+        assert len(steps) == 2
+        for step in steps:
+            prefix = step["messages"]
+            assert self._system_messages(prefix) == [{"role": "system", "content": f"{self.RULES}\n\nYou are a retail agent."}]
+            assert prefix[0]["role"] == "system"
+
+    def test_rules_merge_into_list_content_system_prompt(self):
+        system = {"role": "system", "content": [{"type": "text", "text": "You are a retail agent."}]}
+        trajectory = {
+            "messages": [{"role": "assistant", "content": "Done."}],
+            "context_messages": [system, {"role": "user", "content": "Refund"}],
+            "rules": self.RULES,
+        }
+
+        prefix = transform_trajectory_to_IR(trajectory)["steps"][0]["messages"]
+        assert prefix[0] == {"role": "system", "content": [{"type": "text", "text": self.RULES}, *system["content"]]}
+        assert len(self._system_messages(prefix)) == 1
+
+
+@pytest.mark.unit
 class TestShippedConfigMatchesModuleDefaults:
     """The shipped YAML and the DEFAULT_* constants are two sources of truth for one number.
 

@@ -223,7 +223,7 @@ def test_default_plan_captures_trajectory_window_from_settings(monkeypatch):
     monkeypatch.setattr(guidelines_settings, "guidelines_mode", "standard")
     calls = []
 
-    def generate(messages, *, context_messages=None, options, outcome=None):
+    def generate(messages, *, context_messages=None, options, outcome=None, rules=None):
         calls.append(options)
         return [GuidelineGenerationResult(task_description="task", guidelines=[])]
 
@@ -264,7 +264,7 @@ def test_profile_stored_before_the_trajectory_window_resolves_as_it_ran(monkeypa
     assert manager.get("legacy", 1)["manifest"] == legacy  # the stored record is not rewritten
     calls = []
 
-    def generate(messages, *, context_messages=None, options, outcome=None):
+    def generate(messages, *, context_messages=None, options, outcome=None, rules=None):
         calls.append(options)
         return [GuidelineGenerationResult(task_description="task", guidelines=[])]
 
@@ -706,7 +706,7 @@ def test_builtin_factory_selects_generation_steps(mode, method, monkeypatch):
     calls = []
 
     def generator(name):
-        def run(data, *, options, context_messages=None, outcome=None):
+        def run(data, *, options, context_messages=None, outcome=None, rules=None):
             calls.append((name, data, options.guidelines_model))
             return [
                 GuidelineGenerationResult(
@@ -750,7 +750,7 @@ def test_builtin_admin_update_changes_next_trajectory_not_running_steps(monkeypa
     started, resume = Event(), Event()
     calls = []
 
-    def standard(messages, *, options, context_messages=None, outcome=None):
+    def standard(messages, *, options, context_messages=None, outcome=None, rules=None):
         calls.append(("standard", options.guidelines_model))
         started.set()
         assert resume.wait(10)
