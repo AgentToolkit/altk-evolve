@@ -2184,7 +2184,7 @@ class TestCallerSuppliedRendererFast:
         ],
     }
 
-    def _run(self, monkeypatch, renderer):
+    def _run(self, monkeypatch, renderer, trajectory=None):
         from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
 
         # Segmentation ON: a renderer-supplied fast call must still skip segmentation,
@@ -2201,7 +2201,7 @@ class TestCallerSuppliedRendererFast:
             patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
             patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
         ):
-            results = generate_consistency_guidelines_fast(self._TRAJECTORY, trajectory_renderer=renderer)
+            results = generate_consistency_guidelines_fast(trajectory or self._TRAJECTORY, trajectory_renderer=renderer)
         _, kwargs = mock_completion.call_args
         return results, kwargs["messages"][-1]["content"], mock_segment
 
@@ -2226,3 +2226,21 @@ class TestCallerSuppliedRendererFast:
     def test_segmentation_is_skipped_when_a_renderer_is_supplied(self, monkeypatch):
         _, _, mock_segment = self._run(monkeypatch, lambda *a, **k: "RENDERED")
         mock_segment.assert_not_called()
+
+    def test_rules_pass_through_the_renderer_branch(self, monkeypatch):
+        """trajectory['rules'] reaches _generate_fast_guideline_result on the
+        renderer path too — a message-only renderer would otherwise drop them,
+        because the renderer formats messages, not rules."""
+        trajectory = {**self._TRAJECTORY, "rules": "Never modify records"}
+        _, prompt, _ = self._run(monkeypatch, lambda *a, **k: "RENDERED BODY", trajectory=trajectory)
+        # Rules land in their own prompt section, independent of what the renderer produced.
+        assert "# Rules and Constraints" in prompt
+        assert "Never modify records" in prompt
+        # And the renderer's output is still what formats the trajectory itself.
+        assert "RENDERED BODY" in prompt
+
+    def test_no_rules_section_without_rules(self, monkeypatch):
+        """A trajectory with no rules key must leave the prompt unchanged — the
+        default rules=None in _generate_fast_guideline_result handles the absence."""
+        _, prompt, _ = self._run(monkeypatch, lambda *a, **k: "RENDERED BODY")
+        assert "# Rules and Constraints" not in prompt

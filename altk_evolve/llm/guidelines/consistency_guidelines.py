@@ -1003,6 +1003,7 @@ def generate_consistency_guidelines_fast(
             trace_id=trace_id,
             options=options,
             supporting_context=render_supporting_context(trajectory.get("context_messages")),
+            rules=trajectory.get("rules"),
         )
         if debug_dir:
             _write_guidelines_debug(debug_dir, trace_id, [result], "_consistency-fast")
