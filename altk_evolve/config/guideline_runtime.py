@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from altk_evolve.config.guideline_prompts import resolve_guidelines_prompt
+
 
 class GuidelineRuntime(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -18,6 +20,8 @@ class GuidelineRuntime(BaseModel):
     trajectory_max_steps: int = Field(default=50, ge=1)
     trajectory_max_step_chars: int = Field(default=2000, ge=1)
     trajectory_tail_steps: int = Field(default=0, ge=0)
+    # Prompt name, shipped or from EVOLVE_GUIDELINES_PROMPTS_DIR; see config/guideline_prompts.py.
+    guidelines_prompt: str = "default"
     analysis_config: dict[str, Any] | None = None
     # Caller-supplied extensions to the consistency-pipeline generator prompts (both
     # accurate and fast). Both default to no-op, so leaving them unset keeps the stock
@@ -46,6 +50,7 @@ class GuidelineRuntime(BaseModel):
                 f"({self.trajectory_max_steps}); the tail is carved out of the step budget, so a tail "
                 "that consumes all of it would leave no steps from the start of the run."
             )
+        resolve_guidelines_prompt(self.guidelines_prompt)
         return self
 
     @classmethod
@@ -60,4 +65,5 @@ class GuidelineRuntime(BaseModel):
             trajectory_max_steps=evolve_config.trajectory_max_steps,
             trajectory_max_step_chars=evolve_config.trajectory_max_step_chars,
             trajectory_tail_steps=evolve_config.trajectory_tail_steps,
+            guidelines_prompt=evolve_config.guidelines_prompt,
         )

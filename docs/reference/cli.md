@@ -95,6 +95,19 @@ Reports contain actions, reasons, deciding rules, and evidence. See the
 [Data Retention guide](../guides/retention.md) for rule semantics and the
 [Scheduling guide](../guides/retention-scheduling.md) for command options, execution, and recovery.
 
+### Guideline Prompts
+
+```bash
+# List the prompts EVOLVE_GUIDELINES_PROMPT can name: shipped ones, then EVOLVE_GUIDELINES_PROMPTS_DIR's
+# (the selected one is marked with *)
+evolve prompts list
+
+# Print a prompt's template, for example to start your own from a copy
+evolve prompts show default > my-prompts/mine.jinja2
+```
+
+See [Guideline prompt](../guides/configuration.md#guideline-prompt).
+
 ### Skill Management
 
 ```bash

@@ -30,6 +30,7 @@ skills_app = typer.Typer(help="Skill management commands")
 viz_app = typer.Typer(help="Visualization commands")
 hooks_app = typer.Typer(help="Hook seam management commands")
 retention_app = typer.Typer(help="Retention policies, schedules, and execution", no_args_is_help=True)
+prompts_app = typer.Typer(help="Guideline-generation prompts: list them and show their templates", no_args_is_help=True)
 
 app.add_typer(namespaces_app, name="namespaces")
 app.add_typer(entities_app, name="entities")
@@ -38,6 +39,7 @@ app.add_typer(skills_app, name="skills")
 app.add_typer(viz_app, name="viz")
 app.add_typer(hooks_app, name="hooks")
 app.add_typer(retention_app, name="retention")
+app.add_typer(prompts_app, name="prompts")
 
 
 app.add_typer(profiles_app, name="processing-profiles")
@@ -762,6 +764,50 @@ def hooks_init(
     console.print("  pip install 'altk-evolve[pii-semantic]'", markup=False, highlight=False)
     console.print("[dim](the NER model downloads on first use, ~460MB for en_core_web_trf)[/dim]\n")
     console.print(hooks_init_platform_note(platform.system()), style="yellow", markup=False, highlight=False)
+
+
+# =============================================================================
+# Guideline Prompt Commands
+# =============================================================================
+
+
+def _guidelines_prompts():
+    from altk_evolve.config.guideline_prompts import available_guidelines_prompts
+
+    try:
+        return available_guidelines_prompts()
+    except ValueError as e:
+        err_console.print(f"[red]Error:[/red] {e}", markup=True, highlight=False)
+        raise typer.Exit(1)
+
+
+@prompts_app.command("list")
+def list_prompts():
+    """List the guideline-generation prompts EVOLVE_GUIDELINES_PROMPT can name.
+
+    Prompts shipped with Evolve, then those in EVOLVE_GUIDELINES_PROMPTS_DIR. The one this
+    environment selects is marked with *.
+    """
+    from altk_evolve.config.evolve import evolve_config
+
+    table = Table(title="Guideline prompts")
+    table.add_column("Name", style="cyan")
+    table.add_column("Source")
+    table.add_column("Description", style="dim")
+    for prompt in _guidelines_prompts().values():
+        selected = " *" if prompt.name == evolve_config.guidelines_prompt else ""
+        table.add_row(prompt.name + selected, prompt.source, prompt.description)
+    console.print(table)
+
+
+@prompts_app.command("show")
+def show_prompt(name: Annotated[str, typer.Argument(help="Prompt name")]):
+    """Print a prompt's template, for example to start your own from a copy of it."""
+    prompt = _guidelines_prompts().get(name)
+    if prompt is None:
+        err_console.print(f"[red]Error:[/red] unknown prompt {name!r}. Run: evolve prompts list", markup=True, highlight=False)
+        raise typer.Exit(1)
+    sys.stdout.write(prompt.path.read_text())
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ class GuidelineConfig(GuidelineRuntime):
     trajectory_max_steps: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_max_steps, ge=1)
     trajectory_max_step_chars: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_max_step_chars, ge=1)
     trajectory_tail_steps: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_tail_steps, ge=0)
+    guidelines_prompt: str = Field(default_factory=lambda: GuidelineRuntime.from_settings().guidelines_prompt)
 
     # Keys added since GuidelineProcessor version "1" was first published, mapped to the
     # behaviour of a revision stored without them, so ProcessingManager.resolve() can still
@@ -46,6 +47,7 @@ class GuidelineConfig(GuidelineRuntime):
         # manifest coerces tuples to lists, so the back-fill must write what a validated
         # manifest would produce — else the identity check at the end of resolve() fails.
         "extra_instructions": [],
+        "guidelines_prompt": "default",
     }
 
     @model_validator(mode="after")

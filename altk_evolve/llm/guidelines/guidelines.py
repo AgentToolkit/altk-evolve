@@ -3,6 +3,7 @@ import json
 import logging
 import re
 from json import JSONDecodeError
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,7 @@ from pydantic import ValidationError
 
 from altk_evolve.config.llm import llm_settings  # noqa: F401
 from altk_evolve.config.evolve import evolve_config  # noqa: F401
+from altk_evolve.config.guideline_prompts import resolve_guidelines_prompt
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, one_pass_task_description, subtask_slices
@@ -30,7 +32,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_guidelines.jinja2").read_text())
+
+@lru_cache(maxsize=64)
+def _load_template(path: Path) -> Template:
+    # Read once per process: an edited prompt takes effect on restart.
+    return Template(path.read_text())
+
+
+def _guidelines_template(name: str) -> Template:
+    """The template for a ``guidelines_prompt`` name; see ``altk_evolve.config.guideline_prompts``."""
+    return _load_template(resolve_guidelines_prompt(name))
+
 
 # Bounds on the evaluator's report rendered into the prompt.
 _MAX_FAILED_CHECKS = 10
@@ -403,7 +415,7 @@ def _generate_guidelines_for_segment(
             "detail": detail,
             "segmented": segmented,
         }
-    prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
+    prompt = _guidelines_template(options.guidelines_prompt).render(
         task_instruction=task_description,
         supporting_context=supporting_context,
         rules_section=render_rules(rules),

@@ -51,6 +51,8 @@ All configuration variables are prefixed with `EVOLVE_`.
 | `EVOLVE_SEGMENTATION_ENABLED` | Segment trajectories into logical subtasks before generating guidelines. Governs all three generation paths (`standard`, and both `consistency` methods). Disabled by default — see [Trajectory segmentation](#trajectory-segmentation) | `false` |
 | `EVOLVE_TRAJECTORY_MAX_STEPS` | Most trajectory steps rendered into a generation prompt (`standard` and `fast` consistency; not `accurate`) — see [Trajectory limits](#trajectory-limits) | `50` |
 | `EVOLVE_TRAJECTORY_MAX_STEP_CHARS` | Characters kept per step before truncation | `2000` |
+| `EVOLVE_GUIDELINES_PROMPT` | Name of the prompt the standard guideline generator uses — see [Guideline prompt](#guideline-prompt) | `default` |
+| `EVOLVE_GUIDELINES_PROMPTS_DIR` | A directory of your own prompts, `<name>.jinja2`, selectable by name alongside the shipped ones | unset |
 | `EVOLVE_TRAJECTORY_TAIL_STEPS` | How much of the step budget is reserved for the **end** of a long run. `0` truncates head-only, as before — see [Trajectory limits](#trajectory-limits) | `0` |
 | `EVOLVE_CONSOLIDATION_MODE` | How consolidation merges a cluster: `none` (skip), `lossless` (merge only equivalent advice) or `lossy` (merge more aggressively) — see [Guideline consolidation](#guideline-consolidation) | `lossless` |
 | `EVOLVE_CLUSTERING_KEY` | What consolidation clusters on: `task_description` or `guideline_text` | `task_description` |
@@ -102,6 +104,61 @@ of the same trajectory. One interaction to know about: with elision in effect, t
 `accurate` consistency method skips segmentation on any trajectory long enough to be elided,
 because its step numbering and the segmenter's stop agreeing across the gap. Trajectories
 within the step budget are unaffected, as is the `fast` method.
+
+### Guideline prompt
+
+`EVOLVE_GUIDELINES_PROMPT` names the prompt the `standard` generator renders. The consistency
+pipelines keep their own prompts. A name refers to either:
+
+- a prompt shipped with Evolve, `altk_evolve/llm/guidelines/prompts/generation/<name>.jinja2`.
+  `default` is the prompt earlier releases used.
+- one of your own, `<name>.jinja2` in `EVOLVE_GUIDELINES_PROMPTS_DIR`.
+
+`evolve prompts list` shows the available names, and `evolve prompts show <name>` prints a
+template. The setting is always a name, never a path, and your prompts may not reuse a shipped
+name, so `default` means the same prompt in every deployment.
+
+A processing profile can set it per profile, as `guidelines_prompt` in the
+`evolve.guidelines` processor's config, so one namespace can try a prompt while the rest keep
+the default:
+
+```bash
+evolve processing-profiles get cortex > profile.json
+# set "guidelines_prompt": "mine" in the guidelines processor's config
+evolve processing-profiles apply cortex --file profile.json --expected-revision <revision>
+```
+
+Profiles can be written remotely (MCP, REST), so they can only name prompts already in place,
+and `EVOLVE_GUIDELINES_PROMPTS_DIR` itself is set only by the environment. An unknown name is
+rejected when the profile is published. The profile records the name, not the template, so
+editing a prompt file changes what later runs of that profile render. Templates are read once
+per process: restart Evolve after editing one.
+
+#### Writing a prompt
+
+Start from a copy of the default: `evolve prompts show default > my-prompts/mine.jinja2`. A
+template is Jinja2 and receives these variables:
+
+| Variable | Contents |
+|---|---|
+| `task_instruction` | The task, or the subtask's description when the trajectory is segmented |
+| `trajectory_summary` | The agent's steps, rendered and truncated as set by [Trajectory limits](#trajectory-limits) |
+| `num_steps` | How many steps `trajectory_summary` covers (a subtask's, when segmented) |
+| `supporting_context` | Earlier conversation to interpret the steps by; empty if none |
+| `rules_section` | The rules or policies the agent worked under, rendered as a section; empty if none |
+| `constrained_decoding_supported` | Whether the model is held to the response schema. When false, the prompt must spell out the JSON format |
+| `outcome` | The evaluation's verdict; `outcome.success` is a boolean. Set only when the trajectory has an outcome, like the four below |
+| `failed_checks` | The checks the evaluation failed, at most 10, each truncated to 500 characters |
+| `omitted_checks` | How many failed checks were left out of `failed_checks` |
+| `detail` | The evaluation's free-text detail, truncated to 2,500 characters |
+| `segmented` | Whether the steps are one subtask of a longer trajectory |
+
+A template that uses any other variable is rejected when it is selected, rather than rendering
+the variable as empty. The model's reply is parsed against the same guideline schema whichever
+prompt is used.
+
+A leading Jinja comment is the description `evolve prompts list` shows. Write it as
+`{#- ... -#}`, so that it adds no blank line to the prompt.
 
 ### Trajectory segmentation
 
