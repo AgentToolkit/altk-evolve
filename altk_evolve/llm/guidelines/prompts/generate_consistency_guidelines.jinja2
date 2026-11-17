@@ -7,7 +7,8 @@ Steps below may be marked with ⚠️ and a number from 0 to 1 — e.g. "⚠️ 
 # Supporting Conversation History
 Use this history to interpret the new steps below. These historical turns are not additional steps to score or generate guidelines for.
 {{supporting_context}}
-{% endif %}
+{% endif %}{% if rules_section %}
+{{rules_section}}{% endif %}
 
 # Agent Trajectory
 Task: {{task_instruction}}

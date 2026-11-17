@@ -125,6 +125,7 @@ class GuidelineProcessor:
                         context_messages=trajectory.context_messages,
                         options=options,
                         outcome=trajectory.outcome,
+                        rules=trajectory.rules,
                     ),
                 )
             )

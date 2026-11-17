@@ -294,17 +294,37 @@ generates from that trajectory: `"success"` or `"failure"`. This overrides any
 evidence merging during consolidation. `failed_checks` and `detail` are optional and
 are not stored on entities; they are available to processors through
 `trajectory.outcome`. Standard generation also switches to an outcome-grounded prompt:
-a failure yields 1–3 corrective guidelines grounded in the failed checks and detail, a
-success at most 2 non-obvious patterns, and either may yield none rather than generic
-advice. Extra guidelines are dropped. The prompt renders the first 10 failed checks,
+a failure yields corrective guidelines grounded in the failed checks and detail, and a
+success yields the strategies and steps that made it succeed. Neither has a count limit.
+A run yields none only when it holds nothing beyond the excluded items (greetings,
+acknowledgements, self-reported success and the like), or, for a failure, when no action
+by the agent could have prevented it. The prompt renders the first 10 failed checks,
 each cut to 500 characters, and the first 2,500 characters of `detail`. With
-segmentation, each segment receives the same outcome and these limits apply per segment,
-and a failed run's segment that did not contribute to the failure may yield none.
-This clause was added during review and has not been evaluated; compare guideline yield
-and quality on segmented failed runs with and without it before relying on it.
+segmentation, each segment receives the same outcome, and a failed run's segment that
+did not contribute to the failure may yield none. This clause was added during review
+and has not been evaluated; compare guideline yield and quality on segmented failed runs
+with and without it before relying on it.
 Consistency generation is unchanged. Without an outcome, behavior is unchanged. The Python client,
 REST, MCP `process_trajectory`, and CLI input JSON all accept it. An outcome supplied
 after its batch was processed needs a new `batch.revision`, or the processor is skipped.
+
+## Rules and constraints
+
+When the agent had to follow rules, policies, or constraints (for example a domain
+policy), supply them as `Trajectory.rules`, a single text field:
+
+```json
+"rules": "# Retail agent policy\nAuthenticate the user before acting on an order."
+```
+
+Every guideline generator (standard, fast consistency and accurate consistency) renders
+the text whole, untruncated, in its own `# Rules and Constraints` prompt section, and
+instructs the model that every guideline must be consistent with it and must never tell
+the agent to bypass a rule. Accurate consistency also puts the rules at the start of each
+replay prefix: merged into the prefix's leading system message when it has one, or as a
+new leading system message otherwise. Without `rules`, every prompt and replay prefix is
+unchanged. The tau adapter's `include_policy=true` fills `rules` with the agent domain
+policy.
 
 ## CLI and Phoenix sync
 
