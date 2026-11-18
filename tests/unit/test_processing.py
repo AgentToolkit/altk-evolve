@@ -273,6 +273,29 @@ def test_profile_stored_before_the_trajectory_window_resolves_as_it_ran(monkeypa
     assert tuple(getattr(calls[0], key) for key in _TRAJECTORY_KEYS) == (50, 2000, 0)
 
 
+def test_profile_stored_before_the_prompt_extension_fields_resolves_as_it_ran():
+    """A revision published before `extra_analysis_sentence` and `extra_instructions`
+    existed lacks them. Resolving it fills in the no-op values it actually ran with
+    (None and ()), not whatever a current GuidelineRuntime might default to."""
+    from altk_evolve.processing.builtin import GuidelineProcessor
+
+    manager = make_manager(processor_type=GuidelineProcessor)
+    legacy = manager.validate(
+        {"processors": [{"id": "g", "plugin": "evolve.guidelines", "config": {"guidelines_mode": "standard"}}]}
+    ).manifest()
+    for key in ("extra_analysis_sentence", "extra_instructions"):
+        del legacy["processors"][0]["config"][key]
+    manager.repository.put("legacy_prompt_ext", legacy, expected_revision=0)
+
+    plan = manager.resolve("legacy_prompt_ext", revision=1)
+    config = plan.manifest()["processors"][0]["config"]
+    assert config["extra_analysis_sentence"] is None
+    # The serialized manifest renders the tuple-typed field as a list.
+    assert config["extra_instructions"] == []
+    # The stored record is not rewritten by the back-fill.
+    assert manager.get("legacy_prompt_ext", 1)["manifest"] == legacy
+
+
 def test_back_fill_does_not_hide_other_drift():
     """Only the declared additions are filled; any other missing key is still drift."""
     from altk_evolve.processing.builtin import GuidelineProcessor

@@ -642,8 +642,8 @@ class TestFormatTrajectoryData:
         assert "HIGH UNCERTAINTY" in result
         assert "step two" in result
 
-    def test_marks_elevated_not_high_when_below_high_threshold(self):
-        """A non-zero score below the high threshold must be labeled ELEVATED, not
+    def test_marks_uncertainty_not_high_when_below_high_threshold(self):
+        """A non-zero score below the high threshold must be labeled UNCERTAINTY, not
         HIGH — the label must never claim a threshold that wasn't actually met
         (default high=0.15)."""
         messages = [
@@ -652,12 +652,13 @@ class TestFormatTrajectoryData:
         ]
         consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.1029}}
         result = format_trajectory_data(messages, consistency_data)
-        assert "ELEVATED UNCERTAINTY: 0.1029" in result
+        assert "UNCERTAINTY: 0.1029" in result
+        assert "UNCERTAINTY: 0.02" in result
         assert "HIGH UNCERTAINTY" not in result
 
-    def test_a_peak_in_the_old_band_is_now_high_not_elevated(self):
+    def test_a_peak_in_the_old_band_is_high_not_sub_threshold(self):
         """0.17 sits between the retired 0.2 and the current 0.15, so it is the one score
-        whose label depends on the threshold this PR changed: HIGH now, ELEVATED at 0.2.
+        whose label depends on the threshold this PR changed: HIGH now, sub-threshold at 0.2.
 
         Every other marker test uses scores well clear of both values, which left the
         default free to drift back to 0.2 with the suite still green.
@@ -669,34 +670,36 @@ class TestFormatTrajectoryData:
         consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.17}}
         result = format_trajectory_data(messages, consistency_data)
         assert "HIGH UNCERTAINTY: 0.17" in result
-        assert "ELEVATED UNCERTAINTY" not in result
+        # Step 1 (0.02) still carries the generic UNCERTAINTY tier.
+        assert "[⚠️ UNCERTAINTY: 0.02]" in result
 
-    def test_elevated_marks_only_the_top_step(self):
-        """The ELEVATED fallback flags just the most-uncertain step, so a trajectory of
-        uniformly-small scores doesn't end up marked end to end."""
+    def test_every_nonzero_step_gets_a_marker(self):
+        """Every non-zero step that didn't clear HIGH gets the generic UNCERTAINTY tier,
+        no matter how small the score. The old ELEVATED fallback only marked rank-1 when no
+        step cleared HIGH; the new behavior marks every non-zero step regardless."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
         ]
         consistency_data = {"step_uncertainties": {1: 0.02, 2: 0.05}}
         result = format_trajectory_data(messages, consistency_data)
-        assert result.count("ELEVATED UNCERTAINTY") == 1
-        assert "ELEVATED UNCERTAINTY: 0.05" in result
-        assert "ELEVATED UNCERTAINTY: 0.02" not in result
+        # Both steps have non-zero uncertainty below HIGH, so both get UNCERTAINTY.
+        assert "[⚠️ UNCERTAINTY: 0.02]" in result
+        assert "[⚠️ UNCERTAINTY: 0.05]" in result
         assert "HIGH UNCERTAINTY" not in result
 
-    def test_elevated_stays_single_across_many_sub_threshold_steps(self):
-        """Adding more sub-threshold steps never widens the ELEVATED marker past the top one."""
+    def test_all_sub_threshold_steps_get_marked(self):
+        """All non-zero sub-threshold steps carry a UNCERTAINTY marker, not just the top one."""
         messages = [{"role": "assistant", "content": f"step {i}"} for i in range(1, 6)]
         consistency_data = {"step_uncertainties": {1: 0.01, 2: 0.02, 3: 0.03, 4: 0.04, 5: 0.05}}
         result = format_trajectory_data(messages, consistency_data)
-        assert result.count("ELEVATED UNCERTAINTY") == 1
-        assert "ELEVATED UNCERTAINTY: 0.05" in result
+        # All five non-zero sub-threshold steps get UNCERTAINTY markers.
+        assert result.count("[⚠️ UNCERTAINTY") == 5
         assert "HIGH UNCERTAINTY" not in result
 
     def test_no_marker_when_every_step_is_fully_consistent(self):
-        """Zero is the only score that earns no marker at all — with one threshold left,
-        every trajectory carrying measurable uncertainty gets at least one flag."""
+        """Zero is the only score that earns no marker at all — a trajectory with no
+        measurable uncertainty on any step renders with no markers."""
         messages = [
             {"role": "assistant", "content": "step one"},
             {"role": "assistant", "content": "step two"},
@@ -704,40 +707,62 @@ class TestFormatTrajectoryData:
         consistency_data = {"step_uncertainties": {1: 0.0, 2: 0.0}}
         result = format_trajectory_data(messages, consistency_data)
         assert "HIGH UNCERTAINTY" not in result
-        assert "ELEVATED UNCERTAINTY" not in result
+        assert "UNCERTAINTY: 0.0" not in result
 
-    def test_caps_high_markers_at_five(self):
+    def test_caps_high_markers_at_five_and_rest_get_uncertainty(self):
         """At most HIGH_MARKER_CAP steps carry the HIGH marker, even when more clear the
-        threshold — the lowest-scoring ones above the bar go unmarked."""
+        threshold — the lower-scoring ones above the bar fall through to UNCERTAINTY."""
         messages = [{"role": "assistant", "content": f"step {i}"} for i in range(1, 8)]
         consistency_data = {"step_uncertainties": {1: 0.9, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.5, 6: 0.4, 7: 0.3}}
         result = format_trajectory_data(messages, consistency_data)
         assert result.count("HIGH UNCERTAINTY") == 5
         assert "HIGH UNCERTAINTY: 0.4" not in result
         assert "HIGH UNCERTAINTY: 0.3" not in result
-        # The ELEVATED fallback stays silent whenever any step cleared the threshold.
-        assert "ELEVATED UNCERTAINTY" not in result
+        # The two steps that didn't make the HIGH cut (0.4 and 0.3) still carry the generic
+        # UNCERTAINTY marker rather than going unmarked.
+        assert "[⚠️ UNCERTAINTY: 0.4]" in result
+        assert "[⚠️ UNCERTAINTY: 0.3]" in result
 
-    def test_out_of_window_step_cannot_steal_a_marker_slot(self):
-        """The ranking is clamped to the rendered window, like the loop. Otherwise an
-        out-of-window step wins the HIGH slot — or the single ELEVATED slot — and then never
-        renders, so a trajectory kept alive by an in-window step shows no marker at all."""
+    def test_window_clamp_decides_the_tier_when_high_slots_are_contested(self):
+        """The ranking is clamped to the rendered window: out-of-window steps cannot win
+        HIGH slots and push an in-window step down to UNCERTAINTY. Without the clamp,
+        HIGH_MARKER_CAP out-of-window steps scoring above an in-window step would win
+        every HIGH slot (and never render), leaving the in-window step wearing an
+        UNCERTAINTY marker when it should be HIGH."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import HIGH_MARKER_CAP, MAX_RENDERED_STEPS
+
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
+        # Five out-of-window scores all higher than the in-window step at 0.9 — enough to
+        # fill every HIGH slot by rank. The in-window step clears the 0.15 threshold itself,
+        # so with the clamp it earns HIGH; without the clamp it gets bumped to UNCERTAINTY.
+        scores = {MAX_RENDERED_STEPS + i + 1: 0.95 for i in range(HIGH_MARKER_CAP)}
+        scores[5] = 0.9
+
+        result = format_trajectory_data(messages, {"step_uncertainties": scores})
+        assert "Step 5 [⚠️ HIGH UNCERTAINTY: 0.9]" in result
+        assert "UNCERTAINTY: 0.9]" not in result.replace("HIGH UNCERTAINTY: 0.9", "")
+
+    def test_window_clamp_prevents_zero_markers_for_an_in_window_flap(self):
+        """Also pins the simpler case the earlier test covered: an in-window step with
+        measurable uncertainty must receive a marker even when another step with higher
+        score lives out-of-window."""
         from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
 
         messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
         out_of_window = MAX_RENDERED_STEPS + 5
 
         for label, scores in [
-            ("out-of-window would take HIGH", {5: 0.02, out_of_window: 0.9}),
-            ("out-of-window would take ELEVATED", {5: 0.02, out_of_window: 0.09}),
+            ("out-of-window above HIGH threshold", {5: 0.02, out_of_window: 0.9}),
+            ("out-of-window still sub-threshold", {5: 0.02, out_of_window: 0.09}),
         ]:
             result = format_trajectory_data(messages, {"step_uncertainties": scores})
-            markers = result.count("HIGH UNCERTAINTY") + result.count("ELEVATED UNCERTAINTY")
-            assert markers == 1, label
+            markers = result.count("HIGH UNCERTAINTY") + result.count("[⚠️ UNCERTAINTY")
+            assert markers >= 1, label
 
     def test_marker_does_not_depend_on_uncertainty_insertion_order(self):
         """`sorted` is stable, so with equal scores an unclamped ranking let dict insertion
-        order decide whether a marker appeared at all."""
+        order decide whether a marker appeared at all. Window clamp fixes this: the in-window
+        step gets its UNCERTAINTY marker regardless of insertion order."""
         from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
 
         messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
@@ -746,8 +771,10 @@ class TestFormatTrajectoryData:
         in_first = format_trajectory_data(messages, {"step_uncertainties": {5: 0.02, far: 0.02}})
         out_first = format_trajectory_data(messages, {"step_uncertainties": {far: 0.02, 5: 0.02}})
 
-        assert in_first.count("ELEVATED UNCERTAINTY") == 1
-        assert out_first.count("ELEVATED UNCERTAINTY") == 1
+        # Both orderings yield exactly one marker (on in-window step 5); the far step
+        # never renders.
+        assert in_first.count("[⚠️ UNCERTAINTY") == 1
+        assert out_first.count("[⚠️ UNCERTAINTY") == 1
 
     def test_tool_calls_none_does_not_crash(self):
         # Raw OpenAI message dumps always carry tool_calls: null
@@ -1085,7 +1112,9 @@ class TestSkipGateWindow:
 
         messages = [{"role": "assistant", "content": f"s{i}"} for i in range(MAX_RENDERED_STEPS + 10)]
         rendered = format_trajectory_data(messages, {"step_uncertainties": scores})
-        assert rendered.count("HIGH UNCERTAINTY") + rendered.count("ELEVATED UNCERTAINTY") == 1
+        # Step 5 (in-window, 0.02 — sub-threshold) carries UNCERTAINTY; the out-of-window
+        # 0.9 step never renders.
+        assert rendered.count("HIGH UNCERTAINTY") + rendered.count("[⚠️ UNCERTAINTY") == 1
 
     def test_skips_only_on_all_zero_uncertainty(self):
         """Pins the gate's `> 0`: raising it to a threshold left the whole suite green."""
@@ -2073,3 +2102,168 @@ class TestFastPathElisionWithDedupe:
 
         assert mock_segment.call_count == int(segmented)
         assert len(prompts) == (2 if segmented else 1)
+
+
+@pytest.mark.unit
+class TestPromptExtensionHooks:
+    """`extra_analysis_sentence` and `extra_instructions` splice into both pipelines'
+    prompts at fixed points; defaults are no-op so the stock output is byte-identical."""
+
+    _SENTINEL_SENTENCE = "SENTINEL ANALYSIS SENTENCE SPLICE."
+    _SENTINEL_INSTRUCTIONS = [
+        "SENTINEL INSTRUCTION ONE SPLICE.",
+        "SENTINEL INSTRUCTION TWO SPLICE.",
+    ]
+
+    def _trajectory(self):
+        return {
+            "trace_id": "ext-hooks",
+            "messages": [
+                {"role": "user", "content": "do the thing"},
+                {"role": "assistant", "content": "step one"},
+            ],
+        }
+
+    def _run_accurate(self, monkeypatch, *, options):
+        import altk_evolve.llm.guidelines.consistency_guidelines as module
+
+        monkeypatch.setattr(module, "resample_trajectory", lambda trajectory, **kwargs: trajectory)
+        monkeypatch.setattr(
+            module,
+            "analyze_consistency",
+            lambda trajectory, **kwargs: ({"steps": [{"step_number": 1, "step_uncertainty": 0.4}]}, trajectory),
+        )
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        with patch.object(module, "completion", return_value=response) as mock_completion:
+            module.generate_consistency_guidelines(self._trajectory(), options=options)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    def _run_fast(self, monkeypatch, *, options):
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+        with (
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            generate_consistency_guidelines_fast(self._trajectory(), options=options)
+        _, kwargs = mock_completion.call_args
+        return kwargs["messages"][-1]["content"]
+
+    @pytest.mark.parametrize("runner", ["_run_accurate", "_run_fast"])
+    def test_extra_analysis_sentence_appears_in_analysis_section(self, runner, monkeypatch):
+        options = GuidelineRuntime(extra_analysis_sentence=self._SENTINEL_SENTENCE)
+        prompt = getattr(self, runner)(monkeypatch, options=options)
+        # The sentence lands inside the # Your Analysis block.
+        analysis_start = prompt.index("# Your Analysis")
+        # Both templates put the sentence immediately after the first analysis sentence,
+        # so there's always a next-section marker (# Instructions) further down.
+        analysis_end = prompt.index("# Instructions", analysis_start)
+        assert self._SENTINEL_SENTENCE in prompt[analysis_start:analysis_end]
+
+    @pytest.mark.parametrize("runner", ["_run_accurate", "_run_fast"])
+    def test_extra_instructions_are_numbered_after_stock_items(self, runner, monkeypatch):
+        options = GuidelineRuntime(extra_instructions=self._SENTINEL_INSTRUCTIONS)
+        prompt = getattr(self, runner)(monkeypatch, options=options)
+        # The two extras splice in as items #2 and #3; the stock items that followed shift up.
+        assert f"2. {self._SENTINEL_INSTRUCTIONS[0]}" in prompt
+        assert f"3. {self._SENTINEL_INSTRUCTIONS[1]}" in prompt
+        # Instruction #1 is always the stock lead-in; sentinel strings must not land there.
+        assert f"1. {self._SENTINEL_INSTRUCTIONS[0]}" not in prompt
+        # Stock items that followed the splice point must be renumbered up — otherwise a
+        # revert of `{{ N + (extra_instructions | length) }}` to a hard-coded `N` would
+        # leave duplicate items 2 and 3 in the prompt, and this test would still pass.
+        # Both templates carry "**Avoid overfitting.**" as the first stock item after the
+        # splice point, so with two extras it must land at #4.
+        assert "4. **Avoid overfitting.**" in prompt
+
+    @pytest.mark.parametrize("runner", ["_run_accurate", "_run_fast"])
+    def test_defaults_produce_no_extension_text(self, runner, monkeypatch):
+        prompt = getattr(self, runner)(monkeypatch, options=GuidelineRuntime())
+        assert self._SENTINEL_SENTENCE not in prompt
+        for sentinel in self._SENTINEL_INSTRUCTIONS:
+            assert sentinel not in prompt
+
+
+@pytest.mark.unit
+class TestCallerSuppliedRendererFast:
+    """The fast pipeline exposes the same `trajectory_renderer=` seam the accurate path has,
+    for callers whose own render differs from parse_openai_agents_trajectory's output."""
+
+    _TRAJECTORY = {
+        "trace_id": "fast-renderer",
+        "messages": [
+            {"role": "user", "content": "do the thing"},
+            {"role": "assistant", "content": "reasoning step 0"},
+            {"role": "assistant", "content": "reasoning step 1"},
+            {"role": "assistant", "content": "reasoning step 2"},
+            {"role": "assistant", "content": "reasoning step 3"},
+            {"role": "assistant", "content": "reasoning step 4"},
+        ],
+    }
+
+    def _run(self, monkeypatch, renderer, trajectory=None):
+        from altk_evolve.llm.guidelines.consistency_guidelines import generate_consistency_guidelines_fast
+
+        # Segmentation ON: a renderer-supplied fast call must still skip segmentation,
+        # because segmentation would need per-segment rendering and that is a separate change.
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", True)
+
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": []})
+
+        with (
+            patch("altk_evolve.llm.guidelines.segmentation.segment_trajectory") as mock_segment,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.completion", return_value=response) as mock_completion,
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.supports_response_schema", return_value=True),
+            patch("altk_evolve.llm.guidelines.consistency_guidelines.get_supported_openai_params", return_value=["response_format"]),
+        ):
+            results = generate_consistency_guidelines_fast(trajectory or self._TRAJECTORY, trajectory_renderer=renderer)
+        _, kwargs = mock_completion.call_args
+        return results, kwargs["messages"][-1]["content"], mock_segment
+
+    def test_the_renderer_output_is_what_the_prompt_embeds(self, monkeypatch):
+        results, prompt, _ = self._run(monkeypatch, lambda *a, **k: "RENDERED BY CALLER FAST")
+        assert "RENDERED BY CALLER FAST" in prompt
+        # The default fast-pipeline renderer's output must be gone, not merely supplemented.
+        assert "Agent reasoning" not in prompt
+        # One result for the full trajectory, since the renderer path skips segmentation.
+        assert len(results) == 1
+
+    def test_the_renderer_is_called_exactly_once(self, monkeypatch):
+        calls = []
+
+        def renderer(*args, **kwargs):
+            calls.append((args, kwargs))
+            return "x"
+
+        self._run(monkeypatch, renderer)
+        assert len(calls) == 1
+
+    def test_segmentation_is_skipped_when_a_renderer_is_supplied(self, monkeypatch):
+        _, _, mock_segment = self._run(monkeypatch, lambda *a, **k: "RENDERED")
+        mock_segment.assert_not_called()
+
+    def test_rules_pass_through_the_renderer_branch(self, monkeypatch):
+        """trajectory['rules'] reaches _generate_fast_guideline_result on the
+        renderer path too — a message-only renderer would otherwise drop them,
+        because the renderer formats messages, not rules."""
+        trajectory = {**self._TRAJECTORY, "rules": "Never modify records"}
+        _, prompt, _ = self._run(monkeypatch, lambda *a, **k: "RENDERED BODY", trajectory=trajectory)
+        # Rules land in their own prompt section, independent of what the renderer produced.
+        assert "# Rules and Constraints" in prompt
+        assert "Never modify records" in prompt
+        # And the renderer's output is still what formats the trajectory itself.
+        assert "RENDERED BODY" in prompt
+
+    def test_no_rules_section_without_rules(self, monkeypatch):
+        """A trajectory with no rules key must leave the prompt unchanged — the
+        default rules=None in _generate_fast_guideline_result handles the absence."""
+        _, prompt, _ = self._run(monkeypatch, lambda *a, **k: "RENDERED BODY")
+        assert "# Rules and Constraints" not in prompt
