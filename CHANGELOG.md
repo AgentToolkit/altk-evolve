@@ -4,6 +4,72 @@
 
 <!-- version list -->
 
+## v1.9.0 (2026-11-18)
+
+### Bug Fixes
+
+- **guidelines**: Add a separate rules input for policy-consistent guidelines
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **guidelines**: Apply rules in consistency generation and replay
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **guidelines**: Generalize domain policy rule to rules and constraints
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **guidelines**: Join the segmented-failure empty-list conditions with or
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **guidelines**: Keep outcome guidelines consistent with domain policy and drop count caps
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **guidelines**: Let failed runs return no guidelines when the failure was unpreventable
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **guidelines**: Let unrelated failed segments return no guidelines under the outcome threshold
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **guidelines**: Merge rules into an existing system message in replay prefixes
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **guidelines**: Remove cap on guideline generation and add domain policy / context-aware
+  generation ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **guidelines**: Render rules whole instead of truncating them
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+### Documentation
+
+- Clarify published result provenance ([#470](https://github.com/AgentToolkit/altk-evolve/pull/470),
+  [`2c28547`](https://github.com/AgentToolkit/altk-evolve/commit/2c285478aec8941a2d707d60217f47daa6fc53dc))
+
+- Refresh research highlights and benchmark results
+  ([#470](https://github.com/AgentToolkit/altk-evolve/pull/470),
+  [`2c28547`](https://github.com/AgentToolkit/altk-evolve/commit/2c285478aec8941a2d707d60217f47daa6fc53dc))
+
+- **processing**: Describe uncapped outcome guidelines and the rules field
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **processing**: Note that rules added after processing need a new batch revision
+  ([#474](https://github.com/AgentToolkit/altk-evolve/pull/474),
+  [`dbbbb72`](https://github.com/AgentToolkit/altk-evolve/commit/dbbbb72144fbfd3548033fbdf1f64fedb9cfdb11))
+
+- **results**: Count mean accuracy as a fourth metric
+  ([#470](https://github.com/AgentToolkit/altk-evolve/pull/470),
+  [`2c28547`](https://github.com/AgentToolkit/altk-evolve/commit/2c285478aec8941a2d707d60217f47daa6fc53dc))
+
+
 ## v1.8.0 (2026-10-27)
 
 ### Bug Fixes
