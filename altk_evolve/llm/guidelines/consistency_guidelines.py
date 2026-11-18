@@ -343,15 +343,24 @@ def format_trajectory_data(
     per the high_uncertainty_threshold in config (falling back to the DEFAULT_* module constant).
 
     The most-uncertain steps at or above the threshold are marked HIGH, up to
-    HIGH_MARKER_CAP of them. Every other step with non-zero uncertainty gets the generic
-    ⚠️ UNCERTAINTY tier — so any trajectory with measurable uncertainty *among its first
-    MAX_RENDERED_STEPS steps* carries at least one marker. Uncertainty on a later step
-    cannot be marked, because that step is never rendered; the caller's skip gate applies
-    the same window so such a trajectory is skipped rather than generated with no markers
-    at all.
+    HIGH_MARKER_CAP of them. Every other step with non-zero uncertainty — including HIGH
+    overflows past the cap — gets the generic ⚠️ UNCERTAINTY tier, with the raw score
+    embedded in the marker so the generator can still rank by magnitude. Zero is the only
+    score that renders unmarked; the UNCERTAINTY tier is deliberately uncapped so secondary
+    flaps and HIGH overflows stay visible.
 
-    Both limits keep the markers doing their job: they direct the model's attention, and a
-    trajectory marked end to end conveys no more than one marked nowhere.
+    Trade-off: with a noisy similarity metric (e.g. sbert embeddings on trivial rewordings),
+    nearly every reasoning step may carry a marker. That is accepted: the marker's embedded
+    score lets the generator discriminate what's actionable, and dropping low-score markers
+    at the renderer would hide the signal from the generator entirely. A caller that wants
+    a tighter floor should pre-filter `consistency_data["step_uncertainties"]` or raise the
+    metric's own threshold.
+
+    Uncertainty on a step outside the first MAX_RENDERED_STEPS cannot be marked, because
+    that step is never rendered; the caller's skip gate applies the same window so a
+    trajectory kept alive by only an out-of-window step is skipped rather than generated
+    with no markers at all. The window clamp also decides the tier when HIGH slots are
+    contested between in-window and out-of-window steps.
     """
     config = config or {}
     high_uncertainty_threshold = config.get("high_uncertainty_threshold", DEFAULT_HIGH_UNCERTAINTY_THRESHOLD)
@@ -642,7 +651,7 @@ def generate_consistency_guidelines(
 
     # Fail loudly on a threshold outside the score range. Step uncertainty is normalised to
     # [0, 1], so a value like 15 (meaning 15%) would clear no step for any trajectory and
-    # silently downgrade every run to a single ELEVATED marker. 0 is excluded at the other
+    # silently downgrade every HIGH to a plain UNCERTAINTY marker. 0 is excluded at the other
     # end: it marks every fully-consistent step HIGH, which the gate's own > 0 semantics call
     # not uncertain at all. Bools are rejected explicitly because bool subclasses int and
     # would otherwise pass the range test.
@@ -659,7 +668,7 @@ def generate_consistency_guidelines(
     if "low_uncertainty_threshold" in config:
         logger.warning(
             f"Ignoring retired low_uncertainty_threshold in {config_path}: the accurate method now uses a single "
-            f"high_uncertainty_threshold, and any step below it with non-zero uncertainty is marked ELEVATED."
+            f"high_uncertainty_threshold, and any step below it with non-zero uncertainty is marked UNCERTAINTY."
         )
 
     messages = trajectory.get("messages", [])
@@ -951,6 +960,14 @@ def generate_consistency_guidelines_fast(
             to name debug artifacts when EVOLVE_DEBUG_DIR is set. `model` and `tools` are
             accepted for call-site parity with `generate_consistency_guidelines` but are not
             used — this pipeline never resamples.
+        trajectory_renderer: optional callable replacing this pipeline's own trajectory
+            rendering. Signature matches the accurate path's seam: `renderer(messages,
+            consistency_data, *, step_range, config)`. On this path the fast pipeline passes
+            `consistency_data={}`, `step_range=None`, `config={}` (empty dict rather than
+            None, so a renderer written for the accurate seam that reads `config` does not
+            crash), untrimmed `messages`, and skips segmentation — rendering the full
+            trajectory once. `trajectory["rules"]` is still forwarded to the Rules and
+            Constraints prompt section, as on the stock fast paths.
     """
     options = options or GuidelineRuntime.from_settings()
     messages = trajectory.get("messages", [])
@@ -993,7 +1010,11 @@ def generate_consistency_guidelines_fast(
     # per-segment rendering support (step_range to the renderer), which is a separate
     # change; for now, a supplied renderer renders the full trajectory once.
     if trajectory_renderer is not None:
-        rendered = trajectory_renderer(messages, {}, step_range=None, config=None) or ""
+        # A renderer written for the accurate seam that reads `config` (which the accurate
+        # path normalises via `config = config or {}`) would crash here on `config.get(...)`
+        # if we passed None. Pass an empty dict for the same reason, and document the
+        # fast-path contract in this function's docstring.
+        rendered = trajectory_renderer(messages, {}, step_range=None, config={}) or ""
         result = _generate_fast_guideline_result(
             task_description=task_instruction,
             trajectory_slice=rendered,

@@ -723,22 +723,39 @@ class TestFormatTrajectoryData:
         assert "[⚠️ UNCERTAINTY: 0.4]" in result
         assert "[⚠️ UNCERTAINTY: 0.3]" in result
 
-    def test_out_of_window_step_cannot_steal_a_marker_slot(self):
-        """The ranking is clamped to the rendered window, like the loop. Otherwise an
-        out-of-window step wins the HIGH slot and then never renders, so a trajectory kept
-        alive by an in-window step shows no marker at all."""
+    def test_window_clamp_decides_the_tier_when_high_slots_are_contested(self):
+        """The ranking is clamped to the rendered window: out-of-window steps cannot win
+        HIGH slots and push an in-window step down to UNCERTAINTY. Without the clamp,
+        HIGH_MARKER_CAP out-of-window steps scoring above an in-window step would win
+        every HIGH slot (and never render), leaving the in-window step wearing an
+        UNCERTAINTY marker when it should be HIGH."""
+        from altk_evolve.llm.guidelines.consistency_guidelines import HIGH_MARKER_CAP, MAX_RENDERED_STEPS
+
+        messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
+        # Five out-of-window scores all higher than the in-window step at 0.9 — enough to
+        # fill every HIGH slot by rank. The in-window step clears the 0.15 threshold itself,
+        # so with the clamp it earns HIGH; without the clamp it gets bumped to UNCERTAINTY.
+        scores = {MAX_RENDERED_STEPS + i + 1: 0.95 for i in range(HIGH_MARKER_CAP)}
+        scores[5] = 0.9
+
+        result = format_trajectory_data(messages, {"step_uncertainties": scores})
+        assert "Step 5 [⚠️ HIGH UNCERTAINTY: 0.9]" in result
+        assert "UNCERTAINTY: 0.9]" not in result.replace("HIGH UNCERTAINTY: 0.9", "")
+
+    def test_window_clamp_prevents_zero_markers_for_an_in_window_flap(self):
+        """Also pins the simpler case the earlier test covered: an in-window step with
+        measurable uncertainty must receive a marker even when another step with higher
+        score lives out-of-window."""
         from altk_evolve.llm.guidelines.consistency_guidelines import MAX_RENDERED_STEPS
 
         messages = [{"role": "assistant", "content": f"step {i}"} for i in range(MAX_RENDERED_STEPS + 10)]
         out_of_window = MAX_RENDERED_STEPS + 5
 
         for label, scores in [
-            ("out-of-window would take HIGH", {5: 0.02, out_of_window: 0.9}),
-            ("out-of-window would still be sub-threshold", {5: 0.02, out_of_window: 0.09}),
+            ("out-of-window above HIGH threshold", {5: 0.02, out_of_window: 0.9}),
+            ("out-of-window still sub-threshold", {5: 0.02, out_of_window: 0.09}),
         ]:
             result = format_trajectory_data(messages, {"step_uncertainties": scores})
-            # The in-window step must receive a marker. Either HIGH (if it cleared the
-            # threshold) or UNCERTAINTY (if it didn't) — never zero markers.
             markers = result.count("HIGH UNCERTAINTY") + result.count("[⚠️ UNCERTAINTY")
             assert markers >= 1, label
 
@@ -2158,6 +2175,12 @@ class TestPromptExtensionHooks:
         assert f"3. {self._SENTINEL_INSTRUCTIONS[1]}" in prompt
         # Instruction #1 is always the stock lead-in; sentinel strings must not land there.
         assert f"1. {self._SENTINEL_INSTRUCTIONS[0]}" not in prompt
+        # Stock items that followed the splice point must be renumbered up — otherwise a
+        # revert of `{{ N + (extra_instructions | length) }}` to a hard-coded `N` would
+        # leave duplicate items 2 and 3 in the prompt, and this test would still pass.
+        # Both templates carry "**Avoid overfitting.**" as the first stock item after the
+        # splice point, so with two extras it must land at #4.
+        assert "4. **Avoid overfitting.**" in prompt
 
     @pytest.mark.parametrize("runner", ["_run_accurate", "_run_fast"])
     def test_defaults_produce_no_extension_text(self, runner, monkeypatch):

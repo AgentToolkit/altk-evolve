@@ -19,16 +19,22 @@ class GuidelineRuntime(BaseModel):
     trajectory_max_step_chars: int = Field(default=2000, ge=1)
     trajectory_tail_steps: int = Field(default=0, ge=0)
     analysis_config: dict[str, Any] | None = None
-    # Caller-supplied extensions to the generator prompt. Both default to no-op, so
-    # leaving them unset keeps the stock prompt behavior unchanged. Callers set them
-    # when their trajectory_renderer surfaces data (e.g. the agent's operational rules
-    # at the top of the rendered trajectory) that justifies tightening the generator's
-    # instructions or giving its analysis step something extra to check against. The
-    # Jinja template splices them into fixed insertion points; the caller is
-    # responsible for ensuring the rendered trajectory actually contains whatever the
-    # sentences reference.
+    # Caller-supplied extensions to the consistency-pipeline generator prompts (both
+    # accurate and fast). Both default to no-op, so leaving them unset keeps the stock
+    # prompt behavior unchanged. Callers set them when their trajectory_renderer
+    # surfaces data (e.g. the agent's operational rules at the top of the rendered
+    # trajectory) that justifies tightening the generator's instructions or giving its
+    # analysis step something extra to check against. The Jinja template splices them
+    # into fixed insertion points; the caller is responsible for ensuring the rendered
+    # trajectory actually contains whatever the sentences reference. The standard
+    # (non-consistency) prompt ignores both fields.
+    #
+    # `extra_instructions` is a tuple rather than a list because this model is frozen:
+    # a list on a frozen model is unhashable AND still mutable via `.append`, which
+    # breaks the invariant frozen is meant to guarantee. Callers that pass a list are
+    # coerced automatically by Pydantic.
     extra_analysis_sentence: str | None = None
-    extra_instructions: list[str] = Field(default_factory=list)
+    extra_instructions: tuple[str, ...] = Field(default_factory=tuple)
 
     @model_validator(mode="after")
     def _check_trajectory_window(self):
