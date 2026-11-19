@@ -116,22 +116,42 @@ class _ModelFacingSchema(BaseModel):
 
     @classmethod
     def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        return _drop_numeric_bounds(super().model_json_schema(*args, **kwargs))
+        schema: dict[str, Any] = _drop_numeric_bounds(super().model_json_schema(*args, **kwargs))
+        return schema
 
 
 _NUMERIC_BOUNDS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"})
 
+# Where a JSON Schema node holds sub-schemas. Keywords are dropped only from schema nodes, so a
+# name in a map (a field called "minimum"), and data (default, examples, const, enum), stay as
+# they are.
+_SCHEMA_MAPS = frozenset({"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"})
+_SCHEMA_LISTS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
+_SUBSCHEMAS = frozenset(
+    {"items", "additionalItems", "additionalProperties", "not", "if", "then", "else", "contains", "propertyNames"}
+    | {"unevaluatedItems", "unevaluatedProperties"}
+)
 
-def _drop_numeric_bounds(schema: dict[str, Any]) -> dict[str, Any]:
-    return {key: _without_bounds(value) for key, value in schema.items() if key not in _NUMERIC_BOUNDS}
 
-
-def _without_bounds(value: Any) -> Any:
-    if isinstance(value, dict):
-        return _drop_numeric_bounds(value)
-    if isinstance(value, list):
-        return [_without_bounds(item) for item in value]
-    return value
+def _drop_numeric_bounds(schema: Any) -> Any:
+    """``schema`` without numeric-bound keywords on any schema node. Anything else, such as a
+    boolean schema, is returned as is."""
+    if not isinstance(schema, dict):
+        return schema
+    out: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in _NUMERIC_BOUNDS:
+            continue
+        if key in _SCHEMA_MAPS and isinstance(value, dict):
+            out[key] = {name: _drop_numeric_bounds(sub) for name, sub in value.items()}
+        elif key in _SCHEMA_LISTS and isinstance(value, list):
+            out[key] = [_drop_numeric_bounds(sub) for sub in value]
+        elif key in _SUBSCHEMAS:
+            # items is a list of schemas in draft 4 to 2019-09 tuple form.
+            out[key] = [_drop_numeric_bounds(sub) for sub in value] if isinstance(value, list) else _drop_numeric_bounds(value)
+        else:
+            out[key] = value
+    return out
 
 
 class GuidelineGenerationResponse(_ModelFacingSchema):
