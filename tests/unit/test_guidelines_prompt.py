@@ -45,7 +45,7 @@ def _profile(**config):
     return {"processors": [{"id": "g", "plugin": "evolve.guidelines", "config": config}]}
 
 
-def _render(monkeypatch, options: GuidelineRuntime) -> str:
+def _render(monkeypatch, options: GuidelineRuntime, **kwargs) -> str:
     """Run one generation call and return the prompt the model was sent."""
     import altk_evolve.llm.guidelines.guidelines as guidelines
 
@@ -57,7 +57,7 @@ def _render(monkeypatch, options: GuidelineRuntime) -> str:
 
     monkeypatch.setattr(guidelines, "completion", completion)
     monkeypatch.setattr(guidelines, "dispatch_llm_pre_call", lambda messages, **kwargs: messages)
-    guidelines._generate_guidelines_for_segment("Add a field", "1. edit a file", 1, True, options=options)
+    guidelines._generate_guidelines_for_segment("Add a field", "1. edit a file", 1, True, options=options, **kwargs)
     return sent[0]
 
 
@@ -117,7 +117,11 @@ def test_shipping_a_prompt_is_adding_a_file(monkeypatch, tmp_path):
 def test_listing_puts_shipped_prompts_first_with_descriptions(prompts_dir):
     prompts = available_guidelines_prompts()
 
-    assert [(p.name, p.source) for p in prompts.values()] == [("default", "shipped"), ("mine", "user")]
+    assert [(p.name, p.source) for p in prompts.values()] == [
+        ("default", "shipped"),
+        ("stated-requirements", "shipped"),
+        ("mine", "user"),
+    ]
     assert prompts["mine"].description == "My own prompt."
     assert prompts["default"].description.startswith("Evolve's general-purpose prompt")
 
@@ -244,3 +248,49 @@ def test_cli_reports_a_bad_prompts_dir(monkeypatch, tmp_path):
     result = runner.invoke(app, ["prompts", "list"])
 
     assert result.exit_code == 1
+
+
+# --- The stated-requirements prompt -----------------------------------------------------------
+
+REQUIREMENTS_HEADING = "# Requirements the environment stated"
+GENERIC_RULE_5 = "values specific to this task."
+NAMED_RULE_5 = (
+    "values specific to this one task. Keep the names of the project's own files, commands, formats and "
+    "conventions when a guideline depends on them."
+)
+
+
+def _template(name: str) -> str:
+    """A shipped template without its description comment, the one line that should differ."""
+    text = (SHIPPED_PROMPTS_DIR / f"{name}.jinja2").read_text()
+    assert text.startswith("{#-")
+    return text.split("\n", 1)[1]
+
+
+def test_stated_requirements_is_the_default_plus_two_edits():
+    # A change to default.jinja2 must be made here too: this fails until it is.
+    variant = _template("stated-requirements")
+    start = variant.index(REQUIREMENTS_HEADING)
+    end = variant.index("# Quality threshold", start)
+
+    without_edits = (variant[:start] + variant[end:]).replace(NAMED_RULE_5, GENERIC_RULE_5)
+
+    assert without_edits == _template("default")
+    assert variant.count(NAMED_RULE_5) == 1
+
+
+def test_stated_requirements_is_selectable_and_uses_only_known_variables():
+    assert resolve_guidelines_prompt("stated-requirements") == SHIPPED_PROMPTS_DIR / "stated-requirements.jinja2"
+
+
+@pytest.mark.parametrize("with_outcome", [False, True])
+def test_stated_requirements_asks_for_stated_requirements_with_and_without_an_outcome(monkeypatch, with_outcome):
+    from altk_evolve.processing.models import TrajectoryOutcome
+
+    kwargs = {"outcome": TrajectoryOutcome(success=False)} if with_outcome else {}
+    default = _render(monkeypatch, GuidelineRuntime(), **kwargs)
+    variant = _render(monkeypatch, GuidelineRuntime(guidelines_prompt="stated-requirements"), **kwargs)
+
+    assert REQUIREMENTS_HEADING not in default
+    assert REQUIREMENTS_HEADING in variant
+    assert ("Keep the names of the project's own files" in variant) == with_outcome

@@ -118,6 +118,20 @@ pipelines keep their own prompts. A name refers to either:
 template. The setting is always a name, never a path, and your prompts may not reuse a shipped
 name, so `default` means the same prompt in every deployment.
 
+Shipped prompts:
+
+| Name | Use it when |
+|---|---|
+| `default` | Unless you have a reason not to. It is domain-agnostic: with an outcome, guidelines are grounded in the evaluation; without one, in what the trajectory shows |
+| `stated-requirements` | The agent works where the environment states its own requirements: pre-commit hooks, CI checks, linters, validators, error messages that say what to do. The default prompt, plus two instructions: turn each requirement such a message states into a step to take *before* the action it blocked ("Before committing, add an entry under `## Unreleased` in `CHANGES.md`"), not into advice about recovering from the error; and keep the project's own file, command and format names in those guidelines rather than generalizing them away |
+
+`stated-requirements` changes nothing else in the default prompt, and a test keeps the two in
+step. On a coding-agent session whose first commit was rejected by a hook asking for a
+changelog entry and a version bump, the default prompt learned to "complete the required
+metadata before retrying the commit"; `stated-requirements` learned to "add the required
+`CHANGES.md` entry and bump `clients/python/VERSION`; do this before the initial `git commit`
+attempt".
+
 A processing profile can set it per profile, as `guidelines_prompt` in the
 `evolve.guidelines` processor's config, so one namespace can try a prompt while the rest keep
 the default:
