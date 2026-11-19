@@ -112,6 +112,14 @@ class _ModelFacingSchema(BaseModel):
     are integrity checks, not instructions the model needs, so the schema sent to the model
     omits them and ``model_validate`` still enforces every one locally. Anthropic's SDK
     helpers make the same transformation. See #476.
+
+    Only ``Model.model_json_schema()`` is overridden. That is what ``response_format=Model``
+    sends, because litellm's ``type_to_response_format_param`` calls it. These still emit the
+    bounds: ``TypeAdapter(Model).json_schema()``,
+    ``pydantic.json_schema.model_json_schema(Model)``, a response model nested in a plain
+    ``BaseModel``, and ``Guideline`` or ``SubtaskSegment`` sent on their own. Nothing enforces
+    the convention, so a model sent to an LLM as a response schema must inherit from this class
+    and be passed as the class itself.
     """
 
     @classmethod
