@@ -508,15 +508,40 @@ class TestAttributionDetails:
         assert tool.parameters["properties"]["include_details"]["default"] is False
 
 
+def _sourced(*task_ids, **metadata):
+    entity = _make_entity("g", "content")
+    entity.metadata.pop("support")  # so _support falls back to 1, the default, when no task counts
+    if task_ids:
+        entity.metadata["sources"] = [{"conversation_id": "c", "task_id": task, "status": "supporting"} for task in task_ids]
+    entity.metadata.update(metadata)
+    return entity
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    ("task_id", "expected"),
-    [("t1", ["t1"]), (7, ["7"]), ("", []), (None, []), (True, []), (["t1"], [])],
+    ("entity", "listed", "support"),
+    [
+        (_sourced("t1", "t2", "t1"), ["t1", "t2"], 2),
+        (_sourced(7), ["7"], 1),
+        # Compared as stored, as the support count compares them: two tasks.
+        (_sourced(1, "1"), ["1", "1"], 2),
+        # Falsy and non-scalar IDs name no task: none listed, and the count falls back.
+        (_sourced(0), [], 1),
+        (_sourced(""), [], 1),
+        (_sourced(None), [], 1),
+        (_sourced(["t1"]), [], 1),
+        (_sourced("  "), ["  "], 1),
+        # Legacy metadata reaches both through provenance.sources().
+        (_sourced(source_task_id="cortex:abc:1-4"), ["cortex:abc:1-4"], 1),
+        (_sourced(source_task_id=0), [], 1),
+    ],
+    ids=["distinct", "int", "int-and-str", "zero", "empty", "none", "list", "blank", "legacy", "legacy-zero"],
 )
-def test_source_task_ids_keeps_only_usable_task_ids(task_id, expected):
+def test_source_task_ids_lists_the_tasks_the_support_count_counts(entity, listed, support):
+    from altk_evolve.llm.guidelines.retrieval import _support
     from altk_evolve.schema.provenance import source_task_ids
 
-    entity = _make_entity("g", "content")
-    entity.metadata["sources"] = [{"conversation_id": "c", "task_id": task_id, "status": "supporting"}]
-
-    assert source_task_ids(entity) == expected
+    assert source_task_ids(entity) == listed
+    assert _support(entity) == support
+    if listed:  # complete provenance: the support count is the number of listed tasks
+        assert _support(entity) == len(listed)
