@@ -62,6 +62,20 @@ evolve entities show my_namespace 12345
 
 # Delete an entity
 evolve entities delete my_namespace 12345
+
+# Write a namespace's guidelines to a file (--type to choose another type, standard output without -o)
+evolve entities export my_namespace -o guidelines.json
+
+# Load entities from a file: an export, or a list of guideline strings or {content, type, metadata}
+# objects. They are written as they are, without LLM conflict resolution. Refuses a namespace that
+# already has entities of those types unless --replace (swap them for the file's) or --append is
+# given; creates the namespace if needed. A `merged_from` metadata key is dropped, as with add.
+evolve entities import my_namespace guidelines.json
+evolve entities import my_namespace guidelines.json --replace
+
+# Copy chosen entities from one namespace to another, with their metadata
+evolve entities export candidates | jq '{entities: [.entities[] | select(.id == "17")]}' > chosen.json
+evolve entities import my_namespace chosen.json --append
 ```
 
 ### Data Retention
