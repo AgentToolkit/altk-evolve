@@ -43,6 +43,22 @@ def sources(entity: Entity) -> list[dict]:
     ]
 
 
+def source_task_ids(entity: Entity) -> list[str]:
+    """The distinct task IDs named by an entity's supporting sources, in recorded order.
+
+    Superseded sources and sources that record no task (only a conversation) are skipped,
+    as are task IDs that are not a non-empty string or an integer.
+    """
+    task_ids: list[str] = []
+    for source in sources(entity):
+        task = source.get("task_id")
+        if source.get("status") != "supporting" or isinstance(task, bool) or not isinstance(task, (str, int)) or task == "":
+            continue
+        if str(task) not in task_ids:
+            task_ids.append(str(task))
+    return task_ids
+
+
 def attach_sources(
     metadata: dict,
     old: Entity | None,

@@ -438,14 +438,17 @@ def get_guidelines_with_attribution(
     user_id: str | None = None,
     namespace_id: str | None = None,
     session_id: str | None = None,
+    include_details: bool = False,
 ) -> str:
     """Return injectable guidelines together with the entities that supplied them.
 
     Existing callers keep the text-only contract; clients that need to audit
     actual prompt context can record ``entity_ids`` as memory-use events.
+    ``include_details`` adds ``guidelines``: each one's id, content, trigger and source_task_ids.
     """
     from altk_evolve.config.evolve import evolve_config
     from altk_evolve.llm.guidelines.retrieval import format_selection
+    from altk_evolve.schema.provenance import source_task_ids
 
     resolved_ns = _resolve_namespace(namespace_id)
     client = get_client()
@@ -486,14 +489,24 @@ def get_guidelines_with_attribution(
         user_id is not None,
         session_id is not None,
     )
-    return _json_response(
-        {
-            "text": text,
-            "entity_ids": [entity.id for entity in entities],
-            "entity_revisions": {entity.id: entity.metadata.get("memory_revision") for entity in entities},
-            "namespace_id": resolved_ns,
-        }
-    )
+    payload: dict[str, Any] = {
+        "text": text,
+        "entity_ids": [entity.id for entity in entities],
+        "entity_revisions": {entity.id: entity.metadata.get("memory_revision") for entity in entities},
+        "namespace_id": resolved_ns,
+    }
+    # Only on request, so a caller that doesn't ask gets the same bytes as before.
+    if include_details:
+        payload["guidelines"] = [
+            {
+                "id": entity.id,
+                "content": entity.content,
+                "trigger": entity.metadata.get("trigger"),
+                "source_task_ids": source_task_ids(entity),
+            }
+            for entity in entities
+        ]
+    return _json_response(payload)
 
 
 @mcp.tool()

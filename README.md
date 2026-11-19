@@ -179,7 +179,7 @@ npx @modelcontextprotocol/inspector@latest http://127.0.0.1:8201/sse --cli --met
 **Available tools:**
 - `get_entities(task: str, entity_type: str = "guideline", include_public: bool = False)`: Get relevant entities for a specific task. Set `include_public=True` to merge in public entities from all other namespaces; those results are annotated with `[public: {owner_id}]`.
 - `get_guidelines(task: str)`: Get relevant guidelines for a specific task (backward compatibility alias for `get_entities`).
-- `get_guidelines_with_attribution(task: str)`: Return formatted guidelines with the entity IDs used to build the prompt.
+- `get_guidelines_with_attribution(task: str, include_details: bool = False)`: Return formatted guidelines with the entity IDs used to build the prompt. With `include_details`, also return `guidelines`: each one's `id`, `content`, `trigger` and `source_task_ids`, for callers that render the guidelines themselves.
 - `get_relevant_guidelines(task: str, top_k: int | None, core_support: int | None)`: Retrieve the always-on guideline core plus a task-relevant dosage.
 - `list_entities(...)`: Return structured, filtered, cursor-paginated entity inventory for user and administrative UIs.
 - `get_entity(entity_id: str, user_id: str | None, record_access: bool = True)`: Return one structured entity, enforcing ownership when a caller ID is supplied.

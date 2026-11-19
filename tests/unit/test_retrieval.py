@@ -418,3 +418,105 @@ class TestAttributedGuidelines:
         assert out["entity_ids"] == ["core", "specific"]
         assert "Always name the owner" in out["text"]
         assert "Lead with the decision" in out["text"]
+
+
+@pytest.mark.unit
+class TestAttributionDetails:
+    """get_guidelines_with_attribution(include_details=True) adds each guideline's record; without it, nothing changes."""
+
+    @staticmethod
+    def _entities():
+        merged = _make_entity("merged", "Always name the owner", support=3, source_tasks=["t1", "t2", "t1"])
+        merged.metadata["sources"].append({"conversation_id": "c", "task_id": "t3", "status": "superseded"})
+        merged.metadata.update({"memory_revision": 2, "trigger": "When writing an update"})
+        legacy = _make_entity("legacy", "Lead with the decision")
+        legacy.metadata["source_task_id"] = "cortex:abc:1-4"
+        unknown = _make_entity("unknown", {"rule": "Keep it short"})
+        return merged, legacy, unknown
+
+    def _call(self, mode, **kwargs):
+        import altk_evolve.config.evolve as cfg
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+
+        merged, legacy, unknown = self._entities()
+        client = MagicMock()
+        client.select_guidelines.return_value = GuidelineSelection(core=[merged], retrieved=[legacy, unknown])
+        client.search_entities.return_value = [merged, legacy, unknown]
+        with (
+            patch.object(cfg.evolve_config, "injection_mode", mode),
+            patch.object(mcp, "_resolve_namespace", return_value="ns"),
+            patch.object(mcp, "get_client", return_value=client),
+        ):
+            return mcp.get_guidelines_with_attribution("prepare an update", **kwargs)
+
+    @pytest.mark.parametrize("mode", ["retrieval", "static"])
+    def test_without_the_flag_the_response_is_byte_for_byte_unchanged(self, mode):
+        import json
+
+        out = self._call(mode)
+        # Rebuilt the way the tool built its response before include_details existed.
+        before = json.dumps(
+            {
+                "text": json.loads(out)["text"],
+                "entity_ids": ["merged", "legacy", "unknown"],
+                "entity_revisions": {"merged": 2, "legacy": None, "unknown": None},
+                "namespace_id": "ns",
+            },
+            default=str,
+        )
+
+        assert out == before
+        assert out == self._call(mode, include_details=False)
+
+    @pytest.mark.parametrize("mode", ["retrieval", "static"])
+    def test_the_flag_adds_each_guidelines_content_trigger_and_sources(self, mode):
+        import json
+
+        out = json.loads(self._call(mode, include_details=True))
+
+        assert out["guidelines"] == [
+            {
+                "id": "merged",
+                "content": "Always name the owner",
+                "trigger": "When writing an update",
+                # Distinct, supporting only: t1 once, the superseded t3 left out.
+                "source_task_ids": ["t1", "t2"],
+            },
+            # Stored before sources existed: its source_task_id.
+            {"id": "legacy", "content": "Lead with the decision", "trigger": None, "source_task_ids": ["cortex:abc:1-4"]},
+            # Structured content is returned as stored.
+            {"id": "unknown", "content": {"rule": "Keep it short"}, "trigger": None, "source_task_ids": []},
+        ]
+        assert [g["id"] for g in out["guidelines"]] == out["entity_ids"]
+        assert list(out) == ["text", "entity_ids", "entity_revisions", "namespace_id", "guidelines"]
+
+    def test_the_flag_leaves_out_internal_metadata(self):
+        import json
+
+        out = json.loads(self._call("retrieval", include_details=True))
+
+        assert all(set(g) == {"id", "content", "trigger", "source_task_ids"} for g in out["guidelines"])
+
+    def test_the_tool_schema_keeps_the_flag_optional(self):
+        import asyncio
+
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+
+        tool = asyncio.run(mcp.mcp.get_tool("get_guidelines_with_attribution"))
+
+        assert tool.parameters["required"] == ["task"]
+        assert tool.parameters["properties"]["include_details"]["default"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("task_id", "expected"),
+    [("t1", ["t1"]), (7, ["7"]), ("", []), (None, []), (True, []), (["t1"], [])],
+)
+def test_source_task_ids_keeps_only_usable_task_ids(task_id, expected):
+    from altk_evolve.schema.provenance import source_task_ids
+
+    entity = _make_entity("g", "content")
+    entity.metadata["sources"] = [{"conversation_id": "c", "task_id": task_id, "status": "supporting"}]
+
+    assert source_task_ids(entity) == expected
