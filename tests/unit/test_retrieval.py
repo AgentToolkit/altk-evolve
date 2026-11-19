@@ -449,24 +449,42 @@ class TestAttributionDetails:
         ):
             return mcp.get_guidelines_with_attribution("prepare an update", **kwargs)
 
+    # What base 7730b4d1 (before include_details existed) returned for these entities, captured
+    # through fastmcp.Client.call_tool. A response without the flag must stay these exact bytes.
+    GOLDEN = {
+        "retrieval": '{"text": "Guidelines learned from past task attempts (follow these carefully; they address the most common mistakes):\\n\\n- Always name the owner\\n\\nAdditional task-specific guidelines retrieved from similar past tasks:\\n- Lead with the decision\\n- {\'rule\': \'Keep it short\'}", "entity_ids": ["merged", "legacy", "unknown"], "entity_revisions": {"merged": 2, "legacy": null, "unknown": null}, "namespace_id": "ns"}',
+        "static": '{"text": "# Guidelines for: prepare an update\\n\\n1. Always name the owner\\n2. Lead with the decision\\n3. {\'rule\': \'Keep it short\'}", "entity_ids": ["merged", "legacy", "unknown"], "entity_revisions": {"merged": 2, "legacy": null, "unknown": null}, "namespace_id": "ns"}',
+    }
+
+    def _call_mcp(self, mode, arguments):
+        """The tool through the MCP layer, as a client calls it, so argument validation applies."""
+        import asyncio
+
+        import altk_evolve.config.evolve as cfg
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+        from fastmcp import Client
+
+        merged, legacy, unknown = self._entities()
+        client = MagicMock()
+        client.select_guidelines.return_value = GuidelineSelection(core=[merged], retrieved=[legacy, unknown])
+        client.search_entities.return_value = [merged, legacy, unknown]
+
+        async def call():
+            async with Client(mcp.mcp) as session:
+                result = await session.call_tool("get_guidelines_with_attribution", arguments)
+            return result.content[0].text
+
+        with (
+            patch.object(cfg.evolve_config, "injection_mode", mode),
+            patch.object(mcp, "_resolve_namespace", return_value="ns"),
+            patch.object(mcp, "get_client", return_value=client),
+        ):
+            return asyncio.run(call())
+
     @pytest.mark.parametrize("mode", ["retrieval", "static"])
     def test_without_the_flag_the_response_is_byte_for_byte_unchanged(self, mode):
-        import json
-
-        out = self._call(mode)
-        # Rebuilt the way the tool built its response before include_details existed.
-        before = json.dumps(
-            {
-                "text": json.loads(out)["text"],
-                "entity_ids": ["merged", "legacy", "unknown"],
-                "entity_revisions": {"merged": 2, "legacy": None, "unknown": None},
-                "namespace_id": "ns",
-            },
-            default=str,
-        )
-
-        assert out == before
-        assert out == self._call(mode, include_details=False)
+        assert self._call_mcp(mode, {"task": "prepare an update"}) == self.GOLDEN[mode]
+        assert self._call_mcp(mode, {"task": "prepare an update", "include_details": False}) == self.GOLDEN[mode]
 
     @pytest.mark.parametrize("mode", ["retrieval", "static"])
     def test_the_flag_adds_each_guidelines_content_trigger_and_sources(self, mode):
@@ -506,6 +524,8 @@ class TestAttributionDetails:
 
         assert tool.parameters["required"] == ["task"]
         assert tool.parameters["properties"]["include_details"]["default"] is False
+        # A plain boolean: an optional (bool | None) flag would become anyOf[boolean, null].
+        assert tool.parameters["properties"]["include_details"]["type"] == "boolean"
 
 
 def _sourced(*task_ids, **metadata):
