@@ -119,7 +119,7 @@ def test_listing_puts_shipped_prompts_first_with_descriptions(prompts_dir):
 
     assert [(p.name, p.source) for p in prompts.values()] == [
         ("default", "shipped"),
-        ("stated-requirements", "shipped"),
+        ("environment-grounded", "shipped"),
         ("mine", "user"),
     ]
     assert prompts["mine"].description == "My own prompt."
@@ -250,7 +250,7 @@ def test_cli_reports_a_bad_prompts_dir(monkeypatch, tmp_path):
     assert result.exit_code == 1
 
 
-# --- The stated-requirements prompt -----------------------------------------------------------
+# --- The environment-grounded prompt ----------------------------------------------------------
 
 REQUIREMENTS_HEADING = "# Requirements the environment stated"
 GENERIC_RULE_5 = "values specific to this task."
@@ -267,9 +267,9 @@ def _template(name: str) -> str:
     return text.split("\n", 1)[1]
 
 
-def test_stated_requirements_is_the_default_plus_two_edits():
+def test_environment_grounded_is_the_default_plus_two_edits():
     # A change to default.jinja2 must be made here too: this fails until it is.
-    variant = _template("stated-requirements")
+    variant = _template("environment-grounded")
     start = variant.index(REQUIREMENTS_HEADING)
     end = variant.index("# Quality threshold", start)
 
@@ -279,17 +279,17 @@ def test_stated_requirements_is_the_default_plus_two_edits():
     assert variant.count(NAMED_RULE_5) == 1
 
 
-def test_stated_requirements_is_selectable_and_uses_only_known_variables():
-    assert resolve_guidelines_prompt("stated-requirements") == SHIPPED_PROMPTS_DIR / "stated-requirements.jinja2"
+def test_environment_grounded_is_selectable_and_uses_only_known_variables():
+    assert resolve_guidelines_prompt("environment-grounded") == SHIPPED_PROMPTS_DIR / "environment-grounded.jinja2"
 
 
 @pytest.mark.parametrize("with_outcome", [False, True])
-def test_stated_requirements_asks_for_stated_requirements_with_and_without_an_outcome(monkeypatch, with_outcome):
+def test_environment_grounded_asks_for_stated_requirements_with_and_without_an_outcome(monkeypatch, with_outcome):
     from altk_evolve.processing.models import TrajectoryOutcome
 
     kwargs = {"outcome": TrajectoryOutcome(success=False)} if with_outcome else {}
     default = _render(monkeypatch, GuidelineRuntime(), **kwargs)
-    variant = _render(monkeypatch, GuidelineRuntime(guidelines_prompt="stated-requirements"), **kwargs)
+    variant = _render(monkeypatch, GuidelineRuntime(guidelines_prompt="environment-grounded"), **kwargs)
 
     assert REQUIREMENTS_HEADING not in default
     assert REQUIREMENTS_HEADING in variant
