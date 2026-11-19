@@ -495,7 +495,9 @@ def get_guidelines_with_attribution(
         "entity_revisions": {entity.id: entity.metadata.get("memory_revision") for entity in entities},
         "namespace_id": resolved_ns,
     }
-    # Only on request, so a caller that doesn't ask gets the same bytes as before.
+    # Only on request, so a caller that doesn't ask gets the same bytes as before. Retrieval is
+    # not scoped by user_id, so source_task_ids can name tasks from other users' sessions (as
+    # list_entities' sources already do, with more detail); the README says so.
     if include_details:
         payload["guidelines"] = [
             {
