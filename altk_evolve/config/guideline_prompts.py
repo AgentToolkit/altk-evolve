@@ -120,9 +120,13 @@ def resolve_guidelines_prompt(name: str) -> Path:
     ``load_guidelines_template``), so a bad setting fails when a profile is published, not at the
     first trajectory.
     """
-    if not isinstance(name, str) or not _NAME.fullmatch(name.strip()):
-        raise ValueError(f"guidelines_prompt must be a prompt name (letters, digits, '-' and '_'), not {name!r}")
-    path = _lookup(name.strip(), _user_prompts_dir(), SHIPPED_PROMPTS_DIR)
+    # Not stripped: a padded name would be stored as is, giving the same prompt a new manifest.
+    if not isinstance(name, str) or not _NAME.fullmatch(name):
+        raise ValueError(
+            f"guidelines_prompt must be a prompt name (letters, digits, '-' and '_', starting with a letter or digit, "
+            f"with no surrounding whitespace), not {name!r}"
+        )
+    path = _lookup(name, _user_prompts_dir(), SHIPPED_PROMPTS_DIR)
     _compiled(path)
     return path
 

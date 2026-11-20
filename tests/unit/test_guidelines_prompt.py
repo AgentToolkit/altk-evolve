@@ -129,10 +129,37 @@ def test_listing_puts_shipped_prompts_first_with_descriptions(prompts_dir):
 # --- Rejected settings ------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["typo", "", " ", "../default", "/etc/passwd", "prompts/mine", "mine.jinja2"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "typo",
+        "",
+        " ",
+        "../default",
+        "/etc/passwd",
+        "prompts/mine",
+        "mine.jinja2",
+        " default",
+        "default\n",
+        "default ",
+        "a.b",
+        "-mine",
+        "_mine",
+    ],
+)
 def test_anything_but_an_available_name_is_rejected(prompts_dir, name):
     with pytest.raises(ValueError, match="guidelines_prompt"):
         GuidelineConfig(guidelines_prompt=name)
+
+
+def test_a_name_is_used_exactly_as_given(monkeypatch, prompts_dir):
+    # Letters, digits, '-' and '_' are allowed anywhere after the first character.
+    (prompts_dir / "My_prompt-2.jinja2").write_text("Mixed, for {{task_instruction}}")
+
+    assert GuidelineConfig(guidelines_prompt="My_prompt-2").guidelines_prompt == "My_prompt-2"
+    # Padding is rejected, not stripped: the manifest would otherwise record " default" as a new prompt.
+    with pytest.raises(ValueError, match="no surrounding whitespace"):
+        _manager().validate(_profile(guidelines_prompt=" default"))
 
 
 def test_a_runtime_does_not_check_the_prompt_until_it_renders(monkeypatch):
