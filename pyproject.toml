@@ -8,7 +8,7 @@ dependencies = [
     # 4.14 fixes worker cancellation escaping its request scope and closing MCP sessions.
     "anyio>=4.14,<5",
     "opentelemetry-api>=1.30,<2",
-    "croniter>=6.2.4,<7",
+    "croniter>=6.2.4,<8",
     "jinja2",
     "litellm>=1.84.0",
     "numpy",
