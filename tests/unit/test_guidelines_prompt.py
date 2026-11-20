@@ -298,6 +298,32 @@ def test_a_misspelled_filter_or_test_is_an_invalid_setting(prompts_dir, source):
         _manager().validate(_profile(guidelines_prompt="typo"))
 
 
+@pytest.mark.parametrize(
+    "source, named",
+    [
+        ("{% if outcome %}{{ detail|uppr }}{% endif %}{{ task_instruction }}", "filter 'uppr'"),
+        ("{% if outcome is nosuch %}x{% endif %}{{ task_instruction }}", "test 'nosuch'"),
+        ("{% if outcome %}{% filter shout %}{{ detail }}{% endfilter %}{% endif %}", "filter 'shout'"),
+    ],
+    ids=["filter", "test", "filter-block"],
+)
+def test_a_misspelling_in_a_conditional_is_rejected_when_selected(monkeypatch, prompts_dir, source, named):
+    # Jinja would accept these until a render took the branch: most of a prompt's logic is in its
+    # {% if outcome %} branches, so that would be the first trajectory with an outcome.
+    (prompts_dir / "typo.jinja2").write_text(source)
+
+    with pytest.raises(ValueError, match=f"filters or tests Jinja doesn't have: {named}"):
+        GuidelineConfig(guidelines_prompt="typo")
+
+
+def test_jinjas_own_filters_and_tests_are_accepted(monkeypatch, prompts_dir):
+    (prompts_dir / "builtins.jinja2").write_text(
+        "{% if outcome is not none and detail is string %}{{ detail|truncate(10)|upper }}{% endif %}{{ task_instruction|trim }}"
+    )
+
+    assert GuidelineConfig(guidelines_prompt="builtins").guidelines_prompt == "builtins"
+
+
 def test_a_directory_named_like_a_prompt_is_not_a_prompt(prompts_dir):
     (prompts_dir / "folder.jinja2").mkdir()
 

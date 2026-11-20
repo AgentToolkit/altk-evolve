@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from jinja2 import Environment, Template, TemplateSyntaxError, meta
+from jinja2 import Environment, Template, TemplateSyntaxError, meta, nodes
 
 DEFAULT_GUIDELINES_PROMPT = "default"
 
@@ -49,6 +49,10 @@ TEMPLATE_VARIABLES = frozenset(
         "segmented",
     }
 )
+
+# Parses templates for the checks. It has the same filters and tests as the environment
+# Template() compiles with, so the names it accepts are the ones that render.
+_ENVIRONMENT = Environment()
 
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 _DESCRIPTION = re.compile(r"\s*\{#-?(.*?)-?#\}", re.DOTALL)
@@ -164,7 +168,7 @@ def _compiled(path: Path) -> Template:
     # is a TemplateAssertionError, a TemplateSyntaxError, raised by the variable check and by the
     # compile. So both run inside the try.
     try:
-        tree = Environment().parse(source)
+        tree = _ENVIRONMENT.parse(source)
         referenced = list(meta.find_referenced_templates(tree))
         if referenced:
             names = ", ".join(sorted("a computed name" if ref is None else repr(ref) for ref in referenced))
@@ -172,6 +176,14 @@ def _compiled(path: Path) -> Template:
                 f"Guideline prompt {path} includes, imports or extends other templates ({names}). "
                 "A guideline prompt must be a single, self-contained template."
             )
+        # Inside a conditional, Jinja leaves an unknown filter or test to fail at render time, so a
+        # misspelling in an {% if outcome %} branch would pass every other check here.
+        missing = sorted(
+            {f"filter {node.name!r}" for node in tree.find_all(nodes.Filter) if node.name not in _ENVIRONMENT.filters}
+            | {f"test {node.name!r}" for node in tree.find_all(nodes.Test) if node.name not in _ENVIRONMENT.tests}
+        )
+        if missing:
+            raise ValueError(f"Guideline prompt {path} uses filters or tests Jinja doesn't have: {', '.join(missing)}")
         unknown = meta.find_undeclared_variables(tree) - TEMPLATE_VARIABLES
         if unknown:
             raise ValueError(

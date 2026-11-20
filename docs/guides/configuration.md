@@ -177,7 +177,8 @@ template is Jinja2 and receives these variables:
 A template that uses any other variable is rejected when it is selected, rather than rendering
 the variable as empty. A template must also be self-contained: one that includes, imports or
 extends another template (Jinja's `include`, `import`, `from` and `extends` tags) is rejected,
-as is one with a syntax error.
+as is one with a syntax error or a filter or test Jinja doesn't have, even in a branch that
+only some trajectories render.
 Templates are read as UTF-8. A name is used exactly as given; one with surrounding whitespace
 is rejected. The model's reply is parsed against the same guideline schema whichever
 prompt is used.
