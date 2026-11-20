@@ -942,6 +942,34 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#guideline-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guideline prompt
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Guideline prompt">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#writing-a-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a prompt
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#trajectory-segmentation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1776,6 +1804,34 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#guideline-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guideline prompt
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Guideline prompt">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#writing-a-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a prompt
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#trajectory-segmentation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2081,6 +2137,16 @@
 <td><code>2000</code></td>
 </tr>
 <tr>
+<td><code>EVOLVE_GUIDELINES_PROMPT</code></td>
+<td>Name of the prompt the standard guideline generator uses — see <a href="#guideline-prompt">Guideline prompt</a></td>
+<td><code>default</code></td>
+</tr>
+<tr>
+<td><code>EVOLVE_GUIDELINES_PROMPTS_DIR</code></td>
+<td>A directory of your own prompts, <code>&lt;name&gt;.jinja2</code>, selectable by name alongside the shipped ones</td>
+<td>unset</td>
+</tr>
+<tr>
 <td><code>EVOLVE_TRAJECTORY_TAIL_STEPS</code></td>
 <td>How much of the step budget is reserved for the <strong>end</strong> of a long run. <code>0</code> truncates head-only, as before — see <a href="#trajectory-limits">Trajectory limits</a></td>
 <td><code>0</code></td>
@@ -2177,6 +2243,128 @@ of the same trajectory. One interaction to know about: with elision in effect, t
 <code>accurate</code> consistency method skips segmentation on any trajectory long enough to be elided,
 because its step numbering and the segmenter's stop agreeing across the gap. Trajectories
 within the step budget are unaffected, as is the <code>fast</code> method.</p>
+<h3 id="guideline-prompt">Guideline prompt<a class="headerlink" href="#guideline-prompt" title="Permanent link">&para;</a></h3>
+<p><code>EVOLVE_GUIDELINES_PROMPT</code> names the prompt the <code>standard</code> generator renders. The consistency
+pipelines keep their own prompts. A name refers to either:</p>
+<ul>
+<li>a prompt shipped with Evolve, <code>altk_evolve/llm/guidelines/prompts/generation/&lt;name&gt;.jinja2</code>.
+  <code>default</code> is the prompt earlier releases used.</li>
+<li>one of your own, <code>&lt;name&gt;.jinja2</code> in <code>EVOLVE_GUIDELINES_PROMPTS_DIR</code>.</li>
+</ul>
+<p><code>evolve prompts list</code> shows the available names, and <code>evolve prompts show &lt;name&gt;</code> prints a
+template. The setting is always a name, never a path, and your prompts may not reuse a shipped
+name, so <code>default</code> means the same prompt in every deployment.</p>
+<p>Shipped prompts:</p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Use it when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>default</code></td>
+<td>Unless you have a reason not to. It is domain-agnostic: with an outcome, guidelines are grounded in the evaluation; without one, in what the trajectory shows</td>
+</tr>
+<tr>
+<td><code>environment-grounded</code></td>
+<td>The agent works where the environment states its own requirements: pre-commit hooks, CI checks, linters, validators, error messages that say what to do. The default prompt, plus two instructions: turn each requirement such a message states into a step to take <em>before</em> the action it blocked ("Before committing, add an entry under <code>## Unreleased</code> in <code>CHANGES.md</code>"), not into advice about recovering from the error; and keep the project's own file, command and format names in those guidelines rather than generalizing them away</td>
+</tr>
+</tbody>
+</table>
+<p><code>environment-grounded</code> changes nothing else in the default prompt, and a test keeps the two in
+step. On a coding-agent session whose first commit was rejected by a hook asking for a
+changelog entry and a version bump, the default prompt learned to "complete the required
+metadata before retrying the commit"; <code>environment-grounded</code> learned to "add the required
+<code>CHANGES.md</code> entry and bump <code>clients/python/VERSION</code>; do this before the initial <code>git commit</code>
+attempt".</p>
+<p>A processing profile can set it per profile, as <code>guidelines_prompt</code> in the
+<code>evolve.guidelines</code> processor's config, so one namespace can try a prompt while the rest keep
+the default:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>evolve<span class="w"> </span>processing-profiles<span class="w"> </span>get<span class="w"> </span>cortex<span class="w"> </span>&gt;<span class="w"> </span>current.json
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1"># apply takes a definition, not get&#39;s output, and replaces the whole definition, so this keeps</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># the profile&#39;s other settings and changes only the prompt. Only evolve.guidelines takes</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># guidelines_prompt, so other processors keep their config as it is.</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>jq<span class="w"> </span><span class="s1">&#39;{processors: [.manifest.processors[] | {id, plugin, config: (</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="s1">      if .plugin == &quot;evolve.guidelines&quot; then .config + {guidelines_prompt: &quot;mine&quot;} else .config end)}]}&#39;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span>current.json<span class="w"> </span>&gt;<span class="w"> </span>profile.json
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>evolve<span class="w"> </span>processing-profiles<span class="w"> </span>apply<span class="w"> </span>cortex<span class="w"> </span>--file<span class="w"> </span>profile.json<span class="w"> </span>--expected-revision<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>jq<span class="w"> </span>.revision<span class="w"> </span>current.json<span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p>Profiles can be written remotely (MCP, REST), so they can only name prompts already in place,
+and <code>EVOLVE_GUIDELINES_PROMPTS_DIR</code> itself is set only by the environment. An unknown name is
+rejected when the profile is published, if the profile uses the standard generator
+(<code>guidelines_mode</code> <code>standard</code> or <code>all</code>); a bad <code>EVOLVE_GUIDELINES_PROMPT</code> is reported by name.
+<code>evolve prompts list</code> checks the selected prompt too, and exits 1 if it can't be used. The profile records the name, not the template, so
+editing a prompt file changes what later runs of that profile render. Templates are read once
+per process: restart Evolve after editing one.</p>
+<h4 id="writing-a-prompt">Writing a prompt<a class="headerlink" href="#writing-a-prompt" title="Permanent link">&para;</a></h4>
+<p>Start from a copy of the default: <code>mkdir -p my-prompts &amp;&amp; evolve prompts show default &gt; my-prompts/mine.jinja2</code>. A
+template is Jinja2 and receives these variables:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>task_instruction</code></td>
+<td>The task, or the subtask's description when the trajectory is segmented</td>
+</tr>
+<tr>
+<td><code>trajectory_summary</code></td>
+<td>The agent's steps, rendered and truncated as set by <a href="#trajectory-limits">Trajectory limits</a></td>
+</tr>
+<tr>
+<td><code>num_steps</code></td>
+<td>How many steps <code>trajectory_summary</code> covers (a subtask's, when segmented)</td>
+</tr>
+<tr>
+<td><code>supporting_context</code></td>
+<td>Earlier conversation to interpret the steps by; empty if none</td>
+</tr>
+<tr>
+<td><code>rules_section</code></td>
+<td>The rules or policies the agent worked under, rendered as a section; empty if none</td>
+</tr>
+<tr>
+<td><code>constrained_decoding_supported</code></td>
+<td>Whether the model is held to the response schema. When false, the prompt must spell out the JSON format</td>
+</tr>
+<tr>
+<td><code>outcome</code></td>
+<td>The evaluation's verdict; <code>outcome.success</code> is a boolean. Set only when the trajectory has an outcome, like the four below</td>
+</tr>
+<tr>
+<td><code>failed_checks</code></td>
+<td>The checks the evaluation failed, at most 10, each truncated to 500 characters</td>
+</tr>
+<tr>
+<td><code>omitted_checks</code></td>
+<td>How many failed checks were left out of <code>failed_checks</code></td>
+</tr>
+<tr>
+<td><code>detail</code></td>
+<td>The evaluation's free-text detail, truncated to 2,500 characters</td>
+</tr>
+<tr>
+<td><code>segmented</code></td>
+<td>Whether the steps are one subtask of a longer trajectory</td>
+</tr>
+</tbody>
+</table>
+<p>A template that uses any other variable is rejected when it is selected, rather than rendering
+the variable as empty. A template must also be self-contained: one that includes, imports or
+extends another template (Jinja's <code>include</code>, <code>import</code>, <code>from</code> and <code>extends</code> tags) is rejected,
+as is one with a syntax error or a filter or test Jinja doesn't have, even in a branch that
+only some trajectories render.
+Templates are read as UTF-8. A name is used exactly as given; one with surrounding whitespace
+is rejected. The model's reply is parsed against the same guideline schema whichever
+prompt is used.</p>
+<p>A leading Jinja comment is the description <code>evolve prompts list</code> shows. Write it as
+<code>{#- ... -#}</code>, so that it adds no blank line to the prompt.</p>
 <h3 id="trajectory-segmentation">Trajectory segmentation<a class="headerlink" href="#trajectory-segmentation" title="Permanent link">&para;</a></h3>
 <p><code>EVOLVE_SEGMENTATION_ENABLED</code> is <strong>disabled by default</strong>. With it enabled, a trajectory is
 split into subtasks and each subtask gets its own guideline-generation call.</p>
@@ -2260,10 +2448,10 @@ re-clusters the namespace after each round, stops after a round that merges noth
 does not send the same merge's outputs back to the model together.
 Each round re-embeds the whole namespace, which on CPU takes minutes for thousands of long
 guidelines.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>evolve<span class="w"> </span>entities<span class="w"> </span>consolidate<span class="w"> </span>my-ns<span class="w"> </span>--cluster-key<span class="w"> </span>guideline_text<span class="w"> </span>--threshold<span class="w"> </span><span class="m">0</span>.85<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>--max-cluster-size<span class="w"> </span><span class="m">20</span><span class="w"> </span>--max-rounds<span class="w"> </span><span class="m">3</span><span class="w">            </span><span class="c1"># dry run: lists round-1 clusters</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>evolve<span class="w"> </span>entities<span class="w"> </span>consolidate<span class="w"> </span>my-ns<span class="w"> </span>--cluster-key<span class="w"> </span>guideline_text<span class="w"> </span>--threshold<span class="w"> </span><span class="m">0</span>.85<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span>--max-cluster-size<span class="w"> </span><span class="m">20</span><span class="w"> </span>--max-rounds<span class="w"> </span><span class="m">3</span><span class="w"> </span>--no-dry-run
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>evolve<span class="w"> </span>entities<span class="w"> </span>consolidate<span class="w"> </span>my-ns<span class="w"> </span>--cluster-key<span class="w"> </span>guideline_text<span class="w"> </span>--threshold<span class="w"> </span><span class="m">0</span>.85<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span>--max-cluster-size<span class="w"> </span><span class="m">20</span><span class="w"> </span>--max-rounds<span class="w"> </span><span class="m">3</span><span class="w">            </span><span class="c1"># dry run: lists round-1 clusters</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>evolve<span class="w"> </span>entities<span class="w"> </span>consolidate<span class="w"> </span>my-ns<span class="w"> </span>--cluster-key<span class="w"> </span>guideline_text<span class="w"> </span>--threshold<span class="w"> </span><span class="m">0</span>.85<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span>--max-cluster-size<span class="w"> </span><span class="m">20</span><span class="w"> </span>--max-rounds<span class="w"> </span><span class="m">3</span><span class="w"> </span>--no-dry-run
 </code></pre></div>
 <p><strong>Originals that cannot be deleted.</strong> After writing a merged guideline, consolidation deletes
 its originals. If a delete is vetoed (for example by the <code>legal_hold</code> plugin) or fails, the
@@ -2434,14 +2622,14 @@ not, and the original is then merged again.</p>
 </tbody>
 </table>
 <h3 id="switching-backends">Switching Backends<a class="headerlink" href="#switching-backends" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Use Milvus backend (default)</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>milvus
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Use Filesystem backend</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># Use Postgres backend</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>postgres
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Use Milvus backend (default)</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>milvus
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Use Filesystem backend</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>filesystem
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># Use Postgres backend</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_BACKEND</span><span class="o">=</span>postgres
 </code></pre></div>
 <h3 id="filesystem-backend-details">Filesystem Backend Details<a class="headerlink" href="#filesystem-backend-details" title="Permanent link">&para;</a></h3>
 <p>The filesystem backend stores all data in JSON files - one file per namespace. This is ideal for:
@@ -2451,37 +2639,37 @@ not, and the original is then merged again.</p>
 - Quick prototyping without embedding model overhead</p>
 <p><strong>JSON File Structure:</strong></p>
 <p>Each namespace is stored as <code>&lt;data_dir&gt;/&lt;namespace_id&gt;.json</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_guidelines&quot;</span><span class="p">,</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:29:51.986882+00:00&quot;</span><span class="p">,</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">&quot;entities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;guideline&quot;</span><span class="p">,</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Always write tests before code&quot;</span><span class="p">,</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:30:00.023283+00:00&quot;</span><span class="p">,</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">      </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="p">],</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="nt">&quot;next_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_guidelines&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:29:51.986882+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">&quot;entities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;guideline&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Always write tests before code&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">      </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-13T21:30:00.023283+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">      </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">  </span><span class="p">],</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">  </span><span class="nt">&quot;next_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="p">}</span>
 </code></pre></div>
 <h2 id="low-code-tracing-phoenix-integration">Low-Code Tracing (Phoenix Integration)<a class="headerlink" href="#low-code-tracing-phoenix-integration" title="Permanent link">&para;</a></h2>
 <p>Evolve provides easy integration with Phoenix for tracing LLM calls.</p>
 <h3 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span>evolve<span class="o">[</span>tracing<span class="o">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pip<span class="w"> </span>install<span class="w"> </span>evolve<span class="o">[</span>tracing<span class="o">]</span>
 </code></pre></div>
 <h3 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h3>
 <p>First, enable auto-mode by setting the environment variable:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_AUTO_ENABLED</span><span class="o">=</span><span class="nb">true</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">EVOLVE_AUTO_ENABLED</span><span class="o">=</span><span class="nb">true</span>
 </code></pre></div>
 <p>Then, add one import at the top of your agent to trigger the patching:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">altk_evolve.auto</span> <span class="c1"># noqa: F401</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="k">pass</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="c1"># Your existing code unchanged...</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">altk_evolve.auto</span> <span class="c1"># noqa: F401</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="k">pass</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="c1"># Your existing code unchanged...</span>
 </code></pre></div>
 <h3 id="tracing-environment-variables">Tracing Environment Variables<a class="headerlink" href="#tracing-environment-variables" title="Permanent link">&para;</a></h3>
 <table>
