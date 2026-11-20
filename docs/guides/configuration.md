@@ -139,8 +139,10 @@ the default:
 ```bash
 evolve processing-profiles get cortex > current.json
 # apply takes a definition, not get's output, and replaces the whole definition, so this keeps
-# the profile's other settings and changes only the prompt.
-jq '{processors: [.manifest.processors[] | {id, plugin, config: (.config + {guidelines_prompt: "mine"})}]}' \
+# the profile's other settings and changes only the prompt. Only evolve.guidelines takes
+# guidelines_prompt, so other processors keep their config as it is.
+jq '{processors: [.manifest.processors[] | {id, plugin, config: (
+      if .plugin == "evolve.guidelines" then .config + {guidelines_prompt: "mine"} else .config end)}]}' \
   current.json > profile.json
 evolve processing-profiles apply cortex --file profile.json --expected-revision "$(jq .revision current.json)"
 ```
