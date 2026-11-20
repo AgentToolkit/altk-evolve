@@ -24,7 +24,7 @@ import numpy as np
 
 from altk_evolve.llm.guidelines.clustering import _get_sentence_transformer, stored_support, stored_tasks
 from altk_evolve.schema.core import RecordedEntity
-from altk_evolve.schema.provenance import sources
+from altk_evolve.schema.provenance import sources, supporting_task_ids
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,8 @@ def _support(entity: RecordedEntity) -> int:
     A ``task_id`` that is not a string or an integer is ignored.
     """
     task_ids = [source.get("task_id") for source in sources(entity) if source.get("status") == "supporting"]
-    tasks = {task for task in task_ids if isinstance(task, (str, int)) and task}
+    # The same tasks source_task_ids reports, so a caller sees what put a guideline in the core.
+    tasks = supporting_task_ids(entity)
     complete = all(isinstance(task, (str, int)) and task for task in task_ids) and not (entity.metadata or {}).get("provenance_incomplete")
     if tasks and complete:
         return len(tasks)

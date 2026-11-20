@@ -418,3 +418,150 @@ class TestAttributedGuidelines:
         assert out["entity_ids"] == ["core", "specific"]
         assert "Always name the owner" in out["text"]
         assert "Lead with the decision" in out["text"]
+
+
+@pytest.mark.unit
+class TestAttributionDetails:
+    """get_guidelines_with_attribution(include_details=True) adds each guideline's record; without it, nothing changes."""
+
+    @staticmethod
+    def _entities():
+        merged = _make_entity("merged", "Always name the owner", support=3, source_tasks=["t1", "t2", "t1"])
+        merged.metadata["sources"].append({"conversation_id": "c", "task_id": "t3", "status": "superseded"})
+        merged.metadata.update({"memory_revision": 2, "trigger": "When writing an update"})
+        legacy = _make_entity("legacy", "Lead with the decision")
+        legacy.metadata["source_task_id"] = "cortex:abc:1-4"
+        unknown = _make_entity("unknown", {"rule": "Keep it short"})
+        return merged, legacy, unknown
+
+    def _call(self, mode, **kwargs):
+        import altk_evolve.config.evolve as cfg
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+
+        merged, legacy, unknown = self._entities()
+        client = MagicMock()
+        client.select_guidelines.return_value = GuidelineSelection(core=[merged], retrieved=[legacy, unknown])
+        client.search_entities.return_value = [merged, legacy, unknown]
+        with (
+            patch.object(cfg.evolve_config, "injection_mode", mode),
+            patch.object(mcp, "_resolve_namespace", return_value="ns"),
+            patch.object(mcp, "get_client", return_value=client),
+        ):
+            return mcp.get_guidelines_with_attribution("prepare an update", **kwargs)
+
+    # What base 7730b4d1 (before include_details existed) returned for these entities, captured
+    # through fastmcp.Client.call_tool. A response without the flag must stay these exact bytes.
+    GOLDEN = {
+        "retrieval": '{"text": "Guidelines learned from past task attempts (follow these carefully; they address the most common mistakes):\\n\\n- Always name the owner\\n\\nAdditional task-specific guidelines retrieved from similar past tasks:\\n- Lead with the decision\\n- {\'rule\': \'Keep it short\'}", "entity_ids": ["merged", "legacy", "unknown"], "entity_revisions": {"merged": 2, "legacy": null, "unknown": null}, "namespace_id": "ns"}',
+        "static": '{"text": "# Guidelines for: prepare an update\\n\\n1. Always name the owner\\n2. Lead with the decision\\n3. {\'rule\': \'Keep it short\'}", "entity_ids": ["merged", "legacy", "unknown"], "entity_revisions": {"merged": 2, "legacy": null, "unknown": null}, "namespace_id": "ns"}',
+    }
+
+    def _call_mcp(self, mode, arguments):
+        """The tool through the MCP layer, as a client calls it, so argument validation applies."""
+        import asyncio
+
+        import altk_evolve.config.evolve as cfg
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+        from fastmcp import Client
+
+        merged, legacy, unknown = self._entities()
+        client = MagicMock()
+        client.select_guidelines.return_value = GuidelineSelection(core=[merged], retrieved=[legacy, unknown])
+        client.search_entities.return_value = [merged, legacy, unknown]
+
+        async def call():
+            async with Client(mcp.mcp) as session:
+                result = await session.call_tool("get_guidelines_with_attribution", arguments)
+            return result.content[0].text
+
+        with (
+            patch.object(cfg.evolve_config, "injection_mode", mode),
+            patch.object(mcp, "_resolve_namespace", return_value="ns"),
+            patch.object(mcp, "get_client", return_value=client),
+        ):
+            return asyncio.run(call())
+
+    @pytest.mark.parametrize("mode", ["retrieval", "static"])
+    def test_without_the_flag_the_response_is_byte_for_byte_unchanged(self, mode):
+        assert self._call_mcp(mode, {"task": "prepare an update"}) == self.GOLDEN[mode]
+        assert self._call_mcp(mode, {"task": "prepare an update", "include_details": False}) == self.GOLDEN[mode]
+
+    @pytest.mark.parametrize("mode", ["retrieval", "static"])
+    def test_the_flag_adds_each_guidelines_content_trigger_and_sources(self, mode):
+        import json
+
+        out = json.loads(self._call(mode, include_details=True))
+
+        assert out["guidelines"] == [
+            {
+                "id": "merged",
+                "content": "Always name the owner",
+                "trigger": "When writing an update",
+                # Distinct, supporting only: t1 once, the superseded t3 left out.
+                "source_task_ids": ["t1", "t2"],
+            },
+            # Stored before sources existed: its source_task_id.
+            {"id": "legacy", "content": "Lead with the decision", "trigger": None, "source_task_ids": ["cortex:abc:1-4"]},
+            # Structured content is returned as stored.
+            {"id": "unknown", "content": {"rule": "Keep it short"}, "trigger": None, "source_task_ids": []},
+        ]
+        assert [g["id"] for g in out["guidelines"]] == out["entity_ids"]
+        assert list(out) == ["text", "entity_ids", "entity_revisions", "namespace_id", "guidelines"]
+
+    def test_the_flag_leaves_out_internal_metadata(self):
+        import json
+
+        out = json.loads(self._call("retrieval", include_details=True))
+
+        assert all(set(g) == {"id", "content", "trigger", "source_task_ids"} for g in out["guidelines"])
+
+    def test_the_tool_schema_keeps_the_flag_optional(self):
+        import asyncio
+
+        import altk_evolve.frontend.mcp.mcp_server as mcp
+
+        tool = asyncio.run(mcp.mcp.get_tool("get_guidelines_with_attribution"))
+
+        assert tool.parameters["required"] == ["task"]
+        assert tool.parameters["properties"]["include_details"]["default"] is False
+        # A plain boolean: an optional (bool | None) flag would become anyOf[boolean, null].
+        assert tool.parameters["properties"]["include_details"]["type"] == "boolean"
+
+
+def _sourced(*task_ids, **metadata):
+    entity = _make_entity("g", "content")
+    entity.metadata.pop("support")  # so _support falls back to 1, the default, when no task counts
+    if task_ids:
+        entity.metadata["sources"] = [{"conversation_id": "c", "task_id": task, "status": "supporting"} for task in task_ids]
+    entity.metadata.update(metadata)
+    return entity
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("entity", "listed", "support"),
+    [
+        (_sourced("t1", "t2", "t1"), ["t1", "t2"], 2),
+        (_sourced(7), ["7"], 1),
+        # Compared as stored, as the support count compares them: two tasks.
+        (_sourced(1, "1"), ["1", "1"], 2),
+        # Falsy and non-scalar IDs name no task: none listed, and the count falls back.
+        (_sourced(0), [], 1),
+        (_sourced(""), [], 1),
+        (_sourced(None), [], 1),
+        (_sourced(["t1"]), [], 1),
+        (_sourced("  "), ["  "], 1),
+        # Legacy metadata reaches both through provenance.sources().
+        (_sourced(source_task_id="cortex:abc:1-4"), ["cortex:abc:1-4"], 1),
+        (_sourced(source_task_id=0), [], 1),
+    ],
+    ids=["distinct", "int", "int-and-str", "zero", "empty", "none", "list", "blank", "legacy", "legacy-zero"],
+)
+def test_source_task_ids_lists_the_tasks_the_support_count_counts(entity, listed, support):
+    from altk_evolve.llm.guidelines.retrieval import _support
+    from altk_evolve.schema.provenance import source_task_ids
+
+    assert source_task_ids(entity) == listed
+    assert _support(entity) == support
+    if listed:  # complete provenance: the support count is the number of listed tasks
+        assert _support(entity) == len(listed)

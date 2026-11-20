@@ -43,6 +43,31 @@ def sources(entity: Entity) -> list[dict]:
     ]
 
 
+def supporting_task_ids(entity: Entity) -> list[str | int]:
+    """The distinct tasks an entity's supporting sources name, in recorded order.
+
+    These are the tasks retrieval's support count counts: each task ID that is a string or an
+    integer and is truthy, compared as stored (so ``1`` and ``"1"`` are two tasks, and ``0``
+    and ``""`` are none). Superseded sources and sources that name no task are skipped.
+    """
+    tasks: list[str | int] = []
+    for source in sources(entity):
+        task = source.get("task_id")
+        if source.get("status") == "supporting" and isinstance(task, (str, int)) and task and task not in tasks:
+            tasks.append(task)
+    return tasks
+
+
+def source_task_ids(entity: Entity) -> list[str]:
+    """The tasks an entity was learned from, as text: one per task its support count counts.
+
+    ``supporting_task_ids``, as strings, so a caller sees the same tasks that put a guideline in
+    retrieval's core. Stored IDs are strings; for hand-written ``1`` and ``"1"`` this lists
+    ``"1"`` twice, as they are two tasks to the count.
+    """
+    return [str(task) for task in supporting_task_ids(entity)]
+
+
 def attach_sources(
     metadata: dict,
     old: Entity | None,
