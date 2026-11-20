@@ -258,6 +258,16 @@ def test_a_bad_environment_prompt_is_named_when_a_profile_uses_it(monkeypatch):
         _manager().validate(_profile())
 
 
+def test_a_profiles_own_bad_name_is_not_blamed_on_the_environment(monkeypatch, prompts_dir):
+    # The env var is named only when the profile left the prompt to it.
+    monkeypatch.setattr(_config(), "guidelines_prompt", "bogus")
+
+    with pytest.raises(ValueError) as error:
+        GuidelineConfig(guidelines_prompt="typo")
+    assert "Unknown guidelines_prompt 'typo'" in str(error.value)
+    assert "EVOLVE_GUIDELINES_PROMPT" not in str(error.value)
+
+
 def test_a_user_prompt_may_not_reuse_a_shipped_name(prompts_dir):
     (prompts_dir / "default.jinja2").write_text("Not the default")
 
@@ -368,6 +378,25 @@ def test_a_template_is_checked_and_compiled_from_one_read(monkeypatch, prompts_d
     path.write_text("Edited, for {{ notpassed }}")
     runtime = GuidelineRuntime.model_validate(published.model_dump(include=set(GuidelineRuntime.model_fields)))
     assert _render(monkeypatch, runtime) == "Once, for Add a field"
+
+
+def test_a_template_is_read_from_disk_once(monkeypatch, prompts_dir):
+    # Checked and compiled from the same text. A second read could compile text the checks never saw.
+    path = prompts_dir / "once.jinja2"
+    path.write_text("Once, for {{task_instruction}}")
+    reads: list[Path] = []
+    read_text = Path.read_text
+
+    def counting_read_text(self, *args, **kwargs):
+        if self == path:
+            reads.append(self)
+        return read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting_read_text)
+    load_guidelines_template("once")
+    load_guidelines_template("once")
+
+    assert len(reads) == 1
 
 
 def test_a_prompt_in_use_survives_a_clashing_file_added_later(monkeypatch, prompts_dir):
