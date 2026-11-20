@@ -221,6 +221,25 @@ def test_a_runtime_does_not_check_the_prompt_until_it_renders(monkeypatch):
         _render(monkeypatch, runtime)
 
 
+def test_a_bad_prompt_fails_before_any_llm_call(monkeypatch):
+    # A runtime from the environment isn't checked, so the generator is where a bad
+    # EVOLVE_GUIDELINES_PROMPT is found. It must be found before segmentation calls the model.
+    import altk_evolve.llm.guidelines.guidelines as guidelines
+    import altk_evolve.llm.guidelines.segmentation as segmentation
+
+    calls: list[str] = []
+    monkeypatch.setattr(segmentation, "segment_trajectory", lambda *args, **kwargs: calls.append("segment") or [])
+    monkeypatch.setattr(guidelines, "completion", lambda **kwargs: calls.append("generate"))
+    steps = [{"role": "assistant", "content": f"step {i}"} for i in range(1, segmentation.SEGMENTATION_MIN_STEPS + 2)]
+
+    with pytest.raises(ValueError, match="Unknown guidelines_prompt 'bogus'"):
+        guidelines.generate_guidelines(
+            [{"role": "user", "content": "Do the thing"}, *steps],
+            options=GuidelineRuntime(guidelines_prompt="bogus", segmentation_enabled=True),
+        )
+    assert calls == []
+
+
 def test_a_bad_environment_prompt_does_not_break_a_profile_that_sets_its_own(monkeypatch):
     monkeypatch.setattr(_config(), "guidelines_prompt", "bogus")
 

@@ -493,6 +493,10 @@ def generate_guidelines(
     subtask slices).
     """
     options = options or GuidelineRuntime.from_settings()
+    # Load the prompt before any LLM call. A processing profile checks its prompt when it is
+    # published, but a runtime built from the environment (save_trajectory or a sync without a
+    # profile) is not checked, and segmentation calls the model before the prompt is rendered.
+    _guidelines_template(options.guidelines_prompt)
     is_groq = options.custom_llm_provider == "groq" or options.guidelines_model.startswith("groq/")
     supported_params = get_supported_openai_params(
         model=options.guidelines_model,
