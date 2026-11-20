@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 from jinja2 import Environment, Template, TemplateSyntaxError, meta, nodes
@@ -156,9 +156,12 @@ def load_guidelines_template(name: str) -> Template:
     return _compiled(resolve_guidelines_prompt(name))
 
 
-@lru_cache(maxsize=64)
+# Neither cache is bounded: an evicted entry would be read again, so an edit could take effect
+# without a restart, or a clash added later could break a prompt in use. They can't grow past the
+# prompts installed: only a successful lookup is cached, so every key is a name, or the path of a
+# file, that exists. An unknown name is looked up again next time.
+@cache
 def _lookup(name: str, user_dir: Path | None, shipped_dir: Path) -> Path:
-    # Only a successful lookup is cached; an unknown name is looked up again next time.
     prompts = _available(user_dir, shipped_dir)
     prompt = prompts.get(name)
     if prompt is None:
@@ -166,7 +169,7 @@ def _lookup(name: str, user_dir: Path | None, shipped_dir: Path) -> Path:
     return prompt.path
 
 
-@lru_cache(maxsize=64)
+@cache
 def _compiled(path: Path) -> Template:
     """Read, check and compile one template. Every failure is a ``ValueError``, which pydantic and
     the MCP handlers report as an invalid setting."""

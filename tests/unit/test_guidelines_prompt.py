@@ -11,7 +11,12 @@ from typer.testing import CliRunner
 import altk_evolve.config.guideline_prompts as guideline_prompts
 from altk_evolve.cli.cli import app
 from altk_evolve.config.evolve import EvolveConfig
-from altk_evolve.config.guideline_prompts import SHIPPED_PROMPTS_DIR, available_guidelines_prompts, resolve_guidelines_prompt
+from altk_evolve.config.guideline_prompts import (
+    SHIPPED_PROMPTS_DIR,
+    available_guidelines_prompts,
+    load_guidelines_template,
+    resolve_guidelines_prompt,
+)
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.processing import ProcessingError, ProcessingManager, ProcessorRegistry
 from altk_evolve.processing.builtin import GuidelineConfig, GuidelineProcessor
@@ -354,6 +359,17 @@ def test_a_prompt_in_use_survives_a_clashing_file_added_later(monkeypatch, promp
     # A name not yet looked up is: the clash is reported then.
     with pytest.raises(ValueError, match="reuse names shipped with Evolve"):
         resolve_guidelines_prompt("environment-grounded")
+
+
+def test_every_prompt_in_use_keeps_its_first_read(prompts_dir):
+    # However many prompts a process uses: a bounded cache would evict the first ones and read them
+    # again, so an edit would take effect without a restart.
+    for i in range(100):
+        (prompts_dir / f"p{i}.jinja2").write_text(f"Prompt {i}, for {{{{ task_instruction }}}}")
+        load_guidelines_template(f"p{i}")
+    (prompts_dir / "p0.jinja2").write_text("Edited, for {{ task_instruction }}")
+
+    assert load_guidelines_template("p0").render(task_instruction="t") == "Prompt 0, for t"
 
 
 def test_prompts_are_read_as_utf8(monkeypatch, prompts_dir):
