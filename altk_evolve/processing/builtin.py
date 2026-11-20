@@ -21,16 +21,30 @@ def _analysis_defaults() -> dict:
     return cast(dict, yaml.safe_load(path.read_text()))
 
 
+def _evolve_config():
+    from altk_evolve.config.evolve import evolve_config
+
+    return evolve_config
+
+
+def _llm_settings():
+    from altk_evolve.config.llm import llm_settings
+
+    return llm_settings
+
+
 class GuidelineConfig(GuidelineRuntime):
     guidelines_mode: Literal["standard", "consistency", "all"] = "standard"
     consistency_method: Literal["fast", "accurate"] = "fast"
-    guidelines_model: str = Field(default_factory=lambda: GuidelineRuntime.from_settings().guidelines_model)
-    custom_llm_provider: str | None = Field(default_factory=lambda: GuidelineRuntime.from_settings().custom_llm_provider)
-    segmentation_enabled: bool = Field(default_factory=lambda: GuidelineRuntime.from_settings().segmentation_enabled)
-    trajectory_max_steps: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_max_steps, ge=1)
-    trajectory_max_step_chars: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_max_step_chars, ge=1)
-    trajectory_tail_steps: int = Field(default_factory=lambda: GuidelineRuntime.from_settings().trajectory_tail_steps, ge=0)
-    guidelines_prompt: str = Field(default_factory=lambda: GuidelineRuntime.from_settings().guidelines_prompt)
+    # Each default reads only its own setting. Building a whole runtime from the environment would
+    # also bring along, and fail on, settings this profile overrides.
+    guidelines_model: str = Field(default_factory=lambda: _llm_settings().guidelines_model)
+    custom_llm_provider: str | None = Field(default_factory=lambda: _llm_settings().custom_llm_provider)
+    segmentation_enabled: bool = Field(default_factory=lambda: _evolve_config().segmentation_enabled)
+    trajectory_max_steps: int = Field(default_factory=lambda: _evolve_config().trajectory_max_steps, ge=1)
+    trajectory_max_step_chars: int = Field(default_factory=lambda: _evolve_config().trajectory_max_step_chars, ge=1)
+    trajectory_tail_steps: int = Field(default_factory=lambda: _evolve_config().trajectory_tail_steps, ge=0)
+    guidelines_prompt: str = Field(default_factory=lambda: _evolve_config().guidelines_prompt)
 
     # Keys added since GuidelineProcessor version "1" was first published, mapped to the
     # behaviour of a revision stored without them, so ProcessingManager.resolve() can still
@@ -49,6 +63,22 @@ class GuidelineConfig(GuidelineRuntime):
         "extra_instructions": [],
         "guidelines_prompt": "default",
     }
+
+    @model_validator(mode="after")
+    def _check_prompt(self):
+        # Only the standard generator renders guidelines_prompt; a consistency-only profile
+        # records it without using it, so a bad name there must not block the profile.
+        if self.guidelines_mode in ("standard", "all"):
+            from altk_evolve.config.guideline_prompts import resolve_guidelines_prompt
+
+            try:
+                resolve_guidelines_prompt(self.guidelines_prompt)
+            except ValueError as e:
+                if "guidelines_prompt" in self.model_fields_set:
+                    raise
+                # Not set by this profile: the name came from the environment.
+                raise ValueError(f"EVOLVE_GUIDELINES_PROMPT={self.guidelines_prompt!r} is not a usable prompt: {e}") from e
+        return self
 
     @model_validator(mode="after")
     def capture_analysis(self):

@@ -11,7 +11,7 @@ from altk_evolve.config.evolve import EvolveConfig
 from altk_evolve.config.guideline_prompts import SHIPPED_PROMPTS_DIR, available_guidelines_prompts, resolve_guidelines_prompt
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.processing import ProcessingError, ProcessingManager, ProcessorRegistry
-from altk_evolve.processing.builtin import GuidelineProcessor
+from altk_evolve.processing.builtin import GuidelineConfig, GuidelineProcessor
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("default_trajectory_window")]
 
@@ -132,7 +132,33 @@ def test_listing_puts_shipped_prompts_first_with_descriptions(prompts_dir):
 @pytest.mark.parametrize("name", ["typo", "", " ", "../default", "/etc/passwd", "prompts/mine", "mine.jinja2"])
 def test_anything_but_an_available_name_is_rejected(prompts_dir, name):
     with pytest.raises(ValueError, match="guidelines_prompt"):
-        GuidelineRuntime(guidelines_prompt=name)
+        GuidelineConfig(guidelines_prompt=name)
+
+
+def test_a_runtime_does_not_check_the_prompt_until_it_renders(monkeypatch):
+    # The consistency pipelines and from_settings() build runtimes too; they must not fail on a
+    # prompt only the standard generator uses. The standard generator rejects it when it renders.
+    runtime = GuidelineRuntime(guidelines_prompt="typo")
+    with pytest.raises(ValueError, match="Unknown guidelines_prompt 'typo'"):
+        _render(monkeypatch, runtime)
+
+
+def test_a_bad_environment_prompt_does_not_break_a_profile_that_sets_its_own(monkeypatch):
+    monkeypatch.setattr(_config(), "guidelines_prompt", "bogus")
+
+    assert GuidelineConfig(guidelines_prompt="environment-grounded").guidelines_prompt == "environment-grounded"
+    assert GuidelineRuntime.from_settings().guidelines_prompt == "bogus"  # no longer raises
+    # A consistency-only profile records the prompt but never renders it.
+    assert GuidelineConfig(guidelines_mode="consistency").guidelines_prompt == "bogus"
+
+
+def test_a_bad_environment_prompt_is_named_when_a_profile_uses_it(monkeypatch):
+    monkeypatch.setattr(_config(), "guidelines_prompt", "bogus")
+
+    with pytest.raises(ValueError, match="EVOLVE_GUIDELINES_PROMPT='bogus' is not a usable prompt"):
+        GuidelineConfig()
+    with pytest.raises(ProcessingError, match="EVOLVE_GUIDELINES_PROMPT"):
+        _manager().validate(_profile())
 
 
 def test_a_user_prompt_may_not_reuse_a_shipped_name(prompts_dir):
