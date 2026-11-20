@@ -2,7 +2,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,67 @@ class Guideline(BaseModel):
         return resolved
 
 
-class GuidelineGenerationResponse(BaseModel):
+class _ModelFacingSchema(BaseModel):
+    """A response model whose JSON schema, as sent to an LLM, carries no numeric bounds.
+
+    Structured output sends ``model_json_schema()`` to the provider (litellm forwards it
+    unchanged), and some providers refuse numeric-range keywords outright: Claude's
+    structured outputs reject the whole request with "For 'integer' type, property 'minimum'
+    is not supported" (seen through Bedrock). The bounds here (``support``, segment steps)
+    are integrity checks, not instructions the model needs, so the schema sent to the model
+    omits them and ``model_validate`` still enforces every one locally. Anthropic's SDK
+    helpers make the same transformation. See #476.
+
+    Only ``Model.model_json_schema()`` is overridden. That is what ``response_format=Model``
+    sends, because litellm's ``type_to_response_format_param`` calls it. These still emit the
+    bounds: ``TypeAdapter(Model).json_schema()``,
+    ``pydantic.json_schema.model_json_schema(Model)``, a response model nested in a plain
+    ``BaseModel``, and ``Guideline`` or ``SubtaskSegment`` sent on their own. Nothing enforces
+    the convention, so a model sent to an LLM as a response schema must inherit from this class
+    and be passed as the class itself.
+    """
+
+    @classmethod
+    def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        schema: dict[str, Any] = _drop_numeric_bounds(super().model_json_schema(*args, **kwargs))
+        return schema
+
+
+_NUMERIC_BOUNDS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"})
+
+# Where a JSON Schema node holds sub-schemas. Keywords are dropped only from schema nodes, so a
+# name in a map (a field called "minimum"), and data (default, examples, const, enum), stay as
+# they are.
+_SCHEMA_MAPS = frozenset({"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"})
+_SCHEMA_LISTS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
+_SUBSCHEMAS = frozenset(
+    {"items", "additionalItems", "additionalProperties", "not", "if", "then", "else", "contains", "propertyNames"}
+    | {"unevaluatedItems", "unevaluatedProperties"}
+)
+
+
+def _drop_numeric_bounds(schema: Any) -> Any:
+    """``schema`` without numeric-bound keywords on any schema node. Anything else, such as a
+    boolean schema, is returned as is."""
+    if not isinstance(schema, dict):
+        return schema
+    out: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in _NUMERIC_BOUNDS:
+            continue
+        if key in _SCHEMA_MAPS and isinstance(value, dict):
+            out[key] = {name: _drop_numeric_bounds(sub) for name, sub in value.items()}
+        elif key in _SCHEMA_LISTS and isinstance(value, list):
+            out[key] = [_drop_numeric_bounds(sub) for sub in value]
+        elif key in _SUBSCHEMAS:
+            # items is a list of schemas in draft 4 to 2019-09 tuple form.
+            out[key] = [_drop_numeric_bounds(sub) for sub in value] if isinstance(value, list) else _drop_numeric_bounds(value)
+        else:
+            out[key] = value
+    return out
+
+
+class GuidelineGenerationResponse(_ModelFacingSchema):
     guidelines: list[Guideline]
 
 
@@ -120,7 +180,7 @@ class ConsolidatedGuideline(Guideline):
     )
 
 
-class ConsolidatedGuidelineResponse(BaseModel):
+class ConsolidatedGuidelineResponse(_ModelFacingSchema):
     guidelines: list[ConsolidatedGuideline]
 
 
@@ -151,7 +211,7 @@ class SubtaskSegment(BaseModel):
         return self
 
 
-class SegmentationResponse(BaseModel):
+class SegmentationResponse(_ModelFacingSchema):
     subtasks: list[SubtaskSegment] = Field(description="Contiguous, non-overlapping logical subtasks of the trajectory")
 
 
