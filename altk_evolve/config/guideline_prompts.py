@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from jinja2 import Environment, meta
+from jinja2 import Environment, Template, TemplateSyntaxError, meta
 
 DEFAULT_GUIDELINES_PROMPT = "default"
 
@@ -67,7 +67,7 @@ class GuidelinesPrompt:
         The text of a leading Jinja comment, ``{#- ... -#}`` (the dashes keep it from adding a
         newline to the rendered prompt), or else the template's first non-empty line.
         """
-        text = self.path.read_text()
+        text = self.path.read_text(encoding="utf-8")
         if match := _DESCRIPTION.match(text):
             return " ".join(match.group(1).split())
         return next((line.strip() for line in text.splitlines() if line.strip()), "")
@@ -75,7 +75,9 @@ class GuidelinesPrompt:
 
 def _prompts_in(directory: Path, source: str) -> dict[str, GuidelinesPrompt]:
     return {
-        path.stem: GuidelinesPrompt(path.stem, path, source) for path in sorted(directory.glob("*.jinja2")) if _NAME.fullmatch(path.stem)
+        path.stem: GuidelinesPrompt(path.stem, path, source)
+        for path in sorted(directory.glob("*.jinja2"))
+        if path.is_file() and _NAME.fullmatch(path.stem)
     }
 
 
@@ -85,14 +87,8 @@ def _user_prompts_dir() -> Path | None:
     return evolve_config.guidelines_prompts_dir
 
 
-def available_guidelines_prompts() -> dict[str, GuidelinesPrompt]:
-    """Every selectable prompt by name: those shipped with Evolve, then the deployment's own.
-
-    Raises ``ValueError`` if ``EVOLVE_GUIDELINES_PROMPTS_DIR`` is set but is not a directory, or
-    if one of its prompts reuses a shipped name.
-    """
-    prompts = _prompts_in(SHIPPED_PROMPTS_DIR, "shipped")
-    user_dir = _user_prompts_dir()
+def _available(user_dir: Path | None, shipped_dir: Path) -> dict[str, GuidelinesPrompt]:
+    prompts = _prompts_in(shipped_dir, "shipped")
     if user_dir is None:
         return prompts
     user_dir = Path(user_dir).expanduser()
@@ -107,34 +103,74 @@ def available_guidelines_prompts() -> dict[str, GuidelinesPrompt]:
     return prompts | user
 
 
-def resolve_guidelines_prompt(name: str) -> Path:
-    """Return the template file for a prompt name.
+def available_guidelines_prompts() -> dict[str, GuidelinesPrompt]:
+    """Every selectable prompt by name, as the directories are now: those shipped with Evolve,
+    then the deployment's own.
 
-    Raises ``ValueError`` for a malformed or unknown name, or a template that uses a variable the
-    generator does not pass, so a bad setting fails when a profile is published or the runtime is
-    built, not at the first trajectory.
+    Raises ``ValueError`` if ``EVOLVE_GUIDELINES_PROMPTS_DIR`` is set but is not a directory, or
+    if one of its prompts reuses a shipped name.
+    """
+    return _available(_user_prompts_dir(), SHIPPED_PROMPTS_DIR)
+
+
+def resolve_guidelines_prompt(name: str) -> Path:
+    """Return the template file for a prompt name, once the template has loaded and checked out.
+
+    Raises ``ValueError`` for a malformed or unknown name, or a template that can't be used (see
+    ``load_guidelines_template``), so a bad setting fails when a profile is published, not at the
+    first trajectory.
     """
     if not isinstance(name, str) or not _NAME.fullmatch(name.strip()):
         raise ValueError(f"guidelines_prompt must be a prompt name (letters, digits, '-' and '_'), not {name!r}")
-    prompts = available_guidelines_prompts()
-    prompt = prompts.get(name.strip())
+    path = _lookup(name.strip(), _user_prompts_dir(), SHIPPED_PROMPTS_DIR)
+    _compiled(path)
+    return path
+
+
+def load_guidelines_template(name: str) -> Template:
+    """The compiled template for a prompt name.
+
+    A name found once is not looked up again in this process, so a file added later (one that
+    clashes with a shipped name, say) can't break a prompt already in use. A template is read
+    once, and checked and compiled from that same text, so an edit takes effect on restart and
+    can't skip the checks.
+    """
+    return _compiled(resolve_guidelines_prompt(name))
+
+
+@lru_cache(maxsize=64)
+def _lookup(name: str, user_dir: Path | None, shipped_dir: Path) -> Path:
+    # Only a successful lookup is cached; an unknown name is looked up again next time.
+    prompts = _available(user_dir, shipped_dir)
+    prompt = prompts.get(name)
     if prompt is None:
-        raise ValueError(f"Unknown guidelines_prompt {name.strip()!r}: available prompts are {', '.join(prompts)}")
-    check_template_variables(prompt.path)
+        raise ValueError(f"Unknown guidelines_prompt {name!r}: available prompts are {', '.join(prompts)}")
     return prompt.path
 
 
-def check_template_variables(path: Path) -> None:
-    """Raise ``ValueError`` if the template uses a variable the generator does not pass."""
-    unknown = _undeclared_variables(path) - TEMPLATE_VARIABLES
+@lru_cache(maxsize=64)
+def _compiled(path: Path) -> Template:
+    """Read, check and compile one template. Every failure is a ``ValueError``, which pydantic and
+    the MCP handlers report as an invalid setting."""
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise ValueError(f"Guideline prompt {path} can't be read: {e}") from e
+    try:
+        tree = Environment().parse(source)
+    except TemplateSyntaxError as e:
+        raise ValueError(f"Guideline prompt {path} is not a valid Jinja2 template (line {e.lineno}): {e.message}") from e
+    referenced = list(meta.find_referenced_templates(tree))
+    if referenced:
+        names = ", ".join(sorted("a computed name" if ref is None else repr(ref) for ref in referenced))
+        raise ValueError(
+            f"Guideline prompt {path} includes, imports or extends other templates ({names}). "
+            "A guideline prompt must be a single, self-contained template."
+        )
+    unknown = meta.find_undeclared_variables(tree) - TEMPLATE_VARIABLES
     if unknown:
         raise ValueError(
             f"Guideline prompt {path} uses variables the generator does not pass: {', '.join(sorted(unknown))}. "
             f"Available: {', '.join(sorted(TEMPLATE_VARIABLES))}"
         )
-
-
-@lru_cache(maxsize=64)
-def _undeclared_variables(path: Path) -> frozenset[str]:
-    # Read once per process, like the template itself: an edited prompt takes effect on restart.
-    return frozenset(meta.find_undeclared_variables(Environment().parse(path.read_text())))
+    return Template(source)

@@ -182,6 +182,69 @@ def test_a_template_using_a_variable_the_generator_does_not_pass_is_rejected(pro
         resolve_guidelines_prompt("typo")
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "{% include 'x.txt' %}{{ task_instruction }}",
+        "{% import 'macros.jinja2' as m %}{{ task_instruction }}",
+        "{% extends 'default.jinja2' %}",
+        "{% from 'm.jinja2' import x %}{{ task_instruction }}",
+    ],
+    ids=["include", "import", "extends", "from-import"],
+)
+def test_a_template_that_references_other_templates_is_rejected(prompts_dir, source):
+    # They would pass the variable check and then fail at the first render: there is no loader.
+    (prompts_dir / "refs.jinja2").write_text(source)
+
+    with pytest.raises(ValueError, match="includes, imports or extends other templates"):
+        GuidelineConfig(guidelines_prompt="refs")
+
+
+def test_a_template_with_a_syntax_error_is_an_invalid_setting(prompts_dir):
+    (prompts_dir / "broken.jinja2").write_text("{% if %}x")
+
+    with pytest.raises(ValueError, match="not a valid Jinja2 template"):
+        GuidelineConfig(guidelines_prompt="broken")
+    with pytest.raises(ProcessingError):
+        _manager().put("broken", _profile(guidelines_prompt="broken"), expected_revision=0)
+
+
+def test_a_directory_named_like_a_prompt_is_not_a_prompt(prompts_dir):
+    (prompts_dir / "folder.jinja2").mkdir()
+
+    assert "folder" not in available_guidelines_prompts()
+    with pytest.raises(ValueError, match="Unknown guidelines_prompt 'folder'"):
+        GuidelineConfig(guidelines_prompt="folder")
+
+
+def test_a_template_is_checked_and_compiled_from_one_read(monkeypatch, prompts_dir):
+    # An edit after the prompt is first used can neither take effect nor skip the variable check.
+    path = prompts_dir / "once.jinja2"
+    path.write_text("Once, for {{task_instruction}}")
+    runtime = GuidelineRuntime(guidelines_prompt="once")
+    assert _render(monkeypatch, runtime) == "Once, for Add a field"
+
+    path.write_text("Edited, for {{ notpassed }}")
+    assert _render(monkeypatch, runtime) == "Once, for Add a field"
+
+
+def test_a_prompt_in_use_survives_a_clashing_file_added_later(monkeypatch, prompts_dir):
+    assert _render(monkeypatch, GuidelineRuntime(guidelines_prompt="mine")) == "Mine, for Add a field"
+    (prompts_dir / "default.jinja2").write_text("A clash")
+
+    assert _render(monkeypatch, GuidelineRuntime(guidelines_prompt="mine")) == "Mine, for Add a field"
+    # A name not yet looked up is: the clash is reported then.
+    with pytest.raises(ValueError, match="reuse names shipped with Evolve"):
+        resolve_guidelines_prompt("environment-grounded")
+
+
+def test_prompts_are_read_as_utf8(monkeypatch, prompts_dir):
+    (prompts_dir / "accents.jinja2").write_bytes("{#- Café prompt. -#}\nCafé, for {{task_instruction}}".encode())
+
+    assert _render(monkeypatch, GuidelineRuntime(guidelines_prompt="accents")) == "Café, for Add a field"
+    assert available_guidelines_prompts()["accents"].description == "Café prompt."
+
+
 def test_the_generator_passes_every_documented_variable(monkeypatch, prompts_dir):
     # A template that prints each variable renders without a gap, with and without an outcome.
     from altk_evolve.config.guideline_prompts import TEMPLATE_VARIABLES

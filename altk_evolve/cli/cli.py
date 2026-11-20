@@ -807,7 +807,7 @@ def show_prompt(name: Annotated[str, typer.Argument(help="Prompt name")]):
     if prompt is None:
         err_console.print(f"[red]Error:[/red] unknown prompt {name!r}. Run: evolve prompts list", markup=True, highlight=False)
         raise typer.Exit(1)
-    sys.stdout.write(prompt.path.read_text())
+    sys.stdout.write(prompt.path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

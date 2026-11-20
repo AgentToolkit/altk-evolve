@@ -3,8 +3,6 @@ import json
 import logging
 import re
 from json import JSONDecodeError
-from functools import lru_cache
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from jinja2 import Template
@@ -14,7 +12,7 @@ from pydantic import ValidationError
 
 from altk_evolve.config.llm import llm_settings  # noqa: F401
 from altk_evolve.config.evolve import evolve_config  # noqa: F401
-from altk_evolve.config.guideline_prompts import resolve_guidelines_prompt
+from altk_evolve.config.guideline_prompts import load_guidelines_template
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, one_pass_task_description, subtask_slices
@@ -33,15 +31,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=64)
-def _load_template(path: Path) -> Template:
-    # Read once per process: an edited prompt takes effect on restart.
-    return Template(path.read_text())
-
-
 def _guidelines_template(name: str) -> Template:
     """The template for a ``guidelines_prompt`` name; see ``altk_evolve.config.guideline_prompts``."""
-    return _load_template(resolve_guidelines_prompt(name))
+    return load_guidelines_template(name)
 
 
 # Bounds on the evaluator's report rendered into the prompt.
