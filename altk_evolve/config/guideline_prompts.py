@@ -160,21 +160,24 @@ def _compiled(path: Path) -> Template:
         source = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as e:
         raise ValueError(f"Guideline prompt {path} can't be read: {e}") from e
+    # Jinja reports some mistakes after parsing: an unknown filter or test (outside a conditional)
+    # is a TemplateAssertionError, a TemplateSyntaxError, raised by the variable check and by the
+    # compile. So both run inside the try.
     try:
         tree = Environment().parse(source)
+        referenced = list(meta.find_referenced_templates(tree))
+        if referenced:
+            names = ", ".join(sorted("a computed name" if ref is None else repr(ref) for ref in referenced))
+            raise ValueError(
+                f"Guideline prompt {path} includes, imports or extends other templates ({names}). "
+                "A guideline prompt must be a single, self-contained template."
+            )
+        unknown = meta.find_undeclared_variables(tree) - TEMPLATE_VARIABLES
+        if unknown:
+            raise ValueError(
+                f"Guideline prompt {path} uses variables the generator does not pass: {', '.join(sorted(unknown))}. "
+                f"Available: {', '.join(sorted(TEMPLATE_VARIABLES))}"
+            )
+        return Template(source)
     except TemplateSyntaxError as e:
         raise ValueError(f"Guideline prompt {path} is not a valid Jinja2 template (line {e.lineno}): {e.message}") from e
-    referenced = list(meta.find_referenced_templates(tree))
-    if referenced:
-        names = ", ".join(sorted("a computed name" if ref is None else repr(ref) for ref in referenced))
-        raise ValueError(
-            f"Guideline prompt {path} includes, imports or extends other templates ({names}). "
-            "A guideline prompt must be a single, self-contained template."
-        )
-    unknown = meta.find_undeclared_variables(tree) - TEMPLATE_VARIABLES
-    if unknown:
-        raise ValueError(
-            f"Guideline prompt {path} uses variables the generator does not pass: {', '.join(sorted(unknown))}. "
-            f"Available: {', '.join(sorted(TEMPLATE_VARIABLES))}"
-        )
-    return Template(source)

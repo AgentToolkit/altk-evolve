@@ -282,6 +282,22 @@ def test_a_template_with_a_syntax_error_is_an_invalid_setting(prompts_dir):
         _manager().put("broken", _profile(guidelines_prompt="broken"), expected_revision=0)
 
 
+@pytest.mark.parametrize(
+    "source",
+    ["{{ task_instruction|uppr }}", "{{ outcome is nosuch }}", "{% filter shout %}{{ task_instruction }}{% endfilter %}"],
+    ids=["filter", "test", "filter-block"],
+)
+def test_a_misspelled_filter_or_test_is_an_invalid_setting(prompts_dir, source):
+    # Jinja reports these after parsing, while it checks variables and compiles, as a
+    # TemplateAssertionError. They must still come out as ValueError, an invalid setting.
+    (prompts_dir / "typo.jinja2").write_text(source)
+
+    with pytest.raises(ValueError, match="uppr|nosuch|shout"):
+        GuidelineConfig(guidelines_prompt="typo")
+    with pytest.raises(ProcessingError):
+        _manager().validate(_profile(guidelines_prompt="typo"))
+
+
 def test_a_directory_named_like_a_prompt_is_not_a_prompt(prompts_dir):
     (prompts_dir / "folder.jinja2").mkdir()
 
@@ -398,10 +414,11 @@ def test_cli_lists_prompts_and_marks_the_selected_one(monkeypatch, prompts_dir):
     assert "mine *" in result.output and "My own prompt." in result.output
 
 
-@pytest.mark.parametrize("selected", ["bogus", "badvars"])
+@pytest.mark.parametrize("selected", ["bogus", "badvars", "badfilter"])
 def test_cli_list_reports_a_selection_that_cant_be_used(monkeypatch, prompts_dir, selected):
     # An unknown name, or a listed prompt the generator would reject: say so, mark nothing, exit 1.
     (prompts_dir / "badvars.jinja2").write_text("For {{ notpassed }}")
+    (prompts_dir / "badfilter.jinja2").write_text("For {{ task_instruction|uppr }}")
     monkeypatch.setattr(_config(), "guidelines_prompt", selected)
 
     result = runner.invoke(app, ["prompts", "list"], env={"COLUMNS": "200"})
