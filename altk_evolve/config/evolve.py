@@ -1,5 +1,6 @@
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 from typing import Literal
 
 from altk_evolve.config.hooks import HooksConfig
@@ -23,6 +24,12 @@ class EvolveConfig(BaseSettings):
     trajectory_max_steps: int = Field(default=50, ge=1)
     trajectory_max_step_chars: int = Field(default=2000, ge=1)
     trajectory_tail_steps: int = Field(default=0, ge=0)
+    # Name of the prompt the standard guideline generator renders: one shipped with Evolve, or
+    # one in guidelines_prompts_dir. See altk_evolve/config/guideline_prompts.py.
+    guidelines_prompt: str = "default"
+    # A directory of the deployment's own prompts, <name>.jinja2, selectable by name alongside
+    # the shipped ones. Set only from the environment, never by a processing profile.
+    guidelines_prompts_dir: Path | None = None
     retention_scheduler_enabled: bool = True
     retention_poll_seconds: float = Field(default=10, gt=0)
     retention_max_workers: int = Field(default=1, ge=1)
@@ -62,6 +69,12 @@ class EvolveConfig(BaseSettings):
     retrieval_near_core_thresh: float = Field(default=0.75, ge=0.0, le=1.0)
     retrieval_dedup_thresh: float = Field(default=0.90, ge=0.0, le=1.0)
     evidence_filter: Literal["all", "success", "failure"] = "all"
+
+    @field_validator("guidelines_prompts_dir", mode="before")
+    @classmethod
+    def _empty_prompts_dir_is_unset(cls, value: object) -> object:
+        # EVOLVE_GUIDELINES_PROMPTS_DIR= would otherwise become Path(""), the current directory.
+        return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def _check_trajectory_window(self) -> "EvolveConfig":

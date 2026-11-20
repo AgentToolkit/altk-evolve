@@ -3,7 +3,6 @@ import json
 import logging
 import re
 from json import JSONDecodeError
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from jinja2 import Template
@@ -13,6 +12,7 @@ from pydantic import ValidationError
 
 from altk_evolve.config.llm import llm_settings  # noqa: F401
 from altk_evolve.config.evolve import evolve_config  # noqa: F401
+from altk_evolve.config.guideline_prompts import load_guidelines_template
 from altk_evolve.config.guideline_runtime import GuidelineRuntime
 from altk_evolve.hooks.manager import dispatch_llm_pre_call
 from altk_evolve.llm.guidelines.segmentation import SEGMENTATION_MIN_STEPS, one_pass_task_description, subtask_slices
@@ -30,7 +30,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_GENERATE_GUIDELINES_TEMPLATE = Template((Path(__file__).parent / "prompts/generate_guidelines.jinja2").read_text())
+
+def _guidelines_template(name: str) -> Template:
+    """The template for a ``guidelines_prompt`` name; see ``altk_evolve.config.guideline_prompts``."""
+    return load_guidelines_template(name)
+
 
 # Bounds on the evaluator's report rendered into the prompt.
 _MAX_FAILED_CHECKS = 10
@@ -403,7 +407,7 @@ def _generate_guidelines_for_segment(
             "detail": detail,
             "segmented": segmented,
         }
-    prompt = _GENERATE_GUIDELINES_TEMPLATE.render(
+    prompt = _guidelines_template(options.guidelines_prompt).render(
         task_instruction=task_description,
         supporting_context=supporting_context,
         rules_section=render_rules(rules),
@@ -489,6 +493,10 @@ def generate_guidelines(
     subtask slices).
     """
     options = options or GuidelineRuntime.from_settings()
+    # Load the prompt before any LLM call. A processing profile checks its prompt when it is
+    # published, but a runtime built from the environment (save_trajectory or a sync without a
+    # profile) is not checked, and segmentation calls the model before the prompt is rendered.
+    _guidelines_template(options.guidelines_prompt)
     is_groq = options.custom_llm_provider == "groq" or options.guidelines_model.startswith("groq/")
     supported_params = get_supported_openai_params(
         model=options.guidelines_model,
