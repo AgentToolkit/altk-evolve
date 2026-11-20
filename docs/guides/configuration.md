@@ -137,20 +137,25 @@ A processing profile can set it per profile, as `guidelines_prompt` in the
 the default:
 
 ```bash
-evolve processing-profiles get cortex > profile.json
-# set "guidelines_prompt": "mine" in the guidelines processor's config
-evolve processing-profiles apply cortex --file profile.json --expected-revision <revision>
+evolve processing-profiles get cortex > current.json
+# apply takes a definition, not get's output, and replaces the whole definition, so this keeps
+# the profile's other settings and changes only the prompt.
+jq '{processors: [.manifest.processors[] | {id, plugin, config: (.config + {guidelines_prompt: "mine"})}]}' \
+  current.json > profile.json
+evolve processing-profiles apply cortex --file profile.json --expected-revision "$(jq .revision current.json)"
 ```
 
 Profiles can be written remotely (MCP, REST), so they can only name prompts already in place,
 and `EVOLVE_GUIDELINES_PROMPTS_DIR` itself is set only by the environment. An unknown name is
-rejected when the profile is published. The profile records the name, not the template, so
+rejected when the profile is published, if the profile uses the standard generator
+(`guidelines_mode` `standard` or `all`); a bad `EVOLVE_GUIDELINES_PROMPT` is reported by name.
+`evolve prompts list` checks the selected prompt too, and exits 1 if it can't be used. The profile records the name, not the template, so
 editing a prompt file changes what later runs of that profile render. Templates are read once
 per process: restart Evolve after editing one.
 
 #### Writing a prompt
 
-Start from a copy of the default: `evolve prompts show default > my-prompts/mine.jinja2`. A
+Start from a copy of the default: `mkdir -p my-prompts && evolve prompts show default > my-prompts/mine.jinja2`. A
 template is Jinja2 and receives these variables:
 
 | Variable | Contents |
@@ -168,7 +173,10 @@ template is Jinja2 and receives these variables:
 | `segmented` | Whether the steps are one subtask of a longer trajectory |
 
 A template that uses any other variable is rejected when it is selected, rather than rendering
-the variable as empty. The model's reply is parsed against the same guideline schema whichever
+the variable as empty. A template must also be self-contained: one that uses `{% include %}`,
+`{% import %}`, `{% from %}` or `{% extends %}` is rejected, as is one with a syntax error.
+Templates are read as UTF-8. A name is used exactly as given; one with surrounding whitespace
+is rejected. The model's reply is parsed against the same guideline schema whichever
 prompt is used.
 
 A leading Jinja comment is the description `evolve prompts list` shows. Write it as

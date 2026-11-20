@@ -99,11 +99,11 @@ Reports contain actions, reasons, deciding rules, and evidence. See the
 
 ```bash
 # List the prompts EVOLVE_GUIDELINES_PROMPT can name: shipped ones, then EVOLVE_GUIDELINES_PROMPTS_DIR's
-# (the selected one is marked with *)
+# (the selected one is marked with *; exits 1 if the selected one can't be used)
 evolve prompts list
 
 # Print a prompt's template, for example to start your own from a copy
-evolve prompts show default > my-prompts/mine.jinja2
+mkdir -p my-prompts && evolve prompts show default > my-prompts/mine.jinja2
 ```
 
 See [Guideline prompt](../guides/configuration.md#guideline-prompt).
