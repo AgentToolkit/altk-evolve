@@ -54,6 +54,16 @@ TEMPLATE_VARIABLES = frozenset(
 # Template() compiles with, so the names it accepts are the ones that render.
 _ENVIRONMENT = Environment()
 
+# The tags that bring in another template. There is no loader, so each would fail at the first
+# render. They are found as tags rather than by the names they reference
+# (meta.find_referenced_templates), which finds nothing in {% include [] %}.
+_REFERENCE_TAGS: dict[type[nodes.Node], str] = {
+    nodes.Extends: "extends",
+    nodes.Include: "include",
+    nodes.Import: "import",
+    nodes.FromImport: "from",
+}
+
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 _DESCRIPTION = re.compile(r"\s*\{#-?(.*?)-?#\}", re.DOTALL)
 
@@ -169,11 +179,10 @@ def _compiled(path: Path) -> Template:
     # compile. So both run inside the try.
     try:
         tree = _ENVIRONMENT.parse(source)
-        referenced = list(meta.find_referenced_templates(tree))
-        if referenced:
-            names = ", ".join(sorted("a computed name" if ref is None else repr(ref) for ref in referenced))
+        tags = sorted({_REFERENCE_TAGS[type(node)] for node in tree.find_all(tuple(_REFERENCE_TAGS))})
+        if tags:
             raise ValueError(
-                f"Guideline prompt {path} includes, imports or extends other templates ({names}). "
+                f"Guideline prompt {path} includes, imports or extends other templates (it uses {', '.join(tags)}). "
                 "A guideline prompt must be a single, self-contained template."
             )
         # Inside a conditional, Jinja leaves an unknown filter or test to fail at render time, so a

@@ -262,8 +262,10 @@ def test_a_template_using_a_variable_the_generator_does_not_pass_is_rejected(pro
         "{% import 'macros.jinja2' as m %}{{ task_instruction }}",
         "{% extends 'default.jinja2' %}",
         "{% from 'm.jinja2' import x %}{{ task_instruction }}",
+        "{% include [] %}{{ task_instruction }}",
+        "{% if false %}{% include task_instruction %}{% endif %}{{ task_instruction }}",
     ],
-    ids=["include", "import", "extends", "from-import"],
+    ids=["include", "import", "extends", "from-import", "empty-list", "computed-in-dead-branch"],
 )
 def test_a_template_that_references_other_templates_is_rejected(prompts_dir, source):
     # They would pass the variable check and then fail at the first render: there is no loader.
