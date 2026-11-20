@@ -351,6 +351,19 @@ def test_cli_lists_prompts_and_marks_the_selected_one(monkeypatch, prompts_dir):
     assert "mine *" in result.output and "My own prompt." in result.output
 
 
+@pytest.mark.parametrize("selected", ["bogus", "badvars"])
+def test_cli_list_reports_a_selection_that_cant_be_used(monkeypatch, prompts_dir, selected):
+    # An unknown name, or a listed prompt the generator would reject: say so, mark nothing, exit 1.
+    (prompts_dir / "badvars.jinja2").write_text("For {{ notpassed }}")
+    monkeypatch.setattr(_config(), "guidelines_prompt", selected)
+
+    result = runner.invoke(app, ["prompts", "list"], env={"COLUMNS": "200"})
+
+    assert result.exit_code == 1
+    assert f"EVOLVE_GUIDELINES_PROMPT='{selected}' can't be used" in result.output
+    assert " *" not in result.output
+
+
 def test_cli_shows_a_template(prompts_dir):
     result = runner.invoke(app, ["prompts", "show", "default"])
 

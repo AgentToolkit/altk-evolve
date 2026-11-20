@@ -786,18 +786,29 @@ def list_prompts():
     """List the guideline-generation prompts EVOLVE_GUIDELINES_PROMPT can name.
 
     Prompts shipped with Evolve, then those in EVOLVE_GUIDELINES_PROMPTS_DIR. The one this
-    environment selects is marked with *.
+    environment selects is marked with *. If it can't be used (an unknown name, or a template the
+    generator would reject), says why and exits 1, before the first sync would fail on it.
     """
     from altk_evolve.config.evolve import evolve_config
+    from altk_evolve.config.guideline_prompts import resolve_guidelines_prompt
 
+    selected = evolve_config.guidelines_prompt
+    try:
+        resolve_guidelines_prompt(selected)
+        problem = None
+    except ValueError as e:
+        problem = str(e)
     table = Table(title="Guideline prompts")
     table.add_column("Name", style="cyan")
     table.add_column("Source")
     table.add_column("Description", style="dim")
     for prompt in _guidelines_prompts().values():
-        selected = " *" if prompt.name == evolve_config.guidelines_prompt else ""
-        table.add_row(prompt.name + selected, prompt.source, prompt.description)
+        mark = " *" if prompt.name == selected and problem is None else ""
+        table.add_row(prompt.name + mark, prompt.source, prompt.description)
     console.print(table)
+    if problem is not None:
+        err_console.print(f"[red]Error:[/red] EVOLVE_GUIDELINES_PROMPT={selected!r} can't be used: {problem}", markup=True, highlight=False)
+        raise typer.Exit(1)
 
 
 @prompts_app.command("show")
