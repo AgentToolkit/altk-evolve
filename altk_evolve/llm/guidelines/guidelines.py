@@ -119,15 +119,18 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
     """Parse a guideline-generation LLM response, repairing the malformations models
     commonly emit, and log whichever repair was needed.
 
-    Tries the response as-is first, then two repairs that compose, so a response with
-    both problems is still recovered:
+    Tries the response as-is first, then these repairs. The backslash repair composes with
+    either shape repair, so a response with both problems is still recovered:
 
     1. Lone backslashes escaped — models emit LaTeX-style ``\\( \\)`` inside string
        values, which is not a valid JSON escape sequence and fails to parse at all.
     2. A bare top-level array wrapped under the ``guidelines`` key — a bare ``[...]``
        parses as valid JSON but doesn't match the schema, so it fails validation
-       rather than parsing. Only reachable when the provider can't enforce a response
-       schema; constrained decoding makes the shape impossible to get wrong.
+       rather than parsing. Seen when the provider can't enforce a response schema.
+    3. ``guidelines`` decoded from a string of JSON — asked for structured output, some
+       models return the whole answer encoded once more under its own key,
+       ``{"guidelines": "{\\"guidelines\\": [...]}"}``. A response schema doesn't prevent
+       it: claude-sonnet-5 through a LiteLLM proxy does it (#488).
 
     A repair that succeeds is logged at INFO, so a prompt or model that keeps producing
     off-contract output stays visible instead of being silently rescued.
@@ -159,6 +162,9 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
         payloads: list[tuple[str, object]] = [("", parsed)]
         if isinstance(parsed, list):
             payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}))
+        decoded, names = GuidelineGenerationResponse.decode_string_fields(parsed)
+        if names:
+            payloads.append((f"decoded {', '.join(f'"{n}"' for n in names)} from a JSON string", decoded))
 
         for shape_repair, payload in payloads:
             try:
@@ -420,6 +426,8 @@ def _generate_guidelines_for_segment(
     llm_messages = dispatch_llm_pre_call(
         [{"role": "user", "content": prompt}], purpose="guideline_generation", model=options.guidelines_model
     )
+    # No enable_json_schema_validation: LiteLLM would raise on a reply the parsing below can
+    # repair, and that parsing validates against the same model (#488).
     if constrained_decoding_supported:
         raw = (
             completion(
@@ -427,7 +435,6 @@ def _generate_guidelines_for_segment(
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
                 custom_llm_provider=options.custom_llm_provider,
-                enable_json_schema_validation=constrained_decoding_supported,
             )
             .choices[0]
             .message.content
@@ -438,7 +445,6 @@ def _generate_guidelines_for_segment(
                 model=options.guidelines_model,
                 messages=llm_messages,
                 custom_llm_provider=options.custom_llm_provider,
-                enable_json_schema_validation=constrained_decoding_supported,
             )
             .choices[0]
             .message.content

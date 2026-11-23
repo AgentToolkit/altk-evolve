@@ -45,6 +45,25 @@ def test_segment_trajectory_returns_subtasks(mock_schema, mock_params, mock_comp
 
 
 @patch("altk_evolve.llm.guidelines.segmentation.completion")
+@patch("altk_evolve.llm.guidelines.segmentation.get_supported_openai_params", return_value=["response_format"])
+@patch("altk_evolve.llm.guidelines.segmentation.supports_response_schema", return_value=True)
+def test_segment_trajectory_decodes_subtasks_sent_as_a_json_string(mock_schema, mock_params, mock_completion):
+    """claude-sonnet-5 sends the whole answer as a string under "subtasks" (#488). The first
+    reply is used, with no retry, and LiteLLM isn't asked to validate it."""
+    mock_completion.return_value = _mock_completion(json.dumps({"subtasks": VALID_SEGMENTATION_JSON}))
+
+    from altk_evolve.llm.guidelines.segmentation import segment_trajectory
+
+    result = segment_trajectory(MESSAGES)
+
+    assert [(s.start_step, s.end_step) for s in result] == [(1, 2), (3, 5)]
+    assert mock_completion.call_count == 1
+    _, kwargs = mock_completion.call_args
+    assert "response_format" in kwargs
+    assert "enable_json_schema_validation" not in kwargs
+
+
+@patch("altk_evolve.llm.guidelines.segmentation.completion")
 @patch("altk_evolve.llm.guidelines.segmentation.get_supported_openai_params", return_value=[])
 @patch("altk_evolve.llm.guidelines.segmentation.supports_response_schema", return_value=False)
 def test_segment_trajectory_propagates_non_parse_errors(mock_schema, mock_params, mock_completion):

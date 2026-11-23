@@ -9,7 +9,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, get_args
 
-import litellm
 import numpy as np
 from jinja2 import Template
 from litellm import completion, get_supported_openai_params, supports_response_schema
@@ -455,7 +454,6 @@ def combine_cluster_with_members(
         target_count=evolve_config.lossy_target_num_guidelines,
     )
 
-    litellm.enable_json_schema_validation = constrained_decoding_supported
     llm_messages = dispatch_llm_pre_call(
         [{"role": "user", "content": prompt}], purpose="guideline_combination", model=llm_settings.guidelines_model
     )
@@ -463,6 +461,8 @@ def combine_cluster_with_members(
     last_error: Exception | None = None
     for attempt in range(3):
         try:
+            # LiteLLM isn't asked to validate the schema: it would raise on a reply the parsing below
+            # can repair, and that parsing validates against the same model (#488).
             if constrained_decoding_supported:
                 content = (
                     completion(
@@ -491,7 +491,7 @@ def combine_cluster_with_members(
                     raise EvolveException("LLM returned None content for combine_cluster")
                 clean_response = clean_llm_response(content)
 
-            consolidated = ConsolidatedGuidelineResponse.model_validate(json.loads(clean_response)).guidelines
+            consolidated = ConsolidatedGuidelineResponse.model_validate_reply(json.loads(clean_response), "consolidation").guidelines
             attributed = _attribute_support(entities, consolidated, member_support, member_evidence)
             return [(guideline, [entities[i] for i in members]) for guideline, members in attributed]
         except Exception as e:

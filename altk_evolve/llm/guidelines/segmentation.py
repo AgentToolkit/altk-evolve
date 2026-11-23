@@ -114,6 +114,8 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
     last_error: Exception | None = None
     for attempt in range(3):
         try:
+            # No enable_json_schema_validation: LiteLLM would raise on a reply the parsing below can
+            # repair, and that parsing validates against the same model (#488).
             if constrained_decoding_supported:
                 raw = (
                     completion(
@@ -121,7 +123,6 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
                         messages=llm_messages,
                         response_format=SegmentationResponse,
                         custom_llm_provider=options.custom_llm_provider,
-                        enable_json_schema_validation=constrained_decoding_supported,
                     )
                     .choices[0]
                     .message.content
@@ -132,7 +133,6 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
                         model=options.guidelines_model,
                         messages=llm_messages,
                         custom_llm_provider=options.custom_llm_provider,
-                        enable_json_schema_validation=constrained_decoding_supported,
                     )
                     .choices[0]
                     .message.content
@@ -143,7 +143,7 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
                 logger.debug(f"Segmentation attempt {attempt + 1}: empty response")
                 continue
 
-            subtasks = SegmentationResponse.model_validate(json.loads(clean_response)).subtasks
+            subtasks = SegmentationResponse.model_validate_reply(json.loads(clean_response), "segmentation").subtasks
             return subtasks
 
         except (JSONDecodeError, ValidationError) as e:

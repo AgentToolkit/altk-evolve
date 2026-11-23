@@ -565,7 +565,9 @@ def test_mcp_profile_readback_filters_identity(client, monkeypatch):
 
 @pytest.mark.parametrize("constrained", [False, True])
 @pytest.mark.parametrize("pipeline", ["standard", "fast", "accurate", "segmentation"])
-def test_schema_validation_is_per_call(pipeline, constrained, monkeypatch):
+def test_litellm_is_not_asked_to_validate_the_schema(pipeline, constrained, monkeypatch):
+    """Evolve validates each reply against the response model itself, after its repairs.
+    LiteLLM's check would raise first, on replies those repairs recover (#488)."""
     from altk_evolve.config.guideline_runtime import GuidelineRuntime
     from altk_evolve.llm.guidelines import guidelines, consistency_guidelines, segmentation
 
@@ -595,7 +597,9 @@ def test_schema_validation_is_per_call(pipeline, constrained, monkeypatch):
         generate(
             task_description="task", trajectory_slice="hello", num_steps=1, constrained_decoding_supported=constrained, options=options
         )
-    assert completion.call_args.kwargs["enable_json_schema_validation"] is constrained
+    kwargs = completion.call_args.kwargs
+    assert "enable_json_schema_validation" not in kwargs
+    assert ("response_format" in kwargs) is constrained
 
 
 def test_invalid_profile_trajectory_does_not_write_raw_messages(client, monkeypatch):

@@ -290,6 +290,29 @@ class TestCombineCluster:
     @patch("altk_evolve.llm.guidelines.clustering.completion")
     @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=["response_format"])
+    def test_combine_cluster_decodes_guidelines_sent_as_a_json_string(self, _mock_params, _mock_schema, mock_completion, monkeypatch):
+        """claude-sonnet-5 sends the whole answer as a string under "guidelines" (#488). The first
+        reply is used, and LiteLLM's process-wide schema check is left alone: setting it would
+        turn the check on for every later call in the process."""
+        import litellm
+
+        monkeypatch.setattr(clustering_module.llm_settings, "guidelines_model", "gpt-4o")
+        monkeypatch.setattr(clustering_module.llm_settings, "custom_llm_provider", "openai")
+        monkeypatch.setattr(litellm, "enable_json_schema_validation", False)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = json.dumps({"guidelines": json.dumps({"guidelines": [_cg("Merged", "strategy", [0, 1])]})})
+        mock_completion.return_value = response
+
+        result = combine_cluster([_make_entity("1", "Guideline A"), _make_entity("2", "Guideline B")])
+
+        assert [g.content for g in result] == ["Merged"]
+        mock_completion.assert_called_once()
+        assert litellm.enable_json_schema_validation is False
+
+    @patch("altk_evolve.llm.guidelines.clustering.completion")
+    @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.guidelines.clustering.get_supported_openai_params", return_value=["response_format"])
     def test_combine_cluster_uses_json_prompt_for_groq_even_when_schema_is_reported(
         self,
         _mock_params,
