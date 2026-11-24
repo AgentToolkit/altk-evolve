@@ -550,8 +550,9 @@ def _generate_guideline_result(
         [{"role": "user", "content": prompt}], purpose="consistency_guidelines", model=options.guidelines_model
     )
 
-    # No enable_json_schema_validation: LiteLLM would raise on a reply the parsing below can
-    # repair, and that parsing validates against the same model (#488).
+    # enable_json_schema_validation=False, passed explicitly: LiteLLM would raise on a reply the
+    # parsing below can repair, and that parsing validates against the same model (#488). Left
+    # out, the argument falls back to LiteLLM's process-wide flag, which a host app may turn on.
     if constrained_decoding_supported:
         raw = (
             completion(
@@ -559,6 +560,7 @@ def _generate_guideline_result(
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=False,
             )
             .choices[0]
             .message.content
@@ -569,6 +571,7 @@ def _generate_guideline_result(
                 model=options.guidelines_model,
                 messages=llm_messages,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=False,
             )
             .choices[0]
             .message.content
@@ -896,8 +899,9 @@ def _generate_fast_guideline_result(
         [{"role": "user", "content": prompt}], purpose="consistency_guidelines_fast", model=options.guidelines_model
     )
 
-    # No enable_json_schema_validation: LiteLLM would raise on a reply the parsing below can
-    # repair, and that parsing validates against the same model (#488).
+    # enable_json_schema_validation=False, passed explicitly: LiteLLM would raise on a reply the
+    # parsing below can repair, and that parsing validates against the same model (#488). Left
+    # out, the argument falls back to LiteLLM's process-wide flag, which a host app may turn on.
     if constrained_decoding_supported:
         raw = (
             completion(
@@ -905,6 +909,7 @@ def _generate_fast_guideline_result(
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=False,
             )
             .choices[0]
             .message.content
@@ -915,6 +920,7 @@ def _generate_fast_guideline_result(
                 model=options.guidelines_model,
                 messages=llm_messages,
                 custom_llm_provider=options.custom_llm_provider,
+                enable_json_schema_validation=False,
             )
             .choices[0]
             .message.content

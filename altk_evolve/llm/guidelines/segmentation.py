@@ -114,8 +114,9 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
     last_error: Exception | None = None
     for attempt in range(3):
         try:
-            # No enable_json_schema_validation: LiteLLM would raise on a reply the parsing below can
-            # repair, and that parsing validates against the same model (#488).
+            # enable_json_schema_validation=False, passed explicitly: LiteLLM would raise on a reply the
+            # parsing below can repair, and that parsing validates against the same model (#488). Left
+            # out, the argument falls back to LiteLLM's process-wide flag, which a host app may turn on.
             if constrained_decoding_supported:
                 raw = (
                     completion(
@@ -123,6 +124,7 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
                         messages=llm_messages,
                         response_format=SegmentationResponse,
                         custom_llm_provider=options.custom_llm_provider,
+                        enable_json_schema_validation=False,
                     )
                     .choices[0]
                     .message.content
@@ -133,6 +135,7 @@ def segment_trajectory(messages: list[dict], *, options: GuidelineRuntime | None
                         model=options.guidelines_model,
                         messages=llm_messages,
                         custom_llm_provider=options.custom_llm_provider,
+                        enable_json_schema_validation=False,
                     )
                     .choices[0]
                     .message.content

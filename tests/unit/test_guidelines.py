@@ -513,7 +513,7 @@ class TestParseOpenaiAgentsTrajectory:
     @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
     @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
     def test_generate_guidelines_recovers_an_answer_sent_as_a_json_string(self, _mock_params, _mock_schema, mock_completion, monkeypatch):
-        """With a response schema, the reply reaches Evolve's parser: LiteLLM isn't asked to
+        """With a response schema, the reply reaches Evolve's parser: LiteLLM is told not to
         validate it, which would raise before the parser could repair it (#488)."""
         monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
         mock_completion.return_value = _mock_completion_response({"guidelines": json.dumps({"guidelines": [_GUIDELINE]})})
@@ -523,7 +523,27 @@ class TestParseOpenaiAgentsTrajectory:
         assert results[0].guidelines[0].content == "Validate files before parsing"
         _, kwargs = mock_completion.call_args
         assert "response_format" in kwargs
-        assert "enable_json_schema_validation" not in kwargs
+        assert kwargs.get("enable_json_schema_validation") is False
+
+    @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
+    def test_generate_guidelines_recovers_with_litellms_global_check_on(self, _mock_params, _mock_schema, monkeypatch):
+        """A call that doesn't pass enable_json_schema_validation falls back to LiteLLM's
+        process-wide flag, so a host app that turns it on must not bring #488 back. This goes
+        through LiteLLM's real completion, with a mocked reply, so LiteLLM's own validator runs."""
+        import litellm
+
+        monkeypatch.setattr(litellm, "enable_json_schema_validation", True)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
+        monkeypatch.setattr(guidelines_module.llm_settings, "guidelines_model", "gpt-4o")
+        monkeypatch.setattr(guidelines_module.llm_settings, "custom_llm_provider", None)
+        reply = json.dumps({"guidelines": json.dumps({"guidelines": [_GUIDELINE]})})
+        real_completion = litellm.completion
+        monkeypatch.setattr(guidelines_module, "completion", lambda *args, **kwargs: real_completion(*args, mock_response=reply, **kwargs))
+
+        results = generate_guidelines([{"role": "user", "content": "Fix CSV parsing"}])
+
+        assert results[0].guidelines[0].content == "Validate files before parsing"
 
 
 @pytest.mark.unit

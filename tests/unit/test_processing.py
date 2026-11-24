@@ -567,7 +567,8 @@ def test_mcp_profile_readback_filters_identity(client, monkeypatch):
 @pytest.mark.parametrize("pipeline", ["standard", "fast", "accurate", "segmentation"])
 def test_litellm_is_not_asked_to_validate_the_schema(pipeline, constrained, monkeypatch):
     """Evolve validates each reply against the response model itself, after its repairs.
-    LiteLLM's check would raise first, on replies those repairs recover (#488)."""
+    LiteLLM's check would raise first, on replies those repairs recover (#488). The flag is
+    passed as False, not left out: left out, LiteLLM falls back to its process-wide flag."""
     from altk_evolve.config.guideline_runtime import GuidelineRuntime
     from altk_evolve.llm.guidelines import guidelines, consistency_guidelines, segmentation
 
@@ -598,7 +599,7 @@ def test_litellm_is_not_asked_to_validate_the_schema(pipeline, constrained, monk
             task_description="task", trajectory_slice="hello", num_steps=1, constrained_decoding_supported=constrained, options=options
         )
     kwargs = completion.call_args.kwargs
-    assert "enable_json_schema_validation" not in kwargs
+    assert kwargs.get("enable_json_schema_validation") is False
     assert ("response_format" in kwargs) is constrained
 
 

@@ -309,6 +309,7 @@ class TestCombineCluster:
         assert [g.content for g in result] == ["Merged"]
         mock_completion.assert_called_once()
         assert litellm.enable_json_schema_validation is False
+        assert mock_completion.call_args.kwargs.get("enable_json_schema_validation") is False
 
     @patch("altk_evolve.llm.guidelines.clustering.completion")
     @patch("altk_evolve.llm.guidelines.clustering.supports_response_schema", return_value=True)

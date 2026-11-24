@@ -461,8 +461,9 @@ def combine_cluster_with_members(
     last_error: Exception | None = None
     for attempt in range(3):
         try:
-            # LiteLLM isn't asked to validate the schema: it would raise on a reply the parsing below
-            # can repair, and that parsing validates against the same model (#488).
+            # enable_json_schema_validation=False, passed explicitly: LiteLLM would raise on a reply the
+            # parsing below can repair, and that parsing validates against the same model (#488). Left
+            # out, the argument falls back to LiteLLM's process-wide flag, which a host app may turn on.
             if constrained_decoding_supported:
                 content = (
                     completion(
@@ -470,6 +471,7 @@ def combine_cluster_with_members(
                         messages=llm_messages,
                         response_format=ConsolidatedGuidelineResponse,
                         custom_llm_provider=llm_settings.custom_llm_provider,
+                        enable_json_schema_validation=False,
                     )
                     .choices[0]
                     .message.content
@@ -483,6 +485,7 @@ def combine_cluster_with_members(
                         model=llm_settings.guidelines_model,
                         messages=llm_messages,
                         custom_llm_provider=llm_settings.custom_llm_provider,
+                        enable_json_schema_validation=False,
                     )
                     .choices[0]
                     .message.content
