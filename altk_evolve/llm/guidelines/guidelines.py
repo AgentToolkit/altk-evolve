@@ -71,7 +71,9 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
     3. ``guidelines`` decoded from a string of JSON — asked for structured output, some
        models return the whole answer encoded once more under its own key,
        ``{"guidelines": "{\\"guidelines\\": [...]}"}``. A response schema doesn't prevent
-       it: claude-sonnet-5 through a LiteLLM proxy does it (#488).
+       it: claude-sonnet-5 through a LiteLLM proxy does it (#488). The decoded text is held
+       to the same rule as the response: the backslash repair applies to it too, and only
+       text that needed that repair has its control escapes checked (see below).
 
     A repair that succeeds is logged at INFO, so a prompt or model that keeps producing
     off-contract output stays visible instead of being silently rescued.
@@ -100,16 +102,14 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
             first_error = first_error or e
             continue
 
-        # Each candidate: the shape repair it needed, the payload, and the JSON text of any
-        # field decoded from a string, whose own escapes are scanned too.
-        payloads: list[tuple[str, object, list[str]]] = [("", parsed, [])]
+        # Each candidate: the shape repair it needed, the payload, and any decoded text whose
+        # control escapes are suspect, with why.
+        payloads: list[tuple[str, object, list[str], str]] = [("", parsed, [], "")]
         if isinstance(parsed, list):
-            payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}, []))
-        decoded, names = GuidelineGenerationResponse.decode_string_fields(parsed)
-        if names:
-            payloads.append((f"decoded {', '.join(f'"{n}"' for n in names)} from a JSON string", decoded, [parsed[n] for n in names]))
+            payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}, [], ""))
+        payloads += _string_encoded_candidates(parsed, response_repaired=bool(parse_repair))
 
-        for shape_repair, payload, inner_texts in payloads:
+        for shape_repair, payload, suspect_texts, suspect_reason in payloads:
             try:
                 guidelines = GuidelineGenerationResponse.model_validate(payload).guidelines
             except ValidationError as e:
@@ -119,13 +119,12 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
             # Only a response that needed the backslash repair is suspect: that is the
             # evidence the model was not escaping backslashes, which is what makes its
             # remaining \t/\n/\r ambiguous. A well-formed response keeps its control escapes.
-            # So is text decoded from a JSON string: serialized twice, it loses a backslash
-            # whenever one level of escaping is missed, and a lost one reads as \t or \n.
+            # Decoded text follows the same rule (see _string_encoded_candidates).
             ambiguous = literals_with_ambiguous_control_escapes(text) if parse_repair else []
             reason = "escaping lone backslashes made it parse"
-            if not ambiguous and inner_texts:
-                ambiguous = [literal for inner in inner_texts for literal in literals_with_ambiguous_control_escapes(inner)]
-                reason = "its guidelines had to be decoded from a JSON string"
+            if not ambiguous and suspect_texts:
+                ambiguous = [literal for suspect in suspect_texts for literal in literals_with_ambiguous_control_escapes(suspect)]
+                reason = suspect_reason
             if ambiguous:
                 # Fail closed: a plausible-looking guideline with silently corrupted text is
                 # worse than none, and the operator can regenerate. Whole response, not just
@@ -144,6 +143,40 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
 
     logger.warning(f"Failed to parse {context} guideline response: {first_error}. Response: {repr(clean_response[:500])}")
     return None
+
+
+def _string_encoded_candidates(parsed: object, *, response_repaired: bool) -> list[tuple[str, object, list[str], str]]:
+    """Candidates for a response whose ``guidelines`` arrived as a string of JSON, for
+    ``parse_guideline_response``: the shape repair, the payload, and the decoded text whose
+    control escapes are suspect, with why.
+
+    The decoded text is held to the same rule as the response. It is decoded as it is first,
+    then with its lone backslashes escaped. Only text that needed that repair shows its
+    backslashes going unescaped, so only then are its \\t/\\n/\\r/\\b/\\f checked: text that
+    parses as it is keeps its control escapes, a real newline in a step included, as a response
+    sent once does. When the response itself needed the repair, its decoded text is checked too.
+    """
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("guidelines"), str):
+        return []
+    inner = parsed["guidelines"]
+    label = 'decoded "guidelines" from a JSON string'
+    candidates: list[tuple[str, object, list[str], str]] = []
+    decoded, names = GuidelineGenerationResponse.decode_string_fields(parsed)
+    if names:
+        candidates.append((label, decoded, [inner] if response_repaired else [], "escaping lone backslashes made it parse"))
+    escaped = _escape_lone_backslashes(inner)
+    if escaped != inner:
+        decoded, names = GuidelineGenerationResponse.decode_string_fields({**parsed, "guidelines": escaped})
+        if names:
+            candidates.append(
+                (
+                    f"{label}, escaping lone backslashes in it",
+                    decoded,
+                    [escaped],
+                    "escaping lone backslashes made its guidelines, sent as a string of JSON, parse",
+                )
+            )
+    return candidates
 
 
 def trajectory_step_window(total_steps: int, *, max_steps: int, tail_steps: int) -> tuple[int, int]:

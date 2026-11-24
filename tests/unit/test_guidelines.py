@@ -84,15 +84,49 @@ class TestParseGuidelineResponse:
         raw = json.dumps({"guidelines": json.dumps({"guidelines": json.dumps([_GUIDELINE])})})
         assert parse_guideline_response(raw, "standard") is None
 
-    def test_discards_a_decoded_answer_with_a_single_backslash_control_escape(self, caplog):
-        r"""Serialized twice, text loses a backslash whenever one level of escaping is missed.
-        The reply parses on the first attempt, so only the decoded text shows it: C:\temp
-        would come back with a tab in it. Fail closed, as the backslash repair does."""
+    def test_a_well_formed_decoded_answer_keeps_its_control_escapes(self):
+        r"""Decoded text that parses as it is gets the trust a response sent once does: its
+        \t is a tab. Nothing shows a lost backslash, and a real \n or \t can't be told
+        apart from one anyway."""
         inner = '[{"content": "Open C:\\temp", "rationale": "r", "category": "strategy", "trigger": "t"}]'
+        guidelines = parse_guideline_response(json.dumps({"guidelines": inner}), "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == "Open C:\temp"
+
+    def test_a_decoded_answer_with_a_real_newline_is_recovered(self):
+        """Encoded twice, a real newline in a step reads as \\n in the decoded text. It is
+        recovered, as it is when the same answer is sent once (#489 review)."""
+        inner = json.dumps({"guidelines": [{**_GUIDELINE, "implementation_steps": ["first line\nsecond line"]}]})
+        twice = parse_guideline_response(json.dumps({"guidelines": inner}), "standard")
+        once = parse_guideline_response(inner, "standard")
+        assert twice is not None and once is not None
+        assert twice[0].implementation_steps == once[0].implementation_steps == ["first line\nsecond line"]
+
+    def test_the_backslash_repair_applies_to_a_decoded_answer(self, caplog):
+        r"""LaTeX \( \) in the decoded text is repaired as it is in a response sent once."""
+        inner = '[{"content": "State bounds as \\( n \\le 10 \\)", "rationale": "r", "category": "strategy", "trigger": "t"}]'
+        with caplog.at_level(logging.INFO):
+            guidelines = parse_guideline_response(json.dumps({"guidelines": inner}), "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == r"State bounds as \( n \le 10 \)"
+        assert 'decoded "guidelines" from a JSON string, escaping lone backslashes in it' in caplog.text
+
+    def test_discards_a_decoded_answer_whose_repair_leaves_an_ambiguous_escape(self, caplog):
+        r"""Text that needed the backslash repair shows the model not escaping backslashes, so
+        its remaining \t is as likely C:\temp as a tab: fail closed, as for a response sent once."""
+        inner = '[{"content": "Bound \\( x \\) in C:\\temp", "rationale": "r", "category": "strategy", "trigger": "t"}]'
         with caplog.at_level(logging.WARNING):
             assert parse_guideline_response(json.dumps({"guidelines": inner}), "standard") is None
-        assert "its guidelines had to be decoded from a JSON string" in caplog.text
+        assert "made its guidelines, sent as a string of JSON, parse" in caplog.text
         assert "Recovered" not in caplog.text
+
+    def test_decoded_text_is_checked_when_the_response_needed_the_repair(self, caplog):
+        r"""When the response itself needed the backslash repair, its decoded text is suspect
+        too, though it parses as it is."""
+        raw = r'{"guidelines": "[{\"content\": \"Open C:\\temp\", \"rationale\": \"r\", \"category\": \"strategy\", \"trigger\": \"t\"}]", "note": "see \(x\)"}'
+        with caplog.at_level(logging.WARNING):
+            assert parse_guideline_response(raw, "standard") is None
+        assert "escaping lone backslashes made it parse" in caplog.text
 
     def test_a_decoded_answer_keeps_an_escaped_backslash(self):
         inner = json.dumps([{**_GUIDELINE, "content": r"Open C:\temp"}])

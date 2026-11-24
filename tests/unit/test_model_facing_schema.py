@@ -193,15 +193,23 @@ _TEXT_FIELD = {
 
 
 @pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
-def test_decoded_text_with_a_single_backslash_control_escape_is_refused(response, caplog):
-    r"""C:\temp in text decoded from a JSON string would come back with a tab in it."""
+def test_decoded_text_keeps_its_control_escapes(response):
+    r"""Decoded text that parses as it is is used as a reply sent once would be: its \t is a tab."""
     key, item = _ITEMS[response]
-    inner = json.dumps([{**item, _TEXT_FIELD[response]: "Open C:@"}]).replace("@", "\\temp")
-    with caplog.at_level(logging.WARNING), pytest.raises(ValidationError) as excinfo:
-        response.model_validate_reply({key: inner}, "test")
-    assert excinfo.value.errors()[0]["input"] == inner
-    assert f'Discarding test response: "{key}" had to be decoded from a JSON string' in caplog.text
-    assert "Recovered" not in caplog.text
+    field = _TEXT_FIELD[response]
+    inner = json.dumps([{**item, field: "Open C:@"}]).replace("@", "\\temp")
+    result = response.model_validate_reply({key: inner}, "test")
+    assert getattr(getattr(result, key)[0], field) == "Open C:\temp"
+
+
+@pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
+def test_decoded_text_keeps_a_real_newline(response):
+    """Encoded twice, a real newline reads as \\n in the decoded text. It is kept (#489 review)."""
+    key, item = _ITEMS[response]
+    field = _TEXT_FIELD[response]
+    inner = json.dumps([{**item, field: "first line\nsecond line"}])
+    result = response.model_validate_reply({key: inner}, "test")
+    assert getattr(getattr(result, key)[0], field) == "first line\nsecond line"
 
 
 @pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
