@@ -84,6 +84,22 @@ class TestParseGuidelineResponse:
         raw = json.dumps({"guidelines": json.dumps({"guidelines": json.dumps([_GUIDELINE])})})
         assert parse_guideline_response(raw, "standard") is None
 
+    def test_discards_a_decoded_answer_with_a_single_backslash_control_escape(self, caplog):
+        r"""Serialized twice, text loses a backslash whenever one level of escaping is missed.
+        The reply parses on the first attempt, so only the decoded text shows it: C:\temp
+        would come back with a tab in it. Fail closed, as the backslash repair does."""
+        inner = '[{"content": "Open C:\\temp", "rationale": "r", "category": "strategy", "trigger": "t"}]'
+        with caplog.at_level(logging.WARNING):
+            assert parse_guideline_response(json.dumps({"guidelines": inner}), "standard") is None
+        assert "its guidelines had to be decoded from a JSON string" in caplog.text
+        assert "Recovered" not in caplog.text
+
+    def test_a_decoded_answer_keeps_an_escaped_backslash(self):
+        inner = json.dumps([{**_GUIDELINE, "content": r"Open C:\temp"}])
+        guidelines = parse_guideline_response(json.dumps({"guidelines": inner}), "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == r"Open C:\temp"
+
     def test_repairs_lone_backslashes(self):
         """LaTeX-style \\( \\) in a string value is not a valid JSON escape and fails to parse."""
         raw = r'{"guidelines": [{"content": "Write \( x \) inline", "rationale": "r", "category": "strategy", "trigger": "t"}]}'

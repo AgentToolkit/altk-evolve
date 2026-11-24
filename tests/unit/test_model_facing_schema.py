@@ -185,6 +185,33 @@ def test_a_string_that_does_not_hold_the_list_raises_the_error_for_the_reply_as_
     assert excinfo.value.errors()[0]["input"] == value
 
 
+_TEXT_FIELD = {
+    GuidelineGenerationResponse: "content",
+    ConsolidatedGuidelineResponse: "content",
+    SegmentationResponse: "generalized_description",
+}
+
+
+@pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
+def test_decoded_text_with_a_single_backslash_control_escape_is_refused(response, caplog):
+    r"""C:\temp in text decoded from a JSON string would come back with a tab in it."""
+    key, item = _ITEMS[response]
+    inner = json.dumps([{**item, _TEXT_FIELD[response]: "Open C:@"}]).replace("@", "\\temp")
+    with caplog.at_level(logging.WARNING), pytest.raises(ValidationError) as excinfo:
+        response.model_validate_reply({key: inner}, "test")
+    assert excinfo.value.errors()[0]["input"] == inner
+    assert f'Discarding test response: "{key}" had to be decoded from a JSON string' in caplog.text
+    assert "Recovered" not in caplog.text
+
+
+@pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
+def test_decoded_text_keeps_an_escaped_backslash(response):
+    key, item = _ITEMS[response]
+    field = _TEXT_FIELD[response]
+    result = response.model_validate_reply({key: json.dumps([{**item, field: r"Open C:\temp"}])}, "test")
+    assert getattr(getattr(result, key)[0], field) == r"Open C:\temp"
+
+
 def test_a_decoded_list_is_still_validated():
     bad = {"content": "c", "rationale": "r", "category": "strategy", "trigger": "t", "support": 0}
     with pytest.raises(ValidationError):

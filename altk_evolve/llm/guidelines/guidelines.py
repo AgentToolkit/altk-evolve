@@ -23,7 +23,7 @@ from altk_evolve.schema.guidelines import (
     GuidelineGenerationResponse,
     GuidelineGenerationResult,
 )
-from altk_evolve.utils.utils import clean_llm_response
+from altk_evolve.utils.utils import clean_llm_response, literals_with_ambiguous_control_escapes
 
 if TYPE_CHECKING:
     from altk_evolve.processing.models import TrajectoryOutcome
@@ -50,69 +50,10 @@ _MAX_DETAIL_CHARS = 2500
 # backslash matches group 2 as empty and is still doubled.
 _JSON_ESCAPE_RE = re.compile(r'\\(?:(["\\/bfnrt]|u[0-9a-fA-F]{4})|(.|$))', re.DOTALL)
 
-# One JSON string literal, escapes consumed so an escaped quote does not end it early.
-_JSON_STRING_LITERAL_RE = re.compile(r'"(?:\\.|[^"\\])*"', re.DOTALL)
-
-# Escapes that turn a *single* backslash into a C0 control character. These are the ones a
-# model may have meant as a literal backslash. \uXXXX is excluded on purpose: see below.
-_AMBIGUOUS_CONTROL_ESCAPES = frozenset("bfnrt")
-
 
 def _escape_lone_backslashes(text: str) -> str:
     """Double every backslash that does not already start a valid JSON escape."""
     return _JSON_ESCAPE_RE.sub(lambda m: m.group(0) if m.group(1) else "\\\\" + m.group(2), text)
-
-
-def _literals_with_ambiguous_control_escapes(text: str) -> list[str]:
-    """String literals in ``text`` carrying a ``\\b``, ``\\f``, ``\\n``, ``\\r`` or ``\\t``.
-
-    Those are the escapes a model may have meant as a *literal backslash* — a Windows path
-    or a regex — in a response it demonstrably failed to escape properly. Decoding one
-    anyway yields a guideline that looks valid but whose text is silently wrong, which is
-    then embedded and served on.
-
-    Two things this deliberately does not flag:
-
-    - ``\\uXXXX``, even where it encodes the same character. A model writing ``\\u0009``
-      spelled a control character out on purpose; that is not what failing to escape a path
-      looks like. Only the single-backslash forms are ambiguous.
-    - A correctly escaped ``\\\\`` followed by ``t``, which decodes to a backslash and a
-      ``t``, not a tab. The scan consumes ``\\\\`` as one escape, so it is not misread.
-
-    Scanning *literals* is what makes both of those possible, and is why neither the decoded
-    values nor the whole document is consulted. A decoded value cannot distinguish a tab that
-    came from ``\\t`` from one that came from ``\\u0009``, nor from one the model typed as a
-    path separator — the escape that corrupts consumes its own backslash, so nothing survives
-    in the value to key on. And a pretty-printed document's newlines sit *between* tokens,
-    never inside a literal, so a document-wide character scan would whitelist ``\\n`` for
-    every value and let exactly this corruption through.
-
-    What this cannot do is tell an intended ``\\t`` from a misread one: ``"name\\tvalue"``
-    and ``"C:\\temp"`` are the same shape, one valid escape the repair never touches. Since
-    the two are indistinguishable, the caller fails closed on the whole response — a
-    discarded response is regenerable, whereas corrupted text served into the store is not.
-
-    Splitting into literals is for the *log message* — so the warning can name the literal an
-    operator has to look at — not for correctness. Valid JSON cannot carry a backslash outside
-    a string, so scanning the whole document for the same escapes would reach the identical
-    verdict; no test distinguishes the two, and none can.
-
-    Returns the offending literals, for logging. Empty means nothing ambiguous was found.
-    """
-    offenders = []
-    for literal in _JSON_STRING_LITERAL_RE.findall(text):
-        body = literal[1:-1]
-        i = 0
-        while i < len(body):
-            if body[i] != "\\" or i + 1 >= len(body):
-                i += 1
-                continue
-            if body[i + 1] in _AMBIGUOUS_CONTROL_ESCAPES:
-                offenders.append(literal)
-                break
-            # Consume the whole escape, so the second half of \\ is not read as a new one.
-            i += 2
-    return offenders
 
 
 def parse_guideline_response(clean_response: str, context: str) -> list[Guideline] | None:
@@ -159,14 +100,16 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
             first_error = first_error or e
             continue
 
-        payloads: list[tuple[str, object]] = [("", parsed)]
+        # Each candidate: the shape repair it needed, the payload, and the JSON text of any
+        # field decoded from a string, whose own escapes are scanned too.
+        payloads: list[tuple[str, object, list[str]]] = [("", parsed, [])]
         if isinstance(parsed, list):
-            payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}))
+            payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}, []))
         decoded, names = GuidelineGenerationResponse.decode_string_fields(parsed)
         if names:
-            payloads.append((f"decoded {', '.join(f'"{n}"' for n in names)} from a JSON string", decoded))
+            payloads.append((f"decoded {', '.join(f'"{n}"' for n in names)} from a JSON string", decoded, [parsed[n] for n in names]))
 
-        for shape_repair, payload in payloads:
+        for shape_repair, payload, inner_texts in payloads:
             try:
                 guidelines = GuidelineGenerationResponse.model_validate(payload).guidelines
             except ValidationError as e:
@@ -176,14 +119,20 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
             # Only a response that needed the backslash repair is suspect: that is the
             # evidence the model was not escaping backslashes, which is what makes its
             # remaining \t/\n/\r ambiguous. A well-formed response keeps its control escapes.
-            ambiguous = _literals_with_ambiguous_control_escapes(text) if parse_repair else []
+            # So is text decoded from a JSON string: serialized twice, it loses a backslash
+            # whenever one level of escaping is missed, and a lost one reads as \t or \n.
+            ambiguous = literals_with_ambiguous_control_escapes(text) if parse_repair else []
+            reason = "escaping lone backslashes made it parse"
+            if not ambiguous and inner_texts:
+                ambiguous = [literal for inner in inner_texts for literal in literals_with_ambiguous_control_escapes(inner)]
+                reason = "its guidelines had to be decoded from a JSON string"
             if ambiguous:
                 # Fail closed: a plausible-looking guideline with silently corrupted text is
                 # worse than none, and the operator can regenerate. Whole response, not just
                 # the offending literal — a guideline set is generated as one unit, and
                 # dropping part of it would silently change what the model was asked for.
                 logger.warning(
-                    f"Discarding {context} guideline response: escaping lone backslashes made it parse, but "
+                    f"Discarding {context} guideline response: {reason}, but "
                     f"{len(ambiguous)} string literal(s) still carry a single-backslash \\t/\\n/\\r/\\b/\\f, "
                     "which this model's escaping makes as likely to be a path or regex as a control "
                     f"character. First: {repr(ambiguous[0][:200])}"

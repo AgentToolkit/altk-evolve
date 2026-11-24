@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from typing import Any, Literal, Self, get_origin
 
+from altk_evolve.utils.utils import literals_with_ambiguous_control_escapes
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_TASK_DESCRIPTION = "Task description unknown"
@@ -164,6 +166,12 @@ class _ModelFacingSchema(BaseModel):
 
         A repair is logged at INFO, so a model that keeps needing it stays visible. A reply that
         doesn't validate either way raises the error for the reply as the model sent it.
+
+        Decoded text whose string literals carry a single-backslash ``\\t``, ``\\n``, ``\\r``,
+        ``\\b`` or ``\\f`` is refused, with a warning, and the same error is raised. Serialized
+        twice, the text loses a backslash whenever one level of escaping is missed, and a lost
+        one reads as a control character: ``C:\\temp`` would come back with a tab in it.
+        ``parse_guideline_response`` fails closed the same way.
         """
         try:
             return cls.model_validate(payload)
@@ -171,11 +179,24 @@ class _ModelFacingSchema(BaseModel):
             decoded, names = cls.decode_string_fields(payload)
             if not names:
                 raise
+            fields = ", ".join(f'"{n}"' for n in names)
+            ambiguous = [literal for n in names for literal in literals_with_ambiguous_control_escapes(payload[n])]
+            if ambiguous:
+                logger.warning(
+                    "Discarding %s response: %s had to be decoded from a JSON string, but %d string literal(s) in it "
+                    "carry a single-backslash \\t/\\n/\\r/\\b/\\f, as likely a lost backslash as a control character. "
+                    "First: %r",
+                    context,
+                    fields,
+                    len(ambiguous),
+                    ambiguous[0][:200],
+                )
+                raise error from None
             try:
                 result = cls.model_validate(decoded)
             except ValidationError:
                 raise error from None
-        logger.info("Recovered %s response after repair: decoded %s from a JSON string.", context, ", ".join(f'"{n}"' for n in names))
+        logger.info("Recovered %s response after repair: decoded %s from a JSON string.", context, fields)
         return result
 
 
