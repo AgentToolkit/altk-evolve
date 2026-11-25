@@ -1,0 +1,1338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<script src="/theme.js"></script>
+<script src="/confirm.js"></script>
+<title>ALTK Forge</title>
+<style>
+/* Pipelines, observability filters and integrations. Same tokens as viewer.html. */
+:root {
+  --bg: #0e1114;
+  --surface: #151a1f;
+  --surface-2: #1b2128;
+  --surface-3: #232b34;
+  --line: #2a323b;
+  --line-2: #3a4450;
+  --placeholder: #4a535e;
+  --fg: #e4e8ec;
+  --fg-2: #aab3bd;
+  --fg-3: #7d8794;
+  --data: #56b6c2;
+  --critical: #ef7474;
+  --critical-bg: #2c1618;
+  --warning: #e2b347;
+  --warning-bg: #29220f;
+  --good: #57c457;
+  --good-bg: #13241a;
+  --langfuse: #e0784f;
+  --phoenix: #b79cf0;
+  --filesystem: #5fa8d3;
+  --evolve: #6cc08b;
+  --prod: #57c457;
+  --test: #e2b347;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --on-data: var(--bg);
+  --backdrop: rgb(0 0 0 / 0.55);
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --surface-3: #e6e9ee;
+  --line: #dde1e7;
+  --line-2: #c5cbd4;
+  --placeholder: #b8bec7;
+  --fg: #1b2129;
+  --fg-2: #48525e;
+  --fg-3: #6b7480;
+  --data: #0e7490;
+  --on-data: #ffffff;
+  --critical: #c42b2b;
+  --critical-bg: #fde8e8;
+  --warning: #9a6200;
+  --warning-bg: #fdf1d6;
+  --good: #1f7a33;
+  --good-bg: #e3f4e6;
+  --langfuse: #c4552a;
+  --phoenix: #6d3fc4;
+  --filesystem: #1f6f9e;
+  --evolve: #237a45;
+  --prod: #1f7a33;
+  --test: #9a6200;
+  --backdrop: rgb(20 26 34 / 0.35);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--font); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+a { color: var(--data); }
+
+.top { border-bottom: 1px solid var(--line); background: var(--surface); }
+.top-in, main { max-width: 1180px; margin: 0 auto; padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
+.top-in { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding-block: 14px; }
+.brand { font-size: 17px; font-weight: 600; }
+.brand small { display: block; font-size: 12px; font-weight: 400; color: var(--fg-3); }
+.theme-btn { margin-left: auto; order: 2; }
+.tabs { display: flex; gap: 4px; }
+.tabs button { border: 1px solid transparent; background: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; color: var(--fg-2); }
+.tabs button[aria-selected="true"] { background: var(--surface-3); border-color: var(--line-2); color: var(--fg); }
+main { padding-block: 24px 64px; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; }
+.bar h1 { font-size: 18px; margin: 0; }
+.bar .hint { color: var(--fg-3); font-size: 13px; }
+.bar .grow { flex: 1; }
+
+.btn { border: 1px solid var(--line-2); background: var(--surface-2); border-radius: 6px; padding: 6px 12px; cursor: pointer; white-space: nowrap; text-decoration: none; color: var(--fg); display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { background: var(--surface-3); }
+.btn.primary { background: var(--data); border-color: var(--data); color: var(--on-data); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger { color: var(--critical); }
+.btn.small { padding: 3px 9px; font-size: 13px; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.45; cursor: default; pointer-events: none; }
+
+.cards { display: grid; gap: 12px; }
+.card { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.card-head h2 { font-size: 16px; margin: 0; overflow-wrap: anywhere; }
+.card-head .id { color: var(--fg-3); font-family: var(--mono); font-size: 12px; }
+.card-head .actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; }
+.desc { color: var(--fg-2); margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 13px; color: var(--fg-3); align-items: center; }
+.meta b { color: var(--fg); font-weight: 500; }
+.kind { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 4px; background: var(--surface-3); color: var(--fg); }
+.kind i { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--fg-3)); }
+.kind.langfuse { --c: var(--langfuse); }
+.kind.phoenix { --c: var(--phoenix); }
+.kind.filesystem { --c: var(--filesystem); }
+.kind.altk_evolve { --c: var(--evolve); }
+.dir { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-3); }
+.mode { font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+.mode.test { color: var(--test); background: var(--warning-bg); border: 1px dashed var(--test); }
+.mode.production { color: var(--prod); background: var(--good-bg); border: 1px solid var(--prod); }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; }
+.flow .arrow { color: var(--fg-3); }
+.node { border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 10px; background: var(--surface-2); display: grid; gap: 2px; min-width: 0; }
+.node small { color: var(--fg-3); font-size: 12px; }
+.node.missing { border-style: dashed; color: var(--fg-3); }
+.stats { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--fg-3); }
+.stats b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.crit { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.crit span { font-size: 12px; padding: 1px 8px; border-radius: 4px; background: var(--surface-3); color: var(--fg-2); overflow-wrap: anywhere; }
+.crit b { color: var(--fg); font-weight: 500; }
+.inputs { display: grid; gap: 10px; }
+.input-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }
+.input-row .head { display: flex; gap: 8px; align-items: end; }
+.input-row .head .field { flex: 1; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.checks label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.folder-path { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.folder-path code { font-family: var(--mono); font-size: 12px; color: var(--fg-2); overflow-wrap: anywhere; min-width: 0; }
+.folder-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--line); border-radius: 8px; height: min(320px, 45dvh); overflow: auto; }
+.folder-list button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--fg); font: inherit; font-size: 14px; padding: 5px 8px; border-radius: 5px; cursor: pointer; overflow-wrap: anywhere; }
+.folder-list button:hover, .folder-list button:focus-visible { background: var(--surface-2); }
+.folder-list .empty-dir { color: var(--fg-3); font-size: 13px; padding: 6px 8px; }
+.path-row { display: flex; gap: 6px; }
+.path-row input { flex: 1; min-width: 0; }
+.check-field { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; cursor: pointer; justify-self: start; }
+.cond { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.2fr) auto; gap: 6px; align-items: center; }
+
+.op-val { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 6px; }
+
+fieldset.group { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 12px; margin: 0; display: grid; gap: 10px; min-width: 0; }
+fieldset.group legend { font-size: 13px; color: var(--fg-2); padding: 0 4px; }
+fieldset.group legend small { color: var(--fg-3); }
+dialog.wide { width: min(760px, calc(100vw - 32px)); }
+.worker-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--fg-3); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); display: inline-block; }
+.dot.on { background: var(--good); }
+.dot.run { background: var(--warning); }
+.dot.off { background: var(--critical); }
+.pill { font-size: 12px; padding: 1px 8px; border-radius: 4px; background: var(--surface-3); color: var(--fg-2); }
+.pill.ok { color: var(--good); background: var(--good-bg); }
+.pill.bad { color: var(--critical); background: var(--critical-bg); }
+.pill.run { color: var(--warning); background: var(--warning-bg); }
+
+.job { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; }
+.progress { height: 6px; background: var(--surface-3); border-radius: 3px; overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--data); transition: width 0.3s; }
+.progress.indet i { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+@keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .progress.indet i { animation: none; width: 100%; opacity: 0.4; } }
+pre.log { margin: 6px 0 0; max-height: 220px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: 12px/1.5 var(--mono); color: var(--fg-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+details summary { cursor: pointer; color: var(--fg-2); font-size: 13px; }
+table.runs { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+table.runs th, table.runs td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.runs th { color: var(--fg-3); font-weight: 500; }
+.table-wrap { overflow-x: auto; }
+.empty { border: 1px dashed var(--line-2); border-radius: 8px; padding: 28px; text-align: center; color: var(--fg-3); display: grid; gap: 12px; justify-items: center; }
+.supported { margin-top: 16px; }
+
+/* ---------- dialogs ---------- */
+dialog { border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); color: var(--fg); padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+dialog::backdrop { background: var(--backdrop); }
+dialog form { display: grid; gap: 14px; padding: 20px; }
+dialog h3 { margin: 0; font-size: 17px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field > span { font-size: 13px; color: var(--fg-2); }
+.field small { color: var(--fg-3); font-size: 12px; }
+/* Every text input, select and date/time control in a form looks the same: one height, font and padding. */
+dialog input:not([type=radio]):not([type=checkbox]), dialog select, dialog textarea {
+  width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 6px;
+  background: var(--bg); font: 14px/1.4 var(--font); color: var(--fg); }
+dialog textarea { height: auto; min-height: 60px; padding: 8px 10px; resize: vertical; }
+dialog input::-webkit-datetime-edit { padding: 0; }
+dialog input::-webkit-calendar-picker-indicator { opacity: 0.6; cursor: pointer; }
+:root:not([data-theme="light"]) dialog input::-webkit-calendar-picker-indicator { filter: invert(1); }
+dialog input:focus-visible, dialog select:focus-visible, dialog textarea:focus-visible { outline: 2px solid var(--data); outline-offset: -1px; border-color: var(--data); }
+dialog input:not([type=radio]):not([type=checkbox]):disabled, dialog select:disabled { opacity: 0.5; }
+dialog input[aria-invalid="true"] { border-color: var(--critical); }
+.row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.range { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 12px; margin: 0; display: grid; gap: 10px; min-width: 0; }
+.range legend { font-size: 13px; color: var(--fg-2); padding: 0 4px; }
+.range legend small { color: var(--fg-3); }
+.range-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+.seg label { position: relative; cursor: pointer; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: block; padding: 3px 10px; font-size: 13px; color: var(--fg-2); }
+.seg input:checked + span { background: var(--surface-3); color: var(--fg); font-weight: 600; }
+.seg input:focus-visible + span { outline: 2px solid var(--data); outline-offset: -2px; }
+.presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip-btn { border: 1px solid var(--line-2); background: none; border-radius: 999px; padding: 1px 9px; font-size: 12px; color: var(--fg-2); cursor: pointer; }
+.chip-btn:hover { color: var(--fg); background: var(--surface-2); }
+.dt { display: grid; grid-template-columns: minmax(0, 1fr) 7.5em auto; gap: 6px; }
+.dt .clear-btn { height: 36px; }
+
+.range-sum { font-size: 13px; color: var(--fg-2); display: grid; gap: 2px; }
+.range-sum .alt { color: var(--fg-3); font-size: 12px; }
+.range-sum .bad { color: var(--critical); }
+.range-check { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: end; color: var(--fg-2); }
+.range-check > span { font-size: 13px; align-self: center; }
+.range-check ul { margin: 4px 0 0; padding-left: 18px; color: var(--fg-3); font-size: 12px; }
+.kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.kinds label { position: relative; border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; cursor: pointer; display: grid; gap: 4px; }
+.kinds label:has(input:checked) { border-color: var(--data); background: var(--surface-2); }
+.kinds label:has(input:disabled) { cursor: default; }
+.kinds label:has(input:focus-visible) { outline: 2px solid var(--data); outline-offset: 2px; }
+.kinds input { position: absolute; opacity: 0; pointer-events: none; }
+.kinds small { color: var(--fg-3); font-size: 12px; }
+.note { font-size: 13px; color: var(--warning); background: var(--warning-bg); border-radius: 6px; padding: 8px 10px; margin: 0; }
+.err { font-size: 13px; color: var(--critical); background: var(--critical-bg); border-radius: 6px; padding: 8px 10px; margin: 0; }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.dialog-actions .left { margin-right: auto; }
+.test-result:empty { display: none; }
+.settings-card { max-width: 860px; }
+.settings-card .dialog-actions { align-items: center; }
+#settings-form input { width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--bg); font: 14px/1.4 var(--font); }
+#settings-form input:focus-visible { outline: 2px solid var(--data); outline-offset: -1px; border-color: var(--data); }
+.mem-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mem-grid .dir { grid-column: 1 / -1; margin-top: 4px; }
+.kinds b { font-weight: 600; }
+.kinds .mode, .kinds .kind { justify-self: start; }
+/* converters */
+.conv-list { display: grid; gap: 6px; }
+.conv { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 13px; color: var(--fg-3); padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.conv b { color: var(--fg); font-weight: 600; }
+.conv .grow { flex: 1; }
+.conv .why { color: var(--fg-2); overflow-wrap: anywhere; }
+dialog.code { width: min(1100px, calc(100vw - 32px)); }
+dialog.code form { gap: 12px; }
+.code-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.code-head h3 { margin-right: auto; }
+.code-tabs { display: inline-flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+.code-tabs button { border: 0; background: none; padding: 4px 12px; font-size: 13px; color: var(--fg-2); cursor: pointer; }
+.code-tabs button[aria-pressed="true"] { background: var(--surface-3); color: var(--fg); font-weight: 600; }
+pre.code { margin: 0; max-height: min(62vh, 720px); overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  padding: 10px 12px; font: 12px/1.55 var(--mono); color: var(--fg); white-space: pre; tab-size: 4; }
+pre.code .add { color: var(--good); background: var(--good-bg); display: block; }
+pre.code .del { color: var(--critical); background: var(--critical-bg); display: block; }
+pre.code .hunk { color: var(--data); display: block; }
+pre.code .ln { color: var(--fg-3); user-select: none; display: inline-block; width: 3.5em; }
+table.hist { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.hist th, table.hist td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.hist th { color: var(--fg-3); font-weight: 500; }
+table.hist td.why { overflow-wrap: anywhere; color: var(--fg-2); }
+.hist-v { border: 0; background: none; color: var(--data); cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+@media (max-width: 640px) { .mem-grid { grid-template-columns: minmax(0, 1fr); } }
+.test-result { font-size: 13px; color: var(--fg-2); }
+
+@media (max-width: 640px) {
+  .row2, .kinds { grid-template-columns: minmax(0, 1fr); }
+  .cond { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .op-val { grid-template-columns: minmax(0, 1fr); }
+  .card-head .actions { margin-left: 0; width: 100%; }
+  .tabs { margin-left: 0; }
+  .theme-btn { margin-left: 0; }
+}
+/* A placeholder is an example, not a value: barely visible, so typed text stands out. */
+::placeholder { color: var(--placeholder); opacity: 1; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">ALTK Forge<small>Admin console: check that memory is fed well, then run the pipeline in production</small></div>
+    <button class="btn small theme-btn" data-theme-toggle type="button" aria-pressed="false">☀ Light</button>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tab-pipelines" aria-selected="true" aria-controls="pipelines">Pipelines</button>
+      <button role="tab" id="tab-filters" aria-selected="false" aria-controls="filters">Observability filters</button>
+      <button role="tab" id="tab-integrations" aria-selected="false" aria-controls="integrations">Integrations</button>
+      <button role="tab" id="tab-settings" aria-selected="false" aria-controls="settings">Settings</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section id="pipelines" role="tabpanel" aria-labelledby="tab-pipelines">
+    <div class="bar">
+      <h1>Pipelines</h1>
+      <span class="hint">Traces selected by filters → trajectories → memory. New traces are processed in the background; each trace once.</span>
+      <span class="grow"></span>
+      <button class="btn primary" id="new-pipe">+ New pipeline</button>
+    </div>
+    <div id="pipe-list" class="cards"></div>
+  </section>
+
+  <section id="filters" role="tabpanel" aria-labelledby="tab-filters" hidden>
+    <div class="bar">
+      <h1>Observability filters</h1>
+      <span class="hint">Which traces interest us. Every criterion is optional. A filter can be used by many pipelines and connections.</span>
+      <span class="grow"></span>
+      <button class="btn primary" id="new-filter">+ New filter</button>
+    </div>
+    <div id="filter-list" class="cards"></div>
+  </section>
+
+  <section id="integrations" role="tabpanel" aria-labelledby="tab-integrations" hidden>
+    <div class="bar">
+      <h1>Integrations</h1>
+      <span class="hint">Input: where traces come from. Output: the memory trajectories are sent to. Secrets stay on this machine.</span>
+      <span class="grow"></span>
+      <button class="btn primary" id="new-int">+ New integration</button>
+    </div>
+    <div id="int-list" class="cards"></div>
+    <div id="supported" class="meta supported"></div>
+  </section>
+
+  <section id="settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+    <div class="bar">
+      <h1>Settings</h1>
+      <span class="hint">Central configuration of Forge. Stored on this machine in .data/settings.json.</span>
+    </div>
+    <form id="settings-form" class="card settings-card">
+      <div class="card-head"><h2>LLM</h2><span id="llm-state"></span></div>
+      <p class="desc">The model Forge calls to write the converters that turn traces into trajectories. Any OpenAI-compatible endpoint works; a <b>LiteLLM proxy</b> is the intended one: it routes the model name to the provider behind it.</p>
+      <div class="row2">
+        <label class="field"><span>Endpoint <small>base URL, e.g. http://localhost:4000</small></span><input name="base_url" type="url" placeholder="http://localhost:4000" autocomplete="off"></label>
+        <label class="field"><span>Model <small>the name the proxy knows</small></span><input name="model" placeholder="gpt-4.1, claude-sonnet-…" autocomplete="off"></label>
+        <label class="field"><span>API key <small id="llm-key-hint">the proxy's key</small></span><input name="api_key" type="password" autocomplete="new-password" placeholder="sk-…"></label>
+        <div class="row2" style="gap:12px">
+          <label class="field"><span>Temperature</span><input name="temperature" type="number" step="0.1" min="0" max="2" placeholder="0"></label>
+          <label class="field"><span>Max output tokens</span><input name="max_tokens" type="number" min="256" step="256" placeholder="32000"></label>
+        </div>
+        <label class="field"><span>Timeout <small>seconds per call</small></span><input name="timeout" type="number" min="10" placeholder="600"></label>
+      </div>
+      <p class="hint" id="llm-env" style="margin:0;color:var(--fg-3);font-size:13px" hidden></p>
+      <p class="err" id="settings-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <span class="test-result left" id="llm-test-out" aria-live="polite"></span>
+        <button type="button" class="btn" id="llm-test">Test the model</button>
+        <button class="btn primary" id="settings-save">Save</button>
+      </div>
+    </form>
+  </section>
+</main>
+
+<!-- ---------------------------------------------------------------- pipeline dialog -->
+<dialog id="pipe-dialog" class="wide" aria-labelledby="pipe-dialog-title">
+  <form method="dialog" id="pipe-form">
+    <h3 id="pipe-dialog-title">New pipeline</h3>
+    <div class="row2">
+      <label class="field"><span>Name</span><input name="name" required placeholder="db2_ic → evolve"></label>
+      <label class="field" id="pipe-id-field"><span>Id <small>.data/pipelines/&lt;id&gt;; empty = from the name</small></span>
+        <input name="pipe_id" pattern="[a-z0-9][a-z0-9_\-]{0,63}" placeholder="db2_ic" autocomplete="off"></label>
+    </div>
+    <label class="field"><span>Description <small>optional</small></span><textarea name="description" rows="2"></textarea></label>
+    <fieldset class="group">
+      <legend>Inputs <small>a connection and the filters that pick its traces; a trace matches when any filter selects it</small></legend>
+      <div class="inputs" id="pipe-inputs"></div>
+      <div><button type="button" class="btn small" id="add-input">+ Add a connection</button></div>
+    </fieldset>
+    <fieldset class="group">
+      <legend>Output <small>the memory trajectories are sent to, and how they are stored there</small></legend>
+      <label class="field"><span>Output integration</span><select name="output_id"></select></label>
+      <div id="pipe-memory" class="mem-grid"></div>
+    </fieldset>
+    <fieldset class="group">
+      <legend>Mode</legend>
+      <div class="kinds">
+        <label><input type="radio" name="mode" value="test" checked><span class="mode test">test</span>
+          <small>Trajectories are built in the background; you send them to memory one at a time and can delete everything the pipeline produced.</small></label>
+        <label><input type="radio" name="mode" value="production"><span class="mode production">production</span>
+          <small>Every new trajectory is sent to memory automatically. What it produced is kept.</small></label>
+      </div>
+    </fieldset>
+    <div class="row2">
+      <label class="field"><span>Check for new traces every <small>seconds, ≥ 15</small></span><input name="poll_seconds" type="number" min="15" value="60"></label>
+      <label class="field"><span>Take a trace once unchanged for <small>seconds</small></span><input name="settle_seconds" type="number" min="0" value="120">
+        <small>Langfuse's updatedAt; lets late scores arrive before the trace is converted</small></label>
+    </div>
+    <p class="err" id="pipe-error" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" id="pipe-save" value="save">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ---------------------------------------------------------------- filter dialog -->
+<dialog id="filter-dialog" class="wide" aria-labelledby="filter-dialog-title">
+  <form method="dialog" id="filter-form">
+    <h3 id="filter-dialog-title">New observability filter</h3>
+    <div class="row2">
+      <label class="field"><span>Name</span><input name="name" required placeholder="db2_ic, production, with scores"></label>
+      <label class="field"><span>Type</span><select name="kind" id="filter-kind"></select></label>
+    </div>
+    <label class="field"><span>Description <small>optional</small></span><textarea name="description" rows="2"></textarea></label>
+    <p class="hint" style="margin:0;color:var(--fg-3);font-size:13px">Every criterion is optional; empty means “any”. All criteria must hold.</p>
+    <div class="field"><span>Trace name</span>
+      <div class="op-val"><select name="name_op"></select><input name="name_value" placeholder="db2_ic" autocomplete="off"></div></div>
+    <fieldset class="range">
+      <legend>Time range <small>when the trace started</small></legend>
+      <div class="range-top">
+        <div class="seg" role="radiogroup" aria-label="Time zone of the range">
+          <label><input type="radio" name="tz" value="local" checked><span id="tz-local">Local</span></label>
+          <label><input type="radio" name="tz" value="UTC"><span>UTC</span></label>
+        </div>
+        <div class="presets" aria-label="Quick ranges">
+          <button type="button" class="chip-btn" data-preset="1h">Last hour</button>
+          <button type="button" class="chip-btn" data-preset="24h">Last 24 h</button>
+          <button type="button" class="chip-btn" data-preset="7d">Last 7 days</button>
+          <button type="button" class="chip-btn" data-preset="today">Today</button>
+          <button type="button" class="chip-btn" data-preset="from-now">From now on</button>
+          <button type="button" class="chip-btn" data-preset="all">Any time</button>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field"><span>From <small>empty = from the first trace</small></span>
+          <div class="dt"><input name="from_date" type="date" aria-label="From date"><input name="from_time" type="time" aria-label="From time">
+            <button type="button" class="btn small clear-btn" data-clear="from" aria-label="Clear the start of the range">Clear</button></div>
+          <small>empty time = 00:00</small></div>
+        <div class="field"><span>To <small>empty = keep taking new traces</small></span>
+          <div class="dt"><input name="to_date" type="date" aria-label="To date"><input name="to_time" type="time" aria-label="To time">
+            <button type="button" class="btn small clear-btn" data-clear="to" aria-label="Clear the end of the range">Clear</button></div>
+          <small>empty time = end of the day</small></div>
+      </div>
+      <div class="range-sum" id="range-sum" aria-live="polite"></div>
+    </fieldset>
+    <div class="row2">
+      <label class="field"><span>User ids <small>any of, comma-separated</small></span><input name="user_ids" autocomplete="off"></label>
+      <label class="field"><span>Session ids <small>any of, comma-separated</small></span><input name="session_ids" autocomplete="off"></label>
+      <label class="field"><span>Environments <small>any of, comma-separated</small></span><input name="environments" placeholder="default, production" autocomplete="off"></label>
+      <div class="field"><span>Tags <small>comma-separated</small></span>
+        <div class="op-val"><select name="tags_op"></select><input name="tags_values" autocomplete="off"></div></div>
+      <label class="field"><span>Release</span><input name="release" autocomplete="off"></label>
+      <label class="field"><span>Version</span><input name="version" autocomplete="off"></label>
+      <label class="field"><span>Bookmarked</span><select name="bookmarked"><option value="">any</option><option value="true">bookmarked</option><option value="false">not bookmarked</option></select></label>
+    </div>
+    <fieldset class="group">
+      <legend>More conditions <small>metadata, scores, latency, tokens, cost, observation levels, ids</small></legend>
+      <div id="conds" style="display:grid;gap:6px"></div>
+      <div><button type="button" class="btn small" id="add-cond">+ Add a condition</button></div>
+    </fieldset>
+    <div class="range-check"><label class="field" style="min-width:14em"><span>Check against</span><select id="filter-check-int"></select></label>
+      <button type="button" class="btn small" id="filter-preview">Count matching traces</button><span id="filter-preview-out" aria-live="polite"></span></div>
+    <p class="err" id="filter-error" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button class="btn danger left" id="filter-delete" value="delete" formnovalidate hidden>Delete</button>
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" id="filter-save" value="save">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ---------------------------------------------------------------- converter dialog -->
+<dialog id="conv-dialog" class="code" aria-labelledby="conv-title">
+  <form method="dialog">
+    <div class="code-head">
+      <h3 id="conv-title">Converter</h3>
+      <div class="code-tabs" role="group" aria-label="Show">
+        <button type="button" data-view="code" aria-pressed="true">Code</button>
+        <button type="button" data-view="diff" aria-pressed="false">Changes</button>
+        <button type="button" data-view="schema" aria-pressed="false">JSON Schema</button>
+        <button type="button" data-view="history" aria-pressed="false">History</button>
+      </div>
+    </div>
+    <div class="meta" id="conv-meta"></div>
+    <div id="conv-body"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn danger left" id="conv-delete">Forget this converter</button>
+      <button class="btn" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ---------------------------------------------------------------- integration dialog -->
+<dialog id="int-dialog" aria-labelledby="int-dialog-title">
+  <form method="dialog" id="int-form">
+    <h3 id="int-dialog-title">New integration</h3>
+    <fieldset class="field" style="border:0;padding:0;margin:0"><legend style="font-size:13px;color:var(--fg-2);padding:0;margin-bottom:4px">Type</legend><div class="kinds" id="int-kinds"></div></fieldset>
+    <label class="field"><span>Name</span><input name="name" placeholder="Langfuse dev" autocomplete="off"></label>
+    <div id="int-fields" style="display:grid;gap:14px"></div>
+    <p class="note" id="int-note" hidden></p>
+    <p class="err" id="int-error" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button class="btn danger left" id="int-delete" value="delete" formnovalidate hidden>Delete</button>
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ---------------------------------------------------------------- folder picker -->
+<dialog id="folder-dialog" aria-labelledby="folder-dialog-title">
+  <form method="dialog" id="folder-form">
+    <h3 id="folder-dialog-title">Choose a folder</h3>
+    <div class="folder-path"><button type="button" class="btn small" id="folder-up" aria-label="Parent folder">↑ Up</button>
+      <button type="button" class="btn small" id="folder-home">Home</button><code id="folder-current"></code></div>
+    <ul class="folder-list" id="folder-list" aria-label="Subfolders"></ul>
+    <div class="folder-path"><p class="hint" id="folder-info" style="margin:0;color:var(--fg-3);font-size:13px;flex:1"></p>
+      <label class="check-field" style="font-size:13px"><input type="checkbox" id="folder-hidden" checked> Show hidden folders</label></div>
+    <p class="err" id="folder-error" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="choose">Choose this folder</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const $ = (sel, el = document) => el.querySelector(sel);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtDate = (s) => (s ? new Date(s).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "–");
+const ago = (s) => { if (!s) return "never"; const d = (Date.now() - new Date(s)) / 1000; return d < 60 ? `${Math.max(0, Math.round(d))} s ago` : d < 3600 ? `${Math.round(d / 60)} min ago` : fmtDate(s); };
+const FIELD = {
+  host: { label: "Host", placeholder: "http://localhost:3000" },
+  public_key: { label: "Public key", placeholder: "pk-lf-…" },
+  secret_key: { label: "Secret key", placeholder: "sk-lf-…" },
+  api_key: { label: "API key", placeholder: "empty when auth is off" },
+  project: { label: "Project", placeholder: "default" },
+  path: { label: "Folder", placeholder: "/Users/me/traces", hint: "absolute path on the machine the server runs on; *.json files only", picker: true },
+  recursive: { label: "Include subfolders", type: "checkbox" },
+  exclude: { label: "Exclude", placeholder: "metadata.json, results*.json", hint: "files that are no trace: comma-separated patterns; a pattern with / matches the path in the folder" },
+};
+// How a pipeline stores its trajectories in altk-evolve (pipeline.memory); every field optional.
+const MEM_FIELD = {
+  namespace_mode: { label: "Namespaces", group: "Where trajectories go", choices: { "": "one per agent and step", single: "one namespace for everything" } },
+  namespace_prefix: { label: "Namespace prefix", group: "Where trajectories go", placeholder: "empty = the pipeline id", hint: "<prefix>__<agent>__<step>" },
+  namespace_id: { label: "Namespace", group: "Where trajectories go", placeholder: "forge", hint: "for “one namespace”" },
+  processing_profile: { label: "Processing profile", group: "Guideline generation", placeholder: "empty = forge__<pipeline id>", hint: "created and kept in sync from the settings below" },
+  profile_revision: { label: "Profile revision", group: "Guideline generation", placeholder: "latest", hint: "pin an existing revision; then the settings below are not applied" },
+  guidelines_mode: { label: "Guidelines mode", group: "Guideline generation", choices: { "": "server default", standard: "standard", consistency: "consistency", all: "all" } },
+  consistency_method: { label: "Consistency method", group: "Guideline generation", choices: { "": "server default", fast: "fast", accurate: "accurate" } },
+  guidelines_model: { label: "Guidelines model", group: "Guideline generation", placeholder: "server default (EVOLVE_GUIDELINES_MODEL)" },
+  custom_llm_provider: { label: "LLM provider", group: "Guideline generation", placeholder: "server default, e.g. openai, watsonx" },
+  segmentation_enabled: { label: "Segmentation", group: "Guideline generation", choices: { "": "server default", true: "on", false: "off" } },
+  trajectory_max_steps: { label: "Max steps", group: "Guideline generation", placeholder: "50", type: "number" },
+  trajectory_max_step_chars: { label: "Max characters per step", group: "Guideline generation", placeholder: "2000", type: "number" },
+  trajectory_tail_steps: { label: "Tail steps kept", group: "Guideline generation", placeholder: "0", type: "number" },
+};
+let kinds = {}, filterKinds = {}, memoryKind = { fields: [], choices: {} }, integrations = [], filters = [], pipelines = [];
+const converters = {};  // pipeline id -> list, loaded with the pipelines
+let pollTimer = null;
+
+async function api(path, opts = {}) {
+  const res = await fetch(`/api/${path}`, { method: opts.method || "GET", headers: { "Content-Type": "application/json" },
+                                            body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const data = (res.headers.get("Content-Type") || "").includes("json") ? await res.json() : await res.text();
+  if (!res.ok) throw new Error(data?.error || res.statusText);
+  return data;
+}
+
+// ---------------------------------------------------------------- tabs
+const TABS = ["pipelines", "filters", "integrations", "settings"];
+function showTab(name) {
+  for (const t of TABS) {
+    $(`#tab-${t}`).setAttribute("aria-selected", String(t === name));
+    $(`#${t}`).hidden = t !== name;
+  }
+  history.replaceState(null, "", name === "pipelines" ? location.pathname : `#${name}`);
+}
+for (const t of TABS) $(`#tab-${t}`).onclick = () => showTab(t);
+
+// ---------------------------------------------------------------- data
+async function load() {
+  const k = await api("kinds");
+  kinds = k.integrations; filterKinds = k.filters; memoryKind = k.memory;
+  loadSettings();
+  await refresh();
+}
+async function refresh() {
+  try {
+    [integrations, filters, pipelines] = await Promise.all([api("integrations"), api("filters"), api("pipelines")]);
+    await Promise.all(pipelines.filter((p) => p.counts?.converters).map(async (p) => {
+      converters[p.id] = await api(`pipelines/${encodeURIComponent(p.id)}/converters`).catch(() => converters[p.id] || []);
+    }));
+  } catch { /* keep the last state */ }
+  render();
+}
+function render() {
+  renderPipelines();
+  renderFilters();
+  renderIntegrations();
+  clearTimeout(pollTimer);
+  const busy = pipelines.some((p) => p.worker?.state === "running" || ["running", "stopping"].includes(p.send_all?.state));
+  pollTimer = setTimeout(refresh, busy ? 1500 : 5000);
+}
+const integrationOf = (id) => integrations.find((i) => i.id === id);
+const filterOf = (id) => filters.find((f) => f.id === id);
+const kindLabel = (k) => `<span class="kind ${esc(k)}"><i aria-hidden="true"></i>${esc(kinds[k]?.label || k)}</span>`;
+const modeLabel = (m) => `<span class="mode ${esc(m)}">${esc(m)}</span>`;
+
+// ---------------------------------------------------------------- time range (filters)
+// Stored as UTC timestamps; the form takes them in local time or UTC (kept with the filter as criteria.tz).
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "local time";
+const pad = (n) => String(n).padStart(2, "0");
+function partsIn(iso, utc) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return utc ? { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds() }
+             : { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate(), h: d.getHours(), mi: d.getMinutes(), s: d.getSeconds() };
+}
+function boundToIso(date, time, utc, end) {
+  if (!date) return "";
+  const [y, m, d] = date.split("-").map(Number);
+  let [h, mi, s] = time ? time.split(":").map(Number) : end ? [23, 59, 59] : [0, 0, 0];
+  if (time && end && time.split(":").length === 2) s = 59;  // "to 14:30" includes the whole minute
+  const ms = end ? 999 : 0;
+  const t = utc ? Date.UTC(y, m - 1, d, h, mi, s || 0, ms) : new Date(y, m - 1, d, h, mi, s || 0, ms).getTime();
+  return new Date(t).toISOString();
+}
+function isoToBound(iso, utc, end) {
+  const p = iso ? partsIn(iso, utc) : null;
+  if (!p) return { date: "", time: "" };
+  const wholeDay = end ? p.h === 23 && p.mi === 59 && p.s === 59 : p.h === 0 && p.mi === 0 && p.s === 0;
+  return { date: `${p.y}-${pad(p.m)}-${pad(p.d)}`, time: wholeDay ? "" : `${pad(p.h)}:${pad(p.mi)}${p.s && !(end && p.s === 59) ? `:${pad(p.s)}` : ""}` };
+}
+const fmtIn = (iso, utc) => new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short", ...(utc ? { timeZone: "UTC" } : {}) });
+const zoneName = (utc) => (utc ? "UTC" : LOCAL_TZ);
+const rangeText = (from, to, utc) => `${from ? fmtIn(from, utc) : "the first trace"} → ${to ? fmtIn(to, utc) : "now, and new traces as they come"}`;
+
+// ---------------------------------------------------------------- pipelines
+function renderPipelines() {
+  const open = new Set([...document.querySelectorAll("#pipe-list details[open]")].map((d) => d.dataset.key));
+  const ins = integrations.filter((i) => i.direction === "input");
+  const empty = pipelines.length ? ""
+    : !ins.length ? `<div class="empty"><div>No pipelines yet. First connect the system that holds your traces.</div><button class="btn primary" data-act="go-int">Add an integration</button></div>`
+    : !filters.length ? `<div class="empty"><div>No pipelines yet. First say which traces interest you.</div><button class="btn primary" data-act="go-filter">Add an observability filter</button></div>`
+    : `<div class="empty"><div>No pipelines yet.</div><button class="btn primary" data-act="new-pipe">Create the first pipeline</button></div>`;
+  $("#pipe-list").innerHTML = empty + pipelines.map(pipeCard).join("");
+  document.querySelectorAll("#pipe-list details").forEach((d) => { if (open.has(d.dataset.key)) d.open = true; });
+}
+function workerText(p) {
+  const w = p.worker || {};
+  if (p.enabled === false) return `<span><i class="dot"></i> paused</span>`;
+  if (w.state === "running") {
+    const secs = w.phase_since ? Math.max(0, Math.round((Date.now() - new Date(w.phase_since)) / 1000)) : null;
+    return `<span><i class="dot run"></i> <b>${esc(w.phase || "working")}</b>…${secs != null ? ` <span style="color:var(--fg-3)">${secs < 90 ? `${secs} s` : `${Math.round(secs / 60)} min`}</span>` : ""}</span>
+      ${/LLM attempt/.test(w.phase || "") ? `<span style="color:var(--fg-3)">the LLM writes the code; one attempt takes about half a minute</span>` : ""}`;
+  }
+  const err = w.last_run?.status === "failed";
+  return `<span><i class="dot ${err ? "off" : "on"}"></i> ${err ? `<b style="color:var(--critical)">last check failed</b>` : "watching for new traces"}</span>
+    <span>checked ${esc(ago(w.last_poll))}</span>${w.next_poll ? `<span>next ${esc(ago(w.next_poll).replace(" ago", "").replace(/^-/, ""))}</span>` : ""}
+    ${w.last_run?.waiting ? `<span>${w.last_run.waiting} still changing (settling)</span>` : ""}`;
+}
+function pipeCard(p) {
+  const out = p.output_id && integrationOf(p.output_id), c = p.counts || {}, test = p.mode === "test";
+  const inputs = p.inputs.map((i) => {
+    const integ = integrationOf(i.integration_id);
+    return `<div class="node ${integ ? "" : "missing"}">${integ ? `${kindLabel(integ.kind)} <b>${esc(integ.name)}</b>` : `connection ${esc(i.integration_id)} missing`}
+      <small>${integ && !kinds[integ.kind]?.filter_kind ? `every *.json file${integ.recursive ? ", subfolders too" : ""}${integ.exclude ? ` except ${esc(integ.exclude)}` : ""}` : i.filter_ids.map((f) => esc(filterOf(f)?.name || f)).join(" · ")}</small></div>`;
+  }).join("");
+  const output = out ? `<div class="node">${kindLabel(out.kind)} <b>${esc(out.name)}</b><small>${test ? "you send one trajectory at a time" : "sent automatically"}</small></div>`
+    : `<div class="node missing">no output yet<small>trajectories stay here</small></div>`;
+  const viewer = `<a class="btn small ${c.trajectories ? "primary" : ""}" href="/viewer.html?pipeline=${encodeURIComponent(p.id)}" ${c.trajectories ? "" : `aria-disabled="true" tabindex="-1"`}>Open viewer →</a>`;
+  const actions = `${viewer}
+    <button class="btn small" data-act="run" data-id="${esc(p.id)}" ${p.worker?.state === "running" ? "disabled" : ""}>Check now</button>
+    <button class="btn small" data-act="toggle" data-id="${esc(p.id)}">${p.enabled === false ? "Resume" : "Pause"}</button>
+    ${test ? `<button class="btn small" data-act="promote" data-id="${esc(p.id)}" ${out ? "" : `disabled title="Choose an output first"`}>Promote to production</button>` : ""}
+    <button class="btn small" data-act="edit" data-id="${esc(p.id)}">Edit</button>
+    <button class="btn small danger" data-act="delete" data-id="${esc(p.id)}">Delete</button>`;
+  const testTools = test ? `${sendAllHtml(p, p.send_all, out)}<div class="meta"><span>Test output:</span>
+      <button class="btn small danger" data-act="purge-memory" data-id="${esc(p.id)}" ${c.sent ? "" : "disabled"}>Delete from memory (${c.sent} sent · ${c.entities} entities)</button>
+      <button class="btn small danger" data-act="purge-all" data-id="${esc(p.id)}" ${c.processed ? "" : "disabled"}>Delete everything it produced</button>
+      <span class="hint">the second also forgets the traces, so they are converted again</span></div>` : "";
+  return `<article class="card">
+    <div class="card-head"><h2>${esc(p.name)}</h2>${modeLabel(p.mode)}<span class="id">${esc(p.id)}</span><span class="actions">${actions}</span></div>
+    ${p.description ? `<p class="desc">${esc(p.description)}</p>` : ""}
+    <div class="flow">${inputs}<span class="arrow">→</span><div class="node"><b>trajectories</b><small>${plural(c.converters || 0, "generated converter")}</small></div><span class="arrow">→</span>${output}</div>
+    <div class="stats"><span><b>${c.trajectories ?? 0}</b> trajectories</span>${c.failed ? `<span style="color:var(--critical)"><b>${c.failed}</b> failed to convert <button class="btn small" data-act="retry-convert" data-id="${esc(p.id)}">convert again</button> <button class="btn small" data-act="failures" data-id="${esc(p.id)}">why?</button></span>` : ""}
+      <span><b>${c.converters ?? 0}</b> ${c.converters === 1 ? "converter" : "converters"} generated</span>
+      ${out ? `<span><b>${c.sent ?? 0}</b> turns sent to memory</span><span><b>${c.entities ?? 0}</b> entities created in memory</span>` : ""}
+      ${c.send_failed ? `<span style="color:var(--critical)"><b>${c.send_failed}</b> failed to send <button class="btn small" data-act="retry" data-id="${esc(p.id)}">retry</button></span>` : ""}
+      ${p.migrated_from ? `<span>migrated from ${esc(p.migrated_from)}</span>` : ""}</div>
+    <div class="worker-bar">${workerText(p)}${p.worker?.message ? `<span style="color:var(--critical)">${esc(p.worker.message)}</span>` : ""}</div>
+    ${testTools}
+    ${convHtml(p)}
+    <details data-key="log-${esc(p.id)}" data-log="${esc(p.id)}"><summary>Worker log</summary><pre class="log" id="log-${esc(p.id)}">…</pre></details>
+    ${p.runs?.length ? runsHtml(p) : ""}
+  </article>`;
+}
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// Test: send every trajectory not in memory yet, with the progress of the turns and of the slice being sent.
+function sendAllHtml(p, job, out) {
+  const c = p.counts || {}, active = job && (job.state === "running" || job.state === "stopping");
+  const button = active
+    ? `<button class="btn small danger" data-act="send-all-stop" data-id="${esc(p.id)}" ${job.state === "stopping" ? "disabled" : ""}>${job.state === "stopping" ? "Stopping…" : "Stop sending"}</button>`
+    : `<button class="btn small primary" data-act="send-all" data-id="${esc(p.id)}" ${out && c.unsent ? "" : `disabled title="${out ? "Every trajectory is in memory already" : "Choose an output first"}"`}>Send all not sent to memory (${c.unsent ?? 0})</button>`;
+  if (!job) return `<div class="meta"><span>Test send:</span>${button}<span class="hint">one turn after another; a failed turn is skipped and stays unsent</span></div>`;
+  const cur = job.current, sp = cur?.progress;
+  const slice = sp?.state === "sending" && sp.total ? ` · slice ${Math.min(sp.done + 1, sp.total)} of ${sp.total}${sp.step ? ` (${esc(sp.step)})` : ""}` : sp ? ` · ${esc(sp.state)}` : "";
+  const pct = job.total ? Math.round(100 * (job.done + (sp?.total ? sp.done / sp.total : 0)) / job.total) : 0;
+  const head = active ? `<b>Sending turn ${Math.min(job.done + 1, job.total)} of ${job.total}</b>${cur ? ` · ${esc(cur.name || cur.trace_id.slice(0, 12))}` : ""}${slice}`
+    : `<b>${job.state === "done" ? "Sent" : "Stopped"}</b> ${job.sent} of ${job.total} turns ${esc(ago(job.finished_at))}`;
+  return `<div class="job"><div class="meta"><span>Test send:</span>${button}<span>${head}</span></div>
+    ${active ? `<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></div>` : ""}
+    <div class="stats"><span><b>${job.done}</b> / ${job.total} turns done</span><span><b>${job.sent}</b> sent</span>
+      ${job.failed ? `<span style="color:var(--critical)"><b>${job.failed}</b> failed</span>` : ""}
+      <span><b>${job.slices}</b> slices</span><span><b>${job.guidelines}</b> guidelines</span><span><b>${job.entities}</b> entities created</span>
+      ${active ? `<span>started ${esc(ago(job.started_at))}</span>` : ""}
+      ${active ? `<span class="hint">altk-evolve generates guidelines with an LLM: about 10 s per slice</span>` : ""}</div>
+    ${job.errors?.length ? `<pre class="log">${esc(job.errors.join("\n"))}</pre>` : ""}</div>`;
+}
+const ACTION = { created: "written", extended: "extended", repaired: "repaired", accepted: "accepted as is" };
+function convHtml(p) {
+  const list = converters[p.id] || [];
+  if (!list.length) return `<details data-key="conv-${esc(p.id)}"><summary>Converters (none yet)</summary>
+    <p class="hint" style="color:var(--fg-3);font-size:13px;margin:6px 0 0">The first matching trace gets a converter written by the LLM from Settings. Traces of the same shape reuse it.</p></details>`;
+  return `<details data-key="conv-${esc(p.id)}"><summary>Converters (${list.length})</summary><div class="conv-list" style="margin-top:6px">
+    ${list.map((x) => `<div class="conv"><b>${esc(x.id)}</b><span>v${esc(x.version)}</span><span>${plural(x.traces || 0, "trace")}</span>
+      <span>schema: ${plural(x.attributes || 0, "property", "properties")}</span>
+      <span class="why">${x.retired_at ? `<b>retired</b> ${esc(ago(x.retired_at))} · ${esc(x.retired_reason || "")}` : `${esc(ACTION[x.last_change?.action] || x.last_change?.action || "")}${x.last_change?.at ? ` ${esc(ago(x.last_change.at))}` : ""}${x.last_change?.reason ? ` · ${esc(x.last_change.reason)}` : ""}`}</span>
+      <span class="grow"></span><button class="btn small" data-act="conv" data-id="${esc(p.id)}" data-conv="${esc(x.id)}">View code</button></div>`).join("")}
+  </div></details>`;
+}
+function runsHtml(p) {
+  return `<details data-key="runs-${esc(p.id)}"><summary>Runs with changes (${p.runs.length})</summary><div class="table-wrap"><table class="runs">
+    <thead><tr><th>Started</th><th>Status</th><th>Matching</th><th>New</th><th>Converted</th><th>Failed</th><th>Sent</th></tr></thead>
+    <tbody>${p.runs.map((r) => `<tr><td>${esc(fmtDate(r.started_at))}</td><td>${esc(r.status)}${r.message ? ` · ${esc(r.message)}` : ""}</td>
+      <td>${esc(r.found)}</td><td>${esc(r.new)}</td><td>${esc(r.built)}</td><td>${esc(r.failed)}</td><td>${esc(r.sent)}${r.send_failed ? ` (+${r.send_failed} failed)` : ""}</td></tr>`).join("")}</tbody>
+  </table></div></details>`;
+}
+$("#pipe-list").addEventListener("toggle", async (ev) => {
+  const d = ev.target;
+  if (d.tagName === "DETAILS" && d.open && d.dataset.log) {
+    const text = await api(`pipelines/${encodeURIComponent(d.dataset.log)}/log`).catch((e) => e.message);
+    $(`#log-${CSS.escape(d.dataset.log)}`).textContent = text || "(empty)";
+  }
+}, true);
+$("#pipe-list").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button[data-act]");
+  if (!b) return;
+  const id = b.dataset.id, act = b.dataset.act, path = `pipelines/${encodeURIComponent(id)}`;
+  const p = pipelines.find((x) => x.id === id);
+  try {
+    if (act === "go-int") { showTab("integrations"); return openIntegration(); }
+    if (act === "go-filter") { showTab("filters"); return openFilter(); }
+    if (act === "new-pipe") return openPipeline();
+    if (act === "edit") return openPipeline(p);
+    if (act === "conv") return openConverter(p, b.dataset.conv);
+    if (act === "delete") {
+      const withMem = p.counts.sent && p.mode === "test";
+      const choice = await ask.choose({
+        danger: true, title: `Delete pipeline "${p.name}"?`,
+        message: `Its ${p.counts.trajectories} trajectories are deleted with it. This cannot be undone.`
+          + (withMem ? `\n\nIt also created ${p.counts.entities} entities in memory. You can keep them or delete them too.` : ""),
+        actions: withMem
+          ? [{ label: "Delete, keep memory", value: "keep" }, { label: `Delete with ${p.counts.entities} entities`, value: "all", kind: "danger" }]
+          : [{ label: "Delete pipeline", value: "keep", kind: "danger" }],
+      });
+      if (!choice) return;
+      await api(`${path}${choice === "all" ? "?memory=1" : ""}`, { method: "DELETE" });
+    }
+    if (act === "run") { b.disabled = true; await api(`${path}/run`, { method: "POST" }); }
+    if (act === "toggle") await api(`${path}/enable`, { method: "POST", body: { enabled: p.enabled === false } });
+    if (act === "retry") await api(`${path}/retry`, { method: "POST", body: {} });
+    if (act === "send-all") {
+      if (!await ask.confirm({ title: `Send ${plural(p.counts.unsent, "trajectory", "trajectories")} to memory?`, ok: "Send all",
+        message: `Every trajectory of "${p.name}" not in memory yet goes to ${integrationOf(p.output_id)?.name || "the output"}, one turn after another. You can stop it, and delete what it produced from memory afterwards.` })) return;
+      b.disabled = true;
+      await api(`${path}/send-all`, { method: "POST" });
+    }
+    if (act === "send-all-stop") { b.disabled = true; await api(`${path}/send-all/stop`, { method: "POST" }); }
+    if (act === "retry-convert") { b.disabled = true; await api(`${path}/retry-convert`, { method: "POST", body: {} }); await api(`${path}/run`, { method: "POST" }); }
+    if (act === "failures") {
+      const fails = await api(`${path}/failures`);
+      return ask.alert({ error: true, title: `${plural(fails.length, "trace")} failed to convert`,
+        message: "The converter the LLM wrote did not produce a valid trajectory. Each trace is tried again when the pipeline's converters change, or now with “convert again”. The worker log has every attempt.",
+        details: fails.flatMap((f) => [`${f.name || f.trace_id} (${f.trace_id.slice(0, 12)}, ${plural(f.attempts || 1, "attempt")})`, ...(f.problems || []).map((x) => `  ${x}`)]) });
+    }
+    if (act === "promote") {
+      if (!await ask.confirm({ warn: true, title: `Promote "${p.name}" to production?`, ok: "Promote",
+        message: `Every trajectory not sent yet (${p.counts.trajectories - p.counts.sent}) and every new one will go to memory automatically, and what it produces will be kept.` })) return;
+      await api(`${path}/promote`, { method: "POST" });
+    }
+    if (act === "purge-memory") {
+      if (!await ask.confirm({ danger: true, title: `Delete ${p.counts.entities} entities from memory?`, ok: "Delete entities",
+        message: "These are the entities this test pipeline created in memory. Its trajectories stay, and can be sent again." })) return;
+      const r = await api(`${path}/purge`, { method: "POST", body: { memory: true, trajectories: false } });
+      await ask.alert({ error: r.errors.length > 0, title: `Deleted ${r.entities} entities from memory`,
+        message: r.errors.length ? "Some deletions failed:" : "", details: r.errors });
+    }
+    if (act === "purge-all") {
+      if (!await ask.confirm({ danger: true, title: `Delete everything "${p.name}" produced?`, ok: "Delete everything",
+        message: `${p.counts.entities} entities in memory and ${p.counts.trajectories} trajectories will be deleted.\n\nThe traces are forgotten, so the next check converts them again.` })) return;
+      const r = await api(`${path}/purge`, { method: "POST", body: { memory: !!p.counts.sent, trajectories: true } });
+      await ask.alert({ error: r.errors.length > 0, title: `Deleted ${r.entities} entities and ${r.trajectories} trajectories`,
+        message: r.errors.length ? "Some deletions failed:" : "", details: r.errors });
+    }
+    await refresh();
+  } catch (err) { ask.alert({ error: true, title: "Something went wrong", message: err.message }); }
+});
+
+let editingPipe = null;
+function inputRow(inp = {}) {
+  const ins = integrations.filter((i) => i.direction === "input");
+  const sel = inp.integration_id || ins.find((i) => kinds[i.kind]?.import)?.id || ins[0]?.id || "";
+  const integ = integrationOf(sel);
+  const usable = filters.filter((f) => !integ || f.kind === kinds[integ.kind]?.filter_kind);
+  const unfiltered = integ && !kinds[integ.kind]?.filter_kind;
+  const row = document.createElement("div");
+  row.className = "input-row";
+  row.innerHTML = `<div class="head"><label class="field"><span>Connection</span><select data-in="integration">
+      ${ins.map((i) => `<option value="${esc(i.id)}" ${i.id === sel ? "selected" : ""} ${kinds[i.kind]?.import ? "" : "disabled"}>${esc(i.name)} (${esc(kinds[i.kind]?.label)}${kinds[i.kind]?.import ? "" : ", no import yet"})</option>`).join("")}</select></label>
+      <button type="button" class="btn small danger" data-in="remove" aria-label="Remove this connection">Remove</button></div>
+    ${unfiltered ? `<span class="hint">Every JSON file in the folder${integ.recursive ? " and its subfolders" : ""}${integ.exclude ? `, except ${esc(integ.exclude)},` : ""} is a trace; a folder takes no filters.</span>` : `<div class="field"><span>Filters</span><div class="checks">${usable.length ? usable.map((f) => `<label><input type="checkbox" value="${esc(f.id)}" ${(inp.filter_ids || []).includes(f.id) ? "checked" : ""}> ${esc(f.name)}</label>`).join("")
+      : `<span class="hint">No ${esc(integ ? kinds[integ.kind]?.label : "")} filters yet: create one on the Observability filters tab.</span>`}</div></div>`}`;
+  row.querySelector("[data-in=integration]").onchange = (e) => row.replaceWith(inputRow({ integration_id: e.target.value, filter_ids: readInputs([row])[0].filter_ids }));
+  row.querySelector("[data-in=remove]").onclick = () => row.remove();
+  return row;
+}
+const readInputs = (rows = [...$("#pipe-inputs").children]) => rows.map((r) => ({
+  integration_id: r.querySelector("[data-in=integration]").value,
+  filter_ids: [...r.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value),
+}));
+function openPipeline(p = null) {
+  editingPipe = p;
+  const f = $("#pipe-form");
+  f.reset();
+  $("#pipe-error").hidden = true;
+  $("#pipe-dialog-title").textContent = p ? `Edit ${p.name}` : "New pipeline";
+  $("#pipe-save").textContent = p ? "Save" : "Create";
+  $("#pipe-id-field").hidden = !!p;
+  const outs = integrations.filter((i) => i.direction === "output");
+  f.output_id.innerHTML = `<option value="">none yet: build trajectories only</option>` + outs.map((i) => `<option value="${esc(i.id)}">${esc(i.name)} (${esc(kinds[i.kind]?.label)})</option>`).join("");
+  renderMemoryFields(p?.memory || {}, p?.id);
+  $("#pipe-inputs").innerHTML = "";
+  for (const inp of p?.inputs?.length ? p.inputs : [{}]) $("#pipe-inputs").append(inputRow(inp));
+  if (p) {
+    f.name.value = p.name; f.description.value = p.description || ""; f.output_id.value = p.output_id || "";
+    f.poll_seconds.value = p.poll_seconds; f.settle_seconds.value = p.settle_seconds;
+    f.querySelector(`input[name=mode][value="${p.mode}"]`).checked = true;
+  }
+  showMemoryFields();
+  $("#pipe-dialog").showModal();
+}
+// The memory settings of a pipeline: shown when the output is altk-evolve.
+function renderMemoryFields(mem, pipeId) {
+  let group = null;
+  $("#pipe-memory").innerHTML = memoryKind.fields.map((name) => {
+    const d = MEM_FIELD[name] || { label: name };
+    const head = d.group !== group ? `<div class="dir">${esc(d.group)}</div>` : "";
+    group = d.group;
+    const value = mem[name] ?? "";
+    const label = `<span>${esc(d.label)} <small>${["optional", d.hint && esc(d.hint)].filter(Boolean).join(" · ")}</small></span>`;
+    const placeholder = name === "processing_profile" && pipeId ? `empty = forge__${pipeId}` : d.placeholder || "";
+    if (d.choices) return `${head}<label class="field">${label}<select name="mem_${esc(name)}">${Object.entries(d.choices)
+      .map(([v, l]) => `<option value="${esc(v)}" ${String(value) === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+    return `${head}<label class="field">${label}<input name="mem_${esc(name)}" type="${d.type || "text"}" autocomplete="off" placeholder="${esc(placeholder)}" value="${esc(value)}"></label>`;
+  }).join("");
+}
+function showMemoryFields() {
+  const out = integrationOf($("#pipe-form").output_id.value);
+  $("#pipe-memory").hidden = out?.kind !== "altk_evolve";
+}
+$("#pipe-form").output_id.addEventListener("change", showMemoryFields);
+const readMemory = () => Object.fromEntries(memoryKind.fields.map((n) => [n, $("#pipe-form").elements[`mem_${n}`]?.value ?? ""]));
+$("#new-pipe").onclick = () => openPipeline();
+$("#add-input").onclick = () => $("#pipe-inputs").append(inputRow());
+$("#pipe-form").addEventListener("submit", async (ev) => {
+  if (ev.submitter?.value !== "save") return;
+  ev.preventDefault();
+  const f = ev.target;
+  const mode = f.querySelector("input[name=mode]:checked").value;
+  if (mode === "production" && editingPipe?.mode !== "production"
+      && !await ask.confirm({ warn: true, title: "Switch to production?", ok: "Continue",
+        message: "In production every new trajectory goes to memory automatically and what it produces is kept." })) return;
+  const body = { name: f.name.value, id: f.pipe_id.value, description: f.description.value, inputs: readInputs(),
+                 output_id: f.output_id.value, memory: readMemory(),
+                 mode, poll_seconds: f.poll_seconds.value, settle_seconds: f.settle_seconds.value };
+  try {
+    await api(editingPipe ? `pipelines/${encodeURIComponent(editingPipe.id)}` : "pipelines", { method: editingPipe ? "PUT" : "POST", body });
+    $("#pipe-dialog").close();
+    await refresh();
+  } catch (err) { $("#pipe-error").textContent = err.message; $("#pipe-error").hidden = false; }
+});
+
+// ---------------------------------------------------------------- observability filters
+const STRING_OPS = ["=", "contains", "does not contain", "starts with", "ends with"];
+const ARRAY_OPS = ["any of", "all of", "none of"];
+function criteriaChips(c) {
+  const utc = c.tz === "UTC", out = [];
+  if (c.name) out.push(`name ${esc(c.name.op)} <b>${esc(c.name.value)}</b>`);
+  if (c.from || c.to) out.push(`<b>${esc(rangeText(c.from, c.to, utc))}</b> ${esc(zoneName(utc))}`);
+  for (const [k, l] of [["user_ids", "user"], ["session_ids", "session"], ["environments", "environment"]]) if (c[k]) out.push(`${l} any of <b>${esc(c[k].join(", "))}</b>`);
+  if (c.tags) out.push(`tags ${esc(c.tags.op)} <b>${esc(c.tags.values.join(", "))}</b>`);
+  if (c.release) out.push(`release <b>${esc(c.release)}</b>`);
+  if (c.version) out.push(`version <b>${esc(c.version)}</b>`);
+  if (c.bookmarked != null) out.push(c.bookmarked ? "<b>bookmarked</b>" : "<b>not bookmarked</b>");
+  const cols = filterKinds.langfuse?.columns || {};
+  for (const x of c.conditions || []) out.push(`${esc(cols[x.column]?.label || x.column)}${x.key ? ` <b>${esc(x.key)}</b>` : ""} ${esc(x.operator)} <b>${esc(Array.isArray(x.value) ? x.value.join(", ") : x.value)}</b>`);
+  return out.length ? `<div class="crit">${out.map((x) => `<span>${x}</span>`).join("")}</div>` : `<div class="crit"><span>every trace</span></div>`;
+}
+function renderFilters() {
+  $("#filter-list").innerHTML = filters.length ? filters.map((f) => `<article class="card">
+      <div class="card-head"><h2>${esc(f.name)}</h2>${kindLabel(f.kind)}<span class="id">${esc(f.id)}</span>
+        <span class="actions"><button class="btn small" data-act="edit" data-id="${esc(f.id)}">Edit</button></span></div>
+      ${f.description ? `<p class="desc">${esc(f.description)}</p>` : ""}
+      ${criteriaChips(f.criteria || {})}
+      <div class="meta"><span>${f.used_by.length ? `used by ${f.used_by.map((p) => `<b>${esc(pipelines.find((x) => x.id === p)?.name || p)}</b>`).join(", ")}` : "not used by any pipeline"}</span></div>
+    </article>`).join("")
+    : `<div class="empty"><div>No filters yet.</div><button class="btn primary" data-act="new">Add a filter</button></div>`;
+}
+$("#filter-list").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-act]");
+  if (!b) return;
+  if (b.dataset.act === "new") return openFilter();
+  if (b.dataset.act === "edit") return openFilter(filterOf(b.dataset.id));
+});
+const ff = () => $("#filter-form");
+const zoneIsUtc = () => ff().querySelector("input[name=tz]:checked").value === "UTC";
+const setZone = (utc) => { ff().querySelector(`input[name=tz][value="${utc ? "UTC" : "local"}"]`).checked = true; };
+function readRange() {
+  const f = ff(), utc = zoneIsUtc();
+  return { from: boundToIso(f.from_date.value, f.from_time.value, utc, false), to: boundToIso(f.to_date.value, f.to_time.value, utc, true) };
+}
+function setRange(from, to) {
+  const f = ff(), utc = zoneIsUtc(), a = isoToBound(from, utc, false), b = isoToBound(to, utc, true);
+  f.from_date.value = a.date; f.from_time.value = a.time; f.to_date.value = b.date; f.to_time.value = b.time;
+  showRange();
+}
+// A date input reports "" both when it is empty and when it holds a half-typed date; tell the two apart, and do not
+// let a time without a date pass as "no bound".
+function rangeProblems() {
+  const f = ff(), out = [];
+  for (const [k, label] of [["from", "From"], ["to", "To"]]) {
+    const d = f[`${k}_date`], t = f[`${k}_time`];
+    const badDate = d.validity.badInput, badTime = t.validity.badInput, timeOnly = !d.value && !badDate && t.value;
+    d.setAttribute("aria-invalid", String(badDate || timeOnly));
+    t.setAttribute("aria-invalid", String(badTime));
+    if (badDate) out.push(`“${label}” has an incomplete date: finish it or press Clear.`);
+    else if (timeOnly) out.push(`“${label}” has a time but no date: add the date or press Clear.`);
+    if (badTime) out.push(`“${label}” has an incomplete time.`);
+  }
+  return out;
+}
+function showRange() {
+  const { from, to } = readRange(), utc = zoneIsUtc(), out = $("#range-sum");
+  const bad = rangeProblems();
+  if (bad.length) { out.innerHTML = bad.map((b) => `<span class="bad">${esc(b)}</span>`).join(""); return; }
+  if (!from && !to) { out.innerHTML = "<span>Any time: every matching trace, and new ones as they come.</span>"; return; }
+  if (from && to && from > to) { out.innerHTML = `<span class="bad">“From” is after “To”.</span>`; return; }
+  out.innerHTML = `<span>${esc(rangeText(from, to, utc))} <b>${esc(zoneName(utc))}</b></span><span class="alt">= ${esc(rangeText(from, to, !utc))} ${esc(zoneName(!utc))}</span>`;
+}
+ff().addEventListener("change", (ev) => {
+  if (ev.target.name === "tz") { const utc = zoneIsUtc(); setZone(!utc); const r = readRange(); setZone(utc); setRange(r.from, r.to); }
+  else if (/^(from|to)_/.test(ev.target.name)) showRange();
+  $("#filter-preview-out").textContent = "";
+});
+ff().addEventListener("input", (ev) => { if (/^(from|to)_/.test(ev.target.name)) showRange(); });
+const PRESETS = {
+  "1h": () => [new Date(Date.now() - 3600e3), null],
+  "24h": () => [new Date(Date.now() - 86400e3), null],
+  "7d": () => [new Date(Date.now() - 7 * 86400e3), null],
+  today: () => { const utc = zoneIsUtc(), n = new Date(); return [utc ? new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())) : new Date(n.getFullYear(), n.getMonth(), n.getDate()), null]; },
+  "from-now": () => [new Date(), null],
+  all: () => [null, null],
+};
+ff().addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-clear]");
+  if (!b) return;
+  const f = ff(), k = b.dataset.clear;
+  // Assigning "" does not clear a half-typed date in every browser; resetting the control's value does.
+  for (const el of [f[`${k}_date`], f[`${k}_time`]]) { el.value = ""; el.type = el.type; }
+  showRange();
+  $("#filter-preview-out").textContent = "";
+});
+$(".presets").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-preset]");
+  if (!b) return;
+  const [a] = PRESETS[b.dataset.preset]();
+  setRange(a ? new Date(Math.floor(a.getTime() / 60e3) * 60e3).toISOString() : "", "");
+});
+
+function condRow(x = {}) {
+  const cols = filterKinds[ff().kind.value || "langfuse"]?.columns || {};
+  const col = x.column || Object.keys(cols)[0], spec = cols[col];
+  const row = document.createElement("div");
+  row.className = "cond";
+  const value = Array.isArray(x.value) ? x.value.join(", ") : x.value ?? "";
+  const valueInput = spec.bool ? `<select data-c="value" aria-label="Value"><option value="true" ${value === true || value === "true" ? "selected" : ""}>true</option><option value="false" ${value === false || value === "false" ? "selected" : ""}>false</option></select>`
+    : `<input data-c="value" aria-label="Value" value="${esc(value)}" ${spec.type?.startsWith("number") ? `type="number" step="any"` : ""} placeholder="${spec.list ? (spec.values ? spec.values.join(", ") : "comma-separated") : "value"}">`;
+  row.innerHTML = `<select data-c="column" aria-label="Column">${Object.entries(cols).map(([k, v]) => `<option value="${esc(k)}" ${k === col ? "selected" : ""}>${esc(v.label)}</option>`).join("")}</select>
+    <input data-c="key" aria-label="Key" placeholder="${esc(spec.key || "")}" value="${esc(x.key || "")}" ${spec.key ? "" : "disabled"}>
+    <select data-c="operator" aria-label="Operator">${spec.ops.map((o) => `<option ${o === x.operator ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>
+    ${valueInput}
+    <button type="button" class="btn small danger" data-c="remove" aria-label="Remove condition">✕</button>`;
+  row.querySelector("[data-c=column]").onchange = (e) => row.replaceWith(condRow({ column: e.target.value }));
+  row.querySelector("[data-c=remove]").onclick = () => row.remove();
+  return row;
+}
+function readCriteria() {
+  const f = ff(), r = readRange();
+  return {
+    name: { op: f.name_op.value, value: f.name_value.value }, from: r.from, to: r.to, tz: zoneIsUtc() ? "UTC" : "local",
+    user_ids: f.user_ids.value, session_ids: f.session_ids.value, environments: f.environments.value,
+    tags: { op: f.tags_op.value, values: f.tags_values.value }, release: f.release.value, version: f.version.value,
+    bookmarked: f.bookmarked.value || null,
+    conditions: [...$("#conds").children].map((row) => ({ column: row.querySelector("[data-c=column]").value, key: row.querySelector("[data-c=key]").value,
+      operator: row.querySelector("[data-c=operator]").value, value: row.querySelector("[data-c=value]").value })),
+  };
+}
+let editingFilter = null;
+function openFilter(flt = null) {
+  editingFilter = flt;
+  const f = ff();
+  f.reset();
+  $("#filter-error").hidden = true;
+  $("#filter-dialog-title").textContent = flt ? `Edit ${flt.name}` : "New observability filter";
+  $("#filter-save").textContent = flt ? "Save" : "Create";
+  $("#filter-delete").hidden = !flt;
+  f.kind.innerHTML = Object.entries(filterKinds).map(([k, v]) => `<option value="${esc(k)}">${esc(v.label)}</option>`).join("");
+  f.kind.disabled = !!flt;
+  f.name_op.innerHTML = STRING_OPS.map((o) => `<option ${o === "starts with" ? "selected" : ""}>${esc(o)}</option>`).join("");
+  f.tags_op.innerHTML = ARRAY_OPS.map((o) => `<option>${esc(o)}</option>`).join("");
+  const c = flt?.criteria || {};
+  if (flt) {
+    f.name.value = flt.name; f.description.value = flt.description || ""; f.kind.value = flt.kind;
+    if (c.name) { f.name_op.value = c.name.op; f.name_value.value = c.name.value; }
+    f.user_ids.value = (c.user_ids || []).join(", "); f.session_ids.value = (c.session_ids || []).join(", ");
+    f.environments.value = (c.environments || []).join(", ");
+    if (c.tags) { f.tags_op.value = c.tags.op; f.tags_values.value = c.tags.values.join(", "); }
+    f.release.value = c.release || ""; f.version.value = c.version || "";
+    f.bookmarked.value = c.bookmarked == null ? "" : String(c.bookmarked);
+  }
+  $("#conds").innerHTML = "";
+  for (const x of c.conditions || []) $("#conds").append(condRow(x));
+  $("#tz-local").textContent = `Local (${LOCAL_TZ})`;
+  setZone(c.tz === "UTC");
+  setRange(c.from || "", c.to || "");
+  const ins = integrations.filter((i) => kinds[i.kind]?.filter_kind === (flt?.kind || "langfuse"));
+  $("#filter-check-int").innerHTML = ins.length ? ins.map((i) => `<option value="${esc(i.id)}">${esc(i.name)}</option>`).join("") : `<option value="">no connection</option>`;
+  $("#filter-preview-out").textContent = "";
+  $("#filter-dialog").showModal();
+}
+$("#new-filter").onclick = () => openFilter();
+$("#add-cond").onclick = () => $("#conds").append(condRow());
+$("#filter-preview").addEventListener("click", async () => {
+  const out = $("#filter-preview-out"), btn = $("#filter-preview");
+  const bad = rangeProblems();
+  if (bad.length) { out.innerHTML = `<span style="color:var(--critical)">${esc(bad[0])}</span>`; return; }
+  out.textContent = "counting…"; btn.disabled = true;
+  try {
+    const r = await api("preview", { method: "POST", body: { integration_id: $("#filter-check-int").value, kind: ff().kind.value, criteria: readCriteria() } });
+    const utc = zoneIsUtc();
+    out.innerHTML = `<b>${r.count}</b> ${r.count === 1 ? "trace matches" : "traces match"} now.`
+      + (r.newest.length ? `<ul>${r.newest.map((t) => `<li>${esc(fmtIn(t.timestamp, utc))} · ${esc(t.name || t.id)}</li>`).join("")}${r.count > r.newest.length ? "<li>…</li>" : ""}</ul>` : "");
+  } catch (err) { out.innerHTML = `<span style="color:var(--critical)">${esc(err.message)}</span>`; }
+  btn.disabled = false;
+});
+$("#filter-form").addEventListener("submit", async (ev) => {
+  const action = ev.submitter?.value;
+  if (action !== "save" && action !== "delete") return;
+  ev.preventDefault();
+  try {
+    if (action === "delete") {
+      if (!await ask.confirm({ danger: true, title: `Delete filter "${editingFilter.name}"?`, ok: "Delete filter" })) return;
+      await api(`filters/${encodeURIComponent(editingFilter.id)}`, { method: "DELETE" });
+    } else {
+      const f = ev.target, bad = rangeProblems();
+      if (bad.length) throw new Error(bad[0]);
+      const body = { name: f.name.value, kind: f.kind.value, description: f.description.value, criteria: readCriteria() };
+      await api(editingFilter ? `filters/${encodeURIComponent(editingFilter.id)}` : "filters", { method: editingFilter ? "PUT" : "POST", body });
+    }
+    $("#filter-dialog").close();
+    await refresh();
+  } catch (err) { $("#filter-error").textContent = err.message; $("#filter-error").hidden = false; }
+});
+
+// ---------------------------------------------------------------- integrations
+function renderIntegrations() {
+  const group = (dir, title) => {
+    const list = integrations.filter((i) => i.direction === dir);
+    return `<div class="dir">${title}</div>` + (list.length ? list.map(intCard).join("") : `<div class="empty"><div>None yet.</div></div>`);
+  };
+  $("#int-list").innerHTML = integrations.length ? group("input", "Input · trace sources") + group("output", "Output · memory")
+    : `<div class="empty"><div>No integrations yet.</div><button class="btn primary" data-act="new">Add an integration</button></div>`;
+  $("#supported").innerHTML = `<span>Supported types:</span>` + Object.entries(kinds).map(([k, v]) => `<span>${kindLabel(k)} ${v.direction}${v.direction === "input" && !v.import ? " (connection test only)" : ""}</span>`).join("");
+}
+function intCard(i) {
+  const k = kinds[i.kind] || { secret: [], fields: [] };
+  const secrets = k.secret.map((f) => `<span>${esc(FIELD[f]?.label || f)} <b>${esc(i[`${f}_hint`] || "not set")}</b></span>`).join("");
+  const shown = k.fields.filter((f) => !k.secret.includes(f) && f !== "host" && i[f] !== undefined && i[f] !== "")
+    .map((f) => `<span>${esc(FIELD[f]?.label || f)} <b>${esc(typeof i[f] === "boolean" ? (i[f] ? "yes" : "no") : i[f])}</b></span>`).join("");
+  return `<article class="card">
+    <div class="card-head"><h2>${esc(i.name)}</h2>${kindLabel(i.kind)}<span class="dir">${esc(i.direction)}</span><span class="id">${esc(i.id)}</span>
+      <span class="actions"><button class="btn small" data-act="test" data-id="${esc(i.id)}">Test connection</button>
+        <button class="btn small" data-act="edit" data-id="${esc(i.id)}">Edit</button></span></div>
+    <div class="meta">${i.host ? `<span>host <b>${esc(i.host)}</b></span>` : ""}${shown}${secrets}
+      <span>${i.used_by.length ? `used by ${i.used_by.map((e) => `<b>${esc(e)}</b>`).join(", ")}` : "not used by any pipeline"}</span></div>
+    ${k.direction === "input" && !k.import ? `<p class="note">${esc(k.note || "Import is not supported for this type yet.")}</p>` : ""}
+    <div class="test-result" id="test-${esc(i.id)}" aria-live="polite"></div>
+  </article>`;
+}
+$("#int-list").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button[data-act]");
+  if (!b) return;
+  const id = b.dataset.id;
+  if (b.dataset.act === "new") return openIntegration();
+  if (b.dataset.act === "edit") return openIntegration(integrationOf(id));
+  if (b.dataset.act === "test") {
+    const out = $(`#test-${CSS.escape(id)}`);
+    out.innerHTML = `<span class="pill">testing…</span>`;
+    b.disabled = true;
+    const r = await api(`integrations/${encodeURIComponent(id)}/test`, { method: "POST" }).catch((e) => ({ ok: false, message: e.message }));
+    b.disabled = false;
+    out.innerHTML = `<span class="pill ${r.ok ? "ok" : "bad"}">${r.ok ? "connected" : "failed"}</span> ${esc(r.message)}`;
+  }
+});
+
+let editingInt = null;
+function openIntegration(integ = null) {
+  editingInt = integ;
+  const f = $("#int-form");
+  f.reset();
+  $("#int-error").hidden = true;
+  $("#int-dialog-title").textContent = integ ? `Edit ${integ.name}` : "New integration";
+  $("#int-delete").hidden = !integ;
+  $("#int-kinds").innerHTML = Object.entries(kinds).map(([k, v]) => `<label>
+      <input type="radio" name="kind" value="${esc(k)}" ${(integ ? integ.kind === k : k === "langfuse") ? "checked" : ""} ${integ && integ.kind !== k ? "disabled" : ""}>
+      ${kindLabel(k)}<small>${v.direction === "output" ? "output: send trajectories to memory" : v.import ? "input: read traces" : "input: connection test only, no import yet"}</small></label>`).join("");
+  if (integ) f.name.value = integ.name;
+  renderIntFields();
+  $("#int-dialog").showModal();
+}
+function renderIntFields() {
+  const kind = $("#int-form").querySelector("input[name=kind]:checked")?.value || "langfuse";
+  const k = kinds[kind], optional = new Set(k.optional || []);
+  let group = null;
+  $("#int-fields").innerHTML = k.fields.map((f) => {
+    const d = FIELD[f] || { label: f }, secret = k.secret.includes(f);
+    const head = d.group && d.group !== group ? `<div class="dir" style="margin-top:4px">${esc(d.group)}</div>` : "";
+    group = d.group || group;
+    const hint = secret && editingInt ? `stored ${esc(editingInt[`${f}_hint`] || "none")}; empty keeps it` : [optional.has(f) && "optional", d.hint && esc(d.hint)].filter(Boolean).join(" · ");
+    const value = !secret && editingInt ? editingInt[f] ?? "" : f === "host" && !editingInt ? k.default_host : "";
+    const required = optional.has(f) || (secret && editingInt) ? "" : "required";
+    const label = `<span>${esc(d.label)}${hint ? ` <small>${hint}</small>` : ""}</span>`;
+    if (d.type === "checkbox") return `${head}<label class="check-field"><input type="checkbox" name="${esc(f)}" ${editingInt?.[f] ? "checked" : ""}> ${esc(d.label)}</label>`;
+    if (d.choices) return `${head}<label class="field">${label}<select name="${esc(f)}">${Object.entries(d.choices).filter(([v], i, all) => all.findIndex(([w]) => w === v) === i)
+      .map(([v, l]) => `<option value="${esc(v)}" ${String(value) === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+    if (d.picker) return `${head}<div class="field">${label}<div class="path-row"><input name="${esc(f)}" type="text" autocomplete="off" placeholder="${esc(d.placeholder || "")}" value="${esc(value)}" ${required} aria-label="${esc(d.label)}">
+      <button type="button" class="btn" data-pick="${esc(f)}">Browse…</button></div></div>`;
+    return `${head}<label class="field">${label}<input name="${esc(f)}" type="${secret ? "password" : d.type || "text"}" autocomplete="${secret ? "new-password" : "off"}" placeholder="${esc(d.placeholder || "")}" value="${esc(value)}" ${required}></label>`;
+  }).join("");
+  $("#int-note").hidden = !k.note;
+  $("#int-note").textContent = k.note || "";
+}
+$("#int-kinds").addEventListener("change", renderIntFields);
+$("#int-fields").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button[data-pick]");
+  if (!b) return;
+  const input = $("#int-form").elements[b.dataset.pick];
+  const chosen = await pickFolder(input.value.trim());
+  if (chosen) input.value = chosen;
+});
+
+// ---------------------------------------------------------------- folder picker (folders of the server's machine)
+let folderAt = null, folderDone = null;
+async function showFolder(path) {
+  $("#folder-error").hidden = true;
+  try {
+    const r = await api(`folders${path ? `?path=${encodeURIComponent(path)}` : ""}`);
+    folderAt = r;
+    $("#folder-current").textContent = r.path;
+    $("#folder-up").disabled = !r.parent;
+    const shown = $("#folder-hidden").checked ? r.folders : r.folders.filter((n) => !n.startsWith("."));
+    $("#folder-list").innerHTML = shown.length
+      ? shown.map((n) => `<li><button type="button" data-name="${esc(n)}">📁 ${esc(n)}</button></li>`).join("")
+      : `<li class="empty-dir">No subfolders</li>`;
+    $("#folder-info").textContent = `${r.json_files} JSON file${r.json_files === 1 ? "" : "s"} directly in this folder`;
+  } catch (err) {
+    $("#folder-error").textContent = err.message; $("#folder-error").hidden = false;
+    if (!folderAt && path) return showFolder("");
+  }
+}
+function pickFolder(start) {
+  folderAt = null;
+  $("#folder-dialog").returnValue = "";
+  $("#folder-dialog").showModal();
+  showFolder(start);
+  return new Promise((resolve) => { folderDone = resolve; });
+}
+$("#folder-list").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-name]");
+  if (b && folderAt) showFolder(`${folderAt.path.replace(/[\\/]$/, "")}/${b.dataset.name}`);
+});
+$("#folder-hidden").onchange = () => folderAt && showFolder(folderAt.path);
+$("#folder-up").onclick = () => folderAt?.parent && showFolder(folderAt.parent);
+$("#folder-home").onclick = () => showFolder(folderAt?.home || "");
+$("#folder-dialog").addEventListener("close", () => {
+  const ok = $("#folder-dialog").returnValue === "choose" && folderAt;
+  folderDone?.(ok ? folderAt.path : null);
+  folderDone = null;
+});
+$("#new-int").onclick = () => openIntegration();
+$("#int-form").addEventListener("submit", async (ev) => {
+  const action = ev.submitter?.value;
+  if (action !== "save" && action !== "delete") return;
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    if (action === "delete") {
+      if (!await ask.confirm({ danger: true, title: `Delete integration "${editingInt.name}"?`, ok: "Delete integration" })) return;
+      await api(`integrations/${encodeURIComponent(editingInt.id)}`, { method: "DELETE" });
+    } else {
+      const kind = f.querySelector("input[name=kind]:checked").value;
+      const body = { kind, name: f.name.value };
+      for (const name of kinds[kind].fields) body[name] = f.elements[name].type === "checkbox" ? f.elements[name].checked : f.elements[name].value;
+      await api(editingInt ? `integrations/${encodeURIComponent(editingInt.id)}` : "integrations", { method: editingInt ? "PUT" : "POST", body });
+    }
+    $("#int-dialog").close();
+    await refresh();
+  } catch (err) { $("#int-error").textContent = err.message; $("#int-error").hidden = false; }
+});
+
+// ---------------------------------------------------------------- settings
+let settings = null;
+async function loadSettings() {
+  if (settingsDirty) return;  // never overwrite what is being typed
+  try { settings = await api("settings"); } catch { return; }
+  const f = $("#settings-form"), l = settings.llm;
+  for (const n of ["base_url", "model", "temperature", "max_tokens", "timeout"]) f.elements[n].value = l[n] ?? "";
+  f.api_key.value = "";
+  $("#llm-key-hint").textContent = l.api_key_hint ? `stored ${l.api_key_hint}; empty keeps it` : "the proxy's key; empty if it needs none";
+  $("#llm-state").innerHTML = l.configured ? `<span class="pill ok">configured</span>` : `<span class="pill bad">not configured</span>`;
+  $("#llm-env").hidden = !l.from_env.length;
+  $("#llm-env").textContent = l.from_env.length ? `From the environment (.env): ${l.from_env.join(", ")}. Saving a value here overrides it.` : "";
+}
+const LLM_INPUTS = ["base_url", "model", "api_key", "temperature", "max_tokens", "timeout"];
+function readLlm() {
+  const f = $("#settings-form");
+  const llm = Object.fromEntries(LLM_INPUTS.map((n) => [n, f.elements[n].value.trim()]));
+  // A value shown because it comes from the environment is not saved as a setting of its own.
+  for (const n of settings?.llm.from_env || []) if (llm[n] === (settings.llm[n] ?? "")) delete llm[n];
+  return llm;
+}
+// Unsaved edits are marked, and leaving the page with them asks first.
+let settingsDirty = false;
+function markSettings(dirty) {
+  settingsDirty = dirty;
+  $("#settings-save").textContent = dirty ? "Save changes" : "Save";
+  $("#settings-save").classList.toggle("primary", dirty);
+  if (dirty) $("#llm-test-out").innerHTML = `<span class="pill run">unsaved changes</span>`;
+}
+$("#settings-form").addEventListener("input", () => markSettings(true));
+window.addEventListener("beforeunload", (e) => { if (settingsDirty) { e.preventDefault(); e.returnValue = ""; } });
+$("#settings-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, err = $("#settings-error");
+  err.hidden = true;
+  const llm = readLlm();
+  const missing = [["base_url", "the endpoint"], ["model", "the model"]].filter(([n]) => !f.elements[n].value.trim()).map(([, l]) => l);
+  if (missing.length) { err.textContent = `Set ${missing.join(" and ")} before saving.`; err.hidden = false; f.elements[missing[0] === "the endpoint" ? "base_url" : "model"].focus(); return; }
+  try {
+    await api("settings", { method: "PUT", body: { llm } });
+    markSettings(false);
+    await loadSettings();
+    $("#llm-test-out").innerHTML = `<span class="pill ok">saved</span> <span style="color:var(--fg-3);font-size:13px">${esc(settings.llm.model)} at ${esc(settings.llm.base_url)}</span>`;
+  } catch (e) { err.textContent = e.message; err.hidden = false; }
+});
+$("#llm-test").addEventListener("click", async () => {
+  const out = $("#llm-test-out"), b = $("#llm-test");
+  out.innerHTML = `<span class="pill run">calling the model…</span>`; b.disabled = true;
+  // Tests what the form holds, saved or not.
+  const r = await api("settings/test-llm", { method: "POST", body: { llm: readLlm() } }).catch((e) => ({ ok: false, message: e.message }));
+  b.disabled = false;
+  out.innerHTML = `<span class="pill ${r.ok ? "ok" : "bad"}">${r.ok ? "works" : "failed"}</span> ${esc(r.message)}${r.ok && settingsDirty ? ` · <b>not saved yet</b>` : ""}`;
+});
+
+// ---------------------------------------------------------------- converters
+let conv = null;  // {pipeline, data, view}
+async function openConverter(p, cid, version) {
+  const data = await api(`pipelines/${encodeURIComponent(p.id)}/converters/${encodeURIComponent(cid)}${version ? `?version=${version}` : ""}`);
+  conv = { pipeline: p, data, view: conv?.data?.id === cid ? conv.view : "code" };
+  const d = data, latest = d.shown_version === d.version;
+  $("#conv-title").textContent = `Converter ${d.id} · v${d.shown_version}${latest ? "" : ` (latest is v${d.version})`}`;
+  $("#conv-meta").innerHTML = `<span>pipeline <b>${esc(p.name)}</b></span><span><b>${esc(d.traces || 0)}</b> traces converted</span>
+    <span>schema with <b>${esc(d.attributes ?? "")}</b> properties</span><span>based on <b>${esc(d.based_on || "")}</b></span>
+    <span><b>${esc(d.samples.length)}</b> sample traces guard its changes</span><span>.data/pipelines/${esc(p.id)}/converters/${esc(d.id)}/</span>`;
+  $("#conv-delete").hidden = p.mode === "production";
+  renderConv();
+  if (!$("#conv-dialog").open) $("#conv-dialog").showModal();
+}
+function codeHtml(code) {
+  return code.split("\n").map((l, i) => `<span class="ln">${i + 1}</span>${esc(l)}`).join("\n");
+}
+function diffHtml(diff) {
+  return diff.split("\n").map((l) => {
+    const cls = l.startsWith("@@") ? "hunk" : l.startsWith("+") && !l.startsWith("+++") ? "add" : l.startsWith("-") && !l.startsWith("---") ? "del" : "";
+    return cls ? `<span class="${cls}">${esc(l)}</span>` : esc(l);
+  }).join("\n").replace(/<\/span>\n/g, "</span>");
+}
+function renderConv() {
+  const d = conv.data, v = conv.view;
+  document.querySelectorAll("#conv-dialog [data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
+  const body = $("#conv-body");
+  if (v === "code") body.innerHTML = `<pre class="code">${codeHtml(d.code)}</pre>`;
+  else if (v === "diff") body.innerHTML = d.diff ? `<pre class="code">${diffHtml(d.diff)}</pre>`
+    : `<p class="hint" style="color:var(--fg-3)">v${esc(d.shown_version)} is the first version: there is nothing to compare it with.</p>`;
+  else if (v === "schema") body.innerHTML = `<p class="hint" style="color:var(--fg-3);font-size:13px;margin:0 0 6px">The JSON Schema of the traces this converter handles, inferred from them after decoding JSON held in strings. A new trace's schema is compared with it: the same schema (or a narrower one, with fields missing) reuses the code, a wider one (new fields, no type changed) gets a new version that replaces this one, one where a type changed gets a new converter.</p>
+    <pre class="code">${esc(JSON.stringify(d.schema || {}, null, 2))}</pre>`;
+  else body.innerHTML = `<div class="table-wrap"><table class="hist"><thead><tr><th>Version</th><th>When</th><th>What</th><th>Trace</th><th>Why</th><th>LLM</th></tr></thead><tbody>
+    ${[...(d.history || [])].reverse().map((h) => `<tr><td><button type="button" class="hist-v" data-version="${esc(h.version)}">v${esc(h.version)}</button></td>
+      <td>${esc(fmtDate(h.at))}</td><td>${esc(ACTION[h.action] || h.action)}</td><td style="font-family:var(--mono);font-size:12px">${esc((h.trace_id || "").slice(0, 12))}</td>
+      <td class="why">${esc(h.reason || "")}</td><td style="color:var(--fg-3)">${h.usage ? `${esc(h.attempts ?? 1)}× · ${esc(((h.usage.prompt_tokens || 0) + (h.usage.completion_tokens || 0)).toLocaleString())} tok` : ""}</td></tr>`).join("")}
+    </tbody></table></div>`;
+}
+$("#conv-dialog").addEventListener("click", async (ev) => {
+  const t = ev.target.closest("[data-view]");
+  if (t) { conv.view = t.dataset.view; renderConv(); return; }
+  const h = ev.target.closest("[data-version]");
+  if (h) { conv.view = "code"; await openConverter(conv.pipeline, conv.data.id, h.dataset.version); }
+});
+$("#conv-delete").addEventListener("click", async () => {
+  const { pipeline: p, data: d } = conv;
+  if (!await ask.confirm({ danger: true, title: `Forget converter ${d.id}?`, ok: "Forget converter",
+    message: "Its code, versions and samples are deleted. Trajectories it already made stay. The next trace of this shape gets a new converter written by the LLM." })) return;
+  try {
+    await api(`pipelines/${encodeURIComponent(p.id)}/converters/${encodeURIComponent(d.id)}`, { method: "DELETE" });
+    $("#conv-dialog").close();
+    delete converters[p.id];
+    await refresh();
+  } catch (e) { ask.alert({ error: true, title: "Could not delete the converter", message: e.message }); }
+});
+
+const hash = location.hash.slice(1);
+if (TABS.includes(hash)) showTab(hash);
+load().catch((err) => { $("#pipe-list").innerHTML = `<div class="empty">Could not reach the server: ${esc(err.message)}</div>`; });
+</script>
+</body>
+</html>

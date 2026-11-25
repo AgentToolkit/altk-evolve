@@ -25,3 +25,7 @@ site/
 example-guidelines
 .codex
 notes/
+altk_forge/.data
+altk_forge/.sampledata
+altk_forge/build/
+altk_forge/*.egg-info/

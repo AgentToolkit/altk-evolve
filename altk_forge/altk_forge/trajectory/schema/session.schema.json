@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AgentToolkit/altk-evolve/schemas/session.schema.json",
+  "title": "Evolve Session",
+  "description": "One multi-turn conversation. Turns are trajectory documents referenced by trace_id; this document holds only what no single turn shows: their order, the outcome, and findings, gold data and scores that span turns.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "turns"],
+  "properties": {
+    "schema_version": { "const": "2.0" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "namespace_id": { "type": ["string", "null"] },
+    "user_id": { "type": ["string", "null"] },
+    "agent_id": { "type": ["string", "null"] },
+    "turns": { "description": "trace_id of each turn, in order.", "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "outcome": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "description": "resolved = goal met; abandoned = user left; escalated = handed to a human; open = ongoing.", "enum": ["resolved", "abandoned", "escalated", "open"] },
+        "resolved_at_turn": { "type": ["integer", "null"], "minimum": 0 },
+        "summary": { "type": ["string", "null"] }
+      }
+    },
+    "findings": { "description": "Findings whose symptom and cause are in different turns (SpanRef.trace_id set).", "type": "array", "items": { "$ref": "trajectory.schema.json#/$defs/Finding" } },
+    "expected": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "goal": { "type": ["string", "null"] },
+        "max_turns": { "type": ["integer", "null"], "minimum": 1 },
+        "guidelines": { "type": "array", "items": { "$ref": "trajectory.schema.json#/$defs/ExpectedGuideline" } },
+        "provenance": { "$ref": "trajectory.schema.json#/$defs/Annotator" }
+      }
+    },
+    "scores": { "description": "Conversation-level metrics.", "type": "array", "items": { "$ref": "trajectory.schema.json#/$defs/Score" } }
+  }
+}

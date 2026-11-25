@@ -1,0 +1,1493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trajectories · ALTK Forge</title>
+<meta name="color-scheme" content="dark">
+<script src="/theme.js"></script>
+<script src="/confirm.js"></script>
+<style>
+/* Layout: turn list on the left. Right pane is split: the timeline of the whole run on top (every span, clickable),
+   the inspector below with everything about the selected span. Two visual registers in the inspector:
+   TRAJECTORY blocks (solid cyan rule) hold values copied from the file under their field names;
+   VIEWER blocks (dashed violet outline) hold text this app derives from those values. */
+:root {
+  --bg: #0e1114;
+  --surface: #151a1f;
+  --surface-2: #1b2128;
+  --surface-3: #232b34;
+  --line: #2a323b;
+  --line-2: #3a4450;
+  --placeholder: #4a535e;
+  --fg: #e4e8ec;
+  --fg-2: #aab3bd;
+  --fg-3: #7d8794;
+  --data: #56b6c2;
+  --data-bg: #101c21;
+  --viewer: #b79cf0;
+  --viewer-bg: #18142a;
+  --llm: #3987e5;
+  --tool: #d95926;
+  --retriever: #199e70;
+  --critical: #ef7474;
+  --critical-bg: #2c1618;
+  --warning: #e2b347;
+  --warning-bg: #29220f;
+  --good: #57c457;
+  --io-in: #82aaff;
+  --io-out: #6fd0b0;
+  --io-gold: #e6c36e;
+  --mem: #6cc08b;
+  --mem-bg: #12251a;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --on-data: var(--bg);
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --surface-3: #e6e9ee;
+  --line: #dde1e7;
+  --line-2: #c5cbd4;
+  --placeholder: #b8bec7;
+  --fg: #1b2129;
+  --fg-2: #48525e;
+  --fg-3: #6b7480;
+  --data: #0e7490;
+  --on-data: #ffffff;
+  --critical: #c42b2b;
+  --critical-bg: #fde8e8;
+  --warning: #9a6200;
+  --warning-bg: #fdf1d6;
+  --good: #1f7a33;
+  --data-bg: #eaf5f8;
+  --viewer: #6d3fc4;
+  --viewer-bg: #f3effb;
+  --llm: #2f74d0;
+  --tool: #c54a17;
+  --retriever: #12825b;
+  --io-in: #3159c4;
+  --io-out: #11806a;
+  --io-gold: #8a5a00;
+  --mem: #1f7a45;
+  --mem-bg: #e4f5ea;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.gone { position: fixed; top: 0; left: 0; right: 0; z-index: 50; padding: 8px 16px; background: var(--critical-bg); color: var(--critical);
+  border-bottom: 1px solid var(--critical); font-size: 13px; text-align: center; }
+.gone a { color: inherit; font-weight: 600; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.55 var(--font); }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+.app { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); height: 100%; }
+
+/* ---------- turn list ---------- */
+.list { border-right: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.list-head { padding: 14px 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; border-bottom: 1px solid var(--line); min-width: 0; }
+.list-head > * { min-width: 0; }
+.brand { font-size: 15px; font-weight: 600; }
+.brand .brand-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.theme-btn { margin-left: auto; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--fg-2); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
+.theme-btn:hover { color: var(--fg); }
+.brand .back { display: inline-block; font-size: 12px; font-weight: 400; color: var(--data); text-decoration: none; }
+.brand .back:hover { text-decoration: underline; }
+.brand span { display: block; overflow-wrap: anywhere; }
+.brand .mode-tag { display: inline-block; vertical-align: 2px; margin-left: 6px; }
+.brand small { display: block; font-size: 11px; font-weight: 400; color: var(--fg-3); letter-spacing: 0; }
+.search { width: 100%; padding: 6px 10px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--bg); }
+.filters { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--fg-2); }
+.filters label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.count { margin-left: auto; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.items { overflow-y: auto; flex: 1; }
+.item { display: grid; gap: 3px; width: 100%; text-align: left; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--line); background: none; cursor: pointer; }
+.item:hover { background: var(--surface-2); }
+.item[aria-current="true"] { background: var(--surface-3); box-shadow: inset 3px 0 0 var(--data); }
+.item-q { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.item-meta { font-size: 11px; color: var(--fg-3); display: flex; flex-wrap: wrap; gap: 2px 10px; font-variant-numeric: tabular-nums; }
+.flag { color: var(--critical); }
+.flag.warn { color: var(--warning); }
+.flag.fnd { color: var(--viewer); }
+.filters select { padding: 3px 6px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--bg); font-size: 12px; min-width: 0; width: 0; flex: 1 1 0; max-width: 100%; }
+.search { min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.chip { font-size: 11px; padding: 0 6px; border-radius: 3px; background: var(--surface-3); color: var(--fg-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip.good { color: var(--good); }
+.chip.warn { color: var(--warning); background: var(--warning-bg); }
+.chip.bad { color: var(--critical); background: var(--critical-bg); }
+
+/* ---------- right pane: overview (timeline) + inspector ---------- */
+/* The overview and the inspector run on one after the other and the whole pane scrolls as one; only the memory view fills the pane. */
+.detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow-y: auto; position: relative; }
+.overview { flex: none; border-bottom: 2px solid var(--line-2); background: var(--surface); }
+.overview-head { padding: 12px 20px 8px; display: grid; gap: 6px; }
+.facts { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.facts b { color: var(--fg-2); font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--fg-3); }
+.legend i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.tl-wrap { overflow-x: auto; padding: 0 20px 10px; }
+/* More than 10 spans: the list scrolls on its own (about 10 rows), so the details below stay in view. */
+.tl-wrap.long { max-height: calc(22px + 10.5 * 32px); overflow-y: auto; overscroll-behavior: contain; margin: 0 20px 10px; padding: 0; border-bottom: 1px solid var(--line); }
+.tl { min-width: 760px; display: grid; grid-template-columns: 280px minmax(0, 1fr) 70px; }
+.tl-axis { grid-column: 2; position: sticky; top: 0; z-index: 1; height: 22px; background: var(--surface); border-bottom: 1px solid var(--line); font-size: 10px; color: var(--fg-3); }
+.tl-axis span { position: absolute; top: 3px; transform: translateX(-50%); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tl-axis-pad { position: sticky; top: 0; z-index: 1; background: var(--surface); border-bottom: 1px solid var(--line); }
+.tl-row { display: contents; }
+.tl-row > * { cursor: pointer; padding-block: 3px; border-radius: 0; }
+.tl-row:hover > * { background: var(--surface-2); }
+.tl-row[aria-selected="true"] > * { background: var(--surface-3); }
+.tl-row[aria-selected="true"] > .tl-label { box-shadow: inset 3px 0 0 var(--data); color: var(--fg); }
+.tl-label { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; padding-left: 8px; color: var(--fg-2); display: flex; gap: 8px; align-items: center; }
+.tl-label .n { color: var(--fg-3); font-size: 11px; min-width: 26px; font-variant-numeric: tabular-nums; }
+.tl-label.is-agent, .tl-label.is-turn { color: var(--fg); font-weight: 600; }
+.tl-label .err-dot { color: var(--critical); font-weight: 600; }
+.tl-track { position: relative; height: 26px; }
+.tl-grid { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.tl-dur { font-size: 11px; color: var(--fg-3); text-align: right; font-variant-numeric: tabular-nums; padding-right: 6px; }
+.bar { position: absolute; top: 7px; height: 12px; min-width: 3px; border-radius: 3px; background: var(--fg-3); }
+.bar.llm { background: var(--llm); }
+.bar.tool { background: var(--tool); }
+.bar.retriever { background: var(--retriever); }
+.bar.memory { background: transparent; border: 1.5px dashed var(--fg-2); }
+.bar.agent { top: 5px; height: 16px; background: transparent; border: 1.5px solid var(--fg-2); }
+.bar.turn { top: 5px; height: 16px; background: var(--surface-3); border: 1.5px solid var(--line-2); }
+.bar.err { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--critical); }
+.bar.warn { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--warning); }
+.tl-label .warn-dot { color: var(--warning); font-weight: 600; }
+.tl-label .fnd-dot { color: var(--viewer); font-weight: 600; }
+.tl-label .mem-dot { color: var(--mem); font-weight: 700; }
+.flag.mem { color: var(--mem); }
+
+/* ---------- guidelines from memory, marked inside the prompt that carried them ---------- */
+.gl { display: block; margin: 6px 0; padding: 6px 10px 8px; border: 1.5px solid var(--mem); border-radius: 4px; background: var(--mem-bg); font: 12px/1.5 var(--font); white-space: normal; }
+.gl-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 11px; color: var(--mem); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.gl-head span { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--fg-3); }
+.gl-intro { color: var(--fg-3); margin: 2px 0 4px; }
+.gl ol { margin: 0; padding-left: 22px; display: grid; gap: 3px; }
+.gl li { color: var(--fg); }
+.gl li::marker { color: var(--mem); font-weight: 600; }
+.src.mem { background: var(--mem-bg); color: var(--mem); font-weight: 600; }
+.memtag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; padding: 1px 6px; border-radius: 3px; color: var(--mem); border: 1px solid var(--mem); background: var(--mem-bg); white-space: nowrap; }
+.mem-list-gl { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.mem-list-gl li::marker { color: var(--mem); }
+.mem-list-gl .where { color: var(--fg-3); font-size: 12px; }
+.send-bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--surface-2); }
+.send-bar button { border: 1px solid var(--line-2); background: var(--surface); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-weight: 600; }
+.send-bar button.go { background: var(--mem); border-color: var(--mem); color: var(--bg); }
+.send-bar button.danger { color: var(--critical); }
+.send-bar button:disabled { opacity: 0.45; cursor: default; }
+.mode-tag { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+.mode-tag.test { color: var(--warning); border: 1px dashed var(--warning); }
+.mode-tag.production { color: var(--good); border: 1px solid var(--good); }
+
+.inspector { flex: none; }
+
+/* ---------- memory: what this turn sends to altk-evolve, and what it sent ---------- */
+.gl-made { border-color: var(--mem); }
+.mem-item .memtag { white-space: nowrap; }
+.mem-open { border: 1px solid var(--viewer); color: var(--viewer); background: var(--viewer-bg); border-radius: 4px; padding: 1px 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.mem-open:hover { filter: brightness(1.1); }
+.mem { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.mem-head { padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--surface); display: grid; gap: 6px; }
+.mem-head-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.mem-back { border: 1px solid var(--line-2); background: var(--surface-2); border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 13px; }
+.mem-back:hover { background: var(--surface-3); }
+.mem-title { font-size: 15px; font-weight: 600; }
+.mem-q { color: var(--fg-2); overflow-wrap: anywhere; }
+.mem-sum { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--fg-3); }
+.mem-sum b { color: var(--fg); font-weight: 500; }
+.mem-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); }
+.mem-list { overflow-y: auto; border-right: 1px solid var(--line); background: var(--surface); min-height: 0; }
+.mem-group { padding: 8px 14px 4px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-3); position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--line); z-index: 1; }
+.mem-item { display: grid; gap: 3px; width: 100%; text-align: left; padding: 9px 14px; border: 0; border-bottom: 1px solid var(--line); background: none; cursor: pointer; color: var(--fg); }
+.mem-item:hover { background: var(--surface-2); }
+.mem-item[aria-selected="true"] { background: var(--surface-3); box-shadow: inset 3px 0 0 var(--viewer); }
+.mem-item .step { font-weight: 600; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.mem-item .step .n { color: var(--fg-3); font-weight: 400; font-size: 12px; }
+.mem-item .ns { font: 11px/1.4 var(--mono); color: var(--fg-3); overflow-wrap: anywhere; }
+.mem-item .why-not { font-size: 12px; color: var(--fg-3); }
+.mem-detail { overflow-y: auto; min-height: 0; padding: 16px 20px 64px; display: grid; gap: 14px; align-content: start; }
+.label { font-size: 11px; font-weight: 600; padding: 0 7px; border-radius: 3px; white-space: nowrap; }
+.label.success { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.label.failure { color: var(--critical); background: var(--critical-bg); }
+.label.unknown { color: var(--fg-2); background: var(--surface-3); }
+.label.skip { color: var(--fg-3); border: 1px dashed var(--line-2); }
+.mem-target { display: grid; gap: 4px; padding: 10px 14px; border: 1px solid var(--viewer); border-radius: 6px; background: var(--viewer-bg); }
+.mem-target .ns { font: 600 14px/1.4 var(--mono); overflow-wrap: anywhere; }
+.mem-target small { color: var(--fg-3); }
+.mem-msgs { display: grid; gap: 6px; }
+.mem-msg { border: 1px solid var(--line); border-left: 3px solid var(--c, var(--line-2)); border-radius: 0 4px 4px 0; background: var(--surface); min-width: 0; }
+.mem-msg.user { --c: var(--io-in); }
+.mem-msg.assistant { --c: var(--io-out); }
+.mem-msg.tool { --c: var(--tool); }
+.mem-msg.review { --c: var(--io-gold); }
+.mem-msg-head { padding: 4px 10px; font-size: 12px; color: var(--fg-3); display: flex; flex-wrap: wrap; gap: 4px 10px; border-bottom: 1px solid var(--line); }
+.mem-msg-head b { color: var(--c); }
+.mem-msg pre.val { border: 0; border-radius: 0; max-height: 320px; background: transparent; }
+.mem-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mem-actions button { border: 1px solid var(--line-2); background: var(--surface-2); border-radius: 4px; padding: 2px 10px; font-size: 12px; cursor: pointer; }
+.mem-actions button:hover { background: var(--surface-3); }
+.mem-excl { padding: 10px 14px; border-radius: 6px; background: var(--surface-2); border: 1px dashed var(--line-2); color: var(--fg-2); }
+@media (max-width: 900px) {
+  .mem-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 40%) minmax(0, 1fr); }
+  .mem-list { border-right: 0; border-bottom: 1px solid var(--line); }
+  .mem-head, .mem-detail { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+}
+.insp { max-width: 1500px; padding-block: 18px 64px; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); display: grid; gap: 16px; }
+.empty { color: var(--fg-3); padding: 64px 24px; text-align: center; }
+.insp-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.insp-title { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.kind { font-size: 11px; letter-spacing: 0.08em; color: var(--fg-3); text-transform: uppercase; }
+.dur { color: var(--fg-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.nav { margin-left: auto; display: flex; gap: 6px; }
+.nav button { border: 1px solid var(--line-2); background: var(--surface-2); border-radius: 4px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+.nav button:disabled { opacity: 0.4; cursor: default; }
+h2 { font-size: 12px; font-weight: 600; margin: 0; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-2); }
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.col { display: grid; gap: 10px; min-width: 0; }
+.badge { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 3px; }
+.badge.bad { color: var(--critical); background: var(--critical-bg); }
+.badge.warn { color: var(--warning); background: var(--warning-bg); }
+
+/* ---------- the two registers ---------- */
+.tag { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 1px 6px; border-radius: 3px; white-space: nowrap; }
+.tag.data { color: var(--on-data); background: var(--data); }
+.tag.viewer { color: var(--viewer); border: 1px dashed var(--viewer); }
+.data { background: var(--data-bg); border-left: 2px solid var(--data); border-radius: 0 4px 4px 0; padding: 10px 14px; display: grid; gap: 10px; min-width: 0; }
+.viewer { background: var(--viewer-bg); border: 1px dashed color-mix(in srgb, var(--viewer) 55%, transparent); border-radius: 4px; padding: 10px 14px; display: grid; gap: 8px; min-width: 0; }
+.block-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 11px; color: var(--fg-3); }
+.path { color: var(--data); }
+.kv { display: grid; grid-template-columns: minmax(140px, max-content) minmax(0, 1fr); gap: 3px 16px; margin: 0; font-size: 12px; }
+.kv dt { color: var(--fg-3); }
+.kv dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.kv dd.err { color: var(--critical); }
+pre.val { margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 3px; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 560px; overflow: auto; }
+details.field { border: 1px solid var(--line); border-radius: 3px; background: var(--surface); min-width: 0; }
+details.field > summary { cursor: pointer; padding: 5px 10px; font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; list-style: none; }
+details.field > summary::before { content: "▸"; color: var(--fg-3); }
+details.field[open] > summary::before { content: "▾"; }
+details.field > summary::-webkit-details-marker { display: none; }
+details.field > pre.val { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.fname { color: var(--data); }
+.fmeta { color: var(--fg-3); }
+.src { padding: 0 6px; border-radius: 3px; background: var(--surface-3); color: var(--fg); }
+.src.empty { background: var(--critical-bg); color: var(--critical); }
+.ref { border: 0; background: none; padding: 0; color: var(--data); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; font-size: inherit; text-align: left; }
+.toggle { margin-left: auto; display: inline-flex; border: 1px solid var(--line-2); border-radius: 3px; overflow: hidden; }
+.toggle button { border: 0; background: none; padding: 1px 8px; font-size: 11px; color: var(--fg-3); cursor: pointer; }
+.toggle button[aria-pressed="true"] { background: var(--surface-3); color: var(--fg); }
+.msgs { display: grid; gap: 4px; }
+.why { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.why li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; }
+.why .ico { text-align: center; font-weight: 600; color: var(--fg-3); }
+.why li.warn .ico { color: var(--warning); }
+.why li.bad .ico { color: var(--critical); }
+.why li.ok .ico { color: var(--good); }
+.why .sub { color: var(--fg-3); font-size: 12px; }
+.why .sub .ok { color: var(--good); }
+.why .sub .bad { color: var(--critical); }
+.cur { color: var(--fg); font-weight: 600; }
+.score-val { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.score-val small { font-size: 12px; color: var(--fg-3); font-weight: 400; }
+.meter { height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--data); border-radius: 2px; }
+
+/* ---------- input / output / expected ---------- */
+.io { display: grid; gap: 6px; }
+.io-box { --c: var(--fg-2); border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 0 4px 4px 0; background: var(--bg); display: grid; grid-template-columns: 140px minmax(0, 1fr); min-width: 0; }
+.io-box.in, h2.in { --c: var(--io-in); }
+.io-box.out, h2.out { --c: var(--io-out); }
+.io-box.gold { --c: var(--io-gold); }
+.io-head { padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; font-size: 10px; line-height: 1.35; color: var(--fg-3); border-right: 1px solid var(--line); }
+.io-head b { color: var(--c); font-size: 12px; letter-spacing: 0.08em; }
+.io-box pre.val { border: 0; border-radius: 0; max-height: 7.5em; background: transparent; padding: 6px 10px; }
+.io-box pre.val:not([data-answer="raw"]) { font: 13px/1.5 var(--font); }
+.io-body { min-width: 0; display: grid; }
+.io-foot { padding: 0 10px 5px; font-size: 11px; color: var(--fg-3); }
+.io-head .toggle { margin-left: 0; }
+.io-head span { overflow-wrap: anywhere; }
+.io-empty { padding: 8px 10px; color: var(--fg-3); }
+mark.ph { background: var(--warning-bg); color: var(--io-gold); border-radius: 2px; padding: 0 2px; }
+h2.in, h2.out { color: var(--c); padding-left: 8px; border-left: 3px solid var(--c); }
+
+@media (max-width: 1100px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .io-box { grid-template-columns: minmax(0, 1fr); } .io-head { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); } }
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .list { max-height: 34vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .overview-head, .tl-wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .insp { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .tl-wrap.long { margin-inline: 16px; padding-inline: 0; }
+  .kv { grid-template-columns: minmax(0, 1fr); }
+  .kv dt { margin-top: 4px; }
+}
+/* A placeholder is an example, not a value: barely visible, so typed text stands out. */
+::placeholder { color: var(--placeholder); opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="list" aria-label="Trajectories">
+    <div class="list-head">
+      <div class="brand"><span class="brand-top"><a class="back" href="/">← Pipelines</a><button class="theme-btn" data-theme-toggle type="button" aria-pressed="false">☀ Light</button></span><span id="exp-name">Trajectory viewer</span><small id="exp-sub">How the agent arrived at its answer</small></div>
+      <input id="q" class="search" type="search" placeholder="Search questions, tasks, tags…" aria-label="Search questions, tasks and tags">
+      <div class="filters">
+        <select id="show" aria-label="Show">
+          <option value="">all turns</option>
+          <option value="errors">with errors</option>
+          <option value="warnings">with warnings</option>
+          <option value="retries">with retried llm calls</option>
+          <option value="findings">with findings</option>
+          <option value="guidelines">with guidelines from memory</option>
+          <option value="no-guidelines">without guidelines from memory</option>
+          <option value="sent">sent to memory</option>
+          <option value="unsent">not sent to memory</option>
+          <option value="imperfect">a score below best</option>
+        </select>
+        <select id="sort" aria-label="Sort"></select>
+      </div>
+      <div class="filters"><span id="count" class="count"></span></div>
+    </div>
+    <div id="items" class="items" role="list"></div>
+  </aside>
+  <main class="detail">
+    <section id="overview" class="overview" aria-label="Timeline"></section>
+    <section id="inspector" class="inspector" aria-label="Details"><div class="empty">Loading trajectories…</div></section>
+    <section id="mem" class="mem" aria-label="Memory" hidden></section>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- vocabulary
+const KIND = { turn: "turn", agent: "agent", llm: "llm call", tool: "tool", retriever: "retriever", memory: "memory" };
+const PURPOSE = {
+  route: "choose the next agent", plan: "plan the task", query_rewrite: "write search queries", tool_call: "choose a tool and its arguments",
+  answer: "write the answer", reflect: "check the result", summarize: "summarize context", extract: "extract structured data", other: "intermediate step",
+};
+const ROLE = { supervisor: "routes requests to other agents", specialist: "does the domain work", finalizer: "composes the final answer", other: "" };
+const ERROR = {
+  tool_error: "tool returned an error", invalid_arguments: "invalid arguments", timeout: "timed out",
+  permission_denied: "permission denied", rate_limited: "rate limited", parse_error: "output could not be parsed",
+  llm_error: "llm call failed", guardrail: "blocked by a guardrail", other: "error",
+};
+const OUTCOME = { empty_result: "found nothing", discarded: "output discarded, call retried" };
+const DETECTED = { source: "flagged by the trace source", tool: "reported by the tool itself", converter: "inferred by the converter" };
+const LONG = 1500;  // longer values start collapsed
+
+// ---------------------------------------------------------------- helpers
+const $ = (sel, el = document) => el.querySelector(sel);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ms = (a, b) => (a && b ? new Date(b) - new Date(a) : null);
+const fmtMs = (v) => (v == null ? "–" : v < 1000 ? `${Math.round(v)} ms` : `${(v / 1000).toFixed(v < 10000 ? 2 : 1)} s`);
+const fmtNum = (v) => (v == null ? "–" : Number(v).toLocaleString("en-US"));
+const fmtDate = (s) => (s ? new Date(s).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "medium" }) : "");
+const clip = (s, n = 220) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+const tryJson = (s) => { if (typeof s !== "string") return null; try { return JSON.parse(s); } catch { return null; } };
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const purposeOf = (s) => s.step.split(".")[1];
+// Score normalised to 0-1 (1 = best), from its range and direction; null for label-only scores.
+function norm(s) {
+  if (s?.value == null) return null;
+  const [lo, hi] = s.range || (s.value > 1 ? [0, 100] : [0, 1]);
+  const x = Math.max(0, Math.min(1, (s.value - lo) / (hi - lo || 1)));
+  return s.higher_is_better === false ? 1 - x : x;
+}
+const grade = (x) => (x == null ? "" : x >= 0.999 ? "good" : x >= 0.5 ? "warn" : "bad");
+const fmtScore = (s) => (s.value == null ? String(s.label ?? "–") : String(+Number(s.value).toFixed(2)));
+const isTrace = (r) => !r.trace_id || r.trace_id === current?.doc.trace_id;
+// Spans a finding points at (in this turn), with the role they play.
+function findingsOf(spanId) {
+  const out = [];
+  for (const f of current?.findings || []) {
+    const roles = [["symptom", f.symptom], ["cause", f.cause]].filter(([, l]) => (l || []).some((r) => isTrace(r) && r.span_id === spanId)).map(([k]) => k);
+    if (roles.length) out.push({ f, roles });
+  }
+  return out;
+}
+
+// Guidelines the agent got from memory: a "## Guidelines from memory" section it appends to a system prompt
+// (same rule as altk_forge/trajectory/guidelines.py). Returns { start, end, intro, items } or null.
+function guidelinesIn(text) {
+  if (typeof text !== "string") return null;
+  const m = /^(#{1,6})\s*Guidelines from memory\s*$/im.exec(text);
+  if (!m) return null;
+  const level = m[1].length, after = m.index + m[0].length;
+  const next = new RegExp(`^#{1,${level}}\\s`, "m").exec(text.slice(after));
+  const end = next ? after + next.index : text.length;
+  const items = [], intro = [];
+  for (const line of text.slice(after, end).replace(/^\n+|\n+$/g, "").split("\n")) {
+    if (/^\s*[-*•]\s+/.test(line)) items.push(line.replace(/^\s*[-*•]\s+/, "").trim());
+    else if (items.length && /^[ \t]/.test(line) && line.trim()) items[items.length - 1] += " " + line.trim();
+    else if (line.trim() && !items.length) intro.push(line.trim());
+  }
+  return { start: m.index, end, intro: intro.join(" "), items };
+}
+// Every guideline an llm call received: [{ text, input index }].
+function guidelinesOf(s) {
+  if (s.kind !== "llm") return [];
+  return (s.input || []).flatMap((m, i) => (guidelinesIn(m.content)?.items || []).map((text) => ({ text, i })));
+}
+// A prompt with its guidelines section drawn as a block: escaped text before, the numbered guidelines, text after.
+function withGuidelines(text) {
+  const g = guidelinesIn(text);
+  if (!g) return esc(text);
+  return esc(text.slice(0, g.start)) + `<span class="gl" role="group" aria-label="Guidelines from memory">`
+    + `<span class="gl-head">◆ guidelines from memory <span>${plural(g.items.length, "guideline", "guidelines")} added to this prompt · ${fmtNum(g.end - g.start)} chars</span></span>`
+    + (g.intro ? `<span class="gl-intro">${esc(g.intro)}</span>` : "")
+    + `<ol>${g.items.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></span>` + esc(text.slice(g.end).replace(/^\n/, ""));
+}
+
+function walk(span, fn, depth = 0, parent = null) {
+  fn(span, depth, parent);
+  for (const c of span.children || []) walk(c, fn, depth + 1, span);
+}
+// Value as stored in the file, pretty-printed when it is JSON (also JSON inside a string).
+function asText(v) {
+  if (v == null) return "null";
+  if (typeof v === "string") { const j = tryJson(v); return j && typeof j === "object" ? JSON.stringify(j, null, 2) : v; }
+  return JSON.stringify(v, null, 2);
+}
+// Text a reader sees, from an HTML, Markdown or JSON answer. Parsed inertly by the browser.
+function readable(s) {
+  if (!s) return "";
+  s = String(s);
+  const j = tryJson(s);
+  if (j && typeof j === "object") return jsonAnswerText(j) ?? JSON.stringify(j, null, 2);
+  if (!/<[a-z][^>]*>/i.test(s)) return s.replace(/^#{1,6}\s+/gm, "").replace(/\*\*(.+?)\*\*/g, "$1").trim();
+  const doc = new DOMParser().parseFromString(s, "text/html");
+  doc.querySelectorAll("li").forEach((li) => li.prepend("• "));
+  doc.querySelectorAll("p, div, li, h1, h2, h3, h4, br").forEach((el) => el.append("\n"));
+  return doc.body.textContent.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+function jsonAnswerText(j) {
+  if (typeof j.answer === "string") return j.answer;
+  if (Array.isArray(j.answer)) return j.answer.map((a) => (typeof a === "string" ? a : a.data ?? a.text ?? "")).join("\n");
+  if (typeof j.error === "string") return `Error: ${j.error}`;
+  if (typeof j.introduction === "string") return [j.introduction, j.body, j.conclusion].filter(Boolean).join("\n\n");
+  return null;
+}
+// Structured reply of an llm call: JSON content, or the arguments of the forced call that implements response_format.
+function structured(span) {
+  const out = span.output;
+  if (!out) return null;
+  const forced = out.tool_calls && span.response_format && out.tool_calls.find((tc) => tc.function.name === span.response_format.name);
+  return forced ? tryJson(forced.function.arguments) : tryJson(out.content);
+}
+function realToolCalls(span) {
+  const names = new Set((span.tools || []).map((t) => t.function.name));
+  return (span.output?.tool_calls || []).filter((tc) => names.has(tc.function.name));
+}
+function toolMessage(span) {
+  const j = tryJson(span.output);
+  return j && typeof j === "object" && typeof j.message === "string" ? j.message : null;
+}
+
+// ---------------------------------------------------------------- building blocks
+function field(name, value, { meta = "", open, raw } = {}) {
+  const text = raw ?? asText(value);
+  const isOpen = open ?? text.length <= LONG;
+  return `<details class="field" ${isOpen ? "open" : ""}>
+    <summary><span class="fname">${esc(name)}</span><span class="fmeta">${meta ? meta + " · " : ""}${fmtNum(text.length)} chars</span></summary>
+    <pre class="val">${esc(text)}</pre>
+  </details>`;
+}
+function kv(rows) {
+  const items = rows.filter(([, v]) => v != null && v !== "").map(([k, v, cls]) => `<dt>${esc(k)}</dt><dd class="${cls || ""}">${v}</dd>`);
+  return items.length ? `<dl class="kv">${items.join("")}</dl>` : "";
+}
+const dataBlock = (path, body, extra = "") => `<div class="data"><div class="block-head"><span class="tag data">TRAJECTORY</span><span class="path">${esc(path)}</span>${extra}</div>${body}</div>`;
+const viewerBlock = (title, body) => `<div class="viewer"><div class="block-head"><span class="tag viewer">VIEWER</span><span>${esc(title)}</span></div>${body}</div>`;
+function spanName(s) { return s.kind === "llm" ? s.step : s.kind === "agent" ? s.agent_id : s.kind === "turn" ? "turn" : s.name; }
+function spanLabel(id) {
+  const s = current.spans.get(id);
+  if (!s) return id;
+  const n = current.num.get(id);
+  return n ? `#${n} ${spanName(s)}` : spanName(s);
+}
+const ref = (id) => `<button class="ref" data-goto="${esc(id)}">${esc(spanLabel(id))}</button>`;
+
+// ---------------------------------------------------------------- state
+// The pipeline whose trajectories are shown: viewer.html?pipeline=<id> (?exp=<id> still works for old links)
+const PARAMS = new URLSearchParams(location.search);
+const PIPE = PARAMS.get("pipeline") || PARAMS.get("exp") || "";
+const API = `/api/pipelines/${encodeURIComponent(PIPE)}`;
+let pipeline = null;  // its definition: mode (test / production) and output decide what the memory view offers
+let index = [];
+let sessionIds = new Set();  // sessions that have a session document
+let current = null;   // { doc, spans, order, agentOf, num, usedBy, selected }
+
+async function loadIndex() {
+  const [res, meta] = await Promise.all([fetch(`${API}/trajectories`), fetch(API).then((r) => (r.ok ? r.json() : null)).catch(() => null)]);
+  if (!res.ok) { $("#inspector").innerHTML = `<div class="empty">Pipeline ${esc(PIPE)} not found. <a class="ref" href="/">Back to pipelines</a></div>`; return; }
+  if (meta) {
+    pipeline = meta;
+    $("#exp-name").innerHTML = `${esc(meta.name)} <span class="mode-tag ${esc(meta.mode)}">${esc(meta.mode)}</span>`;
+    $("#exp-sub").textContent = meta.description || `pipeline ${meta.id}`;
+    document.title = `${meta.name} · ALTK Forge`;
+  }
+  index = await res.json();
+  sessionIds = new Set(await fetch(`${API}/sessions`).then((r) => (r.ok ? r.json() : [])).catch(() => []));
+  const metrics = [...new Set(index.flatMap((t) => Object.keys(t.scores || {})))].sort();
+  $("#sort").innerHTML = [["newest", "newest first"], ["duration", "slowest first"], ["tokens", "most tokens first"],
+    ...metrics.map((m) => [`score:${m}`, `worst ${m} first`])].map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+  renderList();
+  const fromHash = location.hash.slice(1);
+  const first = index.find((t) => t.trace_id === fromHash) || index[0];
+  if (first) select(first.trace_id);
+  else $("#inspector").innerHTML = `<div class="empty">No trajectories in this pipeline yet. The worker converts new traces in the background; see the <a class="ref" href="/">pipelines page</a>.</div>`;
+}
+
+const SHOW = {
+  errors: (t) => t.errors > 0, warnings: (t) => t.warnings > 0, retries: (t) => t.retries > 0, findings: (t) => t.findings > 0,
+  guidelines: (t) => t.guidelines > 0, "no-guidelines": (t) => !t.guidelines,
+  sent: (t) => !!t.memory?.sent_at, unsent: (t) => !t.memory?.sent_at,
+  imperfect: (t) => Object.values(t.scores || {}).some((s) => norm(s) != null && norm(s) < 0.999),
+};
+function renderList() {
+  const q = $("#q").value.trim().toLowerCase();
+  const show = SHOW[$("#show").value] || (() => true);
+  const sort = $("#sort").value || "newest";
+  const haystack = (t) => [t.question, t.task_name, t.task_type, ...(t.tags || []), ...(t.agents || [])].join(" ").toLowerCase();
+  const rows = index.filter((t) => (!q || haystack(t).includes(q)) && show(t));
+  const key = sort.startsWith("score:") ? (t) => norm(t.scores?.[sort.slice(6)]) ?? Infinity
+    : sort === "duration" ? (t) => -(t.duration_ms || 0) : sort === "tokens" ? (t) => -(t.total_tokens || 0)
+    : (t) => -new Date(t.timestamp || 0);
+  rows.sort((a, b) => key(a) - key(b));
+  $("#count").textContent = `${rows.length} of ${plural(index.length, "turn", "turns")}`;
+  $("#items").innerHTML = rows.map((t) => `
+    <button class="item" role="listitem" data-id="${esc(t.trace_id)}" aria-current="${current?.doc.trace_id === t.trace_id}">
+      <span class="item-q">${esc(t.question || "(no question)")}</span>
+      ${scoreChips(t.scores)}
+      <span class="item-meta">
+        <span>${esc(fmtDate(t.timestamp))}</span>
+        <span>${esc((t.agents || []).join(" → "))}</span>
+        <span>${t.llm_calls} llm · ${fmtMs(t.duration_ms)}</span>
+        ${t.session_id && t.turn_index ? `<span>turn ${t.turn_index + 1}</span>` : ""}
+        ${t.errors ? `<span class="flag">✕ ${plural(t.errors, "error", "errors")}</span>` : ""}
+        ${t.warnings ? `<span class="flag warn">! ${plural(t.warnings, "warning", "warnings")}</span>` : ""}
+        ${t.findings ? `<span class="flag fnd">◆ ${plural(t.findings, "finding", "findings")}</span>` : ""}
+        ${t.guidelines ? `<span class="flag mem">+${t.guidelines} guidelines in</span>` : ""}
+        ${t.memory?.sent_at ? `<span class="flag mem">→ in memory</span>` : t.memory?.error ? `<span class="flag">send failed</span>` : ""}
+      </span>
+    </button>`).join("");
+}
+function scoreChips(scores) {
+  const chips = Object.entries(scores || {}).map(([m, s]) => `<span class="chip ${grade(norm(s))}" title="${esc(m)}">${esc(m)} ${esc(fmtScore(s))}</span>`);
+  return chips.length ? `<span class="chips">${chips.join("")}</span>` : "";
+}
+
+async function select(id) {
+  const res = await fetch(`${API}/trajectories/${encodeURIComponent(id)}`);
+  if (!res.ok) { $("#inspector").innerHTML = `<div class="empty">Trajectory ${esc(id)} not found.</div>`; return; }
+  const doc = await res.json();
+  const spans = new Map(), order = [], agentOf = new Map(), num = new Map(), usedBy = new Map();
+  let n = 0;
+  walk(doc.tree, (s, depth, parent) => {
+    spans.set(s.span_id, s);
+    order.push({ span: s, depth });
+    if (s.kind !== "turn" && s.kind !== "agent") num.set(s.span_id, ++n);
+    agentOf.set(s.span_id, s.kind === "agent" ? s.agent_id : parent ? agentOf.get(parent.span_id) : null);
+  });
+  // Reverse links: who consumed or was started by each span.
+  const addUse = (from, to, how) => { if (!usedBy.has(from)) usedBy.set(from, []); usedBy.get(from).push({ id: to, how }); };
+  for (const s of spans.values()) {
+    if (s.triggered_by) addUse(s.triggered_by, s.span_id, s.kind === "agent" ? "delegated to" : s.kind === "llm" ? "retried by" : "requested");
+    for (const [i, m] of (s.kind === "llm" ? s.input : []).entries()) for (const f of m.from || []) addUse(f, s.span_id, `input[${i}] of`);
+  }
+  // The conversation: other turns of this session from the index, and the session document if there is one.
+  const sid = doc.session?.id;
+  const turns = sid ? index.filter((t) => t.session_id === sid).sort((a, b) => (a.turn_index ?? 0) - (b.turn_index ?? 0)) : [];
+  let session = null;
+  if (sid && sessionIds.has(sid)) { const r = await fetch(`${API}/sessions/${encodeURIComponent(sid)}`); if (r.ok) session = await r.json(); }
+  const findings = [...(doc.findings || []).map((f) => ({ ...f, from: "turn" })),
+                    ...(session?.findings || []).filter((f) => [...f.symptom, ...(f.cause || [])].some((r) => r.trace_id === doc.trace_id)).map((f) => ({ ...f, from: "session" }))];
+  current = { doc, spans, order, agentOf, num, usedBy, session, turns, findings, selected: doc.tree.span_id };
+  history.replaceState(null, "", `#${id}`);
+  $("#mem").hidden = true;
+  $("#overview").hidden = $("#inspector").hidden = false;
+  $(".detail").scrollTop = 0;
+  renderList();
+  renderOverview();
+  renderInspector();
+}
+
+function selectSpan(id) {
+  if (!current?.spans.has(id)) return;
+  current.selected = id;
+  document.querySelectorAll(".tl-row").forEach((r) => r.setAttribute("aria-selected", String(r.dataset.span === id)));
+  renderInspector();
+  // In a scrolling span list, keep the selected row visible (arrow keys move past the edge).
+  const row = document.querySelector(`.tl-wrap.long .tl-row[aria-selected="true"] > .tl-label`);
+  if (row) {
+    const list = row.closest(".tl-wrap"), axis = 22;
+    const r = row.getBoundingClientRect(), l = list.getBoundingClientRect();
+    if (r.top < l.top + axis) list.scrollTop -= l.top + axis - r.top;
+    else if (r.bottom > l.bottom) list.scrollTop += r.bottom - l.bottom;
+  }
+  // Bring the top of the new span's details into view if the pane was scrolled past it.
+  const pane = $(".detail"), top = $("#inspector").offsetTop;
+  if (pane.scrollTop > top) pane.scrollTop = top;
+}
+
+// ---------------------------------------------------------------- overview: question + timeline
+function renderOverview() {
+  const { doc, order } = current;
+  const turn = doc.tree;
+  const llms = order.filter((o) => o.span.kind === "llm").map((o) => o.span);
+  const tokens = llms.reduce((n, s) => n + (s.usage?.total_tokens || 0), 0);
+  const errors = order.filter((o) => o.span.error).length;
+  const warnings = order.filter((o) => o.span.outcome).length;
+  const turnScores = Object.fromEntries((doc.scores || []).filter((s) => !s.target).map((s) => [s.metric, s]));
+  const glCalls = llms.filter((s) => guidelinesOf(s).length).length, glCount = llms.reduce((n, s) => n + guidelinesOf(s).length, 0);
+  const conv = current.turns.length > 1 ? `<span>conversation: ${current.turns.map((t) => t.trace_id === doc.trace_id
+    ? `<span class="cur">turn ${(t.turn_index ?? 0) + 1}</span>`
+    : `<a class="ref" href="#${esc(t.trace_id)}">turn ${(t.turn_index ?? 0) + 1}</a>`).join(" · ")}</span>` : "";
+  $("#overview").innerHTML = `
+    <div class="overview-head">
+      ${ioHtml()}
+      ${scoreChips(turnScores)}
+      <div class="facts">
+        <span>${esc(fmtDate(doc.timestamp))}</span>
+        ${doc.task?.name || doc.task?.type ? `<span>task <b>${esc(doc.task.name || doc.task.type)}</b></span>` : ""}
+        <span>duration <b>${esc(fmtMs(ms(turn.start_time, turn.end_time)))}</b></span>
+        <span><b>${llms.length}</b> llm calls</span>
+        <span><b>${esc(fmtNum(tokens))}</b> tokens</span>
+        <span style="${errors ? "color:var(--critical)" : ""}"><b style="${errors ? "color:var(--critical)" : ""}">${errors}</b> errors</span>
+        <span style="${warnings ? "color:var(--warning)" : ""}"><b style="${warnings ? "color:var(--warning)" : ""}">${warnings}</b> warnings</span>
+        ${current.findings.length ? `<span style="color:var(--viewer)"><b style="color:var(--viewer)">${current.findings.length}</b> findings</span>` : ""}
+        ${glCount ? `<span style="color:var(--mem)"><b style="color:var(--mem)">${glCount}</b> guidelines from memory in ${plural(glCalls, "call", "calls")}</span>` : ""}
+        ${conv}
+        ${doc.source?.tags?.length ? `<span>tags ${esc(doc.source.tags.join(", "))}</span>` : ""}
+        ${doc.source?.uri ? `<a class="ref" href="${esc(doc.source.uri)}" target="_blank" rel="noopener">open in ${esc(doc.source.kind)} ↗</a>` : ""}
+        <button class="mem-open" data-mem-open type="button" title="What this turn sends to altk-evolve, and what it sent">${memIndex()} →</button>
+      </div>
+      <div class="legend">
+        <span><i style="border:1.5px solid var(--fg-2)"></i>agent</span>
+        <span><i style="background:var(--llm)"></i>llm call</span>
+        <span><i style="background:var(--tool)"></i>tool</span>
+        <span><i style="background:var(--retriever)"></i>retriever</span>
+        <span><i style="border:1.5px dashed var(--fg-2)"></i>memory</span>
+        <span><i style="box-shadow:0 0 0 2px var(--critical)"></i>error</span>
+        <span><i style="box-shadow:0 0 0 2px var(--warning)"></i>warning</span>
+        <span><b style="color:var(--viewer)">◆</b> finding</span>
+        <span><b style="color:var(--mem)">+n gl</b> guidelines from memory in the prompt</span>
+        <span>· click a row for details · ↑ ↓ to move</span>
+      </div>
+    </div>
+    <div class="tl-wrap ${order.length > 10 ? "long" : ""}">${timelineHtml()}</div>`;
+}
+
+function timelineHtml() {
+  const { doc, order, selected } = current;
+  // A trace without times (a file that never recorded them) is shown in order: no axis, bars only where both ends are known.
+  const timed = order.some(({ span: s }) => s.start_time) && !Number.isNaN(Date.parse(doc.tree.start_time)) && !Number.isNaN(Date.parse(doc.tree.end_time));
+  const t0 = timed ? new Date(doc.tree.start_time).getTime() : 0;
+  const total = timed ? Math.max(1, new Date(doc.tree.end_time).getTime() - t0) : 1;
+  const stepMs = niceStep(total / 7);
+  const ticks = [];
+  if (timed) for (let t = 0; t <= total; t += stepMs) ticks.push(t);
+  const pos = (t) => `${(t / total) * 100}%`;
+  const grid = ticks.map((t) => `<span class="tl-grid" style="left:${pos(t)}"></span>`).join("");
+  const rows = order.map(({ span: s, depth }) => {
+    const known = timed && s.start_time;
+    const a = known ? new Date(s.start_time).getTime() - t0 : 0;
+    const b = known ? (s.end_time ? new Date(s.end_time).getTime() : a + t0) - t0 : 0;
+    const n = current.num.get(s.span_id);
+    const text = s.kind === "turn" ? "turn (whole run)" : s.kind === "tool" && !s.name ? "tool" : s.kind === "agent" ? s.agent_id : s.kind === "llm" ? s.step.split(".").slice(1).join(".") : s.name;
+    const cls = s.kind === "agent" ? "is-agent" : s.kind === "turn" ? "is-turn" : "";
+    const marks = [
+      s.error ? `<span class="err-dot" title="${esc(ERROR[s.error.type] || s.error.type)}">✕</span>` : "",
+      s.outcome ? `<span class="warn-dot" title="${esc(OUTCOME[s.outcome.type] || s.outcome.type)}">!</span>` : "",
+      findingsOf(s.span_id).length ? `<span class="fnd-dot" title="${esc(findingsOf(s.span_id).map(({ f }) => f.summary).join("\n"))}">◆</span>` : "",
+      guidelinesOf(s).length ? `<span class="mem-dot" title="${esc(`${plural(guidelinesOf(s).length, "guideline", "guidelines")} from memory:\n` + guidelinesOf(s).map((g) => `• ${g.text}`).join("\n"))}">+${guidelinesOf(s).length} gl</span>` : "",
+    ].join("");
+    return `<div class="tl-row" role="option" data-span="${esc(s.span_id)}" aria-selected="${s.span_id === selected}">
+      <div class="tl-label ${cls}" style="padding-left:${8 + depth * 14}px"><span class="n">${n ? `#${n}` : ""}</span><span>${esc(text)}</span>${marks}</div>
+      <div class="tl-track">${grid}${known ? `<span class="bar ${s.kind} ${s.error ? "err" : s.outcome ? "warn" : ""}" style="left:${pos(a)};width:${pos(Math.max(0, b - a))}"></span>` : ""}</div>
+      <div class="tl-dur">${esc(known && s.end_time ? fmtMs(b - a) : "–")}</div>
+    </div>`;
+  }).join("");
+  return `<div class="tl" role="listbox" aria-label="Spans of this turn"><div class="tl-axis-pad"></div><div class="tl-axis">${timed ? ticks.map((t) => `<span style="left:${pos(t)}">${fmtMs(t)}</span>`).join("") : `<span style="left:0">no times in the trace: spans in order</span>`}</div><div class="tl-axis-pad"></div>${rows}</div>`;
+}
+function niceStep(raw) {
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  for (const m of [1, 2, 5, 10]) if (raw <= m * pow) return m * pow;
+  return 10 * pow;
+}
+
+// ---------------------------------------------------------------- inspector
+function renderInspector() {
+  const s = current.spans.get(current.selected);
+  const idx = current.order.findIndex((o) => o.span === s);
+  const prev = current.order[idx - 1]?.span, next = current.order[idx + 1]?.span;
+  const n = current.num.get(s.span_id);
+  const badge = (s.error ? `<span class="badge bad">${esc(ERROR[s.error.type] || s.error.type)}</span>` : "")
+    + (s.outcome ? `<span class="badge warn">${esc(OUTCOME[s.outcome.type] || s.outcome.type)}</span>` : "");
+  const sub = s.kind === "llm" ? ` <span class="fmeta">(${esc(PURPOSE[purposeOf(s)] || "")})</span>` : s.kind === "agent" ? ` <span class="fmeta">(${esc(current.doc.agents?.find((a) => a.agent_id === s.agent_id)?.role || "agent")})</span>` : "";
+  const attached = s.kind === "turn" ? "" : spanAnnotations(s);
+  const body = (s.kind === "turn" ? turnBody(s) : s.kind === "agent" ? agentBody(s) : s.kind === "llm" ? llmBody(s) : toolBody(s)) + attached;
+  $("#inspector").innerHTML = `<div class="insp">
+    <div class="insp-head">
+      <span class="kind">${esc(KIND[s.kind])}</span>
+      <span class="insp-title">${n ? `#${n} ` : ""}${esc(s.kind === "turn" ? current.doc.trace_id : spanName(s))}${sub}</span>
+      ${badge}
+      <span class="dur">${esc(fmtMs(ms(s.start_time, s.end_time)))}</span>
+      <span class="nav">
+        <button data-goto="${esc(prev?.span_id || "")}" ${prev ? "" : "disabled"} aria-label="Previous span">↑ prev</button>
+        <button data-goto="${esc(next?.span_id || "")}" ${next ? "" : "disabled"} aria-label="Next span">next ↓</button>
+      </span>
+    </div>
+    ${body}
+  </div>`;
+}
+
+function linksRows(s) {
+  const used = current.usedBy.get(s.span_id) || [];
+  return [
+    ["triggered_by", s.triggered_by ? ref(s.triggered_by) : null],
+    ["used by (derived)", used.length ? used.map((u) => `${esc(u.how)} ${ref(u.id)}`).join("<br>") : null],
+  ];
+}
+function errorRows(s) {
+  const by = (x) => (x.detected_by ? `${esc(x.detected_by)} (${esc(DETECTED[x.detected_by] || "")})` : null);
+  return [
+    ...(s.error ? [["error.type", esc(s.error.type), "err"], ["error.code", esc(s.error.code), "err"], ["error.message", esc(s.error.message), "err"],
+                   ["error.detected_by", by(s.error)]] : []),
+    ...(s.outcome ? [["outcome.type", esc(s.outcome.type)], ["outcome.message", esc(s.outcome.message)], ["outcome.detected_by", by(s.outcome)]] : []),
+  ];
+}
+// Scores aimed at this span (or its agent) and findings whose symptom or cause it is.
+function spanAnnotations(s) {
+  const scores = (current.doc.scores || []).map((x, i) => [x, i]).filter(([x]) => x.target && (x.target.span_id === s.span_id || (s.kind === "agent" && x.target.agent_id === s.agent_id)));
+  const memIds = s.kind === "memory" ? new Set((s.output || []).map((m) => m.item_id)) : null;
+  const memScores = memIds ? (current.doc.scores || []).map((x, i) => [x, i]).filter(([x]) => memIds.has(x.target?.item_id)) : [];
+  const found = findingsOf(s.span_id);
+  return [...scores, ...memScores].map(([x, i]) => scoreBlock(x, i)).join("")
+    + found.map(({ f, roles }) => findingBlock(f, current.findings.indexOf(f), `this span is the ${roles.join(" and ")}`)).join("");
+}
+
+// Input, output and gold answer of the turn, stacked, at the top of the page.
+function ioHtml() {
+  const turn = current.doc.tree, expected = current.doc.expected || {};
+  const PH = /\{[A-Za-z_][A-Za-z0-9_]*\}/g;
+  const holes = [...new Set(expected.final_answer?.match(PH) || [])];
+  const gold = expected.final_answer
+    ? `<pre class="val">${esc(expected.final_answer).replace(PH, (m) => `<mark class="ph">${m}</mark>`)}</pre>`
+    : expected.facts?.length ? `<pre class="val">${esc(expected.facts.map((f) => `• ${f}`).join("\n"))}</pre>`
+    : `<div class="io-empty">no gold answer recorded for this turn</div>`;
+  const box = (cls, title, path, body, foot = "", extra = "") => `<div class="io-box ${cls}">
+      <div class="io-head"><b>${title}</b><span>${esc(path)}</span>${extra}</div>
+      <div class="io-body">${body}${foot ? `<div class="io-foot">${foot}</div>` : ""}</div>
+    </div>`;
+  return `<div class="io">
+    ${box("in", "INPUT", "tree.input", `<pre class="val">${esc(turn.input)}</pre>`)}
+    ${box("out", "OUTPUT", "tree.output",
+      `<pre class="val" data-answer="text">${esc(readable(turn.output) || "(no answer)")}</pre><pre class="val" data-answer="raw" hidden>${esc(turn.output ?? "null")}</pre>`, "",
+      `<span class="toggle" role="group" aria-label="Answer view"><button data-view="text" aria-pressed="true">text</button><button data-view="raw" aria-pressed="false">raw</button></span>`)}
+    ${box("gold", "EXPECTED", expected.final_answer ? "expected.final_answer" : expected.facts?.length ? "expected.facts" : "expected", gold,
+      [holes.length && `template: ${esc(holes.join(", "))} are values of the dataset item; compare the statement, not the values`,
+       expected.provenance && `${esc(expected.provenance.kind)} ${esc(expected.provenance.name || "")}`].filter(Boolean).join(" · "))}
+  </div>`;
+}
+
+// --- turn: question, answer, why, scores, findings, metadata
+function turnBody(turn) {
+  const { doc, order } = current;
+  const llms = order.filter((o) => o.span.kind === "llm").map((o) => o.span);
+  const sum = (k) => llms.reduce((n, s) => n + (s.usage?.[k] || 0), 0);
+  const expected = doc.expected || {};
+  return `
+    <div class="cols">
+      <div class="col">
+        ${Object.keys(expected).some((k) => k !== "final_answer" && k !== "provenance") || expected.provenance ? dataBlock("expected", kv([
+          ["facts", expected.facts ? expected.facts.map((f) => `• ${esc(f)}`).join("<br>") : null],
+          ["agent_path", expected.agent_path ? esc(`${expected.agent_path.agents.join(" → ")} (${expected.agent_path.match})`) : null],
+          ["tool_calls", expected.tool_calls ? expected.tool_calls.calls.map((c) => esc(`${c.agent_id ? c.agent_id + ": " : ""}${c.name}${c.arguments ? " " + JSON.stringify(c.arguments) : ""}`)).join("<br>") + ` <span class="fmeta">(${esc(expected.tool_calls.match)})</span>` : null],
+          ["provenance", expected.provenance ? annotator(expected.provenance) : null],
+        ])) : ""}
+        ${givenBlock()}
+        ${(expected.guidelines || []).map((g, i) => guidelineBlock(`expected.guidelines[${i}]`, g)).join("")}
+        ${current.session ? sessionBlock() : ""}
+      </div>
+      <div class="col">
+        ${Object.keys(expected).length ? viewerBlock("expected vs what happened", `<ul class="why">${comparison(expected).map(whyItem).join("")}</ul>`) : ""}
+        ${viewerBlock("why this answer", `<ul class="why">${observations().map(whyItem).join("")}</ul>`)}
+        ${viewerBlock("totals over the llm spans", kv([
+          ["duration", esc(fmtMs(ms(turn.start_time, turn.end_time)))],
+          ["llm calls", esc(llms.length)],
+          ["tool / search calls", esc(order.filter((o) => o.span.kind === "tool" || o.span.kind === "retriever").length)],
+          ["prompt tokens", `${esc(fmtNum(sum("prompt_tokens")))} (cached ${esc(fmtNum(sum("cached_prompt_tokens")))})`],
+          ["completion tokens", esc(fmtNum(sum("completion_tokens")))],
+          ["errors", esc(order.filter((o) => o.span.error).length)],
+          ["warnings", esc(order.filter((o) => o.span.outcome).length)],
+          ["retried llm calls", esc(llms.filter((s) => s.outcome?.type === "discarded").length)],
+        ]))}
+        ${(doc.scores || []).map(scoreBlock).join("")}
+        ${current.findings.map((f, i) => findingBlock(f, i)).join("")}
+        ${dataBlock("document", kv([
+          ["schema_version", esc(doc.schema_version)], ["trace_id", esc(doc.trace_id)], ["timestamp", esc(doc.timestamp)],
+          ["agent_id", esc(doc.agent_id)], ["user_id", esc(doc.user_id)], ["namespace_id", esc(doc.namespace_id)],
+          ["session", doc.session ? esc(JSON.stringify(doc.session)) : null],
+          ["task", doc.task ? esc(JSON.stringify(doc.task)) : null],
+          ["experiment", doc.experiment ? esc(JSON.stringify(doc.experiment)) : null],
+          ["source.kind", esc(doc.source?.kind)], ["source.project", esc(doc.source?.project)],
+          ["source.environment", esc(doc.source?.environment)],
+          ["source.tags", doc.source?.tags?.length ? esc(doc.source.tags.join(", ")) : null],
+          ["tree.span_id", esc(turn.span_id)], ["tree.start_time", esc(turn.start_time)], ["tree.end_time", esc(turn.end_time)],
+          ["agents", (doc.agents || []).map((a) => esc(`${a.agent_id} (${a.role})`)).join(", ")],
+        ]))}
+      </div>
+    </div>`;
+}
+
+// A span reference: a link inside this turn, a link to the other turn of the conversation, or plain text.
+function spanRef(r) {
+  if (isTrace(r)) return ref(r.span_id);
+  const t = index.find((x) => x.trace_id === r.trace_id);
+  return t ? `<a class="ref" href="#${esc(r.trace_id)}">turn ${(t.turn_index ?? 0) + 1} / ${esc(r.span_id)}</a>` : esc(`${r.trace_id}/${r.span_id}`);
+}
+const refList = (list) => (list || []).map(spanRef).join(", ");
+const annotator = (a) => (a ? esc([a.kind, a.name, a.model, a.version].filter(Boolean).join(" · ")) : null);
+function scopeText(sc) {
+  if (!sc) return null;
+  const trig = sc.trigger ? Object.entries(sc.trigger).map(([k, v]) => `${k}=${v}`).join(", ") : null;
+  return esc([sc.step && `step ${sc.step}`, sc.tool_name && `tool ${sc.tool_name}`, trig && `when ${trig}`].filter(Boolean).join(" · "));
+}
+
+function scoreBlock(s, i) {
+  const [lo, hi] = s.range || (s.value > 1 ? [0, 100] : [0, 1]);
+  const x = norm(s);
+  const target = s.target ? Object.entries(s.target).map(([k, v]) => (k === "span_id" ? ref(v) : `${esc(k)} ${esc(v)}`)).join(" ") : "whole turn";
+  return dataBlock(`scores[${i}]`, `
+    <div><div>${esc(s.metric)}</div><div class="score-val">${s.value == null ? esc(s.label) : `${esc(fmtScore(s))}<small> / ${esc(hi)}${s.label ? ` · ${esc(s.label)}` : ""}</small>`}</div></div>
+    ${x == null ? "" : `<div class="meter" role="img" aria-label="${Math.round(x * 100)} percent of best"><i style="width:${x * 100}%;background:var(--${{ good: "good", warn: "warning", bad: "critical" }[grade(x)]})"></i></div>`}
+    ${kv([["range", esc(`${lo} – ${hi}`)], ["higher_is_better", s.higher_is_better === false ? "false (lower is better)" : null],
+          ["target", target], ["evaluator", annotator(s.evaluator)], ["evidence", s.evidence?.length ? refList(s.evidence) : null]])}
+    ${s.explanation ? field("explanation", s.explanation, { open: s.explanation.length < 700 })
+      : `<span class="fmeta">no explanation recorded${/_f1$/.test(s.metric) && current.doc.expected?.tool_calls ? "; see “expected vs what happened” for the tool calls behind it" : ""}</span>`}`);
+}
+
+function findingBlock(f, i, note = "") {
+  const ft = f.fix_target || {};
+  return dataBlock(`${f.from === "session" ? "session.findings" : "findings"}[${i}]`, kv([
+    ["summary", `<b>${esc(f.summary)}</b>`], ["category", esc(f.category)], ["severity", esc(f.severity)],
+    ["symptom", refList(f.symptom)], ["cause", refList(f.cause)],
+    ["fix: what to change", ft.component ? `<b>${esc(ft.component)}</b>${ft.part ? ` · part ${esc(ft.part)}` : ""}` : null],
+    ["fix: which calls", scopeText(ft)],
+    ["detected_by", annotator(f.detected_by)], ["id", esc(f.id)],
+  ]), note ? `<span>${esc(note)}</span>` : "");
+}
+
+// Every guideline from memory the agent's llm calls received in this turn, grouped by text, with the calls.
+function givenBlock() {
+  const by = new Map();
+  for (const { span: s } of current.order) for (const g of guidelinesOf(s)) {
+    if (!by.has(g.text)) by.set(g.text, []);
+    by.get(g.text).push(s.span_id);
+  }
+  if (!by.size) return viewerBlock("guidelines from memory", `<span class="fmeta">No llm call of this turn received guidelines from memory (no “Guidelines from memory” section in its prompts).</span>`);
+  return `<div class="gl"><span class="gl-head">◆ guidelines from memory in this turn <span>${plural(by.size, "distinct guideline", "distinct guidelines")}; click a call to see where it sits in the prompt</span></span>
+    <ol>${[...by].map(([text, ids]) => `<li>${esc(text)} <span class="fmeta">→ ${[...new Set(ids)].map(ref).join(", ")}</span></li>`).join("")}</ol></div>`;
+}
+
+function guidelineBlock(path, g) {
+  return dataBlock(path, `
+    <pre class="val">${esc(g.content)}</pre>
+    ${kv([["applies to", scopeText(g.scope)], ["rationale", esc(g.rationale)], ["evidence", g.evidence?.length ? refList(g.evidence) : null],
+          ["findings", g.finding_ids?.length ? esc(g.finding_ids.join(", ")) : null], ["tags", g.tags?.length ? esc(g.tags.join(", ")) : null]])}`);
+}
+
+function sessionBlock() {
+  const s = current.session, ex = s.expected || {};
+  return dataBlock(`session ${s.session_id}`, kv([
+    ["turns", current.turns.map((t) => (t.trace_id === current.doc.trace_id ? `<span class="cur">${(t.turn_index ?? 0) + 1}. ${esc(clip(t.question, 80))}</span>` : `<a class="ref" href="#${esc(t.trace_id)}">${(t.turn_index ?? 0) + 1}. ${esc(clip(t.question, 80))}</a>`)).join("<br>")],
+    ["outcome.status", esc(s.outcome?.status)],
+    ["outcome.resolved_at_turn", s.outcome?.resolved_at_turn != null ? esc(s.outcome.resolved_at_turn + 1) : null],
+    ["outcome.summary", esc(s.outcome?.summary)],
+    ["expected.goal", esc(ex.goal)], ["expected.max_turns", esc(ex.max_turns)],
+    ["scores", (s.scores || []).map((x) => `<span class="chip ${grade(norm(x))}">${esc(x.metric)} ${esc(fmtScore(x))}</span>`).join(" ") || null],
+  ])) + (ex.guidelines || []).map((g, i) => guidelineBlock(`session.expected.guidelines[${i}]`, g)).join("");
+}
+
+// ---------------------------------------------------------------- expected vs actual (derived)
+function comparison(expected) {
+  const all = current.order.map((o) => o.span);
+  const out = [];
+  if (expected.agent_path) {
+    const want = expected.agent_path.agents, mode = expected.agent_path.match;
+    const got = all.filter((s) => s.kind === "agent").map((s) => s.agent_id);
+    const ok = matches(want, got, mode);
+    out.push({ cls: ok ? "ok" : "bad", ico: ok ? "✓" : "✕", text: `Agent path ${ok ? "matches" : "does not match"} (${esc(mode)}).`,
+               sub: `expected ${want.join(" → ")} · actual ${got.join(" → ") || "none"}` });
+  }
+  if (expected.tool_calls) {
+    const want = expected.tool_calls.calls, mode = expected.tool_calls.match;
+    const calls = all.filter((s) => s.kind === "tool" || s.kind === "retriever");
+    const got = calls.map((s) => s.name);
+    const ok = matches(want.map((c) => c.name), got, mode);
+    const count = (list) => Object.entries(list.reduce((m, n) => ({ ...m, [n]: (m[n] || 0) + 1 }), {})).map(([n, k]) => `${n} ×${k}`).join(", ");
+    const missing = want.filter((c) => !got.includes(c.name)).map((c) => c.name);
+    const extra = [...new Set(got.filter((n) => !want.some((c) => c.name === n)))];
+    const repeated = want.filter((c) => got.filter((n) => n === c.name).length > want.filter((w) => w.name === c.name).length).map((c) => c.name);
+    const notes = [missing.length && `missing ${missing.join(", ")}`, extra.length && `unexpected ${extra.join(", ")}`, repeated.length && `called more often than expected: ${[...new Set(repeated)].join(", ")}`].filter(Boolean);
+    out.push({ cls: ok ? (notes.length ? "warn" : "ok") : "bad", ico: ok ? (notes.length ? "!" : "✓") : "✕",
+               text: `Tool calls ${ok ? "match" : "do not match"} (${esc(mode)})${notes.length ? `; ${esc(notes.join("; "))}` : ""}.`,
+               sub: `expected ${count(want.map((c) => c.name))} · actual ${count(got) || "none"}` });
+    for (const c of want.filter((c) => c.arguments)) {
+      // Exact comparison, ignoring case and whitespace; the last call of that tool is shown when none matches.
+      const same = (a, b) => JSON.stringify(a ?? null).replace(/\s+/g, " ").toLowerCase() === JSON.stringify(b ?? null).replace(/\s+/g, " ").toLowerCase();
+      const named = calls.filter((s) => s.name === c.name);
+      const hit = named.find((s) => Object.entries(c.arguments).every(([k, v]) => same(s.input?.[k], v)));
+      const last = named[named.length - 1];
+      out.push({ cls: hit ? "ok" : "warn", ico: hit ? "✓" : "!",
+                 text: hit ? `${esc(c.name)} was called with exactly the expected arguments: ${ref(hit.span_id)}.`
+                   : `No ${esc(c.name)} call had exactly the expected arguments${last ? `; the closest to compare is the last one, ${ref(last.span_id)}` : ""}.`,
+                 sub: `expected ${JSON.stringify(c.arguments)}${!hit && last ? ` · actual ${JSON.stringify(last.input)}` : ""}` });
+    }
+  }
+  if (expected.facts?.length) {
+    const answer = readable(current.doc.tree.output).toLowerCase();
+    // A literal check: numbers and codes from each fact must appear in the answer. Semantic checks belong to an evaluator.
+    for (const f of expected.facts) {
+      const tokens = f.match(/[A-Z]{2,}\.[A-Z_]+|SQL\d{4}[NW]|-?\d[\d,.]*/g) || [];
+      if (!tokens.length) { out.push({ ico: "?", text: `Fact not checked automatically: “${esc(f)}”.` }); continue; }
+      const missing = tokens.filter((t) => !answer.includes(t.toLowerCase()));
+      out.push({ cls: missing.length ? "warn" : "ok", ico: missing.length ? "!" : "✓",
+                 text: `${missing.length ? "Answer may miss" : "Answer contains"} the fact “${esc(f)}”.`, sub: missing.length ? `not found in the answer: ${missing.join(", ")}` : "" });
+    }
+  }
+  return out;
+}
+// MatchMode from the schema.
+function matches(want, got, mode) {
+  if (mode === "exact") return JSON.stringify(want) === JSON.stringify(got);
+  if (mode === "subset") return got.every((g) => want.includes(g));
+  if (mode === "any_order") return want.every((w) => got.includes(w));
+  let i = 0;  // in_order: expected items appear in order, extras allowed
+  for (const g of got) if (g === want[i]) i++;
+  return i === want.length;
+}
+const whyItem = (o) => `<li class="${o.cls || ""}"><span class="ico" aria-hidden="true">${o.ico}</span><div>${o.text}${o.sub ? `<div class="sub">${esc(o.sub)}</div>` : ""}</div></li>`;
+
+// --- agent: task in, result out, configuration, its steps
+function agentBody(a) {
+  const config = (current.doc.agents || []).find((x) => x.agent_id === a.agent_id) || {};
+  const steps = [];
+  walk(a, (s) => { if (s !== a && current.agentOf.get(s.span_id) === a.agent_id && s.kind !== "agent") steps.push(s); });
+  const nested = (a.children || []).filter((c) => c.kind === "agent");
+  return `
+    ${viewerBlock("what happened", `<div>${agentSummary(a, steps)}</div>`)}
+    <div class="cols">
+      <div class="col"><h2 class="in">Input</h2>${field("input", a.input, { meta: "task the agent received", open: true })}</div>
+      <div class="col"><h2 class="out">Output</h2>${field("output", a.output, { meta: "what the agent returned", open: true })}</div>
+    </div>
+    ${dataBlock(`span ${a.span_id}`, kv([
+      ["kind", "agent"], ["span_id", esc(a.span_id)], ["agent_id", esc(a.agent_id)], ["start_time", esc(a.start_time)], ["end_time", esc(a.end_time)],
+      ...linksRows(a),
+      ["steps (derived)", steps.map((s) => ref(s.span_id)).join("<br>") || "none"],
+      ["nested agents", nested.length ? nested.map((c) => ref(c.span_id)).join(", ") : null],
+      ...errorRows(a),
+    ]))}
+    ${dataBlock(`agents[agent_id=${a.agent_id}]`, kv([
+      ["role", esc(config.role)], ["description", esc(config.description)], ["version", esc(config.version)],
+      ["tools", config.tools?.length ? esc(config.tools.join(", ")) : null],
+      ["can_delegate_to", config.can_delegate_to?.length ? esc(config.can_delegate_to.join(", ")) : null],
+    ]) || `<span class="fmeta">no configuration recorded</span>`)}`;
+}
+function agentSummary(a, steps) {
+  const from = a.triggered_by ? `Received a task from ${ref(a.triggered_by)}` : "Received the user's question";
+  const llm = steps.filter((s) => s.kind === "llm").length, tools = steps.filter((s) => s.kind === "tool" || s.kind === "retriever").length;
+  const failed = steps.filter((s) => s.error);
+  const to = (current.usedBy.get(a.span_id) || []).filter((u) => u.how === "delegated to");
+  return `${from}, made ${plural(llm, "llm call", "llm calls")} and ${plural(tools, "tool or search call", "tool or search calls")}${failed.length ? `, ${plural(failed.length, "of which failed", "of which failed")}: ${failed.map((s) => ref(s.span_id)).join(", ")}` : ""}, then ${to.length ? `handed over to ${to.map((u) => ref(u.id)).join(", ")}` : "returned its output"}.`;
+}
+
+// --- llm call: the unit of optimisation; input left, output right
+function llmBody(s) {
+  const sources = {};
+  for (const m of s.input || []) sources[m.source] = (sources[m.source] || 0) + 1;
+  const given = guidelinesOf(s);
+  return `
+    ${viewerBlock("what happened", `<div>${llmSummary(s)}</div>`)}
+    ${given.length ? `<div class="gl"><span class="gl-head">◆ guidelines from memory in this call <span>${plural(given.length, "guideline", "guidelines")}, marked below in ${[...new Set(given.map((g) => `input[${g.i}]`))].join(", ")}</span></span>
+      <ol>${given.map((g) => `<li>${esc(g.text)}</li>`).join("")}</ol></div>` : ""}
+    <div class="cols">
+      <div class="col">
+        <h2 class="in">Input · ${plural((s.input || []).length, "message", "messages")}</h2>
+        <div class="fmeta">${Object.entries(sources).map(([k, v]) => `${esc(k)} ×${v}`).join(" · ")}</div>
+        <div class="msgs">${(s.input || []).map((m, i) => messageField(m, i)).join("")}</div>
+        ${s.tools?.length ? field(`tools (${s.tools.length})`, s.tools, { meta: esc(s.tools.map((t) => t.function.name).join(", ")), open: false }) : ""}
+        ${s.response_format ? field("response_format", s.response_format, { meta: `${esc(s.response_format.name)}, schema the answer had to follow`, open: false }) : ""}
+      </div>
+      <div class="col">
+        <h2 class="out">Output</h2>
+        ${s.output ? outputFields(s) : `<div class="data"><span class="fmeta">output: null${s.error ? " (the call failed)" : ""}</span></div>`}
+        ${dataBlock(`span ${s.span_id}`, kv([
+          ["kind", "llm"], ["span_id", esc(s.span_id)], ["step", esc(s.step)], ["agent (derived)", esc(current.agentOf.get(s.span_id))],
+          ["provider", esc(s.provider)], ["model", esc(s.model)],
+          ["model_parameters", s.model_parameters ? esc(JSON.stringify(s.model_parameters)) : null],
+          ["prompt", s.prompt ? esc(JSON.stringify(s.prompt)) : null],
+          ["start_time", esc(s.start_time)], ["end_time", esc(s.end_time)],
+          ["time_to_first_token_ms", s.time_to_first_token_ms != null ? esc(s.time_to_first_token_ms) : null],
+          ["finish_reason", esc(s.finish_reason)],
+          ...Object.entries(s.usage || {}).map(([k, v]) => [`usage.${k}`, esc(fmtNum(v))]),
+          ...linksRows(s),
+          ...errorRows(s),
+        ]))}
+      </div>
+    </div>`;
+}
+function outputFields(s) {
+  const out = s.output;
+  const st = structured(s);
+  const parts = [];
+  if (out.content) parts.push(field("output.content", out.content, { open: true }));
+  for (const [i, tc] of (out.tool_calls || []).entries()) {
+    const isFormat = s.response_format && tc.function.name === s.response_format.name;
+    parts.push(field(`output.tool_calls[${i}]`, tryJson(tc.function.arguments) ?? tc.function.arguments,
+      { meta: `${esc(tc.function.name)}${isFormat ? " (response_format, not executed)" : " (executed by the runtime)"} · id ${esc(tc.id)}`, open: true }));
+  }
+  if (out.refusal) parts.push(field("output.refusal", out.refusal, { open: true }));
+  return dataBlock("output", parts.join("") || `<span class="fmeta">empty</span>`);
+}
+function llmSummary(s) {
+  const purpose = purposeOf(s);
+  if (s.error) return `The model was asked to ${PURPOSE[purpose] || "do this step"}, but the call failed${s.error.code ? ` (${esc(s.error.code)})` : ""}; the agent received no output.`;
+  const st = structured(s);
+  const used = current.usedBy.get(s.span_id) || [];
+  const fed = (s.input || []).filter((m) => m.source === "retrieved" || m.source === "tool_result");
+  const emptyFeeds = fed.filter((m) => (m.from || []).map((id) => current.spans.get(id)).every((f) => f && (f.kind === "retriever" ? !(f.output || []).length : !!f.error)));
+  const retry = used.find((u) => u.how === "retried by");
+  const retried = s.triggered_by && current.spans.get(s.triggered_by)?.kind === "llm" ? ` This call retries ${ref(s.triggered_by)}, whose output the agent discarded.` : "";
+  let text;
+  if (s.outcome?.type === "discarded") {
+    const next = st?.next || st?.agent || st?.route;
+    return `The model answered${next ? ` <b>${esc(next)}</b>` : ""}, but the agent <b>discarded this output</b> and sent the request again as ${retry ? ref(retry.id) : "another call"}. ${esc(s.outcome.message.replace(/^.*?retried the call:?\s*/, "Reason: "))}`
+      + ` <span class="fmeta">(${esc(DETECTED[s.outcome.detected_by] || "")})</span>`;
+  }
+  if (purpose === "route") {
+    const next = st?.next || st?.agent || st?.route;
+    const why = st?.chain_of_thought || st?.reason;
+    text = next ? `Chose agent <b>${esc(next)}</b> to handle the request.${why ? ` Its stated reason: “${esc(clip(why, 300))}”` : ""}` : "Decided where the request goes next.";
+  } else if (purpose === "query_rewrite") {
+    const qs = st ? Object.entries(st).filter(([k, v]) => /query/i.test(k) && typeof v === "string") : [];
+    text = `Turned the question into ${plural(qs.length, "search query", "search queries")}.`;
+  } else if (realToolCalls(s).length) {
+    text = `Requested ${realToolCalls(s).map((c) => `<b>${esc(c.function.name)}</b>`).join(", ")}.`;
+  } else {
+    text = purpose === "answer" ? "Wrote the answer." : "Processed its input for the next step.";
+  }
+  const inputs = fed.length ? ` Input included ${plural(fed.length, "tool or search result", "tool or search results")}${emptyFeeds.length ? `, ${emptyFeeds.length} of them empty or failed` : ""}.` : (purpose === "answer" ? " Input included no tool or search results." : "");
+  const consumers = [...new Set(used.filter((u) => u.how !== "retried by").map((u) => u.id))];
+  const out = consumers.length ? ` Its output was used by ${consumers.map(ref).join(", ")}.` : "";
+  return text + retried + inputs + out;
+}
+function messageField(m, i) {
+  let text = m.content ?? "";
+  if (m.tool_calls) text = [text, ...m.tool_calls.map((tc) => `tool_call ${tc.id}: ${tc.function.name}\n${asText(tc.function.arguments)}`)].filter(Boolean).join("\n\n");
+  else if (m.role === "tool") text = `tool_call_id: ${m.tool_call_id}\n\n${asText(m.content)}`;
+  else if (typeof m.content === "string" && tryJson(m.content)) text = asText(m.content);
+  const froms = (m.from || []).map((id) => current.spans.get(id));
+  const empty = m.source === "retrieved" && froms.length && froms.every((f) => f && f.kind === "retriever" && !(f.output || []).length);
+  const gl = typeof m.content === "string" && !m.tool_calls && m.role !== "tool" ? guidelinesIn(text) : null;
+  return `<details class="field">
+    <summary>
+      <span class="fname">input[${i}]</span>
+      <span class="src ${empty ? "empty" : ""}">source: ${esc(m.source)}${empty ? " (empty)" : ""}</span>
+      ${gl ? `<span class="src mem">+ ${plural(gl.items.length, "guideline", "guidelines")} from memory</span>` : ""}
+      <span class="fmeta">role: ${esc(m.role)}${m.name ? ` · name: ${esc(m.name)}` : ""} · ${fmtNum(text.length)} chars</span>
+      ${m.from?.length ? `<span class="fmeta">from: ${m.from.map(ref).join(", ")}</span>` : ""}
+      ${m.item_ids?.length ? `<span class="fmeta">item_ids: ${esc(m.item_ids.join(", "))}</span>` : ""}
+    </summary>
+    <pre class="val">${gl ? withGuidelines(text) : esc(text)}</pre>
+  </details>`;
+}
+
+// --- tool / retriever / memory
+function toolBody(s) {
+  const count = Array.isArray(s.output) ? ` · ${plural(s.output.length, s.kind === "memory" ? "item" : "document", s.kind === "memory" ? "items" : "documents")}` : "";
+  return `
+    ${viewerBlock("what happened", `<div>${toolSummary(s)}</div>`)}
+    <div class="cols">
+      <div class="col"><h2 class="in">Input</h2>${field("input", s.input, { meta: s.kind === "memory" ? "query" : "arguments", open: true })}</div>
+      <div class="col"><h2 class="out">Output${esc(count)}</h2>${Array.isArray(s.output) && s.output.length ? s.output.map((x, i) => itemField(s, x, i)).join("") : field("output", s.output, { open: true })}</div>
+    </div>
+    ${dataBlock(`span ${s.span_id}`, kv([
+      ["kind", esc(s.kind)], ["span_id", esc(s.span_id)], ["name", esc(s.name)], ["agent (derived)", esc(current.agentOf.get(s.span_id))],
+      ["tool_call_id", esc(s.tool_call_id)], ["operation", esc(s.operation)], ["store", esc(s.store)],
+      ["start_time", esc(s.start_time)], ["end_time", esc(s.end_time)],
+      ...linksRows(s),
+      ...errorRows(s),
+    ]))}`;
+}
+// One retrieved document or memory item, with its metadata in the summary line.
+function itemField(s, x, i) {
+  const text = asText(x.content);
+  const meta = s.kind === "memory"
+    ? [x.type, x.version != null && `v${x.version}`, x.score != null && `score ${x.score}`, x.scope && scopeText(x.scope)]
+    : [x.score != null && `score ${x.score}`, x.source];
+  const used = (current.doc.scores || []).filter((sc) => sc.target?.item_id && sc.target.item_id === x.item_id);
+  return `<details class="field" ${text.length <= 800 ? "open" : ""}>
+    <summary>
+      <span class="fname">output[${i}]</span><span class="src">${esc(x.item_id || x.doc_id)}</span>
+      <span class="fmeta">${meta.filter(Boolean).map((m) => (m.startsWith?.("step ") ? m : esc(m))).join(" · ")} · ${fmtNum(text.length)} chars</span>
+      ${x.origin ? `<span class="fmeta">learned from: ${spanRef(x.origin)}</span>` : ""}
+      ${used.map((sc) => `<span class="chip ${grade(norm(sc))}">${esc(sc.metric)} ${esc(fmtScore(sc))}</span>`).join("")}
+    </summary>
+    <pre class="val">${esc(text)}</pre>
+  </details>`;
+}
+function toolSummary(s) {
+  const used = current.usedBy.get(s.span_id) || [];
+  const by = s.triggered_by ? ` at the request of ${ref(s.triggered_by)}` : "";
+  const after = used.length ? ` The result went into ${[...new Set(used.map((u) => u.id))].map(ref).join(", ")}.` : " No llm call received this result.";
+  if (s.kind === "retriever") {
+    const n = (s.output || []).length;
+    return `Searched${by} and found ${n ? plural(n, "document", "documents") : "<b>nothing</b>"}.${after}`;
+  }
+  if (s.kind === "memory") return `${s.operation === "write" ? "Wrote" : "Read"} ${plural((s.output || []).length, "item", "items")} ${s.operation === "write" ? "to" : "from"} memory store <b>${esc(s.store)}</b>.${after}`;
+  const msg = toolMessage(s);
+  const how = s.error ? ` and failed: ${esc(ERROR[s.error.type] || s.error.type)} (${esc(DETECTED[s.error.detected_by] || "")})`
+    : s.outcome ? ` successfully but ${esc(OUTCOME[s.outcome.type] || s.outcome.type)} (${esc(DETECTED[s.outcome.detected_by] || "")}). This is not a failure of the tool`
+    : "";
+  return `Ran${by}${how}.${msg ? ` The tool reported: “${esc(clip(msg, 240))}”` : ""}${after}`;
+}
+
+// ---------------------------------------------------------------- why this answer (derived)
+function observations() {
+  const { spans, order } = current;
+  const out = [];
+  const all = order.map((o) => o.span);
+  const llms = all.filter((s) => s.kind === "llm");
+  const answers = llms.filter((s) => purposeOf(s) === "answer" && s.output);
+  const last = answers[answers.length - 1];
+  const agents = all.filter((s) => s.kind === "agent");
+  if (agents.length) out.push({ ico: "→", text: `The request went through ${plural(agents.length, "agent", "agents")}: ${agents.map((a) => ref(a.span_id)).join(" → ")}.` });
+  const failedLlm = llms.find((s) => s.error);
+  if (last) {
+    const feeds = (last.input || []).filter((m) => m.source === "retrieved" || m.source === "tool_result");
+    const fromSpans = feeds.flatMap((m) => (m.from || []).map((id) => spans.get(id))).filter(Boolean);
+    const retrievers = fromSpans.filter((f) => f.kind === "retriever");
+    const tools = fromSpans.filter((f) => f.kind === "tool");
+    out.push({ ico: "✎", text: `The answer was written by ${ref(last.span_id)} in agent <b>${esc(current.agentOf.get(last.span_id))}</b>.`,
+               sub: `Its input: ${last.input.length} messages, ${fmtNum(last.usage?.prompt_tokens)} prompt tokens.` });
+    if (failedLlm && new Date(failedLlm.start_time) < new Date(last.start_time)) {
+      out.push({ cls: "bad", ico: "✕", span: failedLlm.span_id,
+                 text: `${ref(failedLlm.span_id)} failed${failedLlm.error.code ? ` (${esc(failedLlm.error.code)})` : ""}, so the final answer only reports an error instead of answering the question.`,
+                 sub: clip(failedLlm.error.message, 260) });
+    } else if (retrievers.length && retrievers.every((r) => !(r.output || []).length)) {
+      out.push({ cls: "warn", ico: "!", text: "Every documentation search came back empty, so the model answered without documentation, from its own knowledge.",
+                 sub: "A common cause of vague or incomplete answers." });
+    } else if (retrievers.length) {
+      out.push({ cls: "ok", ico: "✓", text: `The answer is grounded in search results (${plural(retrievers.reduce((n, r) => n + (r.output || []).length, 0), "document", "documents")}).` });
+    } else if (!fromSpans.length) {
+      out.push({ cls: "warn", ico: "!", text: "The answering call got no tool or search results; the answer comes from the model's knowledge and instructions." });
+    }
+    if (tools.length && tools.every((t) => t.error || t.outcome?.type === "empty_result")) {
+      out.push({ cls: "warn", ico: "!", text: "The tools returned no usable data (nothing found, or an error), so the model could only report that nothing was found." });
+    } else if (tools.length && !failedLlm) {
+      out.push({ cls: "ok", ico: "✓", text: `The answer is based on tool results: ${[...new Set(tools.map((t) => t.span_id))].map(ref).join(", ")}.` });
+    }
+  } else if (failedLlm) {
+    out.push({ cls: "bad", ico: "✕", span: failedLlm.span_id, text: `No llm call wrote an answer: ${ref(failedLlm.span_id)} failed.` });
+  }
+  const mentioned = new Set(out.map((o) => o.span).filter(Boolean));
+  const groups = new Map();
+  for (const s of all) {
+    const flag = s.error || s.outcome;
+    if (!flag || mentioned.has(s.span_id)) continue;
+    const key = `${spanName(s)}|${s.error ? "error" : "outcome"}|${flag.type}`;
+    const g = groups.get(key) || { ids: [], s, flag, isError: !!s.error };
+    g.ids.push(s.span_id);
+    groups.set(key, g);
+  }
+  for (const { ids, s, flag, isError } of groups.values()) {
+    out.push({ cls: isError ? "bad" : "warn", ico: isError ? "✕" : "!",
+               text: `${ids.map(ref).join(", ")}: ${esc(isError ? ERROR[flag.type] || flag.type : OUTCOME[flag.type] || flag.type)}${flag.code ? ` (${esc(flag.code)})` : ""}.`,
+               sub: `${s.kind === "llm" ? clip(flag.message, 240) : toolMessage(s) || clip(flag.message, 240)}${flag.detected_by ? ` — ${DETECTED[flag.detected_by]}` : ""}` });
+  }
+  for (const f of current.findings) {
+    out.push({ cls: f.severity === "high" ? "bad" : "warn", ico: "◆", text: `Finding: ${esc(f.summary)}`,
+               sub: [f.fix_target?.component && `fix: ${f.fix_target.component}${f.fix_target.part ? ` (${f.fix_target.part})` : ""}`, f.severity && `severity ${f.severity}`].filter(Boolean).join(" · ") });
+  }
+  return out;
+}
+
+function memIndex() {
+  const m = current.memory !== undefined ? current.memory : index.find((t) => t.trace_id === current.doc.trace_id)?.memory;
+  return m?.sent_at ? "Memory · sent" : m?.error ? "Memory · send failed" : "Memory · not sent";
+}
+// ---------------------------------------------------------------- memory: what this turn sends, and what it sent
+// The server cuts the trajectory into slices, one per llm call (altk_forge/trajectory/slices.py): what altk-evolve receives for
+// that call, in a namespace per pipeline, agent and step. In a test pipeline you send a turn by hand and can delete
+// what it produced; a production pipeline sends on its own.
+async function loadSlices() {
+  const r = await fetch(`${API}/trajectories/${encodeURIComponent(current.doc.trace_id)}/slices`);
+  const data = r.ok ? await r.json() : { slices: [], memory: null };
+  current.slices = data.slices.map((x) => ({ ...x, span: current.spans.get(x.span_id) })).filter((x) => x.span);
+  current.memory = data.memory;
+  return current.slices;
+}
+const slicesOf = () => current.slices || [];
+function updateMemButton() { const b = $("[data-mem-open]"); if (b && current) b.textContent = `${memIndex()} →`; }
+// Statuses change on the server (the worker converts and, in production, sends in the background): refresh the
+// list every 15 s and when the tab comes back, without disturbing the turn on screen.
+// The pipeline was deleted (or recreated under another id) while this page was open: say so instead of acting on it.
+function pipelineGone() {
+  if ($("#gone")) return;
+  const bar = document.createElement("div");
+  bar.id = "gone";
+  bar.className = "gone";
+  bar.setAttribute("role", "alert");
+  bar.innerHTML = `Pipeline <b>${esc(pipeline?.name || PIPE)}</b> (${esc(PIPE)}) no longer exists: it was deleted after this page was opened. What you see is what it had. <a href="/">Open the pipelines</a>`;
+  document.body.prepend(bar);
+  document.querySelectorAll("[data-mem-send], [data-mem-unsend]").forEach((b) => { b.disabled = true; });
+}
+async function refreshIndex() {
+  if (document.hidden || !current) return;
+  const r = await fetch(`${API}/trajectories`).catch(() => null);
+  if (r && r.status === 400) return pipelineGone();
+  if (!r?.ok) return;
+  index = await r.json();
+  const row = index.find((t) => t.trace_id === current.doc.trace_id);
+  if (row && current.memory !== undefined && JSON.stringify(row.memory?.sent_at) !== JSON.stringify(current.memory?.sent_at)) await loadSlices();
+  renderList(); updateMemButton();
+  if (!$("#mem").hidden && !current.sending) renderMem();
+}
+setInterval(refreshIndex, 15000);
+document.addEventListener("visibilitychange", refreshIndex);
+// A sent slice is "in memory" only when altk-evolve created something from it; sending can also yield nothing.
+const elapsed = (since) => { const s = Math.max(0, Math.round((Date.now() - new Date(since)) / 1000)); return s < 90 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; };
+const createdBy = (x) => (x.sent?.entity_ids || []).length;
+const generatedOf = (x) => x.sent?.guidelines || [];
+const sentTag = (x) => !x.sent ? "" : generatedOf(x).length
+  ? `<span class="memtag" title="altk-evolve generated these from this slice">◆ ${plural(generatedOf(x).length, "guideline")}</span>`
+  : createdBy(x) ? `<span class="memtag">in memory · ${plural(createdBy(x), "entity", "entities")}</span>`
+  : `<span class="label skip" title="Sent to altk-evolve, which generated no guideline from it">sent · nothing generated</span>`;
+
+async function openMem(spanId) {
+  current.memFrom = current.selected;
+  $("#overview").hidden = $("#inspector").hidden = true;
+  $("#mem").hidden = false;
+  $(".detail").scrollTop = 0;
+  if (!current.slices) { $("#mem").innerHTML = `<div class="empty">Cutting the turn into slices…</div>`; await loadSlices(); }
+  const slices = slicesOf();
+  const pick = slices.find((x) => x.span_id === (spanId || current.selected)) || slices[0];
+  current.memSel = pick?.span_id;
+  renderMem();
+  $("#mem .mem-item[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
+  $("#mem .mem-back")?.focus();
+}
+function closeMem(gotoSpan) {
+  if (!current || $("#mem").hidden) return;
+  $("#mem").hidden = true;
+  $("#overview").hidden = $("#inspector").hidden = false;
+  selectSpan(gotoSpan || current.memFrom || current.selected);
+}
+
+function sendBar() {
+  const m = current.memory, out = pipeline?.output_id, test = pipeline?.mode !== "production";
+  const sentEntities = (m?.slices || []).reduce((n, s) => n + (s.entity_ids || []).length, 0);
+  if (!out) return `<div class="send-bar"><span>This pipeline has no output yet: choose an altk-evolve integration on the <a class="ref" href="/">pipelines page</a> to send turns to memory.</span></div>`;
+  const productive = (m?.slices || []).filter((s) => (s.entity_ids || []).length).length;
+  const gl = (m?.slices || []).reduce((n, s) => n + (s.guidelines || []).length, 0);
+  const sending = current.sending;
+  const state = sending ? `<b style="color:var(--warning)">${esc(sending.state === "sending" ? `sending slice ${Math.min(sending.done + 1, sending.total)} of ${sending.total}` : sending.state)}</b>${sending.step ? ` · ${esc(sending.step)}` : ""} · ${esc(elapsed(sending.since))} <span class="fmeta">altk-evolve generates guidelines with an LLM: about 10 s per slice</span>`
+    : m?.sent_at ? `<b style="color:var(--mem)">sent</b> ${esc(fmtDate(m.sent_at))} · ${plural((m.slices || []).length, "slice")} sent · <b>${productive}</b> of them created something · <b style="color:var(--mem)">${plural(gl, "guideline")}</b> in memory`
+    : m?.error ? `<b style="color:var(--critical)">sending failed:</b> ${esc(clip(m.error, 200))}` : "not sent to memory yet";
+  const actions = test
+    ? `<button type="button" class="go" data-mem-send ${m?.sent_at || sending ? "disabled" : ""}>${sending ? "Sending…" : "Send this turn to memory"}</button>
+       <button type="button" class="danger" data-mem-unsend ${m?.sent_at && !sending ? "" : "disabled"}>Delete what it produced in memory</button>`
+    : `<span class="fmeta">production: sent automatically</span>`;
+  return `<div class="send-bar"><span class="mode-tag ${esc(pipeline.mode)}">${esc(pipeline.mode)}</span><span>${state}</span>${actions}<span class="fmeta" id="mem-status" aria-live="polite"></span></div>`;
+}
+
+function renderMem() {
+  const { doc } = current, slices = slicesOf();
+  const sent = slices;  // every llm call is sent; altk-evolve decides what is worth a guideline
+  const nss = [...new Set(sent.map((x) => x.namespace_id))];
+  const count = (l) => sent.filter((x) => x.label === l).length;
+  const item = (x) => `<button class="mem-item" role="option" data-mem="${esc(x.span_id)}" aria-selected="${x.span_id === current.memSel}">
+      <span class="step"><span class="n">#${current.num.get(x.span_id)}</span>${esc(x.step)}<span class="label ${x.label}">${x.label}</span>${sentTag(x)}${x.extra.guidelines_given ? `<span class="mem-dot" style="color:var(--mem);font-size:11px">+${x.extra.guidelines_given.length} gl</span>` : ""}</span>
+      ${x.problem ? `<span class="why-not">${esc(clip(x.problem, 110))}</span>` : ""}<span class="ns">${esc(x.namespace_id)}</span>
+    </button>`;
+  $("#mem").innerHTML = `
+    <div class="mem-head">
+      <div class="mem-head-top">
+        <button class="mem-back" data-mem-back type="button">← Back to trajectory</button>
+        <span class="mem-title">Memory</span>
+        <span class="fmeta">what this turn sends to altk-evolve, one slice per llm call</span>
+      </div>
+      <div class="mem-q">${esc(clip(doc.tree.input, 200))}</div>
+      <div class="mem-sum">
+        <span><b>${sent.length}</b> slices to send</span>
+        <span><b>${count("success")}</b> success · <b>${count("failure")}</b> failure · <b>${count("unknown")}</b> unknown</span>
+        <span>into <b>${nss.length}</b> ${nss.length === 1 ? "namespace" : "namespaces"}</span>
+      </div>
+      ${sendBar()}
+    </div>
+    <div class="mem-body">
+      <div class="mem-list" role="listbox" aria-label="Slices">
+        ${sent.length ? `<div class="mem-group">Sent to altk-evolve · ${sent.length}</div>${sent.map(item).join("")}` : ""}
+      </div>
+      <div class="mem-detail" id="mem-detail">${memDetail(slices.find((x) => x.span_id === current.memSel))}</div>
+    </div>`;
+}
+
+function memDetail(x) {
+  if (!x) return `<div class="empty">This turn has no llm calls.</div>`;
+  const n = current.num.get(x.span_id);
+  let head = `<div class="insp-head">
+      <span class="kind">slice of llm call</span>
+      <span class="insp-title">#${n} ${esc(x.step)}</span>
+      <span class="label ${x.label}">${x.label}</span>
+      <span class="nav"><button data-mem-goto="${esc(x.span_id)}" type="button">show in trajectory</button></span>
+    </div>`;
+  const given = x.extra.guidelines_given?.length ? `<div class="gl"><span class="gl-head">◆ guidelines from memory this call was given <span>they are in its system prompt, which is not sent; listed in the evaluation message</span></span>
+      <ol>${x.extra.guidelines_given.map((g) => `<li>${esc(g)}</li>`).join("")}</ol></div>` : "";
+  if (x.problem) head += `<div class="mem-excl"><b>What went wrong with this call.</b> ${esc(x.problem)} It is sent all the same, with this in its evaluation: altk-evolve decides whether it is worth a guideline.</div>`;
+  const roleName = (m) => (m.review ? "evaluation" : m.role);
+  const msgs = x.messages.map((m, i) => {
+    const text = m.tool_calls ? [m.content, ...m.tool_calls.map((tc) => `tool_call ${tc.function.name}\n${asText(tc.function.arguments)}`)].filter(Boolean).join("\n\n")
+      : m.role === "tool" ? asText(m.content) : String(m.content ?? "");
+    const what = m.review ? "added by Forge: label, checks, expected answer, guidelines given" : i === 0 ? "task: user question, handoff and the input the model had (system prompt left out)"
+      : m.role === "assistant" ? "what the model returned" : "what the tool returned";
+    const body = m.review ? esc(text).replace(/(Guidelines from memory the model was given:)/, `<b style="color:var(--mem)">$1</b>`) : esc(text);
+    return `<div class="mem-msg ${m.review ? "review" : m.role}"><div class="mem-msg-head"><b>${esc(roleName(m))}</b><span>messages[${i}] · ${esc(what)}</span><span>${fmtNum(text.length)} chars</span></div><pre class="val">${body}</pre></div>`;
+  }).join("");
+  const tr = x.trajectory;
+  const args = { namespace_id: x.namespace_id, ...tr, messages: `[${tr.messages.length} messages, shown above]`, tools: tr.tools ? `[${tr.tools.length} tool definitions]` : undefined };
+  const sentBlock = !x.sent ? ""
+    : generatedOf(x).length ? `<div class="gl gl-made"><span class="gl-head">◆ ${plural(generatedOf(x).length, "guideline")} altk-evolve generated from this slice
+        <span>in namespace ${esc(x.sent.namespace)}${(x.sent.entity_ids || []).length ? ` · entity ${esc(x.sent.entity_ids.join(", "))}` : ""}</span></span>
+        <ol>${generatedOf(x).map((g) => `<li>${esc(g)}</li>`).join("")}</ol></div>`
+    : viewerBlock("sent, nothing generated", `<span>altk-evolve processed this slice${x.sent.operation_id ? ` (operation ${esc(x.sent.operation_id)})` : ""} and found no lesson worth a guideline in it${createdBy(x) ? `; it stored ${plural(createdBy(x), "entity", "entities")}` : ""}.</span>`);
+  return head + sentBlock + `
+    <div class="mem-target">
+      <small>namespace in altk-evolve</small>
+      <span class="ns">${esc(x.namespace_id)}</span>
+      <small>pipeline <b>${esc(PIPE)}</b> · agent <b>${esc(x.agent)}</b> · step <b>${esc(x.purpose)}</b>. Every call of this step, from every turn, goes to the same namespace, so its guidelines can be retrieved for that step only.</small>
+    </div>
+    ${given}
+    ${x.checks.length ? viewerBlock("checks behind the label", `<ul class="why">${x.checks.map((c) => whyItem({ cls: c.ok === true ? "ok" : c.ok === false ? "bad" : "", ico: c.ok === true ? "✓" : c.ok === false ? "✕" : "·", text: esc(c.text) })).join("")}</ul>`) : ""}
+    <h2>trajectory.messages · ${x.messages.length} messages</h2>
+    <div class="mem-msgs">${msgs}</div>
+    ${dataBlock("POST /api/trajectories body (trajectory)", kv(Object.entries(args).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v == null ? `<span class="fmeta">null</span>` : esc(typeof v === "string" ? v : JSON.stringify(v))])))}
+    ${viewerBlock("kept only here", kv(Object.entries(x.extra).map(([k, v]) => [k, v == null ? null : esc(typeof v === "string" ? v : JSON.stringify(v))])))}
+    <div class="mem-actions">
+      <button type="button" data-mem-copy="call">Copy this slice (JSON)</button>
+      <button type="button" data-mem-copy="all">Copy all slices of this turn</button>
+      <span class="fmeta" id="mem-copied" aria-live="polite"></span>
+    </div>`;
+}
+
+function selectMem(id) {
+  current.memSel = id;
+  document.querySelectorAll("#mem .mem-item").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.mem === id)));
+  $("#mem-detail").innerHTML = memDetail(slicesOf().find((x) => x.span_id === id));
+  $("#mem-detail").scrollTop = 0;
+  document.querySelector(`#mem .mem-item[data-mem="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" });
+}
+const sliceJson = (x) => ({ namespace_id: x.namespace_id, trajectory: x.trajectory, _forge: x.extra });
+async function memAction(op) {
+  const status = $("#mem-status"), id = current.doc.trace_id;
+  if (op === "unsend" && !await ask.confirm({ danger: true, title: "Delete this turn from memory?", ok: "Delete from memory",
+    message: "Everything this turn produced in memory is deleted: its trajectory entities and the guidelines generated from it." })) return;
+  document.querySelectorAll("[data-mem-send], [data-mem-unsend]").forEach((b) => { b.disabled = true; });
+  status.textContent = op === "send" ? "sending…" : "deleting…";
+  // While it runs, ask the server how far it got; the bar shows the slice being sent and the time so far.
+  let poll = null;
+  if (op === "send") {
+    current.sending = { state: "starting", done: 0, total: slicesOf().length, since: new Date().toISOString() };
+    if (!$("#mem").hidden) renderMem();
+    poll = setInterval(async () => {
+      const p = await fetch(`${API}/trajectories/${encodeURIComponent(id)}/sending`).then((x) => x.json()).catch(() => null);
+      if (p?.progress && current?.doc.trace_id === id) { current.sending = p.progress; if (!$("#mem").hidden) renderMem(); }
+    }, 1000);
+  }
+  const r = await fetch(`${API}/trajectories/${encodeURIComponent(id)}/${op}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  clearInterval(poll);
+  if (current) current.sending = null;
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok && /^No pipeline /.test(data.error || "")) { pipelineGone(); $("#mem-status").textContent = "this pipeline no longer exists"; return; }
+  await loadSlices();
+  const row = index.find((t) => t.trace_id === id);
+  if (row) row.memory = current.memory ? { sent_at: current.memory.sent_at, error: current.memory.error } : null;
+  renderMem(); renderList(); updateMemButton();
+  const made = (data.slices || []).reduce((n, s) => n + (s.guidelines || []).length, 0);
+  $("#mem-status").textContent = !r.ok ? data.error || "failed"
+    : op === "send" ? `done: ${plural(made, "guideline")} from ${plural((data.slices || []).filter((s) => (s.guidelines || []).length).length, "slice")}`
+    : `deleted ${data.entities} entities`;
+  if (!r.ok) $("#mem-status").style.color = "var(--critical)";
+}
+
+// ---------------------------------------------------------------- events
+$("#q").addEventListener("input", renderList);
+$("#show").addEventListener("change", renderList);
+$("#sort").addEventListener("change", renderList);
+$("#items").addEventListener("click", (e) => { const b = e.target.closest(".item"); if (b) select(b.dataset.id); });
+// text / raw toggle of an answer
+function toggleView(e) {
+  const view = e.target.closest("[data-view]");
+  if (!view) return false;
+  const block = view.closest(".data, .io");
+  block.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b === view)));
+  block.querySelectorAll("[data-answer]").forEach((p) => { p.hidden = p.dataset.answer !== view.dataset.view; });
+  return true;
+}
+$("#overview").addEventListener("click", (e) => {
+  if (e.target.closest("[data-mem-open]")) return openMem();
+  if (toggleView(e)) return;
+  const row = e.target.closest(".tl-row");
+  if (row) selectSpan(row.dataset.span);
+});
+$("#inspector").addEventListener("click", (e) => {
+  const go = e.target.closest("[data-goto]");
+  if (go) { e.preventDefault(); if (go.dataset.goto) selectSpan(go.dataset.goto); return; }
+  toggleView(e);
+});
+$("#mem").addEventListener("click", async (e) => {
+  if (e.target.closest("[data-mem-back]")) return closeMem();
+  const go = e.target.closest("[data-mem-goto], [data-goto]");
+  if (go) { e.preventDefault(); return closeMem(go.dataset.memGoto || go.dataset.goto); }
+  const it = e.target.closest("[data-mem]");
+  if (it) return selectMem(it.dataset.mem);
+  if (e.target.closest("[data-mem-send]")) return memAction("send");
+  if (e.target.closest("[data-mem-unsend]")) return memAction("unsend");
+  const cp = e.target.closest("[data-mem-copy]");
+  if (cp) {
+    const slices = slicesOf();
+    const value = cp.dataset.memCopy === "all" ? slices.map(sliceJson) : sliceJson(slices.find((x) => x.span_id === current.memSel));
+    try { await navigator.clipboard.writeText(JSON.stringify(value, null, 2)); $("#mem-copied").textContent = "copied"; }
+    catch { $("#mem-copied").textContent = "the browser blocked the clipboard"; }
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (current && !$("#mem").hidden && !e.target.closest("input, textarea")) {
+    if (e.key === "Escape") { e.preventDefault(); return closeMem(); }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const ids = [...document.querySelectorAll("#mem .mem-item")].map((b) => b.dataset.mem);
+      const next = ids[ids.indexOf(current.memSel) + (e.key === "ArrowDown" ? 1 : -1)];
+      if (next) { e.preventDefault(); selectMem(next); }
+      return;
+    }
+  }
+  if (!current || e.target.closest("input, textarea") || !["ArrowUp", "ArrowDown"].includes(e.key)) return;
+  const i = current.order.findIndex((o) => o.span.span_id === current.selected);
+  const next = current.order[i + (e.key === "ArrowDown" ? 1 : -1)];
+  if (next) { e.preventDefault(); selectSpan(next.span.span_id); }
+});
+window.addEventListener("hashchange", () => { const id = location.hash.slice(1); if (id && id !== current?.doc.trace_id) select(id); });
+
+loadIndex().catch((err) => { $("#inspector").innerHTML = `<div class="empty">Could not load data: ${esc(err.message)}. Is the server running?</div>`; });
+</script>
+</body>
+</html>

@@ -1,0 +1,533 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AgentToolkit/altk-evolve/schemas/trajectory.schema.json",
+  "title": "Evolve Trajectory",
+  "description": "One turn of an agent interaction (one trace) as a tree of spans. The unit of optimisation is the LLM call: every llm span holds its full input (each message labelled with where it came from), its output, and its settings. Agent spans only group calls and show handoffs. Diagnosis (`findings`), gold data (`expected`) and metrics (`scores`) point at spans. A conversation is a sequence of these documents (see session.schema.json).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "trace_id", "source", "tree"],
+  "properties": {
+    "schema_version": { "const": "2.0" },
+    "trace_id": { "description": "Unique ID of the turn; guideline provenance keys on it.", "type": "string", "minLength": 1 },
+    "namespace_id": { "description": "Namespace the turn and its derived guidelines are stored in.", "type": ["string", "null"] },
+    "user_id": { "description": "User on whose behalf the agent ran; owner of derived guidelines.", "type": ["string", "null"] },
+    "agent_id": { "description": "The agent system (application) that ran; its agents are listed in `agents`.", "type": ["string", "null"] },
+    "source": {
+      "description": "Where the trace came from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["mcp", "phoenix", "langfuse", "api", "cli", "file"] },
+        "project": { "type": ["string", "null"] },
+        "uri": { "description": "Link to the trace in the source system.", "type": ["string", "null"], "format": "uri" },
+        "environment": { "description": "Deployment environment recorded by the source (e.g. default, production).", "type": ["string", "null"] },
+        "tags": { "description": "Tags the source attached to the trace (agent, environment, model backend, host).", "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "timestamp": { "description": "Start of the turn.", "type": ["string", "null"], "format": "date-time" },
+    "session": {
+      "description": "Position of the turn in its conversation. What the turn used from earlier turns is in memory spans (store=conversation).",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "turn_index"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "turn_index": { "description": "0-based.", "type": "integer", "minimum": 0 },
+        "previous_trace_id": { "type": ["string", "null"] }
+      }
+    },
+    "task": {
+      "description": "Kind of request; groups turns for comparison and is matched by guideline triggers.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "description": "e.g. contextual_search, troubleshooting, data_query.", "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] },
+        "intent": { "description": "e.g. follow_up_confirmation.", "type": ["string", "null"] }
+      }
+    },
+    "experiment": {
+      "description": "Set when the turn comes from an evaluation run.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "dataset": { "type": ["string", "null"] },
+        "item_id": { "type": ["string", "null"] },
+        "run_id": { "type": ["string", "null"] },
+        "release": { "description": "Version of the agent system under test.", "type": ["string", "null"] }
+      }
+    },
+    "agents": {
+      "description": "Configuration of the agents that took part.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/Agent" }
+    },
+    "tree": {
+      "description": "The turn: a `turn` span whose children are agents, and whose agents contain their LLM calls, tools, retrievers and memory access, ordered by start time.",
+      "$ref": "#/$defs/Span"
+    },
+    "findings": {
+      "description": "Diagnosed problems of this turn. Findings whose cause is in another turn belong to the session.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/Finding" }
+    },
+    "expected": { "description": "Gold data; used only by evaluation, never shown to the agent.", "$ref": "#/$defs/Expected" },
+    "scores": { "type": "array", "items": { "$ref": "#/$defs/Score" } }
+  },
+  "$defs": {
+    "Span": {
+      "description": "One node of the turn. Fields used by `kind`: turn -> input (user text), output (answer shown to the user); agent -> agent_id, triggered_by, input (task received), output (what it returned); llm -> step, provider, model, model_parameters, prompt, input (InputMessage[]), tools, response_format, output (AssistantMessage), finish_reason, time_to_first_token_ms, usage; tool / retriever -> name, tool_call_id, triggered_by, input (arguments), output (text / Document[]); memory -> name, operation, store, triggered_by, input (query), output (MemoryItem[]). Any span may carry `error` (it failed) or `outcome` (it worked, but its result deserves attention).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["span_id", "kind"],
+      "properties": {
+        "span_id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["turn", "agent", "llm", "tool", "retriever", "memory"] },
+        "start_time": { "type": ["string", "null"], "format": "date-time" },
+        "end_time": { "type": ["string", "null"], "format": "date-time" },
+        "agent_id": { "description": "kind=agent.", "type": "string", "pattern": "^[^.\\s]+$" },
+        "step": {
+          "description": "kind=llm: stable ID of the decision this call makes, `<agent_id>.<purpose>` with an optional `.<suffix>` when one agent has several different calls of the same purpose. Calls with the same step are the same optimisation unit across traces. Purposes: route = choose the next agent; plan = decompose the task; query_rewrite = formulate search queries; tool_call = choose a tool and its arguments; answer = compose the response; reflect = critique/verify; summarize = compress context; extract = pull structured data; other.",
+          "type": "string",
+          "pattern": "^[^.\\s]+\\.(route|plan|query_rewrite|tool_call|answer|reflect|summarize|extract|other)(\\.[A-Za-z0-9_-]+)?$"
+        },
+        "name": { "description": "kind=tool/retriever/memory: tool or operation name.", "type": "string", "minLength": 1 },
+        "provider": { "description": "kind=llm.", "type": ["string", "null"] },
+        "model": { "description": "kind=llm.", "type": ["string", "null"] },
+        "model_parameters": { "description": "kind=llm: temperature, max_tokens, ...", "type": ["object", "null"] },
+        "prompt": { "description": "kind=llm: managed prompt the system prompt was built from.", "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/PromptRef" }] },
+        "operation": { "description": "kind=memory.", "enum": ["read", "write"] },
+        "store": {
+          "description": "kind=memory: guidelines = Evolve guidelines; conversation = earlier turns; state = persisted agent state; profile = user facts/preferences.",
+          "enum": ["guidelines", "conversation", "state", "profile"]
+        },
+        "tool_call_id": { "description": "kind=tool/retriever.", "type": ["string", "null"] },
+        "triggered_by": {
+          "description": "Span whose output started this one: for an agent, the agent that delegated to it (absent = entry agent); for a tool/retriever/memory span, the llm call that requested it (absent = called by code); for an llm call, the earlier call of the same step whose output was discarded (outcome.type=discarded) and that this call retries.",
+          "type": "string",
+          "minLength": 1
+        },
+        "input": { "description": "What the span received; shape by kind." },
+        "tools": { "description": "kind=llm: tools the model could call.", "type": ["array", "null"], "items": { "$ref": "#/$defs/ToolDefinition" } },
+        "response_format": {
+          "description": "kind=llm: structured-output schema the answer had to follow (also when sent as a forced tool call). Nothing is executed.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": { "name": { "type": "string", "minLength": 1 }, "schema": { "type": "object" } }
+        },
+        "output": { "description": "What the span produced; shape by kind. An empty list means nothing was found." },
+        "finish_reason": { "description": "kind=llm: stop, length, tool_calls, content_filter.", "type": ["string", "null"] },
+        "time_to_first_token_ms": { "description": "kind=llm.", "type": ["number", "null"], "minimum": 0 },
+        "usage": { "description": "kind=llm.", "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/Usage" }] },
+        "memory": {
+          "description": "kind=llm: memory contract recorded by the agent. namespace = where this step's guidelines are read from and where its memories go; step = <agent_id>.<purpose> as the agent named it; query = text the guidelines are selected by; guideline_ids = guidelines injected into this call; enabled = whether memory was on.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["namespace"],
+          "properties": {
+            "namespace": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*$" },
+            "step": { "type": "string" },
+            "query": { "type": "string" },
+            "guideline_ids": { "type": "array", "items": { "type": "string" } },
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "error": { "$ref": "#/$defs/SpanError" },
+        "outcome": { "$ref": "#/$defs/SpanOutcome" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/Span" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "enum": ["turn", "agent"] } } },
+          "then": { "properties": { "input": { "type": ["string", "null"] }, "output": { "type": ["string", "null"] } } }
+        },
+        { "if": { "properties": { "kind": { "const": "agent" } } }, "then": { "required": ["agent_id"] } },
+        {
+          "if": { "properties": { "kind": { "const": "llm" } } },
+          "then": {
+            "required": ["step", "input", "output"],
+            "properties": {
+              "input": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/InputMessage" } },
+              "output": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/AssistantMessage" }] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tool" } } },
+          "then": { "required": ["name"], "properties": { "input": { "type": ["object", "null"] }, "output": { "type": ["string", "null"] } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "retriever" } } },
+          "then": {
+            "required": ["name"],
+            "properties": { "input": { "type": ["object", "null"] }, "output": { "type": "array", "items": { "$ref": "#/$defs/Document" } } }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "memory" } } },
+          "then": {
+            "required": ["name", "operation", "store"],
+            "properties": {
+              "input": { "description": "read: {query, filters, top_k}; write: what was written.", "type": ["object", "array", "null"] },
+              "output": { "type": "array", "items": { "$ref": "#/$defs/MemoryItem" } }
+            }
+          }
+        }
+      ]
+    },
+    "SpanError": {
+      "description": "Failure of this span: it did not do its job. A span that worked but returned nothing, or whose output the agent discarded, has an `outcome` instead.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "message"],
+      "properties": {
+        "type": {
+          "description": "tool_error = the tool failed; invalid_arguments = rejected because of the arguments; parse_error = output could not be parsed and the agent did not recover; llm_error = the model call failed.",
+          "enum": ["tool_error", "invalid_arguments", "timeout", "permission_denied", "rate_limited", "parse_error", "llm_error", "guardrail", "other"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "code": { "description": "e.g. SQL0204N, HTTP 500.", "type": ["string", "null"] },
+        "detected_by": { "$ref": "#/$defs/DetectedBy" }
+      }
+    },
+    "SpanOutcome": {
+      "description": "The span worked, but its result deserves attention when diagnosing the turn.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "message"],
+      "properties": {
+        "type": {
+          "description": "empty_result = succeeded and found nothing (e.g. no lock waits right now, no matching documents); discarded = the agent threw the output away, e.g. because it broke the response_format, and retried the call.",
+          "enum": ["empty_result", "discarded"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "detected_by": { "$ref": "#/$defs/DetectedBy" }
+      }
+    },
+    "DetectedBy": {
+      "description": "Who says so: source = the trace source flagged the span (e.g. Langfuse level=ERROR); tool = the tool's own result says so (status field); converter = inferred by the converter from the output (heuristic).",
+      "enum": ["source", "tool", "converter"]
+    },
+    "InputMessage": {
+      "description": "A message of an llm call's input, labelled with its origin. `source` says which part of the input it is (and so what has to change to improve it); `from` names the spans that produced it, which chains this call to the outputs of other calls, tools, retrievers and memory reads. Drop `source`, `from` and `item_ids` to replay the request.",
+      "allOf": [{ "$ref": "#/$defs/Message" }],
+      "properties": {
+        "source": {
+          "description": "system_prompt = static instructions of the step; instructions = instructions added per call (format, language); user = the user's text of this turn; handoff = task text from the delegating agent; history = earlier turns; memory = guidelines/state/profile; retrieved = retriever results; tool_result = output of a tool; previous_step = output of an earlier llm call; injected_context = other context added by code (environment, session metadata).",
+          "enum": ["system_prompt", "instructions", "user", "handoff", "history", "memory", "retrieved", "tool_result", "previous_step", "injected_context"]
+        },
+        "from": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "item_ids": { "description": "MemoryItem/Document IDs contained in this message.", "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "required": ["source"]
+    },
+    "Message": {
+      "description": "OpenAI Chat Completions message.",
+      "oneOf": [
+        { "$ref": "#/$defs/SystemMessage" },
+        { "$ref": "#/$defs/UserMessage" },
+        { "$ref": "#/$defs/AssistantMessage" },
+        { "$ref": "#/$defs/ToolMessage" }
+      ]
+    },
+    "SystemMessage": {
+      "type": "object",
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "enum": ["system", "developer"] },
+        "content": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "UserMessage": {
+      "type": "object",
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "const": "user" },
+        "content": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" }
+      }
+    },
+    "AssistantMessage": {
+      "type": "object",
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "const": "assistant" },
+        "content": { "type": ["string", "null"] },
+        "name": { "type": "string" },
+        "refusal": { "type": ["string", "null"] },
+        "tool_calls": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/ToolCall" } }
+      },
+      "anyOf": [
+        { "required": ["content"], "properties": { "content": { "type": "string", "minLength": 1 } } },
+        { "required": ["tool_calls"] }
+      ]
+    },
+    "ToolMessage": {
+      "type": "object",
+      "required": ["role", "tool_call_id", "content"],
+      "properties": {
+        "role": { "const": "tool" },
+        "tool_call_id": { "type": "string", "minLength": 1 },
+        "content": { "type": "string" }
+      }
+    },
+    "ToolCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "function"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "function" },
+        "function": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "arguments"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "arguments": { "description": "JSON-encoded object.", "type": "string", "contentMediaType": "application/json" }
+          }
+        }
+      }
+    },
+    "ToolDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "function"],
+      "properties": {
+        "type": { "const": "function" },
+        "function": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "parameters"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "description": { "type": "string" },
+            "parameters": { "type": "object" },
+            "strict": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "Usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
+      "properties": {
+        "prompt_tokens": { "description": "All input tokens, cached included.", "type": ["integer", "null"], "minimum": 0 },
+        "completion_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "total_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "cached_prompt_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "reasoning_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "cost_usd": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+    "PromptRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": { "name": { "type": "string", "minLength": 1 }, "version": { "type": ["string", "integer", "null"] } }
+    },
+    "Agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_id", "role"],
+      "properties": {
+        "agent_id": { "type": "string", "pattern": "^[^.\\s]+$" },
+        "role": { "description": "supervisor = routes/delegates; specialist = does the domain work; finalizer = composes the final answer; other.", "enum": ["supervisor", "specialist", "finalizer", "other"] },
+        "description": { "type": ["string", "null"] },
+        "version": { "type": ["string", "null"] },
+        "tools": { "description": "Tools the agent is configured with (declared, not only used).", "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "can_delegate_to": { "description": "All agents it may hand off to.", "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "MemoryItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item_id", "content"],
+      "properties": {
+        "item_id": { "type": "string", "minLength": 1 },
+        "type": { "description": "guideline = Evolve guideline; turn = an earlier exchange; state = persisted state; fact = user fact.", "enum": ["guideline", "turn", "state", "fact"] },
+        "version": { "type": ["string", "integer", "null"] },
+        "score": { "description": "Retrieval relevance.", "type": ["number", "null"] },
+        "content": { "description": "Text or structured value." },
+        "scope": { "description": "type=guideline: where it applies.", "$ref": "#/$defs/Scope", "unevaluatedProperties": false },
+        "origin": { "description": "Span the item comes from (an earlier turn, or the turn a guideline was learned from).", "$ref": "#/$defs/SpanRef" }
+      }
+    },
+    "Document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["doc_id"],
+      "properties": {
+        "doc_id": { "type": "string", "minLength": 1 },
+        "score": { "type": ["number", "null"] },
+        "source": { "description": "URL/path/title.", "type": ["string", "null"] },
+        "content": { "type": ["string", "null"] }
+      }
+    },
+    "SpanRef": {
+      "description": "A span in this turn, or in another turn when trace_id is given.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["span_id"],
+      "properties": { "trace_id": { "type": "string", "minLength": 1 }, "span_id": { "type": "string", "minLength": 1 } }
+    },
+    "Scope": {
+      "description": "Which LLM calls something applies to. `step` may use * for any agent or purpose (e.g. sql_agent.*, *.tool_call). A guideline is retrieved into a call whose step matches, that has `tool_name` available, and for which `trigger` holds.",
+      "type": "object",
+      "properties": {
+        "step": { "type": "string", "pattern": "^([^.\\s]+|\\*)\\.([a-z_]+|\\*)(\\.[A-Za-z0-9_-]+)?$" },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "trigger": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "task_type": { "type": "string" },
+            "intent": { "type": "string" },
+            "error_code": { "description": "A tool result in the input contains this code.", "type": "string" },
+            "condition": { "description": "Free text, matched semantically.", "type": "string" }
+          }
+        }
+      }
+    },
+    "Finding": {
+      "description": "A diagnosed problem: where it shows (symptom), where it originates (cause) and what to change (fix_target).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "summary", "symptom", "fix_target"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "category": {
+          "description": "error = unrecovered failure; inefficiency = avoidable steps or tokens; instruction_violation = ignored its instructions; grounding_violation = output not supported by its input; routing = wrong agent; context_loss = information from an earlier step or turn was not carried forward; memory_misuse = a guideline was ignored, irrelevant or harmful; spec_conflict = instructions contradict evaluation criteria.",
+          "enum": ["error", "inefficiency", "instruction_violation", "grounding_violation", "routing", "context_loss", "memory_misuse", "spec_conflict"]
+        },
+        "severity": { "enum": ["high", "medium", "low"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "symptom": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/SpanRef" } },
+        "cause": { "type": "array", "items": { "$ref": "#/$defs/SpanRef" } },
+        "fix_target": {
+          "description": "The calls (Scope) and the part of them to change. part = input.<source> | output.content | output.tool_calls | tools | response_format | model_parameters. component = how: guideline (situational lesson retrieved into matching calls), prompt (permanent change of the step's system prompt), tool_description, context_assembly (what code puts into the input), retrieval (index, filters, ranking), routing (graph logic), memory (what is stored/retrieved), code.",
+          "allOf": [{ "$ref": "#/$defs/Scope" }],
+          "properties": {
+            "component": { "enum": ["guideline", "prompt", "tool_description", "context_assembly", "retrieval", "routing", "memory", "code"] },
+            "part": {
+              "type": "string",
+              "pattern": "^(input\\.(system_prompt|instructions|user|handoff|history|memory|retrieved|tool_result|previous_step|injected_context)|output\\.(content|tool_calls)|tools|response_format|model_parameters)$"
+            }
+          },
+          "required": ["component"],
+          "unevaluatedProperties": false
+        },
+        "detected_by": { "$ref": "#/$defs/Annotator" }
+      }
+    },
+    "MatchMode": {
+      "description": "exact = same items, same order, nothing extra; in_order = expected items in order, extras allowed; any_order = all expected items present; subset = nothing unexpected.",
+      "enum": ["exact", "in_order", "any_order", "subset"]
+    },
+    "Expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "final_answer": { "type": "string" },
+        "facts": { "description": "Atomic facts the answer must contain.", "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "agent_path": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["match", "agents"],
+          "properties": {
+            "match": { "$ref": "#/$defs/MatchMode" },
+            "agents": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "tool_calls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["match", "calls"],
+          "properties": {
+            "match": { "$ref": "#/$defs/MatchMode" },
+            "calls": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "agent_id": { "type": "string" },
+                  "arguments": { "description": "Only listed keys are checked.", "type": "object" },
+                  "optional": { "type": "boolean", "default": false }
+                }
+              }
+            }
+          }
+        },
+        "guidelines": { "description": "Guidelines memory should derive from this turn.", "type": "array", "items": { "$ref": "#/$defs/ExpectedGuideline" } },
+        "provenance": { "$ref": "#/$defs/Annotator" }
+      }
+    },
+    "ExpectedGuideline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "scope"],
+      "properties": {
+        "content": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string" },
+        "scope": { "$ref": "#/$defs/Scope", "unevaluatedProperties": false },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/SpanRef" } },
+        "finding_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "Score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "evaluator"],
+      "properties": {
+        "metric": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "value": { "type": ["number", "null"] },
+        "label": { "type": ["string", "null"] },
+        "range": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }], "items": false, "minItems": 2 },
+        "higher_is_better": { "type": "boolean", "default": true },
+        "target": {
+          "description": "What is scored: one span (e.g. an llm call), an agent, or a memory item (how much a guideline helped). Omitted = the whole turn.",
+          "type": "object",
+          "additionalProperties": false,
+          "maxProperties": 1,
+          "properties": {
+            "span_id": { "type": "string", "minLength": 1 },
+            "agent_id": { "type": "string", "minLength": 1 },
+            "item_id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "explanation": { "type": ["string", "null"] },
+        "evidence": { "description": "Spans the score is based on; for implicit feedback a span of the next turn.", "type": "array", "items": { "$ref": "#/$defs/SpanRef" } },
+        "evaluator": { "$ref": "#/$defs/Annotator" }
+      },
+      "anyOf": [
+        { "required": ["value"], "properties": { "value": { "type": "number" } } },
+        { "required": ["label"], "properties": { "label": { "type": "string" } } }
+      ]
+    },
+    "Annotator": {
+      "description": "Who produced a score, finding or gold data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "description": "dataset = imported benchmark labels; external = outside pipeline of unknown type; implicit = inferred from the user's later behaviour.",
+          "enum": ["human", "llm_judge", "code", "synthetic", "dataset", "external", "implicit"]
+        },
+        "name": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "version": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
