@@ -1,6 +1,8 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
+  # "uv" (not "pip") so Dependabot regenerates uv.lock alongside pyproject.toml.
+  # In pip mode it only edits pyproject.toml, and every PR fails `uv lock --check`.
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
