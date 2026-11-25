@@ -102,14 +102,14 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
             first_error = first_error or e
             continue
 
-        # Each candidate: the shape repair it needed, the payload, and any decoded text whose
-        # control escapes are suspect, with why.
-        payloads: list[tuple[str, object, list[str], str]] = [("", parsed, [], "")]
+        # Each candidate: the shape repair it needed, the payload, any decoded text whose control
+        # escapes are suspect with why, and the string it was decoded from, if any.
+        payloads: list[tuple[str, object, list[str], str, str | None]] = [("", parsed, [], "", None)]
         if isinstance(parsed, list):
-            payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}, [], ""))
+            payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}, [], "", None))
         payloads += _string_encoded_candidates(parsed, response_repaired=bool(parse_repair))
 
-        for shape_repair, payload, suspect_texts, suspect_reason in payloads:
+        for shape_repair, payload, suspect_texts, suspect_reason, decoded_from in payloads:
             try:
                 guidelines = GuidelineGenerationResponse.model_validate(payload).guidelines
             except ValidationError as e:
@@ -121,6 +121,11 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
             # remaining \t/\n/\r ambiguous. A well-formed response keeps its control escapes.
             # Decoded text follows the same rule (see _string_encoded_candidates).
             ambiguous = literals_with_ambiguous_control_escapes(text) if parse_repair else []
+            if decoded_from is not None:
+                # The decoded string's own literal is left to the scan of the decoded text below.
+                # Its \n there can be the decoded JSON's indentation, which no lost backslash makes:
+                # one would leave a raw newline inside a decoded string, and decoding rejects that.
+                ambiguous = [literal for literal in ambiguous if _literal_value(literal) != decoded_from]
             reason = "escaping lone backslashes made it parse"
             if not ambiguous and suspect_texts:
                 ambiguous = [literal for suspect in suspect_texts for literal in literals_with_ambiguous_control_escapes(suspect)]
@@ -145,10 +150,18 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
     return None
 
 
-def _string_encoded_candidates(parsed: object, *, response_repaired: bool) -> list[tuple[str, object, list[str], str]]:
+def _literal_value(literal: str) -> object:
+    """The value of a JSON string literal, or None if it doesn't decode."""
+    try:
+        return json.loads(literal)
+    except JSONDecodeError:
+        return None
+
+
+def _string_encoded_candidates(parsed: object, *, response_repaired: bool) -> list[tuple[str, object, list[str], str, str | None]]:
     """Candidates for a response whose ``guidelines`` arrived as a string of JSON, for
-    ``parse_guideline_response``: the shape repair, the payload, and the decoded text whose
-    control escapes are suspect, with why.
+    ``parse_guideline_response``: the shape repair, the payload, the decoded text whose control
+    escapes are suspect with why, and the string it was decoded from.
 
     The decoded text is held to the same rule as the response. It is decoded as it is first,
     then with its lone backslashes escaped. Only text that needed that repair shows its
@@ -160,10 +173,10 @@ def _string_encoded_candidates(parsed: object, *, response_repaired: bool) -> li
         return []
     inner = parsed["guidelines"]
     label = 'decoded "guidelines" from a JSON string'
-    candidates: list[tuple[str, object, list[str], str]] = []
+    candidates: list[tuple[str, object, list[str], str, str | None]] = []
     decoded, names = GuidelineGenerationResponse.decode_string_fields(parsed)
     if names:
-        candidates.append((label, decoded, [inner] if response_repaired else [], "escaping lone backslashes made it parse"))
+        candidates.append((label, decoded, [inner] if response_repaired else [], "escaping lone backslashes made it parse", inner))
     escaped = _escape_lone_backslashes(inner)
     if escaped != inner:
         decoded, names = GuidelineGenerationResponse.decode_string_fields({**parsed, "guidelines": escaped})
@@ -174,6 +187,7 @@ def _string_encoded_candidates(parsed: object, *, response_repaired: bool) -> li
                     decoded,
                     [escaped],
                     "escaping lone backslashes made its guidelines, sent as a string of JSON, parse",
+                    inner,
                 )
             )
     return candidates

@@ -128,6 +128,20 @@ class TestParseGuidelineResponse:
             assert parse_guideline_response(raw, "standard") is None
         assert "escaping lone backslashes made it parse" in caplog.text
 
+    @pytest.mark.parametrize("indent", [None, 2], ids=["compact", "pretty-printed"])
+    def test_a_decoded_answer_is_recovered_when_the_response_needed_the_repair(self, indent):
+        r"""Pretty-printed, the decoded JSON's indentation sits in the response's literal as \n.
+        That \n can't be a lost backslash, so it doesn't refuse the reply: the decoded text is
+        checked on its own instead (#489 review). Here the response holds a lone \( that needs
+        the repair, as does the text decoded from it."""
+        guideline = {**_GUIDELINE, "content": r"Bound \(x\)"}
+        inner = json.dumps({"guidelines": [guideline]}, indent=indent)
+        raw = json.dumps({"guidelines": inner}, indent=indent).replace("\\\\\\\\(", "\\(").replace("\\\\\\\\)", "\\)")
+        assert "\\(" in raw and "\\\\(" not in raw
+        guidelines = parse_guideline_response(raw, "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == r"Bound \(x\)"
+
     def test_a_decoded_answer_keeps_an_escaped_backslash(self):
         inner = json.dumps([{**_GUIDELINE, "content": r"Open C:\temp"}])
         guidelines = parse_guideline_response(json.dumps({"guidelines": inner}), "standard")
