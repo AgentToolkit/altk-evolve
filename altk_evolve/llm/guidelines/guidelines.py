@@ -23,7 +23,7 @@ from altk_evolve.schema.guidelines import (
     GuidelineGenerationResponse,
     GuidelineGenerationResult,
 )
-from altk_evolve.utils.utils import clean_llm_response
+from altk_evolve.utils.utils import clean_llm_response, literals_with_ambiguous_control_escapes
 
 if TYPE_CHECKING:
     from altk_evolve.processing.models import TrajectoryOutcome
@@ -50,84 +50,30 @@ _MAX_DETAIL_CHARS = 2500
 # backslash matches group 2 as empty and is still doubled.
 _JSON_ESCAPE_RE = re.compile(r'\\(?:(["\\/bfnrt]|u[0-9a-fA-F]{4})|(.|$))', re.DOTALL)
 
-# One JSON string literal, escapes consumed so an escaped quote does not end it early.
-_JSON_STRING_LITERAL_RE = re.compile(r'"(?:\\.|[^"\\])*"', re.DOTALL)
-
-# Escapes that turn a *single* backslash into a C0 control character. These are the ones a
-# model may have meant as a literal backslash. \uXXXX is excluded on purpose: see below.
-_AMBIGUOUS_CONTROL_ESCAPES = frozenset("bfnrt")
-
 
 def _escape_lone_backslashes(text: str) -> str:
     """Double every backslash that does not already start a valid JSON escape."""
     return _JSON_ESCAPE_RE.sub(lambda m: m.group(0) if m.group(1) else "\\\\" + m.group(2), text)
 
 
-def _literals_with_ambiguous_control_escapes(text: str) -> list[str]:
-    """String literals in ``text`` carrying a ``\\b``, ``\\f``, ``\\n``, ``\\r`` or ``\\t``.
-
-    Those are the escapes a model may have meant as a *literal backslash* — a Windows path
-    or a regex — in a response it demonstrably failed to escape properly. Decoding one
-    anyway yields a guideline that looks valid but whose text is silently wrong, which is
-    then embedded and served on.
-
-    Two things this deliberately does not flag:
-
-    - ``\\uXXXX``, even where it encodes the same character. A model writing ``\\u0009``
-      spelled a control character out on purpose; that is not what failing to escape a path
-      looks like. Only the single-backslash forms are ambiguous.
-    - A correctly escaped ``\\\\`` followed by ``t``, which decodes to a backslash and a
-      ``t``, not a tab. The scan consumes ``\\\\`` as one escape, so it is not misread.
-
-    Scanning *literals* is what makes both of those possible, and is why neither the decoded
-    values nor the whole document is consulted. A decoded value cannot distinguish a tab that
-    came from ``\\t`` from one that came from ``\\u0009``, nor from one the model typed as a
-    path separator — the escape that corrupts consumes its own backslash, so nothing survives
-    in the value to key on. And a pretty-printed document's newlines sit *between* tokens,
-    never inside a literal, so a document-wide character scan would whitelist ``\\n`` for
-    every value and let exactly this corruption through.
-
-    What this cannot do is tell an intended ``\\t`` from a misread one: ``"name\\tvalue"``
-    and ``"C:\\temp"`` are the same shape, one valid escape the repair never touches. Since
-    the two are indistinguishable, the caller fails closed on the whole response — a
-    discarded response is regenerable, whereas corrupted text served into the store is not.
-
-    Splitting into literals is for the *log message* — so the warning can name the literal an
-    operator has to look at — not for correctness. Valid JSON cannot carry a backslash outside
-    a string, so scanning the whole document for the same escapes would reach the identical
-    verdict; no test distinguishes the two, and none can.
-
-    Returns the offending literals, for logging. Empty means nothing ambiguous was found.
-    """
-    offenders = []
-    for literal in _JSON_STRING_LITERAL_RE.findall(text):
-        body = literal[1:-1]
-        i = 0
-        while i < len(body):
-            if body[i] != "\\" or i + 1 >= len(body):
-                i += 1
-                continue
-            if body[i + 1] in _AMBIGUOUS_CONTROL_ESCAPES:
-                offenders.append(literal)
-                break
-            # Consume the whole escape, so the second half of \\ is not read as a new one.
-            i += 2
-    return offenders
-
-
 def parse_guideline_response(clean_response: str, context: str) -> list[Guideline] | None:
     """Parse a guideline-generation LLM response, repairing the malformations models
     commonly emit, and log whichever repair was needed.
 
-    Tries the response as-is first, then two repairs that compose, so a response with
-    both problems is still recovered:
+    Tries the response as-is first, then these repairs. The backslash repair composes with
+    either shape repair, so a response with both problems is still recovered:
 
     1. Lone backslashes escaped — models emit LaTeX-style ``\\( \\)`` inside string
        values, which is not a valid JSON escape sequence and fails to parse at all.
     2. A bare top-level array wrapped under the ``guidelines`` key — a bare ``[...]``
        parses as valid JSON but doesn't match the schema, so it fails validation
-       rather than parsing. Only reachable when the provider can't enforce a response
-       schema; constrained decoding makes the shape impossible to get wrong.
+       rather than parsing. Seen when the provider can't enforce a response schema.
+    3. ``guidelines`` decoded from a string of JSON — asked for structured output, some
+       models return the whole answer encoded once more under its own key,
+       ``{"guidelines": "{\\"guidelines\\": [...]}"}``. A response schema doesn't prevent
+       it: claude-sonnet-5 through a LiteLLM proxy does it (#488). The decoded text is held
+       to the same rule as the response: the backslash repair applies to it too, and only
+       text that needed that repair has its control escapes checked (see below).
 
     A repair that succeeds is logged at INFO, so a prompt or model that keeps producing
     off-contract output stays visible instead of being silently rescued.
@@ -156,11 +102,14 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
             first_error = first_error or e
             continue
 
-        payloads: list[tuple[str, object]] = [("", parsed)]
+        # Each candidate: the shape repair it needed, the payload, any decoded text whose control
+        # escapes are suspect with why, and the string it was decoded from, if any.
+        payloads: list[tuple[str, object, list[str], str, str | None]] = [("", parsed, [], "", None)]
         if isinstance(parsed, list):
-            payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}))
+            payloads.append(('wrapped a bare array under "guidelines"', {"guidelines": parsed}, [], "", None))
+        payloads += _string_encoded_candidates(parsed, response_repaired=bool(parse_repair))
 
-        for shape_repair, payload in payloads:
+        for shape_repair, payload, suspect_texts, suspect_reason, decoded_from in payloads:
             try:
                 guidelines = GuidelineGenerationResponse.model_validate(payload).guidelines
             except ValidationError as e:
@@ -170,14 +119,24 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
             # Only a response that needed the backslash repair is suspect: that is the
             # evidence the model was not escaping backslashes, which is what makes its
             # remaining \t/\n/\r ambiguous. A well-formed response keeps its control escapes.
-            ambiguous = _literals_with_ambiguous_control_escapes(text) if parse_repair else []
+            # Decoded text follows the same rule (see _string_encoded_candidates).
+            ambiguous = literals_with_ambiguous_control_escapes(text) if parse_repair else []
+            if decoded_from is not None:
+                # The decoded string's own literal is left to the scan of the decoded text below.
+                # Its \n there can be the decoded JSON's indentation, which no lost backslash makes:
+                # one would leave a raw newline inside a decoded string, and decoding rejects that.
+                ambiguous = [literal for literal in ambiguous if _literal_value(literal) != decoded_from]
+            reason = "escaping lone backslashes made it parse"
+            if not ambiguous and suspect_texts:
+                ambiguous = [literal for suspect in suspect_texts for literal in literals_with_ambiguous_control_escapes(suspect)]
+                reason = suspect_reason
             if ambiguous:
                 # Fail closed: a plausible-looking guideline with silently corrupted text is
                 # worse than none, and the operator can regenerate. Whole response, not just
                 # the offending literal — a guideline set is generated as one unit, and
                 # dropping part of it would silently change what the model was asked for.
                 logger.warning(
-                    f"Discarding {context} guideline response: escaping lone backslashes made it parse, but "
+                    f"Discarding {context} guideline response: {reason}, but "
                     f"{len(ambiguous)} string literal(s) still carry a single-backslash \\t/\\n/\\r/\\b/\\f, "
                     "which this model's escaping makes as likely to be a path or regex as a control "
                     f"character. First: {repr(ambiguous[0][:200])}"
@@ -189,6 +148,49 @@ def parse_guideline_response(clean_response: str, context: str) -> list[Guidelin
 
     logger.warning(f"Failed to parse {context} guideline response: {first_error}. Response: {repr(clean_response[:500])}")
     return None
+
+
+def _literal_value(literal: str) -> object:
+    """The value of a JSON string literal, or None if it doesn't decode."""
+    try:
+        return json.loads(literal)
+    except JSONDecodeError:
+        return None
+
+
+def _string_encoded_candidates(parsed: object, *, response_repaired: bool) -> list[tuple[str, object, list[str], str, str | None]]:
+    """Candidates for a response whose ``guidelines`` arrived as a string of JSON, for
+    ``parse_guideline_response``: the shape repair, the payload, the decoded text whose control
+    escapes are suspect with why, and the string it was decoded from.
+
+    The decoded text is held to the same rule as the response. It is decoded as it is first,
+    then with its lone backslashes escaped. Only text that needed that repair shows its
+    backslashes going unescaped, so only then are its \\t/\\n/\\r/\\b/\\f checked: text that
+    parses as it is keeps its control escapes, a real newline in a step included, as a response
+    sent once does. When the response itself needed the repair, its decoded text is checked too.
+    """
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("guidelines"), str):
+        return []
+    inner = parsed["guidelines"]
+    label = 'decoded "guidelines" from a JSON string'
+    candidates: list[tuple[str, object, list[str], str, str | None]] = []
+    decoded, names = GuidelineGenerationResponse.decode_string_fields(parsed)
+    if names:
+        candidates.append((label, decoded, [inner] if response_repaired else [], "escaping lone backslashes made it parse", inner))
+    escaped = _escape_lone_backslashes(inner)
+    if escaped != inner:
+        decoded, names = GuidelineGenerationResponse.decode_string_fields({**parsed, "guidelines": escaped})
+        if names:
+            candidates.append(
+                (
+                    f"{label}, escaping lone backslashes in it",
+                    decoded,
+                    [escaped],
+                    "escaping lone backslashes made its guidelines, sent as a string of JSON, parse",
+                    inner,
+                )
+            )
+    return candidates
 
 
 def trajectory_step_window(total_steps: int, *, max_steps: int, tail_steps: int) -> tuple[int, int]:
@@ -420,6 +422,9 @@ def _generate_guidelines_for_segment(
     llm_messages = dispatch_llm_pre_call(
         [{"role": "user", "content": prompt}], purpose="guideline_generation", model=options.guidelines_model
     )
+    # enable_json_schema_validation=False, passed explicitly: LiteLLM would raise on a reply the
+    # parsing below can repair, and that parsing validates against the same model (#488). Left
+    # out, the argument falls back to LiteLLM's process-wide flag, which a host app may turn on.
     if constrained_decoding_supported:
         raw = (
             completion(
@@ -427,7 +432,7 @@ def _generate_guidelines_for_segment(
                 messages=llm_messages,
                 response_format=GuidelineGenerationResponse,
                 custom_llm_provider=options.custom_llm_provider,
-                enable_json_schema_validation=constrained_decoding_supported,
+                enable_json_schema_validation=False,
             )
             .choices[0]
             .message.content
@@ -438,7 +443,7 @@ def _generate_guidelines_for_segment(
                 model=options.guidelines_model,
                 messages=llm_messages,
                 custom_llm_provider=options.custom_llm_provider,
-                enable_json_schema_validation=constrained_decoding_supported,
+                enable_json_schema_validation=False,
             )
             .choices[0]
             .message.content

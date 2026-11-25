@@ -1,8 +1,9 @@
+import json
 import logging
 import re
 from dataclasses import dataclass
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Any, Literal
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from typing import Any, Literal, Self, get_origin
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,8 @@ class Guideline(BaseModel):
 
 
 class _ModelFacingSchema(BaseModel):
-    """A response model whose JSON schema, as sent to an LLM, carries no numeric bounds.
+    """A response model sent to an LLM: its JSON schema carries no numeric bounds, and it can
+    repair a reply whose list arrived as a string of JSON (see ``decode_string_fields``).
 
     Structured output sends ``model_json_schema()`` to the provider (litellm forwards it
     unchanged), and some providers refuse numeric-range keywords outright: Claude's
@@ -126,6 +128,61 @@ class _ModelFacingSchema(BaseModel):
     def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
         schema: dict[str, Any] = _drop_numeric_bounds(super().model_json_schema(*args, **kwargs))
         return schema
+
+    @classmethod
+    def decode_string_fields(cls, payload: Any) -> tuple[Any, list[str]]:
+        """``payload`` with each list field that arrived as a string of JSON decoded, and the
+        names of the fields decoded. With none to decode, ``payload`` comes back unchanged with
+        no names.
+
+        Asked for structured output, some models return the whole answer JSON-encoded once
+        more, as a string under its own key: ``{"guidelines": "{\\"guidelines\\": [...]}"}``.
+        claude-sonnet-5 through a LiteLLM proxy does it for all three response models. The
+        string may hold the object, whose field is then taken, or the list itself. One level is
+        decoded. Validation decides whether the result is right, so a string that isn't JSON,
+        or holds something else, still fails. See #488.
+        """
+        if not isinstance(payload, dict):
+            return payload, []
+        decoded = dict(payload)
+        names = []
+        for name, field in cls.model_fields.items():
+            value = payload.get(name)
+            if get_origin(field.annotation) is not list or not isinstance(value, str):
+                continue
+            try:
+                inner = json.loads(value)
+            except json.JSONDecodeError:
+                continue
+            decoded[name] = inner[name] if isinstance(inner, dict) and name in inner else inner
+            names.append(name)
+        return (decoded, names) if names else (payload, [])
+
+    @classmethod
+    def model_validate_reply(cls, payload: Any, context: str) -> Self:
+        """Validate an LLM's reply, repairing a list field it sent as a string of JSON.
+
+        A repair is logged at INFO, so a model that keeps needing it stays visible. A reply that
+        doesn't validate either way raises the error for the reply as the model sent it.
+
+        Decoded text is held to the same rule as a reply sent once: it is used if it parses as it
+        is, control escapes and all, a real newline in a segment's description included. These
+        callers have no backslash repair, so text that doesn't parse as it is isn't decoded.
+        ``parse_guideline_response`` repairs decoded text too, and checks what it repaired.
+        """
+        try:
+            return cls.model_validate(payload)
+        except ValidationError as error:
+            decoded, names = cls.decode_string_fields(payload)
+            if not names:
+                raise
+            fields = ", ".join(f'"{n}"' for n in names)
+            try:
+                result = cls.model_validate(decoded)
+            except ValidationError:
+                raise error from None
+        logger.info("Recovered %s response after repair: decoded %s from a JSON string.", context, fields)
+        return result
 
 
 _NUMERIC_BOUNDS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"})

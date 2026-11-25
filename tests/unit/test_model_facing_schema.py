@@ -1,4 +1,8 @@
-"""Response schemas sent to an LLM carry no numeric bounds; local validation still enforces them."""
+"""Response schemas sent to an LLM carry no numeric bounds; local validation still enforces them.
+A reply whose list arrived as a string of JSON is repaired."""
+
+import json
+import logging
 
 import pytest
 from litellm.utils import type_to_response_format_param
@@ -139,3 +143,100 @@ def test_segment_steps_still_validated_locally():
     assert SegmentationResponse.model_validate({"subtasks": [segment]}).subtasks[0].end_step == 2
     with pytest.raises(ValidationError):
         SegmentationResponse.model_validate({"subtasks": [{**segment, "start_step": 0}]})
+
+
+# A reply whose list arrived as a string of JSON (#488).
+
+_ITEMS = {
+    GuidelineGenerationResponse: ("guidelines", {"content": "c", "rationale": "r", "category": "strategy", "trigger": "t"}),
+    ConsolidatedGuidelineResponse: (
+        "guidelines",
+        {"content": "c", "rationale": "r", "category": "strategy", "trigger": "t", "source_indices": [0]},
+    ),
+    SegmentationResponse: ("subtasks", {"generalized_description": "d", "start_step": 1, "end_step": 2, "purpose": "p"}),
+}
+
+
+@pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
+@pytest.mark.parametrize("holds", ["object", "list"])
+def test_a_list_sent_as_a_json_string_is_decoded(response, holds, caplog):
+    """The string holds the whole answer, as claude-sonnet-5 sends it, or just the list."""
+    key, item = _ITEMS[response]
+    encoded = json.dumps({key: [item]} if holds == "object" else [item])
+    with caplog.at_level(logging.INFO):
+        result = response.model_validate_reply({key: encoded}, "test")
+    assert len(getattr(result, key)) == 1
+    assert f'Recovered test response after repair: decoded "{key}" from a JSON string.' in caplog.text
+
+
+@pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
+def test_a_well_formed_reply_is_not_reported_as_repaired(response, caplog):
+    key, item = _ITEMS[response]
+    with caplog.at_level(logging.INFO):
+        result = response.model_validate_reply({key: [item]}, "test")
+    assert len(getattr(result, key)) == 1
+    assert "after repair" not in caplog.text
+
+
+@pytest.mark.parametrize("value", ["not json", "3", json.dumps({"other": []})], ids=["not-json", "a-number", "another-key"])
+def test_a_string_that_does_not_hold_the_list_raises_the_error_for_the_reply_as_sent(value):
+    with pytest.raises(ValidationError) as excinfo:
+        GuidelineGenerationResponse.model_validate_reply({"guidelines": value}, "test")
+    assert excinfo.value.errors()[0]["input"] == value
+
+
+_TEXT_FIELD = {
+    GuidelineGenerationResponse: "content",
+    ConsolidatedGuidelineResponse: "content",
+    SegmentationResponse: "generalized_description",
+}
+
+
+@pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
+def test_decoded_text_keeps_its_control_escapes(response):
+    r"""Decoded text that parses as it is is used as a reply sent once would be: its \t is a tab."""
+    key, item = _ITEMS[response]
+    field = _TEXT_FIELD[response]
+    inner = json.dumps([{**item, field: "Open C:@"}]).replace("@", "\\temp")
+    result = response.model_validate_reply({key: inner}, "test")
+    assert getattr(getattr(result, key)[0], field) == "Open C:\temp"
+
+
+@pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
+def test_decoded_text_keeps_a_real_newline(response):
+    """Encoded twice, a real newline reads as \\n in the decoded text. It is kept (#489 review)."""
+    key, item = _ITEMS[response]
+    field = _TEXT_FIELD[response]
+    inner = json.dumps([{**item, field: "first line\nsecond line"}])
+    result = response.model_validate_reply({key: inner}, "test")
+    assert getattr(getattr(result, key)[0], field) == "first line\nsecond line"
+
+
+@pytest.mark.parametrize("response", RESPONSES, ids=lambda r: r.__name__)
+def test_decoded_text_keeps_an_escaped_backslash(response):
+    key, item = _ITEMS[response]
+    field = _TEXT_FIELD[response]
+    result = response.model_validate_reply({key: json.dumps([{**item, field: r"Open C:\temp"}])}, "test")
+    assert getattr(getattr(result, key)[0], field) == r"Open C:\temp"
+
+
+def test_a_decoded_list_is_still_validated():
+    bad = {"content": "c", "rationale": "r", "category": "strategy", "trigger": "t", "support": 0}
+    with pytest.raises(ValidationError):
+        GuidelineGenerationResponse.model_validate_reply({"guidelines": json.dumps([bad])}, "test")
+
+
+class _Mixed(_ModelFacingSchema):
+    note: str
+    items: list[int]
+
+
+def test_only_list_fields_are_decoded():
+    decoded, names = _Mixed.decode_string_fields({"note": "[1]", "items": "[1, 2]"})
+    assert names == ["items"]
+    assert decoded == {"note": "[1]", "items": [1, 2]}
+
+
+@pytest.mark.parametrize("payload", [[1], "x", None, {"guidelines": []}, {"guidelines": "not json"}])
+def test_nothing_to_decode_leaves_the_payload_as_it_is(payload):
+    assert GuidelineGenerationResponse.decode_string_fields(payload) == (payload, [])

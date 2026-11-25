@@ -43,7 +43,7 @@ _GUIDELINE = {
 
 @pytest.mark.unit
 class TestParseGuidelineResponse:
-    """Repairs for the two ways models break the {"guidelines": [...]} output contract."""
+    """Repairs for the ways models break the {"guidelines": [...]} output contract."""
 
     def test_returns_guidelines_for_well_formed_response(self, caplog):
         with caplog.at_level(logging.INFO):
@@ -58,6 +58,95 @@ class TestParseGuidelineResponse:
         guidelines = parse_guideline_response(json.dumps([_GUIDELINE]), "standard")
         assert guidelines is not None
         assert guidelines[0].content == "Validate files before parsing"
+
+    def test_decodes_the_answer_sent_as_a_json_string(self, caplog):
+        """claude-sonnet-5 returns the whole answer encoded once more under its own key (#488)."""
+        raw = json.dumps({"guidelines": json.dumps({"guidelines": [_GUIDELINE]})})
+        with caplog.at_level(logging.INFO):
+            guidelines = parse_guideline_response(raw, "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == "Validate files before parsing"
+        assert 'Recovered standard guideline response after repair: decoded "guidelines" from a JSON string.' in caplog.text
+
+    def test_decodes_a_list_sent_as_a_json_string(self):
+        raw = json.dumps({"guidelines": json.dumps([_GUIDELINE])})
+        guidelines = parse_guideline_response(raw, "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == "Validate files before parsing"
+
+    def test_a_guidelines_string_that_is_not_json_is_still_rejected(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            assert parse_guideline_response(json.dumps({"guidelines": "Validate files before parsing"}), "standard") is None
+        # The error reported is the one for the reply as sent.
+        assert "Input should be a valid list" in caplog.text
+
+    def test_only_one_level_of_string_encoding_is_decoded(self):
+        raw = json.dumps({"guidelines": json.dumps({"guidelines": json.dumps([_GUIDELINE])})})
+        assert parse_guideline_response(raw, "standard") is None
+
+    def test_a_well_formed_decoded_answer_keeps_its_control_escapes(self):
+        r"""Decoded text that parses as it is gets the trust a response sent once does: its
+        \t is a tab. Nothing shows a lost backslash, and a real \n or \t can't be told
+        apart from one anyway."""
+        inner = '[{"content": "Open C:\\temp", "rationale": "r", "category": "strategy", "trigger": "t"}]'
+        guidelines = parse_guideline_response(json.dumps({"guidelines": inner}), "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == "Open C:\temp"
+
+    def test_a_decoded_answer_with_a_real_newline_is_recovered(self):
+        """Encoded twice, a real newline in a step reads as \\n in the decoded text. It is
+        recovered, as it is when the same answer is sent once (#489 review)."""
+        inner = json.dumps({"guidelines": [{**_GUIDELINE, "implementation_steps": ["first line\nsecond line"]}]})
+        twice = parse_guideline_response(json.dumps({"guidelines": inner}), "standard")
+        once = parse_guideline_response(inner, "standard")
+        assert twice is not None and once is not None
+        assert twice[0].implementation_steps == once[0].implementation_steps == ["first line\nsecond line"]
+
+    def test_the_backslash_repair_applies_to_a_decoded_answer(self, caplog):
+        r"""LaTeX \( \) in the decoded text is repaired as it is in a response sent once."""
+        inner = '[{"content": "State bounds as \\( n \\le 10 \\)", "rationale": "r", "category": "strategy", "trigger": "t"}]'
+        with caplog.at_level(logging.INFO):
+            guidelines = parse_guideline_response(json.dumps({"guidelines": inner}), "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == r"State bounds as \( n \le 10 \)"
+        assert 'decoded "guidelines" from a JSON string, escaping lone backslashes in it' in caplog.text
+
+    def test_discards_a_decoded_answer_whose_repair_leaves_an_ambiguous_escape(self, caplog):
+        r"""Text that needed the backslash repair shows the model not escaping backslashes, so
+        its remaining \t is as likely C:\temp as a tab: fail closed, as for a response sent once."""
+        inner = '[{"content": "Bound \\( x \\) in C:\\temp", "rationale": "r", "category": "strategy", "trigger": "t"}]'
+        with caplog.at_level(logging.WARNING):
+            assert parse_guideline_response(json.dumps({"guidelines": inner}), "standard") is None
+        assert "made its guidelines, sent as a string of JSON, parse" in caplog.text
+        assert "Recovered" not in caplog.text
+
+    def test_decoded_text_is_checked_when_the_response_needed_the_repair(self, caplog):
+        r"""When the response itself needed the backslash repair, its decoded text is suspect
+        too, though it parses as it is."""
+        raw = r'{"guidelines": "[{\"content\": \"Open C:\\temp\", \"rationale\": \"r\", \"category\": \"strategy\", \"trigger\": \"t\"}]", "note": "see \(x\)"}'
+        with caplog.at_level(logging.WARNING):
+            assert parse_guideline_response(raw, "standard") is None
+        assert "escaping lone backslashes made it parse" in caplog.text
+
+    @pytest.mark.parametrize("indent", [None, 2], ids=["compact", "pretty-printed"])
+    def test_a_decoded_answer_is_recovered_when_the_response_needed_the_repair(self, indent):
+        r"""Pretty-printed, the decoded JSON's indentation sits in the response's literal as \n.
+        That \n can't be a lost backslash, so it doesn't refuse the reply: the decoded text is
+        checked on its own instead (#489 review). Here the response holds a lone \( that needs
+        the repair, as does the text decoded from it."""
+        guideline = {**_GUIDELINE, "content": r"Bound \(x\)"}
+        inner = json.dumps({"guidelines": [guideline]}, indent=indent)
+        raw = json.dumps({"guidelines": inner}, indent=indent).replace("\\\\\\\\(", "\\(").replace("\\\\\\\\)", "\\)")
+        assert "\\(" in raw and "\\\\(" not in raw
+        guidelines = parse_guideline_response(raw, "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == r"Bound \(x\)"
+
+    def test_a_decoded_answer_keeps_an_escaped_backslash(self):
+        inner = json.dumps([{**_GUIDELINE, "content": r"Open C:\temp"}])
+        guidelines = parse_guideline_response(json.dumps({"guidelines": inner}), "standard")
+        assert guidelines is not None
+        assert guidelines[0].content == r"Open C:\temp"
 
     def test_repairs_lone_backslashes(self):
         """LaTeX-style \\( \\) in a string value is not a valid JSON escape and fails to parse."""
@@ -467,6 +556,42 @@ class TestParseOpenaiAgentsTrajectory:
         # The context label is the only thing distinguishing the three pipelines in logs.
         assert "Recovered standard guideline response" in caplog.text
         assert "consistency" not in caplog.text
+
+    @patch("altk_evolve.llm.guidelines.guidelines.completion")
+    @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
+    def test_generate_guidelines_recovers_an_answer_sent_as_a_json_string(self, _mock_params, _mock_schema, mock_completion, monkeypatch):
+        """With a response schema, the reply reaches Evolve's parser: LiteLLM is told not to
+        validate it, which would raise before the parser could repair it (#488)."""
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
+        mock_completion.return_value = _mock_completion_response({"guidelines": json.dumps({"guidelines": [_GUIDELINE]})})
+
+        results = generate_guidelines([{"role": "user", "content": "Fix CSV parsing"}])
+
+        assert results[0].guidelines[0].content == "Validate files before parsing"
+        _, kwargs = mock_completion.call_args
+        assert "response_format" in kwargs
+        assert kwargs.get("enable_json_schema_validation") is False
+
+    @patch("altk_evolve.llm.guidelines.guidelines.supports_response_schema", return_value=True)
+    @patch("altk_evolve.llm.guidelines.guidelines.get_supported_openai_params", return_value=["response_format"])
+    def test_generate_guidelines_recovers_with_litellms_global_check_on(self, _mock_params, _mock_schema, monkeypatch):
+        """A call that doesn't pass enable_json_schema_validation falls back to LiteLLM's
+        process-wide flag, so a host app that turns it on must not bring #488 back. This goes
+        through LiteLLM's real completion, with a mocked reply, so LiteLLM's own validator runs."""
+        import litellm
+
+        monkeypatch.setattr(litellm, "enable_json_schema_validation", True)
+        monkeypatch.setattr("altk_evolve.config.evolve.evolve_config.segmentation_enabled", False)
+        monkeypatch.setattr(guidelines_module.llm_settings, "guidelines_model", "gpt-4o")
+        monkeypatch.setattr(guidelines_module.llm_settings, "custom_llm_provider", None)
+        reply = json.dumps({"guidelines": json.dumps({"guidelines": [_GUIDELINE]})})
+        real_completion = litellm.completion
+        monkeypatch.setattr(guidelines_module, "completion", lambda *args, **kwargs: real_completion(*args, mock_response=reply, **kwargs))
+
+        results = generate_guidelines([{"role": "user", "content": "Fix CSV parsing"}])
+
+        assert results[0].guidelines[0].content == "Validate files before parsing"
 
 
 @pytest.mark.unit
